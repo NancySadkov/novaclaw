@@ -6,7 +6,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { Catalog } from "@novaclaw/schema/catalog"
-import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
+import { ServerEvent } from "@novaclaw/schema/server-event"
 import { Effect, Fiber, Stream } from "effect"
 import { publicEventStream } from "./event"
 
@@ -32,8 +32,12 @@ import { publicEventStream } from "./event"
  * which is the very failure being fixed.
  */
 
-/** A type the instance publishes that the public wire union cannot carry. */
-const OFFENDER = SessionStatusEvent.Status
+/**
+ * A type on the bus that the public wire union cannot carry. Until 2026-09-03 this was
+ * `session.status`; the served set is the bus minus the two server-lifecycle types now, and
+ * `global.disposed` — the `/global/event` element, never this stream's — is what is left to skip.
+ */
+const OFFENDER = ServerEvent.Disposed
 
 /**
  * A type the wire union CAN carry, used on both sides of the offender.

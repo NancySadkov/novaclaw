@@ -49,6 +49,12 @@ export function define<
     readonly aggregate: string
   }
   readonly schema: Fields
+  /**
+   * The wire name of this arm when the type's own PascalCase would collide with another schema's.
+   * `session.status` derives to `SessionStatus`, which the status object already owns, so its arm
+   * is named `SessionStatusEvent` rather than the emitter's numbered `SessionStatus2` (2026-09-03).
+   */
+  readonly identifier?: string
 }) {
   const data = Schema.Struct(input.schema)
   return Schema.Struct({
@@ -59,7 +65,7 @@ export function define<
     location: optional(Location.Ref),
     data,
   })
-    .annotate({ identifier: input.type })
+    .annotate({ identifier: input.identifier ?? input.type })
     .pipe(
       statics(() => ({
         type: input.type,

@@ -18,17 +18,15 @@ import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
-import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { AgentV2 } from "@novaclaw/core/agent"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 
 const unavailable = (operation: string) => new Error(`${operation} is host-only in a session worker`)
-const hostEvents = new Set<string>([
-  ...EventManifest.ServerDefinitions.map((definition) => definition.type),
-  SessionStatusEvent.Status.type,
-])
+// `session.status` used to be whitelisted here past the served set; it is IN the served set since
+// 2026-09-03 (the manifest's `ServerDefinitions` note), so the set is the manifest's alone.
+const hostEvents = new Set<string>(EventManifest.ServerDefinitions.map((definition) => definition.type))
 
 /** Effect service implementations consumed by the real runner layer. Read/list/reply surfaces stay
  * host-only; only capabilities the draining worker legitimately needs cross the boundary. */

@@ -2,7 +2,6 @@ export * as SessionWorkerEventBridge from "./event-bridge"
 
 import { Effect, Schema } from "effect"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
-import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import type { EventV2 } from "@novaclaw/core/event"
@@ -11,10 +10,8 @@ import type { Location } from "@novaclaw/core/location"
 type Publish = Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "publish-event" }>
 type Reply = Extract<SessionWorkerProtocol.HostMessage, { readonly type: "event-published" | "event-rejected" }>
 
-const workerDefinitions: ReadonlyArray<(typeof EventManifest.Definitions)[number]> = [
-  ...EventManifest.ServerDefinitions,
-  SessionStatusEvent.Status,
-]
+// `session.status` is in `ServerDefinitions` since 2026-09-03; the bridge forwards the served set.
+const workerDefinitions: ReadonlyArray<(typeof EventManifest.Definitions)[number]> = [...EventManifest.ServerDefinitions]
 const definitions: ReadonlyMap<string, (typeof EventManifest.Definitions)[number]> = new Map(
   workerDefinitions.map((definition) => [definition.type, definition]),
 )

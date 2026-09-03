@@ -5,7 +5,7 @@ import { Effect, Stream } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
 import type { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
-import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
+import { ServerEvent } from "@novaclaw/schema/server-event"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 import { boundedSubscription } from "../../src/server/routes/instance/httpapi/handlers/event"
 
@@ -85,15 +85,15 @@ describe("the /api/event contract equals what the route can deliver", () => {
     expect(declaration).toContain('"server.connected"')
   })
 
-  test("the fixture is real: the bus is wider than the wire, and session.status is the gap", () => {
-    // Nothing below means anything if the two sets were the same set all along.
+  test("the fixture is real: the bus is wider than the wire, and global.disposed is the gap", () => {
+    // Nothing below means anything if the two sets were the same set all along. The gap used to be
+    // ten families wide with `session.status` as its sharpest case; since 2026-09-03 the served set
+    // is the bus minus the two server-lifecycle types, and `global.disposed` — which rides
+    // `/global/event`, not this stream — is what is left of it.
     expect(EventManifest.Latest.size).toBeGreaterThan(deliverableTypes.size)
-    // `session.status` is the sharpest case in the gap: the session worker WHITELISTS it past the
-    // host-manifest check (`session-worker/services.ts`, `session-worker/event-bridge.ts`) so it
-    // reaches the host bus, and the public wire still cannot express it.
     const onTheBus = new Set(EventManifest.Definitions.map((definition) => definition.type))
-    expect(onTheBus.has(SessionStatusEvent.Status.type)).toBe(true)
-    expect(deliverableTypes.has(SessionStatusEvent.Status.type)).toBe(false)
+    expect(onTheBus.has(ServerEvent.Disposed.type)).toBe(true)
+    expect(deliverableTypes.has(ServerEvent.Disposed.type)).toBe(false)
   })
 
   test("🔴 the spec promises exactly the arms the handler emits — no more", () => {

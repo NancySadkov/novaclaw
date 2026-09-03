@@ -87,8 +87,6 @@ export type Event =
   | EventTodoUpdated
   | EventSessionTagsUpdated
   | EventSessionPresenceUpdated
-  | EventPermissionAsked
-  | EventPermissionReplied
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventSessionStatus
@@ -1148,42 +1146,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "permission.asked"
-        properties: {
-          id: string
-          sessionID: string
-          permission: string
-          patterns: Array<string>
-          metadata: {
-            [key: string]: unknown
-          }
-          always: Array<string>
-          tool?: {
-            messageID: string
-            callID: string
-          }
-        }
-      }
-    | {
-        id: string
-        type: "permission.replied"
-        properties: {
-          sessionID: string
-          requestID: string
-          reply:
-            | "once"
-            | "always"
-            | "reject"
-            | "allow-once"
-            | "allow-file"
-            | "allow-always"
-            | "deny-once"
-            | "deny-file"
-            | "deny-always"
-        }
-      }
-    | {
-        id: string
         type: "mcp.tools.changed"
         properties: {
           server: string
@@ -1868,6 +1830,24 @@ export type MessengerAccountStatus = {
   }
 }
 
+export type SessionStatusEvent = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
 export type V2Event =
   | ModelsDevRefreshed
   | IntegrationUpdated
@@ -1925,6 +1905,9 @@ export type V2Event =
   | SessionNextRevertStaged
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
+  | SessionError
+  | InstallationUpdated
+  | InstallationUpdateAvailable
   | AppRegistered
   | MemoryClaimRecorded
   | MemoryItemRecorded
@@ -1948,6 +1931,16 @@ export type V2Event =
   | TodoUpdated
   | SessionTagsUpdated
   | SessionPresenceUpdated
+  | McpToolsChanged
+  | McpBrowserOpenFailed
+  | SessionStatusEvent
+  | SessionCompacted
+  | VcsBranchUpdated
+  | WorkspaceReady
+  | WorkspaceFailed
+  | WorkspaceStatus
+  | WorktreeReady
+  | WorktreeFailed
   | V2EventServerConnected
 
 export type V2EventStream = string
@@ -6198,6 +6191,58 @@ export type SessionNextCompactionDelta = {
   }
 }
 
+export type SessionError = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.error"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID?: string
+    error: unknown
+  }
+}
+
+export type InstallationUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "installation.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    version: string
+  }
+}
+
+export type InstallationUpdateAvailable = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "installation.update-available"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    version: string
+  }
+}
+
 export type AppRegistered = {
   id: string
   metadata?: {
@@ -6610,6 +6655,162 @@ export type SessionPresenceUpdated = {
   data: {
     sessionID: string
     presence: SessionPresenceSnapshot
+  }
+}
+
+export type McpToolsChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "mcp.tools.changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    server: string
+  }
+}
+
+export type McpBrowserOpenFailed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "mcp.browser.open.failed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    mcpName: string
+    url: string
+  }
+}
+
+export type SessionCompacted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.compacted"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+  }
+}
+
+export type VcsBranchUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "vcs.branch.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    branch?: string
+  }
+}
+
+export type WorkspaceReady = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "workspace.ready"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    name: string
+  }
+}
+
+export type WorkspaceFailed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "workspace.failed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    message: string
+  }
+}
+
+export type WorkspaceStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "workspace.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    workspaceID: string
+    status: "connected" | "connecting" | "disconnected" | "error"
+  }
+}
+
+export type WorktreeReady = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "worktree.ready"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    name: string
+    branch?: string
+  }
+}
+
+export type WorktreeFailed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "worktree.failed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    message: string
   }
 }
 
@@ -7632,44 +7833,6 @@ export type EventSessionPresenceUpdated = {
   properties: {
     sessionID: string
     presence: SessionPresenceSnapshot
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: {
-    id: string
-    sessionID: string
-    permission: string
-    patterns: Array<string>
-    metadata: {
-      [key: string]: unknown
-    }
-    always: Array<string>
-    tool?: {
-      messageID: string
-      callID: string
-    }
-  }
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply:
-      | "once"
-      | "always"
-      | "reject"
-      | "allow-once"
-      | "allow-file"
-      | "allow-always"
-      | "deny-once"
-      | "deny-file"
-      | "deny-always"
   }
 }
 

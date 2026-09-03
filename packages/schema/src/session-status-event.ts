@@ -43,6 +43,7 @@ export type Info = Schema.Schema.Type<typeof Info>
 
 export const Status = Event.define({
   type: "session.status",
+  identifier: "SessionStatusEvent",
   schema: {
     sessionID: SessionID,
     status: Info,

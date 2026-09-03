@@ -51,12 +51,29 @@ describe("public event manifest", () => {
     //   Â· Availability domain is the instance's own memory graph, which the memory routes already
     //     expose to the same clients. No new reach, so no new server.
     // Verdict: accepted as public wire events. ServerDefinitions 76 -> 81, Definitions/Latest 97 -> 102.
+    //
+    // 2026-09-03 — REVIEW PERFORMED, the event-stream ledger's rows
+    // (`notes/reports/refactor-sweep-2026-08-31/24-contract-surface.md`). Two moves:
+    //   · JOINED to the served set, +13: `session.error`, `session.status`, `session.compacted`,
+    //     `installation.updated`, `installation.update-available`, `mcp.tools.changed`,
+    //     `mcp.browser.open.failed`, `vcs.branch.updated`, `workspace.ready/failed/status`,
+    //     `worktree.ready/failed`. Every one was already ON THE BUS and declared in `Definitions` — the
+    //     public wire simply refused them, so the app's status row, error toast, updater and branch
+    //     badge were contract consumers waiting on a union that named twenty arms the route dropped.
+    //     No new reach: the same authenticated clients already received them on the legacy `/event`.
+    //     NOT durable — none takes a `durable` block; `Durable.size` stays 48.
+    //   · DELETED, −2: `permission.asked`, `permission.replied`. The consent-card island that
+    //     published them left with the consent-card deletion (2026-09-01); a family nobody emits is not a contract (the
+    //     `question.asked` family went the same way earlier the same day, −3).
+    //   · What the served set still refuses is exactly `server.connected` and `global.disposed` — the
+    //     streams' own lifecycle elements, declared for the union and emitted by the routes themselves.
+    // Verdict: ServerDefinitions 79 -> 92, Definitions/Latest 99 -> 94 (−3 question, −2 permission).
     expect({
       server: EventManifest.ServerDefinitions.length,
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-    }).toEqual({ server: 79, all: 99, latest: 99, durable: 48 })
+    }).toEqual({ server: 92, all: 94, latest: 94, durable: 48 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

@@ -12,7 +12,6 @@ import { McpEvent } from "./mcp-event"
 import { MemoryEvent } from "./memory-event"
 import { Messenger } from "./messenger"
 import { ModelsDev } from "./models-dev"
-import { PermissionRuleset } from "./permission-ruleset"
 import { Plugin } from "./plugin"
 import { Pty } from "./pty"
 import { Question } from "./question"
@@ -60,15 +59,19 @@ const featureDefinitions = Event.inventory(
   ...Messenger.Event.Definitions,
 )
 
+/**
+ * What `/api/event` carries — the whole bus, minus the two server-lifecycle types below.
+ *
+ * ⚠️ Until 2026-09-03 this was the foundation, the features and three session families, and
+ * `Definitions` added ten more families the contract stream then REFUSED (`session.status`,
+ * `session.error`, `session.compacted`, `mcp.*`, `installation.*`, `vcs.branch.updated`,
+ * `workspace.*`, `worktree.*`): the app's status row, error toast, updater and branch badge were
+ * contract consumers waiting on exactly these, and the session worker had to whitelist
+ * `session.status` past this set by hand to reach the host bus at all. The event-stream ledger
+ * (`notes/reports/refactor-sweep-2026-08-31/24-contract-surface.md`) said "join" for each; they are joined. `permission.asked/replied` left instead:
+ * the consent-card island that published them is gone, and a family nobody emits is not a contract.
+ */
 export const ServerDefinitions = Event.inventory(
-  ...foundationDefinitions,
-  ...featureDefinitions,
-  ...SessionTodo.Event.Definitions,
-  ...SessionTags.Event.Definitions,
-  ...SessionPresence.Event.Definitions,
-)
-
-export const Definitions = Event.inventory(
   ...foundationDefinitions,
   ...recordLiveDefinitions,
   ...InstallationEvent.Definitions,
@@ -76,14 +79,20 @@ export const Definitions = Event.inventory(
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,
   ...SessionPresence.Event.Definitions,
-  ...PermissionRuleset.Event.Definitions,
   ...McpEvent.Definitions,
   ...SessionStatusEvent.Definitions,
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
-  ...ServerEvent.Definitions,
 )
+
+/**
+ * Everything the bus carries: the served set plus `server.connected` and `global.disposed`, which
+ * the streams emit themselves (`/api/event` and `/event` open with `server.connected`;
+ * `global.disposed` rides `/global/event`) and are therefore declared here for the union, not served
+ * as bus events. Their shape reconciliation and the legacy element are the two rows of that ledger left.
+ */
+export const Definitions = Event.inventory(...ServerDefinitions, ...ServerEvent.Definitions)
 export const Latest = Event.latest(Definitions)
 export { Durable }

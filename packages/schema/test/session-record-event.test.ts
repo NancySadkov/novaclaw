@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { PermissionRuleset } from "../src/permission-ruleset"
 import { SessionRecordEvent } from "../src/session-record-event"
 
 // V1-nuke slice D: the record lifecycle vocabulary pin. The V1 wire schemas died; these events
@@ -21,10 +20,6 @@ describe("session record event schemas", () => {
   })
 
   test("owns the re-homed live vocabulary", () => {
-    expect([
-      SessionRecordEvent.Error.type,
-      PermissionRuleset.Event.Asked.type,
-      PermissionRuleset.Event.Replied.type,
-    ]).toEqual(["session.error", "permission.asked", "permission.replied"])
+    expect([SessionRecordEvent.Error.type]).toEqual(["session.error"])
   })
 })

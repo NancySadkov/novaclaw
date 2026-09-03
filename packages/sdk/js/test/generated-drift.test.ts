@@ -282,7 +282,12 @@ const GENERATE_TIMEOUT_MS = 60_000
 // 2026-09-03, later: the legacy question surface left (three `/question*` paths, the
 // `question.asked` family and its schema module), taking the ten `Question*`/`EventQuestion*` names
 // with it. Nothing was added.
-const SCHEMA_NAME_FINGERPRINT = "9e9d0541a20c88eb983555a42b537bf9c0d4b2156de96f7706d56f000f530289"
+// 2026-09-03, later still: the served event set became the bus minus the two server-lifecycle
+// types (RF-24-2's join rows), so the `/api/event` union gained thirteen arms — `SessionStatusEvent`
+// (the arm carries its own wire name; its type's PascalCase collided with the status object),
+// `SessionError`, `SessionCompacted`, `Installation*`, `Mcp*`, `VcsBranchUpdated`, `Workspace*`,
+// `Worktree*` — and lost the two `EventPermission*` arms whose family nobody publishes.
+const SCHEMA_NAME_FINGERPRINT = "5a5aa82166b6fde13936fbfb0b4fcdc56373758163e6a8a1631eee48170b0667"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
