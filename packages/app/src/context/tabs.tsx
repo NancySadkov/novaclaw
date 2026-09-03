@@ -396,6 +396,66 @@ export const {
         for (const draftID of drafts) removeDraftPersisted(draftID)
         if (server.key === key) navigate("/")
       },
+      /**
+       * A COLLEAGUE'S TAB FOLLOWS ITS COLLEAGUE.
+       *
+       * 🔴 The ECS lens, applied where it was being broken: a colleague is the ENTITY and its chat is
+       * a COMPONENT reached THROUGH it — *"a component does not get an identity of its own"*. A tab
+       * that pins a `sessionId` forever is that component holding its own identity, and it goes wrong
+       * the moment the kernel legitimately replaces the chat.
+       *
+       * Reassignment does exactly that: `agent/reassignment.ts` archives the chat and opens a
+       * successor in the new folder, on purpose, because a cross-project move is refused outright.
+       * The kernel is coherent — *"an archived predecessor keeps the name but yields the seat"* — but
+       * the tab kept pointing at the predecessor.
+       *
+       * Measured on the owner's instance 2026-09-03: the folder was set at 00:34:46, which archived
+       * `ses_daedalus` and created a correctly-rooted successor. The tab stayed on the archived chat,
+       * which then took **296 events over three more minutes** — a `hello.c` written and compiled into
+       * the colleague's scratch, and a write to the real project refused as `external_directory_write`,
+       * correctly, because that session's root really was scratch. The successor sat at 2 events,
+       * unopened. The agent then advised widening permissions, which was the only remedy visible from
+       * inside a conversation nobody had told it was superseded.
+       *
+       * ⚠️ Keyed on the AGENT, never on the archived id: the successor's id is generated (the
+       * canonical `ses_<agent>` seat is held by the predecessor, deliberately, so a returning name
+       * cannot open into someone else's transcript). The colleague is the only stable identity here,
+       * which is the point.
+       */
+      followAgentChats: (rows: ReadonlyArray<{ id: string; agent?: string; parentID?: string; archived: boolean }>) => {
+        const live = new Map<string, string>()
+        for (const row of rows)
+          if (!row.archived && row.parentID === undefined && row.agent) live.set(row.agent, row.id)
+        const archived = new Set(rows.filter((row) => row.archived).map((row) => row.id))
+        const moves: Array<{ from: string; to: string }> = []
+        for (const tab of store) {
+          if (tab.type !== "session" || tab.server !== server.key) continue
+          if (!tab.agent || !archived.has(tab.sessionId)) continue
+          const successor = live.get(tab.agent)
+          // No successor means the colleague genuinely has no live chat — retired, say. Leave the tab
+          // alone so the route can say so; inventing a destination would be the dead end.
+          if (successor && successor !== tab.sessionId) moves.push({ from: tab.sessionId, to: successor })
+        }
+        if (moves.length === 0) return
+        const active = params.id
+        void startTransition(() => {
+          setStore(
+            produce((tabs) => {
+              for (const move of moves) {
+                const tab = tabs.find((item) => item.type === "session" && item.sessionId === move.from)
+                if (tab?.type === "session") tab.sessionId = move.to
+              }
+            }),
+          )
+          // Travel only if the user is LOOKING at the chat that moved. Re-pointing a background tab
+          // must not yank them out of what they are reading.
+          const followed = moves.find((move) => move.from === active)
+          if (followed) {
+            const tab = store.find((item) => item.type === "session" && item.sessionId === followed.to)
+            if (tab) navigateTab(tab)
+          }
+        })
+      },
       removeSessions: (input: SessionTabsRemovedDetail) => {
         const targetServer = input.server ?? server.key
         const removed = store

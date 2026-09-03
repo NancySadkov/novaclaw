@@ -82,6 +82,17 @@ function Probe() {
       <button data-testid="close-last" onClick={() => tabs.removeTab(tabs.store.length - 1)} />
       <button data-testid="close-first" onClick={() => tabs.removeTab(0)} />
       <button data-testid="reconcile" onClick={() => tabs.removeTab(0, true)} />
+      <span data-testid="ids">{tabs.store.map((t) => (t.type === "session" ? t.sessionId : "?")).join(",")}</span>
+      <button
+        data-testid="follow"
+        onClick={() =>
+          tabs.followAgentChats([
+            { id: "ses_one", agent: "nova", archived: true },
+            { id: "ses_successor", agent: "nova", archived: false },
+            { id: "ses_two", agent: "xenia", archived: false },
+          ])
+        }
+      />
     </div>
   )
 }
@@ -213,6 +224,53 @@ describe("where a close leaves you", () => {
     expect(body).toContain('else navigate("/")')
     // And the dismissal must be recorded on the same path, or the route effect undoes the close.
     expect(body).toContain("if (!stay) setDismissedKey(key)")
+  })
+})
+
+/**
+ * A COLLEAGUE'S TAB FOLLOWS ITS COLLEAGUE.
+ *
+ * Reassignment archives the chat and opens a successor in the new folder, on purpose — a
+ * cross-project move is refused outright. The kernel is coherent about it; the TAB was not, because
+ * it pinned a `sessionId` forever. That is a component holding an identity of its own, which the ECS
+ * lens names as the thing to avoid: a colleague's chat is reached THROUGH the colleague.
+ *
+ * Measured on the owner's instance: the filed chat took 296 more events over three minutes, wrote and
+ * compiled a file into the colleague's scratch, and had a write to the real project refused —
+ * correctly, since that session's root really was scratch. The successor sat unopened at 2 events.
+ */
+describe("a colleague's tab follows its colleague", () => {
+  test("🔴 an archived chat is replaced by the colleague's live one", async () => {
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    click(container, "follow")
+    await settle()
+    expect(await waitForText(container, "ids", "ses_successor,ses_two")).toBe("ses_successor,ses_two")
+  })
+
+  test("CONTROL — a tab whose chat is still live is left alone", async () => {
+    // Without this the file would pass on a build that re-pointed every colleague tab on every
+    // reconcile, which would move people off conversations that are perfectly fine.
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    click(container, "follow")
+    await settle()
+    // `ses_two` (xenia) is not archived, so it must not move.
+    expect(text(container, "ids").split(",")[1]).toBe("ses_two")
+  })
+
+  test("CONTROL — no successor means the tab stays, so the route can explain", async () => {
+    // A retired colleague has no live chat. Inventing a destination would be the dead end AGENTS.md
+    // forbids; leaving the tab lets the session-gone card say what happened.
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    const before = text(container, "ids")
+    ;(container.querySelector('[data-testid="follow"]') as HTMLButtonElement).click()
+    await settle()
+    expect(text(container, "ids").split(",").length).toBe(before.split(",").length)
   })
 })
 

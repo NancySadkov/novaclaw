@@ -255,6 +255,33 @@ export function AgentConfigDialog(props: {
       })
       await sync().updateConfig({ agents: { [plan.id]: plan.fragment } } as never)
       showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
+      // 🔴 A folder change ARCHIVES this colleague's chat and opens a successor in the new folder
+      // (`agent/reassignment.ts`) — deliberately, because a cross-project move is refused outright.
+      // The tab has to follow, or the user keeps talking to a conversation that has been filed.
+      //
+      // Measured on the owner's instance 2026-09-03: it did not follow, and the filed chat took 296
+      // more events over three minutes. Work landed in the colleague's scratch and a write to the
+      // real project was refused as `external_directory_write` — correctly, because that session's
+      // root really was scratch. The correctly-rooted successor sat unopened at 2 events.
+      //
+      // ⚠️ Best-effort and AFTER the save: a session list that will not load must not fail a config
+      // write that already succeeded. The tab is then stale, which is where this started, but the
+      // write is not lost on top of it.
+      try {
+        // `sdk()` is optional here, unlike the two call sites that guard it earlier in the file.
+        const client = sdk()
+        const rows = client === undefined ? [] : await listSessions(client)
+        tabs.followAgentChats(
+          rows.map((row) => ({
+            id: row.id,
+            ...(row.agent === undefined ? {} : { agent: row.agent }),
+            ...(row.parentID === undefined ? {} : { parentID: row.parentID }),
+            archived: row.time.archived !== undefined,
+          })),
+        )
+      } catch {
+        // Deliberately swallowed — see above.
+      }
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
