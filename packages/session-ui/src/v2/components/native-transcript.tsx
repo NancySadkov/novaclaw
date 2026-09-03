@@ -195,6 +195,23 @@ export function NativeTranscript(props: {
    * ⚠️ Cleared when the session stops being busy, NOT when a turn ends. That distinction is the
    * whole feature; clearing per turn would rebuild the bug it fixes.
    */
+  /**
+   * What the model has produced SO FAR, for the working row — "so the user knows it is going
+   * somewhere" (owner, 2026-09-03).
+   *
+   * ⚠️ An ESTIMATE, and it says so with a `~`. Real usage arrives once, at finish, so during the wait
+   * there is no exact number to show; this is the same chars/4 estimate the reasoning fold already
+   * displays (`~525` in the owner's screenshot), over every part the open message has streamed —
+   * reasoning AND answer, because both are the model generating.
+   */
+  const liveTokens = createMemo(() => {
+    const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
+    if (open?.type !== "assistant") return undefined
+    const text = open.content
+      .map((part) => (part.type === "text" || part.type === "reasoning" ? part.text : ""))
+      .join("")
+    return text.length === 0 ? undefined : reasoningTokenLabel(undefined, text)
+  })
   let runStart: number | undefined
   const runStartedAt = createMemo(() => {
     if (props.status?.type !== "busy") {
@@ -250,7 +267,13 @@ export function NativeTranscript(props: {
             }
           >
             {(timing) => (
-              <TurnReceipt timing={timing()} live developer={props.developer} runStartedAt={runStartedAt()} />
+              <TurnReceipt
+                timing={timing()}
+                live
+                developer={props.developer}
+                runStartedAt={runStartedAt()}
+                tokens={liveTokens()}
+              />
             )}
           </Show>
           <Show when={props.status?.type === "retry" && props.status.message}>
@@ -725,6 +748,8 @@ function TurnReceipt(props: {
   developer?: boolean
   /** When this stretch of work began, across every turn in it. Falls back to this turn's own start. */
   runStartedAt?: number
+  /** Approximate tokens generated so far, already formatted with its `~`. Live turns only. */
+  tokens?: string
 }) {
   const timing = () => props.timing
   // One live line, one label. The transcript's own status row, this receipt's fallback and the
@@ -776,6 +801,9 @@ function TurnReceipt(props: {
                 {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
                   there for whoever wants to open the hood, and a longer name advertises them. */}
                 <span>{props.live ? liveLabel() : "Details"}</span>
+                <Show when={props.tokens}>
+                  {(count) => <span data-slot="native-turn-tokens">{count()}</span>}
+                </Show>
                 <ElapsedTime
                   startedAt={props.live ? (props.runStartedAt ?? value().startedAt) : value().startedAt}
                   completedAt={value().completedAt}

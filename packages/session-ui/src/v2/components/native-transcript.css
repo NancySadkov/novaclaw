@@ -184,6 +184,12 @@
   color: var(--v2-text-text-faint);
   user-select: none;
 }
+/* The generated-token estimate, styled like the elapsed counter beside it: both are figures about
+   the same running work, and one of them looking louder than the other would rank them. */
+[data-slot="native-turn-tokens"] {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
 [data-slot="native-turn-summary"] {
   display: inline-flex;
   align-items: center;
@@ -192,6 +198,23 @@
 }
 [data-slot="native-turn-receipt"][data-live] > summary {
   color: var(--v2-text-text-muted);
+}
+/*
+ * 🔴 A LIVE receipt sits in the same gutter as the reasoning fold above it.
+ *
+ * Owner screenshot, 2026-09-03: `Reasoning… ~525` carried the left rule and its 10px inset while
+ * `Writing the answer… 19.3s` sat outside both — two rows about ONE piece of work, at two different
+ * indents, reading as two unrelated things. The receipt renders as a sibling of the turn list rather
+ * than inside the message, which is where the offset comes from; matching the gutter is what makes
+ * them read as one block without restructuring a component whose fold logic has already crashed a
+ * shipped renderer once.
+ *
+ * ⚠️ LIVE only. A settled `Details` fold is not part of that group — it is the turn's own footer, and
+ * giving it a rule would draw a gutter down the transcript beside every finished turn.
+ */
+[data-slot="native-turn-receipt"][data-live] {
+  border-left: 2px solid var(--v2-border-border-muted);
+  padding-left: 0.625rem;
 }
 /* why a long stage is long — shown while the receipt is still folded */
 [data-slot="native-turn-note"] {
