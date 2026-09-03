@@ -72,6 +72,24 @@ describe("createNativeMessageStore", () => {
     store.evict("s")
     expect(store.messages("s")).toBeUndefined()
   })
+
+  test("🔴 a deleted chat's transcript leaves the store on the event, with no caller in between", () => {
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("s", "m1"))
+    store.apply(prompted("kept", "m2"))
+    store.apply(ev("session.deleted", { info: { id: "s" } }))
+    expect(store.messages("s")).toBeUndefined()
+    expect(store.messages("kept")!.map((m) => m.id)).toEqual(["m2"])
+  })
+
+  test("archiving drops it too; an ordinary update does not", () => {
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("s", "m1"))
+    store.apply(ev("session.updated", { info: { id: "s", time: { created: 1 } } }))
+    expect(store.messages("s")!.map((m) => m.id)).toEqual(["m1"])
+    store.apply(ev("session.updated", { info: { id: "s", time: { created: 1, archived: 2 } } }))
+    expect(store.messages("s")).toBeUndefined()
+  })
 })
 
 describe("optimistic user messages", () => {
@@ -122,9 +140,10 @@ describe("optimistic user messages", () => {
     const store = createNativeMessageStore(clientReturning([]))
     store.optimistic("s", optimisticUser("msg_u", "deploy the thing", Date.now() + 60_000))
     await store.load("s")
-    expect(store.messages("s")?.map((m) => m.id), "an in-flight prompt must survive a reconcile").toEqual([
-      "msg_u",
-    ])
+    expect(
+      store.messages("s")?.map((m) => m.id),
+      "an in-flight prompt must survive a reconcile",
+    ).toEqual(["msg_u"])
   })
 })
 

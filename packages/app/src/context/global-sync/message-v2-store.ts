@@ -20,12 +20,19 @@ import { fetchNativeMessages } from "./message-v2-fetch"
  * passes the reconcile bounds below rather than merging as a pure union.
  *
  * `apply` consumes the SDK `V2Event` `{ type, data }` shape and routes by
- * `data.sessionID`. Non-`session.next.*` events are ignored.
+ * `data.sessionID`. Besides `session.next.*` it reads exactly two control events — a chat's
+ * deletion, and its archiving — to drop that chat's transcript. Everything else is ignored.
  */
 export function createNativeMessageStore(client: NovaclawClient) {
   const [data, setData] = createStore({ messages: {} as Record<string, SessionMessage[]> })
 
   const apply = (event: V2Event) => {
+    // A retired id returns — clear everything keyed on it. `server-session` drops its own caches
+    // for these two events; until 2026-09-03 nothing dropped the transcript, so every chat the user
+    // had opened stayed resident for the life of the connection however many they deleted. An
+    // archived chat that is opened again is refetched by `load`, exactly like a first open.
+    const retired = retiredSession(event)
+    if (retired !== undefined) return evict(retired)
     if (!event.type.startsWith("session.next.")) return
     const sessionID = (event.data as { sessionID?: string } | undefined)?.sessionID
     if (!sessionID) return
@@ -121,6 +128,13 @@ export function createNativeMessageStore(client: NovaclawClient) {
         delete bySession[sessionID]
       }),
     )
+  /** The id a `session.deleted` or an archiving `session.updated` retires, else `undefined`. */
+  const retiredSession = (event: V2Event): string | undefined => {
+    if (event.type !== "session.deleted" && event.type !== "session.updated") return undefined
+    const info = (event.data as { info?: { id?: string; time?: { archived?: number } } } | undefined)?.info
+    if (!info?.id) return undefined
+    return event.type === "session.deleted" || info.time?.archived ? info.id : undefined
+  }
 
   return {
     data,
