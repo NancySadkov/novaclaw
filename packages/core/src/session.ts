@@ -256,6 +256,39 @@ export class PromptConflictError extends Schema.TaggedErrorClass<PromptConflictE
   sessionID: SessionSchema.ID,
   messageID: SessionMessage.ID,
 }) {}
+/**
+ * 🔴 A FILED CHAT IS NOT A PLACE WORK HAPPENS.
+ *
+ * Archiving is deliberate and it means the conversation is history — the ECS lens says so outright:
+ * *"an archived chat is history, not a component."* A component is where work is addressed; history
+ * is not. So a prompt aimed at one is refused HERE, at the single seam every prompt passes through,
+ * rather than in whichever client happened to remember.
+ *
+ * Measured on the owner's instance 2026-09-03: reassignment archived a colleague's chat and opened a
+ * successor, correctly. The client stayed pinned to the predecessor, which then accepted **296 more
+ * events over three minutes** — a file written and compiled into the colleague's scratch, and a write
+ * to the real project refused, because that session's root really was scratch. Every layer behaved as
+ * written and the user got work in the wrong place with no way to see why.
+ *
+ * ⚠️ The client fix that shipped first (the tab follows the colleague) closed ONE door. The CLI, the
+ * HTTP API, a colleague's `ask`, a scheduled task and any integration reach this same seam, and none
+ * of them knew either. AGENTS.md: *impossible > caught > named* — a guard in one caller is the middle
+ * rung wearing the top one's clothes.
+ *
+ * ⚠️ It carries the SUCCESSOR, so the refusal states the remedy instead of only the problem. The
+ * colleague's live chat is the answer to "then where should this have gone", and every caller that
+ * can retry can retry there.
+ */
+export class SessionArchivedError extends Schema.TaggedErrorClass<SessionArchivedError>()(
+  "Session.ArchivedError",
+  {
+    sessionID: SessionSchema.ID,
+    /** The colleague's live chat, when it has one. Absent for a retired colleague — then there is
+     *  genuinely nowhere for this to go, and saying so is the honest answer. */
+    successorID: Schema.optional(SessionSchema.ID),
+  },
+) {}
+
 export const MessageNotFoundError = SessionRevert.MessageNotFoundError
 export type MessageNotFoundError = SessionRevert.MessageNotFoundError
 
@@ -387,7 +420,7 @@ export interface Interface {
     prompt: PromptInput.Prompt
     delivery?: SessionInput.Delivery
     resume?: boolean
-  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
+  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionArchivedError>
   readonly shell: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
@@ -969,7 +1002,15 @@ export const layer = Layer.effect(
       prompt: Effect.fn("V2Session.prompt")((input) =>
         Effect.uninterruptible(
           Effect.gen(function* () {
-            yield* result.get(input.sessionID)
+            const target = yield* result.get(input.sessionID)
+            // The invariant, at the one seam every prompt reaches. See `SessionArchivedError`.
+            if (target.time.archived !== undefined) {
+              const successor = target.agent === undefined ? undefined : yield* liveRootFor(db, target.agent)
+              return yield* new SessionArchivedError({
+                sessionID: input.sessionID,
+                ...(successor?.id === undefined ? {} : { successorID: SessionSchema.ID.make(successor.id) }),
+              })
+            }
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
             const delivery = input.delivery ?? "steer"
