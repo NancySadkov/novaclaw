@@ -3604,401 +3604,404 @@ export const layer = Layer.effect(
                     }),
                   ),
                 )
-          } else if (
-            // ⚠️ Logged BEFORE the arms, so a run says which one it took. Measured 2026-08-20: a
-            // parent made 66 read calls across 29 steps and `set.branch` never fired ONCE, and
-            // nothing in the logs could say whether the drive declined or was never reached. The
-            // arms are mutually exclusive `else if`s, so silence from all of them is indistinguishable
-            // from silence from one — which is the same trap that cost this programme two days on
-            // the fan-out. `false` so the chain below is unchanged.
+          } else {
+            // Logged BEFORE the arms, so a run says which one it took. Measured 2026-08-20: a parent
+            // made 66 read calls across 29 steps and `set.branch` never fired ONCE, and nothing in the
+            // logs could say whether the drive declined or was never reached — the same trap that cost
+            // this programme two days on the fan-out. The three predicates are computed once here and
+            // the arms branch on the locals; until 2026-09-03 this log sat INSIDE an `else if` condition
+            // with a body marked unreachable, and every arm below recomputed the predicates.
+            const finishEmpty = isEmptyAssistantTurn(context)
+            const finishAnnounced = announcedToolButCalledNone(context)
+            const finishCalls = toolCallsSinceLastUser(context).length
             yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
-              "session.finish.empty": isEmptyAssistantTurn(context),
-              "session.finish.announced": announcedToolButCalledNone(context),
-              "session.finish.calls": toolCallsSinceLastUser(context).length,
-            }).pipe(Effect.as(false))
-          ) {
-            // unreachable — the log arm above always yields false
-          } else if (isEmptyAssistantTurn(context)) {
-            // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
-            // into the reasoning channel and dropped by the server's parser. Inject ONE synthetic
-            // re-prompt (re-armed on progress above); a SECOND consecutive empty means the re-prompt
-            // isn't working, so stop and surface the server-side fix instead of looping silently.
-            consecutiveEmpty++
-            if (consecutiveEmpty === 1) {
-              yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
-              yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
-            } else {
-              yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
-              // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
-              // in-chat notice too (it names the server-side fix), not just a server log. Once
-              // per drain (consecutiveEmpty === 2 exactly); best-effort like every Synthetic.
-              if (consecutiveEmpty === 2)
-                yield* Effect.gen(function* () {
-                  yield* events.publish(SessionEvent.Synthetic, {
-                    sessionID: input.sessionID,
-                    messageID: SessionMessage.ID.create(),
-                    timestamp: yield* DateTime.now,
-                    text: `⚠️ ${EMPTY_TURN_DIAGNOSTIC}`,
-                  })
-                }).pipe(Effect.ignore)
-            }
-          } else if (announcedToolButCalledNone(context) && !announcedRecovered) {
-            // 🔴 Measured 2026-08-20: "First, let me get a complete listing of all files in the
-            // folder:" — then finish=stop, no tool call, nothing done, and the harness recorded a
-            // completed turn. `isEmptyAssistantTurn` cannot see it (that needs no text AND no call);
-            // this turn is all text. Steer ONCE per drain: the model narrated the call instead of
-            // making it, and asking for the call is the whole recovery.
-            announcedRecovered = true
-            consecutiveEmpty = 0
-            yield* Log.event("session.turn.announced.recovered", { "session.id": input.sessionID })
-            yield* SessionInput.steer(db, events, input.sessionID, ANNOUNCED_TOOL_RECOVERY)
-          } else {
-            consecutiveEmpty = 0
-            // 2E/A7: finish re-grounding — a substantial turn ending with a clean, confident
-            // summary gets ONE "walk your acceptance criteria" re-prompt. Suppressed when the
-            // finish already admits an `unverified:` gap (the honesty exemption — re-prompting
-            // an honest caveat has been seen to regress it into a confident "it works").
-            const finalText = lastAssistantText(context)
-            // The SILENT-NO-OP guard (notes/osint/silent-noop-bug.md): this branch means the turn ended
-            // with text and NO tool call, which the runner otherwise settles as a finished answer. Three
-            // live runs showed the model writing its call as MARKDOWN instead (a ```bash fence, an
-            // invented adhoc-tool JSON, a repeated <thinking> block) and the run reporting SUCCESS having
-            // done nothing — fatal for an unattended scheduled agent. Steer once; never execute what it
-            // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
-            if (!textualNudged) {
-              // Use the exact names this provider turn received. Re-materializing here would lose
-              // the turn's agent permissions and model route, and could nudge the model to call a
-              // tool that its own horizon never contained.
-              const attempted = TextualCall.detect(finalText, result.offeredTools)
-              if (attempted) {
-                textualNudged = true
-                yield* Log.event("session.tool.textual.recovered", {
-                  "session.id": input.sessionID,
-                  "session.tool.tell": attempted.tell,
-                  "session.tool.detail": attempted.detail,
-                })
-                yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
-              }
-            }
-            // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
-            // 2026-08-20: "please describe each glyph here" opened 1 of 6 images and ended. Checked
-            // BEFORE `shouldReground` because that backstop needs 8 tool calls and this failure has
-            // one — and because naming the unopened files is a stronger instruction than asking the
-            // model to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause
-            // is a case that must not fire.
-            // ⚠️ Ordered so an ordinary turn does NO work: the user's wording and the turn's own
-            // tool calls are both in memory, and the folder is only read once both say a set was
-            // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
-            // scope and is not visible here.
-            // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
-            // Latched on the first turn that HAS a real user text, then never re-derived: after
-            // compaction the honest answer to "what did the user ask?" is no longer in the window,
-            // and asking again returns a confident wrong answer rather than an absent one.
-            const realUserText = lastRealUserText(context)
-            if (!setRequests.has(input.sessionID) && realUserText !== undefined)
-              setRequests.set(input.sessionID, {
-                // Same exemption as the sibling latch above — see its note.
-                asked: UnfinishedSet.asksForSet(realUserText) && !UnfinishedSet.asksToDelegate(realUserText),
-                ...(UnfinishedSet.requestedLimit(realUserText) === undefined
-                  ? {}
-                  : { limit: UnfinishedSet.requestedLimit(realUserText) }),
-                named: UnfinishedSet.requestedNames(realUserText),
-              })
-            yield* flushDriveState(input.sessionID)
-            const setRequest = setRequests.get(input.sessionID)
-            const askedForSet = setRequest?.asked ?? false
-            // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
-            // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
-            // exactly the question the 100-icon run left open.
-            yield* Log.event("session.finish.set.branch", {
-              "session.id": input.sessionID,
-              "session.set.asked": askedForSet,
-              "session.set.calls": toolCallsSinceLastUser(context).length,
+              "session.finish.empty": finishEmpty,
+              "session.finish.announced": finishAnnounced,
+              "session.finish.calls": finishCalls,
             })
-            const readsThisTurn = askedForSet
-              ? toolCallsSinceLastUser(context).flatMap((call) => {
-                  // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
-                  // the model sent. Treating it as an object is why the first version of this check
-                  // typechecked, ran, and never fired once.
-                  if (call.name !== "read") return []
-                  try {
-                    const parsed: unknown = JSON.parse(call.input)
-                    const path =
-                      typeof parsed === "object" && parsed !== null && "path" in parsed
-                        ? String((parsed as { readonly path?: unknown }).path ?? "")
-                        : ""
-                    return path.length > 0 ? [{ path, failed: call.failed }] : []
-                  } catch {
-                    // A malformed argument is not a read we can attribute to a file.
-                    return []
-                  }
-                })
-              : []
-            /**
-             * The reads that SUCCEEDED — what the session has actually seen.
-             *
-             * ⚠️ Both remaining consumers want this rather than every attempt. `describedWithoutOpening`
-             * asks whether the model wrote about a picture it never looked at, and a read that ERRORED
-             * returned no picture; counting it would make an invented description look honest. The
-             * `session.set.opened` log field is read as coverage in the reports, so it must mean the
-             * same thing there.
-             */
-            const openedThisTurn = readsThisTurn.filter((read) => !read.failed).map((read) => read.path)
-            // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
-            // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
-            // `set.branch` fired and `set.considered` never did. The zero case is the one that most
-            // needs steering; `MAX_BARREN_ROUNDS` bounds it.
-            // ⚠️ `harness.drives.set` gates the whole block, not just the steer: the enumeration
-            // below reads the folder from disk, and doing that work to then discard it would make
-            // "off" cost the same as "on" while the operator believed it was measuring an unaided
-            // model. Off means the drive does not run.
-            if (askedForSet && harness.drives.set) {
-              // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
-              // small, and this check pays no prompt cost per name. It asks for exactly as many
-              // as the drive could ever complete, so the set it reasons about is the set it can
-              // actually finish, and no file is silently outside the world.
-              /**
-               * 🔴 **THE DIRECTORY THE SET IS IN — from what the model OPENED, not the session cwd.**
-               *
-               * `readListing` is a flat `readdir`, and `location.directory` is the session's working
-               * directory. A request's files are routinely one level down (*"describe every image in
-               * folder X"*), so this listed a folder containing none of them. Measured 2026-08-29:
-               * `session.set.available: 2` for 40-, 100- AND 400-file corpora alike — the two
-               * non-directory entries in the session root — after which the drive told a model that
-               * had opened all 100 images to *"open these 2 next: novaclaw, run.log"*.
-               *
-               * ⚠️ The accumulated `opened` set is used, not this turn's, so the derivation survives
-               * compaction for the same reason the coverage does.
-               */
-              // ⚠️ Union this turn's opens into the request's running total FIRST — the listing below
-              // is derived from them. Compaction cannot take these back: they are what the session
-              // has actually done.
-              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
-              // 🔴 SUCCESSFUL reads only. A file the model tried and failed to read has not been
-              // seen, and must stay in the set the steer names.
-              for (const name of openedThisTurn) opened.add(name)
-              setOpened.set(input.sessionID, opened)
-              // ⚠️ EVERY read, failed or not — this derives the DIRECTORY, and a failed read still
-              // says where the model is working. See `setAttempted`.
-              const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
-              for (const read of readsThisTurn) attempted.add(read.path)
-              setAttempted.set(input.sessionID, attempted)
-              yield* flushDriveState(input.sessionID)
-              const setDir = UnfinishedSet.resolveSetDirectory(location.directory, [...attempted])
-              const listing = yield* Effect.promise(() =>
-                ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
-              )
-              // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
-              // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
-              // names — and a harness that keeps working after the job is done is as wrong as one
-              // that stops early. An unnamed count means the whole enumerated set, as before.
-              const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
-              // From the same latch, for the same reason — a count read after compaction would
-              // silently widen the job to the whole folder, or narrow it to nothing.
-              const requested = setRequest?.limit
-              const setCoverage = {
-                // 🔴 The request's own NAMES outrank both the count and the folder — see
-                // `UnfinishedSet.scopeAvailable`. Without this a delegated child assigned ten of a
-                // hundred files is driven against all hundred (measured 2026-08-31, ten children,
-                // seven still working after global coverage hit 100/100), and a count is applied as
-                // an alphabetical PREFIX, which is the right ten for one child in ten.
-                available: UnfinishedSet.scopeAvailable({
-                  listing: allNames,
-                  named: setRequest?.named ?? [],
-                  limit: requested,
-                }),
-                // ⚠️ The accumulated set, never `openedThisTurn` — that is one window's worth and it
-                // shrinks under compaction. See `setOpened`.
-                opened: [...opened],
+            if (finishEmpty) {
+              // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
+              // into the reasoning channel and dropped by the server's parser. Inject ONE synthetic
+              // re-prompt (re-armed on progress above); a SECOND consecutive empty means the re-prompt
+              // isn't working, so stop and surface the server-side fix instead of looping silently.
+              consecutiveEmpty++
+              if (consecutiveEmpty === 1) {
+                yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
+                yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
+              } else {
+                yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
+                // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
+                // in-chat notice too (it names the server-side fix), not just a server log. Once
+                // per drain (consecutiveEmpty === 2 exactly); best-effort like every Synthetic.
+                if (consecutiveEmpty === 2)
+                  yield* Effect.gen(function* () {
+                    yield* events.publish(SessionEvent.Synthetic, {
+                      sessionID: input.sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      text: `⚠️ ${EMPTY_TURN_DIAGNOSTIC}`,
+                    })
+                  }).pipe(Effect.ignore)
               }
-              // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
-              // runs it was built for, and each time the cause was invisible afterwards — the same
-              // trap that cost this programme two days on the fan-out. One line names every clause.
-              // 🔴 GROUNDING FIRST — before asking for more files, check what was claimed about the
-              // ones already "done". Measured 2026-08-20: denied `spawn`, the model globbed the folder
-              // and emitted 351 description lines from 20 reads — 331 files it never opened, each
-              // rendered as its own filename plus a grid position. Steering that turn toward the
-              // REMAINING files would have asked it to fabricate more, faster.
-              //
-              // ⚠️ Ahead of the coverage check on purpose: a fabricated line makes a file look done,
-              // so coverage read after it is measuring the invention.
-              const invented = UnfinishedSet.describedWithoutOpening(openedThisTurn, finalText)
-              if (invented.length > 0 && !groundingCorrected) {
-                groundingCorrected = true
-                yield* Log.event("session.finish.set.ungrounded", {
-                  "session.id": input.sessionID,
-                  "session.set.invented": invented.length,
-                  "session.set.opened": openedThisTurn.length,
-                })
-                yield* SessionInput.steer(db, events, input.sessionID, UnfinishedSet.groundingMessage(invented))
-                needsContinuation = true
-              }
-              yield* Log.event("session.finish.set.considered", {
-                "session.id": input.sessionID,
-                "session.set.available": setCoverage.available.length,
-                "session.set.opened": setCoverage.opened.length,
-                "session.set.rounds": setRounds,
-              })
-              // Counted BEFORE the decision: a round that opened nothing new is barren whether or not
-              // the drive goes on to steer again.
-              // Session-scoped: a drain-local counter resets on every steer and can never reach the
-              // bound. See `setBarrenBySession`.
-              const barrenState = setBarrenBySession.get(input.sessionID) ?? { barren: 0, lastOpened: 0 }
-              barrenState.barren = setCoverage.opened.length > barrenState.lastOpened ? 0 : barrenState.barren + 1
-              barrenState.lastOpened = Math.max(barrenState.lastOpened, setCoverage.opened.length)
-              setBarrenBySession.set(input.sessionID, barrenState)
-              yield* flushDriveState(input.sessionID)
-              if (
-                UnfinishedSet.shouldContinue({
-                  asked: true,
-                  coverage: setCoverage,
-                  rounds: setRounds,
-                  barren: barrenState.barren,
-                })
-              ) {
-                setRounds += 1
-                const remaining = UnfinishedSet.untouched(setCoverage)
-                yield* Log.event("session.finish.set.continue", {
-                  "session.id": input.sessionID,
-                  "session.set.remaining": remaining.length,
-                })
-                yield* SessionInput.steer(
-                  db,
-                  events,
-                  input.sessionID,
-                  UnfinishedSet.continueMessage(remaining, setCoverage.opened.length),
-                )
-              }
-            }
-            /**
-             * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined.**
-             *
-             * Measured 2026-08-27 on the delegated 100-file run `4623-S2`: `spawn:10` against
-             * `wait:9` and `exit:9`. Ten children started, nine joined, one launched and never
-             * accounted for — and the run completed, reported success, and surfaced nothing. ⭐ The
-             * nine successes are what hide the tenth: a merge of nine slices of ten has no ragged
-             * edge to notice.
-             *
-             * ⚠️ **Placed BEFORE the reground, deliberately.** Reground asks the model to walk its
-             * acceptance criteria; a model missing a whole slice will walk them against the nine it
-             * has and conclude it is done — the reground would be answered honestly and wrongly. Close
-             * the arithmetic gap first, then let reground check what is left.
-             *
-             * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
-             * evidence that this session delegated is that it has children — one indexed
-             * `WHERE parent_id = ?` — and reading the user's prompt for a cue is the substring hazard
-             * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
-             * empty query and skips everything below.
-             */
-            // ⚠️ Gated BEFORE the query for the same reason: `off` must not pay for an indexed read
-            // it will throw away.
-            const kids = harness.drives.children
-              ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
-              : []
-            if (kids.length > 0) {
-              // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
-              // `childrenJoined`. `wait` carries the child id in its input and a terminal marker in
-              // its persisted structured output, so a live timeout is not mistaken for a join.
-              const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
-              for (const call of toolCallsSinceLastUser(context)) {
-                if (
-                  call.name !== WaitTool.name ||
-                  call.failed ||
-                  !UnjoinedChildren.isTerminalWaitResult(call.structured)
-                )
-                  continue
-                try {
-                  const parsed: unknown = JSON.parse(call.input)
-                  const id =
-                    typeof parsed === "object" && parsed !== null && "sessionID" in parsed
-                      ? String((parsed as { readonly sessionID?: unknown }).sessionID ?? "")
-                      : ""
-                  if (id.length > 0) joined.add(id)
-                } catch {
-                  // A malformed argument is not a join we can attribute to a child.
+            } else if (finishAnnounced && !announcedRecovered) {
+              // 🔴 Measured 2026-08-20: "First, let me get a complete listing of all files in the
+              // folder:" — then finish=stop, no tool call, nothing done, and the harness recorded a
+              // completed turn. `isEmptyAssistantTurn` cannot see it (that needs no text AND no call);
+              // this turn is all text. Steer ONCE per drain: the model narrated the call instead of
+              // making it, and asking for the call is the whole recovery.
+              announcedRecovered = true
+              consecutiveEmpty = 0
+              yield* Log.event("session.turn.announced.recovered", { "session.id": input.sessionID })
+              yield* SessionInput.steer(db, events, input.sessionID, ANNOUNCED_TOOL_RECOVERY)
+            } else {
+              consecutiveEmpty = 0
+              // 2E/A7: finish re-grounding — a substantial turn ending with a clean, confident
+              // summary gets ONE "walk your acceptance criteria" re-prompt. Suppressed when the
+              // finish already admits an `unverified:` gap (the honesty exemption — re-prompting
+              // an honest caveat has been seen to regress it into a confident "it works").
+              const finalText = lastAssistantText(context)
+              // The SILENT-NO-OP guard (notes/osint/silent-noop-bug.md): this branch means the turn ended
+              // with text and NO tool call, which the runner otherwise settles as a finished answer. Three
+              // live runs showed the model writing its call as MARKDOWN instead (a ```bash fence, an
+              // invented adhoc-tool JSON, a repeated <thinking> block) and the run reporting SUCCESS having
+              // done nothing — fatal for an unattended scheduled agent. Steer once; never execute what it
+              // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
+              if (!textualNudged) {
+                // Use the exact names this provider turn received. Re-materializing here would lose
+                // the turn's agent permissions and model route, and could nudge the model to call a
+                // tool that its own horizon never contained.
+                const attempted = TextualCall.detect(finalText, result.offeredTools)
+                if (attempted) {
+                  textualNudged = true
+                  yield* Log.event("session.tool.textual.recovered", {
+                    "session.id": input.sessionID,
+                    "session.tool.tell": attempted.tell,
+                    "session.tool.detail": attempted.detail,
+                  })
+                  yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
                 }
               }
-              childrenJoined.set(input.sessionID, joined)
+              // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
+              // 2026-08-20: "please describe each glyph here" opened 1 of 6 images and ended. Checked
+              // BEFORE `shouldReground` because that backstop needs 8 tool calls and this failure has
+              // one — and because naming the unopened files is a stronger instruction than asking the
+              // model to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause
+              // is a case that must not fire.
+              // ⚠️ Ordered so an ordinary turn does NO work: the user's wording and the turn's own
+              // tool calls are both in memory, and the folder is only read once both say a set was
+              // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
+              // scope and is not visible here.
+              // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
+              // Latched on the first turn that HAS a real user text, then never re-derived: after
+              // compaction the honest answer to "what did the user ask?" is no longer in the window,
+              // and asking again returns a confident wrong answer rather than an absent one.
+              const realUserText = lastRealUserText(context)
+              if (!setRequests.has(input.sessionID) && realUserText !== undefined)
+                setRequests.set(input.sessionID, {
+                  // Same exemption as the sibling latch above — see its note.
+                  asked: UnfinishedSet.asksForSet(realUserText) && !UnfinishedSet.asksToDelegate(realUserText),
+                  ...(UnfinishedSet.requestedLimit(realUserText) === undefined
+                    ? {}
+                    : { limit: UnfinishedSet.requestedLimit(realUserText) }),
+                  named: UnfinishedSet.requestedNames(realUserText),
+                })
               yield* flushDriveState(input.sessionID)
-              const enumerated: UnjoinedChildren.Child[] = []
-              for (const kid of kids) {
-                const row = yield* store.get(kid).pipe(Effect.orElseSucceed(() => undefined))
-                // ⚠️ The child's TITLE, not the `spawn` prompt. The prompt is only reachable from a
-                // `spawn` call in the transcript window — which compaction takes back, and which
-                // cannot be paired with the child id anyway, since the id arrives in the call's
-                // OUTPUT and the trail carries only inputs. The title is on the durable row and is
-                // derived from that same opening prompt. Omitted while it is still a creation
-                // default, because "New session" names nothing and a slice must never be invented.
-                const title = row?.title
-                const slice = title !== undefined && title !== "" && !SessionTitle.isDefault(title) ? title : undefined
-                enumerated.push({
-                  id: kid,
-                  exited: row?.result !== undefined,
-                  ...(slice === undefined ? {} : { slice }),
-                })
-              }
-              const orphaned = UnjoinedChildren.unaccounted({ children: enumerated, joined })
-              const restartRounds = childRestartRounds.get(input.sessionID) ?? 0
-              // ⚠️ Logged at the DECISION and BEFORE the gate, so a run that never steers can still
-              // tell "the branch never ran" from "it ran and declined" — the trap that cost this
-              // programme two days on the fan-out, and the reason `set.branch` exists beside
-              // `set.considered`.
-              yield* Log.event("session.finish.children.considered", {
+              const setRequest = setRequests.get(input.sessionID)
+              const askedForSet = setRequest?.asked ?? false
+              // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
+              // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
+              // exactly the question the 100-icon run left open.
+              yield* Log.event("session.finish.set.branch", {
                 "session.id": input.sessionID,
-                "session.children.spawned": kids.length,
-                "session.children.joined": joined.size,
-                "session.children.unaccounted": orphaned.length,
-                "session.children.rounds": restartRounds,
+                "session.set.asked": askedForSet,
+                "session.set.calls": finishCalls,
               })
-              if (UnjoinedChildren.shouldRestart({ unaccounted: orphaned, rounds: restartRounds })) {
-                childRestartRounds.set(input.sessionID, restartRounds + 1)
+              const readsThisTurn = askedForSet
+                ? toolCallsSinceLastUser(context).flatMap((call) => {
+                    // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
+                    // the model sent. Treating it as an object is why the first version of this check
+                    // typechecked, ran, and never fired once.
+                    if (call.name !== "read") return []
+                    try {
+                      const parsed: unknown = JSON.parse(call.input)
+                      const path =
+                        typeof parsed === "object" && parsed !== null && "path" in parsed
+                          ? String((parsed as { readonly path?: unknown }).path ?? "")
+                          : ""
+                      return path.length > 0 ? [{ path, failed: call.failed }] : []
+                    } catch {
+                      // A malformed argument is not a read we can attribute to a file.
+                      return []
+                    }
+                  })
+                : []
+              /**
+               * The reads that SUCCEEDED — what the session has actually seen.
+               *
+               * ⚠️ Both remaining consumers want this rather than every attempt. `describedWithoutOpening`
+               * asks whether the model wrote about a picture it never looked at, and a read that ERRORED
+               * returned no picture; counting it would make an invented description look honest. The
+               * `session.set.opened` log field is read as coverage in the reports, so it must mean the
+               * same thing there.
+               */
+              const openedThisTurn = readsThisTurn.filter((read) => !read.failed).map((read) => read.path)
+              // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
+              // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
+              // `set.branch` fired and `set.considered` never did. The zero case is the one that most
+              // needs steering; `MAX_BARREN_ROUNDS` bounds it.
+              // ⚠️ `harness.drives.set` gates the whole block, not just the steer: the enumeration
+              // below reads the folder from disk, and doing that work to then discard it would make
+              // "off" cost the same as "on" while the operator believed it was measuring an unaided
+              // model. Off means the drive does not run.
+              if (askedForSet && harness.drives.set) {
+                // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
+                // small, and this check pays no prompt cost per name. It asks for exactly as many
+                // as the drive could ever complete, so the set it reasons about is the set it can
+                // actually finish, and no file is silently outside the world.
+                /**
+                 * 🔴 **THE DIRECTORY THE SET IS IN — from what the model OPENED, not the session cwd.**
+                 *
+                 * `readListing` is a flat `readdir`, and `location.directory` is the session's working
+                 * directory. A request's files are routinely one level down (*"describe every image in
+                 * folder X"*), so this listed a folder containing none of them. Measured 2026-08-29:
+                 * `session.set.available: 2` for 40-, 100- AND 400-file corpora alike — the two
+                 * non-directory entries in the session root — after which the drive told a model that
+                 * had opened all 100 images to *"open these 2 next: novaclaw, run.log"*.
+                 *
+                 * ⚠️ The accumulated `opened` set is used, not this turn's, so the derivation survives
+                 * compaction for the same reason the coverage does.
+                 */
+                // ⚠️ Union this turn's opens into the request's running total FIRST — the listing below
+                // is derived from them. Compaction cannot take these back: they are what the session
+                // has actually done.
+                const opened = setOpened.get(input.sessionID) ?? new Set<string>()
+                // 🔴 SUCCESSFUL reads only. A file the model tried and failed to read has not been
+                // seen, and must stay in the set the steer names.
+                for (const name of openedThisTurn) opened.add(name)
+                setOpened.set(input.sessionID, opened)
+                // ⚠️ EVERY read, failed or not — this derives the DIRECTORY, and a failed read still
+                // says where the model is working. See `setAttempted`.
+                const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
+                for (const read of readsThisTurn) attempted.add(read.path)
+                setAttempted.set(input.sessionID, attempted)
                 yield* flushDriveState(input.sessionID)
-                yield* Log.event("session.finish.children.restart", {
-                  "session.id": input.sessionID,
-                  "session.children.unaccounted": orphaned.length,
-                })
-                yield* SessionInput.steer(
-                  db,
-                  events,
-                  input.sessionID,
-                  UnjoinedChildren.restartMessage({
-                    spawned: kids.length,
-                    joined: joined.size,
-                    unaccounted: orphaned,
+                const setDir = UnfinishedSet.resolveSetDirectory(location.directory, [...attempted])
+                const listing = yield* Effect.promise(() =>
+                  ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
+                )
+                // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
+                // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
+                // names — and a harness that keeps working after the job is done is as wrong as one
+                // that stops early. An unnamed count means the whole enumerated set, as before.
+                const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
+                // From the same latch, for the same reason — a count read after compaction would
+                // silently widen the job to the whole folder, or narrow it to nothing.
+                const requested = setRequest?.limit
+                const setCoverage = {
+                  // 🔴 The request's own NAMES outrank both the count and the folder — see
+                  // `UnfinishedSet.scopeAvailable`. Without this a delegated child assigned ten of a
+                  // hundred files is driven against all hundred (measured 2026-08-31, ten children,
+                  // seven still working after global coverage hit 100/100), and a count is applied as
+                  // an alphabetical PREFIX, which is the right ten for one child in ten.
+                  available: UnfinishedSet.scopeAvailable({
+                    listing: allNames,
+                    named: setRequest?.named ?? [],
+                    limit: requested,
                   }),
-                )
-                needsContinuation = true
+                  // ⚠️ The accumulated set, never `openedThisTurn` — that is one window's worth and it
+                  // shrinks under compaction. See `setOpened`.
+                  opened: [...opened],
+                }
+                // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
+                // runs it was built for, and each time the cause was invisible afterwards — the same
+                // trap that cost this programme two days on the fan-out. One line names every clause.
+                // 🔴 GROUNDING FIRST — before asking for more files, check what was claimed about the
+                // ones already "done". Measured 2026-08-20: denied `spawn`, the model globbed the folder
+                // and emitted 351 description lines from 20 reads — 331 files it never opened, each
+                // rendered as its own filename plus a grid position. Steering that turn toward the
+                // REMAINING files would have asked it to fabricate more, faster.
+                //
+                // ⚠️ Ahead of the coverage check on purpose: a fabricated line makes a file look done,
+                // so coverage read after it is measuring the invention.
+                const invented = UnfinishedSet.describedWithoutOpening(openedThisTurn, finalText)
+                if (invented.length > 0 && !groundingCorrected) {
+                  groundingCorrected = true
+                  yield* Log.event("session.finish.set.ungrounded", {
+                    "session.id": input.sessionID,
+                    "session.set.invented": invented.length,
+                    "session.set.opened": openedThisTurn.length,
+                  })
+                  yield* SessionInput.steer(db, events, input.sessionID, UnfinishedSet.groundingMessage(invented))
+                  needsContinuation = true
+                }
+                yield* Log.event("session.finish.set.considered", {
+                  "session.id": input.sessionID,
+                  "session.set.available": setCoverage.available.length,
+                  "session.set.opened": setCoverage.opened.length,
+                  "session.set.rounds": setRounds,
+                })
+                // Counted BEFORE the decision: a round that opened nothing new is barren whether or not
+                // the drive goes on to steer again.
+                // Session-scoped: a drain-local counter resets on every steer and can never reach the
+                // bound. See `setBarrenBySession`.
+                const barrenState = setBarrenBySession.get(input.sessionID) ?? { barren: 0, lastOpened: 0 }
+                barrenState.barren = setCoverage.opened.length > barrenState.lastOpened ? 0 : barrenState.barren + 1
+                barrenState.lastOpened = Math.max(barrenState.lastOpened, setCoverage.opened.length)
+                setBarrenBySession.set(input.sessionID, barrenState)
+                yield* flushDriveState(input.sessionID)
+                if (
+                  UnfinishedSet.shouldContinue({
+                    asked: true,
+                    coverage: setCoverage,
+                    rounds: setRounds,
+                    barren: barrenState.barren,
+                  })
+                ) {
+                  setRounds += 1
+                  const remaining = UnfinishedSet.untouched(setCoverage)
+                  yield* Log.event("session.finish.set.continue", {
+                    "session.id": input.sessionID,
+                    "session.set.remaining": remaining.length,
+                  })
+                  yield* SessionInput.steer(
+                    db,
+                    events,
+                    input.sessionID,
+                    UnfinishedSet.continueMessage(remaining, setCoverage.opened.length),
+                  )
+                }
               }
-            }
-            // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
-            // every session in BOTH of the rig's arms — the cue gates the set drive and never this
-            // one — so every batch-file measurement before this switch was taken with at
-            // least one mitigation live. This switch is what lets that baseline finally be taken.
-            if (
-              harness.drives.reground &&
-              !regrounded &&
-              shouldReground(finalText, toolCallsSinceLastUser(context).length)
-            ) {
-              regrounded = true
-              yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
-              yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
-            }
-            // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
-            // only when the drain actually wrote something. A failure steers; the pending
-            // steer below re-arms continuation so the model fixes it before "done".
-            if (qualityOn)
-              for (const check of Quality.dueTurnEnd(harness.quality, quality))
-                yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
-                  Effect.catchCause((cause) =>
-                    Log.event("session.quality.check.errored", {
-                      "session.id": input.sessionID,
-                      "session.cause": Log.fault(cause),
+              /**
+               * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined.**
+               *
+               * Measured 2026-08-27 on the delegated 100-file run `4623-S2`: `spawn:10` against
+               * `wait:9` and `exit:9`. Ten children started, nine joined, one launched and never
+               * accounted for — and the run completed, reported success, and surfaced nothing. ⭐ The
+               * nine successes are what hide the tenth: a merge of nine slices of ten has no ragged
+               * edge to notice.
+               *
+               * ⚠️ **Placed BEFORE the reground, deliberately.** Reground asks the model to walk its
+               * acceptance criteria; a model missing a whole slice will walk them against the nine it
+               * has and conclude it is done — the reground would be answered honestly and wrongly. Close
+               * the arithmetic gap first, then let reground check what is left.
+               *
+               * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
+               * evidence that this session delegated is that it has children — one indexed
+               * `WHERE parent_id = ?` — and reading the user's prompt for a cue is the substring hazard
+               * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
+               * empty query and skips everything below.
+               */
+              // ⚠️ Gated BEFORE the query for the same reason: `off` must not pay for an indexed read
+              // it will throw away.
+              const kids = harness.drives.children
+                ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+                : []
+              if (kids.length > 0) {
+                // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
+                // `childrenJoined`. `wait` carries the child id in its input and a terminal marker in
+                // its persisted structured output, so a live timeout is not mistaken for a join.
+                const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
+                for (const call of toolCallsSinceLastUser(context)) {
+                  if (
+                    call.name !== WaitTool.name ||
+                    call.failed ||
+                    !UnjoinedChildren.isTerminalWaitResult(call.structured)
+                  )
+                    continue
+                  try {
+                    const parsed: unknown = JSON.parse(call.input)
+                    const id =
+                      typeof parsed === "object" && parsed !== null && "sessionID" in parsed
+                        ? String((parsed as { readonly sessionID?: unknown }).sessionID ?? "")
+                        : ""
+                    if (id.length > 0) joined.add(id)
+                  } catch {
+                    // A malformed argument is not a join we can attribute to a child.
+                  }
+                }
+                childrenJoined.set(input.sessionID, joined)
+                yield* flushDriveState(input.sessionID)
+                const enumerated: UnjoinedChildren.Child[] = []
+                for (const kid of kids) {
+                  const row = yield* store.get(kid).pipe(Effect.orElseSucceed(() => undefined))
+                  // ⚠️ The child's TITLE, not the `spawn` prompt. The prompt is only reachable from a
+                  // `spawn` call in the transcript window — which compaction takes back, and which
+                  // cannot be paired with the child id anyway, since the id arrives in the call's
+                  // OUTPUT and the trail carries only inputs. The title is on the durable row and is
+                  // derived from that same opening prompt. Omitted while it is still a creation
+                  // default, because "New session" names nothing and a slice must never be invented.
+                  const title = row?.title
+                  const slice =
+                    title !== undefined && title !== "" && !SessionTitle.isDefault(title) ? title : undefined
+                  enumerated.push({
+                    id: kid,
+                    exited: row?.result !== undefined,
+                    ...(slice === undefined ? {} : { slice }),
+                  })
+                }
+                const orphaned = UnjoinedChildren.unaccounted({ children: enumerated, joined })
+                const restartRounds = childRestartRounds.get(input.sessionID) ?? 0
+                // ⚠️ Logged at the DECISION and BEFORE the gate, so a run that never steers can still
+                // tell "the branch never ran" from "it ran and declined" — the trap that cost this
+                // programme two days on the fan-out, and the reason `set.branch` exists beside
+                // `set.considered`.
+                yield* Log.event("session.finish.children.considered", {
+                  "session.id": input.sessionID,
+                  "session.children.spawned": kids.length,
+                  "session.children.joined": joined.size,
+                  "session.children.unaccounted": orphaned.length,
+                  "session.children.rounds": restartRounds,
+                })
+                if (UnjoinedChildren.shouldRestart({ unaccounted: orphaned, rounds: restartRounds })) {
+                  childRestartRounds.set(input.sessionID, restartRounds + 1)
+                  yield* flushDriveState(input.sessionID)
+                  yield* Log.event("session.finish.children.restart", {
+                    "session.id": input.sessionID,
+                    "session.children.unaccounted": orphaned.length,
+                  })
+                  yield* SessionInput.steer(
+                    db,
+                    events,
+                    input.sessionID,
+                    UnjoinedChildren.restartMessage({
+                      spawned: kids.length,
+                      joined: joined.size,
+                      unaccounted: orphaned,
                     }),
-                  ),
-                )
+                  )
+                  needsContinuation = true
+                }
+              }
+              // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
+              // every session in BOTH of the rig's arms — the cue gates the set drive and never this
+              // one — so every batch-file measurement before this switch was taken with at
+              // least one mitigation live. This switch is what lets that baseline finally be taken.
+              if (
+                harness.drives.reground &&
+                !regrounded &&
+                shouldReground(finalText, toolCallsSinceLastUser(context).length)
+              ) {
+                regrounded = true
+                yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
+                yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
+              }
+              // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
+              // only when the drain actually wrote something. A failure steers; the pending
+              // steer below re-arms continuation so the model fixes it before "done".
+              if (qualityOn)
+                for (const check of Quality.dueTurnEnd(harness.quality, quality))
+                  yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
+                    Effect.catchCause((cause) =>
+                      Log.event("session.quality.check.errored", {
+                        "session.id": input.sessionID,
+                        "session.cause": Log.fault(cause),
+                      }),
+                    ),
+                  )
+            }
+            if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           }
-          if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
         // F2: the truncation halt ends the RUN, not just the inner step loop — otherwise the
         // queue promotion or the self-drive continuation below would immediately steer the same

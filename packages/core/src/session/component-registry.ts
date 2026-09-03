@@ -732,6 +732,13 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
     })
 
     return Service.of({
+      // ⚠️ AN OPEN DOOR NOBODY HAS WALKED THROUGH (2026-09-03, RF-03-12). This is the third-party half
+      // of the component tier — the answer to "a tool cannot attach state" — and it has NO production
+      // caller: `tool/define-tool.ts` and `adhoc-tools/` declare no component, no route exposes a
+      // generic component surface, and the only walkers are `test/fixtures/session-component-worker.ts`
+      // and the registry's own test. So the door is landed and unproven, and the status is stated here
+      // rather than implied by a green test. The bar before a stranger relies on it: wire ONE real
+      // tool through it end to end. Until then, do not build on it as if it were exercised.
       registerTool: (definition) => {
         const problem = definitionProblem(definition, "tool")
         if (problem) return Effect.fail(new RegistryError({ message: problem }))
