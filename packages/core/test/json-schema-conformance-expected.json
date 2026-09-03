@@ -1,0 +1,462 @@
+[
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:required"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/path:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:additionalProperties"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:additionalProperties",
+   "/content:type",
+   "/path:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/limit:anyOf",
+   "/limit:enum",
+   "/limit:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:required"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/on:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/i:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/g:exclusiveMinimum"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/n:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:anyOf",
+   "/:required",
+   "/kind:enum"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:anyOf",
+   "/:required",
+   "/kind:enum"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:additionalProperties",
+   "/:anyOf",
+   "/kind:enum"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/files/1:type",
+   "/files/2:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/files:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:enum"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:enum",
+   "/:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/node/children/0/children/0:additionalProperties",
+   "/node/children/0/children/0:required"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/id:minLength",
+   "/id:pattern"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:required"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/query:maxLength"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/query:minLength"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/count:maximum"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/count:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/when:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/tag:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/mode:const",
+   "/mode:oneOf"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/ratio:multipleOf"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/tags:maxItems"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/tags:uniqueItems"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/tags:minItems"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/pair/1:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/pair:additionalItems"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/meta:additionalProperties"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/meta/x-a:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/not:not"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/props:minProperties"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/props:maxProperties"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/props:pattern",
+   "/props:propertyNames"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:false schema"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:const"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:type"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:minLength"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:anyOf",
+   "/:minimum",
+   "/:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:oneOf"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/:exclusiveMaximum"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/b:type"
+  ]
+ },
+ {
+  "ok": false,
+  "errors": [
+   "/o:additionalProperties"
+  ]
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": true,
+  "errors": []
+ },
+ {
+  "ok": false,
+  "errors": [],
+  "threw": "schema is invalid: data/type must be equal to one of the allowed values, data/type must be array, data/type must match a schema in anyOf"
+ },
+ {
+  "ok": false,
+  "errors": [],
+  "threw": "schema is invalid: data/required must be array"
+ }
+]

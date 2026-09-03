@@ -1,7 +1,7 @@
 export * as ToolRouter from "./tool-router"
 
-import Ajv, { type AnySchema } from "ajv"
 import { JsonSchema, Option, Schema } from "effect"
+import { JsonSchemaValidate } from "./util/json-schema-validate"
 
 export const Capability = Schema.Literals([
   "tools.serialize",
@@ -99,7 +99,6 @@ export const MAX_SHORTLIST = 8
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "error", propertyOrder: "original" } as const
 const decodeIntent = Schema.decodeUnknownOption(ActionIntent, DECODE_OPTIONS)
 const decodeResult = Schema.decodeUnknownOption(RouterResult, DECODE_OPTIONS)
-const ajv = new Ajv({ allErrors: true, allowUnionTypes: true, strict: false, validateFormats: false })
 
 export function validate(input: {
   readonly intent: unknown
@@ -153,23 +152,23 @@ export function validate(input: {
         issues.push({ code: "known_argument_changed", path: name })
     }
     if (tool !== undefined) {
-      let valid: boolean | undefined
+      // The owned validator (`util/json-schema-validate.ts`): the same verdict and the same
+      // `instancePath:keyword` list ajv gave, held to a recording of ajv's answers, without a
+      // `new Function` compiler on the path that consumes model output.
       if (isAsyncSchema(tool.inputSchema)) {
         issues.push({ code: "invalid_tool_schema", detail: "async JSON Schemas are not supported" })
       } else {
         try {
-          const outcome = ajv.validate(tool.inputSchema as AnySchema, result.arguments)
-          if (typeof outcome === "boolean") valid = outcome
-          else issues.push({ code: "invalid_tool_schema", detail: "async JSON Schemas are not supported" })
+          const outcome = JsonSchemaValidate.validate(tool.inputSchema, result.arguments)
+          if (!outcome.ok)
+            issues.push({
+              code: "invalid_arguments",
+              detail: outcome.errors.map((error) => `${error.instancePath || "/"}:${error.keyword}`).join(","),
+            })
         } catch (error) {
           issues.push({ code: "invalid_tool_schema", detail: error instanceof Error ? error.message : String(error) })
         }
       }
-      if (valid === false)
-        issues.push({
-          code: "invalid_arguments",
-          detail: ajv.errors?.map((error) => `${error.instancePath || "/"}:${error.keyword}`).join(","),
-        })
     }
   } else if (result.type === "need_parameters") {
     const unique = new Set(result.fields)
