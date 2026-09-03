@@ -46,12 +46,12 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-async function startListener() {
+async function startListener(extra: { memoMap?: Layer.MemoMap } = {}) {
   Flag.NOVACLAW_SERVER_PASSWORD = auth.password
   Flag.NOVACLAW_SERVER_USERNAME = auth.username
   process.env.NOVACLAW_SERVER_PASSWORD = auth.password
   process.env.NOVACLAW_SERVER_USERNAME = auth.username
-  return Server.listen({ hostname: "127.0.0.1", port: 0 })
+  return Server.listen({ hostname: "127.0.0.1", port: 0, ...extra })
 }
 
 async function startNoAuthListener() {
@@ -375,10 +375,13 @@ describe("HttpApi Server.listen", () => {
    * Under this package's `NOVACLAW_DB=":memory:"` a database is identified by its layer BUILD, which
    * makes the defect directly observable rather than inferred: a session written behind the shared
    * `memoMap` is served by a listener that shares the map, and is a 404 to one that built its own.
-   * A/B'd against the fresh-map line on the day this landed — 404 there, 200 here.
+   * A/B'd on the day this landed — 404 without the option, 200 with it. The option is what
+   * `serve.ts` and `web.ts` pass; `serve-shares-app-graph.test.ts` pins that they do.
    */
   test("🔴 one process, one graph: a session seeded behind the shared memo map is served by Server.listen", async () => {
-    const listener = await startListener()
+    // What `serve.ts` and `web.ts` pass. Every other test in this file listens in its OWN map, which
+    // is also what a second `listen` in one process needs for its per-listener config to apply.
+    const listener = await startListener({ memoMap })
     await using tmp = await tmpdir()
     try {
       const id = SessionSchema.ID.make("ses_listenonegraph")

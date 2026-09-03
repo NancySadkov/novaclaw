@@ -6,7 +6,6 @@ import { HttpIncomingMessage, HttpRouter, HttpServer } from "effect/unstable/htt
 import * as FileSystem from "effect/FileSystem"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
-import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
@@ -59,6 +58,24 @@ type ListenOptions = CorsOptions & {
    * the user gets "could not start the local server" for a port they never chose and cannot see.
    */
   portIntent?: "required" | "preferred"
+  /**
+   * The memo map the listener's service graph is built in.
+   *
+   * 🔴 Pass the process's SHARED map (`@novaclaw/core/effect/memo-map`) wherever an app graph is
+   * already alive in this process — the CLI's `serve` and `web`, which run under `AppRuntime`.
+   * Without it the listener built a second complete instance graph beside `AppLayer`'s: two
+   * `Database.Service`s over the live file (which falsified the single-connection argument behind
+   * the `PATCH /config` transaction), a second MCP child manager, a second event bus whose bridge saw
+   * nothing the server published.
+   *
+   * ⚠️ Not shared by DEFAULT, and that was measured: sharing unconditionally (2026-09-03) turned the
+   * server test unit red with 401s and a missing CORS header. The route layers are module constants,
+   * so in a process that listens more than once — every test file, and `web`'s relisten — the shared
+   * map hands the second listener the FIRST listener's memoized auth config and CORS options, and
+   * the per-listener `ConfigProvider` installed below never gets to answer. The desktop sidecar
+   * constructs no `AppRuntime` and builds one graph either way; it omits this and keeps its own.
+   */
+  memoMap?: Layer.MemoMap
 }
 type ListenerState = {
   scope: Scope.Scope
@@ -202,13 +219,8 @@ function startWithPortFallback(opts: ListenOptions) {
 
 function startListener(opts: ListenOptions, port: number) {
   const scope = Scope.makeUnsafe()
-  // The SHARED memo map, as every other build site uses (`app-runtime.ts`, `run-service.ts`,
-  // `httpapi/server.ts`). Effect memoizes a layer by object identity within one map, so a fresh
-  // `Layer.makeMemoMapUnsafe()` here built a second complete instance graph beside the one
-  // `AppRuntime` had already materialized for the CLI command: a second `Database.Service` over the
-  // live database, a second MCP child manager, a second event bus whose bridge saw nothing the
-  // server published. `database.ts`'s single-connection argument only holds when the map is shared.
-  return Layer.buildWithMemoMap(listenerLayer(opts, port), memoMap, scope).pipe(
+  // See `ListenOptions.memoMap` for why the shared map is a CHOICE the caller makes, not a default.
+  return Layer.buildWithMemoMap(listenerLayer(opts, port), opts.memoMap ?? Layer.makeMemoMapUnsafe(), scope).pipe(
     Effect.provide(HttpApiApp.context),
     Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
     Effect.map(

@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { effectCmd, fail } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { memoMap } from "@novaclaw/core/effect/memo-map"
 // THE one tree-kill, in its leaf spelling (`Shell.killTreeSync` is the same function). The leaf
 // imports `node:` builtins only, which keeps it off the CLI's startup cost.
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
@@ -212,7 +213,10 @@ export const ServeCommand = effectCmd({
       console.log("Warning: NOVACLAW_SERVER_PASSWORD is not set; server is unsecured.")
     }
     const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => Server.listen(opts))
+    // ONE instance graph: this command runs under `AppRuntime`, whose `AppLayer` is already alive in
+    // the shared memo map, so the listener's routes must be built in the same map or the process
+    // carries two graphs (two database clients, two MCP managers, two buses). `ListenOptions.memoMap`.
+    const server = yield* Effect.promise(() => Server.listen({ ...opts, memoMap }))
     console.log(`novaclaw server listening on http://${server.hostname}:${server.port}`)
 
     /**

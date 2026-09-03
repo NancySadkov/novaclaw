@@ -3,6 +3,7 @@ import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { resolveNetworkOptions } from "../network"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { memoMap } from "@novaclaw/core/effect/memo-map"
 import open from "open"
 import { networkInterfaces } from "os"
 import { CommandSpec } from "../command-spec"
@@ -44,7 +45,8 @@ export const WebCommand = effectCmd({
       UI.println(UI.Style.TEXT_WARNING_BOLD + "!  NOVACLAW_SERVER_PASSWORD is not set; server is unsecured.")
     }
     const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => Server.listen(opts))
+    // ONE instance graph, as in `serve.ts`: this command runs under `AppRuntime`. `ListenOptions.memoMap`.
+    const server = yield* Effect.promise(() => Server.listen({ ...opts, memoMap }))
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
