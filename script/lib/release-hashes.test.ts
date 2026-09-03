@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { digestOf, parseArgs, renderManifest } from "./release-hashes"
+import { digestOf, parseArgs, renderManifest, splitManifestArg } from "./release-hashes"
 
 const dir = mkdtempSync(join(tmpdir(), "novaclaw-hashes-"))
 
@@ -58,5 +58,42 @@ describe("release digests", () => {
   test("takes --out's value and nothing else", () => {
     expect(parseArgs(["--out", "S", "a.7z"])).toEqual({ out: "S", inputs: ["a.7z"] })
     expect(parseArgs(["a.7z", "--out", "S", "b.dmg"])).toEqual({ out: "S", inputs: ["a.7z", "b.dmg"] })
+  })
+})
+
+/**
+ * The `--manifest` split, whose inline predecessor dropped an artifact.
+ *
+ * 🔴 Cutting 0.1.67 recorded 2 of the 3 files it shipped and lost the WINDOWS BINARY — the entry a
+ * stuck user needs most — because `indexOf` returns `-1` and `-1 + 1` is a perfectly valid index.
+ * Nothing failed and nothing warned; the success line was one short and that was the only trace.
+ */
+describe("splitting --manifest off the artifact list", () => {
+  test("🔴 with NO flag every artifact survives — the first one used to vanish", () => {
+    const argv = ["a.7z", "b.7z", "c.tar"]
+    expect(splitManifestArg(argv)).toEqual({ rest: argv })
+  })
+
+  test("with the flag, both its tokens come out and the artifacts stay", () => {
+    const split = splitManifestArg(["--manifest", "out.json", "a.7z", "b.7z"])
+    expect(split.manifest).toBe("out.json")
+    expect(split.rest).toEqual(["a.7z", "b.7z"])
+  })
+
+  test("the flag is honoured wherever it sits, not only first", () => {
+    const split = splitManifestArg(["a.7z", "--manifest", "out.json", "b.7z"])
+    expect(split.manifest).toBe("out.json")
+    expect(split.rest).toEqual(["a.7z", "b.7z"])
+  })
+
+  test("a trailing flag with no value takes no artifact with it", () => {
+    // `--manifest` last is a usage error, but it must not silently eat a file that is not there.
+    const split = splitManifestArg(["a.7z", "--manifest"])
+    expect(split.manifest).toBeUndefined()
+    expect(split.rest).toEqual(["a.7z"])
+  })
+
+  test("an empty argv stays empty rather than answering with a phantom", () => {
+    expect(splitManifestArg([])).toEqual({ rest: [] })
   })
 })

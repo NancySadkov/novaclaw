@@ -13,14 +13,14 @@
  */
 import { statSync } from "node:fs"
 import { join } from "node:path"
-import { digestOf, parseArgs } from "./lib/release-hashes"
+import { digestOf, parseArgs, splitManifestArg } from "./lib/release-hashes"
 import { addRelease, EMPTY, render, type Manifest } from "./lib/release-manifest"
 
 const root = join(import.meta.dir, "..")
 const argv = process.argv.slice(2)
-const flag = argv.indexOf("--manifest")
-const manifestPath = flag >= 0 ? argv[flag + 1]! : join(root, "releases.json")
-const { inputs } = parseArgs(argv.filter((_, i) => i !== flag && i !== flag + 1))
+const { manifest, rest } = splitManifestArg(argv)
+const manifestPath = manifest ?? join(root, "releases.json")
+const { inputs } = parseArgs(rest)
 
 if (inputs.length === 0) {
   console.error("usage: bun script/release-record.ts [--manifest <file>] <artifact> [<artifact> ...]")

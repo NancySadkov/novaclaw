@@ -96,3 +96,28 @@ export function parseArgs(argv: readonly string[]): { readonly out?: string; rea
   }
   return out === undefined ? { inputs } : { out, inputs }
 }
+
+/**
+ * Split `--manifest <file>` off an argv, leaving the artifacts.
+ *
+ * 🔴 **This exists because the inline version dropped an artifact whenever the flag was ABSENT.**
+ * It read `const flag = argv.indexOf("--manifest")` and then filtered out indices `flag` and
+ * `flag + 1` — and a missing flag is `-1`, so `flag + 1` is `0` and the FIRST artifact was quietly
+ * removed. Cutting 0.1.67 recorded two of the three files it shipped, and the one it lost was the
+ * Windows binary: the exact entry a stuck user needs, missing from the manifest whose whole purpose
+ * is to hold it. Nothing failed, nothing warned — the count in the success line was simply one short.
+ *
+ * ⚠️ The lesson generalises past this call site: `indexOf` answers "not found" with a number that is
+ * still valid arithmetic. Any `found + 1` reached without checking `found >= 0` is the same bug
+ * wearing different variable names.
+ */
+export function splitManifestArg(argv: readonly string[]): {
+  readonly manifest?: string
+  readonly rest: readonly string[]
+} {
+  const flag = argv.indexOf("--manifest")
+  if (flag < 0) return { rest: argv }
+  const manifest = argv[flag + 1]
+  const rest = argv.filter((_, index) => index !== flag && index !== flag + 1)
+  return manifest === undefined ? { rest } : { manifest, rest }
+}
