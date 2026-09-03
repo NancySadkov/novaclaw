@@ -123,7 +123,7 @@ it.instance("explore agent denies edit and write", () =>
 // (only `skill` and `task` are ever evaluated against it), and the action they named is not a gate
 // either — the real ones are `external_directory_read` and `external_directory_write`, which
 // `Wildcard.match` will never match from an unsuffixed rule. They were deleted with the rules they
-// read (RF-17-21, 2026-09-04) and RE-EXPRESSED, not dropped, against the floor that decides:
+// read (2026-09-04) and RE-EXPRESSED, not dropped, against the floor that decides:
 // `core/test/permission-baseline.test.ts` → "the built-in floor's scratch dirs are writable, and
 // nothing else is", A/B'd by removing the write grant from `plugin/agent.ts` and watching it go red.
 
@@ -439,8 +439,8 @@ it.instance("Agent.get returns undefined for non-existent agent", () =>
 // in `agent/agent.ts`, over a ruleset that is not the gate. Only `*`, `skill` and `task` are ever
 // evaluated against it (`skill/index.ts`, `tool/truncate.ts`), so an `external_directory` verdict
 // here decided nothing — and asserting it twice, on two different actions, on two different days, is
-// what made the second finding read as a live path when it was not. Both keys are gone (RF-17-20,
-// RF-17-21). What replaced the assertion is `test/permission-island.test.ts`, which pins the CLAIM
+// what made the second finding read as a live path when it was not. Both keys are gone. What
+// replaced the assertion is `test/permission-island.test.ts`, which pins the CLAIM
 // instead of the value: that this ruleset has exactly two consumers and they spend exactly two
 // actions. `webfetch` below is left alone deliberately — it is equally inert, and it is the standing
 // example that the pruning here is about the CLASS being named, not about chasing every key.
@@ -502,7 +502,7 @@ it.instance(
 //   · WRITING into them was never live. The rule claimed `allow`, matched nothing, and the real
 //     answer has always been the floor's `external_directory_write: "*" → ask`. Nothing regresses by
 //     deleting it, and if an agent SHOULD be able to write into its own skill folder that is a
-//     product decision for the V2 floor, filed as RF-17-22 rather than smuggled in here.
+//     product decision for the V2 floor, filed in the plan repo rather than smuggled in here.
 
 it.instance("defaultAgent returns build when no default_agent config", () =>
   Effect.gen(function* () {

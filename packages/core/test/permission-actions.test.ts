@@ -90,7 +90,7 @@ describe("the permission gate vocabulary", () => {
   test("the list only names things that exist — no aspirational entries", () => {
     // The other direction: an action nothing asserts and no rule names is a row the user is invited
     // to write a rule about that can never fire. `question` and `doom_loop` were exactly that; both
-    // are gone (RF-17-20, 2026-09-04) and the config-key test below is what keeps them gone.
+    // are gone (2026-09-04) and the config-key test below is what keeps them gone.
     const known = new Set([...toolActions, ...ruleActions])
     expect(PermissionActions.ALL.filter((action) => !known.has(action)).sort()).toEqual([])
   })
@@ -115,7 +115,7 @@ describe("the permission gate vocabulary", () => {
   })()
 
   /**
-   * ⚠️ Kept EMPTY on purpose. It held `external_directory` for one day (RF-17-21, closed
+   * ⚠️ Kept EMPTY on purpose. It held `external_directory` for one day (closed
    * 2026-09-04): the third inert key, deferred because its filing said making it effective would
    * NARROW a live path. It would not have — the rules that authored it lived in
    * `novaclaw/src/agent/agent.ts`, whose ruleset is not the gate, and `packages/core` cannot import

@@ -331,7 +331,7 @@ describe("the built-in agents the plugin actually builds", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THE SCRATCH GRANTS, re-pointed here on 2026-09-04 (RF-17-21).
+// THE SCRATCH GRANTS, re-pointed here on 2026-09-04.
 //
 // 🔴 Four tests in `packages/novaclaw/test/agent/agent.test.ts` asserted exactly these facts —
 // the truncation glob is writable, a temp child is writable, an arbitrary outside path is not —

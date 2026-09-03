@@ -11,7 +11,7 @@ import path from "node:path"
  * true — `packages/core` cannot import `packages/novaclaw`, so the live evaluator never sees a rule
  * written into an `Agent.Info.permission` — but a structural truth nobody measures is how three
  * inert permission keys survived in the config vocabulary until 2026-09-04 (`doom_loop`,
- * `question`, `external_directory`; RF-17-20 and RF-17-21).
+ * `question`, `external_directory`).
  *
  * The cost of not measuring it was not the dead rules. It was that a finding described
  * `external_directory` as governing a LIVE path and deferred its own fix for a measurement that was

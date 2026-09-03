@@ -186,8 +186,8 @@ export const layer = Layer.effect(
         // `skill/index.ts` (`evaluate("skill", …)`) and `tool/truncate.ts` (`evaluate("task", …)`).
         // Any other action written below is a rule nobody reads.
         //
-        // 🔴 That is why the `external_directory` whitelist that used to sit here is gone (RF-17-21,
-        // 2026-09-04) along with the `skillDirs`/`referenceDirs` walk that built it and the
+        // 🔴 That is why the `external_directory` whitelist that used to sit here is gone (2026-09-04)
+        // along with the `skillDirs`/`referenceDirs` walk that built it and the
         // "Ensure Truncate.GLOB is allowed" loop that appended to it. None of them granted anything.
         // The grants they were imitating are real and live one package over, in
         // `core/src/plugin/agent.ts`'s `floor({scratchDirs: SCRATCH_DIRS})`, which allows
