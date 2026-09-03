@@ -1,9 +1,7 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { GlobalBus } from "@/bus/global"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceEvent } from "@novaclaw/schema/instance-event"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
-import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { describeDisposeFailures, disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -82,30 +80,29 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
           yield* Deferred.done(entry.deferred, exit).pipe(Effect.asVoid)
         })
 
-      // Two doors on purpose: the `GlobalBus` payload is what `/global/event` relays to the app shell,
-      // and the bus event is what `/api/event` serves — the contract stream the CLI reads since the
-      // legacy `/event` left (2026-09-03). Neither may fail the dispose.
-      const emitDisposed = (input: { directory: string; project?: string }) =>
-        Effect.gen(function* () {
-          GlobalBus.emit("event", {
-            directory: input.directory,
-            project: input.project,
-            workspace: WorkspaceContext.workspaceID,
-            payload: {
-              type: "server.instance.disposed",
-              properties: {
-                directory: input.directory,
-              },
-            },
-          })
-          yield* bus
-            .publish(
-              InstanceEvent.Disposed,
-              { directory: input.directory },
-              { location: { directory: AbsolutePath.make(input.directory) } },
-            )
-            .pipe(Effect.ignore)
-        })
+      /**
+       * ONE producer, two surfaces. The publish goes on the bus, where `/api/event` serves it — the
+       * contract stream the CLI reads since the legacy `/event` left (2026-09-03) — and
+       * `EventV2Bridge` mirrors every bus publish onto the `GlobalBus`, which is what `/global/event`
+       * relays to the app shell. Both surfaces are fed by this one call.
+       *
+       * ⚠️ It emitted DIRECTLY to the `GlobalBus` as well for one commit, and the duplicate is why
+       * this comment exists: `httpapi-config-no-teardown` collects disposals off that bus and saw
+       * each one twice. A second producer for one fact is the defect, not the symptom — the mirror
+       * was always going to carry it.
+       *
+       * `Effect.ignore` because a dispose may not fail on a notification. `project` is the one field
+       * the mirror derives itself, from the instance context, rather than taking it from here, and no
+       * consumer of a disposal reads it.
+       */
+      const emitDisposed = (input: { directory: string }) =>
+        bus
+          .publish(
+            InstanceEvent.Disposed,
+            { directory: input.directory },
+            { location: { directory: AbsolutePath.make(input.directory) } },
+          )
+          .pipe(Effect.ignore)
 
       const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
         yield* Log.event("instance.store.dispose", { directory: ctx.directory })
@@ -117,7 +114,7 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
             directory: ctx.directory,
             "instance.disposers": describeDisposeFailures(failures),
           })
-        yield* emitDisposed({ directory: ctx.directory, project: ctx.origin })
+        yield* emitDisposed({ directory: ctx.directory })
       })
 
       const disposeEntry = Effect.fnUntraced(function* (directory: string, entry: Entry, ctx: InstanceContext) {
