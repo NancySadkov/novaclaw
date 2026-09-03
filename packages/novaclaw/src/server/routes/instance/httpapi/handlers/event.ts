@@ -137,17 +137,24 @@ function eventResponse(events: EventV2.Interface) {
       )
     })
     const output = subscriptionOutput(stream, disposed)
+    // The keepalive is an SSE COMMENT, exactly as `/api/event` sends it — never a typed event.
+    // Until 2026-09-03 this stream emitted `server.heartbeat` as an element every five seconds: a
+    // type in no schema module and no manifest, appearing zero times in `openapi.json`, so a client
+    // decoding the stream against the published `Event` union hit an unmatched arm every five
+    // seconds. Both parsers that read this stream (the generated SDK client, the workspace bridge)
+    // discard a line that opens with a colon, which is what the SSE spec says a comment is for.
     const heartbeat = Stream.tick("5 seconds").pipe(
       Stream.drop(1),
-      Stream.map(() => ({ id: eventID(), type: "server.heartbeat", properties: {} })),
+      Stream.map(() => ": heartbeat\n\n"),
     )
 
     yield* Log.event("server.event.connected", {})
     return HttpServerResponse.stream(
       Stream.make({ id: eventID(), type: "server.connected", properties: {} }).pipe(
-        Stream.concat(output.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
+        Stream.concat(output),
         Stream.map(eventData),
         Stream.pipeThroughChannel(Sse.encode()),
+        Stream.merge(heartbeat, { haltStrategy: "left" }),
         Stream.encodeText,
         Stream.ensuring(Log.event("server.event.disconnected", {})),
       ),
