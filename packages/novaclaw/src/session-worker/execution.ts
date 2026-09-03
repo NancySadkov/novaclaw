@@ -35,6 +35,11 @@ import { SessionWorkerEventBridge } from "./event-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionWorkerMemoryBridge } from "./memory-bridge"
+import { SessionWorkerLocalModelBridge } from "./local-model-bridge"
+import { SessionWorkerDriveStateBridge } from "./drive-state-bridge"
+import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
+import { LocalModelRuntime } from "@/local-model/runtime"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
@@ -154,6 +159,14 @@ export const layer = Layer.effect(
     // layer build like everything else here — `Memory.client` wraps a CAPABILITY that acquires per
     // call, so holding it costs nothing when memory is disabled and never blocks the handler.
     const memory = Memory.client(yield* Memory.node.service)
+    // The ONE managed local-model runtime. A worker's `LocalModelManager.node` is replaced by an RPC
+    // client that lands here, so `ensure` in a turn starts (or finds) the host's llama.cpp child
+    // instead of a second one on the same port. Resolved at layer build like memory, and for the
+    // same reason: it is a global, one per instance, never one per folder.
+    const localModels = yield* LocalModelManager.Service
+    // The runner's cross-drain facts. THIS process outlives a drain, so the store is here; a worker
+    // reaches it by RPC and the drain below pins the session for the worker's whole life.
+    const driveState = yield* SessionDriveState.Service
     const ownerID = `server_${crypto.randomUUID()}`
     const command = SessionWorkerCommand.current()
     // Process admission is deliberately OUTSIDE the worker. A child queued here consumes durable
@@ -342,6 +355,14 @@ export const layer = Layer.effect(
                  */
                 onMemoryRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
+                onLocalModelRequest: (message, signal) =>
+                  Effect.runPromise(SessionWorkerLocalModelBridge.handle({ manager: localModels, lease, message }), {
+                    signal,
+                  }),
+                onDriveStateRequest: (message, signal) =>
+                  Effect.runPromise(SessionWorkerDriveStateBridge.handle({ store: driveState, lease, message }), {
+                    signal,
+                  }),
                 onExecutionRequest: (message, signal) =>
                   Effect.runPromise(
                     SessionWorkerExecutionBridge.handle({
@@ -358,12 +379,23 @@ export const layer = Layer.effect(
                     }),
                     { signal },
                   ),
-                onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
+                // The drain is over: release the drive-state pin taken below, after the device
+                // reclaim, so a session is swept only once nothing of its run is still live.
+                onExit: () =>
+                  Effect.runPromise(
+                    SessionWorkerDeviceBridge.reclaim(scheduler, lease).pipe(
+                      Effect.ensuring(driveState.unpin(sessionID)),
+                    ),
+                  ),
               }
+              // Pin the session's drive state for the worker's whole life; `onExit` releases it.
+              yield* driveState.pin(sessionID)
               const spawned = yield* Effect.try({
                 try: () => SessionWorkerSupervisor.spawn(workerInput),
                 catch: (error) => (error instanceof Error ? error : new Error(String(error))),
               }).pipe(Effect.exit)
+              // A spawn that never produced a worker never runs `onExit`: release the pin here.
+              if (Exit.isFailure(spawned)) yield* driveState.unpin(sessionID)
               let outcome: SessionWorkerSupervisor.Outcome
               if (Exit.isFailure(spawned)) {
                 const error = Cause.squash(spawned.cause)
@@ -484,5 +516,9 @@ export const node = makeGlobalNode({
     Database.node,
     AgentConfigStore.node,
     Memory.node,
+    // The manager the server graph builds, named here so this layer resolves the runtime client and
+    // never core's inert default (whose `ensure` is a no-op that would leave every worker modelless).
+    LocalModelRuntime.managerNode,
+    SessionDriveState.node,
   ],
 })

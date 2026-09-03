@@ -90,6 +90,14 @@ export interface Input {
     message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
     signal: AbortSignal,
   ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "memory-result" }>>
+  readonly onLocalModelRequest?: (
+    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "local-model-request" }>,
+    signal: AbortSignal,
+  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "local-model-result" }>>
+  readonly onDriveStateRequest?: (
+    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "drive-state-request" }>,
+    signal: AbortSignal,
+  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "drive-state-result" }>>
   readonly onExecutionRequest?: (
     message: SessionWorkerProtocol.ExecutionRequest,
     signal: AbortSignal,
@@ -217,6 +225,10 @@ const ORDERED_RPC = {
   "device-maintenance-admit": false,
   "device-maintenance-release": false,
   "memory-request": false,
+  "local-model-request": false,
+  // Ordered: a `save` must land before the `load` of the next drain, and both come from one worker
+  // in sequence anyway — the chain costs nothing and rules out a reordered write.
+  "drive-state-request": true,
 } satisfies Record<RPCMessage["type"], boolean>
 
 /** One child, one lease, one drain. This owns process lifetime only; event/device/interaction/execution RPC is
@@ -321,9 +333,7 @@ export function spawn(input: Input): Handle {
       void settle().catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
       return
     }
-    rpcTail = rpcTail
-      .then(settle)
-      .catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
+    rpcTail = rpcTail.then(settle).catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
   }
 
   const accept = (message: SessionWorkerProtocol.WorkerMessage) => {
@@ -515,6 +525,55 @@ export function spawn(input: Input): Handle {
             requestID: message.requestID,
             outcome: "rejected",
             reason: "memory is host-only and this host exposes no memory bridge",
+          })
+          return
+        }
+        dispatchRPC(message, () => request(message, lifetime.signal))
+        return
+      }
+      case "local-model-request": {
+        if (!ready) {
+          finish({ type: "protocol-error", detail: "local-model request arrived before ready" })
+          return
+        }
+        const request = input.onLocalModelRequest
+        if (!request) {
+          // A host with no local-model bridge answers "rejected", which the worker turns into the
+          // `UnavailableError` the model resolver already handles. Never silence: a worker that
+          // heard nothing would wait out the RPC and then run a turn without the model.
+          send({
+            version: SessionWorkerProtocol.VERSION,
+            type: "local-model-result",
+            sessionID: input.lease.sessionID,
+            attemptID: input.lease.attemptID,
+            generation: input.lease.generation,
+            requestID: message.requestID,
+            outcome: "rejected",
+            reason: "the managed local model is host-only and this host exposes no local-model bridge",
+          })
+          return
+        }
+        dispatchRPC(message, () => request(message, lifetime.signal))
+        return
+      }
+      case "drive-state-request": {
+        if (!ready) {
+          finish({ type: "protocol-error", detail: "drive-state request arrived before ready" })
+          return
+        }
+        const request = input.onDriveStateRequest
+        if (!request) {
+          // A host with no drive-state bridge answers "rejected"; the worker reads `empty` on load
+          // and drops the save — the exact pre-fix behaviour, now named rather than silent.
+          send({
+            version: SessionWorkerProtocol.VERSION,
+            type: "drive-state-result",
+            sessionID: input.lease.sessionID,
+            attemptID: input.lease.attemptID,
+            generation: input.lease.generation,
+            requestID: message.requestID,
+            outcome: "rejected",
+            reason: "drive state is host-only and this host exposes no drive-state bridge",
           })
           return
         }

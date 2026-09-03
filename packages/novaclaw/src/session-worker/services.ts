@@ -10,6 +10,11 @@ import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { LocalModelManager } from "@novaclaw/core/local-model-manager"
+import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
+import { Log } from "@novaclaw/schema/log"
+import type { LocalModel } from "@novaclaw/schema/local-model"
+import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
@@ -36,6 +41,8 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
   readonly memory: MemoryClient.Interface
+  readonly localModel: LocalModelManager.Interface
+  readonly driveState: SessionDriveState.Interface
 } {
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
@@ -363,7 +370,106 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     graph: (input) => memoryOp<MemoryClient.MemoryGraph>("graph", [input]),
   }
 
-  return { events, permission, question, scheduler, spawner, join, colleague, memory }
+  /**
+   * 🔴 **THE MANAGED LOCAL MODEL HAS ONE RUNTIME, AND FROM HERE IT IS THE HOST'S.**
+   *
+   * Memory's rule, one rung down the stack. `ServerLocationServiceMap.replacements` points
+   * `LocalModelManager.node` at `LocalModelRuntime.managerNode`, and `runner-layer.ts` compiles that
+   * list into the worker too — so every worker built its OWN runtime with its own closure state
+   * (`state`, `child`, `loading`), and `ensure()`, which every provider turn calls, could never take
+   * the "already ready" branch in a fresh process. It spawned a second `llama-server` on the same
+   * fixed port: either the bind failed while `waitUntilReady` was answered by the HOST's engine (a
+   * dead child reported ready, every turn paying a spawn and a memory preflight), or the worker's
+   * child bound first and the supervisor tree-killed it with the worker at the end of the turn, so
+   * the model reloaded from scratch on the next one. Either way the engine was invisible to the
+   * host's fleet accounting.
+   *
+   * `ensure` is one RPC to the host's runtime and fails as the `UnavailableError` the model resolver
+   * already handles. The three status-shaped ops never cross: nothing in a worker calls them, and a
+   * session process must not be able to `stop` the engine every other session is served by. They
+   * answer a status that names the boundary, because their contract never fails.
+   */
+  const ensureOnHost = (request: LocalModelManager.ModelRequest, overrides?: ConfigLocalModelCatalog.Info) =>
+    Effect.tryPromise({
+      try: () => capabilities.localModel("ensure", [request, overrides]),
+      catch: (cause) => new LocalModelManager.UnavailableError({ message: String(cause).slice(0, 300) }),
+    }).pipe(
+      Effect.flatMap((reply) =>
+        reply.outcome === "ok"
+          ? Effect.void
+          : Effect.fail(
+              new LocalModelManager.UnavailableError({
+                message: reply.reason ?? `the host could not start the local model (${reply.outcome})`,
+              }),
+            ),
+      ),
+    )
+  const hostOnly: LocalModel.Status = {
+    supported: false,
+    platform: `${process.platform}-${process.arch}`,
+    profiles: [],
+    stage: "idle",
+    recommendedContext: 65_536,
+    message: "The managed local model is controlled by the host process; a session can only ask for it to be running.",
+  }
+  const localModel: LocalModelManager.Interface = {
+    status: () => Effect.succeed(hostOnly),
+    install: () => Effect.succeed(hostOnly),
+    ensure: ensureOnHost,
+    stop: () => Effect.succeed(hostOnly),
+  }
+
+  /**
+   * 🔴 **THE RUNNER'S CROSS-DRAIN FACTS LIVE IN THE HOST.**
+   *
+   * `llm.ts` keeps six maps the drives need across drains and calls them "session-scoped, this
+   * process" — true for the in-process executor, false here, where the runner layer is built inside
+   * ONE drain and disposed with the worker. Every steer started a fresh worker with six empty maps:
+   * the barren-round stop never reached its bound, the coverage ledger restarted at the first file,
+   * and the child-restart ceiling never counted (the three measured defects the maps were built to
+   * fix, all back). `SessionDriveState` is the store; this client is the worker's view of the host's.
+   *
+   * `load` and `save` are RPCs. The three pinning calls are pass-throughs on purpose: the HOST pins
+   * the session for the worker's whole life (`execution.ts`), because only the host knows when the
+   * run really ends. A `load` that cannot reach the host answers `empty` — the session starts the
+   * drain as a fresh one, which may repeat visible steering but never marks unfinished work done —
+   * and a `save` that cannot reach it is lost the way the whole map used to be lost every drain.
+   */
+  const driveStateOp = (op: SessionWorkerProtocol.DriveStateOp, args: ReadonlyArray<unknown>) =>
+    Effect.tryPromise({
+      try: () => capabilities.driveState(op, args),
+      catch: (cause) => new Error(String(cause).slice(0, 300)),
+    }).pipe(
+      Effect.flatMap((reply) =>
+        reply.outcome === "ok"
+          ? Effect.succeed(reply.value)
+          : Effect.fail(new Error(reply.reason ?? `drive state ${op} ${reply.outcome}`)),
+      ),
+    )
+  const driveState: SessionDriveState.Interface = {
+    load: (sessionID) =>
+      driveStateOp("load", []).pipe(
+        Effect.map((value) => SessionDriveState.decode(value) ?? SessionDriveState.empty),
+        Effect.catch(() => Effect.succeed(SessionDriveState.empty)),
+        Effect.tap((snapshot) =>
+          Log.event("session.drive.hydrated", {
+            "session.id": sessionID,
+            "drive.opened": snapshot.opened.length,
+            "drive.barren": snapshot.barren?.barren ?? 0,
+          }),
+        ),
+      ),
+    save: (_sessionID, snapshot) =>
+      driveStateOp("save", [snapshot]).pipe(
+        Effect.map(() => undefined),
+        Effect.ignore,
+      ),
+    withSession: (_sessionID, effect) => effect,
+    pin: () => Effect.void,
+    unpin: () => Effect.void,
+  }
+
+  return { events, permission, question, scheduler, spawner, join, colleague, memory, localModel, driveState }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -448,6 +554,32 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
       makeGlobalNode({
         service: SessionScheduler.Service,
         layer: Layer.succeed(SessionScheduler.Service, services.scheduler),
+        deps: [],
+      }),
+    ],
+    /**
+     * 🔴 **`LocalModelManager.node`, replaced so the worker never builds `LocalModelRuntime`.**
+     *
+     * The server's location map ALSO replaces this node (with the real runtime), and `runner-layer.ts`
+     * concatenates that list before this one; `replacementMapFrom` lets the later entry win by name.
+     * A plain global node is enough here — the real node is a capability so that the Instance
+     * controls can report an unavailable runtime, and a worker reports nothing: its `ensure` either
+     * lands on the host or fails as `UnavailableError`.
+     */
+    [
+      LocalModelManager.node,
+      makeGlobalNode({
+        service: LocalModelManager.Service,
+        layer: Layer.succeed(LocalModelManager.Service, services.localModel),
+        deps: [],
+      }),
+    ],
+    // The runner's cross-drain facts: the HOST's store, reached by RPC. See `driveState` above.
+    [
+      SessionDriveState.node,
+      makeGlobalNode({
+        service: SessionDriveState.Service,
+        layer: Layer.succeed(SessionDriveState.Service, services.driveState),
         deps: [],
       }),
     ],

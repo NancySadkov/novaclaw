@@ -187,6 +187,27 @@ export const MemoryResult = Schema.Struct({
   reason: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.MemoryResult" })
 
+export const LocalModelResult = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("local-model-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["ok", "failed", "rejected"]),
+  /** Absent: `ensure` returns nothing. Kept so a future op with a value needs no new message. */
+  value: Schema.Unknown.pipe(Schema.optional),
+  /** Why it failed or was refused. Becomes `LocalModelManager.UnavailableError.message` on the worker. */
+  reason: Schema.String.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.LocalModelResult" })
+
+export const DriveStateResult = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("drive-state-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["ok", "failed", "rejected"]),
+  /** `load` answers the session's `SessionDriveState.Snapshot`, already JSON; `save` answers nothing. */
+  value: Schema.Unknown.pipe(Schema.optional),
+  reason: Schema.String.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.DriveStateResult" })
+
 export const QuestionResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("question-result"),
@@ -225,6 +246,8 @@ export const HostMessage = Schema.Union([
   PermissionResult,
   QuestionResult,
   MemoryResult,
+  LocalModelResult,
+  DriveStateResult,
   SpawnResultMessage,
   ColleagueResultMessage,
   AwaitChildResult,
@@ -480,6 +503,41 @@ export const MemoryRequest = Schema.Struct({
   args: Schema.Array(Schema.Unknown),
 }).annotate({ identifier: "SessionWorker.MemoryRequest" })
 
+/**
+ * The managed local model (the llama.cpp child on its fixed port) is HOST-ONLY, and `ensure` is the
+ * one thing a worker may ask of it: "be running for this model". Deliberately not `status`,
+ * `install` or `stop` — nothing in a worker calls them, and authority narrows downward: a session
+ * process must not be able to stop the engine every other session is served by.
+ */
+export const LOCAL_MODEL_OPS = ["ensure"] as const
+export type LocalModelOp = (typeof LOCAL_MODEL_OPS)[number]
+
+export const LocalModelRequest = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("local-model-request"),
+  requestID: Schema.String,
+  op: Schema.Literals(LOCAL_MODEL_OPS),
+  /** The op's arguments, positionally, exactly as `LocalModelManager.Interface` declares them. */
+  args: Schema.Array(Schema.Unknown),
+}).annotate({ identifier: "SessionWorker.LocalModelRequest" })
+
+/**
+ * The runner's cross-drain controller facts (`core/session/runner/drive-state.ts`) live in the
+ * HOST, because the host is the one process that outlives a drain. A worker hydrates its per-drain
+ * caches with `load` when its run starts and writes them back with `save` on every mutation.
+ */
+export const DRIVE_STATE_OPS = ["load", "save"] as const
+export type DriveStateOp = (typeof DRIVE_STATE_OPS)[number]
+
+export const DriveStateRequest = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("drive-state-request"),
+  requestID: Schema.String,
+  op: Schema.Literals(DRIVE_STATE_OPS),
+  /** `load`: `[]`. `save`: `[snapshot]`, the whole `SessionDriveState.Snapshot`. */
+  args: Schema.Array(Schema.Unknown),
+}).annotate({ identifier: "SessionWorker.DriveStateRequest" })
+
 export const PermissionAssert = Schema.Struct({
   ...Identity,
   type: Schema.Literal("permission-assert"),
@@ -589,6 +647,8 @@ export const WorkerMessage = Schema.Union([
   DeviceMaintenanceRelease,
   PermissionAssert,
   MemoryRequest,
+  LocalModelRequest,
+  DriveStateRequest,
   SpawnChild,
   ColleagueRequest,
   AwaitChild,

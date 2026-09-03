@@ -23,6 +23,14 @@ export interface Options {
 
 export interface Interface {
   readonly withSession: <A, E, R>(sessionID: string, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  /**
+   * The two halves of `withSession`, for a caller whose run is not one Effect: the host pins a
+   * session when it spawns the worker for a drain and releases it from the worker's exit hook
+   * (`session-worker/execution.ts`). Always pair them; an unreleased pin is a session that is never
+   * swept.
+   */
+  readonly acquire: (sessionID: string) => void
+  readonly release: (sessionID: string) => void
 }
 
 export const make = (stores: readonly Store[], options?: Options): Interface => {
@@ -73,5 +81,5 @@ export const make = (stores: readonly Store[], options?: Options): Interface => 
       () => Effect.sync(() => release(sessionID)),
     )
 
-  return { withSession }
+  return { withSession, acquire, release }
 }

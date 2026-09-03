@@ -16,9 +16,7 @@ export interface Capabilities {
     metadata?: Readonly<Record<string, unknown>>,
   ) => Promise<Extract<Reply, { readonly type: "event-published" }>>
   readonly admitDevice: (input: Omit<SessionScheduler.AdmitInput, "sessionID">) => Promise<void>
-  readonly releaseDevice: (
-    input: Omit<SessionScheduler.ReleaseInput, "sessionID">,
-  ) => Promise<void>
+  readonly releaseDevice: (input: Omit<SessionScheduler.ReleaseInput, "sessionID">) => Promise<void>
   readonly reportDevice: (input: Omit<SessionScheduler.ReportInput, "sessionID">) => Promise<void>
   readonly admitMaintenance: (
     input: Omit<SessionScheduler.MaintenanceInput, "ownerID">,
@@ -27,9 +25,7 @@ export interface Capabilities {
   readonly assertPermission: (
     input: PermissionV2.AssertInput,
   ) => Promise<Extract<Reply, { readonly type: "permission-result" }>>
-  readonly askQuestion: (
-    input: QuestionV2.AskInput,
-  ) => Promise<Extract<Reply, { readonly type: "question-result" }>>
+  readonly askQuestion: (input: QuestionV2.AskInput) => Promise<Extract<Reply, { readonly type: "question-result" }>>
   /**
    * Spawn a child of THIS session.
    *
@@ -61,10 +57,31 @@ export interface Capabilities {
     op: SessionWorkerProtocol.MemoryOp,
     args: ReadonlyArray<unknown>,
   ) => Promise<Extract<Reply, { readonly type: "memory-result" }>>
+  /**
+   * One managed-local-model operation, performed by the HOST's single runtime.
+   *
+   * `ensure` runs on every provider turn. A worker that built its own runtime spawned a second
+   * `llama-server` on the same fixed port — or owned the only one and had it tree-killed with the
+   * worker at the end of the turn. `local-model-bridge.ts` is the other end.
+   */
+  readonly localModel: (
+    op: SessionWorkerProtocol.LocalModelOp,
+    args: ReadonlyArray<unknown>,
+  ) => Promise<Extract<Reply, { readonly type: "local-model-result" }>>
+  /**
+   * The runner's cross-drain facts, read from and written to the HOST's store. One worker is one
+   * drain; without this every "session-scoped" controller map in the runner was drain-scoped in
+   * production. `drive-state-bridge.ts` is the other end.
+   */
+  readonly driveState: (
+    op: SessionWorkerProtocol.DriveStateOp,
+    args: ReadonlyArray<unknown>,
+  ) => Promise<Extract<Reply, { readonly type: "drive-state-result" }>>
   /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
-  readonly awaitChild: (
-    input: { readonly childID: string; readonly timeoutMs: number },
-  ) => Promise<Extract<Reply, { readonly type: "await-child-result" }>>
+  readonly awaitChild: (input: {
+    readonly childID: string
+    readonly timeoutMs: number
+  }) => Promise<Extract<Reply, { readonly type: "await-child-result" }>>
   readonly execution: SessionExecutionAttempt.CurrentInterface
 }
 
@@ -93,72 +110,67 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
   return {
     publishEvent: async (eventType, data, metadata) => {
       const reply = rejected(
-        await input.client.request(
-          {
-            ...identity,
-            type: "publish-event",
-            requestID: requestID(),
-            eventType,
-            data,
-            ...(metadata === undefined ? {} : { metadata }),
-          },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "publish-event",
+          requestID: requestID(),
+          eventType,
+          data,
+          ...(metadata === undefined ? {} : { metadata }),
+        }),
       )
       if (reply.type !== "event-published") throw new Error(`unexpected ${reply.type} reply to event publication`)
       return reply
     },
     admitDevice: async (request) => {
       const reply = rejected(
-        await input.client.request(
-          {
-            ...identity,
-            type: "device-admit",
-            requestID: requestID(),
-            deviceKey: request.deviceKey,
-            sessionClass: request.sessionClass,
-            ...(request.priority === undefined ? {} : { priority: request.priority }),
-            ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
-            ...(request.locality === undefined ? {} : { locality: request.locality }),
-          },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "device-admit",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+          sessionClass: request.sessionClass,
+          ...(request.priority === undefined ? {} : { priority: request.priority }),
+          ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+          ...(request.locality === undefined ? {} : { locality: request.locality }),
+        }),
       )
       if (reply.type !== "device-admitted") throw new Error(`unexpected ${reply.type} reply to device admission`)
     },
     releaseDevice: async (request) => {
       const reply = rejected(
-        await input.client.request(
-          { ...identity, type: "device-release", requestID: requestID(), deviceKey: request.deviceKey },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "device-release",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+        }),
       )
       if (reply.type !== "device-released") throw new Error(`unexpected ${reply.type} reply to device release`)
     },
     reportDevice: async (request) => {
       const reply = rejected(
-        await input.client.request(
-          {
-            ...identity,
-            type: "device-report",
-            requestID: requestID(),
-            deviceKey: request.deviceKey,
-            costTokens: request.costTokens,
-          },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "device-report",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+          costTokens: request.costTokens,
+        }),
       )
       if (reply.type !== "device-reported") throw new Error(`unexpected ${reply.type} reply to device report`)
     },
     admitMaintenance: async (request) => {
       const reply = rejected(
-        await input.client.request(
-          {
-            ...identity,
-            type: "device-maintenance-admit",
-            requestID: requestID(),
-            deviceKey: request.deviceKey,
-            task: request.task,
-            ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
-            ...(request.locality === undefined ? {} : { locality: request.locality }),
-          },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "device-maintenance-admit",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+          task: request.task,
+          ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+          ...(request.locality === undefined ? {} : { locality: request.locality }),
+        }),
       )
       if (reply.type !== "device-maintenance-admitted")
         throw new Error(`unexpected ${reply.type} reply to maintenance admission`)
@@ -170,35 +182,34 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
     },
     releaseMaintenance: async (request) => {
       const reply = rejected(
-        await input.client.request(
-          {
-            ...identity,
-            type: "device-maintenance-release",
-            requestID: requestID(),
-            deviceKey: request.deviceKey,
-            maintenanceID: request.maintenanceID,
-          },
-        ),
+        await input.client.request({
+          ...identity,
+          type: "device-maintenance-release",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+          maintenanceID: request.maintenanceID,
+        }),
       )
       if (reply.type !== "device-maintenance-released")
         throw new Error(`unexpected ${reply.type} reply to maintenance release`)
     },
     assertPermission: async (request) => {
-      const reply = await input.client.request(
-        {
-          ...identity,
-          type: "permission-assert",
-          requestID: requestID(),
-          input: { ...request, sessionID: input.lease.sessionID },
-        },
-      )
+      const reply = await input.client.request({
+        ...identity,
+        type: "permission-assert",
+        requestID: requestID(),
+        input: { ...request, sessionID: input.lease.sessionID },
+      })
       if (reply.type !== "permission-result") throw new Error(`unexpected ${reply.type} reply to permission assertion`)
       return reply
     },
     awaitChild: async (request) => {
-      const reply = await input.client.request(
-        { ...identity, type: "await-child", requestID: requestID(), input: request as never },
-      )
+      const reply = await input.client.request({
+        ...identity,
+        type: "await-child",
+        requestID: requestID(),
+        input: request as never,
+      })
       if (reply.type !== "await-child-result") throw new Error(`unexpected ${reply.type} reply to await-child`)
       return reply
     },
@@ -211,10 +222,36 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       return reply
     },
     memory: async (op, args) => {
-      const reply = await input.client.request(
-        { ...identity, type: "memory-request", requestID: requestID(), op, args },
-      )
+      const reply = await input.client.request({
+        ...identity,
+        type: "memory-request",
+        requestID: requestID(),
+        op,
+        args,
+      })
       if (reply.type !== "memory-result") throw new Error(`unexpected ${reply.type} reply to memory-request`)
+      return reply
+    },
+    localModel: async (op, args) => {
+      const reply = await input.client.request({
+        ...identity,
+        type: "local-model-request",
+        requestID: requestID(),
+        op,
+        args,
+      })
+      if (reply.type !== "local-model-result") throw new Error(`unexpected ${reply.type} reply to local-model-request`)
+      return reply
+    },
+    driveState: async (op, args) => {
+      const reply = await input.client.request({
+        ...identity,
+        type: "drive-state-request",
+        requestID: requestID(),
+        op,
+        args,
+      })
+      if (reply.type !== "drive-state-result") throw new Error(`unexpected ${reply.type} reply to drive-state-request`)
       return reply
     },
     colleague: async (request) => {
@@ -226,14 +263,12 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       return reply
     },
     askQuestion: async (request) => {
-      const reply = await input.client.request(
-        {
-          ...identity,
-          type: "question-ask",
-          requestID: requestID(),
-          input: { ...request, sessionID: input.lease.sessionID },
-        },
-      )
+      const reply = await input.client.request({
+        ...identity,
+        type: "question-ask",
+        requestID: requestID(),
+        input: { ...request, sessionID: input.lease.sessionID },
+      })
       if (reply.type !== "question-result") throw new Error(`unexpected ${reply.type} reply to question request`)
       return reply
     },

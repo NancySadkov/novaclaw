@@ -2271,6 +2271,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.drive.hydrated": {
+    level: "debug",
+    message: "worker hydrated the session's cross-drain drive facts from the host",
+    attributes: { "session.id": "correlate", "drive.opened": "count", "drive.barren": "count" },
+    content: "correlated",
+    file: "packages/novaclaw/src/session-worker/services.ts",
+  },
   "session.finish.set.considered": {
     level: "info",
     message: "set-completion check ran",

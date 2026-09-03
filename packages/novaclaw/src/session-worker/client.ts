@@ -19,6 +19,8 @@ export type Request = Extract<
       | "await-child"
       | "colleague-request"
       | "memory-request"
+      | "local-model-request"
+      | "drive-state-request"
       | "execution-advance"
       | "execution-tool-dispatched"
       | "execution-tool-settled"
@@ -49,6 +51,8 @@ export type Reply = Extract<
       | "await-child-result"
       | "colleague-result"
       | "memory-result"
+      | "local-model-result"
+      | "drive-state-result"
       | "execution-result"
   }
 >
@@ -66,6 +70,8 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "await-child": new Set(["await-child-result"]),
   "colleague-request": new Set(["colleague-result"]),
   "memory-request": new Set(["memory-result"]),
+  "local-model-request": new Set(["local-model-result"]),
+  "drive-state-request": new Set(["drive-state-result"]),
   "execution-advance": new Set(["execution-result"]),
   "execution-tool-dispatched": new Set(["execution-result"]),
   "execution-tool-settled": new Set(["execution-result"]),

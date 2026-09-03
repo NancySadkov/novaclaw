@@ -67,6 +67,7 @@ import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { LocalModelRuntime } from "@/local-model/runtime"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { NovaclawExternalDriverSource } from "../../../../messenger/external-driver-source"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
@@ -346,6 +347,11 @@ const app = LayerNode.group([
   // (a second build would clobber the same on-disk snapshot). The capability handle is cheap at boot;
   // its client and consolidation fiber start only on the first memory operation.
   Memory.node,
+  // The runner's cross-drain controller facts — a per-instance store like Memory, provided at the
+  // server-global scope so the location-scoped runner (in-process) and the worker executor's bridge
+  // reach ONE store. A second build would give the worker a store the next drain cannot see, which
+  // is the defect the store exists to end.
+  SessionDriveState.node,
   // One registry derived from this server's declared graph. Reading it is observational: idle
   // capabilities remain idle until a real consumer asks for them.
   CapabilityRegistry.node,

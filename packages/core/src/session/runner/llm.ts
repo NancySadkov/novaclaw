@@ -140,6 +140,7 @@ import { UnfinishedSet } from "./unfinished-set"
 import { UnjoinedChildren } from "./unjoined-children"
 import { SessionTitle } from "../title"
 import { SessionMapRetention } from "./session-map-retention"
+import { SessionDriveState } from "./drive-state"
 import { lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
@@ -332,6 +333,10 @@ export const layer = Layer.effect(
     const models = yield* SessionRunnerModel.Service
     const routeProfiles = yield* ModelRouteProfileStore.Service
     const store = yield* SessionStore.Service
+    // Where the six drive maps below really live — see `drive-state.ts`. In the host it is an
+    // in-memory store with the scheduler's forgiveness window; in a worker it is an RPC client to
+    // that same store, which is what makes "session-scoped" true across drains.
+    const driveState = yield* SessionDriveState.Service
     // THE config entry point (`session/effective-config.ts`). Every reader in this runner resolves
     // through it, which is what lets a folder's tune reach the turn at all.
     const effective = yield* SessionEffectiveConfig.Service
@@ -807,6 +812,14 @@ export const layer = Layer.effect(
      * from the compacted window each time and never fired. Same lifetime as `discoveredImageLimits`
      * above: this process, no schema, and a restart simply re-derives while the prompt is still there.
      */
+    // 🔴 **THE SIX MAPS BELOW ARE A PER-DRAIN CACHE, NOT THE STATE.** Each comment says "session-
+    // scoped, this process", and each was true for the in-process executor and false under the
+    // worker one, where this layer is built inside ONE drain and disposed in `finally`: every steer
+    // started a new worker with six empty maps, so the barren-round stop could never reach its
+    // bound, the coverage restarted at the first file, and the restart ceiling never counted. The
+    // state now lives in `SessionDriveState` (the host's store, reached by RPC from a worker):
+    // `hydrateDriveState` fills these maps when a run starts and `flushDriveState` writes them back
+    // on every mutation. The maps stay so the drives read them the way they always did.
     const setRequests = new Map<
       string,
       {
@@ -893,6 +906,33 @@ export const layer = Layer.effect(
       childrenJoined,
       childRestartRounds,
     ])
+    /** Fill the six caches for one session from the store, at the start of a run. */
+    const hydrateDriveState = (sessionID: string) =>
+      driveState.load(sessionID).pipe(
+        Effect.map((snapshot) => {
+          if (snapshot.request) setRequests.set(sessionID, snapshot.request)
+          else setRequests.delete(sessionID)
+          setOpened.set(sessionID, new Set(snapshot.opened))
+          setAttempted.set(sessionID, new Set(snapshot.attempted))
+          if (snapshot.barren) setBarrenBySession.set(sessionID, { ...snapshot.barren })
+          else setBarrenBySession.delete(sessionID)
+          childrenJoined.set(sessionID, new Set(snapshot.joined))
+          childRestartRounds.set(sessionID, snapshot.restartRounds)
+        }),
+      )
+    /** Write the six caches for one session back to the store. Called after every mutation. */
+    const flushDriveState = (sessionID: string) => {
+      const request = setRequests.get(sessionID)
+      const barren = setBarrenBySession.get(sessionID)
+      return driveState.save(sessionID, {
+        ...(request === undefined ? {} : { request }),
+        opened: [...(setOpened.get(sessionID) ?? [])],
+        attempted: [...(setAttempted.get(sessionID) ?? [])],
+        ...(barren === undefined ? {} : { barren: { ...barren } }),
+        joined: [...(childrenJoined.get(sessionID) ?? [])],
+        restartRounds: childRestartRounds.get(sessionID) ?? 0,
+      })
+    }
     /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
@@ -2061,9 +2101,7 @@ export const layer = Layer.effect(
                   imagePatchPixels: routeProfile.imagePatchPixels,
                 })
                 const anchoredEstimatedPrompt =
-                  anchorable && providerEstimate.confidence !== "whole"
-                    ? providerEstimate.estimatedTokens
-                    : undefined
+                  anchorable && providerEstimate.confidence !== "whole" ? providerEstimate.estimatedTokens : undefined
                 const calibratedEstimate = providerEstimate.estimatedTokens
                 const truncation =
                   reportedPrompt === undefined
@@ -2405,7 +2443,11 @@ export const layer = Layer.effect(
           // `healthyAlternative` never routes onto a retired one, so an instance whose models are
           // all gone walks the list once and then stops — the last pass finds no replacement, falls
           // through, and reports the real fault.
-          if (failure !== undefined && !publisher.hasAssistantStarted() && isModelMissing(String(failure.message ?? ""))) {
+          if (
+            failure !== undefined &&
+            !publisher.hasAssistantStarted() &&
+            isModelMissing(String(failure.message ?? ""))
+          ) {
             const dead = modelRef ?? { providerID: String(model.provider), id: String(model.id) }
             ModelHealth.retired(dead)
             const replacement = yield* models
@@ -3148,6 +3190,8 @@ export const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      // The drives' cross-drain facts, from the store that outlives this drain (`drive-state.ts`).
+      yield* hydrateDriveState(input.sessionID)
       // Arm the 30s title fallback for LONG turns. A short turn finishes first and titles at drain end as
       // before; a compile-test-retry turn gets a name while it is still working, instead of sitting in the
       // chat list as a placeholder for minutes.
@@ -3462,6 +3506,7 @@ export const layer = Layer.effect(
                   : { limit: UnfinishedSet.requestedLimit(firstText) }),
                 named: UnfinishedSet.requestedNames(firstText),
               })
+            yield* flushDriveState(input.sessionID)
           }
           // 1E doom-loop break: only while the model is still acting (made a tool call).
           // If its last few tool calls are byte-identical, inject a one-shot redirect as a
@@ -3660,6 +3705,7 @@ export const layer = Layer.effect(
                   : { limit: UnfinishedSet.requestedLimit(realUserText) }),
                 named: UnfinishedSet.requestedNames(realUserText),
               })
+            yield* flushDriveState(input.sessionID)
             const setRequest = setRequests.get(input.sessionID)
             const askedForSet = setRequest?.asked ?? false
             // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
@@ -3738,6 +3784,7 @@ export const layer = Layer.effect(
               const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
               for (const read of readsThisTurn) attempted.add(read.path)
               setAttempted.set(input.sessionID, attempted)
+              yield* flushDriveState(input.sessionID)
               const setDir = UnfinishedSet.resolveSetDirectory(location.directory, [...attempted])
               const listing = yield* Effect.promise(() =>
                 ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
@@ -3801,6 +3848,7 @@ export const layer = Layer.effect(
               barrenState.barren = setCoverage.opened.length > barrenState.lastOpened ? 0 : barrenState.barren + 1
               barrenState.lastOpened = Math.max(barrenState.lastOpened, setCoverage.opened.length)
               setBarrenBySession.set(input.sessionID, barrenState)
+              yield* flushDriveState(input.sessionID)
               if (
                 UnfinishedSet.shouldContinue({
                   asked: true,
@@ -3872,6 +3920,7 @@ export const layer = Layer.effect(
                 }
               }
               childrenJoined.set(input.sessionID, joined)
+              yield* flushDriveState(input.sessionID)
               const enumerated: UnjoinedChildren.Child[] = []
               for (const kid of kids) {
                 const row = yield* store.get(kid).pipe(Effect.orElseSucceed(() => undefined))
@@ -3904,6 +3953,7 @@ export const layer = Layer.effect(
               })
               if (UnjoinedChildren.shouldRestart({ unaccounted: orphaned, rounds: restartRounds })) {
                 childRestartRounds.set(input.sessionID, restartRounds + 1)
+                yield* flushDriveState(input.sessionID)
                 yield* Log.event("session.finish.children.restart", {
                   "session.id": input.sessionID,
                   "session.children.unaccounted": orphaned.length,
@@ -4083,7 +4133,9 @@ export const layer = Layer.effect(
 
     const run = Effect.fn("SessionRunner.run")(
       (input: { readonly sessionID: SessionSchema.ID; readonly force: boolean }) =>
-        sessionMapRetention.withSession(input.sessionID, runBody(input)),
+        // The store's pin outranks the local caches' sweep: under the worker executor the host
+        // pins the whole drain, and this inner call is the in-process executor's own pin.
+        driveState.withSession(input.sessionID, sessionMapRetention.withSession(input.sessionID, runBody(input))),
     )
 
     return Service.of({
@@ -4120,6 +4172,7 @@ export const node = makeLocationNode({
     Database.node,
     AppProcess.node,
     Memory.node,
+    SessionDriveState.node,
     // Strict's host-execution context (ruling 6): the messenger trust of the chain + the shared
     // OFF-C policy. Both are global nodes, so this adds no per-location state.
     MessengerStore.node,
