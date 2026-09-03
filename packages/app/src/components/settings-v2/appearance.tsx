@@ -286,7 +286,11 @@ export const SettingsAppearanceV2: Component = () => {
           />
         </SettingsRowV2>
 
+        {/* Ruling 13: the 37-item inherited theme list is not a lay control — ThemeSwatches above is the
+            one palette control a lay user sees, and the engine stays a store. The picker leaves the lay
+            tab by gating, not deletion (2026-09-03). */}
         <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.theme.title")}
           description={
             <>
