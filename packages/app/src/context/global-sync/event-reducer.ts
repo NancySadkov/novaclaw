@@ -1,7 +1,7 @@
 import { Binary } from "@novaclaw/core/util/binary"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type {
-  QuestionRequest,
+  QuestionV2Request,
   SessionV2Info as Session,
   SessionStatus,
   SessionChangeDiff,
@@ -17,10 +17,6 @@ const SESSION_CONTENT_EVENTS = new Set([
   "session.diff",
   "todo.updated",
   "session.status",
-  "question.asked",
-  "question.replied",
-  "question.rejected",
-  // The family core's QuestionV2 publishes; same payloads as the three above (2026-09-03).
   "question.v2.asked",
   "question.v2.replied",
   "question.v2.rejected",
@@ -205,9 +201,8 @@ export function applyDirectoryEvent(input: {
       if (input.vcsCache) input.vcsCache.setStore("value", next)
       break
     }
-    case "question.asked":
     case "question.v2.asked": {
-      const question = event.properties as QuestionRequest
+      const question = event.properties as QuestionV2Request
       const questions = input.store.question[question.sessionID]
       if (!questions) {
         input.setStore("question", question.sessionID, [question])
@@ -227,8 +222,6 @@ export function applyDirectoryEvent(input: {
       )
       break
     }
-    case "question.replied":
-    case "question.rejected":
     case "question.v2.replied":
     case "question.v2.rejected": {
       const props = event.properties as { sessionID: string; requestID: string }

@@ -11,7 +11,6 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { TelemetryPaths } from "@novaclaw/protocol/groups/telemetry"
-import { QuestionRequest } from "@novaclaw/schema/question-request"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
@@ -377,88 +376,6 @@ describe("instance HttpApi", () => {
       expect(log.headers[FenceHeader]).toBeUndefined()
     }),
   )
-
-  // The V1 `/permission/:requestID/reply` legs of this test and the next one went with the V1
-  // permission ROUTES (v0.2.0-prep Wave 4 §5) — those routes served the V1 engine's asks only, and
-  // the V1 engine is gone. The equivalent V2 guarantees are asserted on the native route in
-  // `packages/server`'s handler tests + `httpapi-public-openapi.test.ts`; what is left here is the
-  // question surface, which is still legacy.
-  it.live("rejects malformed question request ids", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const request = (path: string, init?: RequestInit) =>
-        Effect.promise(() =>
-          HttpApiApp.webHandler().handler(
-            new Request(`http://localhost${path}`, {
-              ...init,
-              headers: { "x-novaclaw-directory": dir, "content-type": "application/json", ...init?.headers },
-            }),
-            handlerContext,
-          ),
-        )
-      const [questionReply, questionReject] = yield* Effect.all(
-        [
-          request("/question/invalid-question-id/reply", {
-            method: "POST",
-            body: JSON.stringify({ agent: "build", answers: [["Yes"]] }),
-          }),
-          request("/question/invalid-question-id/reject", { method: "POST" }),
-        ],
-        { concurrency: "unbounded" },
-      )
-
-      expect(questionReply.status).toBe(400)
-      expect(questionReject.status).toBe(400)
-    }),
-  )
-
-  it.live("returns typed not found bodies for missing question requests", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const request = (path: string, init?: RequestInit) =>
-        Effect.promise(() =>
-          HttpApiApp.webHandler().handler(
-            new Request(`http://localhost${path}`, {
-              ...init,
-              headers: { "x-novaclaw-directory": dir, "content-type": "application/json", ...init?.headers },
-            }),
-            handlerContext,
-          ),
-        )
-      const questionReplyID = QuestionRequest.ID.ascending()
-      const questionRejectID = QuestionRequest.ID.ascending()
-      const [questionReply, questionReject] = yield* Effect.all(
-        [
-          request(`/question/${questionReplyID}/reply`, {
-            method: "POST",
-            body: JSON.stringify({ agent: "build", answers: [["Yes"]] }),
-          }),
-          request(`/question/${questionRejectID}/reject`, { method: "POST" }),
-        ],
-        { concurrency: "unbounded" },
-      )
-
-      expect(questionReply.status).toBe(404)
-      expect(yield* Effect.promise(() => questionReply.json())).toEqual({
-        _tag: "QuestionNotFoundError",
-        requestID: questionReplyID,
-        message: `Question request not found: ${questionReplyID}`,
-      })
-      expect(questionReject.status).toBe(404)
-      expect(yield* Effect.promise(() => questionReject.json())).toEqual({
-        _tag: "QuestionNotFoundError",
-        requestID: questionRejectID,
-        message: `Question request not found: ${questionRejectID}`,
-      })
-    }),
-  )
-
-  // `returns typed not found bodies for missing projects` lived here until 2026-08-06. It PATCHed
-  // `/project/{id}` — a route the T2/T3 project-entity kill removed — so it got the router's generic
-  // 404 with an EMPTY body and died in `.json()`. ⚠️ Its `expect(status).toBe(404)` passed the whole
-  // time, for the wrong reason: a missing route and a typed not-found are the same status code.
-  // `ProjectNotFoundError` went with it — the test was the last reference to a class no endpoint
-  // could produce.
 
   it.live("serves path and VCS read endpoints", () =>
     Effect.gen(function* () {

@@ -5,7 +5,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { showToast } from "@/utils/toast"
-import type { QuestionAnswer, QuestionRequest } from "@novaclaw/sdk/v2"
+import type { QuestionV2Answer, QuestionV2Request } from "@novaclaw/sdk/v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -13,7 +13,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useServerSDK } from "@/context/server-sdk"
 import { ScopedKey } from "@/utils/server-scope"
 
-const cache = new Map<string, { tab: number; answers: QuestionAnswer[]; custom: string[]; customOn: boolean[] }>()
+const cache = new Map<string, { tab: number; answers: QuestionV2Answer[]; custom: string[]; customOn: boolean[] }>()
 
 function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
   return (
@@ -60,7 +60,7 @@ function Option(props: {
   )
 }
 
-export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
+export const SessionQuestionDock: Component<{ request: QuestionV2Request; onSubmit: () => void }> = (props) => {
   const sdk = useSDK()
   const serverSDK = useServerSDK()
   const language = useLanguage()
@@ -72,7 +72,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const cached = cache.get(cacheKey)
   const [store, setStore] = createStore({
     tab: cached?.tab ?? 0,
-    answers: cached?.answers ?? ([] as QuestionAnswer[]),
+    answers: cached?.answers ?? ([] as QuestionV2Answer[]),
     custom: cached?.custom ?? ([] as string[]),
     customOn: cached?.customOn ?? ([] as boolean[]),
     editing: false,
@@ -209,7 +209,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }
 
   const replyMutation = useMutation(() => ({
-    mutationFn: (answers: QuestionAnswer[]) => sdk().client.question.reply({ requestID: props.request.id, answers }),
+    // The contract route (`/api/session/:id/question/:rid/reply`), which answers core's one pending map;
+    // the legacy `/question*` paths and the `question.asked` event family left with it (2026-09-03).
+    mutationFn: (answers: QuestionV2Answer[]) =>
+      sdk().client.v2.session.question.reply({
+        sessionID: props.request.sessionID,
+        requestID: props.request.id,
+        questionV2Reply: { answers },
+      }),
     onMutate: () => {
       props.onSubmit()
     },
@@ -221,7 +228,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }))
 
   const rejectMutation = useMutation(() => ({
-    mutationFn: () => sdk().client.question.reject({ requestID: props.request.id }),
+    mutationFn: () =>
+      sdk().client.v2.session.question.reject({ sessionID: props.request.sessionID, requestID: props.request.id }),
     onMutate: () => {
       props.onSubmit()
     },
@@ -234,7 +242,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const sending = createMemo(() => replyMutation.isPending || rejectMutation.isPending)
 
-  const reply = async (answers: QuestionAnswer[]) => {
+  const reply = async (answers: QuestionV2Answer[]) => {
     if (sending()) return
     await replyMutation.mutateAsync(answers)
   }

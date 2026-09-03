@@ -40,7 +40,9 @@ test("shows a pending question dock", async ({ page }) => {
 
   await question.getByRole("radio", { name: /Minimal/ }).click()
   const reply = page.waitForRequest(
-    (request) => request.method() === "POST" && new URL(request.url()).pathname === "/question/question-request/reply",
+    (request) =>
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === `/api/session/${sessionID}/question/question-request/reply`,
   )
   await question.getByRole("button", { name: "Submit" }).click()
   expect((await reply).postDataJSON()).toEqual({ answers: [["Minimal"]] })

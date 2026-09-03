@@ -6,7 +6,6 @@ import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
 import { SkillV2 } from "@novaclaw/core/skill"
 import { InstanceDisposed } from "@/server/event"
-import { QuestionRequest } from "@novaclaw/schema/question-request"
 import { AdhocApi } from "./groups/adhoc"
 import { CapabilityApi } from "./groups/capability"
 import { CommunityApi, CommunityPeerApi } from "./groups/community"
@@ -21,7 +20,6 @@ import { McpApi } from "./groups/mcp"
 import { MemoryApi } from "./groups/memory"
 import { PolicyApi } from "./groups/policy"
 import { ProviderApi } from "./groups/provider"
-import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
@@ -82,7 +80,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(McpApi)
   .addHttpApi(MemoryApi)
   .addHttpApi(PolicyApi)
-  .addHttpApi(QuestionApi)
   .addHttpApi(RegistryApi)
   .addHttpApi(ProviderApi)
   .addHttpApi(ShellApi)
@@ -98,8 +95,6 @@ export const NovaClawHttpApi: HttpApi.HttpApi<"novaclaw", HttpApiGroup.Any> = Ht
   .addHttpApi(ServerApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
-    QuestionRequest.Replied,
-    QuestionRequest.Rejected,
     Credential.Value,
     Integration.Inputs,
     Integration.Method,

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { QuestionRequest, Todo } from "@novaclaw/sdk/v2"
+import type { QuestionV2Request, Todo } from "@novaclaw/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
@@ -14,7 +14,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   const sync = useSync()
   const serverSync = useServerSync()
 
-  const questionRequest = createMemo((): QuestionRequest | undefined => {
+  const questionRequest = createMemo((): QuestionV2Request | undefined => {
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
   })
 

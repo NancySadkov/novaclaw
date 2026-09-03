@@ -4,7 +4,7 @@ import type {
   Config,
   McpStatus,
   Path,
-  QuestionRequest,
+  QuestionV2Request,
   SessionV2Info as Session,
   SessionStatus,
   SessionChangeDiff,
@@ -49,7 +49,7 @@ export type State = {
     [sessionID: string]: Todo[]
   }
   question: {
-    [sessionID: string]: QuestionRequest[]
+    [sessionID: string]: QuestionV2Request[]
   }
   mcp_ready: boolean
   mcp: {

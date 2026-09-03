@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 import { sessionQuestionRequest } from "./session-request-tree"
 
@@ -14,7 +14,7 @@ const question = (id: string, sessionID: string) =>
     id,
     sessionID,
     questions: [],
-  }) as QuestionRequest
+  }) as QuestionV2Request
 
 describe("sessionQuestionRequest", () => {
   test("prefers the current session question", () => {

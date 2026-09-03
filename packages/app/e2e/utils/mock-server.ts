@@ -48,8 +48,11 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
     const path = url.pathname
     if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)
     if (path === "/global/health") return json(route, { healthy: true })
-    if (path === "/question")
-      return json(route, typeof config.questions === "function" ? config.questions() : (config.questions ?? []))
+    if (path === "/api/question/request")
+      return json(route, {
+        location: { directory: config.directory, root: config.directory, origin: "local" },
+        data: typeof config.questions === "function" ? config.questions() : (config.questions ?? []),
+      })
     if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])

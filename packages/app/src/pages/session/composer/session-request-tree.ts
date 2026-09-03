@@ -1,4 +1,4 @@
-import type { QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 
 function sessionTreeRequest<T>(
   session: Session[],
@@ -35,9 +35,9 @@ function sessionTreeRequest<T>(
 
 export function sessionQuestionRequest(
   session: Session[],
-  request: Record<string, QuestionRequest[] | undefined>,
+  request: Record<string, QuestionV2Request[] | undefined>,
   sessionID?: string,
-  include?: (item: QuestionRequest) => boolean,
+  include?: (item: QuestionV2Request) => boolean,
 ) {
   return sessionTreeRequest(session, request, sessionID, include)
 }

@@ -1,7 +1,7 @@
 import { retry } from "@novaclaw/core/util/retry"
 import type {
   NovaclawClient,
-  QuestionRequest,
+  QuestionV2Request,
   SessionV2Info as Session,
   SessionStatus,
   SessionPresenceSnapshot,
@@ -69,7 +69,7 @@ export function createServerSession(
     session_status: {} as Record<string, SessionStatus>,
     session_diff: {} as Record<string, SessionChangeDiff[]>,
     todo: {} as Record<string, Todo[]>,
-    question: {} as Record<string, QuestionRequest[]>,
+    question: {} as Record<string, QuestionV2Request[]>,
     // The tags component (notes/reports/entities-review-2026-07-06.md T0): sessionID → tags, fed by `session.tags.updated`
     // events + the /api/tag bootstrap. Organization over chats — replaces project grouping.
     tag: {} as Record<string, string[]>,
@@ -370,9 +370,8 @@ export function createServerSession(
         if (props.status.type === "idle" || props.status.type === "exited") clearLive(props.sessionID)
         return
       }
-      case "question.asked":
       case "question.v2.asked": {
-        const question = event.properties as QuestionRequest
+        const question = event.properties as QuestionV2Request
         const questions = data.question[question.sessionID]
         if (!questions) {
           setData("question", question.sessionID, [question])
@@ -388,8 +387,6 @@ export function createServerSession(
           )
         return
       }
-      case "question.replied":
-      case "question.rejected":
       case "question.v2.replied":
       case "question.v2.rejected": {
         const props = event.properties as { sessionID: string; requestID: string }

@@ -2691,78 +2691,6 @@ class ApiPolicy extends NovaClawApiClient {
   }
 }
 
-class ApiQuestion extends NovaClawApiClient {
-  /**
-   * List pending questions
-   *
-   * Get all pending question requests across all sessions.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.QuestionListResponses, T.QuestionListErrors, ThrowOnError>({
-      url: "/question",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Reply to question request
-   *
-   * Provide answers to a question request from the AI assistant.
-   */
-  public reply<ThrowOnError extends boolean = false>(
-    parameters: {
-      requestID: string
-      directory?: string
-      workspace?: string
-      answers?: Array<T.QuestionAnswer>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { requestID: parameters?.["requestID"] }
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = { answers: parameters?.["answers"] }
-    return (options?.client ?? this.client).post<T.QuestionReplyResponses, T.QuestionReplyErrors, ThrowOnError>({
-      url: "/question/{requestID}/reply",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Reject question request
-   *
-   * Reject a question request from the AI assistant.
-   */
-  public reject<ThrowOnError extends boolean = false>(
-    parameters: {
-      requestID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { requestID: parameters?.["requestID"] }
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).post<T.QuestionRejectResponses, T.QuestionRejectErrors, ThrowOnError>({
-      url: "/question/{requestID}/reject",
-      ...options,
-      path,
-      query,
-    })
-  }
-}
-
 class ApiRegistry extends NovaClawApiClient {
   /**
    * List database tables
@@ -6984,10 +6912,6 @@ export class NovaclawClient extends NovaClawApiClient {
   private _policy?: ApiPolicy
   get policy(): ApiPolicy {
     return (this._policy ??= new ApiPolicy({ client: this.client }))
-  }
-  private _question?: ApiQuestion
-  get question(): ApiQuestion {
-    return (this._question ??= new ApiQuestion({ client: this.client }))
   }
   private _registry?: ApiRegistry
   get registry(): ApiRegistry {

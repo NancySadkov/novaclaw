@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { QuestionRequest } from "@novaclaw/sdk/v2/client"
+import type { QuestionV2Request } from "@novaclaw/sdk/v2/client"
 import { attentionSessionIds } from "./attention-ids"
 
-const question = (sessionID: string) => ({ id: `q_${sessionID}`, sessionID }) as QuestionRequest
+const question = (sessionID: string) => ({ id: `q_${sessionID}`, sessionID }) as QuestionV2Request
 
 describe("attentionSessionIds", () => {
   test("unions question and unseen sources deduped", () => {

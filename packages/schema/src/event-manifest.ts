@@ -16,7 +16,6 @@ import { PermissionRuleset } from "./permission-ruleset"
 import { Plugin } from "./plugin"
 import { Pty } from "./pty"
 import { Question } from "./question"
-import { QuestionRequest } from "./question-request"
 import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
@@ -80,7 +79,6 @@ export const Definitions = Event.inventory(
   ...PermissionRuleset.Event.Definitions,
   ...McpEvent.Definitions,
   ...SessionStatusEvent.Definitions,
-  ...QuestionRequest.Event.Definitions,
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,

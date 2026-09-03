@@ -124,7 +124,6 @@ import { memoryHandlers } from "./handlers/memory"
 import { mcpHandlers } from "./handlers/mcp"
 import { policyHandlers } from "./handlers/policy"
 import { providerHandlers } from "./handlers/provider"
-import { questionHandlers } from "./handlers/question"
 import { shellHandlers } from "./handlers/shell"
 import { syncHandlers } from "./handlers/sync"
 import { handlers } from "@novaclaw/server/handlers"
@@ -198,7 +197,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     memoryHandlers,
     mcpHandlers,
     policyHandlers,
-    questionHandlers,
     providerHandlers,
     shellHandlers,
     syncHandlers,

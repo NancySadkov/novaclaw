@@ -1,9 +1,9 @@
 // Pure attention aggregation (uix-improvement slice 2) — kept free of context/router imports so it
 // is unit-testable outside the browser env. `chats-attention.ts` wraps it reactively.
-import type { QuestionRequest } from "@novaclaw/sdk/v2/client"
+import type { QuestionV2Request } from "@novaclaw/sdk/v2/client"
 
 export type AttentionInput = {
-  question: Record<string, readonly QuestionRequest[] | undefined>
+  question: Record<string, readonly QuestionV2Request[] | undefined>
   unseen: readonly string[]
 }
 

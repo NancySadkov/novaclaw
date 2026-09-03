@@ -59,7 +59,8 @@ const queryParamPatterns: Array<{ method: Method; path: string; name: string; pa
 // permission reply route left to carry the guard, and both `^per` rows resolved to `undefined`. The
 // surviving sibling on the same shape is the session-scoped QUESTION reply
 // (`protocol/src/groups/question.ts:52`), whose `requestID` is `Question.ID` (`^que`,
-// `schema/src/question-request.ts:11`) and whose `sessionID` is still `^ses`.
+// `schema/src/question.ts`) and whose `sessionID` is still `^ses`. (The legacy `/question/:requestID/reply`
+// row left with that surface on 2026-09-03.)
 // 🔴 What is pinned here is the INVARIANT — a session-scoped reply route brands both path params —
 // not the permission route specifically. Move it again when this route moves; deleting the rows
 // retires the invariant silently, which is what this comment has now twice existed to prevent.
@@ -76,7 +77,6 @@ const pathParamPatterns = [
     name: "sessionID",
     pattern: "^ses",
   },
-  { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
   { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },
 ] satisfies Array<{ method: Method; path: string; name: string; pattern: string }>
 

@@ -1002,7 +1002,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
         <TodoTool part={props.part} />
       </Match>
       <Match when={props.part.name === "question"}>
-        <QuestionTool part={props.part} />
+        <QuestionV2Tool part={props.part} />
       </Match>
       <Match when={props.part.state.status === "error" && props.part.state}>
         {(state) => (
@@ -1071,7 +1071,7 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
  * transcript only shows the resolved outcome: the answered Q&A, or a subtle
  * "dismissed" notice on rejection — pending/running asks are hidden (V1 parity).
  */
-function QuestionTool(props: { part: SessionMessageAssistantTool }) {
+function QuestionV2Tool(props: { part: SessionMessageAssistantTool }) {
   const i18n = useI18n()
   const state = () => props.part.state
   const questions = () => {

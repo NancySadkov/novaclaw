@@ -151,9 +151,6 @@ export const LEGACY_PATHS: readonly string[] = [
   "/provider/presets",
   "/provider/{providerID}/probe",
   // /question — 3
-  "/question",
-  "/question/{requestID}/reject",
-  "/question/{requestID}/reply",
   // /registry — 5
   "/registry/row/delete",
   "/registry/row/insert",
@@ -191,7 +188,7 @@ export const LEGACY_PATHS: readonly string[] = [
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 77
+const LEGACY_OPERATION_COUNT = 74
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -314,11 +311,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(69)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(66)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(69)
+    ).toBe(66)
     expect(
       legacyOperations(DOCUMENT).length,
       [

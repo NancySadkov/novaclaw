@@ -81,8 +81,10 @@ describe("bootstrapDirectory", () => {
             return { data: [] }
           },
         },
-        v2: { session: { active: async () => ({ data: { data: {} } }) } },
-        question: { list: async () => ({ data: [] }) },
+        v2: {
+          session: { active: async () => ({ data: { data: {} } }) },
+          question: { request: { list: async () => ({ data: { data: [] } }) } },
+        },
         mcp: {
           status: async () => {
             mcpReads.push("status")
@@ -248,8 +250,10 @@ describe("bootstrapDirectory path seeding", () => {
           session: { status: async () => ({ data: {} }) },
           vcs: { get: async () => ({ data: undefined }) },
           command: { list: async () => ({ data: [] }) },
-          v2: { session: { active: async () => ({ data: { data: {} } }) } },
-          question: { list: async () => ({ data: [] }) },
+          v2: {
+            session: { active: async () => ({ data: { data: {} } }) },
+            question: { request: { list: async () => ({ data: { data: [] } }) } },
+          },
           mcp: { status: async () => ({ data: {} }) },
           provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
         } as unknown as NovaclawClient,
@@ -326,8 +330,10 @@ describe("bootstrapDirectory path seeding", () => {
         session: { status: async () => ({ data: {} }) },
         vcs: { get: async () => ({ data: undefined }) },
         command: { list: async () => ({ data: [] }) },
-        v2: { session: { active: async () => ({ data: { data: {} } }) } },
-        question: { list: async () => ({ data: [] }) },
+        v2: {
+          session: { active: async () => ({ data: { data: {} } }) },
+          question: { request: { list: async () => ({ data: { data: [] } }) } },
+        },
         mcp: { status: async () => ({ data: {} }) },
         provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
       } as unknown as NovaclawClient,

@@ -279,7 +279,10 @@ const GENERATE_TIMEOUT_MS = 60_000
 // 2026-09-03: every wire number became `Schema.Finite` (RF-24-7), so the NaN/Infinity arms left the
 // spec and the one duplicate shape they had minted — `MessengerAccountStatus1` — is no longer emitted.
 // That single removal is the whole difference from the previous fingerprint.
-const SCHEMA_NAME_FINGERPRINT = "10d74a9188cd4dc5ab40e15b4936ddcb09ed38b87de84585cd71a43dca19a3a2"
+// 2026-09-03, later: the legacy question surface left (three `/question*` paths, the
+// `question.asked` family and its schema module), taking the ten `Question*`/`EventQuestion*` names
+// with it. Nothing was added.
+const SCHEMA_NAME_FINGERPRINT = "9e9d0541a20c88eb983555a42b537bf9c0d4b2156de96f7706d56f000f530289"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

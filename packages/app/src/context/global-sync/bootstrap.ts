@@ -1,10 +1,4 @@
-import type {
-  Config,
-  NovaclawClient,
-  Path,
-  QuestionRequest,
-  SessionV2Info as Session,
-} from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { retry } from "@novaclaw/core/util/retry"
@@ -334,9 +328,12 @@ export async function bootstrapDirectory(input: {
       input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
       () =>
         retry(() =>
-          input.sdk.question.list().then((x) => {
-            const ids = (x.data ?? []).map((question) => question?.sessionID).filter((id): id is string => !!id)
-            const grouped = groupBySession((x.data ?? []).filter((q): q is QuestionRequest => !!q?.id && !!q.sessionID))
+          // `/api/question/request` — every pending ask across sessions, wrapped `{ location, data }`.
+          input.sdk.v2.question.request.list().then((x) => {
+            const ids = (x.data?.data ?? []).map((question) => question?.sessionID).filter((id): id is string => !!id)
+            const grouped = groupBySession(
+              (x.data?.data ?? []).filter((q): q is QuestionV2Request => !!q?.id && !!q.sessionID),
+            )
             const warm = input.session
               ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)
               : warmSessions({ ids, store: input.store, setStore: input.setStore, sdk: input.sdk })
