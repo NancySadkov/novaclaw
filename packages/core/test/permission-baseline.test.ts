@@ -92,8 +92,10 @@ describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
     // A MEMBERSHIP ledger, not a shrink-only one: this list may legitimately need to grow (a future
     // ambient-safe action) or shrink (one of these turns out to egress), and both directions must
     // be a deliberate edit rather than something a refactor can do quietly. `webfetch` and `js` are
-    // named product-default exceptions (owner, 2026-08-04); their independent hard boundaries are
-    // documented beside the constant rather than disguised as ambient safety.
+    // named product-default exceptions (owner, 2026-08-04); `websearch` joined them 2026-09-03 as
+    // `webfetch`'s weaker sibling, after a live build refused an ordinary factual question. Their
+    // independent hard boundaries are documented beside the constant rather than disguised as
+    // ambient safety.
     expect(PermissionV2.AMBIENT_SAFE_BASELINE.map((rule) => rule.action)).toEqual([
       "read",
       "explore",
@@ -101,6 +103,7 @@ describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
       "resource_status",
       "webfetch",
       "js",
+      "websearch",
     ])
     // Every rule is an unconditional allow on `*` — the floor is a floor, not a pattern game.
     expect(PermissionV2.AMBIENT_SAFE_BASELINE.every((rule) => rule.resource === "*" && rule.effect === "allow")).toBe(
@@ -268,11 +271,15 @@ describe("the built-in agents the plugin actually builds", () => {
     }),
   )
 
-  it.effect("web fetch and inline JavaScript are available by default", () =>
+  it.effect("web fetch, web search and inline JavaScript are available by default", () =>
     Effect.gen(function* () {
       const build = (yield* builtinAgents).get("build")!
       expect(effectFor(build, "webfetch", "https://example.com/")).toBe("allow")
       expect(effectFor(build, "js", "1 + 1")).toBe("allow")
+      // 🔴 The reported defect: this was "deny" on a default install, so "what is the current price
+      // of gold" came back as a permission refusal. `webfetch` above is the strictly more powerful
+      // egress and was already allowed.
+      expect(effectFor(build, "websearch", "price of gold")).toBe("allow")
     }),
   )
 

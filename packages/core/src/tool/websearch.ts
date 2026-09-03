@@ -112,10 +112,14 @@ export const description =
 // rather than as a permission error, which is the honest distinction between "you may not" and
 // "there is nowhere to go".
 //
-// ⚠️ NOT added to `AMBIENT_SAFE_BASELINE` (permission.ts), deliberately: an egress action fails the
-// second of the three membership tests outright. So on a default install this ASKS once and the
-// answer is saveable — exactly what `webfetch`, its sibling, already does. Under an UNATTENDED root
-// it deny-fasts with `unattended-unanswerable` instead of parking a card nobody can answer.
+// ⚠️ IN `AMBIENT_SAFE_BASELINE` since 2026-09-03, and the reasoning lives with that constant. This
+// comment said the opposite until then, in two sentences that were both untrue when written: that
+// the tool "ASKS once and the answer is saveable" (asking was retired as an outcome on 2026-08-20 —
+// an `ask` verdict is an immediate refusal), and that this is "exactly what `webfetch`, its sibling,
+// already does" (`webfetch` was ambient from 2026-08-04). Reported from a live build as *websearch:
+// permission denied* on an ordinary factual question. The assert STAYS: it is the per-session axis a
+// user or an agent rule can still narrow, and the airgap refusal below is still the answer an
+// ALLOWED search receives in offline mode.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service

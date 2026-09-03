@@ -625,6 +625,27 @@ export function pluginDoorTarget(
 //  · `js`        — deliberate product default (owner, 2026-08-04): inline computation is part of the
 //                  normal reasoning surface. Analyze mode still hard-denies execution, while Build and
 //                  more permissive modes can compute without prompting on every fresh install.
+//  · `websearch` — 2026-09-03, and it is `webfetch`'s ledger entry applied to `webfetch`'s WEAKER
+//                  sibling. Reported from a live build: "what is the current price of gold" came back
+//                  as *permission denied*. Three things make that the wrong answer rather than the
+//                  documented cost of a gate:
+//                  (1) COHERENCE. `webfetch` fetches an arbitrary URL and is ambient by owner ruling;
+//                  `websearch` sends a query to a search engine and returns links. Allowing the
+//                  stronger egress while refusing the weaker one is not a posture, it is an accident.
+//                  (2) THE GATE PROMISED SOMETHING THAT DOES NOT EXIST. `tool/websearch.ts` shipped
+//                  saying "on a default install this ASKS once and the answer is saveable — exactly
+//                  what `webfetch`, its sibling, already does". Both halves were untrue when written:
+//                  asking had been retired four days earlier, and `webfetch` was already in this list.
+//                  A gate whose stated behaviour is unreachable is ruling 2 on the surface a
+//                  privacy-minded user reads first.
+//                  (3) PRINCIPLE 12(a), work by default. An agent that cannot answer an ordinary
+//                  factual question out of the box is not a posture the user chose; it is the north
+//                  star inverted — the curious non-expert meets a refusal where they expected an
+//                  answer, and the remedy is a permission rule they had no way to know to write.
+//                  The independent hard boundaries are UNTOUCHED and they are the real egress
+//                  control: `Offline`/airgap refuses first and is not consentable (`websearch/service.ts`
+//                  rule 1, "AIRGAP WINS"), the traffic governor still paces and caps, and the engine
+//                  set is still the user's own SearXNG or the free metasearch — no paid API, no key.
 //
 // ⚠️ WHAT IS DELIBERATELY ABSENT, so the shortness is not read as an oversight. The mutation/exec
 // cluster (`edit`/`write`/`create`/`trash`/`bash`) is NOT here and does not need to be: the default
@@ -663,6 +684,7 @@ export const AMBIENT_SAFE_BASELINE: Permission.Ruleset = [
   { action: "resource_status", resource: "*", effect: "allow" },
   { action: "webfetch", resource: "*", effect: "allow" },
   { action: "js", resource: "*", effect: "allow" },
+  { action: "websearch", resource: "*", effect: "allow" },
 ]
 
 /**
