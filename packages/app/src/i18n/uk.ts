@@ -514,7 +514,6 @@ export const dict = {
   "settings.general.row.shell.autoDefault": "Авто (за замовчуванням)",
   "settings.general.row.shell.terminalOnly": "тільки термінал",
   "settings.general.row.colorScheme.title": "Кольорова схема",
-  "settings.general.row.colorScheme.description": "Виберіть, чи NovaClaw використовує системну, світлу або темну тему",
   "settings.general.row.theme.title": "Тема",
   "settings.general.row.theme.description": "Налаштуйте тему NovaClaw.",
   "settings.general.row.font.title": "Шрифт коду",

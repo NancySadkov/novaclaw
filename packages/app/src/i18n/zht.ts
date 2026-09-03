@@ -409,7 +409,6 @@ export const dict = {
   "settings.general.row.language.title": "語言",
   "settings.general.row.language.description": "變更 NovaClaw 的顯示語言",
   "settings.general.row.colorScheme.title": "配色方案",
-  "settings.general.row.colorScheme.description": "選擇 NovaClaw 要跟隨系統、淺色或深色主題",
   "settings.general.row.theme.title": "主題",
   "settings.general.row.theme.description": "自訂 NovaClaw 的主題。",
   "settings.general.row.font.title": "程式碼字型",

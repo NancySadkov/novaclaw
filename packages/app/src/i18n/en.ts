@@ -1452,7 +1452,8 @@ export const dict = {
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.colorScheme.title": "Mode",
-  "settings.general.row.colorScheme.description": "Use light mode, dark mode, or match your system setting.",
+  "settings.general.row.colorScheme.description":
+    "Dark for now. A light preset is on the way; this unlocks when it lands.",
   "settings.general.row.theme.title": "Theme",
   "settings.general.row.theme.description":
     "Choose a full visual style, including colors and fonts. Or browse more themes.",

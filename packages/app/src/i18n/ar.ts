@@ -363,7 +363,6 @@ export const dict = {
   "settings.general.row.language.title": "اللغة",
   "settings.general.row.language.description": "تغيير لغة العرض لـ NovaClaw",
   "settings.general.row.colorScheme.title": "مخطط الألوان",
-  "settings.general.row.colorScheme.description": "اختر ما إذا كان NovaClaw يتبع سمة النظام أو الفاتح أو الداكن",
   "settings.general.row.theme.title": "السمة",
   "settings.general.row.theme.description": "تخصيص سمة NovaClaw.",
   "settings.general.row.font.title": "خط الكود",

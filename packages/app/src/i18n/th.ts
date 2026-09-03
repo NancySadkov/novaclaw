@@ -410,7 +410,6 @@ export const dict = {
   "settings.general.row.language.title": "ภาษา",
   "settings.general.row.language.description": "เปลี่ยนภาษาที่แสดงสำหรับ NovaClaw",
   "settings.general.row.colorScheme.title": "โทนสี",
-  "settings.general.row.colorScheme.description": "เลือกว่าจะให้ NovaClaw ใช้ธีมตามระบบ สว่าง หรือมืด",
   "settings.general.row.theme.title": "ธีม",
   "settings.general.row.theme.description": "ปรับแต่งวิธีการที่ NovaClaw มีธีม",
   "settings.general.row.font.title": "ฟอนต์โค้ด",

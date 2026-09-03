@@ -415,7 +415,6 @@ export const dict = {
   "settings.general.row.language.title": "Språk",
   "settings.general.row.language.description": "Endre visningsspråket for NovaClaw",
   "settings.general.row.colorScheme.title": "Fargevalg",
-  "settings.general.row.colorScheme.description": "Velg om NovaClaw skal følge systemets, lyst eller mørkt tema",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Tilpass hvordan NovaClaw er tematisert.",
   "settings.general.row.font.title": "Kodefont",

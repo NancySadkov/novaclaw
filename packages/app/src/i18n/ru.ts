@@ -425,7 +425,6 @@ export const dict = {
   "settings.general.row.language.title": "Язык",
   "settings.general.row.language.description": "Изменить язык отображения NovaClaw",
   "settings.general.row.colorScheme.title": "Цветовая схема",
-  "settings.general.row.colorScheme.description": "Выберите, следует ли NovaClaw системной, светлой или тёмной теме",
   "settings.general.row.theme.title": "Тема",
   "settings.general.row.theme.description": "Настройте оформление NovaClaw.",
   "settings.general.row.font.title": "Шрифт кода",

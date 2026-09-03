@@ -260,11 +260,19 @@ export const SettingsAppearanceV2: Component = () => {
           title={language.t("settings.general.row.colorScheme.title")}
           description={language.t("settings.general.row.colorScheme.description")}
         >
+          {/* Disabled with a reason, not hidden (ruling 13's adversary reversal, uix.md §7's
+              coming-soon precedent): `index.css` hard-sets `color-scheme: dark` and remaps 62 of
+              the 82 `--v2-*` tokens unlayered, so picking Light repaints twenty avatar chips and
+              nothing else. Until a light preset exists the control shows the mode that IS in
+              force (principle 12d) and the copy beside it says why. Re-enable by deleting
+              `disabled` and restoring `current` to the stored scheme, in the same change that
+              lands the preset. */}
           <SelectV2
             appearance="inline"
             data-action="settings-color-scheme"
+            disabled
             options={colorSchemeOptions()}
-            current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
+            current={colorSchemeOptions().find((o) => o.value === "dark")}
             placement="bottom-end"
             gutter={6}
             value={(o) => o.value}

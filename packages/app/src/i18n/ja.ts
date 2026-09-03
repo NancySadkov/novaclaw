@@ -368,7 +368,6 @@ export const dict = {
   "settings.general.row.language.title": "言語",
   "settings.general.row.language.description": "NovaClawの表示言語を変更します",
   "settings.general.row.colorScheme.title": "配色",
-  "settings.general.row.colorScheme.description": "NovaClawがシステム、ライト、またはダークテーマに従うかを選択します",
   "settings.general.row.theme.title": "テーマ",
   "settings.general.row.theme.description": "NovaClawのテーマをカスタマイズします。",
   "settings.general.row.font.title": "コードフォント",

@@ -419,7 +419,6 @@ export const dict = {
   "settings.general.row.language.title": "Idioma",
   "settings.general.row.language.description": "Cambiar el idioma de visualización para NovaClaw",
   "settings.general.row.colorScheme.title": "Esquema de color",
-  "settings.general.row.colorScheme.description": "Elige si NovaClaw sigue el tema del sistema, claro u oscuro",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Personaliza el tema de NovaClaw.",
   "settings.general.row.font.title": "Fuente de código",
