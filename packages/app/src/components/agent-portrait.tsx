@@ -1,5 +1,5 @@
 import { createMemo, createSignal, Show } from "solid-js"
-import { agentPortraitSource } from "@/apps/agent-portrait"
+import { agentPortraitPlaceholder } from "@/apps/agent-portrait"
 
 export function AgentPortrait(props: {
   id: string
@@ -9,7 +9,18 @@ export function AgentPortrait(props: {
   class?: string | undefined
 }) {
   const [failed, setFailed] = createSignal<string>()
-  const source = createMemo(() => agentPortraitSource(props.id))
+  const source = createMemo(() => agentPortraitPlaceholder(props.id, props.avatar))
+  /**
+   * The colleague's OWN `avatar` wins; the shipped portrait is the placeholder for one that has none.
+   *
+   * ⚠️ It was the other way round until 2026-09-03: the pool portrait was looked up first and
+   * `avatar` rendered only in its fallback — and since every officer Nova hires is named from that
+   * pool, the entity-owned avatar was unreachable for the whole roster. A colleague whose config
+   * said 🦊 wore the shipped face on every surface, and the instance never learned the client was
+   * overriding it. The seed no longer writes glyphs for the officers whose portraits ship, so a
+   * fresh instance still shows the faces; an existing row that kept its seeded glyph shows the
+   * glyph, which is what its config says.
+   */
   const visible = createMemo(() => {
     const value = source()
     return value !== undefined && failed() !== value ? value : undefined

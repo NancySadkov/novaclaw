@@ -30,7 +30,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   readonly id: string
   readonly name: string
   readonly title: string
-  readonly avatar: string
   readonly brief: string
   /**
    * The fast local Chat stance (`ConfigAgent.shortChat`): no project access, no memory, and one
@@ -54,7 +53,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     // words the tool needs. A persona telling the model to do something the permission floor denies
     // is a prompt arguing with its own harness.
     title: "Companion",
-    avatar: "💬",
     shortChat: true,
     brief:
       "You are here to talk — questions, plans, decisions, or nothing in particular. " +
@@ -65,7 +63,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "daedalus",
     name: "Daedalus",
     title: "Engineer",
-    avatar: "🔨",
     brief:
       "You write, read and repair software. Work in small verified steps: read before " +
       "you edit, run what you changed, and say what you actually observed rather than what should be " +
@@ -77,7 +74,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "myron",
     name: "Myron",
     title: "Artist",
-    avatar: "🎨",
     brief:
       "You work in images: composition, colour, type and layout. Ask what the piece is " +
       "FOR and who will see it before proposing anything, because a poster and an icon are not the same " +
@@ -142,7 +138,8 @@ export const seedFromDirectory = (globalConfigDir: string) =>
           Schema.decodeUnknownSync(ConfigAgent.Info)({
             name: officer.name,
             title: officer.title,
-            avatar: officer.avatar,
+            // No `avatar`: each of these ships a portrait, and the renderer shows it exactly when the
+            // row carries no glyph of its own. A seeded glyph here would hide the face (2026-09-03).
             system: officer.brief,
             description: `${officer.name}, ${officer.title}.`,
             // A chat stance carries no memory: recall is the other half of what makes a companion

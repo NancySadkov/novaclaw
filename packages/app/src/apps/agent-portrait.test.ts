@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { OfficerName } from "@novaclaw/core/agent/officer-name"
-import { agentPortraitSource } from "./agent-portrait"
+import { agentPortraitPlaceholder, agentPortraitSource } from "./agent-portrait"
 
 describe("builtin agent portraits", () => {
   test("has a lazy client resource for Nova and every pooled officer name", async () => {
@@ -20,5 +20,11 @@ describe("builtin agent portraits", () => {
 
   test("leaves custom agent ids on the existing fallback", () => {
     expect(agentPortraitSource("my-private-researcher")).toBeUndefined()
+  })
+
+  test("🔴 a colleague's own avatar hides the shipped portrait; the pool is only the placeholder", () => {
+    expect(agentPortraitPlaceholder("theron", undefined)).toBe(agentPortraitSource("theron"))
+    expect(agentPortraitPlaceholder("theron", "🦊")).toBeUndefined()
+    expect(agentPortraitPlaceholder("daedalus", "")).toBe(agentPortraitSource("daedalus"))
   })
 })

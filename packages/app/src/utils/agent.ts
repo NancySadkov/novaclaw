@@ -1,7 +1,10 @@
+/**
+ * The two posture ids (`AgentV2.POSTURE_IDS`) with a token of their own. `ask` and `docs` sat here
+ * too until 2026-09-03: V1 agent names that are ids nowhere in core, only CSS tokens that outlived
+ * them — so a hire named "docs" would have worn a colour by accident of history.
+ */
 const defaults: Record<string, string> = {
-  ask: "var(--icon-agent-ask-base)",
   build: "var(--icon-agent-build-base)",
-  docs: "var(--icon-agent-docs-base)",
   plan: "var(--icon-agent-plan-base)",
 }
 
@@ -26,6 +29,12 @@ function tone(name: string) {
   return palette[hash % palette.length]
 }
 
+/**
+ * The colleague's own colour when it has one; otherwise a client-side PLACEHOLDER hashed from the
+ * name. The placeholder is the second identity source NC-REV-038 names — the instance never learns
+ * which colour a colleague without one is wearing — and it stays only until the instance assigns
+ * colours at hire, which is that entry's programme. Do not add name → colour rows here.
+ */
 export function agentColor(name: string, custom?: string) {
   if (custom) return custom
   return defaults[name] ?? defaults[name.toLowerCase()] ?? tone(name.toLowerCase())

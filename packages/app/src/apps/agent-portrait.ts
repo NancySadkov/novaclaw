@@ -15,3 +15,11 @@ export const agentPortraitSource = (id: string): string | undefined => {
   if (!BUILTIN_NAMES.has(name)) return undefined
   return `/assets/agents/portraits/${name}.${BESPOKE_AGENT_PORTRAITS.has(name) ? "webp" : "svg"}`
 }
+
+/**
+ * The portrait to show for a colleague: none when the row carries its own `avatar`, the shipped
+ * one otherwise. The colleague's identity is the instance's; the pool is only the placeholder
+ * for a colleague that has not said what it looks like (2026-09-03 — it was the other way round).
+ */
+export const agentPortraitPlaceholder = (id: string, avatar: string | undefined): string | undefined =>
+  avatar ? undefined : agentPortraitSource(id)
