@@ -10,7 +10,8 @@ describe("first-class permission card", () => {
     expect(source).toContain('props.message.type === "permission-changed"')
     expect(source).toContain('data-slot="native-permission-card"')
     expect(source).toContain('data-slot="native-permission-card-reason"')
-    expect(source).toContain("user-owned ceiling")
+    // The ceiling line is keyed, not spelled: `ui.transcript.permission.ceiling` carries the copy.
+    expect(source).toContain('"ui.transcript.permission.ceiling"')
   })
 
   test("the card is styled as a visible transcript surface, not another tool body", () => {

@@ -49,6 +49,16 @@ export type UiI18nKey = keyof typeof en | HostI18nKey
 
 export type UiI18nParams = Record<string, string | number | boolean>
 
+/** The base of a key ending in `.<Suffix>`. A naked parameter, so the conditional distributes. */
+type BaseOf<K, Suffix extends string> = K extends `${infer B}.${Suffix}` ? B : never
+
+/**
+ * Every plural group THIS bundle declares — a base carrying both a `.one` and a `.other` form.
+ * Derived from `en.ts`, so it cannot drift. The host's `PluralGroup` is a superset (its own keys
+ * plus these), which is what lets `packages/app` hand its `plural` straight into the provider.
+ */
+export type UiPluralGroup = Extract<BaseOf<keyof typeof en, "one">, BaseOf<keyof typeof en, "other">>
+
 /**
  * ⚠️ **`t` is declared to return `string`, but the real app translator returns `undefined` for a
  * key its dictionary does not hold** (measured 2026-07-30 against `@solid-primitives/i18n@2.2.1`:
@@ -63,6 +73,14 @@ export type UiI18nParams = Record<string, string | number | boolean>
 export type UiI18n = {
   locale: Accessor<string>
   t: (key: UiI18nKey, params?: UiI18nParams) => string
+  /**
+   * A counted phrase in the grammar of the locale in force. ⚠️ Never
+   * `t(n === 1 ? "x.one" : "x.other")`: that bakes the English two-form rule into a call site that
+   * no bundle can fix for ru/uk/pl/bs/ar. `packages/app/src/i18n/plural-sites.test.ts` bans the
+   * ternary under `ui/src` and `session-ui/src`; this is the call that replaces it. `count` is
+   * interpolated as `{{count}}`.
+   */
+  plural: (group: UiPluralGroup, count: number, params?: UiI18nParams) => string
 }
 
 function resolveTemplate(text: string, params?: UiI18nParams) {
@@ -74,7 +92,14 @@ function resolveTemplate(text: string, params?: UiI18nParams) {
   })
 }
 
-const fallback: UiI18n = {
+const englishRules = new Intl.PluralRules("en")
+
+/**
+ * The English translator, for surfaces with no provider and for tests of plain helpers that take
+ * a `t` (`colleague-row.ts`). Exported under a name that says what it is: it is not a stand-in for
+ * the host's translator, it IS English.
+ */
+export const englishI18n: UiI18n = {
   locale: () => "en",
   // No host dictionary exists outside a provider, so a `HostI18nKey` cannot be resolved here. It
   // resolves to `""`, never to the key: a key id on screen is what `packages/app/src/i18n/resolve.ts`
@@ -83,7 +108,18 @@ const fallback: UiI18n = {
     const value = key in en ? en[key as keyof typeof en] : undefined
     return value === undefined ? "" : resolveTemplate(value, params)
   },
+  // English has exactly `one` and `other`, and `en.ts` carries both for every group, so the
+  // category `Intl.PluralRules` selects is always a key. The suffix is assembled, never spelled:
+  // the plural-sites ratchet reads a spelled `"<group>.one"` as a hand-rolled selection.
+  plural: (group, count, params) => {
+    const category = englishRules.select(count)
+    const key = `${group}.${category}` as keyof typeof en
+    const value = key in en ? en[key] : en[`${group}.other`]
+    return resolveTemplate(value, { ...params, count })
+  },
 }
+
+const fallback = englishI18n
 
 const Context = createContext<UiI18n>(fallback)
 

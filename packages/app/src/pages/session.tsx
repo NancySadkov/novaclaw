@@ -1156,16 +1156,6 @@ export default function Page() {
                           onRetry={retryFailedTurn}
                           onChooseModel={chooseAnotherModel}
                           onUnpinDevice={unpinDevice}
-                          errorLabels={{
-                            retry: language.t("session.review.retry"),
-                            chooseModel: language.t("command.model.choose"),
-                            technicalDetails: language.t("error.page.details.show"),
-                            copyDetails: language.t("ui.toolErrorCard.copyError"),
-                            working: language.t("processes.status.working"),
-                            unpinDevice: language.t("session.device.unpin"),
-                            unpinningDevice: language.t("session.device.unpinning"),
-                            deviceUnpinned: language.t("session.device.unpinned"),
-                          }}
                           revertMessageID={revertMessageID()}
                         />
                       </ErrorBoundary>

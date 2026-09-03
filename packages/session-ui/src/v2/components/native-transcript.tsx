@@ -42,7 +42,7 @@ import {
   sessionErrorHeadline,
   type SessionErrorDisplay,
 } from "@novaclaw/core/session/session-error"
-import { useI18n } from "@novaclaw/ui/context/i18n"
+import { useI18n, type UiI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
 import { messageTime } from "../message-time"
 import {
@@ -112,16 +112,6 @@ type TranscriptActions = {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
-  labels?: {
-    retry: string
-    chooseModel: string
-    technicalDetails: string
-    copyDetails: string
-    working: string
-    unpinDevice: string
-    unpinningDevice: string
-    deviceUnpinned: string
-  }
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 
@@ -151,7 +141,6 @@ export function NativeTranscript(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
-  errorLabels?: TranscriptActions["labels"]
   status?: SessionStatus
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
@@ -161,6 +150,7 @@ export function NativeTranscript(props: {
    */
   pending?: readonly { id: string; text: string }[]
 }) {
+  const i18n = useI18n()
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
@@ -247,7 +237,6 @@ export function NativeTranscript(props: {
           onRetry: props.onRetry,
           onChooseModel: props.onChooseModel,
           onUnpinDevice: props.onUnpinDevice,
-          labels: props.errorLabels,
         })}
       >
         <div data-component="native-transcript" class={props.class}>
@@ -272,7 +261,7 @@ export function NativeTranscript(props: {
               <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
                 <div data-slot="native-provider-status" role="status" aria-live="polite">
                   <span data-slot="native-working-dot" aria-hidden="true" />
-                  <span>{props.errorLabels?.working ?? "Working…"}</span>
+                  <span>{i18n.t("ui.transcript.working")}</span>
                 </div>
               </Show>
             }
@@ -323,6 +312,7 @@ function Turn(props: {
   /** This is the last turn and the session is still working — never fold it. */
   busy?: boolean
 }) {
+  const i18n = useI18n()
   const body = () => props.group.body
   const running = () => props.busy || body().some((message) => message.type === "assistant" && !message.time.completed)
   /** The turn's closing assistant message — the only one that can carry the answer. */
@@ -409,11 +399,9 @@ function Turn(props: {
                 {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
                 the native triangle, which is what left this fold without one. */}
                 <span data-slot="native-turn-work-summary">
-                  <span data-slot="native-turn-work-label">Done</span>
+                  <span data-slot="native-turn-work-label">{i18n.t("ui.transcript.done")}</span>
                   <Show when={toolCount() > 0}>
-                    <span data-slot="native-turn-work-count">
-                      {toolCount()} {toolCount() === 1 ? "step" : "steps"}
-                    </span>
+                    <span data-slot="native-turn-work-count">{i18n.plural("ui.transcript.steps", toolCount())}</span>
                   </Show>
                 </span>
               </summary>
@@ -495,6 +483,7 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
  * It disappears on its own when the runner promotes the input into a real user message.
  */
 function QueuedMessage(props: { text: string }) {
+  const i18n = useI18n()
   return (
     <div data-slot="native-user" data-queued="true">
       <div data-slot="native-user-bubble">
@@ -503,7 +492,7 @@ function QueuedMessage(props: { text: string }) {
         </Show>
         <div data-slot="native-user-queued" aria-live="polite">
           <span data-slot="native-user-queued-dot" aria-hidden="true" />
-          <span>Queued — the agent will read this when it finishes what it's doing</span>
+          <span>{i18n.t("ui.transcript.queued")}</span>
         </div>
       </div>
     </div>
@@ -513,6 +502,7 @@ function QueuedMessage(props: { text: string }) {
 // ── user ───────────────────────────────────────────────────────────────────────
 
 function UserMessage(props: { message: SessionMessageUser }) {
+  const i18n = useI18n()
   // P6: a remote/delegated turn shows a sender badge from its structured origin; a local-user turn
   // (no origin) shows nothing extra. The stored text is clean — the model-facing provenance header
   // is applied at lowering, not here.
@@ -541,7 +531,9 @@ function UserMessage(props: { message: SessionMessageUser }) {
         <Show when={props.message.files?.length || props.message.agents?.length}>
           <div data-slot="native-user-attachments">
             <For each={props.message.files ?? []}>
-              {(file) => <span data-slot="native-chip">{file.name ?? file.mime ?? "file"}</span>}
+              {(file) => (
+                <span data-slot="native-chip">{file.name ?? file.mime ?? i18n.t("ui.message.attachment.alt")}</span>
+              )}
             </For>
             <For each={props.message.agents ?? []}>{(agent) => <span data-slot="native-chip">@{agent.name}</span>}</For>
           </div>
@@ -555,11 +547,11 @@ function UserMessage(props: { message: SessionMessageUser }) {
           <button
             type="button"
             data-slot="native-revert"
-            aria-label="Revert to this prompt"
-            title="Revert the conversation and files back to this prompt"
+            aria-label={i18n.t("ui.transcript.revert.label")}
+            title={i18n.t("ui.transcript.revert.title")}
             onClick={() => actions().onRevert?.(props.message.id)}
           >
-            Revert
+            {i18n.t("ui.transcript.revert.action")}
           </button>
         </Show>
         <MessageTimestamp created={props.message.time.created} />
@@ -575,9 +567,10 @@ function UserMessage(props: { message: SessionMessageUser }) {
  * a curious reader can expand it; nobody gets barked at by their own harness.
  */
 function SteerMessage(props: { text: string }) {
+  const i18n = useI18n()
   return (
     <details data-slot="native-notice" data-kind="steer">
-      <summary>Automated nudge</summary>
+      <summary>{i18n.t("ui.transcript.steer")}</summary>
       <div data-slot="native-notice-body">
         <Markdown text={props.text} />
       </div>
@@ -602,6 +595,7 @@ function AssistantMessage(props: {
   liveTiming?: boolean
   half?: "work" | "answer"
 }) {
+  const i18n = useI18n()
   // While the turn is in flight but nothing has streamed yet (the model is thinking before
   // its first token), show a "working" indicator — otherwise a slow turn reads as a blank.
   const working = () =>
@@ -702,10 +696,8 @@ function AssistantMessage(props: {
       </Show>
       <Show when={showChrome() && props.message.finish === "broken"}>
         <details data-slot="native-broken-reply">
-          <summary>Reply ended early</summary>
-          <div>
-            NovaClaw kept the usable part and used it to reconnect safely. Completed tool actions were not replayed.
-          </div>
+          <summary>{i18n.t("ui.transcript.brokenReply.title")}</summary>
+          <div>{i18n.t("ui.transcript.brokenReply.body")}</div>
         </details>
       </Show>
       <Show when={showChrome() && props.message.time.completed && copyableText()}>
@@ -713,10 +705,10 @@ function AssistantMessage(props: {
           <button
             type="button"
             data-slot="native-copy"
-            aria-label="Copy message"
+            aria-label={i18n.t("ui.message.copyMessage")}
             onClick={() => void navigator.clipboard?.writeText(copyableText())}
           >
-            Copy
+            {i18n.t("ui.message.copy")}
           </button>
           <MessageTimestamp created={props.message.time.created} />
         </div>
@@ -781,12 +773,13 @@ function TurnReceipt(props: {
    */
   reasoning?: string
 }) {
+  const i18n = useI18n()
   const timing = () => props.timing
   // One live line, one label. The transcript's own status row, this receipt's fallback and the
   // phase label are three places that can claim "the turn is live"; they must not do it in two
   // different words, and only the host app knows the translated one.
   const actions = useContext(TranscriptActionsContext)
-  const working = () => actions().labels?.working ?? "Working…"
+  const working = () => i18n.t("ui.transcript.working")
   // ⚠️ The phase is NOT the title. It is one row inside, marked `data-current`, which is where a
   // reader looks for "which stage" — and it stops the fold renaming itself every few seconds while
   // the user is trying to read it.
@@ -830,10 +823,8 @@ function TurnReceipt(props: {
                 </Show>
                 {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
                   there for whoever wants to open the hood, and a longer name advertises them. */}
-                <span>{props.live ? liveLabel() : "Details"}</span>
-                <Show when={props.tokens}>
-                  {(count) => <span data-slot="native-turn-tokens">{count()}</span>}
-                </Show>
+                <span>{props.live ? liveLabel() : i18n.t("ui.transcript.details")}</span>
+                <Show when={props.tokens}>{(count) => <span data-slot="native-turn-tokens">{count()}</span>}</Show>
                 <ElapsedTime
                   startedAt={props.live ? (props.runStartedAt ?? value().startedAt) : value().startedAt}
                   completedAt={value().completedAt}
@@ -904,15 +895,15 @@ function FaultCard(props: {
   headline: string
   actions: TranscriptActions
 }) {
+  const i18n = useI18n()
   const [retrying, setRetrying] = createSignal(false)
-  const labels = () =>
-    props.actions.labels ?? {
-      retry: "Try again",
-      chooseModel: "Choose another model",
-      technicalDetails: "Technical details",
-      copyDetails: "Copy details",
-      working: "Working…",
-    }
+  const labels = () => ({
+    retry: i18n.t("ui.transcript.error.retry"),
+    chooseModel: i18n.t("ui.transcript.error.chooseModel"),
+    technicalDetails: i18n.t("ui.transcript.error.technicalDetails"),
+    copyDetails: i18n.t("ui.transcript.error.copyDetails"),
+    working: i18n.t("ui.transcript.working"),
+  })
   const diagnostic = () => sessionErrorDiagnostic(props.error)
   const retry = async () => {
     if (retrying() || !props.actions.onRetry) return
@@ -961,6 +952,7 @@ function FaultCard(props: {
  * text arriving — so a user can check the model isn't looping without waiting for the answer.
  */
 function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?: number }) {
+  const i18n = useI18n()
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
   const completed = () => !!props.part.time?.completed
@@ -978,14 +970,14 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
           when={!completed()}
           fallback={
             <span data-slot="native-reasoning-done">
-              <span>Reasoning</span>
+              <span>{i18n.t("ui.transcript.reasoning")}</span>
               <span data-slot="native-reasoning-count">{tokenLabel()}</span>
             </span>
           }
         >
           <span data-slot="native-reasoning-live">
             <span data-slot="native-reasoning-live-dot" />
-            <span>Reasoning…</span>
+            <span>{i18n.t("ui.transcript.reasoning.live")}</span>
             <span data-slot="native-reasoning-count">{tokenLabel()}</span>
           </span>
         </Show>
@@ -998,7 +990,8 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
 }
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
-  const meta = () => toolMeta(props.part)
+  const i18n = useI18n()
+  const meta = () => toolMeta(props.part, i18n)
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
   const faultText = useFaultText()
@@ -1040,6 +1033,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
 
 /** `todowrite` → an inline checklist (the one tool whose payload reads best expanded). */
 function TodoTool(props: { part: SessionMessageAssistantTool }) {
+  const i18n = useI18n()
   const todos = () => {
     const raw = toolInput(props.part.state).todos ?? structuredTodos(props.part.state)
     return Array.isArray(raw) ? (raw as Array<{ content?: string; status?: string }>) : []
@@ -1050,7 +1044,10 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
       data-slot="native-tool"
       status={props.part.state.status}
       defaultOpen
-      trigger={{ title: "Todos", subtitle: todos().length ? `${done()}/${todos().length}` : undefined }}
+      trigger={{
+        title: i18n.t("ui.transcript.todos"),
+        subtitle: todos().length ? `${done()}/${todos().length}` : undefined,
+      }}
     >
       <ul data-slot="native-todos">
         <For each={todos()}>
@@ -1074,6 +1071,7 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
  * "dismissed" notice on rejection — pending/running asks are hidden (V1 parity).
  */
 function QuestionTool(props: { part: SessionMessageAssistantTool }) {
+  const i18n = useI18n()
   const state = () => props.part.state
   const questions = () => {
     const raw = toolInput(state()).questions
@@ -1091,21 +1089,26 @@ function QuestionTool(props: { part: SessionMessageAssistantTool }) {
   return (
     <Switch>
       <Match when={dismissed()}>
-        <div data-slot="native-question-dismissed">Questions dismissed</div>
+        <div data-slot="native-question-dismissed">{i18n.t("ui.transcript.questions.dismissed")}</div>
       </Match>
       <Match when={state().status !== "pending" && state().status !== "running"}>
         <BasicToolV2
           data-slot="native-tool"
           status={state().status}
           defaultOpen={answered()}
-          trigger={{ title: "Questions", subtitle: questionSubtitle(questions().length, answered()) }}
+          trigger={{
+            title: i18n.t("ui.transcript.questions"),
+            subtitle: questionSubtitle(i18n, questions().length, answered()),
+          }}
         >
           <div data-slot="native-question-answers">
             <For each={questions()}>
               {(q, i) => (
                 <div data-slot="native-question-item">
                   <div data-slot="native-question-text">{q.question}</div>
-                  <div data-slot="native-answer-text">{(answers()[i()] ?? []).join(", ") || "No answer"}</div>
+                  <div data-slot="native-answer-text">
+                    {(answers()[i()] ?? []).join(", ") || i18n.t("ui.transcript.questions.noAnswer")}
+                  </div>
                 </div>
               )}
             </For>
@@ -1172,6 +1175,7 @@ function NoticeMessage(props: {
   sessionID?: string
   repair?: SessionMessageSynthetic["repair"]
 }) {
+  const i18n = useI18n()
   const actions = useContext(TranscriptActionsContext)
   const [repairState, setRepairState] = createSignal<"idle" | "pending" | "done">("idle")
   const unpinDevice = async () => {
@@ -1222,17 +1226,17 @@ function NoticeMessage(props: {
             }}
           >
             {repairState() === "done"
-              ? (actions().labels?.deviceUnpinned ?? "Device pin removed")
+              ? i18n.t("ui.transcript.device.unpinned")
               : repairState() === "pending"
-                ? (actions().labels?.unpinningDevice ?? "Removing Device pin…")
-                : (actions().labels?.unpinDevice ?? "Remove Device pin")}
+                ? i18n.t("ui.transcript.device.unpinning")
+                : i18n.t("ui.transcript.device.unpin")}
           </button>
         </Show>
       </div>
     )
   return (
     <details data-slot="native-notice" data-kind="system">
-      <summary>Context</summary>
+      <summary>{i18n.t("ui.transcript.context")}</summary>
       <div data-slot="native-notice-body">
         <Markdown text={props.text} />
       </div>
@@ -1240,29 +1244,36 @@ function NoticeMessage(props: {
   )
 }
 
-const PERMISSION_LABEL = {
-  plan: "Analyze",
-  ask: "Ask",
-  surgical: "Surgical",
-  bypass: "Modify",
-  yolo: "Admin",
+const PERMISSION_KEY = {
+  plan: "ui.transcript.permission.plan",
+  ask: "ui.transcript.permission.ask",
+  surgical: "ui.transcript.permission.surgical",
+  bypass: "ui.transcript.permission.bypass",
+  yolo: "ui.transcript.permission.yolo",
 } as const
 
 function PermissionChangedMessage(props: { message: SessionMessagePermissionChanged }) {
+  const i18n = useI18n()
   const raised = () => props.message.op === "raise"
   return (
-    <section data-slot="native-permission-card" data-direction={props.message.op} aria-label="Permission level changed">
+    <section
+      data-slot="native-permission-card"
+      data-direction={props.message.op}
+      aria-label={i18n.t("ui.transcript.permission.aria")}
+    >
       <div data-slot="native-permission-card-icon" aria-hidden="true">
         {raised() ? "↑" : "↓"}
       </div>
       <div data-slot="native-permission-card-body">
-        <div data-slot="native-permission-card-title">Permissions {raised() ? "raised" : "lowered"}</div>
+        <div data-slot="native-permission-card-title">
+          {i18n.t(raised() ? "ui.transcript.permission.raised" : "ui.transcript.permission.lowered")}
+        </div>
         <div data-slot="native-permission-card-levels">
-          {PERMISSION_LABEL[props.message.previous]} → {PERMISSION_LABEL[props.message.mode]}
+          {i18n.t(PERMISSION_KEY[props.message.previous])} → {i18n.t(PERMISSION_KEY[props.message.mode])}
         </div>
         <blockquote data-slot="native-permission-card-reason">{props.message.justification}</blockquote>
         <div data-slot="native-permission-card-ceiling">
-          Self-managed · user-owned ceiling: {PERMISSION_LABEL[props.message.ceiling]}
+          {i18n.t("ui.transcript.permission.ceiling", { level: i18n.t(PERMISSION_KEY[props.message.ceiling]) })}
         </div>
       </div>
     </section>
@@ -1270,11 +1281,14 @@ function PermissionChangedMessage(props: { message: SessionMessagePermissionChan
 }
 
 function CompactionMessage(props: { message: SessionMessageCompaction }) {
+  const i18n = useI18n()
   return (
     <div data-slot="native-compaction">
-      <div data-slot="native-compaction-divider">Compacted{props.message.reason === "manual" ? " (manual)" : ""}</div>
+      <div data-slot="native-compaction-divider">
+        {i18n.t(props.message.reason === "manual" ? "ui.transcript.compacted.manual" : "ui.transcript.compacted")}
+      </div>
       <details data-slot="native-notice">
-        <summary>Summary</summary>
+        <summary>{i18n.t("ui.transcript.summary")}</summary>
         <div data-slot="native-notice-body">
           <Markdown text={props.message.summary} />
         </div>
@@ -1292,56 +1306,59 @@ interface ToolMeta {
 }
 
 /** Per-tool label/subtitle/args, ported from the V1 `getToolInfo` switch.*/
-function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
+function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
   const input = toolInput(part.state)
   switch (part.name) {
     case "read": {
       const args: string[] = []
       const offset = num(input.offset)
       const limit = num(input.limit)
-      if (offset !== undefined) args.push(`offset ${offset}`)
-      if (limit !== undefined) args.push(`limit ${limit}`)
-      return { title: "Read", subtitle: filePathOf(input), args }
+      if (offset !== undefined) args.push(i18n.t("ui.transcript.tool.read.offset", { value: offset }))
+      if (limit !== undefined) args.push(i18n.t("ui.transcript.tool.read.limit", { value: limit }))
+      return { title: i18n.t("ui.transcript.tool.read"), subtitle: filePathOf(input), args }
     }
     case "list":
-      return { title: "List", subtitle: basename(input.path) ?? str(input.path) }
+      return { title: i18n.t("ui.transcript.tool.list"), subtitle: basename(input.path) ?? str(input.path) }
     case "glob":
-      return { title: "Find files", subtitle: str(input.pattern) }
+      return { title: i18n.t("ui.transcript.tool.glob"), subtitle: str(input.pattern) }
     case "grep":
-      return { title: "Search", subtitle: str(input.pattern) }
+      return { title: i18n.t("ui.transcript.tool.grep"), subtitle: str(input.pattern) }
     case "webfetch":
-      return { title: "Fetch", subtitle: str(input.url) }
+      return { title: i18n.t("ui.transcript.tool.webfetch"), subtitle: str(input.url) }
     case "websearch":
-      return { title: "Web search", subtitle: str(input.query) }
+      return { title: i18n.t("ui.transcript.tool.websearch"), subtitle: str(input.query) }
     case "js":
-      return { title: "Computing" }
+      return { title: i18n.t("ui.transcript.tool.js") }
     case "task":
       return {
-        title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : "Task",
+        title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : i18n.t("ui.transcript.tool.task"),
         subtitle: str(input.description),
       }
     case "bash":
-      return { title: "Shell", subtitle: str(input.command) }
+      return { title: i18n.t("ui.transcript.tool.bash"), subtitle: str(input.command) }
     // The file-mutating tools read as a finished action plus the file — "Edited pi.c" — and carry NO
     // +N/-M stat inline. The stat was noise on every edit, and the exact diff is one click away in this
     // row's own body (and properly presented in the git-changes tab). Past tense on purpose: by the time
     // a row is on screen the action has happened.
     case "edit":
-      return { title: "Edited", subtitle: filePathOf(input) }
+      return { title: i18n.t("ui.transcript.tool.edit"), subtitle: filePathOf(input) }
     case "write":
-      return { title: "Wrote", subtitle: filePathOf(input) }
+      return { title: i18n.t("ui.transcript.tool.write"), subtitle: filePathOf(input) }
     case "apply_patch": {
       const files = Array.isArray(input.files) ? input.files.length : undefined
-      return { title: "Patched", subtitle: files ? `${files} file${files > 1 ? "s" : ""}` : undefined }
+      return {
+        title: i18n.t("ui.transcript.tool.patch"),
+        subtitle: files ? i18n.plural("ui.transcript.tool.patch.files", files) : undefined,
+      }
     }
     case "question":
-      return { title: "Question" }
+      return { title: i18n.t("ui.transcript.tool.question") }
     // The agent turning aside to talk to ANOTHER agent — see `colleague-row.ts`, which holds the
     // rule and the test that runs it (this file cannot be imported by `bun test`).
     case "colleague":
-      return colleagueRow(input)
+      return colleagueRow(input, i18n.t)
     case "skill":
-      return { title: str(input.name) ?? "Skill" }
+      return { title: str(input.name) ?? i18n.t("ui.transcript.tool.skill") }
     default:
       return { title: part.name }
   }
@@ -1361,10 +1378,10 @@ function toolErrorMessage(state: SessionMessageAssistantTool["state"]): string |
   return state.status === "error" ? state.error.message : undefined
 }
 
-function questionSubtitle(count: number, answered: boolean): string | undefined {
+function questionSubtitle(i18n: UiI18n, count: number, answered: boolean): string | undefined {
   if (count === 0) return undefined
-  if (answered) return "Answered"
-  return `${count} question${count > 1 ? "s" : ""}`
+  if (answered) return i18n.t("ui.transcript.questions.answered")
+  return i18n.plural("ui.transcript.questions.count", count)
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */
