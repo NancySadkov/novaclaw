@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { dict as en } from "@/i18n/en"
 import fs from "node:fs"
 import path from "node:path"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
@@ -720,8 +721,11 @@ describe("export — the complete portable folder", () => {
   test("the page offers ZIP upload and labels markdown paste as asset-free", () => {
     const page = fs.readFileSync(path.join(import.meta.dir, "..", "pages", "recipes.tsx"), "utf8")
     expect(page).toContain('accept=".zip,application/zip"')
-    expect(page).toContain("Paste carries recipe.md only — no assets")
-    expect(page).toContain("Import pasted markdown (no assets)")
+    // The copy is keyed since 2026-09-03: the page reads the keys, and the dictionary says the words.
+    expect(page).toContain('language.t("recipes.page.useThisForAProseOnly")')
+    expect(page).toContain('language.t("recipes.page.importPastedMarkdownNoAssets")')
+    expect(en["recipes.page.useThisForAProseOnly"]).toContain("Paste carries recipe.md only — no assets")
+    expect(en["recipes.page.importPastedMarkdownNoAssets"]).toBe("Import pasted markdown (no assets)")
   })
 })
 

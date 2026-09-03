@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { useLanguage } from "@/context/language"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -100,6 +101,7 @@ const OUTCOME_WORD: Record<string, string> = {
 }
 
 export function RecipesPage() {
+  const language = useLanguage()
   const sdk = useServerSDK()
   const server = useServer()
   const navigate = useNavigate()
@@ -512,10 +514,10 @@ export function RecipesPage() {
         hint="Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh."
       >
         <button class={BTN} data-action="recipe-import-open" onClick={startImport}>
-          Import…
+          {language.t("recipes.page.import")}
         </button>
         <button class={BTN} data-action="recipe-new" onClick={startNew}>
-          New recipe
+          {language.t("recipes.page.newRecipe")}
         </button>
       </AppPageHeader>
 
@@ -526,7 +528,7 @@ export function RecipesPage() {
             <TextInputV2
               type="text"
               class="w-full"
-              placeholder="Search recipes"
+              placeholder={language.t("recipes.page.searchRecipes")}
               value={query()}
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
@@ -535,11 +537,11 @@ export function RecipesPage() {
             <Switch>
               <Match when={recipeListing().kind === "failed"}>
                 <div class="p-2 text-sm text-v2-state-fg-danger" data-slot="recipes-failed">
-                  Could not read your recipes. Your shelf is intact — this page could not reach it.
+                  {language.t("recipes.page.couldNotReadYourRecipesYour")}
                 </div>
               </Match>
               <Match when={recipeListing().kind === "idle" || recipeListing().kind === "loading"}>
-                <div class="p-2 text-sm text-v2-text-text-muted">Loading your recipes…</div>
+                <div class="p-2 text-sm text-v2-text-text-muted">{language.t("recipes.page.loadingYourRecipes")}</div>
               </Match>
               <Match when={groups().length === 0}>
                 {/* Two empties, and only one of them is a recipe count: nothing installed, versus
@@ -578,7 +580,9 @@ export function RecipesPage() {
                               </Show>
                             </div>
                             <Show when={recipe.hasDescription}>
-                              <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">{recipe.description}</div>
+                              <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">
+                                {recipe.description}
+                              </div>
                             </Show>
                           </button>
                         )}
@@ -618,7 +622,7 @@ export function RecipesPage() {
               when={creating() || current()}
               fallback={
                 <div class="max-w-2xl text-sm text-v2-text-text-muted" data-slot="recipes-intro">
-                  <p>Pick a recipe on the left, make a new one, or import one somebody sent you.</p>
+                  <p>{language.t("recipes.page.pickARecipeOnTheLeft")}</p>
                   <p class="mt-2">{REPRODUCIBILITY.headline}</p>
                   <p class="mt-2">{REPRODUCIBILITY.gain}</p>
                   <p class="mt-2">{REPRODUCIBILITY.reassurance}</p>
@@ -631,7 +635,7 @@ export function RecipesPage() {
                     type="text"
                     appearance="large"
                     class="!min-w-[240px] flex-1"
-                    placeholder="Recipe name"
+                    placeholder={language.t("recipes.page.recipeName")}
                     value={draftName()}
                     onInput={(event) => {
                       setDraftName(event.currentTarget.value)
@@ -647,10 +651,10 @@ export function RecipesPage() {
                           disabled={busy()}
                           onClick={() => void cook(recipe())}
                         >
-                          Run
+                          {language.t("recipes.page.run")}
                         </button>
                         <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
-                          Run in…
+                          {language.t("recipes.page.runIn")}
                         </button>
                         {/* Anti-obscurantist: a VISIBLE switch next to the button it changes, not a
                             hidden menu — the same Strict lever the composer gives a chat. */}
@@ -658,13 +662,13 @@ export function RecipesPage() {
                           class={BTN}
                           aria-pressed={strictCook()}
                           data-action="recipe-strict-toggle"
-                          title="Cook under the Strict harness: the run is decomposed into small steps, each verified before the next. Slower, and it can race several attempts."
+                          title={language.t("recipes.page.cookUnderTheStrictHarnessThe")}
                           onClick={() => setStrictCook((on) => !on)}
                         >
                           {strictCook() ? "🛡️ Strict on" : "Strict off"}
                         </button>
                         <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
-                          Copy
+                          {language.t("recipes.page.copy")}
                         </button>
                         <button
                           class={BTN}
@@ -673,13 +677,13 @@ export function RecipesPage() {
                           title={describeExport(recipe())}
                           onClick={() => void exportRecipe(recipe())}
                         >
-                          Export
+                          {language.t("recipes.page.export")}
                         </button>
                         <button
                           class={BTN}
                           disabled={busy()}
                           onClick={() => void remove(recipe())}
-                          title="Delete recipe"
+                          title={language.t("recipes.page.deleteRecipe")}
                         >
                           <Icon name="trash" size="normal" />
                         </button>
@@ -694,7 +698,7 @@ export function RecipesPage() {
                   data-slot="recipe-reproducibility"
                 >
                   <h2 class="text-xs font-semibold tracking-wide text-v2-text-text-accent uppercase">
-                    What running this actually does
+                    {language.t("recipes.page.whatRunningThisActuallyDoes")}
                   </h2>
                   <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.headline}</p>
                   <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.gain}</p>
@@ -707,7 +711,7 @@ export function RecipesPage() {
                 {/* ── 2. Before you run: what this machine has. OUR observation. ───────────────── */}
                 <Show when={current()}>
                   <section class={CARD} data-slot="recipe-needs">
-                    <h2 class={LABEL}>Before you run</h2>
+                    <h2 class={LABEL}>{language.t("recipes.page.beforeYouRun")}</h2>
                     <p
                       class="mt-1.5 text-sm"
                       classList={{
@@ -730,7 +734,7 @@ export function RecipesPage() {
                 <Show when={current()}>
                   {(_recipe) => (
                     <section class={CARD} data-slot="recipe-produces">
-                      <h2 class={LABEL}>What a finished run should leave behind</h2>
+                      <h2 class={LABEL}>{language.t("recipes.page.whatAFinishedRunShouldLeave")}</h2>
                       <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-produces-sentence">
                         {declared().sentence}
                       </p>
@@ -741,7 +745,7 @@ export function RecipesPage() {
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                           <input
                             class={`${FIELD} min-w-[260px] flex-1 font-mono text-[12px]`}
-                            placeholder="report.md, chart.html"
+                            placeholder={language.t("recipes.page.reportMdChartHtml")}
                             data-slot="recipe-produces-input"
                             value={producesDirty() ? producesDraft() : declared().files.join(", ")}
                             onInput={(event) => {
@@ -755,12 +759,11 @@ export function RecipesPage() {
                             disabled={busy() || !producesDirty()}
                             onClick={() => void saveProduces()}
                           >
-                            Save file names
+                            {language.t("recipes.page.saveFileNames")}
                           </button>
                         </div>
                         <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                          Just file names, separated by commas — no commands. Saving this changes one line of the recipe
-                          and nothing else in the file.
+                          {language.t("recipes.page.justFileNamesSeparatedByCommas")}
                         </p>
                       </Show>
                     </section>
@@ -772,7 +775,7 @@ export function RecipesPage() {
                   {(recipe) => (
                     <section class={CARD} data-slot="recipe-receipt">
                       <div class="flex flex-wrap items-center gap-2">
-                        <h2 class={`${LABEL} flex-1`}>Did it work?</h2>
+                        <h2 class={`${LABEL} flex-1`}>{language.t("recipes.page.didItWork")}</h2>
                         <Show when={cooked()}>
                           {(last) => (
                             <button
@@ -791,7 +794,7 @@ export function RecipesPage() {
                           disabled={checking() || !conn()}
                           onClick={() => checkElsewhere(recipe())}
                         >
-                          Check a folder…
+                          {language.t("recipes.page.checkAFolder")}
                         </button>
                       </div>
 
@@ -859,17 +862,15 @@ export function RecipesPage() {
 
                 {/* ── 5. The recipe itself — the author's words, and the editor. ───────────────── */}
                 <div class="flex flex-col gap-2">
-                  <h2 class={LABEL}>The recipe</h2>
+                  <h2 class={LABEL}>{language.t("recipes.page.theRecipe")}</h2>
                   <Show when={current()?.shipped}>
                     <p class="text-xs text-v2-text-text-faint">
-                      This one shipped with NovaClaw. Edit it freely — your version is kept on upgrade, and deleting it
-                      brings the original back on next start.
+                      {language.t("recipes.page.thisOneShippedWithNovaclawEdit")}
                     </p>
                   </Show>
                   <Show when={current() && !current()!.shipped}>
                     <p class="text-xs text-v2-text-text-faint" data-slot="recipe-authorship">
-                      The text below is whoever wrote this recipe speaking, not NovaClaw. If somebody sent it to you,
-                      read it before you run it.
+                      {language.t("recipes.page.theTextBelowIsWhoeverWrote")}
                     </p>
                   </Show>
                   {/* ⚠️ The boxes below hold the RAW text, because whatever is in them is what Save writes
@@ -877,14 +878,12 @@ export function RecipesPage() {
                       the surface says out loud that the text is not what it looks like. */}
                   <Show when={current()?.hiddenCharacters}>
                     <p class="text-xs text-v2-state-fg-warning" data-slot="recipe-hidden-characters">
-                      Careful: this recipe's own text contains invisible characters — the kind that can make a name or a
-                      filename read differently than it really is. The boxes below show it exactly as it is stored, so
-                      what you see here may not match what you saw in the list.
+                      {language.t("recipes.page.carefulThisRecipeSOwnText")}
                     </p>
                   </Show>
                   <input
                     class={`${FIELD} w-full`}
-                    placeholder="One-line description (optional)"
+                    placeholder={language.t("recipes.page.oneLineDescriptionOptional")}
                     value={draftDescription()}
                     onInput={(event) => {
                       setDraftDescription(event.currentTarget.value)
@@ -893,7 +892,7 @@ export function RecipesPage() {
                   />
                   <textarea
                     class={`${FIELD} min-h-[320px] w-full font-mono text-[13px] leading-relaxed`}
-                    placeholder="The prompt. This IS the recipe — describe what you want cooked, precisely enough that an agent can do it without you."
+                    placeholder={language.t("recipes.page.thePromptThisIsTheRecipe")}
                     data-slot="recipe-prompt"
                     value={draftPrompt()}
                     onInput={(event) => {
@@ -906,18 +905,17 @@ export function RecipesPage() {
                       {creating() ? "Create recipe" : "Save changes"}
                     </button>
                     <Show when={dirty() && !creating()}>
-                      <span class="text-xs text-v2-text-text-accent">Unsaved changes</span>
+                      <span class="text-xs text-v2-text-text-accent">{language.t("recipes.page.unsavedChanges")}</span>
                     </Show>
                   </div>
                 </div>
 
                 <Show when={current()?.assets.length}>
                   <div class={CARD}>
-                    <div class={LABEL}>Files that travel with it</div>
+                    <div class={LABEL}>{language.t("recipes.page.filesThatTravelWithIt")}</div>
                     <div class="mt-1 text-sm break-all text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
                     <div class="mt-1 text-[11px] text-v2-text-text-faint">
-                      Copied into the work folder alongside the prompt when you run it. Export includes this complete
-                      nested asset tree in the recipe ZIP.
+                      {language.t("recipes.page.copiedIntoTheWorkFolderAlongside")}
                     </div>
                   </div>
                 </Show>
@@ -950,18 +948,16 @@ function ImportPanel(props: {
   onArchiveImport: () => void
   onMarkdownImport: () => void
 }) {
+  const language = useLanguage()
   return (
     <div class="flex flex-col gap-3" data-component="recipe-import">
       <div>
-        <h1 class="text-lg font-semibold">Import a recipe</h1>
-        <p class="mt-1 text-sm text-v2-text-text-muted">
-          A recipe is a folder. Choose its ZIP to bring across recipe.md and every nested file, including binary assets,
-          exactly as they were sent.
-        </p>
+        <h1 class="text-lg font-semibold">{language.t("recipes.page.importARecipe")}</h1>
+        <p class="mt-1 text-sm text-v2-text-text-muted">{language.t("recipes.page.aRecipeIsAFolderChoose")}</p>
       </div>
 
       <section class={CARD} data-slot="recipe-import-archive">
-        <h2 class={LABEL}>Complete recipe folder</h2>
+        <h2 class={LABEL}>{language.t("recipes.page.completeRecipeFolder")}</h2>
         <input
           class="mt-2 block w-full text-sm text-v2-text-text-muted"
           type="file"
@@ -979,15 +975,14 @@ function ImportPanel(props: {
           disabled={props.busy || !props.file}
           onClick={() => props.onArchiveImport()}
         >
-          Import folder
+          {language.t("recipes.page.importFolder")}
         </button>
       </section>
 
       <div>
-        <h2 class={LABEL}>Paste recipe.md only</h2>
+        <h2 class={LABEL}>{language.t("recipes.page.pasteRecipeMdOnly")}</h2>
         <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-import-markdown-limit">
-          Use this for a prose-only recipe copied from a message. Paste carries recipe.md only — no assets can travel
-          with it.
+          {language.t("recipes.page.useThisForAProseOnly")}
         </p>
       </div>
 
@@ -1001,7 +996,7 @@ function ImportPanel(props: {
 
       <Show when={props.text.trim() !== ""}>
         <section class={CARD} data-slot="recipe-import-preview">
-          <h2 class={LABEL}>What this file says</h2>
+          <h2 class={LABEL}>{language.t("recipes.page.whatThisFileSays")}</h2>
           <Show
             when={props.preview.ok}
             fallback={
@@ -1036,8 +1031,7 @@ function ImportPanel(props: {
               </p>
             </Show>
             <p class="mt-2 text-[11px] text-v2-text-text-faint">
-              Somebody else wrote this. Nothing in the file can grant it any permission — the prompt below is all it is.
-              Read it before you run it.
+              {language.t("recipes.page.somebodyElseWroteThisNothingIn")}
             </p>
             <pre class="mt-1.5 max-h-[240px] overflow-auto rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 p-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-v2-text-text-muted">
               {props.preview.body}
@@ -1053,13 +1047,13 @@ function ImportPanel(props: {
           disabled={props.busy || !props.preview.ok || props.text.trim() === ""}
           onClick={() => props.onMarkdownImport()}
         >
-          Import pasted markdown (no assets)
+          {language.t("recipes.page.importPastedMarkdownNoAssets")}
         </button>
         <button class={BTN} onClick={() => props.onCancel()}>
-          Cancel
+          {language.t("recipes.page.cancel")}
         </button>
         <span class="text-xs text-v2-text-text-faint">
-          Importing never replaces a recipe you already have — a name that is taken gets the next free one.
+          {language.t("recipes.page.importingNeverReplacesARecipeYou")}
         </span>
       </div>
     </div>

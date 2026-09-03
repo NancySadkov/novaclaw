@@ -76,6 +76,7 @@ export function DebugPage() {
 }
 
 function DebugAppPage() {
+  const language = useLanguage()
   const global = useGlobal()
   const server = useServer()
   const showModels = useSettingsDialog("models")
@@ -474,8 +475,8 @@ function DebugAppPage() {
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
         <div class={section}>
           <div class={heading}>
-            <span class={title}>Connection</span>
-            <span class={hint}>SSE stream status per configured server</span>
+            <span class={title}>{language.t("debug.page.connection")}</span>
+            <span class={hint}>{language.t("debug.page.sseStreamStatusPerConfiguredServer")}</span>
           </div>
           <div class="px-4 pb-3">
             <Show when={servers().length > 0} fallback={<div class={hint}>no servers configured</div>}>
@@ -502,10 +503,10 @@ function DebugAppPage() {
         {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
         <div class={section} data-panel="capabilities">
           <div class={heading}>
-            <span class={title}>Optional capabilities</span>
+            <span class={title}>{language.t("debug.page.optionalCapabilities")}</span>
             <span class={hint}>live state — looking here does not start anything</span>
             <button class={`${btn} ml-auto`} onClick={() => setCapabilityTick((value) => value + 1)}>
-              Refresh
+              {language.t("debug.page.refresh")}
             </button>
           </div>
           <div class="px-4 pb-3">
@@ -540,7 +541,7 @@ function DebugAppPage() {
                               class={`${btn} ml-auto`}
                               onClick={() => void retryUnavailableCapability(item.name)}
                             >
-                              Try again
+                              {language.t("debug.page.tryAgain")}
                             </button>
                           </Show>
                         </div>
@@ -554,7 +555,9 @@ function DebugAppPage() {
                                   <div class={hint}>repairable settings: {unavailable.reason.repair?.join(", ")}</div>
                                 </Show>
                                 <details class="mt-1">
-                                  <summary class="cursor-pointer text-v2-text-text-faint">Technical detail</summary>
+                                  <summary class="cursor-pointer text-v2-text-text-faint">
+                                    {language.t("debug.page.technicalDetail")}
+                                  </summary>
                                   <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-v2-text-text-faint">
                                     {unavailable.reason.detail ?? "No additional detail."}
                                   </pre>
@@ -575,10 +578,10 @@ function DebugAppPage() {
         {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
         <div class={section} data-panel="scheduler">
           <div class={heading}>
-            <span class={title}>Scheduler</span>
+            <span class={title}>{language.t("debug.page.scheduler")}</span>
             <span class={hint}>live EEVDF state per device — in-flight, waiting, and the fair-share ledger</span>
             <button class={`${btn} ml-auto`} onClick={() => setSchedTick((t) => t + 1)}>
-              Refresh
+              {language.t("debug.page.refresh")}
             </button>
           </div>
           <div class="px-4 pb-3">
@@ -632,10 +635,10 @@ function DebugAppPage() {
         {/* ── Context findings ──────────────────────────────────────────────────────── */}
         <div class={section} data-panel="context-findings">
           <div class={heading}>
-            <span class={title}>Context findings</span>
+            <span class={title}>{language.t("debug.page.contextFindings")}</span>
             <span class={hint}>what shaped recent turns — concrete findings, never a mystery score</span>
             <button type="button" class={`${btn} ml-auto`} onClick={() => void refetchContext()}>
-              Refresh
+              {language.t("debug.page.refresh")}
             </button>
           </div>
           <div class="px-4 pb-3">
@@ -679,7 +682,11 @@ function DebugAppPage() {
                           </div>
                           <Show
                             when={message.context.findings.length > 0}
-                            fallback={<div class={`${hint} pt-1`}>No duplicate or dominant tool output found.</div>}
+                            fallback={
+                              <div class={`${hint} pt-1`}>
+                                {language.t("debug.page.noDuplicateOrDominantToolOutput")}
+                              </div>
+                            }
                           >
                             <ul class="list-disc space-y-0.5 pl-4 pt-1 text-[12px] text-v2-text-text-muted">
                               <For each={message.context.findings}>
@@ -700,7 +707,7 @@ function DebugAppPage() {
         {/* ── Error log ──────────────────────────────────────────────────────────────── */}
         <div class={section} data-panel="error-log">
           <div class={heading}>
-            <span class={title}>Error log</span>
+            <span class={title}>{language.t("debug.page.errorLog")}</span>
             <span class={hint}>
               this UI's own uncaught errors, rejections, console error/warn and subsystem notices — newest first, last{" "}
               {200} kept
@@ -708,10 +715,10 @@ function DebugAppPage() {
             <span class="flex-1" />
             <button type="button" class={btn} onClick={copyLog} disabled={filteredLog().length === 0}>
               <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
-              Copy
+              {language.t("debug.page.copy")}
             </button>
             <button type="button" class={btn} onClick={clearErrorLog} disabled={errorLogEntries().length === 0}>
-              Clear
+              {language.t("debug.page.clear")}
             </button>
           </div>
           {/* ⚠️ Naming the OTHER file is the point of this line, not decoration. Someone reading
@@ -750,8 +757,8 @@ function DebugAppPage() {
             <input
               type="search"
               class="ml-auto min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
-              placeholder="filter text…"
-              aria-label="Filter the error log by text"
+              placeholder={language.t("debug.page.filterText")}
+              aria-label={language.t("debug.page.filterTheErrorLogByText")}
               data-slot="debug-log-match"
               value={logMatch()}
               onInput={(event) => setLogMatch(event.currentTarget.value)}
@@ -802,17 +809,17 @@ function DebugAppPage() {
         {/* ── Instance log (the server half) ─────────────────────────────────────────── */}
         <div class={section} data-panel="server-log">
           <div class={heading}>
-            <span class={title}>Instance log</span>
+            <span class={title}>{language.t("debug.page.instanceLog")}</span>
             <span class={hint}>
               what the OS itself did — keyed, rotated, and read from the instance rather than from this UI
             </span>
             <span class="flex-1" />
             <button type="button" class={btn} onClick={copyServerLog} disabled={(serverLogData()?.lines ?? 0) === 0}>
               <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
-              Copy
+              {language.t("debug.page.copy")}
             </button>
             <button type="button" class={btn} onClick={applyServerFilters}>
-              Refresh
+              {language.t("debug.page.refresh")}
             </button>
           </div>
           <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-filters">
@@ -844,7 +851,7 @@ function DebugAppPage() {
               type="search"
               class="min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
               placeholder="subsystem…"
-              aria-label="Filter the instance log by subsystem"
+              aria-label={language.t("debug.page.filterTheInstanceLogBySubsystem")}
               data-slot="server-log-subsystem"
               value={subsystemDraft()}
               onInput={(event) => setSubsystemDraft(event.currentTarget.value)}
@@ -854,8 +861,8 @@ function DebugAppPage() {
             <input
               type="search"
               class="min-w-0 flex-1 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
-              placeholder="text in the line… (press Enter)"
-              aria-label="Filter the instance log by text"
+              placeholder={language.t("debug.page.textInTheLinePressEnter")}
+              aria-label={language.t("debug.page.filterTheInstanceLogByText")}
               data-slot="server-log-match"
               value={matchDraft()}
               onInput={(event) => setMatchDraft(event.currentTarget.value)}
@@ -874,7 +881,7 @@ function DebugAppPage() {
               classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "local" }}
               onClick={() => setServerPlane("local")}
             >
-              Full detail
+              {language.t("debug.page.fullDetail")}
             </button>
             <button
               type="button"
@@ -882,7 +889,7 @@ function DebugAppPage() {
               classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "maintenance" }}
               onClick={() => setServerPlane("maintenance")}
             >
-              Ready to send onward
+              {language.t("debug.page.readyToSendOnward")}
             </button>
             <span class={hint}>
               {serverPlane() === "local"
@@ -943,7 +950,7 @@ function DebugAppPage() {
         {/* ── Sessions (ps-lite) ─────────────────────────────────────────────────────── */}
         <div class={section}>
           <div class={heading}>
-            <span class={title}>Sessions</span>
+            <span class={title}>{language.t("debug.page.sessions")}</span>
             {/* Naming the scope is the honest move, the same way the log panel says whose ring it
                 shows: presence answers for THIS instance's own sessions and is not a directory of
                 who is online — a developer view does not widen that. */}
@@ -958,7 +965,7 @@ function DebugAppPage() {
                 refreshPresence()
               }}
             >
-              Refresh
+              {language.t("debug.page.refresh")}
             </button>
           </div>
           {/* overflow-x too: seven columns outgrow a narrow window, and a table that spills past
@@ -1042,7 +1049,7 @@ function DebugAppPage() {
                             )}
                           >
                             <button class="mr-2 hover:underline" onClick={() => void actOnExecution("retry", row.id)}>
-                              Retry
+                              {language.t("debug.page.retry")}
                             </button>
                           </Show>
                           <Show
@@ -1051,11 +1058,11 @@ function DebugAppPage() {
                             )}
                           >
                             <button class="mr-2 hover:underline" onClick={() => void actOnExecution("stop", row.id)}>
-                              Stop
+                              {language.t("debug.page.stop")}
                             </button>
                           </Show>
                           <button class="hover:underline" onClick={showModels}>
-                            Models
+                            {language.t("debug.page.models")}
                           </button>
                         </td>
                       </tr>
@@ -1084,7 +1091,7 @@ function DebugAppPage() {
         {/* ── Config snapshot ────────────────────────────────────────────────────────── */}
         <div>
           <div class={heading}>
-            <span class={title}>Config snapshot</span>
+            <span class={title}>{language.t("debug.page.configSnapshot")}</span>
             <span class={hint}>the active server's resolved config (read-only — edit in Settings)</span>
           </div>
           <pre class="overflow-x-auto px-4 pb-4 font-mono text-[11px] leading-4 text-v2-text-text-muted">

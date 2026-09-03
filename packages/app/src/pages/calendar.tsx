@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { useLanguage } from "@/context/language"
 import { fireStatusLabel } from "./calendar-status"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -88,6 +89,7 @@ const BTN =
 const CARD = "rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-4"
 
 export function CalendarPage() {
+  const language = useLanguage()
   let editor: HTMLFormElement | undefined
   const sdk = useServerSDK()
   const httpBase = createMemo(() => sdk()?.server?.http)
@@ -406,15 +408,21 @@ export function CalendarPage() {
         {/* Clock + next run */}
         <div class="flex flex-wrap items-center gap-4">
           <div class={`${CARD} flex-1 min-w-[220px]`}>
-            <div class="text-xs uppercase tracking-wide text-v2-text-text-faint">Now</div>
+            <div class="text-xs uppercase tracking-wide text-v2-text-text-faint">{language.t("calendar.page.now")}</div>
             <div class="mt-1 text-2xl font-semibold tabular-nums">{clockTime()}</div>
             <div class="text-sm text-v2-text-text-muted">{clockDate()}</div>
           </div>
           <div class={`${CARD} flex-1 min-w-[220px]`}>
-            <div class="text-xs uppercase tracking-wide text-v2-text-text-faint">Next run</div>
+            <div class="text-xs uppercase tracking-wide text-v2-text-text-faint">
+              {language.t("calendar.page.nextRun")}
+            </div>
             <Show
               when={nextUp()}
-              fallback={<div class="mt-1 text-sm text-v2-text-text-muted">No upcoming runs scheduled.</div>}
+              fallback={
+                <div class="mt-1 text-sm text-v2-text-text-muted">
+                  {language.t("calendar.page.noUpcomingRunsScheduled")}
+                </div>
+              }
             >
               {(n) => (
                 <>
@@ -433,7 +441,7 @@ export function CalendarPage() {
           <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
             {/* A count is a CLAIM about how many tasks exist. It is withheld until one has arrived,
                 because "(0)" over a failed read is the same lie in numerals. */}
-            Scheduled tasks
+            {language.t("calendar.page.scheduledTasks")}
             <Show when={scheduleListing().kind === "loaded" || scheduleListing().kind === "empty"}>
               {" "}
               ({schedules().length})
@@ -445,16 +453,19 @@ export function CalendarPage() {
               {directoryProblem()}
             </div>
           </Show>
-          <Switch fallback={<div class="text-sm text-v2-text-text-muted">Loading your scheduled tasks…</div>}>
+          <Switch
+            fallback={
+              <div class="text-sm text-v2-text-text-muted">{language.t("calendar.page.loadingYourScheduledTasks")}</div>
+            }
+          >
             <Match when={scheduleListing().kind === "failed"}>
               <div class="text-sm text-v2-state-fg-danger" data-slot="calendar-schedules-failed">
-                Could not read your scheduled tasks. They are still on the instance and still running — only this
-                list failed to arrive, so there is nothing here to add again.
+                {language.t("calendar.page.couldNotReadYourScheduledTasks")}
               </div>
             </Match>
             <Match when={scheduleListing().kind === "empty"}>
               <div class="text-sm text-v2-text-text-muted" data-slot="calendar-schedules-empty">
-                No tasks yet — add one below.
+                {language.t("calendar.page.noTasksYetAddOneBelow")}
               </div>
             </Match>
             <Match when={scheduleListing().kind === "loaded"}>
@@ -497,8 +508,13 @@ export function CalendarPage() {
                           </Show>
                         </div>
                       </div>
-                      <button class={BTN} onClick={() => edit(s)} title="Edit task" aria-pressed={editingID() === s.id}>
-                        Edit
+                      <button
+                        class={BTN}
+                        onClick={() => edit(s)}
+                        title={language.t("calendar.page.editTask")}
+                        aria-pressed={editingID() === s.id}
+                      >
+                        {language.t("calendar.page.edit")}
                       </button>
                       <button
                         class={BTN}
@@ -508,7 +524,7 @@ export function CalendarPage() {
                       >
                         {s.enabled ? "Pause" : "Resume"}
                       </button>
-                      <button class={BTN} onClick={() => void del(s.id)} title="Delete task">
+                      <button class={BTN} onClick={() => void del(s.id)} title={language.t("calendar.page.deleteTask")}>
                         <Icon name="trash" size="normal" />
                       </button>
                     </div>
@@ -523,12 +539,14 @@ export function CalendarPage() {
             hiding the whole section and implying nothing has ever run. */}
         <Show when={fireListing().kind === "failed"}>
           <div class="text-sm text-v2-state-fg-danger" data-slot="calendar-fires-failed">
-            Could not read the recent-run history.
+            {language.t("calendar.page.couldNotReadTheRecentRun")}
           </div>
         </Show>
         <Show when={fires().length}>
           <div>
-            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">Recent runs</div>
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
+              {language.t("calendar.page.recentRuns")}
+            </div>
             <div class="flex flex-col gap-1.5">
               <For each={fires()}>
                 {(f) => (
@@ -555,14 +573,14 @@ export function CalendarPage() {
             </div>
             <Show when={editingID()}>
               <button class={BTN} type="button" onClick={resetEditor} disabled={busy()}>
-                Cancel
+                {language.t("calendar.page.cancel")}
               </button>
             </Show>
           </div>
           <input
             aria-label="Title"
             class={FIELD}
-            placeholder="Title (e.g. New Year greeting)"
+            placeholder={language.t("calendar.page.titleEGNewYearGreeting")}
             value={title()}
             onInput={(e) => setTitle(e.currentTarget.value)}
           />
@@ -570,13 +588,13 @@ export function CalendarPage() {
             aria-label="Prompt"
             class={FIELD}
             rows={2}
-            placeholder="Prompt the agent runs — e.g. Congratulate our clients with the New Year and unobtrusively promote our product."
+            placeholder={language.t("calendar.page.promptTheAgentRunsEG")}
             value={prompt()}
             onInput={(e) => setPrompt(e.currentTarget.value)}
           />
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-repeat" class="text-sm text-v2-text-text-muted">
-              Repeat
+              {language.t("calendar.page.repeat")}
             </label>
             <select
               id="calendar-repeat"
@@ -589,7 +607,7 @@ export function CalendarPage() {
 
             <Show when={kind() === "once"}>
               <input
-                aria-label="Run once at"
+                aria-label={language.t("calendar.page.runOnceAt")}
                 class={FIELD}
                 type="datetime-local"
                 value={onceAt()}
@@ -599,7 +617,7 @@ export function CalendarPage() {
             <Show when={kind() !== "once"}>
               <label class="text-sm text-v2-text-text-muted">at</label>
               <input
-                aria-label="Run at"
+                aria-label={language.t("calendar.page.runAt")}
                 class={FIELD}
                 type="time"
                 value={time()}
@@ -626,7 +644,7 @@ export function CalendarPage() {
             <Show when={kind() === "monthly"}>
               <label class="text-sm text-v2-text-text-muted">day</label>
               <input
-                aria-label="Day of month"
+                aria-label={language.t("calendar.page.dayOfMonth")}
                 class={`${FIELD} w-20`}
                 type="number"
                 min={1}
@@ -645,7 +663,7 @@ export function CalendarPage() {
                 <For each={MONTHS}>{(m, i) => <option value={i() + 1}>{m}</option>}</For>
               </select>
               <input
-                aria-label="Day of month"
+                aria-label={language.t("calendar.page.dayOfMonth")}
                 class={`${FIELD} w-20`}
                 type="number"
                 min={1}
@@ -658,7 +676,7 @@ export function CalendarPage() {
 
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-agent" class="text-sm text-v2-text-text-muted">
-              Responsible
+              {language.t("calendar.page.responsible")}
             </label>
             <select
               id="calendar-agent"
@@ -682,12 +700,12 @@ export function CalendarPage() {
 
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-model" class="text-sm text-v2-text-text-muted">
-              Model
+              {language.t("calendar.page.model")}
             </label>
             <input
               id="calendar-model"
               class={`${FIELD} min-w-[260px] flex-1`}
-              placeholder="Override the model for this one task — blank = whatever the colleague thinks with"
+              placeholder={language.t("calendar.page.overrideTheModelForThisOne")}
               value={model()}
               onInput={(e) => setModel(e.currentTarget.value)}
             />
@@ -695,23 +713,23 @@ export function CalendarPage() {
 
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-folder" class="text-sm text-v2-text-text-muted">
-              Folder
+              {language.t("calendar.page.folder")}
             </label>
             <input
               id="calendar-folder"
               class={`${FIELD} min-w-[220px] flex-1`}
-              placeholder="Override the folder for this one task — blank = wherever the responsible colleague works"
+              placeholder={language.t("calendar.page.overrideTheFolderForThisOne")}
               value={folder()}
               onInput={(e) => setFolder(e.currentTarget.value)}
             />
             <button type="button" class={BTN} onClick={pickFolder} disabled={!conn()}>
-              Browse…
+              {language.t("calendar.page.browse")}
             </button>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-permissions" class="text-sm text-v2-text-text-muted">
-              Permissions
+              {language.t("calendar.page.permissions")}
             </label>
             <select
               id="calendar-permissions"
@@ -721,7 +739,9 @@ export function CalendarPage() {
             >
               <For each={PERMISSION_MODES}>{(m) => <option value={m.value}>{m.label}</option>}</For>
             </select>
-            <span class="text-xs text-v2-text-text-faint">Runs unattended — “Ask” stalls with no one to approve.</span>
+            <span class="text-xs text-v2-text-text-faint">
+              {language.t("calendar.page.runsUnattendedAskStallsWithNo")}
+            </span>
           </div>
 
           <Show when={error()}>
@@ -738,7 +758,9 @@ export function CalendarPage() {
             <ButtonV2 variant="gold" type="submit" disabled={busy() || !httpBase() || !routingDirectory()}>
               {busy() ? (editingID() ? "Saving…" : "Adding…") : editingID() ? "Save changes" : "Add task"}
             </ButtonV2>
-            <span class="text-xs text-v2-text-text-faint">Times are in your local timezone.</span>
+            <span class="text-xs text-v2-text-text-faint">
+              {language.t("calendar.page.timesAreInYourLocalTimezone")}
+            </span>
           </div>
         </form>
       </div>

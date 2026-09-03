@@ -1,4 +1,5 @@
 import { A, useSearchParams } from "@solidjs/router"
+import { useLanguage } from "@/context/language"
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
@@ -200,6 +201,7 @@ function writeCache(serverKey: string, pos: Record<string, Vec>) {
 }
 
 export function MemoryGraphPage() {
+  const language = useLanguage()
   const global = useGlobal()
   const server = useServer()
 
@@ -930,11 +932,11 @@ export function MemoryGraphPage() {
       <header class="flex items-center gap-3 border-b border-v2-border-border-muted px-4 py-2.5">
         <A href="/" class="flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100">
           <Icon name="arrow-left" size="large" />
-          Home
+          {language.t("memoryGraph.page.home")}
         </A>
         <div class="flex items-center gap-2">
           <Icon name="branch" size="large" />
-          <h1 class="text-sm font-medium">Memory</h1>
+          <h1 class="text-sm font-medium">{language.t("memoryGraph.page.memory")}</h1>
         </div>
         {/* WHOSE memory. The app used to show one undifferentiated pile, which was the only honest
             rendering while there was one pile; now every memory belongs to a colleague, to one chat
@@ -942,7 +944,7 @@ export function MemoryGraphPage() {
             old model. Nova is included like anyone else — it is not a super-user of its colleagues'
             cabinets, it just has one of its own. */}
         <label class="flex items-center gap-1.5 text-[11px] opacity-80" data-slot="memory-owner-picker">
-          <span class="opacity-70">Whose</span>
+          <span class="opacity-70">{language.t("memoryGraph.page.whose")}</span>
           <select
             class="rounded bg-v2-background-bg-layer-01 px-1.5 py-1 text-[11px]"
             value={owner()?.key ?? ""}
@@ -1009,8 +1011,8 @@ export function MemoryGraphPage() {
             <input
               type="search"
               value={filter().query}
-              placeholder="Search memories"
-              aria-label="Search memories"
+              placeholder={language.t("memoryGraph.page.searchMemories")}
+              aria-label={language.t("memoryGraph.page.searchMemories")}
               class="w-40 rounded bg-v2-background-bg-layer-01 px-2 py-1 text-[11px] placeholder:opacity-40"
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
@@ -1065,12 +1067,12 @@ export function MemoryGraphPage() {
               data-slot="memory-focus"
             >
               <span class="opacity-70">
-                Connected to <span class="opacity-100">{label()}</span>
+                {language.t("memoryGraph.page.connectedTo")} <span class="opacity-100">{label()}</span>
               </span>
               <button
                 type="button"
                 data-slot="memory-focus-clear"
-                aria-label="Show everything again"
+                aria-label={language.t("memoryGraph.page.showEverythingAgain")}
                 class="opacity-60 hover:opacity-100"
                 onClick={() => setSelected(undefined)}
               >
@@ -1158,15 +1160,22 @@ export function MemoryGraphPage() {
               it at two after the roster landed would be the one place still describing the old model
               — and a colour with no legend entry is a mystery, not a hint. */}
           <span class="flex items-center gap-1">
-            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_GLOBAL }} /> Shared
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_GLOBAL }} />{" "}
+            {language.t("memoryGraph.page.shared")}
           </span>
           <span class="flex items-center gap-1">
-            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_AGENT }} /> Its own
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_AGENT }} />{" "}
+            {language.t("memoryGraph.page.itsOwn")}
           </span>
           <span class="flex items-center gap-1">
-            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_SESSION }} /> One chat
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_SESSION }} />{" "}
+            {language.t("memoryGraph.page.oneChat")}
           </span>
-          <button class="opacity-70 hover:opacity-100" title="Reset view" onClick={resetView}>
+          <button
+            class="opacity-70 hover:opacity-100"
+            title={language.t("memoryGraph.page.resetView")}
+            onClick={resetView}
+          >
             <Icon name="expand" size="large" />
           </button>
           <button class="opacity-70 hover:opacity-100" title="Refresh" onClick={() => setTick((t) => t + 1)}>
@@ -1231,12 +1240,12 @@ export function MemoryGraphPage() {
                 data-state={graphState()}
               >
                 <Show when={graphState() === "loading"}>
-                  <span class="opacity-50">Loading the memory graph…</span>
+                  <span class="opacity-50">{language.t("memoryGraph.page.loadingTheMemoryGraph")}</span>
                 </Show>
                 <Show when={graphState() === "unavailable" ? fault() : undefined}>
                   {(f) => (
                     <>
-                      <span class="opacity-70">Memory is unavailable right now.</span>
+                      <span class="opacity-70">{language.t("memoryGraph.page.memoryIsUnavailableRightNow")}</span>
                       <span class="max-w-md opacity-50">{f().reason}</span>
                       <Show when={f().retryable}>
                         <button
@@ -1245,14 +1254,14 @@ export function MemoryGraphPage() {
                           class="rounded bg-v2-background-bg-layer-02 px-2.5 py-1 text-xs opacity-80 hover:opacity-100"
                           onClick={retry}
                         >
-                          Retry
+                          {language.t("memoryGraph.page.retry")}
                         </button>
                       </Show>
                     </>
                   )}
                 </Show>
                 <Show when={graphState() === "empty"}>
-                  <span class="opacity-50">Nothing remembered yet — the graph fills as you chat.</span>
+                  <span class="opacity-50">{language.t("memoryGraph.page.nothingRememberedYetTheGraphFills")}</span>
                 </Show>
               </div>
             }
@@ -1561,7 +1570,9 @@ export function MemoryGraphPage() {
                     <Show
                       when={selectedScope()}
                       fallback={
-                        <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-xs opacity-60">Group</span>
+                        <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-xs opacity-60">
+                          {language.t("memoryGraph.page.group")}
+                        </span>
                       }
                     >
                       {(scope) => (
@@ -1613,7 +1624,7 @@ export function MemoryGraphPage() {
                         <Show when={rowOf(sel().id)?.source}>
                           {(source) => (
                             <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-source">
-                              <span class="opacity-70">Recorded by </span>
+                              <span class="opacity-70">{language.t("memoryGraph.page.recordedBy")} </span>
                               {source()}
                             </p>
                           )}
@@ -1641,14 +1652,14 @@ export function MemoryGraphPage() {
                           fallback={
                             <Show when={rowOf(sel().id)?.kind === "claim"}>
                               <p class="mb-1 text-xs opacity-50" data-slot="memory-inspector-identity">
-                                No identity — nothing can correct this later, only forget it.
+                                {language.t("memoryGraph.page.noIdentityNothingCanCorrectThis")}
                               </p>
                             </Show>
                           }
                         >
                           {(predicate) => (
                             <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-identity">
-                              <span class="opacity-70">Identity: </span>
+                              <span class="opacity-70">{language.t("memoryGraph.page.identity")} </span>
                               {rowOf(sel().id)?.subject ?? "?"} · {predicate()}
                             </p>
                           )}
@@ -1661,7 +1672,7 @@ export function MemoryGraphPage() {
                           this shows the links that ARE reachable and claims nothing further. */}
                         <Show when={timeline(sel().id).length > 0}>
                           <div class="mb-3 mt-2" data-slot="memory-inspector-timeline">
-                            <div class="text-xs font-medium opacity-70">Timeline</div>
+                            <div class="text-xs font-medium opacity-70">{language.t("memoryGraph.page.timeline")}</div>
                             <ul class="mt-1 flex flex-col gap-1">
                               <For each={timeline(sel().id)}>
                                 {(step) => (
@@ -1696,15 +1707,21 @@ export function MemoryGraphPage() {
                             {whyOpen() === sel().id ? "Hide why this is here" : "Why is this here?"}
                           </button>
                           <Show when={whyOpen() === sel().id}>
-                            <Show when={why()} fallback={<p class="mt-1 text-[11px] opacity-50">Asking the ledger…</p>}>
+                            <Show
+                              when={why()}
+                              fallback={
+                                <p class="mt-1 text-[11px] opacity-50">
+                                  {language.t("memoryGraph.page.askingTheLedger")}
+                                </p>
+                              }
+                            >
                               {(answer) => (
                                 <div class="mt-1 text-[11px] opacity-70">
                                   <Show
                                     when={answer().ok}
                                     fallback={
                                       <p class="opacity-60">
-                                        This instance could not answer — it may not be recording which memories get
-                                        recalled.
+                                        {language.t("memoryGraph.page.thisInstanceCouldNotAnswerIt")}
                                       </p>
                                     }
                                   >
@@ -1714,7 +1731,9 @@ export function MemoryGraphPage() {
                                         /* ⚠️ Not "never useful". No recall has ever RETURNED it, which is a
                                          different and much weaker statement, and the one the ledger can
                                          actually make. */
-                                        <p class="opacity-60">No recall has ever returned this one.</p>
+                                        <p class="opacity-60">
+                                          {language.t("memoryGraph.page.noRecallHasEverReturnedThis")}
+                                        </p>
                                       }
                                     >
                                       {(usage) => (
@@ -1755,7 +1774,7 @@ export function MemoryGraphPage() {
                             when={rowOf(sel().id)?.status !== "superseded"}
                             fallback={
                               <span class="text-[11px] opacity-50" data-slot="memory-inspector-superseded">
-                                Replaced by a newer answer — record a new claim to change it back.
+                                {language.t("memoryGraph.page.replacedByANewerAnswerRecord")}
                               </span>
                             }
                           >
@@ -1798,8 +1817,11 @@ export function MemoryGraphPage() {
                       </>
                     )}
                   </Show>
-                  <Show when={selectedEdges().length > 0} fallback={<p class="text-xs opacity-40">No links.</p>}>
-                    <div class="text-xs font-medium opacity-70">Links</div>
+                  <Show
+                    when={selectedEdges().length > 0}
+                    fallback={<p class="text-xs opacity-40">{language.t("memoryGraph.page.noLinks")}</p>}
+                  >
+                    <div class="text-xs font-medium opacity-70">{language.t("memoryGraph.page.links")}</div>
                     <ul class="mt-1 flex flex-col gap-1">
                       <For each={selectedEdges()}>
                         {(edge) => (
