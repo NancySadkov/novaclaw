@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { elapsedMs, phaseLabel } from "../src/v2/components/turn-receipt"
+import { elapsedMs, phaseLabel } from "./turn-receipt"
 
 /**
  * THE RECEIPT'S CLOCK IS ABOUT THE RUN, NOT THE TURN.
