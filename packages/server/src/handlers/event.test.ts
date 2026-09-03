@@ -62,11 +62,18 @@ const run = <A>(effect: Effect.Effect<A, unknown, EventV2.Service | Database.Ser
   Effect.runPromise(effect.pipe(Effect.scoped, Effect.provide(layer)) as Effect.Effect<A>)
 
 describe("the public event stream's manifest asymmetry", () => {
-  test("the fixture is real: the offender is published but unwireable, the control is wireable", () => {
+  test("the fixture is real: the offender is PUBLISHABLE and unwireable, the control is wireable", () => {
+    // ⚠️ "Publishable", not "in the manifest", since 2026-09-03: the bus inventory is now exactly the
+    // served set, so no manifest type is unwireable and the asymmetry this file guards can only come
+    // from a definition OUTSIDE it. `EventV2.publish` takes any definition — that is what makes a
+    // stray publish, or a future divergence, reachable at all — so the offender stays a real
+    // definition the wire has no arm for. `global.disposed` is exactly that: `/global/event`'s own
+    // element, declared by that route, never on this stream and no longer in the bus inventory.
     const published = new Set<string>(EventManifest.Definitions.map((one) => one.type))
-    expect(published.has(OFFENDER.type)).toBe(true)
+    expect(published.has(OFFENDER.type)).toBe(false)
     expect(wireTypes.has(OFFENDER.type)).toBe(false)
     expect(wireTypes.has(CARRIED.type)).toBe(true)
+    expect(published.has(CARRIED.type)).toBe(true)
   })
 
   test("an event outside the wire union is skipped and the stream keeps delivering", async () => {

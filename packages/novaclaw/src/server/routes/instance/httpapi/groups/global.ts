@@ -1,6 +1,7 @@
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
+import { ServerEvent } from "@novaclaw/schema/server-event"
 import { LocalModel } from "@novaclaw/schema/local-model"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -156,6 +157,16 @@ const GlobalEventSchema = Schema.Struct({
         Schema.Struct({ id: EventV2.ID, type: Schema.Literal(definition.type), properties: definition.data }),
       )
       .toArray(),
+    // THIS ROUTE'S OWN lifecycle arm, declared here because this route is the only thing that emits
+    // it: `server/global-lifecycle.ts` puts it on the `GlobalBus` when every instance is disposed,
+    // and nothing publishes it through `EventV2.publish`. It sat in the bus manifest until
+    // 2026-09-03, which made the instance streams look like they were REFUSING an event rather than
+    // never having carried one.
+    Schema.Struct({
+      id: EventV2.ID,
+      type: Schema.Literal(ServerEvent.Disposed.type),
+      properties: Schema.Struct({}),
+    }),
     ...SyncEventSchemas,
   ]),
 }).annotate({ identifier: "GlobalEvent" })

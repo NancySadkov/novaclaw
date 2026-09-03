@@ -72,12 +72,18 @@ describe("public event manifest", () => {
     //     type the CLI could read only on the legacy `/event`, now a bus event the contract stream
     //     carries, so `/event` could be deleted. Payload: a directory. Not durable.
     // Verdict: ServerDefinitions 92 -> 93, Definitions/Latest 94 -> 95.
+    //   · And last: `server.connected` and `global.disposed` LEFT the inventory. Neither was ever a
+    //     bus event — the streams synthesize them (`protocol/groups/event.ts` declares the opener
+    //     itself; `groups/global.ts` declares the disposal it relays off the `GlobalBus`) — so the
+    //     inventory now IS the served set and `/api/event` refuses nothing. `Definitions` is
+    //     `ServerDefinitions`, which is why the two numbers below are the same number.
+    // Verdict: Definitions/Latest 95 -> 93.
     expect({
       server: EventManifest.ServerDefinitions.length,
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-    }).toEqual({ server: 93, all: 95, latest: 95, durable: 48 })
+    }).toEqual({ server: 93, all: 93, latest: 93, durable: 48 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

@@ -289,7 +289,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `Worktree*` — and lost the two `EventPermission*` arms whose family nobody publishes.
 // 2026-09-03, last: the legacy `/event` left with its `EventSubscribeResponses`; `server.instance.disposed`
 // became a served bus event (`ServerInstanceDisposed`) so the CLI reads it on `/api/event`.
-const SCHEMA_NAME_FINGERPRINT = "c568a56c7bb6e2c89dfefd750549fca95b3775f62438973125fa15ea71161f66"
+// 2026-09-03, and the row's last move: `server.connected` and `global.disposed` left the bus
+// inventory for the streams that synthesize them, so `GlobalEvent` names the disposal itself.
+const SCHEMA_NAME_FINGERPRINT = "ec0dc98ee6831c500e3d8ae8f50202b8c0c51121cd8fc06a9c22951a19731033"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

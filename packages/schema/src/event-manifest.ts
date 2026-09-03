@@ -17,7 +17,6 @@ import { Plugin } from "./plugin"
 import { Pty } from "./pty"
 import { Question } from "./question"
 import { Reference } from "./reference"
-import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
 import { SessionPresence } from "./session-presence"
@@ -90,11 +89,18 @@ export const ServerDefinitions = Event.inventory(
 )
 
 /**
- * Everything the bus carries: the served set plus `server.connected` and `global.disposed`, which
- * the streams emit themselves (`/api/event` and `/event` open with `server.connected`;
- * `global.disposed` rides `/global/event`) and are therefore declared here for the union, not served
- * as bus events. Their shape reconciliation and the legacy element are the two rows of that ledger left.
+ * Everything the bus carries — and since 2026-09-03 that is exactly the served set, so
+ * `/api/event` refuses nothing.
+ *
+ * ⚠️ `server.connected` and `global.disposed` used to sit here too, and neither was ever a bus
+ * event: the STREAMS synthesize them. `/api/event` opens with `server.connected` (the arm is
+ * declared by `protocol/groups/event.ts` itself, which adds it when the definitions do not carry
+ * one), and `global.disposed` is a `GlobalBus` payload `/global/event` relays, declared by that
+ * route's own element schema. Keeping them in the bus inventory made two claims that were both
+ * false — that something publishes them through `EventV2.publish`, and that a stream refusing them
+ * was a GAP rather than the two sides of one contract meeting. A manifest entry with no publisher
+ * is the same defect the `question` and `permission` families were deleted for.
  */
-export const Definitions = Event.inventory(...ServerDefinitions, ...ServerEvent.Definitions)
+export const Definitions = ServerDefinitions
 export const Latest = Event.latest(Definitions)
 export { Durable }

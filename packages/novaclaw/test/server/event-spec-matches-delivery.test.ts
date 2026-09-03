@@ -82,14 +82,26 @@ describe("the /api/event contract equals what the route can deliver", () => {
     expect(declaration).toContain('"server.connected"')
   })
 
-  test("the fixture is real: the bus is wider than the wire, and global.disposed is the gap", () => {
-    // Nothing below means anything if the two sets were the same set all along. The gap used to be
-    // ten families wide with `session.status` as its sharpest case; since 2026-09-03 the served set
-    // is the bus minus the two server-lifecycle types, and `global.disposed` — which rides
-    // `/global/event`, not this stream — is what is left of it.
-    expect(EventManifest.Latest.size).toBeGreaterThan(deliverableTypes.size)
-    const onTheBus = new Set(EventManifest.Definitions.map((definition) => definition.type))
-    expect(onTheBus.has(ServerEvent.Disposed.type)).toBe(true)
+  test("🔴 the gap is CLOSED: every type the bus carries is deliverable, and the wire adds only its opener", () => {
+    // This test measured the GAP until 2026-09-03, and its fixture was the gap itself: a type the bus
+    // published that the wire could not express. There is no such type any more, so the assertion is
+    // the invariant that replaced it — the bus IS the served set — and the fixture that keeps it
+    // honest is the one arm on the other side: `server.connected`, which no publisher ever puts on
+    // the bus because the route synthesizes it as its first element.
+    //
+    // ⚠️ The gap closed in two moves, and neither was "widen the wire until the test passes": ten
+    // families JOINED the served set (they were already on the bus, and the app was waiting on them),
+    // and the four families nothing published — `question`, `permission`, and the two stream
+    // lifecycle arms — LEFT the manifest. `event-manifest.test.ts` carries the review of both.
+    // ⚠️ `Set<string>`, not the inferred narrow union: this is a membership ORACLE asked about a type
+    // deliberately outside it, and a set inferred over its own members rejects that question at the
+    // type level while the runtime answers it correctly. Same reasoning as `handlers/event.test.ts`.
+    const onTheBus = new Set<string>(EventManifest.Definitions.map((definition) => definition.type))
+    expect([...onTheBus].filter((type) => !deliverableTypes.has(type)).sort()).toEqual([])
+    expect([...deliverableTypes].filter((type) => !onTheBus.has(type)).sort()).toEqual(["server.connected"])
+    // …and the disposal that used to be the gap is now what it always was: the OTHER stream's
+    // element, declared by the route that relays it and absent from the bus inventory entirely.
+    expect(onTheBus.has(ServerEvent.Disposed.type)).toBe(false)
     expect(deliverableTypes.has(ServerEvent.Disposed.type)).toBe(false)
   })
 
