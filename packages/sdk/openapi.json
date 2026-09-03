@@ -36847,12 +36847,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "enabled_providers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         },
         "additionalProperties": false

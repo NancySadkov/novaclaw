@@ -194,7 +194,7 @@ describe("ConfigStoreWrite.apply", () => {
       const skills = yield* SkillConfigStore.Service
       yield* skills.addSource("/old/skills")
 
-      // Step 9: instructions + disabled/enabled_providers joined SETTINGS_KEYS — every
+      // Step 9: instructions + disabled_providers joined SETTINGS_KEYS — every
       // Config.Info key now routes (nothing falls back to a jsonc patch anymore).
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({

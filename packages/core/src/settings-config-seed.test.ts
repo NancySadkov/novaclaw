@@ -33,7 +33,6 @@ const VALID: Record<string, unknown> = {
   instances: [{ name: "spark", url: "http://127.0.0.1:4097" }],
   instructions: ["AGENTS.md"],
   disabled_providers: ["openai"],
-  enabled_providers: ["dgx-spark"],
   username: "nancy",
   server: {},
   snapshots: false,

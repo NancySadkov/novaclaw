@@ -762,9 +762,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   disabled_providers: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Providers to disable that would otherwise load automatically",
   }),
-  enabled_providers: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
-    description: "When set, ONLY these providers are enabled; all others are ignored",
-  }),
 }) {}
 
 export class Document extends Schema.Class<Document>("Config.Document")({

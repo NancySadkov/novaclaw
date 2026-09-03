@@ -160,11 +160,12 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.
   affective: "consequential",
-  // Both provider filters can leave the instance with NO working model — and "at least one working
+  // The provider filter can leave the instance with NO working model — and "at least one working
   // model remains" is the self-healing law's own precondition, i.e. the one outage this tool could
   // create that this tool could not then repair. Not privileged: no execution, no egress, no text.
+  // (`enabled_providers`, its allow-list twin, was retired 2026-09-03: no product writer, and its one
+  // reader filtered the models.dev picker of a CLI credential prompt — the wrong price for that.)
   disabled_providers: "consequential",
-  enabled_providers: "consequential",
   // A closed enum of three. It selects a COMPILED prompt hint (`harness-config.ts` maps "normal" to
   // `EXPERTISE_HINT`) and the UI's disclosure tier, so it changes a future prompt without being able
   // to carry a single byte of attacker text — which is why it clears the fourth test and stops here.

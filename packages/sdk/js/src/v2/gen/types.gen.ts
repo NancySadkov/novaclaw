@@ -4370,7 +4370,6 @@ export type ConfigInfo = {
     [key: string]: ConfigV2ModelEntry
   }
   disabled_providers?: Array<string>
-  enabled_providers?: Array<string>
 }
 
 export type ProjectTune = {

@@ -29,8 +29,8 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  * - `agents`/`commands`/`skills`/`references`/`plugins`/`providers` — per-subsystem stores.
  *
  * Step 9 moved the last three V1-side keys in: `instructions` CONCAT+dedups across documents
- * (the V1 service's historical Set union); `disabled_providers`/`enabled_providers` are
- * whole-value (last document wins — mergeDeep replaced arrays).
+ * (the V1 service's historical Set union); `disabled_providers` is whole-value (last document
+ * wins — mergeDeep replaced arrays). Its allow-list twin `enabled_providers` was retired 2026-09-03.
  */
 export const SETTINGS_KEYS = [
   "shell",
@@ -40,7 +40,6 @@ export const SETTINGS_KEYS = [
   "instances",
   "instructions",
   "disabled_providers",
-  "enabled_providers",
   "username",
   "server",
   "snapshots",

@@ -32,7 +32,7 @@ import { SkillConfigStore } from "./skill-config-store"
 // `updateConfig` contract is patch-MERGE over the effective config; this module routes each
 // top-level key of such a patch into its owning SQLite store — and mirrors the same keys back
 // over the served view so the UI reads what it wrote. Since step 9 EVERY Config.Info key
-// routes (`instructions` + `disabled/enabled_providers` joined SETTINGS_KEYS); there is no
+// routes (`instructions` + `disabled_providers` joined SETTINGS_KEYS); there is no
 // jsonc fallback anymore — and a key that routes nowhere is now REFUSED BY NAME rather than
 // ignored (`NOT_ROUTED_KEYS` + `unroutedKeys` below).
 //
@@ -620,9 +620,9 @@ export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([])
  * back, and the location's `Catalog` still served nothing at all
  * (`packages/core/test/config-catalog-reload.test.ts`).
  *
- * ⚠️ And `disabled_providers`/`enabled_providers` are deliberately NOT triggers — for a reason about
- * their READER, not about their reach. Re-checked tree-wide 2026-09-01: `cli/cmd/providers.ts:102-103`
- * reads both and `settings-v2/dialog-new-model.tsx:403` writes `disabled_providers`, so they are not
+ * ⚠️ And `disabled_providers` is deliberately NOT a trigger — for a reason about
+ * its READER, not about its reach. Re-checked tree-wide 2026-09-01: `cli/cmd/providers.ts`
+ * reads it and `settings-v2/dialog-new-model.tsx:403` writes `disabled_providers`, so they are not
  * inert keys. But the only reader is a CLI command that resolves config once per process and exits,
  * so **no live location holds a value derived from them for an invalidation to reach.** A trigger here
  * would fire a reload that changes nothing observable, i.e. the per-key discipline abandoned for a

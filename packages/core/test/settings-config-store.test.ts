@@ -418,7 +418,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       // instructions: the V1 config service's historical Set union — concat in document
       // order, first occurrence wins the position.
       expect(all.instructions).toEqual(["dup.md", "first-only.md", "second-only.md"])
-      // disabled/enabled_providers: whole-value latest() — the more specific doc wins.
+      // disabled_providers: whole-value latest() — the more specific doc wins.
       expect(all.disabled_providers).toEqual(["google"])
     }),
   )

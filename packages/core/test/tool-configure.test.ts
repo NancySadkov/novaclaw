@@ -192,7 +192,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     expect(of("consequential")).toEqual([
       "affective",
       "disabled_providers",
-      "enabled_providers",
       "expertise",
       // The five harness drives (reground, set-listing, fan-out join, unfinished-set cue, image
       // shortcut). Consequential rather than operational because each one CHANGES WHAT THE AGENT IS

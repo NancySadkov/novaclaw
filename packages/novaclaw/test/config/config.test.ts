@@ -276,7 +276,7 @@ it.instance("serves providers/model from the catalog store and agents/default_ag
 
 it.instance("routes every updateConfig key into the stores — instructions + provider filters included", () =>
   Effect.gen(function* () {
-    // Step 9: instructions + disabled/enabled_providers joined SETTINGS_KEYS — the router
+    // Step 9: instructions + disabled_providers joined SETTINGS_KEYS — the router
     // consumes them (no legacy jsonc fallback remains) and the service serves them back.
     // The HTTP route hands the router a DECODED Config.Info instance — mirror that here.
     const consumed = yield* withStores(
@@ -284,20 +284,17 @@ it.instance("routes every updateConfig key into the stores — instructions + pr
         Schema.decodeUnknownSync(ConfigV2.Info)({
           instructions: ["docs/rules.md"],
           disabled_providers: ["openai"],
-          enabled_providers: ["teststore"],
           shell: "routed-shell",
         }),
       ),
     )
     expect(consumed.has("instructions")).toBe(true)
     expect(consumed.has("disabled_providers")).toBe(true)
-    expect(consumed.has("enabled_providers")).toBe(true)
     yield* Config.use.invalidate()
 
     const config = yield* Config.use.get()
     expect(config.instructions).toEqual(["docs/rules.md"])
     expect(config.disabled_providers).toEqual(["openai"])
-    expect(config.enabled_providers).toEqual(["teststore"])
     expect(config.shell).toBe("routed-shell")
   }),
 )
@@ -877,21 +874,21 @@ test("parseManagedPlist parses permission rules", async () => {
   expect(config.permissions).toEqual(rules)
 })
 
-test("parseManagedPlist parses enabled_providers", async () => {
+test("parseManagedPlist parses disabled_providers", async () => {
   const config = ConfigParse.schema(
     ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
           $schema: "https://novaclaw.app/config.json",
-          enabled_providers: ["anthropic", "google"],
+          disabled_providers: ["anthropic", "google"],
         }),
       ),
       "test:mobileconfig",
     ),
     "test:mobileconfig",
   )
-  expect(config.enabled_providers).toEqual(["anthropic", "google"])
+  expect(config.disabled_providers).toEqual(["anthropic", "google"])
 })
 
 test("parseManagedPlist handles empty config", async () => {
