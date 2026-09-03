@@ -646,7 +646,9 @@ export const layer = Layer.effect(
                 workspaceID: current?.workspaceID ?? undefined,
                 local: () => vcs.diffRaw(),
                 remote: ({ target }) =>
-                  HttpClientRequest.get(route(target.url, "/vcs/diff/raw"), {
+                  // The contract route. `/vcs/diff/raw` went with the rest of the family on
+                  // 2026-09-03; this one still carries no envelope, because the body IS the patch.
+                  HttpClientRequest.get(route(target.url, "/api/vcs/diff/raw"), {
                     headers: new Headers(target.headers),
                   }),
                 fallback: "",
@@ -660,13 +662,17 @@ export const layer = Layer.effect(
           // the session.
           yield* runInWorkspace({
             workspaceID: input.workspaceID ?? undefined,
-            local: () => vcs.apply({ patch: sourcePatch }),
+            // ⚠️ Both sides speak the CONTRACT's envelope, and the local side is the one that had to
+            // change. `runInWorkspace` casts a remote body straight to the local result's type, so a
+            // remote `{ location, data }` against a local `{ applied }` would have typechecked and
+            // been wrong at runtime. Wrapping the local call keeps the two halves the same shape.
+            local: () => vcs.apply({ patch: sourcePatch }).pipe(Effect.map((data) => ({ data }))),
             remote: ({ target }) =>
-              HttpClientRequest.post(route(target.url, "/vcs/apply"), {
+              HttpClientRequest.post(route(target.url, "/api/vcs/apply"), {
                 headers: new Headers(target.headers),
                 body: HttpBody.jsonUnsafe({ patch: sourcePatch }),
               }),
-            fallback: { applied: false },
+            fallback: { data: { applied: false } },
           }).pipe(Effect.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))))
         }
 

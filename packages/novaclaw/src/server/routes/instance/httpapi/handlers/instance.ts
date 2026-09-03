@@ -17,7 +17,6 @@ import { CredentialRepair } from "@novaclaw/core/credential/repair"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
-import { Vcs } from "@/project/vcs"
 import { OsPlaces } from "@/server/os-places"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
@@ -35,7 +34,7 @@ import { Effect, Layer } from "effect"
 import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ApiAppRegisterError, ApiVcsApplyError } from "../groups/instance"
+import { ApiAppRegisterError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
 
 // Filesystem roots for the picker / Files "jump to drive" affordance (M6). Windows probes A:–Z:
@@ -62,7 +61,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
     const config = yield* Config.Service
-    const vcs = yield* Vcs.Service
     const settingsStore = yield* SettingsConfigStore.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
@@ -104,42 +102,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         ...(places.length > 0 ? { places } : {}),
         ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
-    })
-
-    const getVcs = Effect.fn("InstanceHttpApi.vcs")(function* () {
-      const [branch, default_branch] = yield* Effect.all([vcs.branch(), vcs.defaultBranch()], {
-        concurrency: "unbounded",
-      })
-      return { branch, default_branch }
-    })
-
-    const getVcsStatus = Effect.fn("InstanceHttpApi.vcsStatus")(function* () {
-      return yield* vcs.status()
-    })
-
-    const getVcsDiff = Effect.fn("InstanceHttpApi.vcsDiff")(function* (ctx: {
-      query: { mode: Vcs.Mode; context?: number }
-    }) {
-      return yield* vcs.diff(ctx.query.mode, { context: ctx.query.context })
-    })
-
-    const getVcsDiffRaw = Effect.fn("InstanceHttpApi.vcsDiffRaw")(function* () {
-      return yield* vcs.diffRaw()
-    })
-
-    const applyVcs = Effect.fn("InstanceHttpApi.vcsApply")(function* (ctx: { payload: Vcs.ApplyInput }) {
-      return yield* vcs.apply(ctx.payload).pipe(
-        Effect.mapError(
-          (error) =>
-            new ApiVcsApplyError({
-              name: "VcsApplyError",
-              data: {
-                message: error.message,
-                reason: error.reason,
-              },
-            }),
-        ),
-      )
     })
 
     // P6 reconciliation (rides config-sqlite step 9): list from the authoritative V2 truth —
@@ -246,42 +208,43 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             presets: ConfigProviderPreset.effective(merged.provider_presets as never),
           })
 
-          const providerRow = target === undefined
-            ? // No default model means no provider to be told about. Inventing an "unknown" row would
-              // put a worry on this screen that the rest of the product does not share.
-              undefined
-            : target.baseURL === undefined
-              ? NovaHealth.fromProvider({
-                  name: target.name,
-                  verdict: "unknown",
-                  detail: "No address is configured for this provider.",
-                })
-              : // ⚠️ The policy answer is FREE and comes first: when the airgap is on, the request
-                // would fail, and calling that "unreachable" would tell someone their provider is
-                // broken when the truth is that they turned offline mode on themselves.
-                // Read the SAME live ref that enforces the guard, never a re-derived policy: a
-                // status surface that recomputes can disagree with what is actually blocking, which
-                // is ruling 2 on the screen someone opens to find out what is wrong. `shell.ts`
-                // learned this already -- re-deriving also costs two sqlite open/close pairs.
-                ProviderReach.blockedByPolicy((yield* Offline.Service).policy, target.baseURL)
-                ? NovaHealth.fromProvider({ name: target.name, verdict: "blocked" })
-                : request.query.probe !== "provider"
-                  ? NovaHealth.fromProvider({
-                      name: target.name,
-                      verdict: "unknown",
-                      detail: "Not checked — checking contacts the provider.",
-                    })
-                  : NovaHealth.fromProvider({
-                      name: target.name,
-                      ...(yield* ProviderReach.probe({
-                        // The discovery convention this tree already uses everywhere.
-                        url: `${target.baseURL.replace(/\/$/, "")}/models`,
-                        fetcher: async (url, signal) => {
-                          const response = await fetch(url, { signal })
-                          return { ok: response.ok, status: response.status }
-                        },
-                      })),
-                    })
+          const providerRow =
+            target === undefined
+              ? // No default model means no provider to be told about. Inventing an "unknown" row would
+                // put a worry on this screen that the rest of the product does not share.
+                undefined
+              : target.baseURL === undefined
+                ? NovaHealth.fromProvider({
+                    name: target.name,
+                    verdict: "unknown",
+                    detail: "No address is configured for this provider.",
+                  })
+                : // ⚠️ The policy answer is FREE and comes first: when the airgap is on, the request
+                  // would fail, and calling that "unreachable" would tell someone their provider is
+                  // broken when the truth is that they turned offline mode on themselves.
+                  // Read the SAME live ref that enforces the guard, never a re-derived policy: a
+                  // status surface that recomputes can disagree with what is actually blocking, which
+                  // is ruling 2 on the screen someone opens to find out what is wrong. `shell.ts`
+                  // learned this already -- re-deriving also costs two sqlite open/close pairs.
+                  ProviderReach.blockedByPolicy((yield* Offline.Service).policy, target.baseURL)
+                  ? NovaHealth.fromProvider({ name: target.name, verdict: "blocked" })
+                  : request.query.probe !== "provider"
+                    ? NovaHealth.fromProvider({
+                        name: target.name,
+                        verdict: "unknown",
+                        detail: "Not checked — checking contacts the provider.",
+                      })
+                    : NovaHealth.fromProvider({
+                        name: target.name,
+                        ...(yield* ProviderReach.probe({
+                          // The discovery convention this tree already uses everywhere.
+                          url: `${target.baseURL.replace(/\/$/, "")}/models`,
+                          fetcher: async (url, signal) => {
+                            const response = await fetch(url, { signal })
+                            return { ok: response.ok, status: response.status }
+                          },
+                        })),
+                      })
 
           // ⚠️ The ENGINE's stage, not the capability's. The capability answers "did the layer
           // build", and it does — the open failure is caught inside and yields a degraded client —
@@ -324,7 +287,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             ),
             NovaHealth.fromPressure(pressure),
             NovaHealth.fromDatabase(database),
-            NovaHealth.fromMemory({ stage: memory.stage, ...(memory.detail === undefined ? {} : { detail: memory.detail }) }),
+            NovaHealth.fromMemory({
+              stage: memory.stage,
+              ...(memory.detail === undefined ? {} : { detail: memory.detail }),
+            }),
             NovaHealth.fromScheduler(schedulerState),
             // ⚠️ `undefined`, not `false`. UPDATER_ENABLED lives in the desktop main process and a
             // server-side board cannot read it; reporting "updates are off" would describe the
@@ -347,11 +313,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         }),
       )
       .handle("path", getPath)
-      .handle("vcs", getVcs)
-      .handle("vcsStatus", getVcsStatus)
-      .handle("vcsDiff", getVcsDiff)
-      .handle("vcsDiffRaw", getVcsDiffRaw)
-      .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
       .handle("agent", getAgent)
       .handle("appList", listApp)

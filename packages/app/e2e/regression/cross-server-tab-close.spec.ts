@@ -91,8 +91,7 @@ async function mockServers(page: Page, requests: string[]) {
     if (/^\/session\/[^/]+$/.test(url.pathname)) return json(route, { name: "NotFoundError" }, 404)
     if (url.pathname === `/session/${current.id}/message`) return json(route, [])
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(url.pathname)) return json(route, [])
-    if (["/skill", "/command", "/question", "/vcs/diff"].includes(url.pathname))
-      return json(route, [])
+    if (["/skill", "/command", "/question"].includes(url.pathname)) return json(route, [])
     if (["/global/config", "/config", "/mcp", "/session/status"].includes(url.pathname)) return json(route, {})
     if (url.pathname === "/provider")
       return json(route, { all: [], connected: [], default: { providerID: "", modelID: "" } })
@@ -115,7 +114,12 @@ async function mockServers(page: Page, requests: string[]) {
         directory: current.directory,
         home: current.directory,
       })
-    if (url.pathname === "/vcs") return json(route, { branch: "main", default_branch: "main" })
+    // The `{ location, data }` envelope, which the VCS family joined on 2026-09-03.
+    if (url.pathname === "/api/vcs" || url.pathname === "/api/vcs/diff")
+      return json(route, {
+        location: { directory: current.directory, root: current.directory, origin: "local" },
+        data: url.pathname === "/api/vcs" ? { branch: "main", default_branch: "main" } : [],
+      })
     // ⚠️ LIST endpoints must answer a list. The catch-all below returns `{}`, and the composer feeds
     // these three straight into `.filter`/`.find` — which threw inside a render and put the whole app
     // behind its error boundary ("Something went wrong"), so every assertion in this file failed for a

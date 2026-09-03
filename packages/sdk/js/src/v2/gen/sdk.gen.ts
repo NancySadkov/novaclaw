@@ -2006,126 +2006,6 @@ class ApiPath extends NovaClawApiClient {
   }
 }
 
-class ApiVcsDiff extends NovaClawApiClient {
-  /**
-   * Get raw VCS diff
-   *
-   * Retrieve a raw patch for current uncommitted changes.
-   */
-  public raw<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.VcsDiffRawResponses, T.VcsDiffRawErrors, ThrowOnError>({
-      url: "/vcs/diff/raw",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiVcs extends NovaClawApiClient {
-  /**
-   * Get VCS info
-   *
-   * Retrieve version control system (VCS) information for the current project, such as git branch.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.VcsGetResponses, T.VcsGetErrors, ThrowOnError>({
-      url: "/vcs",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get VCS status
-   *
-   * Retrieve changed files in the current working tree without patches.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.VcsStatusResponses, T.VcsStatusErrors, ThrowOnError>({
-      url: "/vcs/status",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get VCS diff
-   *
-   * Retrieve the current git diff for the working tree or against the default branch.
-   */
-  public diff<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      mode: "git" | "branch"
-      context?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      directory: parameters?.["directory"],
-      workspace: parameters?.["workspace"],
-      mode: parameters?.["mode"],
-      context: parameters?.["context"],
-    }
-    return (options?.client ?? this.client).get<T.VcsDiffResponses, T.VcsDiffErrors, ThrowOnError>({
-      url: "/vcs/diff",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Apply VCS patch
-   *
-   * Apply a raw patch to the current working tree.
-   */
-  public apply<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      patch?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = { patch: parameters?.["patch"] }
-    return (options?.client ?? this.client).post<T.VcsApplyResponses, T.VcsApplyErrors, ThrowOnError>({
-      url: "/vcs/apply",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  private _diff?: ApiVcsDiff
-  get diff2(): ApiVcsDiff {
-    return (this._diff ??= new ApiVcsDiff({ client: this.client }))
-  }
-}
-
 class ApiCommand extends NovaClawApiClient {
   /**
    * List commands
@@ -6179,6 +6059,124 @@ class ApiV2Command extends NovaClawApiClient {
   }
 }
 
+class ApiV2Vcs extends NovaClawApiClient {
+  /**
+   * Get VCS info
+   *
+   * Retrieve version control information for a location, such as its branch and default branch.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsGetResponses, T.V2VcsGetErrors, ThrowOnError>({
+      url: "/api/vcs",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get VCS status
+   *
+   * Retrieve the changed files in the working tree, with counts and no patches.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsStatusResponses, T.V2VcsStatusErrors, ThrowOnError>({
+      url: "/api/vcs/status",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get VCS diff
+   *
+   * Retrieve the diff for the working tree (mode=git) or against the default branch (mode=branch).
+   */
+  public diff<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      mode: "git" | "branch"
+      context?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], mode: parameters?.["mode"], context: parameters?.["context"] }
+    return (options?.client ?? this.client).get<T.V2VcsDiffResponses, T.V2VcsDiffErrors, ThrowOnError>({
+      url: "/api/vcs/diff",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get raw VCS diff
+   *
+   * Retrieve a raw patch of the uncommitted changes, as text a patch tool can apply directly.
+   */
+  public diffRaw<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsDiffRawResponses, T.V2VcsDiffRawErrors, ThrowOnError>({
+      url: "/api/vcs/diff/raw",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Apply VCS patch
+   *
+   * Apply a raw patch to the working tree. Fails with kind 'non-git' outside a repository and 'not-clean' when the tree has changes.
+   */
+  public apply<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      patch: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    const body = { patch: parameters?.["patch"] }
+    return (options?.client ?? this.client).post<T.V2VcsApplyResponses, T.V2VcsApplyErrors, ThrowOnError>({
+      url: "/api/vcs/apply",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiV2Skill extends NovaClawApiClient {
   /**
    * List skills
@@ -6769,6 +6767,11 @@ class ApiV2 extends NovaClawApiClient {
     return (this._command ??= new ApiV2Command({ client: this.client }))
   }
 
+  private _vcs?: ApiV2Vcs
+  get vcs(): ApiV2Vcs {
+    return (this._vcs ??= new ApiV2Vcs({ client: this.client }))
+  }
+
   private _skill?: ApiV2Skill
   get skill(): ApiV2Skill {
     return (this._skill ??= new ApiV2Skill({ client: this.client }))
@@ -6866,10 +6869,6 @@ export class NovaclawClient extends NovaClawApiClient {
   private _path?: ApiPath
   get path(): ApiPath {
     return (this._path ??= new ApiPath({ client: this.client }))
-  }
-  private _vcs?: ApiVcs
-  get vcs(): ApiVcs {
-    return (this._vcs ??= new ApiVcs({ client: this.client }))
   }
   private _command?: ApiCommand
   get command(): ApiCommand {

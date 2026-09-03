@@ -165,28 +165,27 @@ export const LEGACY_PATHS: readonly string[] = [
   "/sync/history",
   "/sync/replay",
   "/sync/steal",
-  // /vcs — 5
-  "/vcs",
-  "/vcs/apply",
-  "/vcs/diff",
-  "/vcs/diff/raw",
-  "/vcs/status",
+  // /vcs — GONE 2026-09-03. The family moved to `/api/vcs*` (protocol `groups/vcs.ts`, served by
+  // `novaclaw/…/handlers/vcs.ts`), which is the last row of the event-stream shrink's ledger.
 ]
 
 /**
- * Legacy OPERATIONS (method + path), measured 2026-09-01: GET 34, POST 36, DELETE 3, PUT 2,
- * PATCH 2 — 77 in total.
+ * Legacy OPERATIONS (method + path), measured 2026-09-03: GET 28, POST 33, DELETE 3, PUT 2,
+ * PATCH 2 — 68 in total.
  *
- * ⚠️ The line above used to read "measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3, PATCH 2",
- * which sums to 100 against a pin of 94: prose that was never re-measured when the pin moved. These
- * five numbers are re-derived from the committed spec and DO sum to the constant below — if you
- * change one, re-derive all five rather than adjusting by hand.
+ * ⚠️ This header has been wrong twice, the same way both times: the pin moved and the prose did
+ * not. It read "measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3, PATCH 2" (sum 100) against a
+ * pin of 94, was corrected on 2026-09-01 to five numbers summing to 77 against a pin of 73, and is
+ * re-derived here from the committed spec at a pin of 68 — which these five DO sum to. If you change
+ * one, re-derive all five from `packages/sdk/openapi.json` rather than adjusting by hand; a
+ * breakdown that does not sum to the constant is worse than no breakdown, because it reads as a
+ * measurement.
  *
  * The path ledger alone would let `POST /file` be added beside the existing `GET /file` — a new
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 73
+const LEGACY_OPERATION_COUNT = 68
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -309,11 +308,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(65)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(60)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(65)
+    ).toBe(60)
     expect(
       legacyOperations(DOCUMENT).length,
       [
@@ -336,8 +335,8 @@ describe("the guard actually bites (negative control)", () => {
     // …and the contract half stays free to grow, however new the route is.
     expect(unpinnedLegacyPaths(["/api/totally-new-contract-route"], PINNED)).toEqual([])
     // A pinned path is not an offender — the ledger is what excuses it, nothing else.
-    expect(unpinnedLegacyPaths(["/vcs/status"], PINNED)).toEqual([])
-    expect(unpinnedLegacyPaths(["/vcs/status"], new Set())).toEqual(["/vcs/status"])
+    expect(unpinnedLegacyPaths(["/shell/status"], PINNED)).toEqual([])
+    expect(unpinnedLegacyPaths(["/shell/status"], new Set())).toEqual(["/shell/status"])
   })
 
   test("the shrink half reports a pin the spec no longer declares", () => {

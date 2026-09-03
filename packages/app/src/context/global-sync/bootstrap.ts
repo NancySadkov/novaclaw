@@ -326,8 +326,10 @@ export async function bootstrapDirectory(input: {
         ),
       () =>
         retry(() =>
-          input.sdk.vcs.get().then((x) => {
-            const next = x.data ?? input.store.vcs
+          // `/api/vcs` — the branch badge's source, wrapped `{ location, data }` like every other
+          // contract route since the family moved there on 2026-09-03.
+          input.sdk.v2.vcs.get().then((x) => {
+            const next = x.data?.data ?? input.store.vcs
             input.setStore("vcs", next)
             if (next) input.vcsCache.setStore("value", next)
           }),

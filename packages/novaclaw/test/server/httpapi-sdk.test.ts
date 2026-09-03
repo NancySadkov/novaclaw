@@ -486,7 +486,10 @@ describe("HttpApi SDK", () => {
         // `InstanceState.make` and registers for no reload domain, so it served a stale list after
         // any config write. Skills are read through core's `SkillV2` at `/api/skill`, which is
         // registered for the `skills` reload domain — covered by the core config-plugin suite.
-        const vcs = yield* capture(() => sdk.vcs.get())
+        // `/api/vcs` since 2026-09-03, when the family left the legacy surface. Reached through
+        // `sdk.v2` and answering the `{ location, data }` envelope, which is why the branch is read
+        // one level deeper below.
+        const vcs = yield* capture(() => sdk.v2.vcs.get())
 
         return {
           statuses: statuses({
@@ -505,7 +508,7 @@ describe("HttpApi SDK", () => {
           foundFile: JSON.stringify(findFiles.data).includes("hello.txt"),
           foundText: JSON.stringify(findText.data ?? null).includes("sdk-parity"),
           listedFile: JSON.stringify(files.data).includes("hello.txt"),
-          vcs: { hasBranch: typeof record(vcs.data).branch === "string" },
+          vcs: { hasBranch: typeof record(record(vcs.data).data).branch === "string" },
         }
       }),
     ),

@@ -1463,35 +1463,6 @@ export type Path = {
   instanceHome?: string
 }
 
-export type VcsInfo = {
-  branch?: string
-  default_branch?: string
-}
-
-export type VcsFileStatus = {
-  file: string
-  additions: number
-  deletions: number
-  status: "added" | "deleted" | "modified"
-}
-
-export type VcsFileDiff = {
-  file: string
-  patch?: string
-  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
-export type VcsApplyError = {
-  name: "VcsApplyError"
-  data: {
-    message: string
-    reason: "non-git" | "not-clean"
-  }
-}
-
 export type Command = {
   name: string
   description?: string
@@ -1807,6 +1778,27 @@ export type UnknownReason = "not-applicable" | "not-measured" | "measurement-fai
 export type ForbiddenError = {
   _tag: "ForbiddenError"
   message: string
+}
+
+export type VcsInfo = {
+  branch?: string
+  default_branch?: string
+}
+
+export type VcsFileStatus = {
+  file: string
+  additions: number
+  deletions: number
+  status: "added" | "deleted" | "modified"
+}
+
+export type VcsFileDiff = {
+  file: string
+  patch?: string
+  patchUnavailableReason?: "binary" | "too_large" | "metadata_only"
+  additions: number
+  deletions: number
+  status?: "added" | "deleted" | "modified"
 }
 
 export type MessengerAccountStatus = {
@@ -10752,152 +10744,6 @@ export type PathGetResponses = {
 
 export type PathGetResponse = PathGetResponses[keyof PathGetResponses]
 
-export type VcsGetData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs"
-}
-
-export type VcsGetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsGetError = VcsGetErrors[keyof VcsGetErrors]
-
-export type VcsGetResponses = {
-  /**
-   * VCS info
-   */
-  200: VcsInfo
-}
-
-export type VcsGetResponse = VcsGetResponses[keyof VcsGetResponses]
-
-export type VcsStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/status"
-}
-
-export type VcsStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsStatusError = VcsStatusErrors[keyof VcsStatusErrors]
-
-export type VcsStatusResponses = {
-  /**
-   * VCS status
-   */
-  200: Array<VcsFileStatus>
-}
-
-export type VcsStatusResponse = VcsStatusResponses[keyof VcsStatusResponses]
-
-export type VcsDiffData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    mode: "git" | "branch"
-    context?: number
-  }
-  url: "/vcs/diff"
-}
-
-export type VcsDiffErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsDiffError = VcsDiffErrors[keyof VcsDiffErrors]
-
-export type VcsDiffResponses = {
-  /**
-   * VCS diff
-   */
-  200: Array<VcsFileDiff>
-}
-
-export type VcsDiffResponse = VcsDiffResponses[keyof VcsDiffResponses]
-
-export type VcsDiffRawData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/diff/raw"
-}
-
-export type VcsDiffRawErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsDiffRawError = VcsDiffRawErrors[keyof VcsDiffRawErrors]
-
-export type VcsDiffRawResponses = {
-  /**
-   * Raw VCS diff
-   */
-  200: string
-}
-
-export type VcsDiffRawResponse = VcsDiffRawResponses[keyof VcsDiffRawResponses]
-
-export type VcsApplyData = {
-  body?: {
-    patch: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/apply"
-}
-
-export type VcsApplyErrors = {
-  /**
-   * VcsApplyError | InvalidRequestError
-   */
-  400: VcsApplyError | InvalidRequestError
-}
-
-export type VcsApplyError2 = VcsApplyErrors[keyof VcsApplyErrors]
-
-export type VcsApplyResponses = {
-  /**
-   * VCS patch applied
-   */
-  200: {
-    applied: boolean
-  }
-}
-
-export type VcsApplyResponse = VcsApplyResponses[keyof VcsApplyResponses]
-
 export type CommandListData = {
   body?: never
   path?: never
@@ -16968,6 +16814,194 @@ export type V2CommandRemoveResponses = {
 }
 
 export type V2CommandRemoveResponse = V2CommandRemoveResponses[keyof V2CommandRemoveResponses]
+
+export type V2VcsGetData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs"
+}
+
+export type V2VcsGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsGetError = V2VcsGetErrors[keyof V2VcsGetErrors]
+
+export type V2VcsGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: VcsInfo
+  }
+}
+
+export type V2VcsGetResponse = V2VcsGetResponses[keyof V2VcsGetResponses]
+
+export type V2VcsStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs/status"
+}
+
+export type V2VcsStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsStatusError = V2VcsStatusErrors[keyof V2VcsStatusErrors]
+
+export type V2VcsStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<VcsFileStatus>
+  }
+}
+
+export type V2VcsStatusResponse = V2VcsStatusResponses[keyof V2VcsStatusResponses]
+
+export type V2VcsDiffData = {
+  body?: never
+  path?: never
+  query: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    mode: "git" | "branch"
+    context?: string
+  }
+  url: "/api/vcs/diff"
+}
+
+export type V2VcsDiffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsDiffError = V2VcsDiffErrors[keyof V2VcsDiffErrors]
+
+export type V2VcsDiffResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<VcsFileDiff>
+  }
+}
+
+export type V2VcsDiffResponse = V2VcsDiffResponses[keyof V2VcsDiffResponses]
+
+export type V2VcsDiffRawData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs/diff/raw"
+}
+
+export type V2VcsDiffRawErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsDiffRawError = V2VcsDiffRawErrors[keyof V2VcsDiffRawErrors]
+
+export type V2VcsDiffRawResponses = {
+  /**
+   * Success
+   */
+  200: string
+}
+
+export type V2VcsDiffRawResponse = V2VcsDiffRawResponses[keyof V2VcsDiffRawResponses]
+
+export type V2VcsApplyData = {
+  body: {
+    patch: string
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/vcs/apply"
+}
+
+export type V2VcsApplyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2VcsApplyError = V2VcsApplyErrors[keyof V2VcsApplyErrors]
+
+export type V2VcsApplyResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      applied: boolean
+    }
+  }
+}
+
+export type V2VcsApplyResponse = V2VcsApplyResponses[keyof V2VcsApplyResponses]
 
 export type V2SkillListData = {
   body?: never

@@ -23,6 +23,7 @@ import { AppGroup } from "@novaclaw/protocol/groups/app"
 import { ReferenceGroup } from "@novaclaw/protocol/groups/reference"
 import { SkillGroup } from "@novaclaw/protocol/groups/skill"
 import { TelemetryGroup } from "@novaclaw/protocol/groups/telemetry"
+import { VcsGroup } from "@novaclaw/protocol/groups/vcs"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { SchemaErrorMiddleware } from "@novaclaw/protocol/middleware/schema-error"
 import type { Layer } from "effect"
@@ -70,6 +71,12 @@ export const AppApi = fragment(AppGroup)
 export const ReferenceApi = fragment(ReferenceGroup.middleware(LocationMiddleware))
 export const SkillApi = fragment(SkillGroup.middleware(LocationMiddleware))
 export const TelemetryApi = fragment(TelemetryGroup)
+// ⚠️ Declared here, HANDLED in `packages/novaclaw`. The VCS service needs that package's `Git`,
+// `InstanceState` and `EventV2Bridge`, none of which this package can see — and none of which it
+// needs to, because a handler layer only has to satisfy the group's type. Every other fragment
+// here happens to be served next door in `handlers/`; this one is the exception, and saying so is
+// cheaper than letting the next reader conclude the handler was forgotten.
+export const VcsApi = fragment(VcsGroup.middleware(LocationMiddleware))
 
 /** Name a handler layer's exact public contract without widening its error or service requirements. */
 export function handlerLayer<Name extends string, Error, Requirements>(

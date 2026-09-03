@@ -291,7 +291,12 @@ const GENERATE_TIMEOUT_MS = 60_000
 // became a served bus event (`ServerInstanceDisposed`) so the CLI reads it on `/api/event`.
 // 2026-09-03, and the row's last move: `server.connected` and `global.disposed` left the bus
 // inventory for the streams that synthesize them, so `GlobalEvent` names the disposal itself.
-const SCHEMA_NAME_FINGERPRINT = "ec0dc98ee6831c500e3d8ae8f50202b8c0c51121cd8fc06a9c22951a19731033"
+// 2026-09-03, the row closed: the five `/vcs*` legacy paths became `/api/vcs*`. Exactly ONE name
+// moved - `VcsApplyError` LEFT, and nothing arrived. The bespoke 400 the legacy route carried is
+// now the contract's own `InvalidRequestError`, with the reason in its `kind`; the six VCS wire
+// shapes kept their names because they moved package without changing shape. 506 -> 505 entries,
+// reviewed with a HEAD-versus-working-tree diff of the table rather than by re-running the pin.
+const SCHEMA_NAME_FINGERPRINT = "0b9f5f25a036c29a204e0ff60f59bbb582b25f133fee72855095decc95d4e5db"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

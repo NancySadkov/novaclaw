@@ -74,7 +74,6 @@ describe("bootstrapDirectory", () => {
         app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
         config: { get: async () => ({ data: {} }) },
         session: { status: async () => ({ data: {} }) },
-        vcs: { get: async () => ({ data: undefined }) },
         command: {
           list: async () => {
             mcpReads.push("command")
@@ -84,6 +83,9 @@ describe("bootstrapDirectory", () => {
         v2: {
           session: { active: async () => ({ data: { data: {} } }) },
           question: { request: { list: async () => ({ data: { data: [] } }) } },
+          // `/api/vcs` since 2026-09-03, so the envelope is nested twice: the client's own `data`,
+          // then the contract's.
+          vcs: { get: async () => ({ data: { data: undefined } }) },
         },
         mcp: {
           status: async () => {
@@ -248,11 +250,11 @@ describe("bootstrapDirectory path seeding", () => {
           app: { agents: async () => ({ data: [] }) },
           config: { get: async () => ({ data: {} }) },
           session: { status: async () => ({ data: {} }) },
-          vcs: { get: async () => ({ data: undefined }) },
           command: { list: async () => ({ data: [] }) },
           v2: {
             session: { active: async () => ({ data: { data: {} } }) },
             question: { request: { list: async () => ({ data: { data: [] } }) } },
+            vcs: { get: async () => ({ data: { data: undefined } }) },
           },
           mcp: { status: async () => ({ data: {} }) },
           provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
@@ -328,11 +330,13 @@ describe("bootstrapDirectory path seeding", () => {
         app: { agents: async () => ({ data: [] }) },
         config: { get: async () => ({ data: {} }) },
         session: { status: async () => ({ data: {} }) },
-        vcs: { get: async () => ({ data: undefined }) },
         command: { list: async () => ({ data: [] }) },
         v2: {
           session: { active: async () => ({ data: { data: {} } }) },
           question: { request: { list: async () => ({ data: { data: [] } }) } },
+          // `/api/vcs` since 2026-09-03, so the envelope is nested twice: the client's own `data`,
+          // then the contract's.
+          vcs: { get: async () => ({ data: { data: undefined } }) },
         },
         mcp: { status: async () => ({ data: {} }) },
         provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },

@@ -387,8 +387,11 @@ describe("instance HttpApi", () => {
       const [paths, vcs, diff] = yield* Effect.all(
         [
           HttpClientRequest.get(InstancePaths.path).pipe(directoryHeader(dir), HttpClient.execute),
-          HttpClientRequest.get(InstancePaths.vcs).pipe(directoryHeader(dir), HttpClient.execute),
-          HttpClientRequest.get(InstancePaths.vcsDiff).pipe(
+          // The contract routes, not `InstancePaths`: the VCS family moved to `/api/vcs*` on
+          // 2026-09-03 and the five legacy paths went with it. Same header, same handler behaviour,
+          // one envelope more — which is what the `.data` reads below check.
+          HttpClientRequest.get("/api/vcs").pipe(directoryHeader(dir), HttpClient.execute),
+          HttpClientRequest.get("/api/vcs/diff").pipe(
             HttpClientRequest.setUrlParam("mode", "git"),
             directoryHeader(dir),
             HttpClient.execute,
@@ -401,12 +404,12 @@ describe("instance HttpApi", () => {
       expect(yield* paths.json).toMatchObject({ directory: dir, worktree: dir })
 
       expect(vcs.status).toBe(200)
-      expect(yield* vcs.json).toMatchObject({ branch: expect.any(String) })
+      expect(yield* vcs.json).toMatchObject({ data: { branch: expect.any(String) } })
 
       expect(diff.status).toBe(200)
-      expect(yield* diff.json).toContainEqual(
-        expect.objectContaining({ file: "changed.txt", additions: 1, status: "added" }),
-      )
+      expect((yield* diff.json) as { data: unknown[] }).toMatchObject({
+        data: expect.arrayContaining([expect.objectContaining({ file: "changed.txt", additions: 1, status: "added" })]),
+      })
     }),
   )
 

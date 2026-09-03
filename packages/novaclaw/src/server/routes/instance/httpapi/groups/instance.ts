@@ -1,6 +1,5 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
-import { Vcs } from "@/project/vcs"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
@@ -76,24 +75,7 @@ export class ApiAppRegisterError extends Schema.ErrorClass<ApiAppRegisterError>(
   { httpApiStatus: 400 },
 ) {}
 
-export const VcsDiffQuery = Schema.Struct({
-  ...WorkspaceRoutingQueryFields,
-  mode: Vcs.Mode,
-  context: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
-})
-
-export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsApplyError")(
-  {
-    name: Schema.Literal("VcsApplyError"),
-    data: Schema.Struct({
-      message: Schema.String,
-      reason: Schema.Literals(["non-git", "not-clean"]),
-    }),
-  },
-  { httpApiStatus: 400 },
-) {}
-
-// The live scheduler view — the `ps`-app story the EEVDF ledger's own snapshot() was written for:
+export // The live scheduler view — the `ps`-app story the EEVDF ledger's own snapshot() was written for:
 // ONE query surface over the running session world, shared by humans, agents and tests.
 const SchedulerLedgerEntry = Schema.Struct({
   id: Schema.String,
@@ -155,11 +137,6 @@ const DiagnosisQuery = Schema.Struct({
 export const InstancePaths = {
   dispose: "/instance/dispose",
   path: "/path",
-  vcs: "/vcs",
-  vcsStatus: "/vcs/status",
-  vcsDiff: "/vcs/diff",
-  vcsDiffRaw: "/vcs/diff/raw",
-  vcsApply: "/vcs/apply",
   command: "/command",
   agent: "/agent",
   app: "/app",
@@ -194,62 +171,6 @@ export const InstanceApi = HttpApi.make("instance")
             summary: "Get paths",
             description:
               "Retrieve the current working directory and related path information for the NovaClaw instance.",
-          }),
-        ),
-        HttpApiEndpoint.get("vcs", InstancePaths.vcs, {
-          query: WorkspaceRoutingQuery,
-          success: described(Vcs.Info, "VCS info"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.get",
-            summary: "Get VCS info",
-            description:
-              "Retrieve version control system (VCS) information for the current project, such as git branch.",
-          }),
-        ),
-        HttpApiEndpoint.get("vcsStatus", InstancePaths.vcsStatus, {
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(Vcs.FileStatus), "VCS status"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.status",
-            summary: "Get VCS status",
-            description: "Retrieve changed files in the current working tree without patches.",
-          }),
-        ),
-        HttpApiEndpoint.get("vcsDiff", InstancePaths.vcsDiff, {
-          query: VcsDiffQuery,
-          success: described(Schema.Array(Vcs.FileDiff), "VCS diff"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.diff",
-            summary: "Get VCS diff",
-            description: "Retrieve the current git diff for the working tree or against the default branch.",
-          }),
-        ),
-        HttpApiEndpoint.get("vcsDiffRaw", InstancePaths.vcsDiffRaw, {
-          query: WorkspaceRoutingQuery,
-          success: described(
-            Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/x-diff; charset=utf-8" })),
-            "Raw VCS diff",
-          ),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.diff.raw",
-            summary: "Get raw VCS diff",
-            description: "Retrieve a raw patch for current uncommitted changes.",
-          }),
-        ),
-        HttpApiEndpoint.post("vcsApply", InstancePaths.vcsApply, {
-          query: WorkspaceRoutingQuery,
-          payload: Vcs.ApplyInput,
-          success: described(Vcs.ApplyResult, "VCS patch applied"),
-          error: ApiVcsApplyError,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.apply",
-            summary: "Apply VCS patch",
-            description: "Apply a raw patch to the current working tree.",
           }),
         ),
         HttpApiEndpoint.get("command", InstancePaths.command, {

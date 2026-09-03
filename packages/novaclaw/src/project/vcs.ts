@@ -7,6 +7,7 @@ import { Git } from "@/git"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@novaclaw/core/event"
 import { VcsEvent } from "@novaclaw/schema/vcs-event"
+import { Vcs as VcsSchema } from "@novaclaw/schema/vcs"
 
 const PATCH_CONTEXT_LINES = 2_147_483_647
 const MAX_PATCH_BYTES = 10_000_000
@@ -267,52 +268,29 @@ const track = Effect.fnUntraced(function* (
   return yield* diffAgainstRef(git, dirs, ref, options)
 })
 
-export const Mode = Schema.Literals(["git", "branch"])
-export type Mode = Schema.Schema.Type<typeof Mode>
+/**
+ * The wire shapes live in `@novaclaw/schema/vcs` so `packages/protocol` can declare the routes that
+ * carry them (ruling 11: one contract, and it is that package). Re-exported here, not re-declared,
+ * so `Vcs.Info` still resolves for the fifty-odd call sites that were written against this module
+ * and there is still exactly one definition of each shape.
+ */
+export const Mode = VcsSchema.Mode
+export type Mode = VcsSchema.Mode
+export const Info = VcsSchema.Info
+export type Info = VcsSchema.Info
+export const FileDiff = VcsSchema.FileDiff
+export type FileDiff = VcsSchema.FileDiff
+export const FileStatus = VcsSchema.FileStatus
+export type FileStatus = VcsSchema.FileStatus
+export const ApplyInput = VcsSchema.ApplyInput
+export type ApplyInput = VcsSchema.ApplyInput
+export const ApplyResult = VcsSchema.ApplyResult
+export type ApplyResult = VcsSchema.ApplyResult
+export const PatchApplyError = VcsSchema.PatchApplyError
+export type PatchApplyError = VcsSchema.PatchApplyError
 
+/** The event family this service publishes. Not a wire shape, so it stays where it was. */
 export const Event = VcsEvent
-
-export const Info = Schema.Struct({
-  branch: Schema.optional(Schema.String),
-  default_branch: Schema.optional(Schema.String),
-}).annotate({ identifier: "VcsInfo" })
-export type Info = Schema.Schema.Type<typeof Info>
-
-export const FileDiff = Schema.Struct({
-  file: Schema.String,
-  // Mirrors Snapshot.FileDiff (see #26574). The current producer always
-  // populates patch, but loosening matches the sibling schema so a
-  // future code path that omits it can't crash /instance/vcs/diff.
-  patch: Schema.optional(Schema.String),
-  patchUnavailableReason: Schema.optional(Schema.Literals(["binary", "too_large", "metadata_only"])),
-  additions: Schema.Finite,
-  deletions: Schema.Finite,
-  status: Schema.optional(Schema.Literals(["added", "deleted", "modified"])),
-}).annotate({ identifier: "VcsFileDiff" })
-export type FileDiff = Schema.Schema.Type<typeof FileDiff>
-
-export const FileStatus = Schema.Struct({
-  file: Schema.String,
-  additions: Schema.Finite,
-  deletions: Schema.Finite,
-  status: Schema.Literals(["added", "deleted", "modified"]),
-}).annotate({ identifier: "VcsFileStatus" })
-export type FileStatus = Schema.Schema.Type<typeof FileStatus>
-
-export const ApplyInput = Schema.Struct({
-  patch: Schema.String,
-})
-export type ApplyInput = Schema.Schema.Type<typeof ApplyInput>
-
-export const ApplyResult = Schema.Struct({
-  applied: Schema.Boolean,
-})
-export type ApplyResult = Schema.Schema.Type<typeof ApplyResult>
-
-export class PatchApplyError extends Schema.TaggedErrorClass<PatchApplyError>()("VcsPatchApplyError", {
-  message: Schema.String,
-  reason: Schema.Literals(["non-git", "not-clean"]),
-}) {}
 
 export interface Interface {
   readonly init: () => Effect.Effect<void>

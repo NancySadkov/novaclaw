@@ -124,6 +124,7 @@ import { policyHandlers } from "./handlers/policy"
 import { providerHandlers } from "./handlers/provider"
 import { shellHandlers } from "./handlers/shell"
 import { syncHandlers } from "./handlers/sync"
+import { vcsHandlers } from "./handlers/vcs"
 import { handlers } from "@novaclaw/server/handlers"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { SessionExecutionWorker } from "@/session-worker/execution"
@@ -204,7 +205,11 @@ const instanceRoutes = instanceApiRoutes.pipe(
   Layer.provide([httpApiAuthLayer, peerDoorLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
 const serverRoutes = HttpApiBuilder.layer(runtimeApi()).pipe(
-  Layer.provide(handlers),
+  // ⚠️ TWO handler sources for one API. `handlers` serves every group declared in
+  // `packages/server`; `vcsHandlers` serves `server.vcs`, whose service lives in THIS package and is
+  // therefore unreachable from there. The api's type requires every group be handled, so a missing
+  // one is a compile error here rather than a 404 found by a user.
+  Layer.provide([handlers, vcsHandlers]),
   // 🔴 `workspaceRoutingLive` — the line that was missing. `eventApiRoutes` and `instanceRoutes` both
   // had it; the NATIVE api did not, so no `/api/**` request was ever routed to the instance owning
   // its session. A prompt for a remotely-owned session ran locally, against the wrong working tree,

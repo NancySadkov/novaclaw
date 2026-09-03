@@ -420,8 +420,8 @@ export default function Page() {
       queryFn: mode
         ? () =>
             sdk()
-              .client.vcs.diff({ mode })
-              .then((result) => list(result.data))
+              .client.v2.vcs.diff({ mode })
+              .then((result) => list(result.data?.data))
         : skipToken,
     }
   })

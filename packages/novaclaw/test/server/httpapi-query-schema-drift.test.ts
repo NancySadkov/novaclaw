@@ -10,7 +10,7 @@ import {
   FindFileQuery,
   FindTextQuery,
 } from "../../src/server/routes/instance/httpapi/groups/file"
-import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/httpapi/groups/instance"
+import { VcsDiffQuery } from "@novaclaw/protocol/groups/vcs"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { SessionMessagesQuery } from "@novaclaw/protocol/groups/message"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
@@ -35,7 +35,10 @@ const openApiDriftRoutes = [
   { method: "get", path: FilePaths.findFile, query: FindFileQuery },
   { method: "get", path: FilePaths.findText, query: FindTextQuery },
   { method: "get", path: FilePaths.list, query: FileQuery },
-  { method: "get", path: InstancePaths.vcsDiff, query: VcsDiffQuery },
+  // Re-pointed 2026-09-03: the row moved from the legacy `/vcs/diff` to the contract route with
+  // the family. The invariant is the same one — the served spec's query parameters must match the
+  // schema the route declares - and it survived the move rather than leaving with it.
+  { method: "get", path: "/api/vcs/diff", query: VcsDiffQuery },
   { method: "get", path: "/api/session/:sessionID/message", query: SessionMessagesQuery },
 ] satisfies Array<{ method: Method; path: string; query: QuerySchema }>
 

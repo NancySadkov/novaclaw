@@ -8,6 +8,7 @@ import { makeSessionGroups } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
+import { VcsGroup } from "./groups/vcs"
 import { SkillGroup } from "./groups/skill"
 import { EventGroup } from "./groups/event"
 import { AgentGroup } from "./groups/agent"
@@ -73,6 +74,8 @@ const makeApiFromGroup = <
     .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
+    // Location-scoped like `fs` and for the same reason: a diff belongs to one working tree.
+    .add(VcsGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
@@ -151,6 +154,7 @@ type ApiFromGroup<
         >
       | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof VcsGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof SkillGroup, LocationId>
       | Group
       | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>

@@ -6011,333 +6011,6 @@
         ]
       }
     },
-    "/vcs": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "vcs.get",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "VCS info",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VcsInfo"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve version control system (VCS) information for the current project, such as git branch.",
-        "summary": "Get VCS info",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.vcs.get({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/vcs/status": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "vcs.status",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "VCS status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/VcsFileStatus"
-                  },
-                  "description": "VCS status"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve changed files in the current working tree without patches.",
-        "summary": "Get VCS status",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.vcs.status({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/vcs/diff": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "vcs.diff",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "mode",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": ["git", "branch"]
-            },
-            "required": true
-          },
-          {
-            "name": "context",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "VCS diff",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/VcsFileDiff"
-                  },
-                  "description": "VCS diff"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve the current git diff for the working tree or against the default branch.",
-        "summary": "Get VCS diff",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.vcs.diff({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/vcs/diff/raw": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "vcs.diff.raw",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Raw VCS diff",
-            "content": {
-              "text/x-diff; charset=utf-8": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve a raw patch for current uncommitted changes.",
-        "summary": "Get raw VCS diff",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.vcs.diff.raw({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/vcs/apply": {
-      "post": {
-        "tags": ["instance"],
-        "operationId": "vcs.apply",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "VCS patch applied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "applied": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": ["applied"],
-                  "additionalProperties": false,
-                  "description": "VCS patch applied"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VcsApplyError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/VcsApplyError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Apply a raw patch to the current working tree.",
-        "summary": "Apply VCS patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "patch": {
-                    "type": "string"
-                  }
-                },
-                "required": ["patch"],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.vcs.apply({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/command": {
       "get": {
         "tags": ["instance"],
@@ -20699,6 +20372,433 @@
         ]
       }
     },
+    "/api/vcs": {
+      "get": {
+        "tags": ["vcs"],
+        "operationId": "v2.vcs.get",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/VcsInfo"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve version control information for a location, such as its branch and default branch.",
+        "summary": "Get VCS info",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.vcs.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/vcs/status": {
+      "get": {
+        "tags": ["vcs"],
+        "operationId": "v2.vcs.status",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VcsFileStatus"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the changed files in the working tree, with counts and no patches.",
+        "summary": "Get VCS status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.vcs.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/vcs/diff": {
+      "get": {
+        "tags": ["vcs"],
+        "operationId": "v2.vcs.diff",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["git", "branch"]
+            },
+            "required": true
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VcsFileDiff"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the diff for the working tree (mode=git) or against the default branch (mode=branch).",
+        "summary": "Get VCS diff",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.vcs.diff({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/vcs/diff/raw": {
+      "get": {
+        "tags": ["vcs"],
+        "operationId": "v2.vcs.diffRaw",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/x-diff; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve a raw patch of the uncommitted changes, as text a patch tool can apply directly.",
+        "summary": "Get raw VCS diff",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.vcs.diffRaw({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/vcs/apply": {
+      "post": {
+        "tags": ["vcs"],
+        "operationId": "v2.vcs.apply",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "applied": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["applied"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Apply a raw patch to the working tree. Fails with kind 'non-git' outside a repository and 'not-clean' when the tree has changes.",
+        "summary": "Apply VCS patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "patch": {
+                    "type": "string"
+                  }
+                },
+                "required": ["patch"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.vcs.apply({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/skill": {
       "get": {
         "tags": ["skills"],
@@ -27693,90 +27793,6 @@
         "required": ["home", "state", "config", "data", "worktree", "directory", "roots"],
         "additionalProperties": false
       },
-      "VcsInfo": {
-        "type": "object",
-        "properties": {
-          "branch": {
-            "type": "string"
-          },
-          "default_branch": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "VcsFileStatus": {
-        "type": "object",
-        "properties": {
-          "file": {
-            "type": "string"
-          },
-          "additions": {
-            "type": "number"
-          },
-          "deletions": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["added", "deleted", "modified"]
-          }
-        },
-        "required": ["file", "additions", "deletions", "status"],
-        "additionalProperties": false
-      },
-      "VcsFileDiff": {
-        "type": "object",
-        "properties": {
-          "file": {
-            "type": "string"
-          },
-          "patch": {
-            "type": "string"
-          },
-          "patchUnavailableReason": {
-            "type": "string",
-            "enum": ["binary", "too_large", "metadata_only"]
-          },
-          "additions": {
-            "type": "number"
-          },
-          "deletions": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["added", "deleted", "modified"]
-          }
-        },
-        "required": ["file", "additions", "deletions"],
-        "additionalProperties": false
-      },
-      "VcsApplyError": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["VcsApplyError"]
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              },
-              "reason": {
-                "type": "string",
-                "enum": ["non-git", "not-clean"]
-              }
-            },
-            "required": ["message", "reason"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["name", "data"],
-        "additionalProperties": false
-      },
       "Command": {
         "type": "object",
         "properties": {
@@ -28719,6 +28735,65 @@
           }
         },
         "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
+      "VcsInfo": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "default_branch": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VcsFileStatus": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "additions": {
+            "type": "number"
+          },
+          "deletions": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["added", "deleted", "modified"]
+          }
+        },
+        "required": ["file", "additions", "deletions", "status"],
+        "additionalProperties": false
+      },
+      "VcsFileDiff": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "patch": {
+            "type": "string"
+          },
+          "patchUnavailableReason": {
+            "type": "string",
+            "enum": ["binary", "too_large", "metadata_only"]
+          },
+          "additions": {
+            "type": "number"
+          },
+          "deletions": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["added", "deleted", "modified"]
+          }
+        },
+        "required": ["file", "additions", "deletions"],
         "additionalProperties": false
       },
       "messenger.account.status": {
@@ -47782,6 +47857,10 @@
     {
       "name": "commands",
       "description": "Experimental command routes."
+    },
+    {
+      "name": "vcs",
+      "description": "Version control routes for a location."
     },
     {
       "name": "skills",

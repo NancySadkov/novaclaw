@@ -1,6 +1,16 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/vcs/status", "/vcs/diff"])
+const emptyList = new Set(["/skill", "/command"])
+
+/**
+ * The `{ location, data }` envelope every `/api` route answers in. The VCS family joined them on
+ * 2026-09-03, and a mock that kept returning the bare body would have let the app's unwrap regress
+ * without a single spec going red.
+ */
+const located = (directory: string, data: unknown) => ({
+  location: { directory, root: directory, origin: "local" },
+  data,
+})
 const emptyObject = new Set(["/global/config", "/config", "/mcp", "/session/status"])
 
 export interface MockServerConfig {
@@ -33,7 +43,6 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
     "/project": [config.project],
     "/project/current": config.project,
     "/agent": [{ name: "build", mode: "primary" }],
-    "/vcs": { branch: "main", default_branch: "main" },
     "/session": config.sessions,
   }
 
@@ -53,7 +62,9 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
         location: { directory: config.directory, root: config.directory, origin: "local" },
         data: typeof config.questions === "function" ? config.questions() : (config.questions ?? []),
       })
-    if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)
+    if (path === "/api/vcs") return json(route, located(config.directory, { branch: "main", default_branch: "main" }))
+    if (path === "/api/vcs/status") return json(route, located(config.directory, []))
+    if (path === "/api/vcs/diff") return json(route, located(config.directory, config.vcsDiff ?? []))
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])
     if (path in staticRoutes) return json(route, staticRoutes[path])
