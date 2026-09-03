@@ -116,7 +116,6 @@ export const SUBSYSTEMS = {
   offline: "Offline mode",
   plugin: "Plugins",
   pty: "Terminal sessions",
-  question: "Questions",
   resource: "Host resources",
   server: "HTTP server",
   session: "Sessions and agent turns",
@@ -330,8 +329,6 @@ export const CORRELATION_ATTRIBUTES = {
   "workspace.id": "correlate",
   /** A terminal session the user opened. */
   "pty.id": "correlate",
-  /** One question put to the user, and answered by them. */
-  "question.request": "correlate",
   /** The legacy on-disk project id — derived from the user's own directory. */
   /**
    * A colleague on the roster (AGENTS.md — the structural metaphor).
@@ -1781,48 +1778,6 @@ export const EVENTS = {
     attributes: { "pty.id": "correlate" },
     content: "correlated",
     file: "packages/core/src/pty.ts",
-  },
-
-  // ── question ──────────────────────────────────────────────────────────────────────────────────
-  /** A session is waiting for answers to one or more questions. */
-  "question.request.ask": {
-    level: "info",
-    message: "asking",
-    attributes: { "question.request": "correlate", "question.count": "count" },
-    content: "correlated",
-    file: "packages/novaclaw/src/question/index.ts",
-  },
-  /** The user rejected a pending question request. */
-  "question.request.reject": {
-    level: "info",
-    message: "rejected",
-    attributes: { "question.request": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/question/index.ts",
-  },
-  /** A rejection named no pending question request. */
-  "question.request.reject.unknown": {
-    level: "warn",
-    message: "reject for unknown request",
-    attributes: { "question.request": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/question/index.ts",
-  },
-  /** The user answered a pending question request. */
-  "question.request.reply": {
-    level: "info",
-    message: "replied",
-    attributes: { "question.request": "correlate", "question.answers": "list" },
-    content: "user",
-    file: "packages/novaclaw/src/question/index.ts",
-  },
-  /** A reply named no pending question request. */
-  "question.request.reply.unknown": {
-    level: "warn",
-    message: "reply for unknown request",
-    attributes: { "question.request": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/question/index.ts",
   },
 
   // ── resource ──────────────────────────────────────────────────────────────────────────────────

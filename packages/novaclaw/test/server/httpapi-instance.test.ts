@@ -11,7 +11,7 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { TelemetryPaths } from "@novaclaw/protocol/groups/telemetry"
-import { QuestionID } from "../../src/question/schema"
+import { QuestionRequest } from "@novaclaw/schema/question-request"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
@@ -425,8 +425,8 @@ describe("instance HttpApi", () => {
             handlerContext,
           ),
         )
-      const questionReplyID = QuestionID.ascending()
-      const questionRejectID = QuestionID.ascending()
+      const questionReplyID = QuestionRequest.ID.ascending()
+      const questionRejectID = QuestionRequest.ID.ascending()
       const [questionReply, questionReject] = yield* Effect.all(
         [
           request(`/question/${questionReplyID}/reply`, {

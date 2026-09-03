@@ -232,7 +232,6 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     expect(mayEgress("session.message.decode.failed")).toBe(false)
     expect(mayEgress("workspace.sync.replay.ok")).toBe(false)
     expect(mayEgress("pty.session.exit")).toBe(false)
-    expect(mayEgress("question.request.ask")).toBe(false)
     // …while an event with no correlator still egresses. Without this the block above would also
     // pass on a tree where `mayEgress` had simply been made to return false for everything.
     expect(mayEgress("session.compaction.prune.planned")).toBe(true)

@@ -13,7 +13,6 @@ import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
 import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
-import { Question } from "@/question"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Truncate } from "@/tool/truncate"
@@ -41,7 +40,6 @@ export const AppLayer = Layer.mergeAll(
   Agent.defaultLayer,
   Skill.defaultLayer,
   SkillDiscovery.defaultLayer,
-  Question.defaultLayer,
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
   MCP.defaultLayer,

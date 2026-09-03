@@ -370,7 +370,8 @@ export function createServerSession(
         if (props.status.type === "idle" || props.status.type === "exited") clearLive(props.sessionID)
         return
       }
-      case "question.asked": {
+      case "question.asked":
+      case "question.v2.asked": {
         const question = event.properties as QuestionRequest
         const questions = data.question[question.sessionID]
         if (!questions) {
@@ -388,7 +389,9 @@ export function createServerSession(
         return
       }
       case "question.replied":
-      case "question.rejected": {
+      case "question.rejected":
+      case "question.v2.replied":
+      case "question.v2.rejected": {
         const props = event.properties as { sessionID: string; requestID: string }
         setData(
           "question",

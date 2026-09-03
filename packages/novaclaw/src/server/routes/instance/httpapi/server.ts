@@ -45,7 +45,6 @@ import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
-import { Question } from "@/question"
 import { Skill } from "@/skill"
 import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { HostPressure } from "@/storage/host-pressure"
@@ -371,7 +370,6 @@ const app = LayerNode.group([
   Agent.node,
   Skill.node,
   SkillDiscovery.node,
-  Question.node,
   PermissionSaved.node,
   SessionProjector.node,
   // 🔴 The reassignment DELIVERY, registered where the sessions and the event bus are.

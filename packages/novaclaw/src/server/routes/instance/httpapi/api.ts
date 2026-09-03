@@ -6,7 +6,7 @@ import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
 import { SkillV2 } from "@novaclaw/core/skill"
 import { InstanceDisposed } from "@/server/event"
-import { Question } from "@/question"
+import { QuestionRequest } from "@novaclaw/schema/question-request"
 import { AdhocApi } from "./groups/adhoc"
 import { CapabilityApi } from "./groups/capability"
 import { CommunityApi, CommunityPeerApi } from "./groups/community"
@@ -98,8 +98,8 @@ export const NovaClawHttpApi: HttpApi.HttpApi<"novaclaw", HttpApiGroup.Any> = Ht
   .addHttpApi(ServerApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
-    Question.Replied,
-    Question.Rejected,
+    QuestionRequest.Replied,
+    QuestionRequest.Rejected,
     Credential.Value,
     Integration.Inputs,
     Integration.Method,
