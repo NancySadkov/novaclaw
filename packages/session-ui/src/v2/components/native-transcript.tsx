@@ -33,7 +33,12 @@ import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } fr
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
 import { Markdown } from "../../components/markdown"
-import { reasoningGoesInReceipt, reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
+import {
+  reasoningGoesInReceipt,
+  reasoningOpenDefault,
+  toolOpenDefault,
+  type ReasoningFoldMode,
+} from "../reasoning-fold"
 import { turnOutcome } from "./turn-receipt"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
@@ -61,8 +66,12 @@ import {
 // the user's explicit Settings prefs (feedReasoningDisplay/feedToolDisplay) can override each
 // independently of the expertise default; callers that pass nothing keep the folded behavior.
 // Consumed via context so the modes need not be prop-drilled through every message.
-type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode }
-const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed" })
+// `settled` rides with the modes because it is the same kind of fact and reaches the same consumer:
+// a reasoning card deep in a turn has to know whether the TRANSCRIPT is still working, and prop-
+// drilling one boolean through every message is what the context exists to avoid. It defaults to
+// settled so a caller that renders history (no live status) folds exactly as it always did.
+type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode; settled: boolean }
+const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed", settled: true })
 const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes)
 
 /**
@@ -230,6 +239,9 @@ export function NativeTranscript(props: {
         // Tool cards historically followed the reasoning mode — keep that when no explicit
         // tool mode is given so existing callers render unchanged.
         tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
+        // The SAME predicate `Turn` folds its work on (`running` reads `busy` first), so the two
+        // folds settle together instead of one of them collapsing under a running turn.
+        settled: !busy(),
       })}
     >
       <TranscriptActionsContext.Provider
@@ -1008,7 +1020,7 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
   const completed = () => !!props.part.time?.completed
-  const open = () => override() ?? reasoningOpenDefault(foldMode().reasoning, completed())
+  const open = () => override() ?? reasoningOpenDefault(foldMode().reasoning, completed(), foldMode().settled)
   const tokenLabel = () => reasoningTokenLabel(props.tokens, props.part.text)
   return (
     <details data-slot="native-reasoning" open={open()} data-streaming={completed() ? undefined : ""}>

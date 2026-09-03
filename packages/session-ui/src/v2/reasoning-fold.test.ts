@@ -12,9 +12,39 @@ describe("reasoningOpenDefault", () => {
     expect(reasoningOpenDefault("open", true)).toBe(true)
   })
 
-  test("live (Advanced) is open while streaming, collapsed once complete", () => {
-    expect(reasoningOpenDefault("live", false)).toBe(true)
+  test("live (Advanced) is open while streaming, collapsed once the turn is done", () => {
+    expect(reasoningOpenDefault("live", false, true)).toBe(true)
+    expect(reasoningOpenDefault("live", true, true)).toBe(false)
+  })
+
+  // 🔴 THE MID-TURN REWIND. Owner, 2026-09-04: at the bottom, model Working, "sometimes the chat
+  // gets rewinded to the start of the user's prompt". A step's reasoning finished, this default
+  // collapsed it, and a transcript the reader was pinned to the bottom of lost the tallest thing in
+  // it — so the bottom moved up past everything they were reading. Nothing scrolled and the pin was
+  // never lost, which is why it survived a scroll-side investigation.
+  test("🔴 live does NOT collapse a completed part while the turn is still running", () => {
+    expect(reasoningOpenDefault("live", true, false)).toBe(true)
+    // …and still open, obviously, when it has not finished either.
+    expect(reasoningOpenDefault("live", false, false)).toBe(true)
+  })
+
+  test("NEGATIVE CONTROL: `settled` does not just pin everything open", () => {
+    // Without this the fix could be "live never collapses", which loses the tidy settled transcript
+    // the mode exists for. The collapse must still happen — once the TURN is done.
+    expect(reasoningOpenDefault("live", true, true)).toBe(false)
+  })
+
+  test("a running turn changes nothing for the other two modes", () => {
+    // Neither can change height under the reader: collapsed is never open, open never closes.
+    expect(reasoningOpenDefault("collapsed", true, false)).toBe(false)
+    expect(reasoningOpenDefault("collapsed", false, false)).toBe(false)
+    expect(reasoningOpenDefault("open", true, false)).toBe(true)
+    expect(reasoningOpenDefault("open", false, false)).toBe(true)
+  })
+
+  test("callers that render history and pass no `settled` fold exactly as before", () => {
     expect(reasoningOpenDefault("live", true)).toBe(false)
+    expect(reasoningOpenDefault("live", false)).toBe(true)
   })
 })
 
