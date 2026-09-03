@@ -63,6 +63,9 @@ type PresetWord =
   | "quickRecovery"
   | "patientRecovery"
   | "persistentRecovery"
+  | "briefThought"
+  | "thoroughThought"
+  | "exhaustiveThought"
 export type RawPreset = { num?: number; word?: PresetWord; size?: string }
 export const PRESETS: Record<FieldKey, RawPreset[]> = {
   temperature: [
@@ -152,15 +155,20 @@ export const PRESETS: Record<FieldKey, RawPreset[]> = {
   // because "no budget" is a budget setting. The runtime already collapses any non-positive configured
   // value to 0 (`defaultThinkingBudget` clamps with Math.max(0, …)) and the runner gates on `> 0`, so the
   // sentinel needs no schema, migration or protocol change. Blank still means "derive the default".
+  // ⚠️ NAMED, for the same reason `retryAttempts` below is named — and this list is where that rule
+  // was first written down and then not applied. Owner, 2026-09-03: *"ensure the model's Tune has
+  // thinking LEVEL selectable, since some models allow picking how long they will think before
+  // acting."* `2K` asks the reader to know what two thousand reasoning tokens buys them; "Brief" says
+  // it. The raw box beside the droplist still takes any exact number and reflects back as "Custom",
+  // so nothing that could be expressed before is lost — principle 12(b), free text is the fallback
+  // for what the list missed, not a replacement for it.
   thinkingBudget: [
     {},
     { word: "disabled", num: -1 },
-    { size: "2K", num: 2048 },
-    { size: "4K", num: 4096 },
-    { size: "6K", num: 6144 },
-    { size: "8K", num: 8192 },
-    { size: "16K", num: 16384 },
-    { size: "32K", num: 32768 },
+    { word: "briefThought", num: 2048 },
+    { word: "balanced", num: 6144 },
+    { word: "thoroughThought", num: 16384 },
+    { word: "exhaustiveThought", num: 32768 },
   ],
   // ⚠️ NAMED, not bare counts — principle 12(c), and it arrived from the other line of work while
   // this table was being lifted out of `dialog-model-config.tsx`. "3 attempts" asks the reader to
