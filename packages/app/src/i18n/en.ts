@@ -2066,6 +2066,18 @@ export const dict = {
   "settings.models.config.thinkingBudget.desc": "Soft cap on the model's reasoning per turn.",
   "settings.models.config.thinkingBudget.desc.more":
     "When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
+  "settings.models.config.thinkingEffort.name": "Thinking effort",
+  "settings.models.config.thinkingEffort.desc": "How hard this model is told to think, sent with every request.",
+  "settings.models.config.thinkingEffort.desc.more":
+    "This is the `reasoning_effort` parameter the inference server receives — the server decides what each level costs and how long it thinks for. It is NOT the Thinking budget above: that one is NovaClaw's own limit, counted here and enforced by interrupting the model mid-thought. Leave this unset to use whatever the server does by default. Not every endpoint honours every level (OpenAI takes minimal through high; some servers add max), and one it does not know is refused by the server rather than by NovaClaw.",
+  "settings.models.config.thinkingEffort.unset": "Server default",
+  "settings.models.config.thinkingEffort.value.none": "None",
+  "settings.models.config.thinkingEffort.value.minimal": "Minimal",
+  "settings.models.config.thinkingEffort.value.low": "Low",
+  "settings.models.config.thinkingEffort.value.medium": "Medium",
+  "settings.models.config.thinkingEffort.value.high": "High",
+  "settings.models.config.thinkingEffort.value.xhigh": "Very high",
+  "settings.models.config.thinkingEffort.value.max": "Max",
   "settings.models.config.retryAttempts.name": "Connection attempts",
   "settings.models.config.retryAttempts.desc":
     "How patiently NovaClaw reconnects when this model sends no reply or an incomplete reply. Persistent keeps trying for about three minutes.",

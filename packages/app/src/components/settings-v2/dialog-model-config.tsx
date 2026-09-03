@@ -68,6 +68,32 @@ type WithRequestBody = {
 }
 const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.thinkingBudget
 
+/**
+ * THINKING EFFORT — the one the INFERENCE SERVER is told, `reasoning_effort` on the wire.
+ *
+ * ⚠️ Not `thinkingBudget` above, and the pair is worth naming because the words are nearly the same
+ * and the mechanisms are not. The BUDGET is NovaClaw's own controller: it counts reasoning tokens off
+ * the stream and interrupts at checkpoints (`session/runner/reasoning-budget.ts`), which is why it is
+ * pulled out of the body before the wire (`session/runner/model.ts` → `withDefaults`). The EFFORT is
+ * a parameter: it rides `request.body` through `splitModelSampling` into the HTTP overlay and the
+ * server decides what it means. A user setting one and getting the other would be a fault described
+ * falsely, so they say which is which on screen.
+ *
+ * Empty means UNSET — the model server's own default (principle 12a: a setting is an override).
+ */
+const bodyEffort = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.reasoning_effort
+
+/**
+ * The efforts the product knows, in ascending order (`llm/src/schema/ids.ts` → `ReasoningEfforts`).
+ *
+ * Offered as a LIST because principle 12(b) says a list-shaped setting offers its list, and this one
+ * is the reason the rule exists: until 2026-09-03 the only way to send an effort was to know the
+ * literal `reasoning_effort` and type it into a raw body field — a value nothing on screen names.
+ * Which of these a given endpoint honours is the SERVER's to say (OpenAI takes minimal…high, GLM
+ * takes high and max), so the row says that rather than pretending to know for every endpoint.
+ */
+const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
+
 export const DialogModelConfig: Component<{
   providerID: string
   modelID: string
@@ -187,6 +213,10 @@ export const DialogModelConfig: Component<{
     maxTokens: nstr(init.limit?.output ?? d.limit?.output),
     images: nstr(init.limit?.images ?? d.limit?.images),
     thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
+    thinkingEffort: ((): string => {
+      const value = bodyEffort(init) ?? bodyEffort(d)
+      return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
+    })(),
     retryAttempts: nstr(init.retry?.attempts ?? d.retry?.attempts ?? 3),
     reasoning: init.reasoning ?? d.reasoning ?? false,
     tool_call: init.tool_call ?? d.tool_call ?? true,
@@ -221,6 +251,10 @@ export const DialogModelConfig: Component<{
     const tb = num(form.thinkingBudget)
     if (tb !== undefined) body.thinkingBudget = tb
     else delete body.thinkingBudget
+    // Unset clears the key rather than sending an empty string: the server's default is the absence
+    // of the parameter, not a parameter whose value is "".
+    if (form.thinkingEffort) body.reasoning_effort = form.thinkingEffort
+    else delete body.reasoning_effort
 
     const model: ModelConfig = {
       ...saved,
@@ -499,6 +533,38 @@ export const DialogModelConfig: Component<{
                 {language.t("settings.models.config.thinkingBudget.desc.more")}
               </SettingsExplainV2>,
             )}
+            {/* Only for a model that declares reasoning — an effort dial on a model that does not
+                think is a row the reader has to read and then dismiss (same rule as the image cap
+                above). The capability switch is in this same dialog, so turning it on reveals it. */}
+            <Show when={form.reasoning}>
+              <SettingsRowV2
+                title={language.t("settings.models.config.thinkingEffort.name")}
+                description={
+                  <>
+                    {language.t("settings.models.config.thinkingEffort.desc")}{" "}
+                    <SettingsExplainV2 label={language.t("settings.models.config.thinkingEffort.name")}>
+                      {language.t("settings.models.config.thinkingEffort.desc.more")}
+                    </SettingsExplainV2>
+                  </>
+                }
+              >
+                <SelectV2
+                  appearance="inline"
+                  data-action="settings-model-thinking-effort"
+                  options={["", ...THINKING_EFFORTS]}
+                  current={form.thinkingEffort}
+                  placement="bottom-end"
+                  gutter={6}
+                  value={(option) => option}
+                  label={(option) =>
+                    option === ""
+                      ? language.t("settings.models.config.thinkingEffort.unset")
+                      : language.t(`settings.models.config.thinkingEffort.value.${option}` as never)
+                  }
+                  onSelect={(option) => setForm("thinkingEffort", option ?? "")}
+                />
+              </SettingsRowV2>
+            </Show>
           </SettingsListV2>
 
           {section("reliability")}

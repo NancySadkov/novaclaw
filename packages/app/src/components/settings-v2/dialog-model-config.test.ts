@@ -85,3 +85,40 @@ describe("Model Configure — recovery", () => {
     expect(en["settings.models.config.retryAttempts.desc"]).toContain("about three minutes")
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// THINKING EFFORT — the parameter the inference server receives.
+//
+// 🔴 Owner report 2026-09-03: "ensure the model configure exposes the Thinking Effort (the one sent
+// to the model inference server) for the models which support it." Before this it could only be set
+// by knowing the literal `reasoning_effort` and typing it into a raw body field — principle 12's c64
+// line, and 12(b)'s "every list-shaped setting offers its list" with no list offered.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("Model Configure — thinking effort", () => {
+  test("offers the effort list, and only for a model that declares reasoning", () => {
+    expect(source).toContain('const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]')
+    expect(source).toContain('options={["", ...THINKING_EFFORTS]}')
+    expect(source).toContain("<Show when={form.reasoning}>")
+    expect(source).toContain('data-action="settings-model-thinking-effort"')
+  })
+
+  test("round-trips through request.body.reasoning_effort, and unset CLEARS the key", () => {
+    // Read from the model's own body, falling back to the catalog default…
+    expect(source).toContain("reasoning_effort")
+    expect(source).toContain("const value = bodyEffort(init) ?? bodyEffort(d)")
+    // …and written where the wire will carry it: `request.body` survives into the HTTP overlay
+    // (`session/runner/model.ts` → `withDefaults` → `splitModelSampling`), unlike `thinkingBudget`
+    // beside it, which is pulled out before the wire because it is NovaClaw's own controller.
+    expect(source).toContain("if (form.thinkingEffort) body.reasoning_effort = form.thinkingEffort")
+    expect(source).toContain("else delete body.reasoning_effort")
+  })
+
+  test("every effort the list offers has a human label, and unset says whose default it is", () => {
+    for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+      expect(typeof en[`settings.models.config.thinkingEffort.value.${effort}` as keyof typeof en]).toBe("string")
+    expect(en["settings.models.config.thinkingEffort.unset"]).toBe("Server default")
+    // The two names are nearly identical and the mechanisms are not, so the copy separates them.
+    expect(en["settings.models.config.thinkingEffort.desc.more"]).toContain("reasoning_effort")
+    expect(en["settings.models.config.thinkingEffort.desc.more"]).toContain("Thinking budget")
+  })
+})
