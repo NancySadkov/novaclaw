@@ -2,7 +2,7 @@ import { createSimpleContext } from "@novaclaw/ui/context"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted, removePersisted, draftPersistedKeys } from "@/utils/persist"
 import { ServerConnection, useServer } from "./server"
-import { createEffect, getOwner, onCleanup, startTransition } from "solid-js"
+import { createEffect, createSignal, getOwner, onCleanup, startTransition } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { usePlatform } from "./platform"
 import { uuid } from "@/utils/uuid"
@@ -139,6 +139,15 @@ export const {
     }
 
     /**
+     * The tab the user just closed on purpose, until the route leaves it.
+     *
+     * Read by the route effect that opens a tab for the current URL: that effect exists so a deep
+     * link, Contacts or a restored window all end up with a tab, and it cannot otherwise distinguish
+     * those from a dismissal it is about to undo.
+     */
+    const [dismissedKey, setDismissedKey] = createSignal<string | undefined>(undefined)
+
+    /**
      * @param stay Take the tab out of the strip and go NOWHERE.
      *
      * 🔴 The navigation below belongs to the CLOSE BUTTON — a user who shut a tab wants to land
@@ -154,6 +163,19 @@ export const {
       const tab = store[index]
       if (!tab) return
       const key = tabKey(tab)
+      // 🔴 A CLOSE IS AN INTENT, and until this signal existed nothing recorded it — so the route
+      // effect that opens a tab for the URL you are on could not tell "you arrived here" from "you
+      // just shut this".
+      //
+      // Measured 2026-09-03: closing the only tab put it straight back. `titlebar.tsx`'s effect reads
+      // the tab store through `matchRoute`, so REMOVING the tab is itself the change that re-runs it;
+      // the navigation away is deferred inside the transition below, so the route is still the
+      // session, and it re-adds what was just closed. Intermittent, because it is a race with that
+      // navigation — which is exactly how it was reported.
+      //
+      // ⚠️ Only a DISMISSAL sets it. `stay` is reconciliation (the chat is gone and the route wants
+      // to explain that itself), and marking those would suppress a legitimate re-open.
+      if (!stay) setDismissedKey(key)
       const draftID = tab.type === "draft" ? tab.draftID : undefined
       const nextTab = store[index + 1] ?? store[index - 1]
       void startTransition(() => {
@@ -330,6 +352,10 @@ export const {
         removeDraftPersisted(draftID)
       },
       removeTab,
+      /** The key of a tab the user just dismissed, or `undefined`. See `dismissedKey`. */
+      dismissedKey,
+      /** The route moved somewhere else, so the dismissal no longer needs suppressing. */
+      clearDismissed: () => setDismissedKey(undefined),
       /**
        * The chat is GONE — close whatever tab still shows it.
        *

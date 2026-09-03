@@ -204,9 +204,15 @@ export function Titlebar() {
           if (!tabs.ready()) return
           const tab = currentTab()
           if (tab) {
+            // Landing on any tab means the dismissal is spent — a later navigation back to the
+            // closed chat must open it again, which is the ordinary way to reopen something.
+            tabsStoreActions.clearDismissed()
             tabs.remember(tab)
             return
           }
+          // Home, an app page, anything that is not a session: the user has left, so the suppression
+          // has done its job and must not outlive it.
+          if (route.type !== "session") tabsStoreActions.clearDismissed()
 
           if (route.type === "session") {
             const s = session()
@@ -228,6 +234,12 @@ export function Titlebar() {
              * back the colleague's existing tab, we have to travel to it, or the strip highlights
              * one chat while the page renders another.
              */
+            // 🔴 Do NOT resurrect a tab the user just closed. This effect reads the tab store (via
+            // `matchRoute`), so removing a tab is itself what re-runs it — and the navigation away
+            // is deferred inside the store's transition, so `route` is still this session. Without
+            // this guard, closing the only tab put it straight back, intermittently, depending on
+            // which won the race.
+            if (tabsStoreActions.dismissedKey() === tabKey({ type: "session", ...next })) return
             const tab = tabsStoreActions.addSessionTab(next)
             if (tab.type === "session" && tab.sessionId !== sessionId) tabsStoreActions.select(tab)
           }
@@ -312,9 +324,13 @@ export function Titlebar() {
               title: language.t("command.tab.close"),
               keybind: "mod+w",
               hidden: true,
-              onSelect: () => {
-                tabsStoreActions.removeTab(tabsStore.findIndex((tab) => current === tab))
-              },
+              // ⚠️ `closeCurrent`, not a second search. This used to be
+              // `removeTab(findIndex((tab) => current === tab))` — REFERENCE equality where the two
+              // other close paths compare `tabKey`, and no `-1` guard. A store row whose identity was
+              // replaced (a reorder, a reconcile) therefore matched nothing, `findIndex` answered -1,
+              // and `removeTab(-1)` read `store[-1]`, found nothing and returned: the keybind did
+              // nothing at all, silently.
+              onSelect: closeCurrent,
             },
             {
               id: `tab.prev`,
