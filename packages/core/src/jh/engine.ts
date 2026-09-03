@@ -2312,17 +2312,36 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const editHint = coordEdit
           ? "use `replace_lines {path, first_line, last_line, new_content}` addressing the `N→` line numbers shown above (the RELIABLE way to change specific lines — you do NOT have to reproduce the old text), or `edit_file` only for a SHORT, unique, easy-to-quote string"
           : "make a SURGICAL `edit_file` on the SPECIFIC line(s) named in the error (a targeted old_string→new_string on the code shown above)"
+        // The bullets below are the CODE twin and the PROSE twin of one ladder, behind the same seam
+        // `stageFixGoal` already has (`deps.forcedAnalyze !== false` ⇒ code/numeric work). Until
+        // 2026-09-03 the code bullets — compile errors, "the compiled .exe is STALE … RECOMPILE (a gcc
+        // step)", a cmd-only `set PATH=…` prefix — were injected on EVERY failed leaf attempt of every
+        // task, undoing the task-agnostic path the flag was built for, and contradicting the
+        // `environment` text the caller owns (bash OR cmd). Shell and PATH mechanics are that text's
+        // job; the recovery names the KIND of next action and defers to the environment notes above.
+        const instrument = deps.forcedAnalyze !== false
+        const kindBullets = instrument
+          ? [
+              `- SOURCE-CODE error (a compile/runtime error in a file) → ${editHint}. Do NOT rewrite the whole file — \`write_file\` is ONLY for creating a file that does not exist yet.`,
+              `- The program RAN but produced WRONG output (the check expected one value and got another) → ONE function's logic is buggy. Fix just that function (${coordEdit ? "`replace_lines` by coordinate, or `edit_file`" : "`edit_file`"}) — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled program is STALE — your very next steps must REBUILD it (a \`run\` step with the build command) and then re-run, before checking output again.`,
+              ...revertHint,
+              "- The goal needs a file a COMMAND produces (the built program, a generated output) → `run` that command exactly as the execution-environment notes above describe (shell, PATH, working directory).",
+              "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command, again per the environment notes above.",
+            ]
+          : [
+              `- The check rejected a specific PART of what you produced → name that part and change ONLY it (${coordEdit ? "`replace_lines` by coordinate, or `edit_file`" : "`edit_file`"}). Do NOT rewrite the whole file — \`write_file\` is ONLY for creating a file that does not exist yet, and re-emitting everything discards the parts already verified.`,
+              "- The check compared your output against what the goal asks for and it differed → the difference names the passage, section or value at fault; fix that one thing, then re-verify.",
+              ...revertHint,
+              "- The goal needs a file a COMMAND produces → `run` that command exactly as the execution-environment notes above describe.",
+              "- The command itself was wrong (wrong path/filename, bad shell syntax) → a corrected `run` command, again per the environment notes above.",
+            ]
         const recovery = [
           "The previous action did NOT achieve this step's goal yet:",
           `  action: ${currentTool} — ${actionDesc}`,
           `  result/error: ${vr.detail}`,
           "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
-          `- SOURCE-CODE error (a compile/runtime error in a file) → ${editHint}. Do NOT rewrite the whole file — \`write_file\` is ONLY for creating a file that does not exist yet.`,
-          `- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → ONE function's logic is buggy. Fix just that function (${coordEdit ? "`replace_lines` by coordinate, or `edit_file`" : "`edit_file`"}) — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a \`run\` gcc step) and then re-run, before checking output again.`,
-          ...revertHint,
-          "- The goal needs a file a COMMAND produces (e.g. the compiled .exe) → `run` that command (every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
-          "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
-          `Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code ${coordEdit ? "with `replace_lines`" : "with edit_file"}.`,
+          ...kindBullets,
+          `Do NOT repeat the exact action that just failed, and do NOT rewrite the whole ${instrument ? "program" : "piece"} — if re-running gave the same wrong result, change the SPECIFIC ${instrument ? "buggy code" : "offending part"} ${coordEdit ? "with `replace_lines`" : "with edit_file"}.`,
         ].join("\n")
         const recoverPlan = yield* thinkFor(node.id, "recover", recovery)
         const ex = yield* Effect.exit(
