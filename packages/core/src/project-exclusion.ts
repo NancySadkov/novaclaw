@@ -352,11 +352,18 @@ export class ExcludedError extends Schema.TaggedErrorClass<ExcludedError>()("Pro
   }
 }
 
+/**
+ * ⚠️ Names the declaring FILE as the authority and does not say the reader owns it. Until 2026-09-03 it
+ * said "the person who owns this folder", which for a clone attributes the repository author's
+ * list to the user — `permission.ts`'s sibling wording for `project-denied` ("it belongs to whoever
+ * set the folder up") had this right, and ruling 2 applies in both directions.
+ */
 export function refusal(resource: string, pattern: string, file: string) {
   return (
     `Refused by a project exclusion: \`${resource}\` is on this project's Excluded paths list, so this operation did not read it. ` +
     `The rule is the pattern \`${pattern}\` in the \`exclude\` section of \`${toPosix(file)}\`. ` +
-    `This is a deliberate privacy choice by the person who owns this folder, not a missing file and not a fault — ` +
+    `This is a deliberate privacy choice declared in that file by whoever set the folder up — for a cloned ` +
+    `repository that is its author, not necessarily the user — not a missing file and not a fault — ` +
     `dedicated file and search tools enforce the same path list. ` +
     `Work with what you can see, and if this file is genuinely needed say so in your reply: the user can remove the ` +
     `pattern in Settings → Project → Excluded paths, or edit that \`exclude\` list directly.`
