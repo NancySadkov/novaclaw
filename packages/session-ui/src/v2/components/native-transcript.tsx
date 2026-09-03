@@ -33,7 +33,7 @@ import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } fr
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
 import { Markdown } from "../../components/markdown"
-import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
+import { reasoningGoesInReceipt, reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { turnOutcome } from "./turn-receipt"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
@@ -639,6 +639,23 @@ function AssistantMessage(props: {
   }
   const showReceipt = () => props.half !== "answer"
   const showChrome = () => props.half !== "work"
+  /**
+   * Does the Details fold hold this half's reasoning?
+   *
+   * Only when one is actually going to be drawn — `TurnReceipt` renders its `<details>` under
+   * `Show when={timing()}`, so handing parts to a receipt that has no timing would delete them from
+   * the transcript rather than move them. A part never disappears: when there is no fold to put it
+   * in, it stays where it always was.
+   */
+  const receiptHoldsReasoning = () =>
+    reasoningGoesInReceipt({ half: props.half, hasTiming: props.message.timing !== undefined })
+  /** This half's reasoning parts, for the fold — empty whenever they render inline instead. */
+  const foldedReasoning = () =>
+    receiptHoldsReasoning()
+      ? parts().filter(
+          (part): part is SessionMessageAssistantReasoning => part.type === "reasoning" && part.text.trim().length > 0,
+        )
+      : []
   return (
     <div data-slot="native-assistant">
       <For each={parts()}>
@@ -659,7 +676,11 @@ function AssistantMessage(props: {
                 // would render twice, which is the two-rows-one-wait defect facing the other way. The
                 // gate is the same one the per-message receipt already uses, so the two cannot
                 // disagree about which of them is showing.
-                <Show when={p().text.trim() && !(props.liveTiming && !props.message.time.completed)}>
+                <Show
+                  when={
+                    p().text.trim() && !(props.liveTiming && !props.message.time.completed) && !receiptHoldsReasoning()
+                  }
+                >
                   <ReasoningPart part={p()} tokens={reasoningTokens()} />
                 </Show>
               )}
@@ -669,7 +690,13 @@ function AssistantMessage(props: {
         )}
       </For>
       <Show when={showReceipt() && ((working() && !props.liveTiming) || props.message.timing)}>
-        <TurnReceipt timing={props.message.timing} live={working() && !props.liveTiming} developer={props.developer} />
+        <TurnReceipt
+          timing={props.message.timing}
+          live={working() && !props.liveTiming}
+          developer={props.developer}
+          reasoningParts={foldedReasoning()}
+          reasoningTokens={reasoningTokens()}
+        />
       </Show>
       {/* The per-turn "N files changed" strip is deliberately NOT rendered. It repeated what the tool
           rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
@@ -766,13 +793,30 @@ function TurnReceipt(props: {
    * count of generated tokens"* — and principle 12(d) says the same thing on its own: state what is
    * in force in ONE line, with the rest on demand. A separate `Reasoning…` row beside a separate
    * `Working…` row is two lines about one wait, which is what the screenshot showed.
-   *
-   * ⚠️ LIVE only, and that is the whole distinction. Once the turn settles the reasoning goes back to
-   * its own fold in the transcript, because a finished turn's reasoning is a RECORD somebody opens
-   * deliberately — folding it into a list of stage timings would bury it. What is merged here is the
-   * live status, which is one thing happening now.
    */
   reasoning?: string
+  /**
+   * The SETTLED message's reasoning, held inside this fold as its own parts.
+   *
+   * 🔴 **This reverses the paragraph that used to stand here**, which said live-only was "the whole
+   * distinction" and that a finished turn's reasoning must stay in its own fold because folding it
+   * into stage timings "would bury it". The owner ruled otherwise the same day, holding a screenshot
+   * of a four-step answer: *"the reasoning is not hidden inside of the Details fold, so clutters the
+   * chat window. Most users will only look at the model reasoning if something is wrong."*
+   *
+   * Burying it was the point. A reader who wants the answer should see the answer; the trace is for
+   * the reader who has a reason to look, and that reader is already opening Details. Four `Reasoning`
+   * rows down the left of one reply is the same *two lines about one wait* defect as above, repeated
+   * once per step.
+   *
+   * ⚠️ The PARTS, not their text joined: they keep their order against the tool cards, their own
+   * `~N` counts and their streaming state, so nothing is lost by moving them — only their parent
+   * changes. The Developer level opens them by default (`reasoningOpenDefault`), so a trace is still
+   * one click away for the person who lives in it.
+   */
+  reasoningParts?: readonly SessionMessageAssistantReasoning[]
+  /** The per-message reasoning token count, attributed only when there is exactly one part. */
+  reasoningTokens?: number
 }) {
   const i18n = useI18n()
   const timing = () => props.timing
@@ -838,6 +882,13 @@ function TurnReceipt(props: {
                   <Markdown text={text()} />
                 </div>
               )}
+            </Show>
+            <Show when={props.reasoningParts?.length}>
+              <div data-slot="native-turn-reasoning-parts">
+                <For each={props.reasoningParts}>
+                  {(part) => <ReasoningPart part={part} tokens={props.reasoningTokens} />}
+                </For>
+              </div>
             </Show>
             <ol data-slot="native-turn-phases">
               <For each={value().phases}>

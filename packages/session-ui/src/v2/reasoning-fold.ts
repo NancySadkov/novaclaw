@@ -23,6 +23,25 @@ export const reasoningOpenDefault = (mode: ReasoningFoldMode, completed: boolean
   }
 }
 
+/**
+ * Does a settled message's reasoning live INSIDE its Details receipt, rather than beside it?
+ *
+ * 🔴 Owner, 2026-09-03, holding a screenshot of a four-step answer: *"the reasoning is not hidden
+ * inside of the Details fold, so clutters the chat window. Most users will only look at the model
+ * reasoning if something is wrong."* One `Reasoning` row per step down the left of a single reply is
+ * the machinery competing with the answer.
+ *
+ * ⚠️ **The `timing` half is not a detail — without it the parts would be DELETED, not moved.** The
+ * receipt only draws its `<details>` when it has timing to show, so a message with reasoning and no
+ * timing has no fold to be folded into, and its reasoning must stay where it is. Same for the
+ * `answer` half of a split message, which deliberately renders no receipt: its chrome belongs to the
+ * answer, outside the fold. A part never disappears; it only changes parent.
+ */
+export const reasoningGoesInReceipt = (input: {
+  readonly half?: "work" | "answer"
+  readonly hasTiming: boolean
+}): boolean => input.half !== "answer" && input.hasTiming
+
 /** The default open-state for a tool card. Tool output is noisier than reasoning, so only the
  *  Developer ("open") level expands it by default — Normal and Advanced keep the feed clean and
  *  let the reader open a card on demand. (Unlike reasoning this is an UNCONTROLLED default: the
