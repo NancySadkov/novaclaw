@@ -107,8 +107,6 @@ import { InstanceHttpApi, RootHttpApi } from "./api"
 import { runtimeApi } from "@novaclaw/server/api"
 import { PublicApi } from "./public"
 import { authorizationLayer, authorizationRouterMiddleware, serverAuthorizationLayer } from "./middleware/authorization"
-import { EventApi } from "./groups/event"
-import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
@@ -167,7 +165,6 @@ const cors = (corsOptions?: CorsOptions) =>
 
 // Route tree:
 // - rootApiRoutes: typed /global/* and control routes; auth is declared by RootHttpApi.
-// - eventApiRoutes: typed SSE route with instance routing context and its existing API contract.
 // - instanceApiRoutes: remaining typed instance routes.
 // - uiRoute: raw catch-all fallback; auth is router middleware so public static assets can bypass it.
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
@@ -178,10 +175,6 @@ const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, controlPlaneHandlers, globalHandlersWithAuth]),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
-)
-const eventApiRoutes = HttpApiBuilder.layer(EventApi).pipe(
-  Layer.provide(eventHandlers),
-  Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer]),
 )
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
@@ -516,7 +509,6 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   return Layer.mergeAll(
     rootApiRoutes,
-    eventApiRoutes,
     instanceRoutes,
     serverRoutes,
     docRoute,

@@ -3,7 +3,6 @@ import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
-import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { ServerAuth } from "../../src/server/auth"
@@ -56,11 +55,11 @@ describe("HttpApi instance route authorization", () => {
     const server = app({ password: "secret" })
     const headers = { "x-novaclaw-directory": tmp.path }
 
-    const missing = await server.request(EventPaths.event, { headers })
+    const missing = await server.request("/api/event", { headers })
     await cancelBody(missing)
     expect(missing.status).toBe(401)
 
-    const authed = await server.request(EventPaths.event, {
+    const authed = await server.request("/api/event", {
       headers: { ...headers, authorization: basic("novaclaw", "secret") },
     })
     await cancelBody(authed)

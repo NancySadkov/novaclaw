@@ -1090,50 +1090,6 @@
         ]
       }
     },
-    "/event": {
-      "get": {
-        "tags": ["event"],
-        "operationId": "event.subscribe",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Event stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/Event"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get events",
-        "summary": "Subscribe to events",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.event.subscribe({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/adhoc/session/{sessionID}": {
       "get": {
         "tags": ["adhoc"],
@@ -22930,6 +22886,9 @@
             "$ref": "#/components/schemas/EventInstallationUpdate-available"
           },
           {
+            "$ref": "#/components/schemas/EventServerInstanceDisposed"
+          },
+          {
             "$ref": "#/components/schemas/EventAppRegistered"
           },
           {
@@ -23033,9 +22992,6 @@
           },
           {
             "$ref": "#/components/schemas/EventGlobalDisposed"
-          },
-          {
-            "$ref": "#/components/schemas/EventServerInstanceDisposed"
           }
         ]
       },
@@ -25943,6 +25899,31 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["server.instance.disposed"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "directory": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["directory"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["app.registered"]
                   },
                   "properties": {
@@ -26967,9 +26948,6 @@
                 },
                 "required": ["id", "type", "properties"],
                 "additionalProperties": false
-              },
-              {
-                "$ref": "#/components/schemas/EventServerInstanceDisposed"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionCreated"
@@ -29050,6 +29028,9 @@
             "$ref": "#/components/schemas/InstallationUpdate-available"
           },
           {
+            "$ref": "#/components/schemas/ServerInstanceDisposed"
+          },
+          {
             "$ref": "#/components/schemas/AppRegistered"
           },
           {
@@ -31116,30 +31097,6 @@
             "additionalProperties": false
           }
         ]
-      },
-      "EventServerInstanceDisposed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["server.instance.disposed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "directory": {
-                "type": "string"
-              }
-            },
-            "required": ["directory"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
       },
       "SyncEventSessionCreated": {
         "type": "object",
@@ -42342,6 +42299,53 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "ServerInstanceDisposed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["server.instance.disposed"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              }
+            },
+            "required": ["directory"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "AppRegistered": {
         "type": "object",
         "properties": {
@@ -46518,6 +46522,31 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventServerInstanceDisposed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["server.instance.disposed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              }
+            },
+            "required": ["directory"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventAppRegistered": {
         "type": "object",
         "properties": {
@@ -47676,10 +47705,6 @@
     {
       "name": "global",
       "description": "Global server routes."
-    },
-    {
-      "name": "event",
-      "description": "Instance event stream route."
     },
     {
       "name": "adhoc",

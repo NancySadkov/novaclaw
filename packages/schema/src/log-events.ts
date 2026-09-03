@@ -1789,14 +1789,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/storage/resource-pressure-context.ts",
   },
-  /** A client opened the per-instance SSE event stream. */
-  "server.event.connected": {
-    level: "info",
-    message: "event stream connected",
-    attributes: {},
-    content: "none",
-    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
-  },
   /**
    * An instance event was not carried on `/api/event` because the route's published wire union
    * cannot express it. Logged once per type per subscription. Its ABSENCE from a busy instance is
@@ -1808,14 +1800,6 @@ export const EVENTS = {
     attributes: { "instance.event.type": "id" },
     content: "none",
     file: "packages/server/src/handlers/event.ts",
-  },
-  /** The per-instance SSE event stream closed. */
-  "server.event.disconnected": {
-    level: "info",
-    message: "event stream disconnected",
-    attributes: {},
-    content: "none",
-    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
   },
   /** A file search was served. The query is user text and never egresses. */
   "server.file.find": {

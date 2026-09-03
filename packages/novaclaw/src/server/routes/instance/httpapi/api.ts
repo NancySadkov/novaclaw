@@ -5,14 +5,12 @@ import { EventManifest } from "@/event-manifest"
 import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
 import { SkillV2 } from "@novaclaw/core/skill"
-import { InstanceDisposed } from "@/server/event"
 import { AdhocApi } from "./groups/adhoc"
 import { CapabilityApi } from "./groups/capability"
 import { CommunityApi, CommunityPeerApi } from "./groups/community"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { ControlPlaneApi } from "./groups/control-plane"
-import { EventApi } from "./groups/event"
 import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
 import { InstanceApi } from "./groups/instance"
@@ -38,7 +36,6 @@ const EventSchema: Schema.Schema<unknown> = Schema.Union([
       }).annotate({ identifier: `Event.${definition.type}` }),
     )
     .toArray(),
-  InstanceDisposed,
 ]).annotate({ identifier: "Event" })
 
 /**
@@ -90,7 +87,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
 // public event does not force TypeScript to serialize the entire endpoint+event union at this boundary.
 export const NovaClawHttpApi: HttpApi.HttpApi<"novaclaw", HttpApiGroup.Any> = HttpApi.make("novaclaw")
   .addHttpApi(RootHttpApi)
-  .addHttpApi(EventApi)
   .addHttpApi(InstanceHttpApi)
   .addHttpApi(ServerApi)
   .annotate(HttpApi.AdditionalSchemas, [

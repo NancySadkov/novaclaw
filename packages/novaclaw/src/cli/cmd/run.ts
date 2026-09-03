@@ -353,9 +353,7 @@ export const RunCommand = effectCmd({
        */
       const words = [...args.message, ...(args["--"] || [])]
       let message = words.join(" ")
-      let commandArguments = words
-        .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
-        .join(" ")
+      let commandArguments = words.map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg)).join(" ")
 
       /**
        * Who a headless run belongs to. `DEFAULT_COLLEAGUE_ID`, not the string "nova": the kernel
@@ -768,7 +766,11 @@ export const RunCommand = effectCmd({
         // Set when the SERVER says it is disposing this instance — see ./run/incomplete.
         let incomplete: IncompleteReason = "stream-ended"
 
-        async function loop(client: NovaclawClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
+        async function loop(
+          client: NovaclawClient,
+          events: Awaited<ReturnType<typeof sdk.v2.event.subscribe>>,
+          directory: string,
+        ) {
           const toggles = new Map<string, boolean>()
           // callID -> name+input captured at tool.called, joined with tool.success/failed.
           const calls = new Map<string, { tool: string; input: Record<string, unknown> }>()
@@ -834,82 +836,83 @@ export const RunCommand = effectCmd({
             // BEFORE the session filter, deliberately: the disposal carries only `{ directory }`,
             // so the filter below would skip it as "not mine" — and it is the one event that
             // explains why this stream is about to end.
+            // The contract stream is instance-wide, so another directory's disposal is not ours.
             if (event.type === "server.instance.disposed") {
-              incomplete = "disposed"
+              if (event.data.directory === directory) incomplete = "disposed"
               continue
             }
-            const scoped = (event as { properties?: { sessionID?: string } }).properties
+            const scoped = (event as { data?: { sessionID?: string } }).data
             if (scoped?.sessionID !== sessionID) continue
 
             if (event.type === "session.next.step.started") {
-              if (emit("step_start", { step: { agent: event.properties.agent, model: event.properties.model } })) {
+              if (emit("step_start", { step: { agent: event.data.agent, model: event.data.model } })) {
                 continue
               }
               if (args.format !== "json" && toggles.get("start") !== true) {
                 UI.empty()
-                UI.println(`> ${event.properties.agent} · ${event.properties.model.id}`)
+                UI.println(`> ${event.data.agent} · ${event.data.model.id}`)
                 UI.empty()
                 toggles.set("start", true)
               }
             }
 
             if (event.type === "session.next.step.ended") {
-              const { timestamp: _t, sessionID: _s, assistantMessageID: _m, ...step } = event.properties
+              const { timestamp: _t, sessionID: _s, assistantMessageID: _m, ...step } = event.data
               if (emit("step_finish", { step })) continue
             }
 
             if (event.type === "session.next.tool.called") {
-              calls.set(event.properties.callID, {
-                tool: event.properties.tool,
-                input: event.properties.input,
+              calls.set(event.data.callID, {
+                tool: event.data.tool,
+                input: event.data.input,
               })
-              if (event.properties.tool === "task" && args.format !== "json") {
-                if (toggles.get(event.properties.callID) === true) continue
-                await tool(toolPart({ callID: event.properties.callID, state: { status: "running" } }))
-                toggles.set(event.properties.callID, true)
+              if (event.data.tool === "task" && args.format !== "json") {
+                if (toggles.get(event.data.callID) === true) continue
+                await tool(toolPart({ callID: event.data.callID, state: { status: "running" } }))
+                toggles.set(event.data.callID, true)
               }
             }
 
             if (event.type === "session.next.tool.success") {
-              const output = flatten(event.properties.content)
+              const output = flatten(event.data.content)
               if (
                 emit("tool_use", {
-                  tool: calls.get(event.properties.callID)?.tool ?? "unknown",
-                  callID: event.properties.callID,
-                  input: calls.get(event.properties.callID)?.input ?? {},
+                  tool: calls.get(event.data.callID)?.tool ?? "unknown",
+                  callID: event.data.callID,
+                  input: calls.get(event.data.callID)?.input ?? {},
                   output,
-                  structured: event.properties.structured,
+                  structured: event.data.structured,
                 })
               ) {
                 continue
               }
               await tool(
                 toolPart({
-                  callID: event.properties.callID,
-                  state: { status: "completed", output, metadata: event.properties.structured },
+                  callID: event.data.callID,
+                  state: { status: "completed", output, metadata: event.data.structured },
                 }),
               )
             }
 
             if (event.type === "session.next.tool.failed") {
-              const message = errorText(event.properties.error)
+              const message = errorText(event.data.error)
               if (
                 emit("tool_use", {
-                  tool: calls.get(event.properties.callID)?.tool ?? "unknown",
-                  callID: event.properties.callID,
-                  input: calls.get(event.properties.callID)?.input ?? {},
-                  error: event.properties.error,
+                  tool: calls.get(event.data.callID)?.tool ?? "unknown",
+                  callID: event.data.callID,
+                  input: calls.get(event.data.callID)?.input ?? {},
+                  error: event.data.error,
                 })
               ) {
                 continue
               }
-              await toolError(toolPart({ callID: event.properties.callID, state: { status: "error", error: message } }))
+              await toolError(toolPart({ callID: event.data.callID, state: { status: "error", error: message } }))
               UI.error(message)
             }
 
             if (event.type === "session.next.text.ended") {
-              if (emit("text", { text: event.properties.text })) continue
-              const text = event.properties.text.trim()
+              if (emit("text", { text: event.data.text })) continue
+              const text = event.data.text.trim()
               if (!text) continue
               if (!process.stdout.isTTY) {
                 process.stdout.write(text + EOL)
@@ -921,8 +924,8 @@ export const RunCommand = effectCmd({
             }
 
             if (event.type === "session.next.reasoning.ended" && thinking) {
-              if (emit("reasoning", { text: event.properties.text })) continue
-              const text = event.properties.text.trim()
+              if (emit("reasoning", { text: event.data.text })) continue
+              const text = event.data.text.trim()
               if (!text) continue
               const line = `Thinking: ${text}`
               if (process.stdout.isTTY) {
@@ -937,19 +940,18 @@ export const RunCommand = effectCmd({
             // Turn-level failures: step.failed carries the mid-turn error; a pre-turn
             // setup failure (model resolution &c.) surfaces as a synthetic notice.
             if (event.type === "session.next.step.failed") {
-              fail(errorText(event.properties.error), event.properties.error)
+              fail(errorText(event.data.error), event.data.error)
             }
 
             if (event.type === "session.next.synthetic") {
-              const text = event.properties.text.trim()
+              const text = event.data.text.trim()
               if (text) fail(text, { message: text })
             }
 
-            if (event.type === "session.status" && event.properties.status.type === "idle") {
+            if (event.type === "session.status" && event.data.status.type === "idle") {
               settled = true
               break
             }
-
           }
           return error
         }
@@ -970,8 +972,9 @@ export const RunCommand = effectCmd({
         // Validate agent if specified
         const agent = await chosenAgent(client)
 
-        const events = await client.event.subscribe()
-        const completed = loop(client, events).catch((e) => {
+        // `/api/event` — the contract stream; the legacy `/event` this read until 2026-09-03 is gone.
+        const events = await client.v2.event.subscribe()
+        const completed = loop(client, events, cwd).catch((e) => {
           console.error(e)
           process.exitCode = 1
         })

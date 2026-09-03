@@ -9,13 +9,14 @@
  * different places:
  *
  *   - `disposed` — the server told us it was disposing this instance. Any accepted config WRITE
- *     disposes every instance (`handlers/global.ts` `configUpdate`), and the SSE response ends on
- *     `server.instance.disposed`, so an unrelated client changing settings mid-turn ends this run.
- *     Nothing is wrong with the machine or the network; something reconfigured the server.
+ *     disposes every instance (`handlers/global.ts` `configUpdate`); `server.instance.disposed` is a
+ *     served bus event since 2026-09-03 (`schema/instance-event.ts`), so `loop()` records it for its
+ *     own directory and reports it when the turn never settles. Nothing is wrong with the machine or
+ *     the network; something reconfigured the server.
  *   - `stream-ended` — the stream simply stopped, with no reason given.
  *
  * ⚠️ The CLI already RECEIVED the disposal and threw it away. `loop()` filters every event on
- * `properties.sessionID`, and the disposal carries only `{ directory }` — so it read as "not mine"
+ * `data.sessionID`, and the disposal carries only `{ directory }` — so it read as "not mine"
  * and was skipped a moment before the stream ended. The one event that explained the failure was in
  * hand, discarded, and then re-derived from scratch (2026-08-24) with a synchronous file probe.
  * That is what this module exists to prevent happening a second time.

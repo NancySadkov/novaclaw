@@ -264,7 +264,14 @@ describe("PluginHost event domain", () => {
       const target = yield* recorder(1)
 
       const unpublishable = collectWarnings()
-      yield* host.event.subscribe("server.instance.disposed", target.handler).pipe(Effect.provide(unpublishable.layer))
+      // ⚠️ CAST, and the cast is the point. `server.instance.disposed` played this part until
+      // 2026-09-03, when it became a served bus event — so no member of the typed union is
+      // unpublished any more. The guard still matters because a PLUGIN is third-party JS: `import()`
+      // runs its module scope and the parameter type binds nothing at runtime, so a typo'd name
+      // arrives here as a string the manifest does not know.
+      yield* host.event
+        .subscribe("server.never.published" as Parameters<typeof host.event.subscribe>[0], target.handler)
+        .pipe(Effect.provide(unpublishable.layer))
       expect(unpublishable.warnings.some((line) => line.includes("the kernel never publishes"))).toBe(true)
 
       // …and a type the kernel DOES publish is silent, so the assertion above is not vacuous.

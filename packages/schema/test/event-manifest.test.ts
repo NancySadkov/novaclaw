@@ -68,12 +68,16 @@ describe("public event manifest", () => {
     //   · What the served set still refuses is exactly `server.connected` and `global.disposed` — the
     //     streams' own lifecycle elements, declared for the union and emitted by the routes themselves.
     // Verdict: ServerDefinitions 79 -> 92, Definitions/Latest 99 -> 94 (−3 question, −2 permission).
+    //   · Later the same day, +1 served: `server.instance.disposed` (`instance-event.ts`) — the one
+    //     type the CLI could read only on the legacy `/event`, now a bus event the contract stream
+    //     carries, so `/event` could be deleted. Payload: a directory. Not durable.
+    // Verdict: ServerDefinitions 92 -> 93, Definitions/Latest 94 -> 95.
     expect({
       server: EventManifest.ServerDefinitions.length,
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-    }).toEqual({ server: 92, all: 94, latest: 94, durable: 48 })
+    }).toEqual({ server: 93, all: 95, latest: 95, durable: 48 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

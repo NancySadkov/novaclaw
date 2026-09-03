@@ -55,8 +55,10 @@ const merged = (() => {
 
 describe("serve parity: the published API is the mounted API", () => {
   test("the composition is what this test expects to be reading", () => {
-    expect(composed.length).toBeGreaterThanOrEqual(4)
-    expect(builders.size).toBeGreaterThanOrEqual(4)
+    // Three since 2026-09-03: the legacy event API left with its route. A composition of one would
+    // still be worth checking; a composition of zero is the scan reading the wrong file.
+    expect(composed.length).toBeGreaterThanOrEqual(3)
+    expect(builders.size).toBeGreaterThanOrEqual(3)
   })
 
   test("🔴 every member of NovaClawHttpApi has exactly one HttpApiBuilder in server.ts", () => {

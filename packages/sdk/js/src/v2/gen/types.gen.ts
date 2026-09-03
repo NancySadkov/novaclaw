@@ -64,6 +64,7 @@ export type Event =
   | EventSessionError
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventServerInstanceDisposed
   | EventAppRegistered
   | EventMemoryClaimRecorded
   | EventMemoryItemRecorded
@@ -99,7 +100,6 @@ export type Event =
   | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
-  | EventServerInstanceDisposed
 
 export type OAuth = {
   type: "oauth"
@@ -943,6 +943,13 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "server.instance.disposed"
+        properties: {
+          directory: string
+        }
+      }
+    | {
+        id: string
         type: "app.registered"
         properties: {
           id: string
@@ -1232,7 +1239,6 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
-    | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
     | SyncEventSessionDeleted
@@ -1908,6 +1914,7 @@ export type V2Event =
   | SessionError
   | InstallationUpdated
   | InstallationUpdateAvailable
+  | ServerInstanceDisposed
   | AppRegistered
   | MemoryClaimRecorded
   | MemoryItemRecorded
@@ -2627,14 +2634,6 @@ export type MessengerAccountStatus2 =
       state: "error"
       message: string
     }
-
-export type EventServerInstanceDisposed = {
-  id: string
-  type: "server.instance.disposed"
-  properties: {
-    directory: string
-  }
-}
 
 export type SyncEventSessionCreated = {
   type: "sync"
@@ -6243,6 +6242,23 @@ export type InstallationUpdateAvailable = {
   }
 }
 
+export type ServerInstanceDisposed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "server.instance.disposed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    directory: string
+  }
+}
+
 export type AppRegistered = {
   id: string
   metadata?: {
@@ -7610,6 +7626,14 @@ export type EventInstallationUpdateAvailable = {
   }
 }
 
+export type EventServerInstanceDisposed = {
+  id: string
+  type: "server.instance.disposed"
+  properties: {
+    directory: string
+  }
+}
+
 export type EventAppRegistered = {
   id: string
   type: "app.registered"
@@ -8473,25 +8497,6 @@ export type GlobalResourcesResponses = {
 }
 
 export type GlobalResourcesResponse = GlobalResourcesResponses[keyof GlobalResourcesResponses]
-
-export type EventSubscribeData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/event"
-}
-
-export type EventSubscribeResponses = {
-  /**
-   * Event stream
-   */
-  200: Event
-}
-
-export type EventSubscribeResponse = EventSubscribeResponses[keyof EventSubscribeResponses]
 
 export type AdhocListData = {
   body?: never

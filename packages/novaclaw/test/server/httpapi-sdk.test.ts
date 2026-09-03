@@ -385,8 +385,8 @@ describe("HttpApi SDK", () => {
 
   serverPathParity("matches generated SDK instance event stream", (serverPath) =>
     withStandardProject(serverPath, ({ sdk }) =>
-      firstEvent((signal) => sdk.event.subscribe(undefined, { signal })).pipe(
-        Effect.map((event) => ({ type: record(record(event).payload).type })),
+      firstEvent((signal) => sdk.v2.event.subscribe({ signal })).pipe(
+        Effect.map((event) => ({ type: record(event).type })),
       ),
     ),
   )

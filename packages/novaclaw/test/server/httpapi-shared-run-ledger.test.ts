@@ -161,7 +161,9 @@ describe("the sweep", () => {
   test("reaches the files that compose the layer, and the one that defines it", () => {
     const consumers = new Set(sources.filter(consumesHttpApiLayer).map((file) => file.name))
     for (const name of [
-      "packages/novaclaw/test/server/httpapi-event.test.ts",
+      // `httpapi-event.test.ts` was here until 2026-09-03. Deleted, not moved: the legacy `/event`
+      // stream left the tree once its one consumer (the CLI) read `/api/event`, and the test went with
+      // the surface it exercised.
       "packages/novaclaw/test/server/httpapi-sync.test.ts",
       // `httpapi-workspace.test.ts` was here until 2026-09-01. Deleted, not moved: the refactor
       // sweep's RF-13-9 removed the seven `/workspace/*` routes (`groups/workspace.ts`) as legacy

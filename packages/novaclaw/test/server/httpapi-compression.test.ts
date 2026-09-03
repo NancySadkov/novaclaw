@@ -129,10 +129,12 @@ describe("HttpApi compression", () => {
   })
 
   describe("streaming exclusions", () => {
-    test("/event SSE is not compressed", async () => {
+    test("/global/event SSE is not compressed", async () => {
       await using tmp = await tmpdir({ config: { formatter: false } })
       const controller = new AbortController()
-      const response = await app().request("/event", {
+      // (`/event` carried this claim until 2026-09-03; the legacy stream is gone and `/global/event` is
+      // the one streaming path the middleware still excludes.)
+      const response = await app().request("/global/event", {
         headers: { "x-novaclaw-directory": tmp.path, "accept-encoding": "gzip" },
         signal: controller.signal,
       })

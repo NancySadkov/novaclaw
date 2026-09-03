@@ -369,28 +369,6 @@ class ApiGlobal extends NovaClawApiClient {
   }
 }
 
-class ApiEvent extends NovaClawApiClient {
-  /**
-   * Subscribe to events
-   *
-   * Get events
-   */
-  public subscribe<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).sse.get<T.EventSubscribeResponses, unknown, ThrowOnError>({
-      url: "/event",
-      ...options,
-      query,
-    })
-  }
-}
-
 class ApiAdhoc extends NovaClawApiClient {
   /**
    * List session recipes (4E)
@@ -6848,10 +6826,6 @@ export class NovaclawClient extends NovaClawApiClient {
   private _global?: ApiGlobal
   get global(): ApiGlobal {
     return (this._global ??= new ApiGlobal({ client: this.client }))
-  }
-  private _event?: ApiEvent
-  get event(): ApiEvent {
-    return (this._event ??= new ApiEvent({ client: this.client }))
   }
   private _adhoc?: ApiAdhoc
   get adhoc(): ApiAdhoc {

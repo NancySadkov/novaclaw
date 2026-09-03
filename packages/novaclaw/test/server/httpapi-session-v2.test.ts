@@ -138,7 +138,8 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // Subscribe BEFORE prompting so the busy/idle bracket cannot be missed.
           const controller = new AbortController()
           yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()))
-          const events = yield* Effect.promise(() => sdk.event.subscribe(undefined, { signal: controller.signal }))
+          // The contract stream (`/api/event`); the legacy `/event` this subscribed to left on 2026-09-03.
+          const events = yield* Effect.promise(() => sdk.v2.event.subscribe({ signal: controller.signal }))
           yield* Effect.addFinalizer(() =>
             Effect.promise(async () => void (await events.stream.return?.(undefined))).pipe(Effect.ignore),
           )
@@ -171,9 +172,9 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
                 if (promptedCount === 1) Deferred.doneUnsafe(sawPrompted, Effect.void)
                 if (promptedCount >= 2) Deferred.doneUnsafe(sawPromptedAgain, Effect.void)
               }
-              if (type === "session.status" && record(record(payload.properties).status).type === "busy")
+              if (type === "session.status" && record(record(payload.data).status).type === "busy")
                 Deferred.doneUnsafe(sawBusy, Effect.void)
-              if (type === "session.status" && record(record(payload.properties).status).type === "idle")
+              if (type === "session.status" && record(record(payload.data).status).type === "idle")
                 Deferred.doneUnsafe(sawIdle, Effect.void)
             }
           }).pipe(Effect.forkScoped)

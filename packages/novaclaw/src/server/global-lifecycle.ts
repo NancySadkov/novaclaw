@@ -1,14 +1,14 @@
 import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
 import { Effect } from "effect"
-import { Event } from "./event"
+import { ServerEvent } from "@novaclaw/schema/server-event"
 import { Log } from "@novaclaw/schema/log"
 
 export const emitGlobalDisposed = Effect.sync(() =>
   GlobalBus.emit("event", {
     directory: "global",
     payload: {
-      type: Event.Disposed.type,
+      type: ServerEvent.Disposed.type,
       properties: {},
     },
   }),

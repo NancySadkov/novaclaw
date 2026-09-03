@@ -1,9 +1,7 @@
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
-import { InstanceDisposed } from "@/server/event"
 import { LocalModel } from "@novaclaw/schema/local-model"
-import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { described } from "./metadata"
@@ -158,7 +156,6 @@ const GlobalEventSchema = Schema.Struct({
         Schema.Struct({ id: EventV2.ID, type: Schema.Literal(definition.type), properties: definition.data }),
       )
       .toArray(),
-    InstanceDisposed,
     ...SyncEventSchemas,
   ]),
 }).annotate({ identifier: "GlobalEvent" })

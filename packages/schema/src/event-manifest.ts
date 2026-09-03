@@ -7,6 +7,7 @@ import { Event } from "./event"
 import { FileSystem } from "./filesystem"
 import { FileSystemWatcher } from "./filesystem-watcher"
 import { InstallationEvent } from "./installation-event"
+import { InstanceEvent } from "./instance-event"
 import { Integration } from "./integration"
 import { McpEvent } from "./mcp-event"
 import { MemoryEvent } from "./memory-event"
@@ -75,6 +76,7 @@ export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...recordLiveDefinitions,
   ...InstallationEvent.Definitions,
+  ...InstanceEvent.Definitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,

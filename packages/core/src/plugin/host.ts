@@ -76,10 +76,10 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
   type: string,
   handler: (event: PublicEvent) => Effect.Effect<void>,
 ) {
-  // The public union carries one type the kernel bus never publishes
-  // (`server.instance.disposed`, emitted by the instance supervisor on the process-global bus).
-  // Registering silently would leave the plugin deaf with no way to find out — ruling 2: a
-  // fault is never described falsely.
+  // A type outside the manifest is one the kernel bus never publishes (until 2026-09-03 the public
+  // union itself carried one: `server.instance.disposed`, then an IPC-only payload). Registering
+  // silently would leave the plugin deaf with no way to find out — ruling 2: a fault is never
+  // described falsely.
   if (EventManifest.Latest.get(type) === undefined) {
     yield* Log.event("plugin.event.subscription.unsupported", { "plugin.event.type": type })
   }

@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import { Effect, Stream } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
-import type { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { ServerEvent } from "@novaclaw/schema/server-event"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
-import { boundedSubscription } from "../../src/server/routes/instance/httpapi/handlers/event"
 
 /**
  * Two properties of the event streams this server publishes, both of which were false.
@@ -105,83 +102,4 @@ describe("the /api/event contract equals what the route can deliver", () => {
     expect([...deliverableTypes].filter((type) => !declared.has(type)).sort()).toEqual([])
     expect(declared.size).toBe(deliverableTypes.size)
   })
-})
-
-type Listener = (event: EventV2.Payload) => Effect.Effect<void>
-
-/**
- * A bus that is nothing but its listener list.
- *
- * `boundedSubscription`'s entire contract is what it does between `events.listen` and its queue, so
- * a stub that can deliver an event with a chosen `location` exercises it exactly, and a capacity of
- * four reaches the bound in twenty publishes instead of a thousand.
- */
-function fakeBus() {
-  const listeners = new Set<Listener>()
-  const events = {
-    listen: (listener: Listener) =>
-      Effect.sync(() => {
-        listeners.add(listener)
-        return Effect.sync(() => {
-          listeners.delete(listener)
-        })
-      }),
-  } as unknown as EventV2.Interface
-  const publish = (directory: string, id: string) =>
-    Effect.forEach(
-      [...listeners],
-      (listener) => listener({ id, type: "probe.event", data: {}, location: { directory } } as EventV2.Payload),
-      { discard: true },
-    )
-  return { events, publish }
-}
-
-const MINE = "/workspace/mine"
-const THEIRS = "/workspace/theirs"
-
-describe("the /event subscription is bounded, and filtered at the source", () => {
-  test("🔴 a neighbour's traffic far past the bound cannot evict or disconnect this subscriber", async () => {
-    const seen = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { events, publish } = fakeBus()
-        const stream = yield* boundedSubscription(events, (event) => event.location?.directory === MINE, 4)
-
-        // Twelve times the capacity, all for a directory this subscriber did not ask for. Filtered
-        // AFTER the queue these fill it, fail it, and the matching event below never arrives.
-        for (let index = 0; index < 50; index++) yield* publish(THEIRS, `evt_theirs_${index}`)
-        yield* publish(MINE, "evt_mine")
-
-        const frames = yield* stream.pipe(Stream.take(1), Stream.runCollect)
-        // `Event.ID` is a branded string; widen it here so the assertion below compares plain ids.
-        return Array.from(frames).map((event) => String(event.id))
-      }).pipe(Effect.scoped),
-    )
-
-    // PRESENCE and ABSENCE in the same run: the stream survived, and it carries only what it matched.
-    expect(seen).toEqual(["evt_mine"])
-  })
-
-  test("🔴 a subscriber that stops reading is disconnected, not buffered without limit", async () => {
-    const outcome = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { events, publish } = fakeBus()
-        const stream = yield* boundedSubscription(events, () => true, 4)
-
-        // Nobody is draining, so this is the stalled client. Unbounded, the queue simply grows.
-        for (let index = 0; index < 20; index++) yield* publish(MINE, `evt_${index}`)
-
-        return yield* stream.pipe(
-          Stream.runDrain,
-          Effect.matchEffect({
-            onFailure: (error: { readonly _tag: string }) => Effect.succeed(error._tag),
-            onSuccess: () => Effect.succeed("ended cleanly"),
-          }),
-          // An unbounded queue neither fails nor ends: it would hang here rather than report.
-          Effect.timeoutOrElse({ duration: "2 seconds", orElse: () => Effect.succeed("still growing") }),
-        )
-      }).pipe(Effect.scoped),
-    )
-
-    expect(outcome).toBe("EventV2.SubscriberOverflow")
-  }, 10_000)
 })

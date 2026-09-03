@@ -287,7 +287,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // (the arm carries its own wire name; its type's PascalCase collided with the status object),
 // `SessionError`, `SessionCompacted`, `Installation*`, `Mcp*`, `VcsBranchUpdated`, `Workspace*`,
 // `Worktree*` — and lost the two `EventPermission*` arms whose family nobody publishes.
-const SCHEMA_NAME_FINGERPRINT = "5a5aa82166b6fde13936fbfb0b4fcdc56373758163e6a8a1631eee48170b0667"
+// 2026-09-03, last: the legacy `/event` left with its `EventSubscribeResponses`; `server.instance.disposed`
+// became a served bus event (`ServerInstanceDisposed`) so the CLI reads it on `/api/event`.
+const SCHEMA_NAME_FINGERPRINT = "c568a56c7bb6e2c89dfefd750549fca95b3775f62438973125fa15ea71161f66"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
