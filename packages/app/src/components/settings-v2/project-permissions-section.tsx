@@ -2,6 +2,7 @@ import { For, Show, Switch, Match, createMemo, createSignal, type Accessor, type
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { ACTION_LABEL_KEY } from "@/i18n/permission-action-labels"
 import { PermissionActions } from "@novaclaw/core/permission-actions"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { SettingsExplainV2 } from "./explain"
@@ -104,6 +105,26 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
     const value = props.state()
     return value?.kind === "project" ? value.permissions : []
   })
+  /**
+   * The action a rule names, in words. `register-app`, `todowrite` and `external_directory_write`
+   * are the strings the EVALUATOR matches; they are not what a control should put in front of a
+   * person, and this list exists to be read by whoever is deciding what a folder may do.
+   *
+   * 🔴 The strings were already here — `settings.permissions.tool.*`, a title and a description per
+   * action, translated into eighteen locales — and **nothing in the tree rendered any of them**.
+   * Meanwhile this picker shipped `label={(value) => value}`, so the same screen whose comment below
+   * complains that "`kb`, `js` and `provision` in a row teach nobody what they gate" rendered
+   * exactly that row. Principle 8 and 12(c) were answered in the bundles and thrown away here.
+   *
+   * ⚠️ Falls back to the RAW action, and must: the free-text box beside this list accepts an MCP
+   * tool's own action name, and nothing can label those from here. It cannot fire for a built-in —
+   * `ACTION_LABEL_KEY` is exhaustive over the action union by construction.
+   */
+  const actionLabel = (value: string) => {
+    const key = (ACTION_LABEL_KEY as Partial<Record<string, TranslationKey>>)[value]
+    return key ? language.t(key) : value
+  }
+
   const current = createMemo(() => draft() ?? fromFile())
   const plan = createMemo(() => planProjectPermissions(current()))
   const dirty = createMemo(() => draft() !== undefined)
@@ -260,7 +281,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
           options={[...PermissionActions.ALL]}
           current={PermissionActions.ALL.includes(action()) ? action() : undefined}
           placeholder={language.t("settings.permissions.project.actionPick")}
-          label={(value) => value}
+          label={actionLabel}
           groupBy={(value) => language.t(GROUP_LABEL[PermissionActions.groupOf(value) ?? "legacy"])}
           data-action="project-permission-action-pick"
           class="min-w-[10rem] flex-1"

@@ -103,6 +103,18 @@ export type Group = keyof typeof GROUPS
 export const groupOf = (action: string): Group | undefined =>
   (Object.keys(GROUPS) as Group[]).find((group) => (GROUPS[group] as readonly string[]).includes(action))
 
+/**
+ * Every action, as a TYPE.
+ *
+ * `ALL` is annotated `readonly string[]` because its consumers compare it against free text — an
+ * MCP action or a runtime-defined tool's name — and a literal union would reject those. This type
+ * is the other half: it lets a table be keyed on the closed set, so a control that must have an
+ * entry PER ACTION fails to compile when one is added rather than falling back at runtime.
+ * `app/src/i18n/permission-action-labels.ts` is the first such table, and it is why the app has no
+ * `dynamicKey` hatch for these labels (`i18n/key-typing.test.ts`: narrow the source).
+ */
+export type Action = (typeof GROUPS)[keyof typeof GROUPS][number]
+
 /** Flat and sorted, for a control that just wants the list. */
 export const ALL: readonly string[] = Object.values(GROUPS)
   .flatMap((group) => [...group])

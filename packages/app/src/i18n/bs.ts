@@ -520,12 +520,6 @@ export const dict = {
   "settings.permissions.tool.edit.title": "Uređivanje",
   "settings.permissions.tool.edit.description":
     "Mijenjanje datoteka, uključujući izmjene, pisanja, patch-eve i multi-izmjene",
-  "settings.permissions.tool.glob.title": "Glob",
-  "settings.permissions.tool.glob.description": "Podudaranje datoteka pomoću glob šablona",
-  "settings.permissions.tool.grep.title": "Grep",
-  "settings.permissions.tool.grep.description": "Pretraživanje sadržaja datoteka pomoću regularnih izraza",
-  "settings.permissions.tool.list.title": "Lista",
-  "settings.permissions.tool.list.description": "Listanje datoteka unutar direktorija",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Pokretanje shell komandi",
   "settings.permissions.tool.task.title": "Zadatak",
@@ -538,8 +532,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Preuzmi sadržaj sa URL-a",
   "settings.permissions.tool.websearch.title": "Web pretraga",
   "settings.permissions.tool.websearch.description": "Pretražuj web",
-  "settings.permissions.tool.external_directory.title": "Vanjski direktorij",
-  "settings.permissions.tool.external_directory.description": "Pristup datotekama izvan direktorija projekta",
 
   "session.delete.failed.title": "Neuspjelo brisanje sesije",
   "session.delete.title": "Izbriši sesiju",

@@ -514,12 +514,6 @@ export const dict = {
   "settings.permissions.tool.edit.title": "Rediger",
   "settings.permissions.tool.edit.description":
     "Endre filer, inkludert redigeringer, skriving, patcher og multi-redigeringer",
-  "settings.permissions.tool.glob.title": "Glob",
-  "settings.permissions.tool.glob.description": "Match filer ved hjelp av glob-mønstre",
-  "settings.permissions.tool.grep.title": "Grep",
-  "settings.permissions.tool.grep.description": "Søk i filinnhold ved hjelp av regulære uttrykk",
-  "settings.permissions.tool.list.title": "Liste",
-  "settings.permissions.tool.list.description": "List filer i en mappe",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Kjør shell-kommandoer",
   "settings.permissions.tool.task.title": "Oppgave",
@@ -532,8 +526,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Hent innhold fra en URL",
   "settings.permissions.tool.websearch.title": "Websøk",
   "settings.permissions.tool.websearch.description": "Søk på nettet",
-  "settings.permissions.tool.external_directory.title": "Ekstern mappe",
-  "settings.permissions.tool.external_directory.description": "Få tilgang til filer utenfor prosjektmappen",
 
   "session.delete.failed.title": "Kunne ikke slette sesjon",
   "session.delete.title": "Slett sesjon",

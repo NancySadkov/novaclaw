@@ -521,12 +521,6 @@ export const dict = {
   "settings.permissions.tool.edit.title": "Editar",
   "settings.permissions.tool.edit.description":
     "Modificar archivos, incluyendo ediciones, escrituras, parches y multi-ediciones",
-  "settings.permissions.tool.glob.title": "Glob",
-  "settings.permissions.tool.glob.description": "Coincidir archivos usando patrones glob",
-  "settings.permissions.tool.grep.title": "Grep",
-  "settings.permissions.tool.grep.description": "Buscar contenidos de archivo usando expresiones regulares",
-  "settings.permissions.tool.list.title": "Listar",
-  "settings.permissions.tool.list.description": "Listar archivos dentro de un directorio",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Ejecutar comandos de shell",
   "settings.permissions.tool.task.title": "Tarea",
@@ -539,8 +533,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Obtener contenido de una URL",
   "settings.permissions.tool.websearch.title": "Búsqueda Web",
   "settings.permissions.tool.websearch.description": "Buscar en la web",
-  "settings.permissions.tool.external_directory.title": "Directorio Externo",
-  "settings.permissions.tool.external_directory.description": "Acceder a archivos fuera del directorio del proyecto",
 
   "session.delete.failed.title": "Fallo al eliminar sesión",
   "session.delete.title": "Eliminar sesión",

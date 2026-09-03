@@ -525,12 +525,6 @@ export const dict = {
   "settings.permissions.tool.edit.title": "Редактирование",
   "settings.permissions.tool.edit.description":
     "Изменение файлов, включая редактирование, запись, патчи и мульти-редактирование",
-  "settings.permissions.tool.glob.title": "Glob",
-  "settings.permissions.tool.glob.description": "Сопоставление файлов по паттернам glob",
-  "settings.permissions.tool.grep.title": "Grep",
-  "settings.permissions.tool.grep.description": "Поиск по содержимому файлов с использованием регулярных выражений",
-  "settings.permissions.tool.list.title": "List",
-  "settings.permissions.tool.list.description": "Список файлов в директории",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Запуск команд оболочки",
   "settings.permissions.tool.task.title": "Task",
@@ -543,8 +537,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Получение контента по URL",
   "settings.permissions.tool.websearch.title": "Web Search",
   "settings.permissions.tool.websearch.description": "Поиск в интернете",
-  "settings.permissions.tool.external_directory.title": "Внешняя директория",
-  "settings.permissions.tool.external_directory.description": "Доступ к файлам вне директории проекта",
 
   "session.delete.failed.title": "Не удалось удалить сессию",
   "session.delete.title": "Удалить сессию",
