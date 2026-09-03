@@ -272,21 +272,33 @@ export function Titlebar() {
         }
 
         const VISIBLE_TABS = 4
+        /**
+         * 🔴 STORE ORDER, never recency. Owner, 2026-09-03: *"picking a new one moves it to the left
+         * — that is incredibly distracting, and gives the feel that our UI is falling apart. Ensure
+         * there is no tab sorting, but the user has the ability to drag tabs to sort them if they
+         * want, like in a browser."*
+         *
+         * The strip used to render `recentOrder()`, so selecting a tab promoted it to index 0 and
+         * every other tab shifted right under the pointer. Tabs are a SPATIAL control: people find
+         * them by where they are, and a control that rearranges itself when you use it cannot be
+         * learned. Drag-to-reorder already exists (`tabs.reorder`), which is the only sorting there
+         * should be — the user's own.
+         *
+         * ⚠️ The current task is still always visible, because a strip that does not contain the
+         * thing on screen is worse than one that shifts. It takes the LAST slot rather than the
+         * first, so the tabs the user has parked on the left never move.
+         */
         const visibleTabs = createMemo(() => {
-          const ordered = tabs.recentOrder()
-          const shown = ordered.slice(0, VISIBLE_TABS)
+          const shown = tabsStore.slice(0, VISIBLE_TABS)
           const current = currentTab()
-          // ⚠️ The current task is ALWAYS shown, even if it is not in the recent few — otherwise
-          // opening an old task from the list would leave you looking at a strip that does not
-          // contain the thing on screen.
           if (current && !shown.some((tab) => tabKey(tab) === tabKey(current))) {
-            return [current, ...shown.slice(0, VISIBLE_TABS - 1)]
+            return [...shown.slice(0, VISIBLE_TABS - 1), current]
           }
           return shown
         })
         const hiddenTabs = createMemo(() => {
           const visible = new Set(visibleTabs().map(tabKey))
-          return tabs.recentOrder().filter((tab) => !visible.has(tabKey(tab)))
+          return tabsStore.filter((tab) => !visible.has(tabKey(tab)))
         })
         const closeCurrent = () => {
           const current = currentTab()

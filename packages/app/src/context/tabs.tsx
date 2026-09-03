@@ -226,7 +226,34 @@ export const {
           return existing
         }
         const open = agentTab(next.server, next.agent)
-        if (open >= 0) return store[open]!
+        if (open >= 0) {
+          const held = store[open]!
+          // 🔴 ONE tab per colleague, pointing at the colleague's CURRENT chat — not at whichever chat
+          // it was pointing at first. The dedupe used to hand the old tab straight back, so a caller
+          // that had just been given a NEW session for this colleague got a tab still rendering the
+          // previous one, and nothing said why.
+          //
+          // Measured on the owner's instance 2026-09-03: Clear chat deleted the colleague's live chat
+          // (correctly — that is what clearing is), the tab was still pinned to the ARCHIVED
+          // predecessor holding 296 events, and opening the colleague from Contacts created a fresh
+          // chat and then handed back the stale tab. The user saw the conversation they had just
+          // cleared, and the route could not resolve it, which bounced them to Home.
+          //
+          // The ECS lens again: the colleague is the entity and the chat is a component reached
+          // THROUGH it, so the tab adopts the id it is given rather than keeping its own.
+          if (held.type === "session" && held.sessionId !== next.sessionId) {
+            void startTransition(() => {
+              setStore(
+                produce((tabs) => {
+                  const target = tabs[open]
+                  if (target?.type === "session") target.sessionId = next.sessionId
+                }),
+              )
+            })
+            return { ...held, sessionId: next.sessionId }
+          }
+          return held
+        }
         void startTransition(() => {
           setStore(
             produce((tabs) => {

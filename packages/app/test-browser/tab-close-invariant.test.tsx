@@ -84,6 +84,10 @@ function Probe() {
       <button data-testid="reconcile" onClick={() => tabs.removeTab(0, true)} />
       <span data-testid="ids">{tabs.store.map((t) => (t.type === "session" ? t.sessionId : "?")).join(",")}</span>
       <button
+        data-testid="readd"
+        onClick={() => tabs.addSessionTab({ server: KEY, sessionId: "ses_fresh", agent: "nova" })}
+      />
+      <button
         data-testid="follow"
         onClick={() =>
           tabs.followAgentChats([
@@ -271,6 +275,37 @@ describe("a colleague's tab follows its colleague", () => {
     ;(container.querySelector('[data-testid="follow"]') as HTMLButtonElement).click()
     await settle()
     expect(text(container, "ids").split(",").length).toBe(before.split(",").length)
+  })
+})
+
+/**
+ * ONE TAB PER COLLEAGUE, POINTING AT THE COLLEAGUE'S CURRENT CHAT.
+ *
+ * The dedupe used to hand the existing tab straight back, so a caller that had just been given a NEW
+ * session for that colleague got a tab still rendering the previous one. Measured on the owner's
+ * instance: Clear chat deleted the live chat (correctly), the tab stayed pinned to the ARCHIVED
+ * predecessor holding 296 events, and opening the colleague from Contacts created a fresh chat and
+ * then handed back the stale tab — so the user saw the conversation they had just cleared.
+ */
+describe("re-opening a colleague adopts the chat it was given", () => {
+  test("🔴 the tab moves to the new session rather than handing back the old one", async () => {
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    click(container, "readd")
+    await settle()
+    expect(text(container, "ids").split(",")[0]).toBe("ses_fresh")
+  })
+
+  test("CONTROL — it does not open a SECOND tab for the same colleague", async () => {
+    // The dedupe is still a dedupe. Adopting must not become "add another".
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    const before = text(container, "ids").split(",").length
+    click(container, "readd")
+    await settle()
+    expect(text(container, "ids").split(",").length).toBe(before)
   })
 })
 

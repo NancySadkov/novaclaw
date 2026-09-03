@@ -14,6 +14,7 @@ import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
+import { describeFailure } from "@/utils/failure-copy"
 import {
   formatRate,
   liveFor,
@@ -204,7 +205,18 @@ export function ContactsPage() {
       navigate(sessionHref(key, id))
     } catch (error) {
       // Said, never swallowed: a row that quietly refuses to open reads as a broken product.
-      showToast({ variant: "error", title: language.t("contacts.startFailed"), description: String(error) })
+      // ⚠️ And SAID IN WORDS THE USER CAN ACT ON. `String(error)` here produced
+      // "TypeError: Failed to fetch", which names neither what was attempted, nor where, nor what to
+      // do about it — the browser's words for whoever wrote the fetch call, shown to somebody who
+      // just clicked a name in a list.
+      const copy = describeFailure(error, { operation: `start a chat with ${name}`, target: key })
+      showToast({
+        variant: "error",
+        title: copy.headline,
+        description: copy.remedy ? `${copy.remedy}
+
+${copy.detail}` : copy.detail,
+      })
     } finally {
       setStarting(undefined)
     }
