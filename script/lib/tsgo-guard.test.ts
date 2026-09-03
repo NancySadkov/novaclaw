@@ -109,9 +109,32 @@ describe.skipIf(process.platform !== "win32")("the tsgo guard bounds itself", ()
     return predicate()
   }
 
+  /**
+   * How long to allow for an exit that must EVENTUALLY happen.
+   *
+   * 🔴 **This was 20 s, and 20 s is a latency assumption wearing an assertion's clothes.** Both tests
+   * passed in 1.8 s when the file was run alone and the ownership one then failed in the gate, which
+   * runs this unit's whole directory in one process beside three other units on a box with ~1.9 GB
+   * free. A guard tick there is `Start-Sleep 1` plus a full `Get-Process` enumeration, and that
+   * stretches to seconds under load — so the run went red because the machine was busy.
+   *
+   * ⚠️ Generous does NOT mean toothless, and that distinction is the whole reason this is safe to
+   * raise: the failure being guarded against is a loop with no way out, which never exits at any
+   * budget. The poison A/B is the evidence — removing the bound fails this file whether the wait is
+   * 20 s or 200 s.
+   */
+  const EXIT_BUDGET_MS = 90_000
+
   /** Resolves true if the guard exited inside the window, false if it was still running. */
   const exitedWithin = async (exited: Promise<void>, ms: number) =>
     Promise.race([exited.then(() => true), Bun.sleep(ms).then(() => false)])
+
+  /** Wait for an exit and SAY how long it took, so a red distinguishes "slow" from "never". */
+  const exitedEventually = async (exited: Promise<void>) => {
+    const started = Date.now()
+    const ok = await exitedWithin(exited, EXIT_BUDGET_MS)
+    return { ok, ms: Date.now() - started }
+  }
 
   test("it stays up while its subject lives, then exits once the subject is gone", async () => {
     const dir = mkdtempSync(join(os.tmpdir(), "novaclaw-tsgo-guard-"))
@@ -132,10 +155,11 @@ describe.skipIf(process.platform !== "win32")("the tsgo guard bounds itself", ()
 
     // THE BOUND. The subject finishes; the guard has nothing left to guard.
     subject.child.kill()
-    expect(await exitedWithin(guard.exited, 20_000)).toBe(true)
+    const gone = await exitedEventually(guard.exited)
+    expect(gone.ok, `the guard was still running ${gone.ms} ms after its subject died`).toBe(true)
     // And it takes its record with it, so the next wrapper run does not read a corpse as a guard.
     expect(existsSync(guard.pidFile)).toBe(false)
-  }, 60_000)
+  }, 150_000)
 
   test("it exits when the pid file stops naming it, and leaves the successor's record alone", async () => {
     const dir = mkdtempSync(join(os.tmpdir(), "novaclaw-tsgo-guard-"))
@@ -150,7 +174,8 @@ describe.skipIf(process.platform !== "win32")("the tsgo guard bounds itself", ()
     const successor = `999999 ${Date.now()}`
     writeFileSync(guard.pidFile, successor)
 
-    expect(await exitedWithin(guard.exited, 20_000)).toBe(true)
+    const gone = await exitedEventually(guard.exited)
+    expect(gone.ok, `the guard was still running ${gone.ms} ms after losing the pid file`).toBe(true)
     expect(readFileSync(guard.pidFile, "utf8").trim()).toBe(successor)
-  }, 60_000)
+  }, 150_000)
 })
