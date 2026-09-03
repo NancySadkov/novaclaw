@@ -249,6 +249,12 @@ function mount(answers: (() => MemoryGraph)[]) {
   const syncStub = () => ({ data: { path: { directory: "/tmp/p" } }, session: { data: { info: {} } } })
   // Deliberately echoes the KEY rather than resolving copy — this file asserts which key a row
   // reaches for, not what it says. `plural` echoes the group for the same reason.
+  //
+  // ⚠️ CORRECTION (2026-09-03): six assertions below were still matching the English SENTENCE, which
+  // only ever passed because those two rows were hard-coded literals. `f7427dd8e` keyed them, this
+  // stub started echoing the key, and the five tests that guard the empty-versus-fault distinction
+  // went red — the exact distinction they exist to hold. They now name the keys, which is what this
+  // stub was built to let them do.
   const languageStub = {
     t: (key: string) => key,
     plural: (group: string) => group,
@@ -468,10 +474,10 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     expect(state()).toBe("unavailable")
-    expect(bodyText()).toContain("Memory is unavailable")
+    expect(bodyText()).toContain("memoryGraph.page.memoryIsUnavailableRightNow")
     expect(bodyText()).toContain("Could not reach this instance.")
     // The regression, stated as the assertion.
-    expect(bodyText()).not.toContain("Nothing remembered yet")
+    expect(bodyText()).not.toContain("memoryGraph.page.nothingRememberedYetTheGraphFills")
     expect(document.querySelector('[data-slot="memory-graph-retry"]')).not.toBeNull()
   })
 
@@ -493,7 +499,7 @@ describe("MemoryGraphPage renders", () => {
     ;(document.querySelector('[data-slot="memory-graph-retry"]') as HTMLButtonElement).click()
     await settle()
     expect(state()).toBe("ready")
-    expect(bodyText()).not.toContain("Memory is unavailable")
+    expect(bodyText()).not.toContain("memoryGraph.page.memoryIsUnavailableRightNow")
   })
 
   test("a genuinely empty graph still says so — the honest empty is not lost", async () => {
@@ -502,7 +508,7 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     expect(state()).toBe("empty")
-    expect(bodyText()).toContain("Nothing remembered yet")
+    expect(bodyText()).toContain("memoryGraph.page.nothingRememberedYetTheGraphFills")
   })
 
   test("🔴 a BROKEN ENGINE answering 200-with-nothing is not an empty cabinet", async () => {
@@ -517,9 +523,9 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     expect(state()).toBe("unavailable")
-    expect(bodyText()).toContain("Memory is unavailable")
+    expect(bodyText()).toContain("memoryGraph.page.memoryIsUnavailableRightNow")
     expect(bodyText()).toContain("the graph store failed to open")
-    expect(bodyText()).not.toContain("Nothing remembered yet")
+    expect(bodyText()).not.toContain("memoryGraph.page.nothingRememberedYetTheGraphFills")
   })
 
   test("a board with no DETAIL still says something a person can act on", async () => {
@@ -542,7 +548,7 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     expect(state()).toBe("empty")
-    expect(bodyText()).toContain("Nothing remembered yet")
+    expect(bodyText()).toContain("memoryGraph.page.nothingRememberedYetTheGraphFills")
   })
 
   test("a healthy board with memories present never mentions the board at all", async () => {
@@ -554,7 +560,7 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     expect(state()).toBe("ready")
-    expect(bodyText()).not.toContain("Memory is unavailable")
+    expect(bodyText()).not.toContain("memoryGraph.page.memoryIsUnavailableRightNow")
   })
 
   test("🔴 every drawn node fits a NARROW pane — the clipping the fixed plane caused", async () => {
@@ -575,7 +581,10 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     const points = drawnPoints()
-    const mid = points.reduce((a, p) => ({ x: a.x + p.x / points.length, y: a.y + p.y / points.length }), { x: 0, y: 0 })
+    const mid = points.reduce((a, p) => ({ x: a.x + p.x / points.length, y: a.y + p.y / points.length }), {
+      x: 0,
+      y: 0,
+    })
     // The old identity transform kept this whole cluster inside the top-left 1000x700 of the pane.
     expect(mid.x).toBeGreaterThan(paneSize.width * 0.3)
     expect(mid.y).toBeGreaterThan(paneSize.height * 0.3)
@@ -792,14 +801,9 @@ describe("MemoryGraphPage renders", () => {
     // between the lifecycle ones and `history`, so a reader scans "what is true / what is unused /
     // what happened" rather than hunting. `useful` and `corrections` joined when the noise endpoints
     // gained a UI — they had no caller before, so the pruning protections had no door.
-    expect([...document.querySelectorAll('[data-slot="memory-lens-tab"]')].map((b) => (b as HTMLElement).dataset.lens)).toEqual([
-      "current",
-      "needs-review",
-      "never-used",
-      "useful",
-      "corrections",
-      "history",
-    ])
+    expect(
+      [...document.querySelectorAll('[data-slot="memory-lens-tab"]')].map((b) => (b as HTMLElement).dataset.lens),
+    ).toEqual(["current", "needs-review", "never-used", "useful", "corrections", "history"])
   })
 
   test("🔴 A WRITE IS CAPTIONED THE MOMENT IT HAPPENS — no reload, no poll", async () => {
@@ -876,7 +880,7 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     const chip = document.querySelector('[data-slot="memory-focus"]') as HTMLElement
     expect(chip).not.toBeNull()
-    expect(chip.textContent).toContain("Connected to")
+    expect(chip.textContent).toContain("memoryGraph.page.connectedTo")
     expect(document.querySelector('[data-slot="memory-focus-clear"]')).not.toBeNull()
   })
 
@@ -959,7 +963,7 @@ describe("MemoryGraphPage renders", () => {
     expect(listRowCount()).toBe(before)
   })
 
-  test("a focused neighborhood with nothing else in it says THAT, not \"nothing remembered\"", async () => {
+  test('a focused neighborhood with nothing else in it says THAT, not "nothing remembered"', async () => {
     mount([() => FIXTURE])
     await settle()
     showGraph()
@@ -972,7 +976,7 @@ describe("MemoryGraphPage renders", () => {
     const text = (document.querySelector('[data-slot="memory-list-empty"]') as HTMLElement | null)?.textContent
     // Either it shows just the episode itself, or it says the neighborhood is otherwise empty — both
     // are honest. What it must never say is that the cabinet is empty.
-    expect(document.body.textContent).not.toContain("Nothing remembered yet. NovaClaw learns")
+    expect(document.body.textContent).not.toContain("memoryGraph.page.nothingRememberedYetTheGraphFills")
     if (text) expect(text).toContain("connects to")
   })
 

@@ -741,6 +741,13 @@ const INITIATE_FILES: readonly string[] = [
   "messenger/gateway.ts",
   // The gate: `SendOp.initiate`, `initiationRefusal`, and the `messenger.initiate` assert.
   "tool/messenger.ts",
+  // ⚠️ The third entry, added 2026-09-03, and it is a different KIND of mention. The other two
+  // pass the flag; this one NAMES the action so the project rule editor can offer it as something a
+  // folder may refuse (principle 12(b): a list-shaped setting offers its list). Naming a gate is the
+  // opposite of spending it — a user who cannot see the word `messenger.initiate` cannot write the
+  // rule that stops it — so the sweep counts it, and this line says which kind it is rather than
+  // letting a reader assume a third caller appeared.
+  "permission-actions.ts",
 ]
 
 describe("only the gated tool may ask the gateway to cold-start", () => {

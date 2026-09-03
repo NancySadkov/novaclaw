@@ -442,7 +442,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
           void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === serverSDK.scope })
         },
       })
-      if (event.type === "server.connected" || event.type === "global.disposed") {
+      // ⚠️ Both cast, for the reason the `catalog.updated` line above casts: neither is a BUS event.
+      // `/api/event` opens with `server.connected` and `/global/event` relays `global.disposed` off
+      // the `GlobalBus` when the last instance goes, so the manifest union — which since 2026-09-03
+      // is exactly what the bus carries — names neither, while this stream delivers both.
+      if ((event.type as string) === "server.connected" || (event.type as string) === "global.disposed") {
         if (recent) return
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)

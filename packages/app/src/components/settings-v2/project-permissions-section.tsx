@@ -2,7 +2,8 @@ import { For, Show, Switch, Match, createMemo, createSignal, type Accessor, type
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { useLanguage } from "@/context/language"
+import { PermissionActions } from "@novaclaw/core/permission-actions"
+import { useLanguage, type TranslationKey } from "@/context/language"
 import { SettingsExplainV2 } from "./explain"
 import type { ServerConnection } from "@/context/server"
 import type { ProjectPermissionRule, ProjectState, ProjectWriteResult } from "@/utils/project-api"
@@ -54,6 +55,24 @@ const Muted: Component<{ children: unknown }> = (props) => (
 )
 
 const describeRule = (rule: ProjectPermissionRule) => `${rule.action} · ${rule.resource} → ${rule.effect}`
+
+/**
+ * The heading each gate group gets in the picker. Named here rather than in `core` because these are
+ * SENTENCES for a reader, and every sentence this product shows a person lives in `i18n/en.ts` where
+ * a translator can find it. `core` owns which actions exist; this owns what to call them.
+ */
+const GROUP_LABEL: Record<PermissionActions.Group, TranslationKey> = {
+  read: "settings.permissions.project.actionGroup.read",
+  mutate: "settings.permissions.project.actionGroup.mutate",
+  execute: "settings.permissions.project.actionGroup.execute",
+  external: "settings.permissions.project.actionGroup.external",
+  network: "settings.permissions.project.actionGroup.network",
+  session: "settings.permissions.project.actionGroup.session",
+  capability: "settings.permissions.project.actionGroup.capability",
+  delegation: "settings.permissions.project.actionGroup.delegation",
+  social: "settings.permissions.project.actionGroup.social",
+  legacy: "settings.permissions.project.actionGroup.legacy",
+}
 
 export interface ProjectPermissionsProps {
   readonly state: Accessor<ProjectState | undefined>
@@ -139,9 +158,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
           props.refresh()
         }
       })
-      .catch((error: unknown) =>
-        setReceipt({ failed: error instanceof Error ? error.message : String(error) }),
-      )
+      .catch((error: unknown) => setReceipt({ failed: error instanceof Error ? error.message : String(error) }))
       .finally(() => setBusy(false))
   }
 
@@ -209,10 +226,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
               >
                 <For each={rules()}>
                   {(rule) => (
-                    <span
-                      class="text-[12px] leading-4 break-all text-v2-text-text-base"
-                      data-origin-rule="personal"
-                    >
+                    <span class="text-[12px] leading-4 break-all text-v2-text-text-base" data-origin-rule="personal">
                       {describeRule(rule)}
                     </span>
                   )}
@@ -234,7 +248,28 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
       <Muted>{language.t("settings.permissions.project.narrowing")}</Muted>
 
       {/* ── THE EDITOR ───────────────────────────────────────────────────────────────────────── */}
+      {/* 🔴 Principle 12(b) — the list is OFFERED, because it exists. This field used to be free text
+          whose only guidance was the placeholder "What the agent wants to do", while the vocabulary
+          it wanted sat compiled into `core` and was shown nowhere. A user had to already know the
+          word is `external_directory_write` and not "write outside", and a near miss saved silently,
+          matched nothing and reported success — a control gatekeeping on knowledge it was holding.
+          Grouped rather than one alphabetical run of thirty-odd verbs, because `kb`, `js` and
+          `provision` in a row teach nobody what they gate (principle 8). */}
       <div class="flex flex-wrap items-center gap-2" data-project-permissions-add>
+        <SelectV2
+          options={[...PermissionActions.ALL]}
+          current={PermissionActions.ALL.includes(action()) ? action() : undefined}
+          placeholder={language.t("settings.permissions.project.actionPick")}
+          label={(value) => value}
+          groupBy={(value) => language.t(GROUP_LABEL[PermissionActions.groupOf(value) ?? "legacy"])}
+          data-action="project-permission-action-pick"
+          class="min-w-[10rem] flex-1"
+          onSelect={(value) => value && setAction(value)}
+        />
+        {/* 12(b)’s own fallback, and the sentence below says it IS the fallback. An MCP tool’s action
+            is the remote tool’s own name and the set is per-server; a tool a model defines names
+            itself at runtime. Neither is knowable from here, so free text stays — beside the list
+            rather than instead of it. */}
         <TextInputV2
           value={action()}
           placeholder={language.t("settings.permissions.project.addAction")}
@@ -269,6 +304,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
           {language.t("settings.permissions.project.add")}
         </ButtonV2>
       </div>
+      <Muted>{language.t("settings.permissions.project.actionFallback")}</Muted>
 
       <Show when={plan().omitted.length > 0}>
         <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-permissions-omitted>
@@ -357,7 +393,9 @@ export const WriteReceipt: Component<{
   const language = useLanguage()
   const failed = () => ("failed" in props.result ? props.result : undefined)
   const written = () =>
-    !("failed" in props.result) && props.result.ok ? (props.result as Extract<ProjectWriteResult, { ok: true }>) : undefined
+    !("failed" in props.result) && props.result.ok
+      ? (props.result as Extract<ProjectWriteResult, { ok: true }>)
+      : undefined
   const refused = () =>
     !("failed" in props.result) && !props.result.ok
       ? (props.result as Extract<ProjectWriteResult, { ok: false }>)
