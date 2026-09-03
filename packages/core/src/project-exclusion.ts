@@ -2,7 +2,7 @@ export * as ProjectExclusion from "./project-exclusion"
 
 import path from "node:path"
 import { Effect, Schema } from "effect"
-import { minimatch } from "minimatch"
+import { GlobMatch } from "./util/glob-match"
 import { FSUtil } from "./fs-util"
 import { ProjectFileCache } from "./project-file-cache"
 
@@ -151,7 +151,7 @@ function toRule(line: string): Rule | undefined {
  * Compile a project's `exclude` lines.
  *
  * Memoised on the joined source, because `LocationMutation.resolve` runs on every file operation
- * and `minimatch` compiles a regular expression per pattern. The cache is bounded and keyed on the
+ * and `GlobMatch` compiles a matcher per pattern. The cache is bounded and keyed on the
  * TEXT, so an edited `novaclaw.json` simply misses it.
  */
 const compiled = new Map<string, Matcher>()
@@ -203,8 +203,8 @@ export function evaluate(matcher: Matcher, relative: string, isDirectory: boolea
   let verdict: Verdict = NOT_EXCLUDED
   for (const rule of matcher.rules) {
     const hit =
-      (minimatch(target, rule.self, options) && (!rule.directoryOnly || isDirectory)) ||
-      minimatch(target, rule.under, options)
+      (GlobMatch.match(rule.self, target, options) && (!rule.directoryOnly || isDirectory)) ||
+      GlobMatch.match(rule.under, target, options)
     if (!hit) continue
     verdict = rule.negated ? NOT_EXCLUDED : { excluded: true, pattern: rule.source }
   }

@@ -43,7 +43,6 @@
     "@types/npm-package-arg": "6.1.4",
     "@types/npmcli__arborist": "6.3.3",
     "@types/turndown": "5.0.5",
-    "@types/which": "3.0.4",
     "drizzle-kit": "catalog:",
     "prettier": "3.6.2",
     "typescript": "catalog:"
@@ -71,16 +70,13 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "fuzzysort": "catalog:",
-    "glob": "13.0.5",
     "gray-matter": "4.0.3",
     "htmlparser2": "8.0.2",
     "immer": "11.1.4",
     "jsonc-parser": "3.3.1",
     "mime-types": "3.0.2",
-    "minimatch": "10.2.5",
     "npm-package-arg": "13.0.2",
-    "turndown": "7.2.0",
-    "which": "6.0.1"
+    "turndown": "7.2.0"
   },
   "overrides": {
     "drizzle-orm": "catalog:"
