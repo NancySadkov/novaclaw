@@ -117,17 +117,15 @@ it.instance("explore agent denies edit and write", () =>
   }),
 )
 
-it.instance("explore agent asks for external directories and allows whitelisted external paths", () =>
-  Effect.gen(function* () {
-    const explore = yield* load((svc) => svc.get("explore"))
-    expect(explore).toBeDefined()
-    expect(Permission.evaluate("external_directory", "/some/other/path", explore!.permission).action).toBe("ask")
-    expect(Permission.evaluate("external_directory", Truncate.GLOB, explore!.permission).action).toBe("allow")
-    expect(
-      Permission.evaluate("external_directory", path.join(Global.Path.tmp, "agent-work"), explore!.permission).action,
-    ).toBe("allow")
-  }),
-)
+// 🔴 Four tests stood here and in the block below asserting `external_directory` verdicts on this
+// service's ruleset — the truncation glob allowed, a temp child allowed, an outside path refused,
+// and two of them "even when the user denies it". Every one was empty: this ruleset is not the gate
+// (only `skill` and `task` are ever evaluated against it), and the action they named is not a gate
+// either — the real ones are `external_directory_read` and `external_directory_write`, which
+// `Wildcard.match` will never match from an unsuffixed rule. They were deleted with the rules they
+// read (RF-17-21, 2026-09-04) and RE-EXPRESSED, not dropped, against the floor that decides:
+// `core/test/permission-baseline.test.ts` → "the built-in floor's scratch dirs are writable, and
+// nothing else is", A/B'd by removing the write grant from `plugin/agent.ts` and watching it go red.
 
 it.instance(
   "reference config does not create subagents",
@@ -436,16 +434,16 @@ it.instance("Agent.get returns undefined for non-existent agent", () =>
   }),
 )
 
-// `doom_loop` was asserted here too until 2026-09-04 (RF-17-20). It resolved to "ask" and always
-// would have: the assertion read back the default this same file writes, and nothing in the tree
-// ever spent the action. A default that resolves is not a gate that fires — the key is gone, and
-// `core/test/permission-actions.test.ts` now fails on the next config key that names no action.
-it.instance("default permission asks before an unwhitelisted external directory", () =>
-  Effect.gen(function* () {
-    const build = yield* load((svc) => svc.get("build"))
-    expect(evalPerm(build, "external_directory")).toBe("ask")
-  }),
-)
+// 🔴 This is where a test asserted `doom_loop` and then `external_directory` resolve to "ask", and
+// BOTH assertions were empty for the same reason: they read back a default written a few lines away
+// in `agent/agent.ts`, over a ruleset that is not the gate. Only `*`, `skill` and `task` are ever
+// evaluated against it (`skill/index.ts`, `tool/truncate.ts`), so an `external_directory` verdict
+// here decided nothing — and asserting it twice, on two different actions, on two different days, is
+// what made the second finding read as a live path when it was not. Both keys are gone (RF-17-20,
+// RF-17-21). What replaced the assertion is `test/permission-island.test.ts`, which pins the CLAIM
+// instead of the value: that this ruleset has exactly two consumers and they spend exactly two
+// actions. `webfetch` below is left alone deliberately — it is equally inert, and it is the standing
+// example that the pruning here is about the CLASS being named, not about chasing every key.
 
 it.instance("webfetch is allowed by default", () =>
   Effect.gen(function* () {
@@ -494,122 +492,17 @@ it.instance(
   },
 )
 
-it.instance(
-  "Truncate.GLOB is allowed even when user denies external_directory globally",
-  () =>
-    Effect.gen(function* () {
-      const build = yield* load((svc) => svc.get("build"))
-      expect(Permission.evaluate("external_directory", Truncate.GLOB, build!.permission).action).toBe("allow")
-      expect(Permission.evaluate("external_directory", Truncate.DIR, build!.permission).action).toBe("deny")
-      expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("deny")
-    }),
-  {
-    config: {
-      permissions: [{ action: "external_directory", resource: "*", effect: "deny" }],
-    },
-  },
-)
-
-it.instance("global tmp directory children are allowed for external_directory", () =>
-  Effect.gen(function* () {
-    const build = yield* load((svc) => svc.get("build"))
-    expect(
-      Permission.evaluate("external_directory", path.join(Global.Path.tmp, "scratch"), build!.permission).action,
-    ).toBe("allow")
-    expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("ask")
-  }),
-)
-
-it.instance(
-  "Truncate.GLOB is allowed even when user denies external_directory per-agent",
-  () =>
-    Effect.gen(function* () {
-      const build = yield* load((svc) => svc.get("build"))
-      expect(Permission.evaluate("external_directory", Truncate.GLOB, build!.permission).action).toBe("allow")
-      expect(Permission.evaluate("external_directory", Truncate.DIR, build!.permission).action).toBe("deny")
-      expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("deny")
-    }),
-  {
-    config: {
-      agents: {
-        build: {
-          permissions: [{ action: "external_directory", resource: "*", effect: "deny" }],
-        },
-      },
-    },
-  },
-)
-
-it.instance(
-  "explicit Truncate.GLOB deny is respected",
-  () =>
-    Effect.gen(function* () {
-      const build = yield* load((svc) => svc.get("build"))
-      expect(Permission.evaluate("external_directory", Truncate.GLOB, build!.permission).action).toBe("deny")
-      expect(Permission.evaluate("external_directory", Truncate.DIR, build!.permission).action).toBe("deny")
-    }),
-  {
-    config: {
-      permissions: [
-        { action: "external_directory", resource: "*", effect: "deny" },
-        { action: "external_directory", resource: Truncate.GLOB, effect: "deny" },
-      ],
-    },
-  },
-)
-
-it.instance(
-  "skill directories are allowed for external_directory",
-  () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const skillDir = path.join(test.directory, ".novaclaw", "skill", "perm-skill")
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(skillDir, "SKILL.md"),
-          `---
-name: perm-skill
-description: Permission skill.
----
-
-# Permission Skill
-`,
-        ),
-      )
-
-      const home = process.env.NOVACLAW_TEST_HOME
-      process.env.NOVACLAW_TEST_HOME = test.directory
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          process.env.NOVACLAW_TEST_HOME = home
-        }),
-      )
-
-      const build = yield* load((svc) => svc.get("build"))
-      const target = path.join(skillDir, "reference", "notes.md")
-      expect(Permission.evaluate("external_directory", target, build!.permission).action).toBe("allow")
-    }),
-  { git: true },
-)
-
-it.instance(
-  "project reference directories are allowed for external_directory",
-  () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const build = yield* load((svc) => svc.get("build"))
-      const target = path.resolve(test.directory, "../docs/reference/notes.md")
-      expect(Permission.evaluate("external_directory", target, build!.permission).action).toBe("allow")
-    }),
-  {
-    git: true,
-    config: {
-      references: {
-        docs: "../docs",
-      },
-    },
-  },
-)
+// 🔴 Three more of the same shape stood here: "explicit Truncate.GLOB deny is respected", "skill
+// directories are allowed for external_directory", "project reference directories are allowed for
+// external_directory". Same emptiness — an `external_directory` verdict on a ruleset nothing gates
+// with, over an action that is not a gate. The last two were also the only tests naming the
+// skill-dir and reference-dir whitelist, so deleting them is worth being explicit about:
+//   · READING those directories is live and is now pinned in `core/test/permission-baseline.test.ts`
+//     (an arbitrary outside path is `external_directory_read: allow` — 1I's ambient read baseline).
+//   · WRITING into them was never live. The rule claimed `allow`, matched nothing, and the real
+//     answer has always been the floor's `external_directory_write: "*" → ask`. Nothing regresses by
+//     deleting it, and if an agent SHOULD be able to write into its own skill folder that is a
+//     product decision for the V2 floor, filed as RF-17-22 rather than smuggled in here.
 
 it.instance("defaultAgent returns build when no default_agent config", () =>
   Effect.gen(function* () {

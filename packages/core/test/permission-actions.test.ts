@@ -115,21 +115,23 @@ describe("the permission gate vocabulary", () => {
   })()
 
   /**
-   * ⚠️ ONE exception, and it is a finding rather than an allowance: `external_directory` is a config
-   * key whose action nothing evaluates — the real gates are `external_directory_read` and
-   * `external_directory_write` (`location-mutation.ts`), and `Wildcard.match` anchors both ends, so a
-   * rule named `external_directory` matches neither. It stays only because `novaclaw/src/agent`'s
-   * defaults still author it, and making those rules effective would NARROW a live path
-   * (`"*": "allow"` is what currently answers external access for those agents) — a behaviour change
-   * owed its own measurement. Filed as RF-17-21. Do not extend this list to dodge a red test.
+   * ⚠️ Kept EMPTY on purpose. It held `external_directory` for one day (RF-17-21, closed
+   * 2026-09-04): the third inert key, deferred because its filing said making it effective would
+   * NARROW a live path. It would not have — the rules that authored it lived in
+   * `novaclaw/src/agent/agent.ts`, whose ruleset is not the gate, and `packages/core` cannot import
+   * `packages/novaclaw`, so nothing this evaluator does could ever have seen them. The deferral was
+   * bought by one grep nobody ran.
+   *
+   * So an entry here is a finding parked, not a key excused. Add one only with a ledger id beside it
+   * and a reason that is a measurement rather than a worry.
    */
-  const UNSPENT_CONFIG_KEYS = ["external_directory"]
+  const UNSPENT_CONFIG_KEYS: readonly string[] = []
 
   test("the config-key scan is real — it finds the keys we know are there", () => {
     expect(configKeys.length).toBeGreaterThan(8)
     expect(configKeys).toContain("bash")
-    expect(configKeys).toContain("external_directory")
-    // The retired pair, so this goes red if either is ever re-added.
+    expect(configKeys).not.toContain("external_directory")
+    // The three retired keys, so this goes red if any is ever re-added.
     expect(configKeys).not.toContain("doom_loop")
     expect(configKeys).not.toContain("question")
   })

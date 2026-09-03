@@ -3,7 +3,6 @@ import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Config } from "@/config/config"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 
-import { Truncate } from "@/tool/truncate"
 import { LLM, LLMError, Message, SystemPart } from "@novaclaw/llm"
 import { Catalog } from "@novaclaw/core/catalog"
 import { Integration } from "@novaclaw/core/integration"
@@ -29,7 +28,6 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
-import { Reference } from "@novaclaw/core/reference"
 import { Location } from "@novaclaw/core/location"
 import { PluginV2 } from "@novaclaw/core/plugin"
 
@@ -176,36 +174,35 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
-    const skill = yield* Skill.Service
     const locations = yield* LocationServiceMap.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Agent.state")(function* (ctx) {
         const cfg = yield* config.get()
-        const skillDirs = yield* skill.dirs()
-        const referenceDirs = Object.keys(cfg.references ?? {}).length
-          ? yield* Effect.gen(function* () {
-              yield* (yield* PluginV2.Service).wait(PluginV2.ID.make("core/config-reference"))
-              return (yield* (yield* Reference.Service).list()).map((reference) => reference.path)
-            }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
-          : []
-        const whitelistedDirs = [
-          Truncate.GLOB,
-          path.join(Global.Path.tmp, "*"),
-          ...skillDirs.map((dir) => path.join(dir, "*")),
-          ...referenceDirs.map((dir) => path.join(dir, "*")),
-        ]
-        const readonlyExternalDirectory = {
-          "*": "ask",
-          ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
-        } satisfies Record<string, "allow" | "ask" | "deny">
-
+        // ⚠️ **Only `*`, `skill` and `task` are ever read out of this ruleset.** It is not the gate —
+        // `packages/novaclaw/src/permission/index.ts` says so at the top, and it is structural rather
+        // than a convention: `packages/core` cannot import `packages/novaclaw`, so the live evaluator
+        // (`core/src/permission.ts`) never sees what is written here. The two consumers are
+        // `skill/index.ts` (`evaluate("skill", …)`) and `tool/truncate.ts` (`evaluate("task", …)`).
+        // Any other action written below is a rule nobody reads.
+        //
+        // 🔴 That is why the `external_directory` whitelist that used to sit here is gone (RF-17-21,
+        // 2026-09-04) along with the `skillDirs`/`referenceDirs` walk that built it and the
+        // "Ensure Truncate.GLOB is allowed" loop that appended to it. None of them granted anything.
+        // The grants they were imitating are real and live one package over, in
+        // `core/src/plugin/agent.ts`'s `floor({scratchDirs: SCRATCH_DIRS})`, which allows
+        // `external_directory_read` and `external_directory_write` on the truncation glob and the temp
+        // dir and is pinned by `core/test/permission-baseline.test.ts`. Deleting the imitation loses
+        // no capability; it removes a second, false answer to who may write outside the folder.
+        // ⚠️ It also removed this service's only `PluginV2.wait("core/config-reference")`. That wait
+        // existed to enumerate reference dirs for the inert whitelist and appeared nowhere else in the
+        // tree — every other `Reference.list()` caller (`server/src/handlers/reference.ts`,
+        // `core/src/reference/guidance.ts`) runs without it. It was this dead path's ordering
+        // dependency, not a shared one.
+        //
+        // Do not add an action here expecting it to gate. Add it to the V2 floor.
         const defaults = Permission.fromConfig({
           "*": "allow",
-          external_directory: {
-            "*": "ask",
-            ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
-          },
           plan_enter: "deny",
           plan_exit: "deny",
           // mirrors the standard Node ignore pattern for .env files
@@ -253,9 +250,6 @@ export const layer = Layer.effect(
                 task: {
                   general: "deny",
                 },
-                external_directory: {
-                  [path.join(Global.Path.data, "plans", "*")]: "allow",
-                },
                 edit: {
                   "*": "deny",
                   [path.join(".novaclaw", "plans", "*.md")]: "allow",
@@ -299,7 +293,6 @@ export const layer = Layer.effect(
                 webfetch: "allow",
                 websearch: "allow",
                 read: "allow",
-                external_directory: readonlyExternalDirectory,
               }),
               user,
             ),
@@ -387,22 +380,6 @@ export const layer = Layer.effect(
           item.permission = Permission.merge(
             item.permission,
             (value.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect })),
-          )
-        }
-
-        // Ensure Truncate.GLOB is allowed unless explicitly configured
-        for (const name in agents) {
-          const agent = agents[name]
-          const explicit = agent.permission.some((r) => {
-            if (r.permission !== "external_directory") return false
-            if (r.action !== "deny") return false
-            return r.pattern === Truncate.GLOB
-          })
-          if (explicit) continue
-
-          agents[name].permission = Permission.merge(
-            agents[name].permission,
-            Permission.fromConfig({ external_directory: { [Truncate.GLOB]: "allow" } }),
           )
         }
 

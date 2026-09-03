@@ -331,6 +331,65 @@ describe("the built-in agents the plugin actually builds", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THE SCRATCH GRANTS, re-pointed here on 2026-09-04 (RF-17-21).
+//
+// 🔴 Four tests in `packages/novaclaw/test/agent/agent.test.ts` asserted exactly these facts —
+// the truncation glob is writable, a temp child is writable, an arbitrary outside path is not —
+// and none of them could fail. They evaluated `external_directory` against
+// `novaclaw/src/agent/agent.ts`'s ruleset, which is not the gate: `packages/core` cannot import
+// `packages/novaclaw`, so nothing this evaluator does ever saw those rules, and the action they
+// named (`external_directory`, unsuffixed) matches neither real gate under `Wildcard.match`.
+// They were deleted, and this block is what they were trying to say, asserted where it decides.
+//
+// ⚠️ The claim being pinned is a CAPABILITY, not a rule list: tool-output truncation writes into
+// `Global.Path.data/tool-output` and scratch writes into the temp dir, so an agent that cannot
+// write there is broken in a way no other suite reports — `truncate.ts` would simply start
+// failing to save the output it promised the model it had saved.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("the built-in floor's scratch dirs are writable, and nothing else is", () => {
+  const outside = "/somewhere/else/x.ts"
+
+  it.effect("both scratch dirs allow external read AND write", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      const build = agents.get(String(AgentV2.BUILD_ID))!
+      // Non-vacuity: the loop below asserts nothing if the list is ever emptied, and emptying it is
+      // exactly the regression this block exists to catch.
+      expect(AgentPlugin.SCRATCH_DIRS.length, "the scratch list emptied — the loop below would pass vacuously").toBe(2)
+      for (const dir of AgentPlugin.SCRATCH_DIRS) {
+        // A resource under the glob, not the glob itself — the pattern is what a rule carries and
+        // a real call arrives with a path. Asserting the glob against itself would pass on a rule
+        // that matches nothing else.
+        const resource = dir.replace(/\*$/, "probe.txt")
+        expect(effectFor(build, "external_directory_read", resource), `read ${resource}`).toBe("allow")
+        expect(effectFor(build, "external_directory_write", resource), `write ${resource}`).toBe("allow")
+      }
+    }),
+  )
+
+  it.effect("an arbitrary outside path is readable but NOT writable — 1I's classed access", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      const build = agents.get(String(AgentV2.BUILD_ID))!
+      expect(effectFor(build, "external_directory_read", outside)).toBe("allow")
+      // `ask`, and asking resolves to a refusal — what matters here is that it is not `allow`.
+      expect(effectFor(build, "external_directory_write", outside)).not.toBe("allow")
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: the unsuffixed action grants nothing, which is why the key was retired", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      const build = agents.get(String(AgentV2.BUILD_ID))!
+      const scratch = AgentPlugin.SCRATCH_DIRS[0]!.replace(/\*$/, "probe.txt")
+      // If this ever starts returning `allow`, someone has re-added a bare `external_directory`
+      // rule to the floor and collapsed the read/write class distinction 1I exists to keep.
+      expect(effectFor(build, "external_directory", scratch)).not.toBe("allow")
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // THE `explore` SUBAGENT COULD NOT SEARCH — a shadowing bug that predates B4c and survived it.
 //
 // `explore` is the one built-in whose ruleset opens a catch-all DENY and then grants back what it
