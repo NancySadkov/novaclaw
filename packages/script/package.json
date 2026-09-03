@@ -9,6 +9,7 @@
     "semver": "catalog:"
   },
   "devDependencies": {
+    "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@types/semver": "catalog:"
   },
