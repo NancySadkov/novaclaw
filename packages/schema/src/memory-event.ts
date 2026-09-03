@@ -37,7 +37,7 @@ const Hit = Schema.Struct({
   id: Schema.String,
   /** 1-based, in the order the caller was handed them — the order the overlay highlights in. */
   rank: NonNegativeInt,
-  score: Schema.Number,
+  score: Schema.Finite,
   scope: Schema.String,
 })
 

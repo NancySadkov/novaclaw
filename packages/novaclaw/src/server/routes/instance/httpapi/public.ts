@@ -506,8 +506,27 @@ function isBareArraySchema(schema: OpenApiSchema) {
   return schema.type === "array" && !schema.items && !schema.prefixItems
 }
 
+/**
+ * Flatten nested unions, and drop an arm the flattening has already produced. A nested
+ * `anyOf:[…,{enum:[a,b,c]}]` next to its own members used to come out as `{a},{b},{c},{enum:[a,b,c]}` —
+ * 281 such doubled arms in the generated client on 2026-09-03, every one of them a `Schema.Number`
+ * that has since become `Schema.Finite` — so the artifact is gone from the wire numbers; this keeps
+ * the next nested union from reintroducing it.
+ */
 function flattenOptions(options: OpenApiSchema[] | undefined): OpenApiSchema[] | undefined {
-  return options?.flatMap((item) => flattenOptions(item.anyOf ?? item.oneOf) ?? [item])
+  const flat = options?.flatMap((item) => flattenOptions(item.anyOf ?? item.oneOf) ?? [item])
+  if (!flat) return undefined
+  // ⚠️ `null` arms are NOT deduplicated: the caller above counts them — two nulls mean the contract
+  // itself defines null (`NullOr` under an optional field), one means only optionality — and
+  // `generated-drift.test.ts` pins that a typed caller keeps `archived?: number | null`.
+  const seen = new Set<string>()
+  return flat.filter((item) => {
+    if (item.type === "null") return true
+    const key = JSON.stringify(item)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function normalizeParameter(param: OpenApiParameter, route: string) {

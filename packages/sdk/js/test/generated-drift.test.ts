@@ -276,7 +276,10 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `fs.read` now declares `ForbiddenError`, so the emitter reaches that already-public schema earlier
 // (first divergence at index 78). The fingerprint hashes `mapping.join()`, so a reordering moves it
 // exactly as a rename would — which is why the set comparison above is what makes this re-pin safe.
-const SCHEMA_NAME_FINGERPRINT = "439b267d046d44b48df59ae16f093f5aa08f455130d957d801d3d8338cd2736f"
+// 2026-09-03: every wire number became `Schema.Finite` (RF-24-7), so the NaN/Infinity arms left the
+// spec and the one duplicate shape they had minted — `MessengerAccountStatus1` — is no longer emitted.
+// That single removal is the whole difference from the previous fingerprint.
+const SCHEMA_NAME_FINGERPRINT = "10d74a9188cd4dc5ab40e15b4936ddcb09ed38b87de84585cd71a43dca19a3a2"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

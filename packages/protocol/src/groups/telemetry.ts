@@ -10,8 +10,8 @@ const Refusal = Schema.Literals([
   "empty_signature",
 ])
 const Envelope = Schema.Struct({
-  signature: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
-  attributes: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+  signature: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])),
+  attributes: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])),
 })
 
 export const TelemetryStatus = Schema.Struct({

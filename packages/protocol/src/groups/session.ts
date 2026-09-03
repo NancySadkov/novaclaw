@@ -647,7 +647,7 @@ export const makeSessionGroups = <
                 id: SessionMessage.ID,
                 text: Schema.String,
                 delivery: Schema.String,
-                timeCreated: Schema.Number,
+                timeCreated: Schema.Finite,
               }),
             ),
           }).annotate({ identifier: "SessionPendingResponse" }),

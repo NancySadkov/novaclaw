@@ -21,13 +21,13 @@ const RowsQuery = Schema.Struct({
 
 const UpdateRowPayload = Schema.Struct({
   table: Schema.String,
-  rowid: Schema.Number,
+  rowid: Schema.Finite,
   values: Schema.Record(Schema.String, Schema.Unknown),
 })
 
 const DeleteRowPayload = Schema.Struct({
   table: Schema.String,
-  rowid: Schema.Number,
+  rowid: Schema.Finite,
 })
 
 export const RegistryApi = HttpApi.make("registry").add(

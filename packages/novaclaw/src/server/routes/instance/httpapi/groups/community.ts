@@ -28,7 +28,7 @@ export const CommunityContact = Schema.Struct({
    * undeclared field is dropped silently and looks exactly like a stale backend. Found by driving
    * the real UI, not by any test.
    */
-  trust: Schema.optional(Schema.Number),
+  trust: Schema.optional(Schema.Finite),
   /**
    * Keys this peer has rotated away from, newest first.
    *
@@ -43,9 +43,9 @@ export const CommunityContact = Schema.Struct({
    * unroutable, so an entry without routes is an identity we cannot reach.
    */
   routes: Schema.Array(Schema.String),
-  lastSeenAt: Schema.optional(Schema.Number),
+  lastSeenAt: Schema.optional(Schema.Finite),
   blocked: Schema.Boolean,
-  addedAt: Schema.Number,
+  addedAt: Schema.Finite,
 })
 
 /**
@@ -58,7 +58,7 @@ export const CommunityContact = Schema.Struct({
 export const CommunityTransportState = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("off"), reason: Schema.Literals(["airgap", "no-peers", "not-joined"]) }),
   Schema.Struct({ kind: Schema.Literal("connecting") }),
-  Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("online"), peers: Schema.Finite }),
 ])
 
 /**
@@ -74,7 +74,7 @@ const PeerOffer = Schema.Struct({
   /** A Lightning address or LNURL, or empty. Displayed and copied — never paid by this software. */
   payTo: Schema.String,
   from: Schema.String,
-  at: Schema.Number,
+  at: Schema.Finite,
   signature: Schema.String,
 })
 
@@ -94,9 +94,9 @@ export const CommunityMessageInfo = Schema.Struct({
   channel: Schema.String,
   author: Schema.String,
   /** The author's CLAIMED time — signed, and freely chosen by them. */
-  at: Schema.Number,
+  at: Schema.Finite,
   /** When THIS instance received it: the only time we can vouch for, and the sort key. */
-  receivedAt: Schema.Number,
+  receivedAt: Schema.Finite,
   body: Schema.String,
 })
 
@@ -105,7 +105,7 @@ const AddContact = Schema.Struct({
   petname: Schema.optional(Schema.String),
   routes: Schema.optional(Schema.Array(Schema.String)),
   /** The user's own rating, when they are adding somebody they already decided to trust. */
-  trust: Schema.optional(Schema.Number),
+  trust: Schema.optional(Schema.Finite),
 })
 
 /**
@@ -221,7 +221,7 @@ export const CommunityApi = HttpApi.make("community").add(
       ),
       HttpApiEndpoint.post("communityRotate", CommunityPaths.rotate, {
         success: described(
-          Schema.Struct({ networkID: Schema.String, told: Schema.Number }),
+          Schema.Struct({ networkID: Schema.String, told: Schema.Finite }),
           "The new identity, and how many peers were told",
         ),
       }).annotateMerge(
@@ -236,7 +236,7 @@ export const CommunityApi = HttpApi.make("community").add(
         payload: Schema.Struct({
           address: Schema.String,
           /** 1..5, the user's own words about how far they trust this instance. */
-          trust: Schema.Number,
+          trust: Schema.Finite,
           petname: Schema.optional(Schema.String),
         }),
         success: described(
@@ -258,9 +258,9 @@ export const CommunityApi = HttpApi.make("community").add(
         payload: Schema.Struct({ addresses: Schema.optional(Schema.Array(Schema.String)) }),
         success: described(
           Schema.Struct({
-            learned: Schema.Number,
-            asked: Schema.Number,
-            peers: Schema.Number,
+            learned: Schema.Finite,
+            asked: Schema.Finite,
+            peers: Schema.Finite,
             /**
              * 🔴 How the DEFAULT door went, so "found nobody" can name its reason.
              *
@@ -270,7 +270,7 @@ export const CommunityApi = HttpApi.make("community").add(
              * a person than "this is not built yet", and it is one they can fix in a minute.*
              */
             seedsAsked: Schema.Boolean,
-            seedsFound: Schema.Number,
+            seedsFound: Schema.Finite,
             /**
              * 🔴 Why nothing was looked for — present only when discovery REFUSED to run.
              *
@@ -298,7 +298,7 @@ export const CommunityApi = HttpApi.make("community").add(
       ),
       HttpApiEndpoint.get("channelArchived", CommunityPaths.channelsArchived, {
         success: described(
-          Schema.Array(Schema.Struct({ name: Schema.String, messages: Schema.Number })),
+          Schema.Array(Schema.Struct({ name: Schema.String, messages: Schema.Finite })),
           "Channels whose messages we hold but no longer subscribe to",
         ),
       }).annotateMerge(
@@ -429,9 +429,9 @@ export const CommunityApi = HttpApi.make("community").add(
              */
             answers: Schema.Struct({
               enabled: Schema.Boolean,
-              perDay: Schema.Number,
+              perDay: Schema.Finite,
               /** How many answers have been given today, so a user can see the budget moving. */
-              today: Schema.Number,
+              today: Schema.Finite,
             }),
             /**
              * 🔴 The address this instance publishes to the public DHT, so the panel can SHOW what
@@ -519,7 +519,8 @@ export const CommunityApi = HttpApi.make("community").add(
         OpenApi.annotations({
           identifier: "community.offer.withdraw",
           summary: "Stop offering",
-          description: "Removes this instance's offer. Peers that already collected it keep their copy until they refresh.",
+          description:
+            "Removes this instance's offer. Peers that already collected it keep their copy until they refresh.",
         }),
       ),
       HttpApiEndpoint.get("offersKnown", CommunityPaths.offersKnown, {
@@ -556,8 +557,8 @@ export const CommunityApi = HttpApi.make("community").add(
               peer: Schema.String,
               direction: Schema.String,
               body: Schema.String,
-              at: Schema.Number,
-              receivedAt: Schema.Number,
+              at: Schema.Finite,
+              receivedAt: Schema.Finite,
             }),
           ),
           "The conversation with one person, most recent first",
@@ -607,13 +608,13 @@ export const CommunityApi = HttpApi.make("community").add(
         success: described(
           Schema.Struct({
             messages: Schema.Array(CommunityMessageInfo),
-            hidden: Schema.Number,
+            hidden: Schema.Finite,
             /**
              * ⚠️ Declared, because an undeclared field is silently DROPPED by the response schema and
              * reads exactly like a backend that never sent it — the trap `listed` fell into on this
              * same group.
              */
-            held: Schema.Number,
+            held: Schema.Finite,
           }),
           "One page of messages, most recently RECEIVED first, how many the user's own filters hid, and how many the room HOLDS",
         ),
@@ -629,7 +630,7 @@ export const CommunityApi = HttpApi.make("community").add(
         params: ChannelParams,
         payload: Schema.Struct({}),
         success: described(
-          Schema.Struct({ peers: Schema.Number, fetched: Schema.Number }),
+          Schema.Struct({ peers: Schema.Finite, fetched: Schema.Finite }),
           "How many peers answered, and how many messages were new to us",
         ),
       }).annotateMerge(
@@ -697,10 +698,10 @@ export const CommunityPeerPaths = {
 const PeerMessage = Schema.Struct({
   channel: Schema.String,
   author: Schema.String,
-  at: Schema.Number,
+  at: Schema.Finite,
   body: Schema.String,
   signature: Schema.String,
-  nonce: Schema.Number,
+  nonce: Schema.Finite,
 })
 
 /**
@@ -731,7 +732,7 @@ const PeerDelivery = Schema.Struct({ topic: Schema.String, message: PeerMessage 
 const PeerAck = Schema.Struct({
   received: Schema.Literal(true),
   by: Schema.optional(Schema.String),
-  at: Schema.optional(Schema.Number),
+  at: Schema.optional(Schema.Finite),
   signature: Schema.optional(Schema.String),
 })
 
@@ -752,7 +753,7 @@ const PeerAck = Schema.Struct({
  */
 const SyncTopic = Schema.Struct({ topic: Schema.String })
 const SyncSummary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
-const SyncIdsRequest = Schema.Struct({ topic: Schema.String, buckets: Schema.Array(Schema.Number) })
+const SyncIdsRequest = Schema.Struct({ topic: Schema.String, buckets: Schema.Array(Schema.Finite) })
 const SyncIds = Schema.Struct({ ids: Schema.Array(Schema.String) })
 const SyncMessagesRequest = Schema.Struct({ topic: Schema.String, ids: Schema.Array(Schema.String) })
 const SyncMessages = Schema.Struct({ messages: Schema.Array(PeerMessage) })
@@ -801,10 +802,10 @@ const PeerSuccession = Schema.Struct({
 const PeerDirectMessage = Schema.Struct({
   to: Schema.String,
   from: Schema.String,
-  at: Schema.Number,
+  at: Schema.Finite,
   sealed: Schema.Struct({ epk: Schema.String, iv: Schema.String, ct: Schema.String }),
   signature: Schema.String,
-  nonce: Schema.Number,
+  nonce: Schema.Finite,
 })
 
 const PeerList = Schema.Struct({
@@ -829,13 +830,13 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
         payload: Schema.Struct({
           id: Schema.String,
           terms: Schema.String,
-          ttl: Schema.Number,
+          ttl: Schema.Finite,
           origin: Schema.String,
           /**
            * ⚠️ MUST be declared here or the schema drops it silently and every query arrives
            * unproven — the trap this codebase has already been bitten by once.
            */
-          nonce: Schema.Number,
+          nonce: Schema.Finite,
         }),
         success: described(
           Schema.Struct({ channels: Schema.Array(Schema.String) }),
@@ -868,7 +869,7 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
            */
           to: Schema.String,
           question: Schema.String,
-          at: Schema.Number,
+          at: Schema.Finite,
           signature: Schema.String,
         }),
         success: described(
@@ -889,7 +890,7 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
              * every later question. Optional on the wire; an unproven refusal is still reported to
              * the user, it simply earns nobody a dealing.
              */
-            refusalAt: Schema.optional(Schema.Number),
+            refusalAt: Schema.optional(Schema.Finite),
             refusalSignature: Schema.optional(Schema.String),
             /**
              * 🔴 The answer is a CLAIM WE AUTHOR, so it is signed — and every field the
@@ -899,7 +900,7 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
              * dropped silently: the reply would arrive looking exactly like an unsigned one.
              */
             author: Schema.optional(Schema.String),
-            at: Schema.optional(Schema.Number),
+            at: Schema.optional(Schema.Finite),
             signature: Schema.optional(Schema.String),
           }),
           "An answer, or a NAMED refusal - never silence",

@@ -84,17 +84,17 @@ export const Schedule = Schema.Struct({
    */
   permissionMode: Schema.NullOr(PermissionMode),
   enabled: Schema.Boolean,
-  nextFireAt: Schema.NullOr(Schema.Number),
-  lastFiredAt: Schema.NullOr(Schema.Number),
-  timeCreated: Schema.Number,
-  timeUpdated: Schema.Number,
+  nextFireAt: Schema.NullOr(Schema.Finite),
+  lastFiredAt: Schema.NullOr(Schema.Finite),
+  timeCreated: Schema.Finite,
+  timeUpdated: Schema.Finite,
 }).annotate({ identifier: "Calendar.Schedule" })
 
 const Fire = Schema.Struct({
   id: Schema.String,
   scheduleId: Schema.String,
-  occurrenceMillis: Schema.Number,
-  firedAt: Schema.Number,
+  occurrenceMillis: Schema.Finite,
+  firedAt: Schema.Finite,
   sessionId: Schema.NullOr(Schema.String),
   status: Schema.Literals(["spawned", "skipped", "error"]),
 }).annotate({ identifier: "Calendar.Fire" })

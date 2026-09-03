@@ -282,13 +282,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         description:
           "Answer questions from other instances. OFF by default and separate from `enabled`: this is the one path that spends the user's tokens on people they have never met.",
       }),
-      perDay: Schema.Number.pipe(Schema.optional).annotate({
+      perDay: Schema.Finite.pipe(Schema.optional).annotate({
         description: "How many questions a day this instance will answer in total. Bounded before anything is spent.",
       }),
-      perPeerPerDay: Schema.Number.pipe(Schema.optional).annotate({
+      perPeerPerDay: Schema.Finite.pipe(Schema.optional).annotate({
         description: "How many of the day's answers any ONE peer may take, so a single asker cannot consume it.",
       }),
-      maxTokens: Schema.Number.pipe(Schema.optional).annotate({
+      maxTokens: Schema.Finite.pipe(Schema.optional).annotate({
         description:
           "Token ceiling for one answer. A reasoning model spends this on thinking before it writes, so too small a value returns an EMPTY answer rather than a short one. Exposure is perDay times this.",
       }),
@@ -656,7 +656,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
    * ⚠️ A LEARNED value, never a guess: absent means "no cap known", which lowers byte-identically to
    * an endpoint that never had one. We do not invent a number for a stranger's server.
    */
-  provider_media_limit: Schema.Record(Schema.String, Schema.Number)
+  provider_media_limit: Schema.Record(Schema.String, Schema.Finite)
     .pipe(Schema.optional)
     .annotate({
       description:
@@ -693,7 +693,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     Schema.Struct({
       choice: Schema.Literals(["native", "prompted", "chat-only", "unknown"]),
       rationale: Schema.optional(Schema.String),
-      measuredAt: Schema.Number,
+      measuredAt: Schema.Finite,
       fingerprint: Schema.String,
       // The endpoint it was measured from. Optional so a row written before this field is still a
       // valid measurement rather than a decode failure that re-measures for a display detail.

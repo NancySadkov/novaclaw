@@ -9,7 +9,7 @@ export const Info = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Periodically ask an introspecting model whether the session is stuck (default: false)",
   }),
-  cadence: Schema.optional(Schema.Number).annotate({
+  cadence: Schema.optional(Schema.Finite).annotate({
     description: "Judge every N continuation steps within a turn drain (default: 3)",
   }),
   model: Schema.optional(Schema.String).annotate({

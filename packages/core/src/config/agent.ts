@@ -107,8 +107,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   strict: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional),
-    attempts: Schema.Number.pipe(Schema.optional),
-    wallMinutes: Schema.Number.pipe(Schema.optional),
+    attempts: Schema.Finite.pipe(Schema.optional),
+    wallMinutes: Schema.Finite.pipe(Schema.optional),
   }).pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = the fast local Chat stance, no project access or memory. */
   shortChat: Schema.Boolean.pipe(Schema.optional),

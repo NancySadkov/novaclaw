@@ -41,7 +41,7 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
     HttpApiEndpoint.post("provider.installLocalModel", "/api/provider/local-models/:profileID/install", {
       params: { profileID: Schema.String },
       query: LocationQuery,
-      payload: Schema.Struct({ context: Schema.optional(Schema.Number) }),
+      payload: Schema.Struct({ context: Schema.optional(Schema.Finite) }),
       success: LocalModel.Status,
     })
       .annotateMerge(locationQueryOpenApi)

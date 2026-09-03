@@ -97,7 +97,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
     HttpApiEndpoint.post("messenger.account.pair", "/api/messenger/account/:accountID/pair", {
       params: { accountID: Messenger.AccountID },
       payload: Schema.Struct({ trust: Schema.Literals(["operator", "client"]) }),
-      success: Schema.Struct({ code: Schema.String, expiresAt: Schema.Number }),
+      success: Schema.Struct({ code: Schema.String, expiresAt: Schema.Finite }),
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({

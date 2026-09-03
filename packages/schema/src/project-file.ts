@@ -203,7 +203,7 @@ export type Skills = typeof Skills.Type
 
 /** What a folder may declare about itself. Every section optional: an empty project is still valid. */
 export const Info = Schema.Struct({
-  version: Schema.Number,
+  version: Schema.Finite,
   /** Human-facing. Absent means "use the folder name" — never invent an identifier from it. */
   name: Schema.optional(Schema.String),
   /**
@@ -281,7 +281,11 @@ export function parse(text: string): ParseResult {
     return { ok: false, reason: "unreadable", detail: cause instanceof Error ? cause.message : String(cause) }
   }
   if (typeof value !== "object" || value === null || Array.isArray(value))
-    return { ok: false, reason: "not-an-object", detail: `expected an object, found ${Array.isArray(value) ? "an array" : typeof value}` }
+    return {
+      ok: false,
+      reason: "not-an-object",
+      detail: `expected an object, found ${Array.isArray(value) ? "an array" : typeof value}`,
+    }
   const raw = value as Record<string, unknown>
   const version = raw["version"]
   // 🔴 The version is checked BEFORE the shape. A file from a newer NovaClaw will often fail to
@@ -296,8 +300,7 @@ export function parse(text: string): ParseResult {
       detail: `this file declares version ${version}; this NovaClaw understands up to ${VERSION}`,
     }
   const decoded = decode(raw)
-  if (decoded._tag === "Failure")
-    return { ok: false, reason: "not-an-object", detail: String(decoded.failure) }
+  if (decoded._tag === "Failure") return { ok: false, reason: "not-an-object", detail: String(decoded.failure) }
   return { ok: true, info: decoded.success, raw }
 }
 

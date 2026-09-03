@@ -536,7 +536,7 @@ class ApiCommunityContact extends NovaClawApiClient {
       networkID: string
       petname?: string
       routes?: Array<string>
-      trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      trust?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1158,7 +1158,7 @@ class ApiCommunityPeerSync extends NovaClawApiClient {
   public ids<ThrowOnError extends boolean = false>(
     parameters: {
       topic: string
-      buckets: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+      buckets: Array<number>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1211,14 +1211,14 @@ class ApiCommunityPeer extends NovaClawApiClient {
     parameters: {
       to: string
       from: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       sealed: {
         epk: string
         iv: string
         ct: string
       }
       signature: string
-      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      nonce: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1247,9 +1247,9 @@ class ApiCommunityPeer extends NovaClawApiClient {
     parameters: {
       id: string
       terms: string
-      ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      ttl: number
       origin: string
-      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      nonce: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1282,7 +1282,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
       asker: string
       to: string
       question: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       signature: string
     },
     options?: Options<never, ThrowOnError>,
@@ -1384,10 +1384,10 @@ class ApiCommunityPeer extends NovaClawApiClient {
       message: {
         channel: string
         author: string
-        at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        at: number
         body: string
         signature: string
-        nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        nonce: number
       }
     },
     options?: Options<never, ThrowOnError>,
@@ -1437,7 +1437,7 @@ class ApiCommunity extends NovaClawApiClient {
   public doorman<ThrowOnError extends boolean = false>(
     parameters: {
       address: string
-      trust: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      trust: number
       petname?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -2459,7 +2459,7 @@ class ApiMemory extends NovaClawApiClient {
       directory?: string
       workspace?: string
       query?: string
-      k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      k?: number
       scopes?: Array<string>
       kinds?: Array<string>
     },
@@ -2491,7 +2491,7 @@ class ApiMemory extends NovaClawApiClient {
       directory?: string
       workspace?: string
       id?: string
-      k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      k?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2517,7 +2517,7 @@ class ApiMemory extends NovaClawApiClient {
       workspace?: string
       from?: string
       to?: string
-      maxHops?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      maxHops?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2624,7 +2624,7 @@ class ApiMemory extends NovaClawApiClient {
       text?: string
       name?: string
       scope?: string
-      absorb?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      absorb?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2823,7 +2823,7 @@ class ApiRegistry extends NovaClawApiClient {
       directory?: string
       workspace?: string
       table?: string
-      rowid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      rowid?: number
       values?: {
         [key: string]: unknown
       }
@@ -2882,7 +2882,7 @@ class ApiRegistry extends NovaClawApiClient {
       directory?: string
       workspace?: string
       table?: string
-      rowid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      rowid?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3204,7 +3204,7 @@ class ApiV2MemoryClaim extends NovaClawApiClient {
         | "uses"
         | "version"
         | "works_on"
-      confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      confidence?: number
       source?: string
       agent?: string
       validFrom?: string
@@ -3245,8 +3245,8 @@ class ApiV2MemoryUsage extends NovaClawApiClient {
   public neverUsed<ThrowOnError extends boolean = false>(
     parameters?: {
       scopes?: Array<string>
-      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      scan?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      limit?: number
+      scan?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3271,7 +3271,7 @@ class ApiV2MemoryUsage extends NovaClawApiClient {
   public useful<ThrowOnError extends boolean = false>(
     parameters?: {
       scopes?: Array<string>
-      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      limit?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3296,8 +3296,8 @@ class ApiV2MemoryUsage extends NovaClawApiClient {
   public corrections<ThrowOnError extends boolean = false>(
     parameters?: {
       scopes?: Array<string>
-      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      minCorrected?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      limit?: number
+      minCorrected?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4812,7 +4812,7 @@ class ApiV2Provider extends NovaClawApiClient {
         directory?: string
         workspace?: string
       }
-      context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      context?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {

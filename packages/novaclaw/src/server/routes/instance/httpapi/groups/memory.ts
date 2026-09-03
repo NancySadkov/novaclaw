@@ -28,7 +28,7 @@ const MemoryRow = Schema.Struct({
   name: Schema.NullOr(Schema.String),
   scope: Schema.String,
   source: Schema.NullOr(Schema.String),
-  confidence: Schema.NullOr(Schema.Number),
+  confidence: Schema.NullOr(Schema.Finite),
   relation: Schema.String,
   status: Schema.String,
   subject: Schema.NullOr(Schema.String),
@@ -38,17 +38,17 @@ const MemoryRow = Schema.Struct({
   evidence: Schema.NullOr(Schema.String),
   evidenceKind: Schema.NullOr(Schema.String),
 })
-const SearchHit = Schema.Struct({ ...MemoryRow.fields, score: Schema.Number })
+const SearchHit = Schema.Struct({ ...MemoryRow.fields, score: Schema.Finite })
 const Neighbor = Schema.Struct({ id: Schema.String, type: Schema.String, text: Schema.String })
 const EdgeRow = Schema.Struct({ from: Schema.String, to: Schema.String, type: Schema.String })
-const Stats = Schema.Struct({ total: Schema.Number, valid: Schema.Number })
+const Stats = Schema.Struct({ total: Schema.Finite, valid: Schema.Finite })
 /** ⚠️ DECLARED, because an undeclared field is silently stripped on the way out — the whole point of
  *  this struct is that the client can tell a slice from the complete graph. */
 const GraphSlice = Schema.Struct({
   partial: Schema.Boolean,
-  total: Schema.Number,
-  returned: Schema.Number,
-  omitted: Schema.Number,
+  total: Schema.Finite,
+  returned: Schema.Finite,
+  omitted: Schema.Finite,
   reason: Schema.Literals(["complete", "connected-first", "scan-capped"]),
 })
 const MemoryGraph = Schema.Struct({
@@ -56,10 +56,9 @@ const MemoryGraph = Schema.Struct({
   edges: Schema.Array(EdgeRow),
   slice: GraphSlice,
 })
-const PathResult = Schema.NullOr(Schema.Struct({ ids: Schema.Array(Schema.String), hops: Schema.Number }))
+const PathResult = Schema.NullOr(Schema.Struct({ ids: Schema.Array(Schema.String), hops: Schema.Finite }))
 
 const CsvOptional = Schema.optional(Schema.String) // comma-separated scopes/kinds in the query string
-
 
 const ListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -79,12 +78,12 @@ const GraphQuery = Schema.Struct({
 
 const SearchPayload = Schema.Struct({
   query: Schema.String,
-  k: Schema.optional(Schema.Number),
+  k: Schema.optional(Schema.Finite),
   scopes: Schema.optional(Schema.Array(Schema.String)),
   kinds: Schema.optional(Schema.Array(Schema.String)),
 })
-const NeighborsPayload = Schema.Struct({ id: Schema.String, k: Schema.optional(Schema.Number) })
-const PathPayload = Schema.Struct({ from: Schema.String, to: Schema.String, maxHops: Schema.optional(Schema.Number) })
+const NeighborsPayload = Schema.Struct({ id: Schema.String, k: Schema.optional(Schema.Finite) })
+const PathPayload = Schema.Struct({ from: Schema.String, to: Schema.String, maxHops: Schema.optional(Schema.Finite) })
 const RememberPayload = Schema.Struct({
   text: Schema.String,
   name: Schema.optional(Schema.String),
@@ -105,13 +104,13 @@ const IngestPayload = Schema.Struct({
    * "all" because a document stored and never read is a document with its pages attached, not
    * knowledge — the graph looks populated while holding nothing you could ask a question about.
    */
-  absorb: Schema.optional(Schema.Number),
+  absorb: Schema.optional(Schema.Finite),
 })
 const IngestResult = Schema.Struct({
-  stored: Schema.Number,
-  passages: Schema.Number,
+  stored: Schema.Finite,
+  passages: Schema.Finite,
   /** Passages queued for absorption. The work runs DETACHED, so this is not a completion count. */
-  absorbing: Schema.optional(Schema.Number),
+  absorbing: Schema.optional(Schema.Finite),
 })
 
 const meta = (identifier: string, summary: string, description: string) =>

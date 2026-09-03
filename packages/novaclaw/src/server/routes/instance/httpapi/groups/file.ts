@@ -124,7 +124,7 @@ export const TrashRestorePayload = Schema.Struct({
 export const TrashEntry = Schema.Struct({
   id: Schema.String,
   originalPath: Schema.String,
-  trashedAt: Schema.Number,
+  trashedAt: Schema.Finite,
   type: Schema.Literals(["file", "directory"]),
 }).annotate({ identifier: "TrashEntry" })
 

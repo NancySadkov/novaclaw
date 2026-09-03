@@ -32,7 +32,7 @@ const MemoryRow = Schema.Struct({
   name: Schema.NullOr(Schema.String),
   scope: Schema.String,
   source: Schema.NullOr(Schema.String),
-  confidence: Schema.NullOr(Schema.Number),
+  confidence: Schema.NullOr(Schema.Finite),
   relation: Schema.String,
   status: Schema.String,
   subject: Schema.NullOr(Schema.String),
@@ -44,12 +44,12 @@ const MemoryRow = Schema.Struct({
 })
 
 const UsageCounts = Schema.Struct({
-  accesses: Schema.Number,
-  uses: Schema.Number,
-  useful: Schema.Number,
-  corrections: Schema.Number,
-  firstAccessedAt: Schema.Number,
-  lastAccessedAt: Schema.Number,
+  accesses: Schema.Finite,
+  uses: Schema.Finite,
+  useful: Schema.Finite,
+  corrections: Schema.Finite,
+  firstAccessedAt: Schema.Finite,
+  lastAccessedAt: Schema.Finite,
 })
 
 /** A memory in a noise view: the row, plus the ledger's verdict on it. */
@@ -57,28 +57,28 @@ const UsageItem = Schema.Struct({ ...MemoryRow.fields, usage: Schema.optional(Us
 
 const NeverUsedResult = Schema.Struct({
   items: Schema.Array(UsageItem),
-  scanned: Schema.Number,
+  scanned: Schema.Finite,
   partial: Schema.Boolean,
 })
 const UsefulResult = Schema.Struct({ items: Schema.Array(UsageItem) })
 const CorrectionGroup = Schema.Struct({
   conflictKey: Schema.String,
   scope: Schema.String,
-  corrected: Schema.Number,
-  corrections: Schema.Number,
-  lastAccessedAt: Schema.Number,
+  corrected: Schema.Finite,
+  corrections: Schema.Finite,
+  lastAccessedAt: Schema.Finite,
   items: Schema.Array(UsageItem),
 })
 const CorrectionsResult = Schema.Struct({ groups: Schema.Array(CorrectionGroup) })
 const AccessRow = Schema.Struct({
   fingerprint: Schema.String,
   surface: Schema.String,
-  rank: Schema.Number,
-  score: Schema.Number,
-  accessedAt: Schema.Number,
-  usedAt: Schema.NullOr(Schema.Number),
-  usefulAt: Schema.NullOr(Schema.Number),
-  correctedAt: Schema.NullOr(Schema.Number),
+  rank: Schema.Finite,
+  score: Schema.Finite,
+  accessedAt: Schema.Finite,
+  usedAt: Schema.NullOr(Schema.Finite),
+  usefulAt: Schema.NullOr(Schema.Finite),
+  correctedAt: Schema.NullOr(Schema.Finite),
 })
 const UsageDetail = Schema.Struct({ usage: Schema.NullOr(UsageCounts), accesses: Schema.Array(AccessRow) })
 
@@ -90,7 +90,7 @@ const UsageDetail = Schema.Struct({ usage: Schema.NullOr(UsageCounts), accesses:
  */
 const UsageFilter = Schema.Struct({
   scopes: Schema.optional(Schema.Array(Schema.String)),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(Schema.Finite),
 })
 
 /**
@@ -150,7 +150,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
     HttpApiEndpoint.post("memory.erase", "/api/memory/erase", {
       // A COUNT, not a boolean. "It worked" is not auditable, and a store that was already empty must
       // answer 0 rather than imply something happened.
-      success: Schema.Number,
+      success: Schema.Finite,
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
@@ -245,7 +245,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
         scope: Schema.optional(Schema.String),
         subject: Schema.optional(Schema.String),
         predicate: Schema.optional(Schema.Literals(CLAIM_PREDICATES)),
-        confidence: Schema.optional(Schema.Number),
+        confidence: Schema.optional(Schema.Finite),
         source: Schema.optional(Schema.String),
         agent: Schema.optional(Schema.String),
         validFrom: Schema.optional(Schema.String),
@@ -298,7 +298,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
       payload: Schema.Struct({
         ...UsageFilter.fields,
         /** How deep the never-used scan may go before it answers `partial`. */
-        scan: Schema.optional(Schema.Number),
+        scan: Schema.optional(Schema.Finite),
       }),
       success: NeverUsedResult,
     }).annotateMerge(
@@ -330,7 +330,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
       payload: Schema.Struct({
         ...UsageFilter.fields,
         /** How many corrected claims an identity needs before it counts as "repeatedly". Default 2. */
-        minCorrected: Schema.optional(Schema.Number),
+        minCorrected: Schema.optional(Schema.Finite),
       }),
       success: CorrectionsResult,
     }).annotateMerge(

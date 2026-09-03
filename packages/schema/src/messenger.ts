@@ -142,7 +142,7 @@ export const AccountStatus = Schema.Union([
   Schema.Struct({ state: Schema.Literal("airgapped") }),
   Schema.Struct({ state: Schema.Literal("connecting") }),
   Schema.Struct({ state: Schema.Literal("connected") }),
-  Schema.Struct({ state: Schema.Literal("backoff"), until: Schema.Number, message: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("backoff"), until: Schema.Finite, message: Schema.String }),
   Schema.Struct({ state: Schema.Literal("challenge"), message: Schema.String }),
   Schema.Struct({ state: Schema.Literal("error"), message: Schema.String }),
 ])
@@ -158,7 +158,7 @@ export const Capabilities = Schema.Struct({
   files: Schema.Struct({
     up: Schema.Boolean,
     down: Schema.Boolean,
-    maxBytes: optional(Schema.Number),
+    maxBytes: optional(Schema.Finite),
   }),
   edits: Schema.Boolean,
   threads: Schema.Boolean,
@@ -175,8 +175,8 @@ export const Capabilities = Schema.Struct({
     lock: optional(Schema.Boolean),
   }),
   format: Schema.Literals(["plain", "markdown", "html"]),
-  maxChars: Schema.Number,
-  maxBytes: optional(Schema.Number),
+  maxChars: Schema.Finite,
+  maxBytes: optional(Schema.Finite),
 }).annotate({ identifier: "Messenger.Capabilities" })
 
 /** How an account authenticates (messenger-plan §0.2): `login` = act as the USER's own account
@@ -243,7 +243,7 @@ export class LoginAttempt extends Schema.Class<LoginAttempt>("Messenger.LoginAtt
    *  WhatsApp's linked-device QR. ROTATES: re-read it from the status route while the step is open
    *  (see `LoginStatus.qrImage`); the one here is only the first frame. */
   qrImage: optional(Schema.String),
-  time: Schema.Struct({ created: Schema.Number, expires: Schema.Number }),
+  time: Schema.Struct({ created: Schema.Finite, expires: Schema.Finite }),
 }) {}
 
 /** The live state of a login attempt. Mirrors `Integration.AttemptStatus` (same status vocabulary)
@@ -258,7 +258,7 @@ export class LoginStatus extends Schema.Class<LoginStatus>("Messenger.LoginStatu
   instructions: optional(Schema.String),
   /** The step's current scannable image, refreshed on every rotation. */
   qrImage: optional(Schema.String),
-  time: Schema.Struct({ created: Schema.Number, expires: Schema.Number }),
+  time: Schema.Struct({ created: Schema.Finite, expires: Schema.Finite }),
 }) {}
 
 export class AccountInfo extends Schema.Class<AccountInfo>("Messenger.AccountInfo")({
@@ -277,7 +277,7 @@ export class ChatInfo extends Schema.Class<ChatInfo>("Messenger.ChatInfo")({
   chatID: Schema.String,
   kind: ChatKind,
   title: Schema.String,
-  lastSeen: Schema.Number,
+  lastSeen: Schema.Finite,
   /** EVERY chat carries the source label (ruling 7) — REQUIRED, because an absent label is exactly
    *  the "no evidence" state and that state has its own value (`Source.UNLABELLED`). Making it
    *  optional would hand back the ambiguity the tri-state exists to remove. */

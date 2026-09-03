@@ -55,7 +55,7 @@ export const ProjectState = Schema.Union([
     file: Schema.String,
     name: Schema.optional(Schema.String),
     /** How many permission rules the file contributes. Kept beside `permissions` for the chip-sized surfaces. */
-    permissionRules: Schema.Number,
+    permissionRules: Schema.Finite,
     /**
      * The rules themselves, verbatim and in file order.
      *

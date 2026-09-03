@@ -55,8 +55,8 @@ const AppManifest = Schema.Struct({
   accent: Schema.optional(Schema.String),
   subtitle: Schema.optional(Schema.String),
   open: Schema.Struct({ type: Schema.Literals(["route", "url", "prompt"]), value: Schema.String }),
-  createdAt: Schema.Number,
-  updatedAt: Schema.Number,
+  createdAt: Schema.Finite,
+  updatedAt: Schema.Finite,
 }).annotate({ identifier: "AppManifest" })
 
 const AppRegisterPayload = Schema.Struct({
@@ -97,10 +97,10 @@ export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsAp
 // ONE query surface over the running session world, shared by humans, agents and tests.
 const SchedulerLedgerEntry = Schema.Struct({
   id: Schema.String,
-  weight: Schema.Number,
-  sliceTokens: Schema.Number,
-  lag: Schema.Number,
-  vdeadline: Schema.Number,
+  weight: Schema.Finite,
+  sliceTokens: Schema.Finite,
+  lag: Schema.Finite,
+  vdeadline: Schema.Finite,
 })
 const SchedulerDevice = Schema.Struct({
   deviceKey: Schema.String,
@@ -281,7 +281,7 @@ export const InstanceApi = HttpApi.make("instance")
             summary: "Diagnose this instance",
             description:
               "Compose storage, conversation store, memory, scheduler, updater and provider readings into one " +
-            "verdict. " +
+              "verdict. " +
               "Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
           }),
         ),

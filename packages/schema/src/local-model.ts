@@ -10,10 +10,10 @@ export const Profile = Schema.Struct({
   quant: Schema.String,
   license: Schema.String,
   sourceURL: Schema.String,
-  downloadBytes: Schema.Number,
-  minimumMemoryBytes: Schema.Number,
-  workingMemoryBytes: Schema.Number,
-  contexts: Schema.Array(Schema.Number),
+  downloadBytes: Schema.Finite,
+  minimumMemoryBytes: Schema.Finite,
+  workingMemoryBytes: Schema.Finite,
+  contexts: Schema.Array(Schema.Finite),
 })
 export type Profile = Schema.Schema.Type<typeof Profile>
 
@@ -21,8 +21,8 @@ export const Preflight = Schema.Struct({
   ok: Schema.Boolean,
   issues: Schema.Array(Schema.String),
   warnings: Schema.Array(Schema.String),
-  memory: Schema.optional(Schema.Struct({ freeBytes: Schema.Number, limitBytes: Schema.Number })),
-  disk: Schema.optional(Schema.Struct({ freeBytes: Schema.Number, requiredBytes: Schema.Number })),
+  memory: Schema.optional(Schema.Struct({ freeBytes: Schema.Finite, limitBytes: Schema.Finite })),
+  disk: Schema.optional(Schema.Struct({ freeBytes: Schema.Finite, requiredBytes: Schema.Finite })),
 })
 export type Preflight = Schema.Schema.Type<typeof Preflight>
 
@@ -46,17 +46,17 @@ export const Status = Schema.Struct({
   profiles: Schema.Array(Profile),
   stage: Stage,
   profileID: Schema.optional(Schema.String),
-  completed: Schema.optional(Schema.Number),
-  total: Schema.optional(Schema.Number),
+  completed: Schema.optional(Schema.Finite),
+  total: Schema.optional(Schema.Finite),
   message: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
   baseURL: Schema.optional(Schema.String),
   modelID: Schema.optional(Schema.String),
-  context: Schema.optional(Schema.Number),
-  output: Schema.optional(Schema.Number),
-  pid: Schema.optional(Schema.Number),
-  ramBytes: Schema.optional(Schema.Number),
+  context: Schema.optional(Schema.Finite),
+  output: Schema.optional(Schema.Finite),
+  pid: Schema.optional(Schema.Finite),
+  ramBytes: Schema.optional(Schema.Finite),
   preflight: Schema.optional(Preflight),
-  recommendedContext: Schema.Number,
+  recommendedContext: Schema.Finite,
 })
 export type Status = Schema.Schema.Type<typeof Status>

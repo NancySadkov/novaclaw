@@ -82,8 +82,8 @@ export const Info = Schema.Struct({
   permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(optional),
   strict: Schema.Struct({
     enabled: Schema.Boolean.pipe(optional),
-    attempts: Schema.Number.pipe(optional),
-    wallMinutes: Schema.Number.pipe(optional),
+    attempts: Schema.Finite.pipe(optional),
+    wallMinutes: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),

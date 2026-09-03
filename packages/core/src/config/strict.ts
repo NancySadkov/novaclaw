@@ -31,22 +31,22 @@ export const Info = Schema.Struct({
   budgetSteering: Schema.optional(Schema.Boolean).annotate({
     description: "Wall-clock awareness: calm simplify/land-it steers at 50%/75% of the time budget (default: true)",
   }),
-  wallMinutes: Schema.optional(Schema.Number).annotate({
+  wallMinutes: Schema.optional(Schema.Finite).annotate({
     description:
       "Wall-clock budget per Strict task in minutes; the engine stops through its terminal best-restore at exhaustion (default: 45)",
   }),
-  attempts: Schema.optional(Schema.Number).annotate({
+  attempts: Schema.optional(Schema.Finite).annotate({
     description:
       "Best-of-N racing (jh.md §14.2): run N isolated attempts on FORKED copies of the workspace and keep the first verified winner (1 = off, max 8). Explicit opt-in — costs ~N× compute; the Spark's bandwidth-bound decoding makes concurrent attempts nearly free capacity (default: 1)",
   }),
   // The two per-call token budgets (owner, 2026-07-16). These bound GENERATION, not context: a local
   // model is typically served with a 128k context, but each call still needs room to FINISH. They are
   // separate knobs because the two step kinds fail in opposite ways when starved.
-  executionTokens: Schema.optional(Schema.Number).annotate({
+  executionTokens: Schema.optional(Schema.Finite).annotate({
     description:
       "Token budget for EXECUTION steps — the calls that fill in the step schema and write files. Truncation is fatal here (jh.md §3: a non-trivial C source file is ~13-15k tokens), so leave headroom (default: 24576)",
   }),
-  reasoningTokens: Schema.optional(Schema.Number).annotate({
+  reasoningTokens: Schema.optional(Schema.Finite).annotate({
     description:
       "Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh/think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)",
   }),

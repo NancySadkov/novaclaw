@@ -9,7 +9,7 @@ export const Info = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Emotion-modulated sampling + loop-breaking nudges (default: false)",
   }),
-  temperature: Schema.optional(Schema.Number).annotate({
+  temperature: Schema.optional(Schema.Finite).annotate({
     description: "Calm-baseline temperature when the model config sets none (default: 0.7)",
   }),
   extended: Schema.optional(Schema.Boolean).annotate({

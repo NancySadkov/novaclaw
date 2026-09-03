@@ -21,17 +21,17 @@ export const Check = Schema.Struct({
    * ⚠️ NULLABLE, and the null MEANS something: no process existed. `refused` never started one, so a
    * `0` here would report a clean exit for a check that never ran.
    */
-  exitCode: Schema.NullOr(Schema.Number),
+  exitCode: Schema.NullOr(Schema.Finite),
   timedOut: Schema.Boolean,
-  durationMs: Schema.NullOr(Schema.Number),
-  at: Schema.Number,
+  durationMs: Schema.NullOr(Schema.Finite),
+  at: Schema.Finite,
 }).annotate({ identifier: "SessionReceipt.Check" })
 
 export const PlanItem = Schema.Struct({
   content: Schema.String,
   status: Schema.String,
   priority: Schema.String,
-  position: Schema.Number,
+  position: Schema.Finite,
 }).annotate({ identifier: "SessionReceipt.PlanItem" })
 
 /**
@@ -86,15 +86,15 @@ export const PolicyDecision = Schema.Struct({
    * which the transcript already holds. Absent when nothing was rewritten.
    */
   patched: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  at: Schema.Number,
+  at: Schema.Finite,
 }).annotate({ identifier: "SessionReceipt.PolicyDecision" })
 
 export const Info = Schema.Struct({
   attemptID: Schema.String,
-  generation: Schema.Number,
+  generation: Schema.Finite,
   /** `busy · settled · failed · interrupted · paused · recovering`. */
   state: Schema.String,
-  startedAt: Schema.Number,
+  startedAt: Schema.Finite,
   /** The plan as DECLARED, frozen when the attempt opened — never the live list. */
   declaredPlan: Schema.Array(PlanItem),
   checks: Schema.Array(Check),

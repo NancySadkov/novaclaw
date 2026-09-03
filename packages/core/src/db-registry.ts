@@ -13,18 +13,18 @@ import { Database } from "./database/database"
 
 export class TableSummary extends Schema.Class<TableSummary>("DbRegistry.TableSummary")({
   name: Schema.String,
-  rowCount: Schema.Number,
+  rowCount: Schema.Finite,
 }) {}
 
 export class TableRow extends Schema.Class<TableRow>("DbRegistry.TableRow")({
-  rowid: Schema.Number,
+  rowid: Schema.Finite,
   values: Schema.Record(Schema.String, Schema.Unknown),
 }) {}
 
 export class TablePage extends Schema.Class<TablePage>("DbRegistry.TablePage")({
   table: Schema.String,
   columns: Schema.Array(Schema.String),
-  rowCount: Schema.Number,
+  rowCount: Schema.Finite,
   rows: Schema.Array(TableRow),
 }) {}
 

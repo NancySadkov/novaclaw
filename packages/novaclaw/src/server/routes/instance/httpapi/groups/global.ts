@@ -86,7 +86,7 @@ const GlobalIdentityBackup = Schema.Struct({
 const UsageItem = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
-  bytes: Schema.optional(Schema.Number),
+  bytes: Schema.optional(Schema.Finite),
   state: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
@@ -96,8 +96,8 @@ const MemoryReading = Schema.Union([
     known: Schema.Literal(true),
     source: Schema.String,
     crosscheck: Schema.String,
-    usedBytes: Schema.Number,
-    limitBytes: Schema.Number,
+    usedBytes: Schema.Finite,
+    limitBytes: Schema.Finite,
   }),
   Schema.Struct({ known: Schema.Literal(false), reason: Schema.String }),
 ])
@@ -106,13 +106,13 @@ const DiskReading = Schema.Union([
     known: Schema.Literal(true),
     path: Schema.String,
     measuredPath: Schema.String,
-    freeBytes: Schema.Number,
-    totalBytes: Schema.Number,
+    freeBytes: Schema.Finite,
+    totalBytes: Schema.Finite,
   }),
   Schema.Struct({ known: Schema.Literal(false), path: Schema.String, reason: Schema.String }),
 ])
 const GlobalResources = Schema.Struct({
-  measuredAt: Schema.Number,
+  measuredAt: Schema.Finite,
   memory: MemoryReading,
   disks: Schema.Array(DiskReading),
   /** The WORST verdict across every probe — memory and each disk. */

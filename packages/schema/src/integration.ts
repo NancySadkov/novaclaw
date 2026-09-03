@@ -106,8 +106,8 @@ export const AttemptID = Schema.String.pipe(
 export type AttemptID = typeof AttemptID.Type
 
 const AttemptTime = Schema.Struct({
-  created: Schema.Number,
-  expires: Schema.Number,
+  created: Schema.Finite,
+  expires: Schema.Finite,
 })
 
 export class Attempt extends Schema.Class<Attempt>("Integration.Attempt")({

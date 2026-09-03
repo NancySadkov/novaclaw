@@ -15,13 +15,13 @@ const Unavailable = Schema.Struct({
 
 const Status = Schema.Union([
   Schema.Struct({ state: Schema.Literal("idle") }),
-  Schema.Struct({ state: Schema.Literal("starting"), since: Schema.Number }),
-  Schema.Struct({ state: Schema.Literal("ready"), since: Schema.Number }),
+  Schema.Struct({ state: Schema.Literal("starting"), since: Schema.Finite }),
+  Schema.Struct({ state: Schema.Literal("ready"), since: Schema.Finite }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
     reason: Unavailable,
-    at: Schema.Number,
-    attempts: Schema.Number,
+    at: Schema.Finite,
+    attempts: Schema.Finite,
   }),
 ])
 

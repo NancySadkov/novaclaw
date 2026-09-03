@@ -16,7 +16,7 @@ const Recipe = Schema.Struct({
   prompt: Schema.String,
   assets: Schema.Array(Schema.String),
   builtin: Schema.Boolean,
-  updatedAt: Schema.Number,
+  updatedAt: Schema.Finite,
 }).annotate({ identifier: "Recipe.Info" })
 
 const SaveInput = Schema.Struct({
@@ -139,7 +139,7 @@ const VerifyCheck = Schema.Struct({
   path: Schema.optional(Schema.String),
   /** What was ACTUALLY verified, in words — a weak claim must be readable as a weak claim. */
   checked: Schema.String,
-  bytes: Schema.optional(Schema.Number),
+  bytes: Schema.optional(Schema.Finite),
 }).annotate({ identifier: "Recipe.VerifyCheck" })
 
 const VerifyResult = Schema.Struct({
@@ -154,7 +154,7 @@ const VerifyResult = Schema.Struct({
   checks: Schema.Array(VerifyCheck),
   /** The same receipt in one sentence, house style, safe to show a normal person. */
   summary: Schema.String,
-  at: Schema.Number,
+  at: Schema.Finite,
   /**
    * What the COOK did, when a `sessionID` was supplied and we could read it.
    *

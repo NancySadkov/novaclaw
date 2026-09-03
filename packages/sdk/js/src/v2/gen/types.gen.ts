@@ -1053,7 +1053,7 @@ export type GlobalEvent = {
           hits: Array<{
             id: string
             rank: number
-            score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            score: number
             scope: string
           }>
           considered: number
@@ -1426,7 +1426,7 @@ export type ProjectState =
       root: string
       file: string
       name?: string
-      permissionRules: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      permissionRules: number
       permissions: PermissionV2Ruleset
       exclude: Array<string>
       skills: Array<string>
@@ -1557,7 +1557,7 @@ export type File = {
 export type TrashEntry = {
   id: string
   originalPath: string
-  trashedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  trashedAt: number
   type: "file" | "directory"
 }
 
@@ -1665,8 +1665,8 @@ export type AppManifest = {
     type: "route" | "url" | "prompt"
     value: string
   }
-  createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  createdAt: number
+  updatedAt: number
 }
 
 export type AppRegisterError = {
@@ -1835,7 +1835,7 @@ export type SessionPendingResponse = {
     id: string
     text: string
     delivery: string
-    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number
   }>
 }
 
@@ -1920,7 +1920,7 @@ export type SessionDurableEventStream = string
 
 export type SessionExportResponse = {
   path: string
-  messageCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  messageCount: number
   running: boolean
 }
 
@@ -1959,7 +1959,7 @@ export type MessengerAccountStatus = {
   location?: LocationRef
   data: {
     accountID: string
-    status: MessengerAccountStatus1
+    status: MessengerAccountStatus2
   }
 }
 
@@ -2712,7 +2712,7 @@ export type MessengerAccountStatus2 =
     }
   | {
       state: "backoff"
-      until: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      until: number
       message: string
     }
   | {
@@ -3697,8 +3697,8 @@ export type ConfigV2Agent = {
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean
-    attempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    wallMinutes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    attempts?: number
+    wallMinutes?: number
   }
   shortChat?: boolean
   description?: string
@@ -4201,10 +4201,7 @@ export type ConfigInfo = {
   }
   introspection?: {
     enabled?: boolean
-    /**
-     * Judge every N continuation steps within a turn drain (default: 3)
-     */
-    cadence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    cadence?: number
     model?: string
     prompt?: string
     interjection?: string
@@ -4234,10 +4231,7 @@ export type ConfigInfo = {
   }>
   affective?: {
     enabled?: boolean
-    /**
-     * Calm-baseline temperature when the model config sets none (default: 0.7)
-     */
-    temperature?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    temperature?: number
     extended?: boolean
   }
   strict?: {
@@ -4246,22 +4240,10 @@ export type ConfigInfo = {
     recovery?: boolean
     editingAids?: boolean
     budgetSteering?: boolean
-    /**
-     * Wall-clock budget per Strict task in minutes; the engine stops through its terminal best-restore at exhaustion (default: 45)
-     */
-    wallMinutes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    /**
-     * Best-of-N racing (jh.md §14.2): run N isolated attempts on FORKED copies of the workspace and keep the first verified winner (1 = off, max 8). Explicit opt-in — costs ~N× compute; the Spark's bandwidth-bound decoding makes concurrent attempts nearly free capacity (default: 1)
-     */
-    attempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    /**
-     * Token budget for EXECUTION steps — the calls that fill in the step schema and write files. Truncation is fatal here (jh.md §3: a non-trivial C source file is ~13-15k tokens), so leave headroom (default: 24576)
-     */
-    executionTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    /**
-     * Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh/think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)
-     */
-    reasoningTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    wallMinutes?: number
+    attempts?: number
+    executionTokens?: number
+    reasoningTokens?: number
   }
   instances?: Array<{
     /**
@@ -4286,18 +4268,9 @@ export type ConfigInfo = {
     }
     answers?: {
       enabled?: boolean
-      /**
-       * How many questions a day this instance will answer in total. Bounded before anything is spent.
-       */
-      perDay?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      /**
-       * How many of the day's answers any ONE peer may take, so a single asker cannot consume it.
-       */
-      perPeerPerDay?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      /**
-       * Token ceiling for one answer. A reasoning model spends this on thinking before it writes, so too small a value returns an EMPTY answer rather than a short one. Exposure is perDay times this.
-       */
-      maxTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      perDay?: number
+      perPeerPerDay?: number
+      maxTokens?: number
     }
     announce?: string
     dht?: {
@@ -4363,7 +4336,7 @@ export type ConfigInfo = {
   }
   local_model_catalog?: ConfigV2LocalModelCatalog
   provider_media_limit?: {
-    [key: string]: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    [key: string]: number
   }
   provider_route_profile?: {
     [key: string]: {
@@ -4378,7 +4351,7 @@ export type ConfigInfo = {
     [key: string]: {
       choice: "native" | "prompted" | "chat-only" | "unknown"
       rationale?: string
-      measuredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      measuredAt: number
       fingerprint: string
       endpoint?: string
       servedBy?: string
@@ -4426,11 +4399,11 @@ export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "poli
 
 export type DbRegistryTableSummary = {
   name: string
-  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  rowCount: number
 }
 
 export type DbRegistryTableRow = {
-  rowid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  rowid: number
   values: {
     [key: string]: unknown
   }
@@ -4439,7 +4412,7 @@ export type DbRegistryTableRow = {
 export type DbRegistryTablePage = {
   table: string
   columns: Array<string>
-  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  rowCount: number
   rows: Array<DbRegistryTableRow>
 }
 
@@ -4570,8 +4543,8 @@ export type AgentV2Info = {
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean
-    attempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    wallMinutes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    attempts?: number
+    wallMinutes?: number
   }
   shortChat?: boolean
   mode: "subagent" | "primary" | "all"
@@ -4590,38 +4563,38 @@ export type AgentUsageMinute = {
 export type SessionExecution = {
   sessionID: string
   attemptID: string
-  generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  generation: number
   ownerID: string
   state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
   phase: "drain" | "provider" | "tool" | "maintenance"
-  heartbeatAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  checkpointAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  heartbeatAt: number
+  checkpointAt?: number
   failureClass?: string
   failureDetail?: string
-  failureCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  failureCount: number
   toolCallID?: string
   toolName?: string
   toolSideEffect?: "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
   toolState?: "dispatched" | "settled"
-  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  startedAt: number
+  updatedAt: number
 }
 
 export type SessionReceiptPlanItem = {
   content: string
   status: string
   priority: string
-  position: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  position: number
 }
 
 export type SessionReceiptCheck = {
   label: string
   command: string
   outcome: string
-  exitCode: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+  exitCode: number | null
   timedOut: boolean
-  durationMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  durationMs: number | null
+  at: number
 }
 
 export type SessionReceiptPolicyDecision = {
@@ -4637,14 +4610,14 @@ export type SessionReceiptPolicyDecision = {
   patched?: {
     [key: string]: unknown
   }
-  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  at: number
 }
 
 export type SessionReceiptInfo = {
   attemptID: string
-  generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  generation: number
   state: string
-  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  startedAt: number
   declaredPlan: Array<SessionReceiptPlanItem>
   checks: Array<SessionReceiptCheck>
   policies: Array<SessionReceiptPolicyDecision>
@@ -5750,8 +5723,8 @@ export type IntegrationAttempt = {
   instructions: string
   mode: "auto" | "code"
   time: {
-    created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    created: number
+    expires: number
   }
 }
 
@@ -5759,30 +5732,30 @@ export type IntegrationAttemptStatus =
   | {
       status: "pending"
       time: {
-        created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        created: number
+        expires: number
       }
     }
   | {
       status: "complete"
       time: {
-        created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        created: number
+        expires: number
       }
     }
   | {
       status: "failed"
       message: string
       time: {
-        created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        created: number
+        expires: number
       }
     }
   | {
       status: "expired"
       time: {
-        created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        created: number
+        expires: number
       }
     }
 
@@ -5793,7 +5766,7 @@ export type MessengerCapabilities = {
   files: {
     up: boolean
     down: boolean
-    maxBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    maxBytes?: number
   }
   edits: boolean
   threads: boolean
@@ -5807,8 +5780,8 @@ export type MessengerCapabilities = {
     lock?: boolean
   }
   format: "plain" | "markdown" | "html"
-  maxChars: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  maxBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  maxChars: number
+  maxBytes?: number
 }
 
 export type MessengerDriverMeta = {
@@ -5857,7 +5830,7 @@ export type MessengerChatInfo = {
   chatID: string
   kind: MessengerChatKind
   title: string
-  lastSeen: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  lastSeen: number
   access: MessengerSourceLabel
 }
 
@@ -5879,8 +5852,8 @@ export type MessengerLoginAttempt = {
   instructions: string
   qrImage?: string
   time: {
-    created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    created: number
+    expires: number
   }
 }
 
@@ -5890,8 +5863,8 @@ export type MessengerLoginStatus = {
   instructions?: string
   qrImage?: string
   time: {
-    created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    created: number
+    expires: number
   }
 }
 
@@ -5944,10 +5917,10 @@ export type CalendarSchedule = {
   location: string | null
   permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo" | null
   enabled: boolean
-  nextFireAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-  lastFiredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  nextFireAt: number | null
+  lastFiredAt: number | null
+  timeCreated: number
+  timeUpdated: number
 }
 
 export type CalendarCreateInput = {
@@ -5977,8 +5950,8 @@ export type CalendarUpdateInput = {
 export type CalendarFire = {
   id: string
   scheduleId: string
-  occurrenceMillis: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  firedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  occurrenceMillis: number
+  firedAt: number
   sessionId: string | null
   status: "spawned" | "skipped" | "error"
 }
@@ -5990,7 +5963,7 @@ export type RecipeInfo = {
   prompt: string
   assets: Array<string>
   builtin: boolean
-  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  updatedAt: number
 }
 
 export type RecipeNeedCheck = {
@@ -6047,7 +6020,7 @@ export type RecipeVerifyCheck = {
   reason?: UnknownReason
   path?: string
   checked: string
-  bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  bytes?: number
 }
 
 export type RecipeVerifyResult = {
@@ -6057,7 +6030,7 @@ export type RecipeVerifyResult = {
   verdict: "working" | "not-working" | "not-available" | "unknown"
   checks: Array<RecipeVerifyCheck>
   summary: string
-  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  at: number
   cookState?: "ran" | "blocked" | "stopped"
 }
 
@@ -6436,7 +6409,7 @@ export type MemoryRecalled = {
     hits: Array<{
       id: string
       rank: number
-      score: number | "NaN" | "Infinity" | "-Infinity"
+      score: number
       scope: string
     }>
     considered: number
@@ -6640,33 +6613,6 @@ export type QuestionV2Rejected = {
     requestID: string
   }
 }
-
-export type MessengerAccountStatus1 =
-  | {
-      state: "disabled"
-    }
-  | {
-      state: "airgapped"
-    }
-  | {
-      state: "connecting"
-    }
-  | {
-      state: "connected"
-    }
-  | {
-      state: "backoff"
-      until: number | "NaN" | "Infinity" | "-Infinity"
-      message: string
-    }
-  | {
-      state: "challenge"
-      message: string
-    }
-  | {
-      state: "error"
-      message: string
-    }
 
 export type MessengerChatSeen = {
   id: string
@@ -7620,7 +7566,7 @@ export type EventMemoryRecalled = {
     hits: Array<{
       id: string
       rank: number
-      score: number | "NaN" | "Infinity" | "-Infinity"
+      score: number
       scope: string
     }>
     considered: number
@@ -7731,7 +7677,7 @@ export type EventMessengerAccountStatus = {
   type: "messenger.account.status"
   properties: {
     accountID: string
-    status: MessengerAccountStatus1
+    status: MessengerAccountStatus2
   }
 }
 
@@ -8386,14 +8332,14 @@ export type GlobalResourcesResponses = {
    * Live instance RAM and disk usage
    */
   200: {
-    measuredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    measuredAt: number
     memory:
       | {
           known: true
           source: string
           crosscheck: string
-          usedBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          usedBytes: number
+          limitBytes: number
         }
       | {
           known: false
@@ -8404,8 +8350,8 @@ export type GlobalResourcesResponses = {
           known: true
           path: string
           measuredPath: string
-          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          totalBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          freeBytes: number
+          totalBytes: number
         }
       | {
           known: false
@@ -8418,7 +8364,7 @@ export type GlobalResourcesResponses = {
     ram: Array<{
       id: string
       label: string
-      bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      bytes?: number
       state?: string
       detail?: string
       path?: string
@@ -8426,7 +8372,7 @@ export type GlobalResourcesResponses = {
     disk: Array<{
       id: string
       label: string
-      bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      bytes?: number
       state?: string
       detail?: string
       path?: string
@@ -8442,10 +8388,10 @@ export type GlobalResourcesResponses = {
         quant: string
         license: string
         sourceURL: string
-        downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+        downloadBytes: number
+        minimumMemoryBytes: number
+        workingMemoryBytes: number
+        contexts: Array<number>
       }>
       stage:
         | "idle"
@@ -8459,30 +8405,30 @@ export type GlobalResourcesResponses = {
         | "stopping"
         | "error"
       profileID?: string
-      completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      completed?: number
+      total?: number
       message?: string
       detail?: string
       baseURL?: string
       modelID?: string
-      context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      context?: number
+      output?: number
+      pid?: number
+      ramBytes?: number
       preflight?: {
         ok: boolean
         issues: Array<string>
         warnings: Array<string>
         memory?: {
-          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          freeBytes: number
+          limitBytes: number
         }
         disk?: {
-          freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          freeBytes: number
+          requiredBytes: number
         }
       }
-      recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      recommendedContext: number
     }
   }
 }
@@ -8648,11 +8594,11 @@ export type CapabilityListResponses = {
         }
       | {
           state: "starting"
-          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          since: number
         }
       | {
           state: "ready"
-          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          since: number
         }
       | {
           state: "unavailable"
@@ -8663,8 +8609,8 @@ export type CapabilityListResponses = {
             detail?: string
             repair?: Array<string>
           }
-          at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          attempts: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          at: number
+          attempts: number
         }
   }>
 }
@@ -8687,7 +8633,7 @@ export type CapabilityRetryErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * Unauthorized
    */
@@ -8708,11 +8654,11 @@ export type CapabilityRetryResponses = {
         }
       | {
           state: "starting"
-          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          since: number
         }
       | {
           state: "ready"
-          since: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          since: number
         }
       | {
           state: "unavailable"
@@ -8723,8 +8669,8 @@ export type CapabilityRetryResponses = {
             detail?: string
             repair?: Array<string>
           }
-          at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          attempts: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          at: number
+          attempts: number
         }
   }
 }
@@ -8758,12 +8704,12 @@ export type CommunityContactListResponses = {
   200: Array<{
     networkID: string
     petname?: string
-    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    trust?: number
     formerIDs?: Array<string>
     routes: Array<string>
-    lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastSeenAt?: number
     blocked: boolean
-    addedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    addedAt: number
   }>
 }
 
@@ -8774,7 +8720,7 @@ export type CommunityContactAddData = {
     networkID: string
     petname?: string
     routes?: Array<string>
-    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    trust?: number
   }
   path?: never
   query?: never
@@ -8785,7 +8731,7 @@ export type CommunityContactAddErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * Unauthorized
    */
@@ -8801,12 +8747,12 @@ export type CommunityContactAddResponses = {
   200: {
     networkID: string
     petname?: string
-    trust?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    trust?: number
     formerIDs?: Array<string>
     routes: Array<string>
-    lastSeenAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastSeenAt?: number
     blocked: boolean
-    addedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    addedAt: number
   }
 }
 
@@ -8910,7 +8856,7 @@ export type CommunityTransportStateResponses = {
       }
     | {
         kind: "online"
-        peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        peers: number
       }
 }
 
@@ -8962,7 +8908,7 @@ export type CommunityChannelJoinErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * Unauthorized
    */
@@ -9010,7 +8956,7 @@ export type CommunityRotateResponses = {
    */
   200: {
     networkID: string
-    told: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    told: number
   }
 }
 
@@ -9019,7 +8965,7 @@ export type CommunityRotateResponse = CommunityRotateResponses[keyof CommunityRo
 export type CommunityDoormanData = {
   body: {
     address: string
-    trust: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    trust: number
     petname?: string
   }
   path?: never
@@ -9079,11 +9025,11 @@ export type CommunityDiscoverResponses = {
    * How many peers were learned, how many are now known, and whether the seed door answered
    */
   200: {
-    learned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    asked: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    learned: number
+    asked: number
+    peers: number
     seedsAsked: boolean
-    seedsFound: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    seedsFound: number
     refused?: Array<string>
   }
 }
@@ -9116,7 +9062,7 @@ export type CommunityChannelArchivedResponses = {
    */
   200: Array<{
     name: string
-    messages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    messages: number
   }>
 }
 
@@ -9371,8 +9317,8 @@ export type CommunityParticipationResponses = {
     refusals: Array<"never_consented" | "switched_off" | "airgap">
     answers: {
       enabled: boolean
-      perDay: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      today: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      perDay: number
+      today: number
     }
     announce?: string
     announceConfirmed?: boolean
@@ -9414,7 +9360,7 @@ export type CommunityOfferMineResponses = {
       price: string
       payTo: string
       from: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       signature: string
     }
     servable: boolean
@@ -9439,7 +9385,7 @@ export type CommunityOfferPublishErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * Unauthorized
    */
@@ -9459,7 +9405,7 @@ export type CommunityOfferPublishResponses = {
     price: string
     payTo: string
     from: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
     signature: string
   }
 }
@@ -9526,7 +9472,7 @@ export type CommunityOfferKnownResponses = {
     price: string
     payTo: string
     from: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
     signature: string
   }>
 }
@@ -9600,8 +9546,8 @@ export type CommunityDirectHistoryResponses = {
     peer: string
     direction: string
     body: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
+    receivedAt: number
   }>
 }
 
@@ -9735,12 +9681,12 @@ export type CommunityChannelHistoryResponses = {
       id: string
       channel: string
       author: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      receivedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
+      receivedAt: number
       body: string
     }>
-    hidden: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    held: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    hidden: number
+    held: number
   }
 }
 
@@ -9775,8 +9721,8 @@ export type CommunityChannelSyncResponses = {
    * How many peers answered, and how many messages were new to us
    */
   200: {
-    peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    fetched: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    peers: number
+    fetched: number
   }
 }
 
@@ -9786,14 +9732,14 @@ export type CommunityPeerDmData = {
   body: {
     to: string
     from: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
     sealed: {
       epk: string
       iv: string
       ct: string
     }
     signature: string
-    nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    nonce: number
   }
   path?: never
   query?: never
@@ -9816,7 +9762,7 @@ export type CommunityPeerDmResponses = {
   200: {
     received: true
     by?: string
-    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at?: number
     signature?: string
   }
 }
@@ -9827,9 +9773,9 @@ export type CommunityPeerSearchData = {
   body: {
     id: string
     terms: string
-    ttl: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    ttl: number
     origin: string
-    nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    nonce: number
   }
   path?: never
   query?: never
@@ -9861,7 +9807,7 @@ export type CommunityPeerAskData = {
     asker: string
     to: string
     question: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
     signature: string
   }
   path?: never
@@ -9885,10 +9831,10 @@ export type CommunityPeerAskResponses = {
   200: {
     answer?: string
     refused?: string
-    refusalAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    refusalAt?: number
     refusalSignature?: string
     author?: string
-    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at?: number
     signature?: string
   }
 }
@@ -9925,7 +9871,7 @@ export type CommunityPeerSuccessionTellResponses = {
   200: {
     received: true
     by?: string
-    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at?: number
     signature?: string
   }
 }
@@ -10028,7 +9974,7 @@ export type CommunityPeerOfferResponses = {
       price: string
       payTo: string
       from: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       signature: string
     }
   }
@@ -10099,10 +10045,10 @@ export type CommunityPeerInboundData = {
     message: {
       channel: string
       author: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       body: string
       signature: string
-      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      nonce: number
     }
   }
   path?: never
@@ -10126,7 +10072,7 @@ export type CommunityPeerInboundResponses = {
   200: {
     received: true
     by?: string
-    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at?: number
     signature?: string
   }
 }
@@ -10166,7 +10112,7 @@ export type CommunityPeerSyncSummaryResponse =
 export type CommunityPeerSyncIdsData = {
   body: {
     topic: string
-    buckets: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+    buckets: Array<number>
   }
   path?: never
   query?: never
@@ -10220,10 +10166,10 @@ export type CommunityPeerSyncMessagesResponses = {
     messages: Array<{
       channel: string
       author: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       body: string
       signature: string
-      nonce: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      nonce: number
     }>
   }
 }
@@ -10529,9 +10475,9 @@ export type FileWriteData = {
 
 export type FileWriteErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type FileWriteError = FileWriteErrors[keyof FileWriteErrors]
@@ -10590,9 +10536,9 @@ export type FileMkdirData = {
 
 export type FileMkdirErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type FileMkdirError = FileMkdirErrors[keyof FileMkdirErrors]
@@ -10623,9 +10569,9 @@ export type FileRenameData = {
 
 export type FileRenameErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type FileRenameError = FileRenameErrors[keyof FileRenameErrors]
@@ -10655,9 +10601,9 @@ export type FileTrashData = {
 
 export type FileTrashErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type FileTrashError = FileTrashErrors[keyof FileTrashErrors]
@@ -10713,9 +10659,9 @@ export type FileTrashRestoreData = {
 
 export type FileTrashRestoreErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type FileTrashRestoreError = FileTrashRestoreErrors[keyof FileTrashRestoreErrors]
@@ -11064,10 +11010,10 @@ export type InstanceSchedulerResponses = {
     waiting: Array<string>
     ledger: Array<{
       id: string
-      weight: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      sliceTokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      lag: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      vdeadline: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      weight: number
+      sliceTokens: number
+      lag: number
+      vdeadline: number
     }>
   }>
 }
@@ -11438,8 +11384,8 @@ export type MemoryStatsResponses = {
    * Total + currently-valid memory counts
    */
   200: {
-    total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    valid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    total: number
+    valid: number
   }
 }
 
@@ -11481,7 +11427,7 @@ export type MemoryListResponses = {
     name: string | null
     scope: string
     source: string | null
-    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    confidence: number | null
     relation: string
     status: string
     subject: string | null
@@ -11528,7 +11474,7 @@ export type MemoryGraphResponses = {
       name: string | null
       scope: string
       source: string | null
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      confidence: number | null
       relation: string
       status: string
       subject: string | null
@@ -11545,9 +11491,9 @@ export type MemoryGraphResponses = {
     }>
     slice: {
       partial: boolean
-      total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      returned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      omitted: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      total: number
+      returned: number
+      omitted: number
       reason: "complete" | "connected-first" | "scan-capped"
     }
   }
@@ -11558,7 +11504,7 @@ export type MemoryGraphResponse = MemoryGraphResponses[keyof MemoryGraphResponse
 export type MemorySearchData = {
   body?: {
     query: string
-    k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    k?: number
     scopes?: Array<string>
     kinds?: Array<string>
   }
@@ -11590,7 +11536,7 @@ export type MemorySearchResponses = {
     name: string | null
     scope: string
     source: string | null
-    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    confidence: number | null
     relation: string
     status: string
     subject: string | null
@@ -11599,7 +11545,7 @@ export type MemorySearchResponses = {
     supersededBy: string | null
     evidence: string | null
     evidenceKind: string | null
-    score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    score: number
   }>
 }
 
@@ -11608,7 +11554,7 @@ export type MemorySearchResponse = MemorySearchResponses[keyof MemorySearchRespo
 export type MemoryNeighborsData = {
   body?: {
     id: string
-    k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    k?: number
   }
   path?: never
   query?: {
@@ -11644,7 +11590,7 @@ export type MemoryPathData = {
   body?: {
     from: string
     to: string
-    maxHops?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    maxHops?: number
   }
   path?: never
   query?: {
@@ -11669,7 +11615,7 @@ export type MemoryPathResponses = {
    */
   200: {
     ids: Array<string>
-    hops: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    hops: number
   } | null
 }
 
@@ -11692,9 +11638,9 @@ export type MemoryRememberData = {
 
 export type MemoryRememberErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type MemoryRememberError = MemoryRememberErrors[keyof MemoryRememberErrors]
@@ -11724,9 +11670,9 @@ export type MemoryInvalidateData = {
 
 export type MemoryInvalidateErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type MemoryInvalidateError = MemoryInvalidateErrors[keyof MemoryInvalidateErrors]
@@ -11754,9 +11700,9 @@ export type MemoryPurgeData = {
 
 export type MemoryPurgeErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type MemoryPurgeError = MemoryPurgeErrors[keyof MemoryPurgeErrors]
@@ -11775,7 +11721,7 @@ export type MemoryIngestData = {
     text: string
     name: string
     scope?: string
-    absorb?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    absorb?: number
   }
   path?: never
   query?: {
@@ -11787,9 +11733,9 @@ export type MemoryIngestData = {
 
 export type MemoryIngestErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type MemoryIngestError = MemoryIngestErrors[keyof MemoryIngestErrors]
@@ -11799,9 +11745,9 @@ export type MemoryIngestResponses = {
    * How many passages were stored, and how many the document chunked into
    */
   200: {
-    stored: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    passages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    absorbing?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    stored: number
+    passages: number
+    absorbing?: number
   }
 }
 
@@ -11821,9 +11767,9 @@ export type MemoryClearScopeData = {
 
 export type MemoryClearScopeErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type MemoryClearScopeError = MemoryClearScopeErrors[keyof MemoryClearScopeErrors]
@@ -12013,9 +11959,9 @@ export type RegistryRowsData = {
 
 export type RegistryRowsErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type RegistryRowsError = RegistryRowsErrors[keyof RegistryRowsErrors]
@@ -12032,7 +11978,7 @@ export type RegistryRowsResponse = RegistryRowsResponses[keyof RegistryRowsRespo
 export type RegistryUpdateRowData = {
   body?: {
     table: string
-    rowid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    rowid: number
     values: {
       [key: string]: unknown
     }
@@ -12047,9 +11993,9 @@ export type RegistryUpdateRowData = {
 
 export type RegistryUpdateRowErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type RegistryUpdateRowError = RegistryUpdateRowErrors[keyof RegistryUpdateRowErrors]
@@ -12080,9 +12026,9 @@ export type RegistryInsertRowData = {
 
 export type RegistryInsertRowErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type RegistryInsertRowError = RegistryInsertRowErrors[keyof RegistryInsertRowErrors]
@@ -12099,7 +12045,7 @@ export type RegistryInsertRowResponse = RegistryInsertRowResponses[keyof Registr
 export type RegistryDeleteRowData = {
   body?: {
     table: string
-    rowid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    rowid: number
   }
   path?: never
   query?: {
@@ -12111,9 +12057,9 @@ export type RegistryDeleteRowData = {
 
 export type RegistryDeleteRowErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type RegistryDeleteRowError = RegistryDeleteRowErrors[keyof RegistryDeleteRowErrors]
@@ -12188,16 +12134,16 @@ export type ProviderProbeResponses = {
    */
   200: {
     status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
-    latencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    discoveryLatencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    completionLatencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    completionAttempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    latencyMs?: number
+    discoveryLatencyMs?: number
+    completionLatencyMs?: number
+    completionAttempts?: number
     completed?: boolean
-    window?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    window?: number
     limits?: {
       [key: string]: {
-        context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        context?: number
+        output?: number
       }
     }
     detail?: string
@@ -12359,9 +12305,9 @@ export type ShellProvisionData = {
 
 export type ShellProvisionErrors = {
   /**
-   * InvalidRequestError
+   * Bad request
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: BadRequestError
 }
 
 export type ShellProvisionError = ShellProvisionErrors[keyof ShellProvisionErrors]
@@ -12561,7 +12507,7 @@ export type V2MemoryEraseErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -12574,7 +12520,7 @@ export type V2MemoryEraseResponses = {
   /**
    * Success
    */
-  200: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  200: number
 }
 
 export type V2MemoryEraseResponse = V2MemoryEraseResponses[keyof V2MemoryEraseResponses]
@@ -12592,7 +12538,7 @@ export type V2MemoryExportErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -12612,7 +12558,7 @@ export type V2MemoryExportResponses = {
     name: string | null
     scope: string
     source: string | null
-    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    confidence: number | null
     relation: string
     status: string
     subject: string | null
@@ -12640,7 +12586,7 @@ export type V2MemoryClaimStatusErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -12684,7 +12630,7 @@ export type V2MemoryClaimAddData = {
       | "uses"
       | "version"
       | "works_on"
-    confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    confidence?: number
     source?: string
     agent?: string
     validFrom?: string
@@ -12703,7 +12649,7 @@ export type V2MemoryClaimAddErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -12732,8 +12678,8 @@ export type V2MemoryClaimAddResponse = V2MemoryClaimAddResponses[keyof V2MemoryC
 export type V2MemoryUsageNeverUsedData = {
   body: {
     scopes?: Array<string>
-    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    scan?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    limit?: number
+    scan?: number
   }
   path?: never
   query?: never
@@ -12765,7 +12711,7 @@ export type V2MemoryUsageNeverUsedResponses = {
       name: string | null
       scope: string
       source: string | null
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      confidence: number | null
       relation: string
       status: string
       subject: string | null
@@ -12775,15 +12721,15 @@ export type V2MemoryUsageNeverUsedResponses = {
       evidence: string | null
       evidenceKind: string | null
       usage?: {
-        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        accesses: number
+        uses: number
+        useful: number
+        corrections: number
+        firstAccessedAt: number
+        lastAccessedAt: number
       }
     }>
-    scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    scanned: number
     partial: boolean
   }
 }
@@ -12793,7 +12739,7 @@ export type V2MemoryUsageNeverUsedResponse = V2MemoryUsageNeverUsedResponses[key
 export type V2MemoryUsageUsefulData = {
   body: {
     scopes?: Array<string>
-    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    limit?: number
   }
   path?: never
   query?: never
@@ -12825,7 +12771,7 @@ export type V2MemoryUsageUsefulResponses = {
       name: string | null
       scope: string
       source: string | null
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      confidence: number | null
       relation: string
       status: string
       subject: string | null
@@ -12835,12 +12781,12 @@ export type V2MemoryUsageUsefulResponses = {
       evidence: string | null
       evidenceKind: string | null
       usage?: {
-        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        accesses: number
+        uses: number
+        useful: number
+        corrections: number
+        firstAccessedAt: number
+        lastAccessedAt: number
       }
     }>
   }
@@ -12851,8 +12797,8 @@ export type V2MemoryUsageUsefulResponse = V2MemoryUsageUsefulResponses[keyof V2M
 export type V2MemoryUsageCorrectionsData = {
   body: {
     scopes?: Array<string>
-    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    minCorrected?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    limit?: number
+    minCorrected?: number
   }
   path?: never
   query?: never
@@ -12880,9 +12826,9 @@ export type V2MemoryUsageCorrectionsResponses = {
     groups: Array<{
       conflictKey: string
       scope: string
-      corrected: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      corrected: number
+      corrections: number
+      lastAccessedAt: number
       items: Array<{
         id: string
         kind: string
@@ -12890,7 +12836,7 @@ export type V2MemoryUsageCorrectionsResponses = {
         name: string | null
         scope: string
         source: string | null
-        confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+        confidence: number | null
         relation: string
         status: string
         subject: string | null
@@ -12900,12 +12846,12 @@ export type V2MemoryUsageCorrectionsResponses = {
         evidence: string | null
         evidenceKind: string | null
         usage?: {
-          accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          accesses: number
+          uses: number
+          useful: number
+          corrections: number
+          firstAccessedAt: number
+          lastAccessedAt: number
         }
       }>
     }>
@@ -12943,22 +12889,22 @@ export type V2MemoryUsageDetailResponses = {
    */
   200: {
     usage: {
-      accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      accesses: number
+      uses: number
+      useful: number
+      corrections: number
+      firstAccessedAt: number
+      lastAccessedAt: number
     } | null
     accesses: Array<{
       fingerprint: string
       surface: string
-      rank: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      accessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      usedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      usefulAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      correctedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      rank: number
+      score: number
+      accessedAt: number
+      usedAt: number | null
+      usefulAt: number | null
+      correctedAt: number | null
     }>
   }
 }
@@ -12979,7 +12925,7 @@ export type V2MemoryFeedbackErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13125,7 +13071,7 @@ export type V2AgentRemoveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13163,7 +13109,7 @@ export type V2SessionListErrors = {
   /**
    * InvalidCursorError | InvalidRequestError
    */
-  400: InvalidCursorError | InvalidRequestError | InvalidRequestError
+  400: InvalidCursorError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13217,7 +13163,7 @@ export type V2SessionCreateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13260,7 +13206,7 @@ export type V2SessionTagsSetErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionTagsSetError = V2SessionTagsSetErrors[keyof V2SessionTagsSetErrors]
@@ -13334,7 +13280,7 @@ export type V2SessionPresenceReportErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionPresenceReportError = V2SessionPresenceReportErrors[keyof V2SessionPresenceReportErrors]
@@ -13468,7 +13414,7 @@ export type V2SessionReceiptErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionReceiptError = V2SessionReceiptErrors[keyof V2SessionReceiptErrors]
@@ -13505,7 +13451,7 @@ export type V2SessionGetErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionGetError = V2SessionGetErrors[keyof V2SessionGetErrors]
@@ -13541,7 +13487,7 @@ export type V2SessionUpdateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13549,7 +13495,7 @@ export type V2SessionUpdateErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionUpdateError = V2SessionUpdateErrors[keyof V2SessionUpdateErrors]
@@ -13586,7 +13532,7 @@ export type V2SessionRemoveErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionRemoveError = V2SessionRemoveErrors[keyof V2SessionRemoveErrors]
@@ -13621,7 +13567,7 @@ export type V2SessionChildrenErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionChildrenError = V2SessionChildrenErrors[keyof V2SessionChildrenErrors]
@@ -13658,7 +13604,7 @@ export type V2SessionConfigErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionConfigError = V2SessionConfigErrors[keyof V2SessionConfigErrors]
@@ -13697,7 +13643,7 @@ export type V2SessionForkErrors = {
   /**
    * SessionNotFoundError | MessageNotFoundError
    */
-  404: MessageNotFoundError | SessionNotFoundError | SessionNotFoundError
+  404: MessageNotFoundError | SessionNotFoundError
 }
 
 export type V2SessionForkError = V2SessionForkErrors[keyof V2SessionForkErrors]
@@ -13734,7 +13680,7 @@ export type V2SessionPendingErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * UnknownError
    */
@@ -13773,7 +13719,7 @@ export type V2SessionTodoErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionTodoError = V2SessionTodoErrors[keyof V2SessionTodoErrors]
@@ -13812,7 +13758,7 @@ export type V2SessionSwitchAgentErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * ConflictError
    */
@@ -13853,7 +13799,7 @@ export type V2SessionSwitchModelErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchModelError = V2SessionSwitchModelErrors[keyof V2SessionSwitchModelErrors]
@@ -13890,7 +13836,7 @@ export type V2SessionSwitchResponderErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchResponderError = V2SessionSwitchResponderErrors[keyof V2SessionSwitchResponderErrors]
@@ -13926,7 +13872,7 @@ export type V2SessionFolderErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionFolderError = V2SessionFolderErrors[keyof V2SessionFolderErrors]
@@ -14009,7 +13955,7 @@ export type V2SessionSwitchModeErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchModeError = V2SessionSwitchModeErrors[keyof V2SessionSwitchModeErrors]
@@ -14046,7 +13992,7 @@ export type V2SessionSwitchStrictErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchStrictError = V2SessionSwitchStrictErrors[keyof V2SessionSwitchStrictErrors]
@@ -14094,7 +14040,7 @@ export type V2SessionSwitchFeatureErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchFeatureError = V2SessionSwitchFeatureErrors[keyof V2SessionSwitchFeatureErrors]
@@ -14131,7 +14077,7 @@ export type V2SessionSwitchTypeErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchTypeError = V2SessionSwitchTypeErrors[keyof V2SessionSwitchTypeErrors]
@@ -14168,7 +14114,7 @@ export type V2SessionSwitchPromptOverrideErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionSwitchPromptOverrideError =
@@ -14207,7 +14153,7 @@ export type V2SessionShellErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionShellError = V2SessionShellErrors[keyof V2SessionShellErrors]
@@ -14241,7 +14187,7 @@ export type V2SessionCommandErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -14249,7 +14195,7 @@ export type V2SessionCommandErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionCommandError = V2SessionCommandErrors[keyof V2SessionCommandErrors]
@@ -14289,7 +14235,7 @@ export type V2SessionPromptErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * ConflictError
    */
@@ -14330,7 +14276,7 @@ export type V2SessionCompactErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * ServiceUnavailableError
    */
@@ -14369,7 +14315,7 @@ export type V2SessionWaitErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * ServiceUnavailableError
    */
@@ -14411,7 +14357,7 @@ export type V2SessionRevertStageErrors = {
   /**
    * MessageNotFoundError | SessionNotFoundError
    */
-  404: MessageNotFoundError | SessionNotFoundError | SessionNotFoundError
+  404: MessageNotFoundError | SessionNotFoundError
   /**
    * UnknownError
    */
@@ -14452,7 +14398,7 @@ export type V2SessionRevertClearErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * UnknownError
    */
@@ -14491,7 +14437,7 @@ export type V2SessionRevertCommitErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionRevertCommitError = V2SessionRevertCommitErrors[keyof V2SessionRevertCommitErrors]
@@ -14526,7 +14472,7 @@ export type V2SessionContextErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * UnknownError
    */
@@ -14570,7 +14516,7 @@ export type V2SessionHistoryErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionHistoryError = V2SessionHistoryErrors[keyof V2SessionHistoryErrors]
@@ -14607,7 +14553,7 @@ export type V2SessionEventsErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionEventsError = V2SessionEventsErrors[keyof V2SessionEventsErrors]
@@ -14646,7 +14592,7 @@ export type V2SessionInterruptErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionInterruptError = V2SessionInterruptErrors[keyof V2SessionInterruptErrors]
@@ -14681,7 +14627,7 @@ export type V2SessionExecutionRetryErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionExecutionRetryError = V2SessionExecutionRetryErrors[keyof V2SessionExecutionRetryErrors]
@@ -14717,7 +14663,7 @@ export type V2SessionMessageErrors = {
   /**
    * SessionNotFoundError | MessageNotFoundError
    */
-  404: MessageNotFoundError | SessionNotFoundError | SessionNotFoundError
+  404: MessageNotFoundError | SessionNotFoundError
 }
 
 export type V2SessionMessageError = V2SessionMessageErrors[keyof V2SessionMessageErrors]
@@ -14755,7 +14701,7 @@ export type V2SessionExportMarkdownErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -14763,7 +14709,7 @@ export type V2SessionExportMarkdownErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * UnknownError
    */
@@ -14806,7 +14752,7 @@ export type V2SessionMessagesErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
   /**
    * UnknownError
    */
@@ -14946,10 +14892,10 @@ export type V2ProviderLocalModelsResponses = {
       quant: string
       license: string
       sourceURL: string
-      downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+      downloadBytes: number
+      minimumMemoryBytes: number
+      workingMemoryBytes: number
+      contexts: Array<number>
     }>
     stage:
       | "idle"
@@ -14963,30 +14909,30 @@ export type V2ProviderLocalModelsResponses = {
       | "stopping"
       | "error"
     profileID?: string
-    completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completed?: number
+    total?: number
     message?: string
     detail?: string
     baseURL?: string
     modelID?: string
-    context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    context?: number
+    output?: number
+    pid?: number
+    ramBytes?: number
     preflight?: {
       ok: boolean
       issues: Array<string>
       warnings: Array<string>
       memory?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        limitBytes: number
       }
       disk?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        requiredBytes: number
       }
     }
-    recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    recommendedContext: number
   }
 }
 
@@ -14994,7 +14940,7 @@ export type V2ProviderLocalModelsResponse = V2ProviderLocalModelsResponses[keyof
 
 export type V2ProviderInstallLocalModelData = {
   body: {
-    context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    context?: number
   }
   path: {
     profileID: string
@@ -15037,10 +14983,10 @@ export type V2ProviderInstallLocalModelResponses = {
       quant: string
       license: string
       sourceURL: string
-      downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+      downloadBytes: number
+      minimumMemoryBytes: number
+      workingMemoryBytes: number
+      contexts: Array<number>
     }>
     stage:
       | "idle"
@@ -15054,30 +15000,30 @@ export type V2ProviderInstallLocalModelResponses = {
       | "stopping"
       | "error"
     profileID?: string
-    completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completed?: number
+    total?: number
     message?: string
     detail?: string
     baseURL?: string
     modelID?: string
-    context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    context?: number
+    output?: number
+    pid?: number
+    ramBytes?: number
     preflight?: {
       ok: boolean
       issues: Array<string>
       warnings: Array<string>
       memory?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        limitBytes: number
       }
       disk?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        requiredBytes: number
       }
     }
-    recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    recommendedContext: number
   }
 }
 
@@ -15124,10 +15070,10 @@ export type V2ProviderStopLocalModelResponses = {
       quant: string
       license: string
       sourceURL: string
-      downloadBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      minimumMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      workingMemoryBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      contexts: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+      downloadBytes: number
+      minimumMemoryBytes: number
+      workingMemoryBytes: number
+      contexts: Array<number>
     }>
     stage:
       | "idle"
@@ -15141,30 +15087,30 @@ export type V2ProviderStopLocalModelResponses = {
       | "stopping"
       | "error"
     profileID?: string
-    completed?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completed?: number
+    total?: number
     message?: string
     detail?: string
     baseURL?: string
     modelID?: string
-    context?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    output?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    ramBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    context?: number
+    output?: number
+    pid?: number
+    ramBytes?: number
     preflight?: {
       ok: boolean
       issues: Array<string>
       warnings: Array<string>
       memory?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        limitBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        limitBytes: number
       }
       disk?: {
-        freeBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        requiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        freeBytes: number
+        requiredBytes: number
       }
     }
-    recommendedContext: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    recommendedContext: number
   }
 }
 
@@ -15400,7 +15346,7 @@ export type V2IntegrationConnectKeyErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15442,7 +15388,7 @@ export type V2IntegrationConnectOauthErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15561,7 +15507,7 @@ export type V2IntegrationAttemptCompleteErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15730,7 +15676,7 @@ export type V2MessengerAccountListErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15767,7 +15713,7 @@ export type V2MessengerAccountCreateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15806,7 +15752,7 @@ export type V2MessengerAccountUpdateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15838,7 +15784,7 @@ export type V2MessengerAccountRemoveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15872,7 +15818,7 @@ export type V2MessengerAccountPairErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15887,7 +15833,7 @@ export type V2MessengerAccountPairResponses = {
    */
   200: {
     code: string
-    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    expiresAt: number
   }
 }
 
@@ -15906,7 +15852,7 @@ export type V2MessengerAccountChatsErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -15977,7 +15923,7 @@ export type V2MessengerBindingCreateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16045,7 +15991,7 @@ export type V2MessengerLoginBeginErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16076,7 +16022,7 @@ export type V2MessengerLoginStatusErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16107,7 +16053,7 @@ export type V2MessengerLoginCancelErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16140,7 +16086,7 @@ export type V2MessengerLoginCompleteErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16199,7 +16145,7 @@ export type V2CalendarScheduleCreateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16231,7 +16177,7 @@ export type V2CalendarScheduleUpdateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16351,7 +16297,7 @@ export type V2RecipeSaveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16382,7 +16328,7 @@ export type V2RecipeGetErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16413,7 +16359,7 @@ export type V2RecipeUpdateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16475,7 +16421,7 @@ export type V2RecipeSourceErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16504,7 +16450,7 @@ export type V2RecipeImportErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16535,7 +16481,7 @@ export type V2RecipeArchiveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16566,7 +16512,7 @@ export type V2RecipeArchiveImportErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16599,7 +16545,7 @@ export type V2RecipeDuplicateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16635,7 +16581,7 @@ export type V2RecipeRunErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16670,7 +16616,7 @@ export type V2RecipeVerifyErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16814,7 +16760,7 @@ export type V2SessionPermissionCreateErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionPermissionCreateError = V2SessionPermissionCreateErrors[keyof V2SessionPermissionCreateErrors]
@@ -17718,7 +17664,7 @@ export type V2SessionQuestionListErrors = {
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError | SessionNotFoundError
+  404: SessionNotFoundError
 }
 
 export type V2SessionQuestionListError = V2SessionQuestionListErrors[keyof V2SessionQuestionListErrors]
@@ -17756,7 +17702,7 @@ export type V2SessionQuestionReplyErrors = {
   /**
    * SessionNotFoundError | QuestionNotFoundError
    */
-  404: QuestionNotFoundError | SessionNotFoundError | SessionNotFoundError
+  404: QuestionNotFoundError | SessionNotFoundError
 }
 
 export type V2SessionQuestionReplyError = V2SessionQuestionReplyErrors[keyof V2SessionQuestionReplyErrors]
@@ -17792,7 +17738,7 @@ export type V2SessionQuestionRejectErrors = {
   /**
    * SessionNotFoundError | QuestionNotFoundError
    */
-  404: QuestionNotFoundError | SessionNotFoundError | SessionNotFoundError
+  404: QuestionNotFoundError | SessionNotFoundError
 }
 
 export type V2SessionQuestionRejectError = V2SessionQuestionRejectErrors[keyof V2SessionQuestionRejectErrors]
@@ -17890,7 +17836,7 @@ export type V2ConfigRemoveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -17919,7 +17865,7 @@ export type V2LogReadErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError | InvalidRequestError
+  400: InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -18001,10 +17947,10 @@ export type V2TelemetryStatusResponses = {
     >
     payloadPreview?: {
       signature: {
-        [key: string]: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+        [key: string]: string | number | boolean
       }
       attributes: {
-        [key: string]: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+        [key: string]: string | number | boolean
       }
     }
     disclosure: Array<{

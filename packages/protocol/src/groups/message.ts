@@ -23,7 +23,7 @@ export const SessionMessagesQuery = Schema.Struct({
 
 export const SessionExportResponse = Schema.Struct({
   path: Schema.String,
-  messageCount: Schema.Number,
+  messageCount: Schema.Finite,
   /** True when the session was still producing output as it was exported (the file says so too). */
   running: Schema.Boolean,
 }).annotate({ identifier: "SessionExportResponse" })
