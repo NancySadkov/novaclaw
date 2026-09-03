@@ -65,6 +65,17 @@ export const DAILY_NEW_CONVERSATION_CAP = 20
 // map is per chat and a restart forgets it. Do not read the matching number as one mechanism.
 const MAX_DISPATCHES_PER_MINUTE = 10
 const DISPATCH_RATE_WINDOW_MS = 60_000
+// Moderation is a privileged WRITE on the account — a ban, a kick, a delete — and a provider's abuse
+// heuristics see one account issuing N of them, which is the signature of a compromised bot token
+// (Discord's ban/kick/timeout endpoints are among its most aggressively rate-limited and most
+// audit-logged). Until 2026-09-03 it was the one wire write that passed neither the pacer nor any
+// cap, on the reasoning that it "isn't social traffic"; principle 9(a) is human-paced output
+// GLOBALLY and the governor is transport-agnostic. It has no text to derive a typing delay from, so
+// the delay is a constant — the honest input — and the per-minute cap is per ACCOUNT, since that is
+// the unit the provider judges.
+export const MAX_MODERATIONS_PER_MINUTE = 6
+const MODERATION_WINDOW_MS = 60_000
+export const MODERATION_DELAY_MS = 1_500
 // Files both ways (P5, edge #6): attachments at or under the inline cap ride the prompt as
 // data: URIs; bigger ones land on disk under the session location's downloads/ as file:// refs.
 // The fetch cap bounds what we'll pull at all (a poisoned 2 GB "brief" must not fill the disk).
@@ -400,8 +411,9 @@ export interface Interface {
     readonly messageID: string
   }) => Effect.Effect<AttachmentOutcome>
   /** Moderate a chat (the tool's `moderate` op) — delete a message, or ban/kick/mute/pin a member.
-   *  Not paced (moderation isn't outbound social traffic); refused legibly where the driver lacks
-   *  the capability or the account lacks the platform permission. */
+   *  Paced like every other wire write (a fixed delay under the one permit — see
+   *  `MODERATION_DELAY_MS`) and capped per account per minute; refused legibly where the driver
+   *  lacks the capability or the account lacks the platform permission. */
   readonly moderate: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
@@ -468,6 +480,7 @@ const build = (options: Options) =>
     // site in `send`.
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
+    const moderationRate = new Map<string, number[]>()
     // §0.1.5 dispatcher: dispatched sessionID -> the last narration already relayed to its chat, so
     // the completion report can stay silent when it would only repeat itself. Cleared on completion;
     // an entry outlives its task only if the task never completes, and the spawn rate guard bounds that.
@@ -1319,8 +1332,7 @@ const build = (options: Options) =>
           // the same one global "hand" as any other message, so a chat firing commands faster than
           // a human is dropped here exactly as plain text is below — this branch used to sit above
           // the gate and was the one path in the tree that could burst without limit.
-          if (!(yield* floodCleared(account, connection, event, trust !== undefined)))
-            return yield* settle(delivered)
+          if (!(yield* floodCleared(account, connection, event, trust !== undefined))) return yield* settle(delivered)
           yield* handleCommand(account, connection, event, command, trust)
           return yield* settle(delivered)
         }
@@ -2074,10 +2086,23 @@ const build = (options: Options) =>
           const act = entry.connection.moderate
           if (act === undefined)
             return { ok: false, reason: "This messenger has no moderation controls." } satisfies ModerationOutcome
-          return yield* act(input.chatID, input.act).pipe(
-            Effect.map(() => ({ ok: true }) satisfies ModerationOutcome),
-            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies ModerationOutcome)),
-          )
+          const now = yield* Clock.currentTimeMillis
+          const recent = (moderationRate.get(input.accountID) ?? []).filter((at) => now - at < MODERATION_WINDOW_MS)
+          if (recent.length >= MAX_MODERATIONS_PER_MINUTE)
+            return {
+              ok: false,
+              reason:
+                `That's a lot of moderation in one minute on this account (max ${MAX_MODERATIONS_PER_MINUTE}) — ` +
+                `a burst of bans and deletes is what a provider reads as a hijacked bot. Wait a minute, then continue.`,
+            } satisfies ModerationOutcome
+          moderationRate.set(input.accountID, [...recent, now])
+          // Under the one permit, with a fixed delay: no text to type, so the constant is the pace.
+          return yield* pacer
+            .paced("", act(input.chatID, input.act), { minMs: MODERATION_DELAY_MS, maxMs: MODERATION_DELAY_MS })
+            .pipe(
+              Effect.map(() => ({ ok: true }) satisfies ModerationOutcome),
+              Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies ModerationOutcome)),
+            )
         }),
     })
     // Publish the runtime handle the `messenger` tool reads at call time (gateway-handle.ts —

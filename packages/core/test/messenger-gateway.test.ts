@@ -222,6 +222,8 @@ const makeFakeDriver = () => {
     // P5: downloadable file bytes by FileRef id; download call log.
     files: {} as Record<string, Uint8Array>,
     downloads: [] as string[],
+    /** Every moderation the gateway let through to the wire. */
+    moderations: [] as { chatID: string; act: string }[],
   }
   const driver: MessengerDriver.Driver = {
     id: "fake",
@@ -268,6 +270,7 @@ const makeFakeDriver = () => {
             }),
           ...(state.liveChats === undefined ? {} : { listChats: () => Effect.succeed(state.liveChats!) }),
           history: (chatID, limit) => Effect.succeed((state.history[chatID] ?? []).slice(-limit)),
+          moderate: (chatID, act) => Effect.sync(() => void state.moderations.push({ chatID, act: act.act })),
           downloadFile: (ref) =>
             Effect.suspend(() => {
               state.downloads.push(ref.id)
@@ -326,6 +329,8 @@ const graph = LayerNode.group([
  *
  * The ratchet that keeps both halves honest is at the bottom of this file.
  */
+/** Every delay the (instant) pacer was asked for — the proof that a write went through it. */
+const paceSleeps: number[] = []
 const REPLACEMENTS = [
   [
     MessengerDrivers.node,
@@ -335,7 +340,7 @@ const REPLACEMENTS = [
   [SessionV2.node, session.layer],
   // Instant, still-serialized pacing: these tests exercise routing LOGIC; the real human-typing
   // timing is proven directly in messenger-pace.test.ts.
-  [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
+  [MessengerPace.node, MessengerPace.layerWith({ sleep: (ms) => Effect.sync(() => void paceSleeps.push(ms)) })],
 ] satisfies LayerNode.Replacements
 
 const it = testEffect(AppNodeBuilder.build(graph, REPLACEMENTS))
@@ -506,6 +511,35 @@ const eventually = <A, E>(effect: Effect.Effect<A, E>, predicate: (value: A) => 
   })
 
 describe("MessengerGateway", () => {
+  it.live("🔴 moderation goes through the pacer and is capped per account per minute", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const gateway = yield* MessengerGateway.Service
+      const account = yield* store.createAccount({ driverID: "fake", label: "mod", enabled: true, settings: {} })
+      yield* gateway.reload()
+      yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
+      const before = fake.state.moderations.length
+      paceSleeps.length = 0
+      const outcomes: MessengerGateway.ModerationOutcome[] = []
+      for (let i = 0; i <= MessengerGateway.MAX_MODERATIONS_PER_MINUTE; i++)
+        outcomes.push(
+          yield* gateway.moderate({ accountID: account.id, chatID: "c1", act: { act: "delete", messageID: `m${i}` } }),
+        )
+      // The first six reach the wire, each under the permit with the fixed delay; the seventh is
+      // refused in the caller's words before anything is spent.
+      expect(outcomes.filter((o) => o.ok)).toHaveLength(MessengerGateway.MAX_MODERATIONS_PER_MINUTE)
+      expect(fake.state.moderations.length - before).toBe(MessengerGateway.MAX_MODERATIONS_PER_MINUTE)
+      const refused = outcomes.at(-1)
+      expect(refused?.ok).toBe(false)
+      if (refused && !refused.ok) expect(refused.reason).toContain("moderation in one minute")
+      expect(paceSleeps.filter((ms) => ms === MessengerGateway.MODERATION_DELAY_MS).length).toBeGreaterThanOrEqual(
+        MessengerGateway.MAX_MODERATIONS_PER_MINUTE,
+      )
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
   it.live("connects an enabled account, tracks seen chats, drops self-echo, and parks on disable", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
@@ -2014,6 +2048,8 @@ const CITED_GATEWAY_SYMBOLS: readonly string[] = [
  * VIRTUAL_LEDGER instead, and the difference is seconds off every `bun run test` forever.
  */
 const LIVE_LEDGER: readonly string[] = [
+  // Moderation: instant pacer, no production timer; the wall clock is only the connect handshake.
+  "🔴 moderation goes through the pacer and is capped per account per minute",
   "a CAPTCHA notice that FAILS to send is not swallowed — the parked status says so (#9(c))",
   "\u{1F534} a challenge raised BY A SEND parks the account, like one raised at connect",
   "a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries",
