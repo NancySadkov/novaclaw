@@ -428,6 +428,19 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[2] === "providers" })
     }
 
+    // 🔴 The TRANSCRIPT recovers here too, and it used to be the one thing that did not.
+    //
+    // The invalidation above is the data plane's recovery, and it reaches everything held as a
+    // TanStack query. The native message store is a Solid store, so it was never in that set: a
+    // stream that dropped mid-conversation left the open chat frozen at the last event it saw, with
+    // the server holding messages the client would not show until the page was reloaded by hand.
+    // Reproduced against the owner's 121-message session on 2026-09-03 — see `reconcileAll`.
+    //
+    // ⚠️ This is the arm that CAN fire: `server.connected` is delivered on (re)connect by definition,
+    // whereas `native-timeline`'s busy → idle reload needs a transition it can only learn from the
+    // stream that just failed.
+    if ((event.type as string) === "server.connected") void nativeMessages.reconcileAll()
+
     if (directory === "global") {
       applyGlobalEvent({
         event,

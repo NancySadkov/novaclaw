@@ -188,3 +188,92 @@ describe("the optimistic row settles when the server confirms it", () => {
     expect(store.messages("s")?.[0]).toMatchObject({ text: "first" })
   })
 })
+
+/**
+ * WHAT RECOVERS A TRANSCRIPT WHOSE STREAM DIED.
+ *
+ * 🔴 Reproduced end to end on 2026-09-03 against the owner's own 121-message chat: stop the server,
+ * let two messages land while the stream is down, start it again. The client reconnects and every
+ * TanStack query under the server's scope is invalidated — but this store is not a query, so the two
+ * messages stayed invisible until the page was reloaded by hand. The owner's report is the symptom
+ * exactly: *"its response message is cut from the chat … both these prompts and model's answer to
+ * them didn't appeared in chat"*, with the transcript frozen at the moment the stream broke.
+ *
+ * ⚠️ The reconcile that already existed could not fire: `native-timeline` reloads on a busy → idle
+ * transition it learns FROM THE STREAM. While the stream is down there are no events, so there is no
+ * transition, and by the time it returns the turn has settled and the edge never comes. A recovery
+ * whose trigger rides the channel it recovers from is not a recovery.
+ */
+describe("recovering a transcript after the stream dropped", () => {
+  const message = (id: string, text: string): SessionMessage =>
+    ({ id, type: "user", text, time: { created: 1 } }) as unknown as SessionMessage
+
+  /** A client whose history answer can change between calls, like a server that kept working. */
+  function growingClient(pages: SessionMessage[][]): { client: NovaclawClient; calls: () => number } {
+    let call = 0
+    const client = {
+      v2: {
+        session: {
+          async messages() {
+            const page = pages[Math.min(call, pages.length - 1)]!
+            call += 1
+            return { data: { data: page } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    return { client, calls: () => call }
+  }
+
+  test("🔴 reconcileAll picks up what arrived while the client was disconnected", async () => {
+    const before = [message("msg_1", "hello")]
+    const after = [...before, message("msg_2", "MISSED-WHILE-DISCONNECTED-ONE"), message("msg_3", "and-two")]
+    const { client } = growingClient([before, after])
+    const store = createNativeMessageStore(client)
+
+    await store.load("s")
+    expect(store.messages("s")!.map((m) => m.id)).toEqual(["msg_1"])
+
+    // …the stream drops, two messages land server-side, the stream comes back.
+    await store.reconcileAll()
+
+    expect(store.messages("s")!.map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+  })
+
+  test("it re-reads every chat the client is holding, not just one", async () => {
+    const { client } = growingClient([[message("msg_x", "seed")]])
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s1", "msg_a"))
+    store.apply(prompted("s2", "msg_b"))
+
+    await store.reconcileAll()
+
+    // Both transcripts were re-read: each now carries the server's row alongside its own.
+    expect(store.messages("s1")!.some((m) => m.id === "msg_x")).toBe(true)
+    expect(store.messages("s2")!.some((m) => m.id === "msg_x")).toBe(true)
+  })
+
+  test("a chat that cannot be re-read does not abandon the others", async () => {
+    let call = 0
+    const client = {
+      v2: {
+        session: {
+          async messages() {
+            call += 1
+            if (call === 1) throw new Error("network is still flapping")
+            return { data: { data: [message("msg_ok", "recovered")] } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s1", "msg_a"))
+    store.apply(prompted("s2", "msg_b"))
+
+    await store.reconcileAll()
+
+    // One of the two threw; the other still reconciled rather than the whole sweep dying with it.
+    const recovered = ["s1", "s2"].filter((id) => store.messages(id)!.some((m) => m.id === "msg_ok"))
+    expect(recovered.length).toBe(1)
+  })
+})

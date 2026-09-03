@@ -136,11 +136,42 @@ export function createNativeMessageStore(client: NovaclawClient) {
     return event.type === "session.deleted" || info.time?.archived ? info.id : undefined
   }
 
+  /**
+   * Re-read every transcript this client is holding, from the server.
+   *
+   * 🔴 **The transcript had no recovery path of its own, and that is how a chat freezes mid-answer.**
+   * Reproduced 2026-09-03 against the owner's own 121-message session: stop the server, let two
+   * messages land while the stream is down, bring it back. The client reconnects, `server.connected`
+   * arrives, every TanStack query under the server's scope is invalidated — and the transcript store
+   * is not a query, so it is not among them. The two messages stay invisible until the page is
+   * reloaded by hand, which is exactly what the owner saw: *"its response message is cut from the
+   * chat … both these prompts and model's answer to them didn't appeared"*.
+   *
+   * ⚠️ **The one reconcile that did exist could not fire.** `native-timeline` reloads when a session
+   * goes busy → idle, and it learns that transition FROM THE STREAM. A recovery whose trigger rides
+   * the channel it exists to recover from is not a recovery: while the stream is down there are no
+   * events, so there is no transition, so nothing reloads — and once it returns, the turn has long
+   * since settled and the edge never comes.
+   *
+   * Held sessions only, so this costs one request per open chat and nothing for chats nobody opened.
+   * `load` is already idempotent and authoritative, so calling it twice is harmless.
+   */
+  const reconcileAll = async () => {
+    await Promise.all(
+      Object.keys(data.messages).map((sessionID) =>
+        load(sessionID).catch(() => {
+          // A chat that cannot be re-read stays as it is; one failure must not abandon the others.
+        }),
+      ),
+    )
+  }
+
   return {
     data,
     messages: (sessionID: string): SessionMessage[] | undefined => data.messages[sessionID],
     apply,
     load,
+    reconcileAll,
     optimistic,
     forget,
     evict,
