@@ -2698,7 +2698,7 @@ export const dict = {
   // "clear" next to a colleague reads like it might take the colleague with it.
   "agentConfig.clear.confirm.title": "Clear your chat with {{name}}?",
   "agentConfig.clear.confirm.description":
-    "This conversation is put away and the next one starts empty. {{name}} stays on your roster and keeps its brief and its memories — only the messages go.",
+    "These messages are deleted and a fresh chat opens in their place. {{name}} stays on your roster and keeps its brief and its memories — only the messages go.",
   "agentConfig.clear.confirm.action": "Clear chat",
   "agentConfig.clone": "Clone",
   "agentConfig.cloning": "Cloning…",

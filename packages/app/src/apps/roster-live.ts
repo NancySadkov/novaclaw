@@ -65,6 +65,49 @@ export const chatFor = (sessions: readonly SessionLike[], agentID: string): Sess
   return best
 }
 
+/**
+ * WHICH chat "Clear chat" acts on — which is not always the one `chatFor` would hand a colleague.
+ *
+ * 🔴 **`chatFor` alone told the owner there was nothing to clear while the transcript was on screen**
+ * (2026-09-03). Measured on the prod instance: colleague `umbris` had four root chats and ALL FOUR
+ * carried a `time_archived`, including the one in the open tab — 19 messages, archived 2026-08-27
+ * 23:13, still receiving messages until 2026-09-01, because refusing work on a filed chat only
+ * landed in `c5cf172c9` on 2026-09-03. `chatFor` excludes archived rows on purpose, so it answered
+ * "no chat", the toast said *"There is no chat to clear yet"*, and the chat the user was looking at
+ * stayed exactly where it was — unclearable, and by then unable to take a message either.
+ *
+ * ⚠️ **`chatFor` is still right, and is deliberately NOT relaxed.** Its exclusion is what stops a
+ * colleague being handed back the conversation the user just cleared. The two questions are simply
+ * different: `chatFor` asks *which chat is this colleague's now*, and this asks *which transcript is
+ * the user asking to be rid of*. Answering the second with the first is what produced a dead end.
+ *
+ * The order is the user's own view of it:
+ *   1. the chat the ROUTE names, when it is this colleague's — they are looking at it, so it is the
+ *      one they mean, archived or not;
+ *   2. otherwise the colleague's live chat, exactly as `chatFor` picks it;
+ *   3. otherwise its most recent archived root — from Contacts there is no route to go on, and
+ *      "nothing to clear" is false whenever a transcript exists at all.
+ *
+ * `undefined` therefore means what the toast says: this colleague has never had a chat.
+ */
+export const chatToClear = (
+  sessions: readonly SessionLike[],
+  agentID: string,
+  routePath: string,
+): SessionLike | undefined => {
+  let routed: SessionLike | undefined
+  let archived: SessionLike | undefined
+  for (const session of sessions) {
+    if (session.agent !== agentID || !isRoot(session)) continue
+    // A path segment match, not a substring of some other id: ids are opaque, so anchor on the
+    // separators the route actually puts around them.
+    if (routePath.split(/[/?&=]/).includes(session.id)) routed = session
+    if (session.time.archived === undefined) continue
+    if (archived === undefined || touchedAt(session) > touchedAt(archived)) archived = session
+  }
+  return routed ?? chatFor(sessions, agentID) ?? archived
+}
+
 /** A chat and every thread spawned under it, transitively — the unit token spend is measured over. */
 export const threadOf = (sessions: readonly SessionLike[], rootID: string): readonly SessionLike[] => {
   const byParent = new Map<string, SessionLike[]>()

@@ -10,11 +10,11 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { listSessions } from "@/apps/agent-list"
+import { listSessions, startChat } from "@/apps/agent-list"
 import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { planClone } from "@/apps/agent-clone"
-import { chatFor } from "@/apps/roster-live"
+import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
 import { memoryList } from "@/utils/memory-api"
@@ -22,7 +22,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { useTabs } from "@/context/tabs"
+import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
@@ -329,7 +329,13 @@ export function AgentConfigDialog(props: {
     setBusy("clear")
     try {
       const sessions = await listSessions(client)
-      const chat = chatFor(sessions, id)
+      /**
+       * 🔴 **Not `chatFor`.** It answers "which chat is this colleague's now" and excludes archived
+       * rows, which is right for the roster and wrong here: the owner's `umbris` had four root chats,
+       * every one of them archived, and the newest was the transcript in the open tab. Clear reported
+       * *"There is no chat to clear yet"* about a conversation on screen. See `chatToClear`.
+       */
+      const chat = chatToClear(sessions, id, location.pathname)
       if (chat === undefined) {
         showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
         return
@@ -355,19 +361,36 @@ export function AgentConfigDialog(props: {
       props.onChanged?.()
       props.onDismiss()
       /**
-       * ⚠️ **Close the TAB too, not just leave the route** (owner, 2026-08-28). Navigating away hid
-       * the cleared conversation; its tab stayed in the strip and put every message straight back on
-       * screen when clicked. A chat the user has cleared must not still be one click away — that is
-       * the same "the durable change with the stale view" defect the roster refresh above exists for,
-       * one surface further out.
+       * ⚠️ **The tab KEEPS ITS SEAT and opens the fresh chat** (owner, 2026-09-03: *"it for some
+       * reason closed the existing chat tab, instead of replacing it with a blank one"*).
        *
-       * Closing first: `removeTab` navigates to the neighbouring tab, or home when none is left, so
-       * doing it in this order means the route decision is made once, by the tab strip, instead of
-       * twice with the second overruling the first.
+       * The 2026-08-28 ruling this replaces was right about the defect it fixed — a cleared
+       * conversation must not stay one click away in the strip — and wrong about the remedy. Closing
+       * the tab treats the chat as the thing the tab is FOR, but under the ECS lens the colleague is
+       * the entity and the chat is a component reached through it: clearing replaces the component,
+       * it does not retire the colleague. Taking the tab away makes the user re-open a colleague they
+       * never dismissed, and on the last tab it drops them at Home.
+       *
+       * `addSessionTab` already holds the one-tab-per-colleague invariant and RE-POINTS that tab at
+       * the id it is given, in place, so the seat and its position survive — the same mechanism a
+       * reassignment's successor already travels through.
+       *
+       * ⚠️ Order is forced: remove, THEN create. A colleague may hold only one live root chat
+       * (`session_agent_live_root_idx`), so creating first would either collide or hand back the very
+       * chat being cleared.
        */
       const key = serverKey()
-      if (key) tabs.closeSessionTab(key, chat.id)
-      else if (viewingCleared) navigate("/")
+      const successor = await startChat(client, { agentID: id, title: name() })
+      if (key === undefined) {
+        if (viewingCleared) navigate("/")
+      } else if (successor === undefined) {
+        // No successor to sit in the seat. Closing beats stranding the tab on a deleted chat, which
+        // is the dead end this whole path exists to avoid.
+        tabs.closeSessionTab(key, chat.id)
+      } else {
+        const tab = tabs.addSessionTab({ server: key, sessionId: successor, agent: id })
+        if (viewingCleared) navigate(tabHref(tab))
+      }
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {

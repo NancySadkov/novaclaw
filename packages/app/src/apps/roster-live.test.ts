@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   chatFor,
+  chatToClear,
   formatRate,
   formatTokensPerSecond,
   liveFor,
@@ -57,6 +58,66 @@ describe("the ONE chat a colleague has", () => {
     expect(chatFor(sessions, "theron")?.id).toBe("recent")
     // Order of the input must not change the answer.
     expect(chatFor([...sessions].reverse(), "theron")?.id).toBe("recent")
+  })
+})
+
+/**
+ * WHICH transcript "Clear chat" acts on.
+ *
+ * 🔴 Reproduced from the owner's prod instance, 2026-09-03: colleague `umbris`, four root chats, all
+ * four archived, the newest of them in the open tab with 19 messages. `chatFor` answers `undefined`
+ * for that state — correctly, it is asked a different question — and Clear told the user there was
+ * nothing to clear while they were looking at the thing they had asked it to clear.
+ */
+describe("the chat Clear acts on", () => {
+  const umbris = [
+    session({ id: "one", agent: "umbris", time: { created: 1, updated: 10, archived: 20 } }),
+    session({ id: "two", agent: "umbris", time: { created: 2, updated: 30, archived: 40 } }),
+    session({ id: "three", agent: "umbris", time: { created: 3, updated: 25, archived: 50 } }),
+  ]
+
+  test("the OWNER'S CASE: every chat archived, so the newest archived one is what Clear takes", () => {
+    // Without this the toast said "There is no chat to clear yet" and nothing happened.
+    expect(chatFor(umbris, "umbris")).toBeUndefined()
+    expect(chatToClear(umbris, "umbris", "/")?.id).toBe("two")
+  })
+
+  test("the chat the ROUTE names wins, even when a live chat exists elsewhere", () => {
+    // The user is looking at it, so it is the one they mean.
+    const sessions = [...umbris, session({ id: "live", agent: "umbris", time: { created: 9, updated: 9 } })]
+    expect(chatToClear(sessions, "umbris", "/session/local/three")?.id).toBe("three")
+    expect(chatToClear(sessions, "umbris", "/")?.id).toBe("live")
+  })
+
+  test("a route naming ANOTHER colleague's chat does not drag it in", () => {
+    const sessions = [...umbris, session({ id: "elsewhere", agent: "theron", time: { created: 9 } })]
+    expect(chatToClear(sessions, "umbris", "/session/local/elsewhere")?.id).toBe("two")
+  })
+
+  test("it matches a whole path SEGMENT, never a substring of one", () => {
+    // Ids are opaque, so a substring match would let one chat's id select another's. The two answers
+    // have to differ for this to prove anything: `ses_ab` is a substring of the routed id and is the
+    // OLDER archived row, so a substring match returns it and a segment match returns `ses_zz`.
+    const sessions = [
+      session({ id: "ses_ab", agent: "umbris", time: { created: 1, updated: 1, archived: 2 } }),
+      session({ id: "ses_zz", agent: "umbris", time: { created: 3, updated: 9, archived: 4 } }),
+    ]
+    expect(chatToClear(sessions, "umbris", "/session/local/ses_abcdef")?.id).toBe("ses_zz")
+    // And the real id in the route still selects its own row.
+    expect(chatToClear(sessions, "umbris", "/session/local/ses_ab")?.id).toBe("ses_ab")
+  })
+
+  test("a sub-agent thread is never the thing cleared, even when the route names it", () => {
+    const sessions = [
+      session({ id: "root", agent: "umbris", time: { created: 1 } }),
+      session({ id: "child", parentID: "root", agent: "umbris", time: { created: 5 } }),
+    ]
+    expect(chatToClear(sessions, "umbris", "/session/local/child")?.id).toBe("root")
+  })
+
+  test("a colleague that has never had a chat still reports nothing to clear", () => {
+    expect(chatToClear(umbris, "nobody", "/")).toBeUndefined()
+    expect(chatToClear([], "umbris", "/session/local/anything")).toBeUndefined()
   })
 })
 
