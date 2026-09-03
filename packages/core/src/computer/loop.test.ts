@@ -138,7 +138,7 @@ const CALIBRATE: ReadonlyArray<LOOP.Event> = [captured("start"), adjudged({ chec
  * `confirm` overrides it, which is how the refusal cases are written.
  *
  * ⚠️ **`lookahead` must be supplied for a `checkpoint: "no"` step on a spec that has a checkpoint
- * AFTER the next unsatisfied one** — {@link LOOP.CHECKPOINT_LOOKAHEAD} asks it there. It is NOT
+ * AFTER the next unsatisfied one** — the one-level lookahead asks it there. It is NOT
  * defaulted, because appending an event the reducer is not parked for would be consumed by the next
  * phase and the failure would read as a protocol void somewhere else entirely.
  */
@@ -636,7 +636,7 @@ describe("🔴 G14 — a yes-machine adjudicator voids the run rather than scori
 /**
  * 🔴 **A claimed checkpoint is not an awarded one.** The 2.2 acceptance run awarded checkpoint 3 at
  * step 1 in all three runs on a frame where `CD MOM` had been typed but not executed, and in one run
- * it never became true at all — so the printed 3/9 was really 2/9. `CHECKPOINT_CONFIRMATIONS` carries
+ * it never became true at all — so the printed 3/9 was really 2/9. the one-re-ask confirmation gate carries
  * the measurement; this block is the mechanism.
  *
  * ⚠️ **Every refusal test here is paired with the near-identical script that AWARDS.** A gate that
@@ -736,7 +736,7 @@ describe("🔴 a checkpoint award is CONFIRMED before it counts", () => {
       ...step(proposeAt(464, 684), moved(), { predicted: "yes", checkpoint: "no" }, "s1"),
     ])
     const unclaimed = quietRun.commands.filter((c) => c.kind === "ask-adjudicator").length
-    expect(claimed - unclaimed).toBe(LOOP.CHECKPOINT_CONFIRMATIONS)
+    expect(claimed - unclaimed).toBe(1) // exactly one re-ask, fixed in prose in loop.ts
   })
 
   test("a refused award is NOT progress — it must not reset the no-progress counter", () => {
@@ -844,7 +844,7 @@ describe("C4 — executable state may veto a visual checkpoint, never originate 
 })
 
 // ------------------------------------------------------------------------------------------------
-// CHECKPOINT_LOOKAHEAD — the battery is a progress marker, not a stopwatch
+// the one-level lookahead — the battery is a progress marker, not a stopwatch
 // ------------------------------------------------------------------------------------------------
 
 /**
@@ -857,7 +857,7 @@ describe("C4 — executable state may veto a visual checkpoint, never originate 
  * These tests are the scripted form of that live shape — three lines of events where the live case
  * was a 120,000-token run on the Spark.
  */
-describe("🔴 CHECKPOINT_LOOKAHEAD — an award must not require the exact frame", () => {
+describe("🔴 the one-level lookahead — an award must not require the exact frame", () => {
   const CP_A = { id: "cp-a", question: "Is the main menu showing?" }
   const CP_B = { id: "cp-b", question: "Is the Game Options dialog showing?" }
   const three = spec({ checkpoints: [CP_A, CP_B, CP9], noProgressLimit: 99 })

@@ -732,7 +732,7 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
     })
 
     return Service.of({
-      // ⚠️ AN OPEN DOOR NOBODY HAS WALKED THROUGH (2026-09-03, RF-03-12). This is the third-party half
+      // ⚠️ AN OPEN DOOR NOBODY HAS WALKED THROUGH (2026-09-03). This is the third-party half
       // of the component tier — the answer to "a tool cannot attach state" — and it has NO production
       // caller: `tool/define-tool.ts` and `adhoc-tools/` declare no component, no route exposes a
       // generic component surface, and the only walkers are `test/fixtures/session-component-worker.ts`

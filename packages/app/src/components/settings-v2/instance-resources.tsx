@@ -8,6 +8,7 @@ import { localModelStop } from "@/utils/fs-api"
 import { instanceResources } from "@/utils/resource-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // Imported for this file's own use AND re-exported so existing importers keep working. The
 // implementation lives in a component-free sibling so its test can load without dragging Kobalte in;
@@ -59,16 +60,25 @@ export const InstanceResources: Component = () => {
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.storage.resources.hostMemory")}
-          description={hostMemory()}
-          hint={language.t("settings.storage.resources.description")}
+          description={
+            <>
+              {hostMemory()}
+              <SettingsExplainV2 label={language.t("settings.storage.resources.hostMemory")}>
+                {language.t("settings.storage.resources.description")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <span class="select-text text-[12px] text-v2-text-text-muted">{usage()?.level ?? "…"}</span>
         </SettingsRowV2>
-        {/* Row descriptions stay empty: the value column already carries state-or-bytes, and the
-            prose detail pops on hover — printing state in the description would say it twice. */}
+        {/* The value column carries state-or-bytes; the prose detail is a focus-reachable disclosure
+            (uix.md §1.4), not the mouse-only row hint it used to be. */}
         <For each={usage()?.ram ?? []}>
           {(item) => (
-            <SettingsRowV2 title={item.label} description="" hint={item.detail}>
+            <SettingsRowV2
+              title={item.label}
+              description={<SettingsExplainV2 label={item.label}>{item.detail}</SettingsExplainV2>}
+            >
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
                   ? (item.state ?? language.t("settings.storage.resources.unknown"))
@@ -85,7 +95,15 @@ export const InstanceResources: Component = () => {
       <SettingsListV2>
         <For each={usage()?.disk ?? []}>
           {(item) => (
-            <SettingsRowV2 title={item.label} description={item.path ?? item.state ?? ""} hint={item.detail}>
+            <SettingsRowV2
+              title={item.label}
+              description={
+                <>
+                  {item.path ?? item.state ?? ""}
+                  <SettingsExplainV2 label={item.label}>{item.detail}</SettingsExplainV2>
+                </>
+              }
+            >
               <span class="select-text text-[12px] text-v2-text-text-muted">
                 {item.bytes === undefined
                   ? language.t("settings.storage.resources.unknown")

@@ -4,9 +4,15 @@ import { Show, createMemo, createResource, createSignal, type Component } from "
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { instanceIdentity, instanceIdentityBackup, instanceIdentityRestore, type IdentityBackup } from "@/utils/identity-api"
+import {
+  instanceIdentity,
+  instanceIdentityBackup,
+  instanceIdentityRestore,
+  type IdentityBackup,
+} from "@/utils/identity-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 /**
  * Community P1 — the instance's identity, and the one place a user can back it up.
@@ -161,8 +167,14 @@ export const SettingsIdentityV2: Component = () => {
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.identity.networkID")}
-          description={language.t("settings.identity.networkIDDescription")}
-          hint={language.t("settings.identity.networkIDHint")}
+          description={
+            <>
+              {language.t("settings.identity.networkIDDescription")}
+              <SettingsExplainV2 label={language.t("settings.identity.networkID")}>
+                {language.t("settings.identity.networkIDHint")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <div class="flex items-center gap-2">
             {/* Selectable: the whole purpose of showing it is that a user can hand it to someone. */}
@@ -177,8 +189,14 @@ export const SettingsIdentityV2: Component = () => {
 
         <SettingsRowV2
           title={language.t("settings.identity.backupTitle")}
-          description={language.t("settings.identity.backupDescription")}
-          hint={language.t("settings.identity.backupHint")}
+          description={
+            <>
+              {language.t("settings.identity.backupDescription")}
+              <SettingsExplainV2 label={language.t("settings.identity.backupTitle")}>
+                {language.t("settings.identity.backupHint")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <Show
             when={confirming()}
@@ -220,8 +238,14 @@ export const SettingsIdentityV2: Component = () => {
         */}
         <SettingsRowV2
           title={language.t("settings.identity.restoreTitle")}
-          description={language.t("settings.identity.restoreDescription")}
-          hint={language.t("settings.identity.restoreHint")}
+          description={
+            <>
+              {language.t("settings.identity.restoreDescription")}
+              <SettingsExplainV2 label={language.t("settings.identity.restoreTitle")}>
+                {language.t("settings.identity.restoreHint")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <input
             ref={(element) => (fileInput = element)}
@@ -245,9 +269,7 @@ export const SettingsIdentityV2: Component = () => {
           >
             {(bundle) => (
               <div class="flex flex-col items-end gap-1">
-                <span class="text-[11px] text-v2-text-text-muted">
-                  {language.t("settings.identity.restoreChosen")}
-                </span>
+                <span class="text-[11px] text-v2-text-text-muted">{language.t("settings.identity.restoreChosen")}</span>
                 {/* Selectable and monospaced like the id above it: the user is being asked to
                     confirm a key, so they have to be able to READ the key. */}
                 <span class="select-text truncate font-mono text-[11px] text-v2-text-text-muted">
@@ -269,8 +291,14 @@ export const SettingsIdentityV2: Component = () => {
         </SettingsRowV2>
         <SettingsRowV2
           title={language.t("settings.identity.rotateTitle")}
-          description={language.t("settings.identity.rotateDescription")}
-          hint={language.t("settings.identity.rotateHint")}
+          description={
+            <>
+              {language.t("settings.identity.rotateDescription")}
+              <SettingsExplainV2 label={language.t("settings.identity.rotateTitle")}>
+                {language.t("settings.identity.rotateHint")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <Show
             when={rotating()}

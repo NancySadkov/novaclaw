@@ -11,7 +11,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { PermissionMode, useLocal } from "@/context/local"
+import type { useLocal } from "@/context/local"
 import { useFile } from "@/context/file"
 import { ContentPart, DEFAULT_PROMPT, isPromptEqual, Prompt, usePrompt, ImageAttachmentPart } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
@@ -47,11 +47,7 @@ import { getCursorPosition } from "./prompt-input/editor-dom"
 import { createEditorCore } from "./prompt-input/editor-core"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
-import {
-  createPersistedPromptInputHistory,
-  type PromptInputHistory,
-  promptLength,
-} from "./prompt-input/history"
+import { createPersistedPromptInputHistory, type PromptInputHistory, promptLength } from "./prompt-input/history"
 import { createPromptInputHistoryController } from "./prompt-input/history-controller"
 import { createPromptInputKeyboardController } from "./prompt-input/keyboard-controller"
 import { createPromptInputPopoverController } from "./prompt-input/popover-controller"
@@ -84,13 +80,7 @@ export type PromptInputControls = {
   }
   model: {
     selection: ReturnType<typeof useLocal>["model"]
-    paid: boolean
     loading: boolean
-  }
-  // 1K: the create-time permission-mode droplist (only rendered on the new-session composer).
-  permissionMode: {
-    current: PermissionMode
-    select: (value: PermissionMode) => void
   }
   // WHOSE chat this is (mid-session only). Replaced the folder chip on 2026-08-21: a chat's folder
   // is its COLLEAGUE's folder now, so a per-chat move would leave the two disagreeing. Identity, not
@@ -124,12 +114,10 @@ export type PromptInputControls = {
   // The Remote-chat control (messenger-plan §6.2): which messenger chat this session lives in
   // remotely — accounts, this session's binding, and the connect/disconnect actions.
   remote: ComposerRemoteChatState
-  // The per-chat Strict-harness switch (jh.md): current = the effective state (session override →
-  // draft → global Settings default); set writes the per-session override (and stages it on drafts).
-  strict: {
-    current: { enabled?: boolean; attempts?: number; wallMinutes?: number }
-    set: (value: { enabled: boolean; attempts?: number; wallMinutes?: number }) => void
-  }
+  // ⚠️ No `permissionMode`, `strict` or `model.paid` here (2026-09-03): the controls that read them
+  // were deleted earlier in the sweep and the fields outlived them — the producer did real work (an
+  // optimistic write, a permission-mode escalation) to fill props nothing rendered. The composer's
+  // own permission mode and Strict state are read from `local` by `prompt-input/submit.ts`.
   session: {
     id?: string
     tabs: {
@@ -918,9 +906,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   type="submit"
                   disabled={!working() && blank()}
                   tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={
-                    <IconV2 name={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />
-                  }
+                  icon={<IconV2 name={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />}
                   variant="contrast"
                   class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
                   style={{

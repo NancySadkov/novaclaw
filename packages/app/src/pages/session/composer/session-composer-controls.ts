@@ -31,14 +31,7 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
-import {
-  switchFeature,
-  switchMode,
-  switchStrict,
-  switchType,
-  type SessionFeatureName,
-  type SessionModeName,
-} from "@/utils/fs-api"
+import { switchFeature, switchType, type SessionFeatureName, type SessionModeName } from "@/utils/fs-api"
 import { useSync } from "@/context/sync"
 import { useSessionView } from "@/pages/session/use-session-view"
 import { useTabs } from "@/context/tabs"
@@ -140,38 +133,6 @@ export function createPromptInputController(input: {
           description: `${language.t("session.control.reverted", { control: input.control })} (${errorMessage(error, language.t("common.requestFailed"))})`,
         }),
     })
-
-  const selectPermissionMode = (value: Parameters<typeof local.permissionMode.set>[0]) => {
-    const previous = local.permissionMode.current()
-    const id = input.sessionID()
-    const conn = server.current
-    const directory = sessionView.directory()
-    if (!id || !conn || !directory) {
-      // No live session yet: the choice is create-time only, so there is nothing to refuse it.
-      local.permissionMode.set(value)
-      return
-    }
-    optimistic({
-      set: local.permissionMode.set,
-      previous,
-      next: value,
-      write: switchMode(conn.http, { directory, sessionID: id, permissionMode: value }),
-      control: language.t("prompt.permissionMode.title"),
-    })
-  }
-
-  // The per-chat Strict switch (jh.md): this browser's explicit choice wins (it is what we last
-  // POSTed — it must not be shadowed by a not-yet-folded record), then the live session record
-  // (a fork's copied override, or one set from another client — P2 keeps it folded), then the
-  // global Settings → Strict default. Same local-first precedence as the permission-mode droplist.
-  const strictGlobal = () =>
-    (sync().data.config as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } }).strict ?? {}
-  const strictCurrent = () => {
-    const record = (
-      sessionView.record() as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } | undefined
-    )?.strict
-    return local.strict.current() ?? record ?? strictGlobal()
-  }
 
   // The Tuning toggles (introspection · quality · affective · thinkingBudget) — same local-first per
   // feature: this browser's explicit stance, then the session record, then the global config
@@ -334,9 +295,7 @@ export function createPromptInputController(input: {
    */
   const isDraft = () => input.sessionID() === undefined
   const featureOrigins = createMemo(() =>
-    isDraft()
-      ? ConfigProvenance.draftOrigins(projectDiscovered())
-      : ConfigProvenance.featureOrigins(resolvedConfig()),
+    isDraft() ? ConfigProvenance.draftOrigins(projectDiscovered()) : ConfigProvenance.featureOrigins(resolvedConfig()),
   )
   const projectLayer = createMemo(() =>
     isDraft()
@@ -345,9 +304,7 @@ export function createPromptInputController(input: {
   )
   /** The kernel's stance per switch — the session's resolution, or the folder's fold for a draft. */
   const kernelStances = () =>
-    isDraft()
-      ? ConfigProvenance.draftStances(projectDiscovered())
-      : ConfigProvenance.resolvedStances(resolvedConfig())
+    isDraft() ? ConfigProvenance.draftStances(projectDiscovered()) : ConfigProvenance.resolvedStances(resolvedConfig())
 
   /**
    * "Make Default for this Folder" — write this chat's declared stance into the folder's own
@@ -544,39 +501,7 @@ export function createPromptInputController(input: {
     },
     model: {
       selection: local.model,
-      paid: providers.paid().length > 0,
       loading: agentsQuery.isLoading || providersQuery.isLoading || globalProvidersQuery.isLoading,
-    },
-    permissionMode: {
-      current: local.permissionMode.current(),
-      select: selectPermissionMode,
-    },
-    strict: {
-      current: strictCurrent(),
-      set: (value) => {
-        // The draft signal is the instant UI truth (and the create-time payload); a live session
-        // ALSO persists the override server-side so the runner reads it on the next turn.
-        const previousStrict = local.strict.current()
-        const id = input.sessionID()
-        const conn = server.current
-        const directory = sessionView.directory()
-        if (!id || !conn || !directory) local.strict.set(value)
-        else
-          optimistic({
-            set: local.strict.set,
-            previous: previousStrict,
-            next: value,
-            write: switchStrict(conn.http, { directory, sessionID: id, strict: value }),
-            control: "Strict",
-          })
-        // The Strict harness executes autonomously — the runner's permission floor is Bypass
-        // (llm.ts strict gate). Raise the mode with the switch so the toggle just works; the
-        // popover says so out loud. Turning Strict off leaves the mode as the user set it.
-        if (value.enabled) {
-          const mode = local.permissionMode.current()
-          if (mode !== "bypass" && mode !== "yolo") selectPermissionMode("bypass")
-        }
-      },
     },
     // 🔴 WHOSE chat this is — replacing the folder chip that stood here (owner, 2026-08-21).
     //

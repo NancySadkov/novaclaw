@@ -30,9 +30,9 @@ import { ComputerProposal } from "./proposal"
  * > and never a substitute for it. A task supplied with no terminal checkpoint can never reach
  * > `Done` — it terminates `Blocked(done-unverifiable)` and says so.
  *
- * ⚠️ **{@link CHECKPOINT_LOOKAHEAD} widened WHICH frame can carry that answer and nothing else about
+ * ⚠️ **the one-level lookahead (`lookahead-checkpoint` below) widened WHICH frame can carry that answer and nothing else about
  * the law.** When the terminal checkpoint is the lookahead target it is asked by the harness, on a
- * harness-captured frame, and gated by {@link CHECKPOINT_CONFIRMATIONS} exactly like every other
+ * harness-captured frame, and gated by the one-re-ask confirmation gate (`confirm-checkpoint` below) exactly like every other
  * award — the evidence standard is unchanged; only the requirement that the answer arrive on the one
  * frame where the ratchet happened to be pointing at it is gone.
  *
@@ -133,10 +133,14 @@ export const DEFAULT_NO_PROGRESS_LIMIT = 4
  * 25/25** — the positive control, without which suppressing false awards is indistinguishable from
  * making the checkpoint unreachable.
  *
- * Cost: one extra adjudication per CANDIDATE award, never per step. Raising this number lowers the
- * false rate further (the samples are near-independent) at one call each.
+ * Cost: one extra adjudication per CANDIDATE award, never per step.
+ *
+ * ⚠️ The depth is FIXED at one re-ask, in prose, not a constant (2026-09-03). This used to be
+ * a `CHECKPOINT_CONFIRMATIONS = 1` documented as a dial whose raising "lowers the false rate further" —
+ * but the gate below asks exactly once more and never read the number, so raising it changed nothing
+ * except a test's arithmetic. A knob whose doc promises a dial and whose code ignores it is a lie told
+ * to the next tuner; the measured effect above was of one re-ask, and one re-ask is what ships.
  */
-export const CHECKPOINT_CONFIRMATIONS = 1
 
 /**
  * 🔴 **How far PAST the next unsatisfied checkpoint the battery may look on one frame. MEASURED,
@@ -171,9 +175,12 @@ export const CHECKPOINT_CONFIRMATIONS = 1
  * would be silent in a case it is written for.
  *
  * **Residual, named rather than hidden:** at depth 1 a run that clears TWO stages in one step still
- * jams. The knob is here; raising it costs one call per level per non-advancing step.
+ * jams. The depth is FIXED at one level, in prose (2026-09-03): this used to be a
+ * `CHECKPOINT_LOOKAHEAD = 1` documented as a knob whose raising "costs one call per level", but the
+ * probe below hard-codes `checkpointIndex + 1` and read the constant only as a boolean — setting it to
+ * 2 looked one level ahead, exactly as before. Widening the probe is a state-machine change, not a
+ * number; when someone makes it, the depth becomes a parameter of THAT loop.
  */
-export const CHECKPOINT_LOOKAHEAD = 1
 
 /** How many times one step may be re-prompted before the step is spent. G3: exactly one. */
 export const REPAIRS_PER_STEP = 1
@@ -437,7 +444,7 @@ export interface State {
   readonly confirming?: Measured
   /**
    * How many checkpoints the award currently being confirmed covers: 1 for the ordinary next-one
-   * award, 2 when {@link CHECKPOINT_LOOKAHEAD} found the run had already overshot. Parked beside
+   * award, 2 when the one-level lookahead (`lookahead-checkpoint` below) found the run had already overshot. Parked beside
    * `confirming` so the confirmation phase never has to re-derive which question it is confirming.
    */
   readonly awarding?: number
@@ -499,7 +506,7 @@ const voided = (state: State, reason: VoidReason, detail: string): Transition =>
 
 /**
  * `n/m`, `n/m?` when a checkpoint award was CLAIMED this step and the confirming re-ask did not
- * agree, and `n/m^` when the award came from {@link CHECKPOINT_LOOKAHEAD} — i.e. the run had already
+ * agree, and `n/m^` when the award came from the one-level lookahead (`lookahead-checkpoint` below) — i.e. the run had already
  * overshot and one earlier checkpoint was awarded by monotone inference rather than by being seen.
  * That distinction is reported, never hidden: `^` is the mark of an award nobody looked at directly.
  *
@@ -1505,7 +1512,7 @@ export function next(state: State, event: Event): Transition {
         attributed: attribution?.kind === "attributed",
       }
 
-      // 🔴 A CLAIMED checkpoint is not an awarded one. See {@link CHECKPOINT_CONFIRMATIONS} for the
+      // 🔴 A CLAIMED checkpoint is not an awarded one. See the one-re-ask confirmation gate (`confirm-checkpoint` below) for the
       // measurement: on the near-miss frame that actually produced the 2.2 false positive this
       // question answers `yes` ~40% of the time and `no` the rest, at temperature 0, so a single
       // sample turned into a permanent advance is the defect. Nothing else about the step waits on
@@ -1527,13 +1534,13 @@ export function next(state: State, event: Event): Transition {
         )
       }
 
-      // 🔴 The battery is a PROGRESS MARKER, not a stopwatch. See {@link CHECKPOINT_LOOKAHEAD}: a run
+      // 🔴 The battery is a PROGRESS MARKER, not a stopwatch. See the one-level lookahead (`lookahead-checkpoint` below): a run
       // that clears one screen per step outruns a one-question-per-frame ratchet, and the frame that
       // satisfies k+1 is gone by the time k lands. So when the next checkpoint says `no`, ask the one
       // AFTER it on the same frame — if that is true the run has already overshot, and the skipped
       // one is passed by the substrate's own monotone structure.
       const lookahead = spent.spec.checkpoints[spent.checkpointIndex + 1]
-      if (CHECKPOINT_LOOKAHEAD > 0 && lookahead !== undefined) {
+      if (lookahead !== undefined) {
         const probing: State = { ...spent, phase: "lookahead-checkpoint", confirming: measured }
         return ask(
           probing,

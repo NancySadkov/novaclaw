@@ -203,8 +203,14 @@ export const SettingsPoliciesSection: Component = () => {
             {/* 🔴 The fact FIRST, before any switch — principle 12(d). */}
             <SettingsRowV2
               title={language.t("policies.inForce.title")}
-              description={inForce()}
-              hint={language.t("policies.hint")}
+              description={
+                <>
+                  {inForce()}
+                  <SettingsExplainV2 label={language.t("policies.inForce.title")}>
+                    {language.t("policies.hint")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Value>{String(resolved().installed.length)}</Value>
             </SettingsRowV2>
