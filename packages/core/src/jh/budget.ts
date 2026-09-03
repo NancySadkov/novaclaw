@@ -19,7 +19,15 @@ export interface Telemetry {
 }
 export const emptyTelemetry: Telemetry = { attempts: 0, verifierFails: 0, parseFails: 0 }
 
-/** The harness's own difficulty read from runtime signals. */
+/**
+ * The harness's own difficulty read from runtime signals.
+ *
+ * ⚠️ NOT WIRED TO A BUDGET YET (2026-09-03, RF-05-8). The engine calls `budgetFor` with
+ * `emptyTelemetry` on purpose — a leaf's budget is seeded by the prior and fixed for that leaf, so a
+ * trivial-prior leaf can still exhaust — and `jh.md` §4/§6 now say so. This function is the read a
+ * CARRY-OVER seed would use (telemetry from a node's earlier leaves shaping the next leaf's budget);
+ * until something seeds it, `difficulty_prior` is the whole budget and this is a tested idea.
+ */
 export function observedDifficulty(t: Telemetry): JhStep.DifficultyPrior {
   if (t.verifierFails >= 2 || t.parseFails >= 2) return "hard"
   if (t.verifierFails === 1 || t.parseFails === 1) return "moderate"

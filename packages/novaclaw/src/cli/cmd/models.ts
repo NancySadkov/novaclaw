@@ -10,6 +10,8 @@ import { Config } from "@/config/config"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import { CommandSpec } from "../command-spec"
+import { DatabasePath } from "@novaclaw/core/database/db-path"
+import { InstallationChannel } from "@novaclaw/core/installation/version"
 
 export const ModelsCommand = effectCmd({
   ...CommandSpec.models,
@@ -32,6 +34,11 @@ export const ModelsCommand = effectCmd({
         type: "boolean",
       }),
   handler: Effect.fn("Cli.models")(function* (args) {
+    // Which store this listing comes from — as a `#` line, so `models | grep spark-` and every
+    // other pipe over this output is unchanged. A from-source run is channel `local` on
+    // `novaclaw-local.db`; the packaged app is on `novaclaw.db`, with a different provider catalog,
+    // and the model-not-found message tells the user to compare the two as if they were one.
+    UI.println(`# store: ${DatabasePath.path()} (channel ${InstallationChannel})`)
     if (args.refresh) {
       yield* ModelsDev.Service.use((s) => s.refresh(true))
       UI.println(UI.Style.TEXT_SUCCESS_BOLD + "Models cache refreshed" + UI.Style.TEXT_NORMAL)

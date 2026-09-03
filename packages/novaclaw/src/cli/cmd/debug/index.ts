@@ -1,6 +1,7 @@
 import { ConfigPluginGlob } from "@novaclaw/core/config/plugin/glob"
 import { Global } from "@novaclaw/core/global"
-import { InstallationVersion } from "@novaclaw/core/installation/version"
+import { InstallationChannel, InstallationVersion } from "@novaclaw/core/installation/version"
+import { DatabasePath } from "@novaclaw/core/database/db-path"
 import { Flag } from "@novaclaw/core/flag/flag"
 import os from "os"
 import { Duration, Effect } from "effect"
@@ -53,6 +54,12 @@ const InfoCommand = effectCmd({
     const terminal = [termProgram, process.env.TERM].filter((item): item is string => Boolean(item)).join(" / ")
 
     console.log(`novaclaw version: ${InstallationVersion}`)
+    // Which STORE this process is on — principle 12(d), say what is in force. A from-source run is
+    // channel `local` and reads `novaclaw-local.db`; the packaged app reads `novaclaw.db`. Two stores,
+    // two provider catalogs, and until 2026-09-03 nothing the CLI printed said which one it was on
+    // while its own model-not-found message told the user to compare them.
+    console.log(`channel: ${InstallationChannel}`)
+    console.log(`database: ${DatabasePath.path()}`)
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
     // ⚠️ This used to print `config.plugins`. Ruling 5 / step 17 deleted that key — an external
@@ -69,9 +76,9 @@ const InfoCommand = effectCmd({
       return
     }
     const files = yield* Effect.promise(() =>
-      Array.fromAsync(
-        new Bun.Glob(ConfigPluginGlob.PATTERN).scan({ cwd: configDir, absolute: true, dot: true }),
-      ).catch(() => [] as string[]),
+      Array.fromAsync(new Bun.Glob(ConfigPluginGlob.PATTERN).scan({ cwd: configDir, absolute: true, dot: true })).catch(
+        () => [] as string[],
+      ),
     )
     if (files.length === 0) {
       console.log("none")

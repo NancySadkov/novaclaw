@@ -36,7 +36,10 @@ export function level(): ConfigLog.Level {
 }
 
 export function maxAgeMs(): number {
-  return (current.retention_days ?? MAX_AGE_MS / DAY_MS) * DAY_MS
+  // Clamped to a day: `apply` takes the stored value without decoding (the 1–365 bound in
+  // `config/log.ts` is applied on the WRITE path only), and a stored `0` would make every flush
+  // rotate, gzip and sweep. Whichever door wrote it, the writer cannot be driven into that loop.
+  return Math.max(1, current.retention_days ?? MAX_AGE_MS / DAY_MS) * DAY_MS
 }
 
 function eventFrom(message: unknown): string | undefined {
