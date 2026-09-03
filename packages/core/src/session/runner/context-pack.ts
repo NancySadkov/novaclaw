@@ -927,16 +927,18 @@ export const pack = (
   }
 }
 
-/** The runner-facing composition: budget from the request's own system/tools, then pack. */
-const enforceSystemBudgets = (input: {
+/**
+ * REPORT a system-category overrun; never enforce one. The system prompt is protected: it is never
+ * truncated, and the finding says so (`protected: true`, `afterTokens === beforeTokens`). Until
+ * 2026-09-03 this was `enforceSystemBudgets`, returned a copy of the input and a `changed` that was
+ * always `false`, and threaded both through `packRequest` — a name and a shape that lied about what
+ * the code does.
+ */
+const reportSystemOverrun = (input: {
   readonly system: ReadonlyArray<SystemPart>
   readonly contextSize: number
   readonly profile: ContextBudget.Profile
-}): {
-  readonly system: SystemPart[]
-  readonly changed: boolean
-  readonly findings: SessionMessage.ContextFinding[]
-} => {
+}): SessionMessage.ContextFinding[] => {
   const systemBefore = input.system.reduce((sum, part) => sum + Token.estimate(part.text), 0)
   const systemLimit = ContextBudget.cap(input.contextSize, input.profile.system)
   const findings: SessionMessage.ContextFinding[] = []
@@ -950,7 +952,7 @@ const enforceSystemBudgets = (input: {
       affectedMessages: 0,
       protected: true,
     })
-  return { system: [...input.system], changed: false, findings }
+  return findings
 }
 
 /**
@@ -1029,10 +1031,10 @@ export const packRequest = (input: {
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
-  const systemBudget =
+  const systemFindings =
     input.profile === undefined
-      ? { system: [...input.request.system], changed: false, findings: [] }
-      : enforceSystemBudgets({
+      ? []
+      : reportSystemOverrun({
           system: input.request.system,
           contextSize,
           profile: input.profile,
@@ -1053,7 +1055,7 @@ export const packRequest = (input: {
       : PromptEstimate.unsupported(input.request, input.imagePatchPixels).marginTokens
   const correctedBudget = budget({
     contextSize,
-    system: systemBudget.system,
+    system: input.request.system,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
     prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
@@ -1078,9 +1080,9 @@ export const packRequest = (input: {
   })
   return {
     ...result,
-    changed: result.changed || systemBudget.changed || memoryBudget.changed,
-    findings: [...systemBudget.findings, ...memoryBudget.findings, ...result.findings],
+    changed: result.changed || memoryBudget.changed,
+    findings: [...systemFindings, ...memoryBudget.findings, ...result.findings],
     contextSize,
-    system: systemBudget.system,
+    system: input.request.system,
   }
 }

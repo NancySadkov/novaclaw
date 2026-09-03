@@ -58,6 +58,7 @@ import { join } from "node:path"
 
 import { writeDiagnostic } from "./lib/diagnostic"
 import { check, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
+import { sweepStrayServers } from "./lib/stray-servers"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as CommitPressure from "./lib/commit-pressure"
 import * as ChildExit from "./lib/child-exit"
@@ -109,6 +110,13 @@ const enforceTestMemory = (label: string, ownWorkInFlight = false) => {
 const liveChildren = new Set<ChildProcess>()
 /** Detached so `abort` can stop the sampler without referencing a `const` declared below it. */
 let stopSampler: () => void = () => {}
+
+// The owner's directive — "launching new bun or launching build kills existing buns" — reached
+// `dev`, `dev:web` and the desktop prebuild but not the heaviest bun launch in the repo. Swept
+// BEFORE the admission check below, so four idle `serve` backends make the gate proceed rather
+// than refuse; `stray-servers.test.ts` pins that no heavy-guard label is ever a sweep target, which
+// is what makes sweeping in front of a gate safe for a concurrent session's own run.
+sweepStrayServers({ reason: "the test suite" })
 
 enforceTestMemory("the test suite")
 

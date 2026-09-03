@@ -497,7 +497,15 @@ export const defaultLayer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(Global.defaultLayer))
 
-export const node = makeGlobalNode({ service: Service, layer: layerFromPath(path()), deps: [] })
+// Lazy, like `defaultLayer`: `path()` used to be evaluated at MODULE LOAD here (an eager argument)
+// while `defaultLayer` re-evaluated it inside `Layer.unwrap`, so an environment change between
+// import and build gave the two entry points two filenames — and since `serviceLayer` is the
+// shared memo key, whichever built first won and the other's file was silently ignored.
+export const node = makeGlobalNode({
+  service: Service,
+  layer: Layer.unwrap(Effect.sync(() => layerFromPath(path()))),
+  deps: [],
+})
 
 // Periodically truncate the WAL so the `-wal` sidecar doesn't grow without bound
 // during long-lived write bursts (only a PASSIVE checkpoint runs at boot otherwise).

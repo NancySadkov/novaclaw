@@ -37,8 +37,37 @@ const refuseRealDatabaseUnderTest = () => {
   )
 }
 
+/**
+ * The sentence printed ONCE when `NOVACLAW_DB` is set and nothing moved the home, or `undefined`
+ * when the isolation is whole. Pure, so `db-path-half-isolation.test.ts` can drive it.
+ *
+ * 🔴 `NOVACLAW_DB` is HALF of an isolation lever, and the half that looks like all of it. It moves
+ * one file. `Global.Path.data` — `memory/`, `adhoc-tools/`, `plugins/`, `scratch/`, the log — and
+ * the config dir stay on the real instance. Measured 2026-08-06: auto-recall injected the owner's
+ * own memory graph into a "isolated" run and cost a day chasing a phantom cross-tenant leak. The
+ * whole lever is `NOVACLAW_HOME` (or `--home`), which moves all four base directories at once.
+ */
+export function halfIsolationWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (!Flag.NOVACLAW_DB) return undefined
+  if (env.NOVACLAW_HOME || env.XDG_DATA_HOME) return undefined
+  return (
+    `NOVACLAW_DB moves only the database file (${Flag.NOVACLAW_DB}); the rest of the instance — ` +
+    `memory, adhoc tools, plugins, scratch and the log under ${Global.Path.data}, and the config dir — ` +
+    `is still the real one. For a whole isolated instance set NOVACLAW_HOME (or pass --home).`
+  )
+}
+
+let warnedHalfIsolation = false
+
 export function path() {
   if (Flag.NOVACLAW_DB) {
+    // Once per process, and not under the test runner: its preload pins `NOVACLAW_DB=:memory:`
+    // on purpose and the rigs go through `isolated-home.ts`, which sets the whole home.
+    if (!warnedHalfIsolation && process.env.NODE_ENV !== "test") {
+      warnedHalfIsolation = true
+      const warning = halfIsolationWarning()
+      if (warning) console.warn(warning)
+    }
     if (Flag.NOVACLAW_DB === ":memory:" || isAbsolute(Flag.NOVACLAW_DB)) return Flag.NOVACLAW_DB
     return join(Global.Path.data, Flag.NOVACLAW_DB)
   }
