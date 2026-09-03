@@ -7,7 +7,7 @@ import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/
 import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
-import { formatServerError, isMissingDirectoryError } from "@/utils/server-errors"
+import { formatServerError, isUnreachableError, isMissingDirectoryError } from "@/utils/server-errors"
 import type { Translator } from "@/context/language"
 import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery } from "../server-sync"
@@ -139,6 +139,13 @@ export async function bootstrapGlobal(input: {
   }
   input.setGlobalStore("error", toInitError(slowErrs[0], input.translate))
   console.error("Failed to bootstrap instance globals", slowErrs[0])
+  // 🔴 A liveness fact is told ONCE, by the surface that owns liveness. These three fetches go out
+  // together on every (re)connect, so an instance that is momentarily not there fails all three and
+  // used to raise "Request failed — Failed to fetch (+2 more)": one fact, three times, as an error
+  // the user can do nothing about, while the connection screen and banner were already saying it in
+  // words that promise recovery. A server that ANSWERED with a fault still toasts — that is
+  // something the user can act on, and `globalStore.error` alone would only reach the error page.
+  if (slowErrs.every(isUnreachableError)) return
   showErrors({
     errors: slowErrs,
     title: input.requestFailedTitle,

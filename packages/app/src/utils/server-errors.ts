@@ -52,6 +52,30 @@ function unwrapNamedError(error: unknown): unknown {
   return error
 }
 
+/**
+ * Did the request never reach a server, as opposed to reaching one that answered with a fault?
+ *
+ * 🔴 The distinction is the difference between two USER-FACING stories, which is why it is a
+ * predicate and not an `instanceof` at a call site. A server that answers `{name, data}` is telling
+ * the user something they can act on. A `TypeError: Failed to fetch` says only that the instance was
+ * not there — a LIVENESS fact, which the connection surfaces already own and already word better
+ * ("Still trying. Your work is safe; this clears by itself once the instance is back").
+ *
+ * Reported from a live build 2026-09-03: some time after startup, with no agent running, the shell
+ * raised *"Request failed — Failed to fetch (+2 more)"*. That was the global bootstrap's three
+ * fetches (config, providers, paths) failing together on a reconnect, i.e. one liveness fact told
+ * three times, as an error the user could do nothing about.
+ *
+ * The test is `cause.body`/`cause.status`: `sdk/js/src/error-interceptor.ts` attaches both when a
+ * server ANSWERED, and passes a transport `Error` through untouched.
+ */
+export function isUnreachableError(error: unknown) {
+  if (!(error instanceof Error)) return false
+  const cause: unknown = error.cause
+  if (!cause || typeof cause !== "object") return true
+  return !("body" in cause) && !("status" in cause)
+}
+
 export function isSessionNotFoundError(error: unknown, sessionID: string) {
   // Bare client-synthesized Error (result-tuple path).
   if (error instanceof Error && error.message === `Session not found: ${sessionID}`) return true

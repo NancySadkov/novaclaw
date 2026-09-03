@@ -7,6 +7,7 @@ import {
   isMissingDirectoryError,
   isSessionNotFoundError,
   parseReadableConfigInvalidError,
+  isUnreachableError,
 } from "./server-errors"
 
 function fill(text: string, vars?: TranslationParams) {
@@ -254,5 +255,28 @@ describe("isMissingDirectoryError", () => {
         data: { field: "workspace", message: "Directory does not exist: /gone" },
       }),
     ).toBe(false)
+  })
+})
+
+// 🔴 The split between "the instance is not there" and "the instance said no". Reported from a live
+// build: the global bootstrap's three fetches failed together on a reconnect and the shell raised
+// "Request failed — Failed to fetch (+2 more)" — one liveness fact, told three times, as an error
+// the user could do nothing about while the connection surfaces were already saying it properly.
+describe("isUnreachableError", () => {
+  test("a transport failure is unreachable", () => {
+    expect(isUnreachableError(new TypeError("Failed to fetch"))).toBe(true)
+    expect(isUnreachableError(new Error("Load failed"))).toBe(true)
+  })
+
+  test("a server that ANSWERED with a fault is not", () => {
+    expect(
+      isUnreachableError(new Error("boom", { cause: { body: { name: "NotFoundError", data: {} }, status: 404 } })),
+    ).toBe(false)
+    expect(isUnreachableError(new Error("boom", { cause: { status: 500 } }))).toBe(false)
+  })
+
+  test("a non-Error is nobody's liveness claim", () => {
+    expect(isUnreachableError("Failed to fetch")).toBe(false)
+    expect(isUnreachableError(undefined)).toBe(false)
   })
 })
