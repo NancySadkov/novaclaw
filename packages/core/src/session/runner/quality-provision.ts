@@ -80,6 +80,35 @@ export interface Proposal {
 export const FILE_RENDERED_SLOTS: readonly (keyof Commands)[] = ["syntax", "check"]
 
 /**
+ * The rule at the MODEL's door: a `syntax`/`check` override must say where the file goes.
+ *
+ * Rung-1 verification cannot catch a whole-project command filed in a per-file slot — it strips
+ * `{file}` before running, so `cargo check --quiet --workspace` exits 0, is saved, and from the
+ * next write on renders as `cargo check --quiet --workspace "src/lib.rs"`: exit 1, a fault that
+ * does not exist reported on every write, forever, and one the model cannot fix. The exact-value
+ * migration above only knows the old scan's seven strings, so a variant was never repaired.
+ *
+ * ⚠️ This is the TOOL's door only, and that is deliberate. The template here is MODEL-authored in
+ * this very call, so asking it to write `{file}` where the path goes costs nothing and removes the
+ * guess. Settings → Quality is the USER's door: a hand-written `ruff check` with no placeholder is
+ * correct there (`Quality.renderCommand` appends the path), which is why the migration refuses to
+ * judge by "has no `{file}`" and why this predicate is not applied to stored values.
+ */
+export function overrideProblem(overrides: Partial<Record<keyof Commands, string | undefined>>): string | undefined {
+  for (const slot of FILE_RENDERED_SLOTS) {
+    const value = overrides[slot]
+    if (value && !value.includes("{file}"))
+      return (
+        `\`${slot}\` runs PER WRITTEN FILE, so its command must say where the file goes: put \`{file}\` ` +
+        `where the path belongs (for example \`ruff check {file}\`). \`${value}\` has no placeholder. ` +
+        `If it is a whole-project verifier, pass it as \`typecheck\`, \`test\` or \`lint\` instead — those are ` +
+        `never rendered with a file. Nothing was verified or saved.`
+      )
+  }
+  return undefined
+}
+
+/**
  * ── THE MIGRATION FOR THE STORES THAT WERE WRITTEN BEFORE THAT FIX ──────────────────────────────
  *
  * `FILE_RENDERED_SLOTS` tightened the RULES. It did nothing for the DATA: an instance provisioned

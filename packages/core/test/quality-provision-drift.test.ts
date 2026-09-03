@@ -234,3 +234,19 @@ describe("QE-A: the scan never claims a slot the runner renders a FILE into", ()
     expect(QualityProvision.verifiableCommand("ruff check {file}")).toBe("ruff check")
   })
 })
+
+describe("the model's per-file overrides must say where the file goes", () => {
+  test("🔴 a whole-project command in a per-file slot is refused with the remedy, before anything runs", () => {
+    const problem = QualityProvision.overrideProblem({ check: "cargo check --quiet --workspace" })
+    expect(problem).toContain("`check` runs PER WRITTEN FILE")
+    expect(problem).toContain("{file}")
+    expect(problem).toContain("`typecheck`, `test` or `lint`")
+    expect(QualityProvision.overrideProblem({ syntax: "python -m py_compile" })).toBeDefined()
+  })
+  test("a placeholder satisfies it, whole-project slots are never asked, and empty is fine", () => {
+    expect(QualityProvision.overrideProblem({ check: "ruff check {file}" })).toBeUndefined()
+    expect(QualityProvision.overrideProblem({ typecheck: "cargo check --quiet", test: "cargo test" })).toBeUndefined()
+    expect(QualityProvision.overrideProblem({})).toBeUndefined()
+    expect(QualityProvision.overrideProblem({ check: undefined })).toBeUndefined()
+  })
+})

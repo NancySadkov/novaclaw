@@ -162,6 +162,11 @@ export const layer = Layer.effectDiscard(
                   // the common Windows case backwards.
                   shell: Shell.agentShellIsPosix() ? "posix" : "cmd",
                 })
+                // The model's per-file overrides must carry `{file}`: rung-1 verification strips it and
+                // so cannot tell a whole-project verifier filed in a per-file slot from a real one
+                // (see `QualityProvision.overrideProblem`). Refused before anything runs or lands.
+                const problem = QualityProvision.overrideProblem(input.commands ?? {})
+                if (problem !== undefined) return yield* Effect.fail(new ToolFailure({ message: problem }))
                 const merged: { -readonly [K in keyof Commands]: Commands[K] } = { ...proposal.commands }
                 for (const [key, value] of Object.entries(input.commands ?? {}))
                   if (value) merged[key as keyof Commands] = value
@@ -183,14 +188,37 @@ export const layer = Layer.effectDiscard(
                 // The CONFIG half: this call is about to persist `quality.commands` into the
                 // instance settings store, a durable host mutation under its own action name.
                 // It does NOT cover the execution below — see the `bash` assert in the loop.
+                //
+                // ⚠️ `save` names the exact `slot: command` strings, never `"*"` (2026-09-03). `quality`
+                // is a PRIVILEGED key — command lines the runner executes — and `configure` saves
+                // `[key]` for that reason; a wildcard "always" answered once to a routine card here was
+                // a standing grant to file ANY command into the project's gates in every later session.
                 yield* permission.assert({
                   action: "provision",
                   resources: candidates.map(([key, command]) => `${key}: ${command}`),
-                  save: ["*"],
+                  save: candidates.map(([key, command]) => `${key}: ${command}`),
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
+                // THE EXECUTION HALF, for EVERY command that will be stored — not only the verified
+                // ones. Until 2026-09-03 this assert sat inside `if (verify !== false)`, a model-set
+                // flag, so a write-only call stored strings that `runQualityCheck` then executes as the
+                // project's own gates on later turns without any `bash` rule ever seeing them. Same
+                // shape as `tool/bash.ts` (`resources: [command]`, `save: [command]`): one vocabulary,
+                // so an "always allow" answered for a command is the same grant whichever tool runs it,
+                // and every bash rule — mode denies, the switch, saved answers — applies here for free.
+                for (const [, template] of candidates) {
+                  const command = QualityProvision.verifiableCommand(template)
+                  yield* permission.assert({
+                    action: "bash",
+                    resources: [command],
+                    save: [command],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                }
                 const dropped: string[] = []
                 if (input.verify !== false) {
                   const shell = Shell.agentDefault()
@@ -201,29 +229,7 @@ export const layer = Layer.effectDiscard(
                     // as a missing toolchain: a good per-file check discarded and the reason
                     // misreported (ruling 2). `template` is what gets SAVED; `command` is what runs.
                     const command = QualityProvision.verifiableCommand(template)
-                    // ⚠️ THE EXECUTION HALF, and it must be spelled `bash`. Verification runs this
-                    // command string through the agent shell with the host user's authority, and the
-                    // string can come straight from the MODEL (`input.commands` wins over the scan).
-                    // Asserting only `provision` above made this a second door onto the shell that
-                    // every `bash` rule missed by name: "Ask before every change" promises the user
-                    // is asked "before it runs a shell command" (i18n `prompt.features.
-                    // askBeforeChanges.description`) and its overlay lists `bash`, so provisioning
-                    // executed without ever asking. Enumerating `provision` in each such rule list
-                    // would patch this instance and leave the class; asserting the action that
-                    // MATCHES WHAT WE ARE DOING makes every bash rule — mode denies, the switch,
-                    // saved user answers, and any rule added later — apply here for free.
-                    //
-                    // Same shape as `tool/bash.ts` deliberately (`resources: [command]`,
-                    // `save: [command]`): one vocabulary means an "always allow" answered for a
-                    // command is the same grant whichever tool runs it.
-                    yield* permission.assert({
-                      action: "bash",
-                      resources: [command],
-                      save: [command],
-                      sessionID: context.sessionID,
-                      agent: context.agent,
-                      source,
-                    })
+                    // Already spent as `bash` above, for this and every other stored command.
                     const run = yield* appProcess
                       .run(
                         ChildProcess.make(command, [], {
