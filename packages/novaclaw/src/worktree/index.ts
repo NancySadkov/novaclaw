@@ -659,7 +659,11 @@ export const layer: Layer.Layer<
       // ⚠️ `childOutput`, deliberately NOT `reason`: this matches on git's own wording, so our caught
       // spawn failure must never be able to satisfy it. A worktree we could not even ask about is not
       // a worktree we know to be dirty.
-      if (removed.code !== 0 && input.force !== true && /use --force|not empty|contains modified/i.test(childOutput(removed))) {
+      if (
+        removed.code !== 0 &&
+        input.force !== true &&
+        /use --force|not empty|contains modified/i.test(childOutput(removed))
+      ) {
         return yield* new DirtyWorktreeError({
           // ⚠️ The CALLER's path, not git's `entry.path`. git reports worktrees with forward slashes
           // on Windows, so `entry.path` differs from the string the client passed in — and this field
@@ -821,9 +825,13 @@ export const layer: Layer.Layer<
       if (base.ref !== base.name && sep > 0) {
         const remote = base.ref.slice(0, sep)
         const branch = base.ref.slice(sep + 1)
+        // In the WORKTREE, not the user's primary checkout: a linked worktree shares the object store
+        // and the remotes, so the fetch lands the same refs, but `FETCH_HEAD` and any hook output
+        // stay under the worktree's own gitdir instead of appearing in a checkout the user never
+        // asked NovaClaw to touch. Principle 11: the primary checkout is read-only to us.
         yield* gitExpect(
           ["fetch", remote, branch],
-          { cwd: ctx.worktree },
+          { cwd: worktreePath },
           (r) => new ResetFailedError({ message: reason(r, `Failed to fetch ${base.ref}`) }),
         )
       }

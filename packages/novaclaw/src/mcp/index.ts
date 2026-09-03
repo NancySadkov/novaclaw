@@ -8,6 +8,7 @@ import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/ind
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { McpChildEnv } from "./child-env"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import {
   ListRootsRequestSchema,
@@ -522,11 +523,9 @@ export const layer = Layer.effect(
         command: cmd,
         args,
         cwd,
-        env: {
-          ...process.env,
-          ...(cmd === "novaclaw" ? { BUN_BE_BUN: "1" } : {}),
-          ...mcp.environment,
-        },
+        // The SDK's default set plus what this server's config DECLARES — never the whole of
+        // `process.env`, which is where this instance's own secrets live. See `child-env.ts`.
+        env: McpChildEnv.childEnvironment({ command: cmd, declared: mcp.environment }),
       })
 
       return yield* connectTransport(transport, connectTimeout).pipe(
