@@ -202,6 +202,13 @@ export interface PutInput {
   readonly system?: true
 }
 
+export interface ReplaceSetInput {
+  readonly sessionID: SessionSchema.ID
+  readonly kind: string
+  readonly items: ReadonlyArray<{ readonly id: string; readonly value: unknown }>
+  readonly system?: true
+}
+
 export interface ReadInput {
   readonly sessionID: SessionSchema.ID
   readonly kind: string
@@ -228,6 +235,16 @@ export interface Interface {
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
   readonly list: (input: Omit<ReadInput, "id">) => Effect.Effect<ReadonlyArray<Entry>, ComponentError>
   readonly put: (input: PutInput) => Effect.Effect<Entry, ComponentError>
+  /**
+   * Replace every row of a SET kind for one session, in one transaction, with each item validated
+   * exactly as {@link put} validates it (excess-property decode, `validateWrite`, lifetime).
+   *
+   * ⚠️ This is the door the two kernel plan writers (`session/todo.ts`, `session/plan.ts`) used to
+   * walk around with a raw `DELETE … kind = 'plan'` + `INSERT`, so nothing above ran for them: a
+   * `PlanStep` gaining a required field would have kept both compiling and produced rows
+   * `decodeStored` refuses at the READ, far from the writer. Projected kinds have no set to replace.
+   */
+  readonly replaceSet: (input: ReplaceSetInput) => Effect.Effect<void, ComponentError>
   /**
    * `system` claims kernel authority, exactly as `put` does — and it defaults to FALSE, so the
    * agent-facing component tool (which passes no flag) cannot clear a system-owned component.
@@ -696,6 +713,60 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       }))!
     })
 
+    const replaceSet = Effect.fn("SessionComponent.replaceSet")(function* (input: ReplaceSetInput) {
+      const definition = yield* definitionOf(input.kind)
+      if (definition.cardinality !== "set")
+        return yield* new RegistryError({ message: `${definition.kind} is not a set; use put` })
+      if (definition.projection)
+        return yield* new RegistryError({ message: `${definition.kind} is projected; it has no set to replace` })
+      // Validate EVERYTHING before writing ANYTHING: a refusal that half-replaced the set would be
+      // worse than the raw SQL this replaces.
+      const rows: Array<{ componentID: string; value: Schema.Json }> = []
+      for (const item of input.items) {
+        const componentID = yield* storedID(definition, item.id)
+        const put: PutInput = { sessionID: input.sessionID, kind: input.kind, id: item.id, value: item.value }
+        yield* assertLifetime(definition, put)
+        const decoded = yield* decodeWrite(definition, item.value)
+        if (definition.validateWrite)
+          yield* definition
+            .validateWrite({ id: item.id, value: decoded, system: input.system === true })
+            .pipe(Effect.mapError((cause) => projectionFailure(definition, "Writing", cause)))
+        rows.push({ componentID, value: yield* encodeInput(definition, decoded) })
+      }
+      const now = Date.now()
+      yield* db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx
+              .delete(SessionComponentTable)
+              .where(
+                and(
+                  eq(SessionComponentTable.session_id, input.sessionID),
+                  eq(SessionComponentTable.kind, definition.kind),
+                ),
+              )
+              .run()
+            if (rows.length === 0) return
+            yield* tx
+              .insert(SessionComponentTable)
+              .values(
+                rows.map((row) => ({
+                  session_id: input.sessionID,
+                  kind: definition.kind,
+                  component_id: row.componentID,
+                  schema_version: definition.version,
+                  lifetime: definition.lifetime,
+                  value: row.value,
+                  time_created: now,
+                  time_updated: now,
+                })),
+              )
+              .run()
+          }),
+        )
+        .pipe(Effect.orDie)
+    })
+
     const remove = Effect.fn("SessionComponent.remove")(function* (
       input: Omit<ReadInput, "attempt" | "now"> & { readonly system?: boolean },
     ) {
@@ -753,6 +824,7 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       get,
       list,
       put,
+      replaceSet,
       remove,
     })
   })

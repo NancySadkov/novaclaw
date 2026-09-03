@@ -69,43 +69,34 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const events = yield* EventV2.Service
+    const components = yield* SessionComponentRegistry.Service
 
+    /**
+     * Writes the session's `plan` set through the registry — `replaceSet` decodes and validates
+     * every step the way `put` does — after clearing the legacy `todo` rows the read path falls
+     * back to. Until 2026-09-03 this was a raw `DELETE … kind = 'plan'` + `INSERT`, so none of the
+     * registry's rules ran for the model's own plan.
+     *
+     * OWNERSHIP of the `plan` set: it belongs to whichever planner is ACTIVE — this writer when the
+     * model calls `todowrite`, `SessionPlan.projectJh` while a strict drain runs the JH tree. The
+     * two cannot be active at once: JH's steps execute against JH's own tool table, which has no
+     * `todowrite`. So the last writer is the current planner, by construction rather than by luck,
+     * and both writers say so.
+     */
     const update = Effect.fn("SessionTodo.update")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly todos: ReadonlyArray<Info>
     }) {
-      yield* db
-        .transaction((tx) =>
-          Effect.gen(function* () {
-            yield* tx
-              .delete(SessionComponentTable)
-              .where(and(eq(SessionComponentTable.session_id, input.sessionID), eq(SessionComponentTable.kind, "plan")))
-              .run()
-            yield* tx.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
-            if (input.todos.length === 0) return
-            yield* tx
-              .insert(SessionComponentTable)
-              .values(
-                input.todos.map((todo, position) => ({
-                  session_id: input.sessionID,
-                  kind: "plan",
-                  component_id: SessionComponentRegistry.planComponentID(position),
-                  schema_version: 1,
-                  lifetime: "entity" as const,
-                  value: {
-                    position,
-                    text: todo.content,
-                    status: todo.status,
-                    priority: todo.priority,
-                    verdict: null,
-                  },
-                  time_created: Date.now(),
-                  time_updated: Date.now(),
-                })),
-              )
-              .run()
-          }),
-        )
+      yield* db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run().pipe(Effect.orDie)
+      yield* components
+        .replaceSet({
+          sessionID: input.sessionID,
+          kind: "plan",
+          items: input.todos.map((todo, position) => ({
+            id: SessionComponentRegistry.planComponentID(position),
+            value: { position, text: todo.content, status: todo.status, priority: todo.priority, verdict: null },
+          })),
+        })
         .pipe(Effect.orDie)
       yield* events.publish(Event.Updated, input)
     })
@@ -118,6 +109,14 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EventV2.defaultLayer), Layer.provide(Database.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(EventV2.defaultLayer),
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(SessionComponentRegistry.defaultLayer),
+)
 
-export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node, Database.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer,
+  deps: [EventV2.node, Database.node, SessionComponentRegistry.node],
+})

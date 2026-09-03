@@ -12,10 +12,13 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionComponentTable, SessionTable, TodoTable } from "@novaclaw/core/session/sql"
 import { SessionTodo } from "@novaclaw/core/session/todo"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionPlan } from "@novaclaw/core/session/plan"
 import { testEffect } from "./lib/effect"
 
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionTodo.node])))
+const it = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionComponentRegistry.node, SessionTodo.node])),
+)
 const sessionID = SessionV2.ID.make("ses_todo_test")
 
 const setup = Effect.gen(function* () {
@@ -38,6 +41,7 @@ describe("SessionTodo", () => {
     Effect.gen(function* () {
       yield* setup
       const { db } = yield* Database.Service
+      const components = yield* SessionComponentRegistry.Service
       const events = yield* EventV2.Service
       const todos = yield* SessionTodo.Service
       const published = new Array<EventV2.Payload>()
@@ -102,6 +106,7 @@ describe("SessionTodo", () => {
     Effect.gen(function* () {
       yield* setup
       const { db } = yield* Database.Service
+      const components = yield* SessionComponentRegistry.Service
       const draft = {
         goal: "Run the focused test",
         size: "atomic" as const,
@@ -119,7 +124,7 @@ describe("SessionTodo", () => {
         ],
         telemetry: new Map(),
       }
-      yield* SessionPlan.projectJh(db, { sessionID, goal: "Ship C8", state, now: 456 })
+      yield* SessionPlan.projectJh(components, { sessionID, goal: "Ship C8", state, now: 456 })
 
       const rows = yield* db
         .select()
@@ -144,7 +149,7 @@ describe("SessionTodo", () => {
         },
       ])
 
-      yield* SessionPlan.projectJh(db, {
+      yield* SessionPlan.projectJh(components, {
         sessionID,
         goal: "Ship C8",
         state: {

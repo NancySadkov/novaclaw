@@ -22,6 +22,7 @@ import { SessionExecutionAttempt } from "../execution-attempt"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
 import { SessionPlan } from "../plan"
+import type { SessionComponentRegistry } from "../component-registry"
 import { SessionScheduler } from "../scheduler"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
@@ -52,6 +53,8 @@ export interface Dependencies {
   readonly scheduler: SessionScheduler.Interface
   readonly db: Database.Interface["db"]
   readonly routeProfiles: ModelRouteProfileStore.Interface
+  /** The component registry: `SessionPlan.projectJh` writes the goal and plan through it. */
+  readonly components: SessionComponentRegistry.Interface
 }
 
 /**
@@ -633,7 +636,7 @@ export const make = (dependencies: Dependencies) => {
                 const now = Date.now()
                 return Effect.gen(function* () {
                   yield* JhStore.save(db, { id: savedKey, goal, status: "running", state, now })
-                  yield* SessionPlan.projectJh(db, { sessionID, goal, state, now })
+                  yield* SessionPlan.projectJh(dependencies.components, { sessionID, goal, state, now })
                 }).pipe(Effect.ignore)
               }
             : undefined, // racers don't persist; the winner's final state is saved below
@@ -854,7 +857,7 @@ export const make = (dependencies: Dependencies) => {
           state: report.state,
           now: Date.now(),
         }).pipe(Effect.ignore)
-        yield* SessionPlan.projectJh(db, {
+        yield* SessionPlan.projectJh(dependencies.components, {
           sessionID,
           goal,
           state: report.state,

@@ -116,6 +116,53 @@ describe("SessionComponentRegistry", () => {
       }),
     ))
 
+  test("🔴 replaceSet validates every item before writing any, and swaps the whole set at once", () =>
+    withRegistry([SessionComponentRegistry.PlanDefinition], ({ sessionID }) =>
+      Effect.gen(function* () {
+        const registry = yield* SessionComponentRegistry.Service
+        const step = (position: number, text: string) => ({
+          id: SessionComponentRegistry.planComponentID(position),
+          value: { position, text, status: "pending", verdict: null },
+        })
+        yield* registry.replaceSet({ sessionID, kind: "plan", items: [step(0, "read"), step(1, "edit")] })
+        expect(
+          (yield* registry.list({ sessionID, kind: "plan" })).map((e) => (e.value as { text: string }).text),
+        ).toEqual(["read", "edit"])
+        // One bad item (a step under the wrong id) refuses the WHOLE replacement — the raw SQL this
+        // replaced would have written it, and the read would have refused it later, far from here.
+        const refused = yield* registry
+          .replaceSet({ sessionID, kind: "plan", items: [step(0, "read"), { ...step(1, "edit"), id: "step-9" }] })
+          .pipe(Effect.flip)
+        expect(refused).toBeInstanceOf(SessionComponentRegistry.RegistryError)
+        expect(
+          (yield* registry.list({ sessionID, kind: "plan" })).map((e) => (e.value as { text: string }).text),
+        ).toEqual(["read", "edit"])
+        // A stray key is refused exactly as `put` refuses it.
+        const typo = yield* registry
+          .replaceSet({
+            sessionID,
+            kind: "plan",
+            items: [{ ...step(0, "read"), value: { ...step(0, "read").value, tetx: 1 } }],
+          })
+          .pipe(Effect.flip)
+        expect(typo).toBeInstanceOf(SessionComponentRegistry.InvalidValueError)
+        // The empty set clears it.
+        yield* registry.replaceSet({ sessionID, kind: "plan", items: [] })
+        expect(yield* registry.list({ sessionID, kind: "plan" })).toEqual([])
+      }),
+    ))
+
+  test("replaceSet refuses a singleton kind — that is what put is for", () =>
+    withRegistry([Goal], ({ sessionID }) =>
+      Effect.gen(function* () {
+        const registry = yield* SessionComponentRegistry.Service
+        const refused = yield* registry
+          .replaceSet({ sessionID, kind: Goal.kind, items: [{ id: "", value: { text: "x" } }] })
+          .pipe(Effect.flip)
+        expect(refused).toBeInstanceOf(SessionComponentRegistry.RegistryError)
+      }),
+    ))
+
   test("decodes singleton values on both sides of storage and cascades with the session", () =>
     withRegistry([Goal], ({ sessionID }) =>
       Effect.gen(function* () {

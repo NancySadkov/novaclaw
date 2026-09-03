@@ -3222,6 +3222,7 @@ export const layer = Layer.effect(
       scheduler,
       db,
       routeProfiles,
+      components,
     })
 
     const runBody = Effect.fn("SessionRunner.run.body")(function* (input: {
