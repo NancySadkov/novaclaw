@@ -17,7 +17,12 @@ import { TitlebarTabStrip } from "@/components/titlebar-tab-strip"
 import { NovaClawWordmark } from "@/components/brand"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
-import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
+import {
+  readSessionAgentChatsDetail,
+  readSessionTabsRemovedDetail,
+  SESSION_AGENT_CHATS_EVENT,
+  SESSION_TABS_REMOVED_EVENT,
+} from "@/components/titlebar-session-events"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabHref, tabKey, useTabs, type Tab } from "@/context/tabs"
@@ -249,6 +254,14 @@ export function Titlebar() {
           const detail = readSessionTabsRemovedDetail(event)
           if (!detail) return
           tabsStoreActions.removeSessions(detail)
+        })
+
+        // A colleague's tab follows its colleague — see `notifySessionAgentChats` for why this is on
+        // the event stream and not on the dialog that changes a folder.
+        makeEventListener(window, SESSION_AGENT_CHATS_EVENT, (event) => {
+          const detail = readSessionAgentChatsDetail(event)
+          if (!detail) return
+          tabsStoreActions.followAgentChats(detail.rows)
         })
 
         // The legacy new-tab "+" (draft tabs, mod+t) is RETIRED (owner 2026-07-22): chat

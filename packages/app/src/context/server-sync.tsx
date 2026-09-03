@@ -6,7 +6,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import type { InitError } from "../pages/error"
 import { ServerSDK } from "./server-sdk"
-import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
+import { notifySessionAgentChats, notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import {
   bootstrapDirectory,
   bootstrapGlobal,
@@ -385,6 +385,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const recent = Date.now() - bootedAt < 1500
 
     session.apply(event)
+    const type = event.type as string
 
     // A chat deleted from ANYWHERE — another client, the raw API, server auto-prune — must close
     // its open tabs/routes too. UI-initiated deletes notify locally (which masked this gap); the
@@ -478,11 +479,31 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       // inserted the record — owner-hit 2026-07-22). Materialize the store and fold; every OTHER
       // event type still requires an existing store, so message-level traffic can't build stores
       // for never-opened folders (the unbounded-growth guard this early return exists for).
-      const type = event.type as string
       if (!key || (type !== "session.created" && type !== "session.updated" && type !== "session.deleted")) return
       existing = children.ensureChild(directory)
     }
     children.mark(key)
+    // A colleague's tab follows its colleague. The RECORD lifecycle is the only signal that says
+    // which chat is a colleague's live one, and the archive and its successor arrive as two separate
+    // events — so re-evaluate on each of the three rather than on one of them. `followAgentChats`
+    // moves a tab only when the id it holds is archived AND that colleague has a live chat, so this
+    // is a store read and an early return on every ordinary create.
+    if (type === "session.created" || type === "session.updated" || type === "session.deleted")
+      notifySessionAgentChats({
+        server: ServerConnection.key(serverSDK.server),
+        rows: Object.values(session.data.info).flatMap((info) =>
+          info
+            ? [
+                {
+                  id: info.id,
+                  ...(info.agent === undefined ? {} : { agent: info.agent }),
+                  ...(info.parentID === undefined ? {} : { parentID: info.parentID }),
+                  archived: info.time.archived !== undefined,
+                },
+              ]
+            : [],
+        ),
+      })
     const [store, setStore] = existing
     applyDirectoryEvent({
       event,
