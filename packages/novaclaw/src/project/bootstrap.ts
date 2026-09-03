@@ -1,6 +1,5 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Format } from "../format"
-import { Snapshot } from "../snapshot"
 import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer } from "effect"
@@ -19,7 +18,6 @@ export const layer = Layer.effect(
     // so it can depend on bootstrap without importing this implementation graph.
     const config = yield* Config.Service
     const format = yield* Format.Service
-    const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
 
     const run = Effect.gen(function* () {
@@ -30,7 +28,10 @@ export const layer = Layer.effect(
       // Each service self-manages its own slow work via Effect.forkScoped against
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
-        [format, vcs, snapshot],
+        // No snapshot warm-up: the novaclaw Snapshot fork that used to sit here was deleted on
+        // 2026-09-03 (a second service on the SAME store directory as core's, with weaker guards and
+        // no product caller); core's `Snapshot` captures lazily on first use and needs no init.
+        [format, vcs],
         (s) =>
           s
             .init()
@@ -48,13 +49,13 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer: Layer.Layer<Service> = layer.pipe(
-  Layer.provide([Config.defaultLayer, Format.defaultLayer, Snapshot.defaultLayer, Vcs.defaultLayer]),
+  Layer.provide([Config.defaultLayer, Format.defaultLayer, Vcs.defaultLayer]),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Format.node, Snapshot.node, Vcs.node],
+  deps: [Config.node, Format.node, Vcs.node],
 })
 
 export * as InstanceBootstrap from "./bootstrap"

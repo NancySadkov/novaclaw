@@ -617,47 +617,32 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("snapshot truncation keeps every budget dimension as a numeric field", () => {
+  test("a truncation keeps every budget dimension as a numeric field", () => {
+    // (Was the snapshot fork's diff truncation until 2026-09-03; the property is the same.)
     const [line] = lines(
-      Log.event("snapshot.diff.compute.truncated", {
-        "snapshot.files.total": 750,
-        "snapshot.files.listed": 500,
-        "snapshot.files.omitted": 250,
-        "snapshot.files.computed": 300,
-        "snapshot.diff.bytes": 4_194_304,
-      }),
+      Log.event("git.tree.diff.truncated", { "git.files": 750, "git.computed": 300, "git.bytes": 4_194_304 }),
     )
     expect(line).toContain("level=WARN")
-    expect(line).toContain("event=snapshot.diff.compute.truncated")
-    expect(line).toContain('message="Snapshot.diffFull: change set too large; display is partial"')
-    expect(line).toContain("snapshot.files.total=750")
-    expect(line).toContain("snapshot.files.listed=500")
-    expect(line).toContain("snapshot.files.omitted=250")
-    expect(line).toContain("snapshot.files.computed=300")
-    expect(line).toContain("snapshot.diff.bytes=4194304")
+    expect(line).toContain("event=git.tree.diff.truncated")
+    expect(line).toContain("git.files=750")
+    expect(line).toContain("git.computed=300")
+    expect(line).toContain("git.bytes=4194304")
   })
 
-  test("snapshot phases with the same English remain distinguishable by key", () => {
-    const checkout = lines(
-      Log.event("snapshot.restore.checkout.failed", {
-        "snapshot.hash": "abc123",
-        "snapshot.exit": 1,
-        "snapshot.stderr": "checkout failed",
-      }),
+  test("phases with the same English remain distinguishable by key", () => {
+    // (Was the snapshot fork's two restore phases until 2026-09-03; the property is the same.)
+    const load = lines(
+      Log.event("worktree.bootstrap.load.failed", { "worktree.directory": "/w", "worktree.cause": "load failed" }),
     )[0]
-    const read = lines(
-      Log.event("snapshot.restore.read.failed", {
-        "snapshot.hash": "abc123",
-        "snapshot.exit": 2,
-        "snapshot.stderr": "read-tree failed",
-      }),
+    const run = lines(
+      Log.event("worktree.bootstrap.run.failed", { "worktree.directory": "/w", "worktree.cause": "run failed" }),
     )[0]
-    expect(checkout).toContain('message="failed to restore snapshot"')
-    expect(read).toContain('message="failed to restore snapshot"')
-    expect(checkout).toContain("event=snapshot.restore.checkout.failed")
-    expect(read).toContain("event=snapshot.restore.read.failed")
-    // A Git tree hash fingerprints user files; it is local-only text, not an egress-safe id.
-    expect(mayEgress("snapshot.restore.read.failed")).toBe(false)
+    expect(load).toContain('message="worktree bootstrap failed"')
+    expect(run).toContain('message="worktree bootstrap failed"')
+    expect(load).toContain("event=worktree.bootstrap.load.failed")
+    expect(run).toContain("event=worktree.bootstrap.run.failed")
+    // A directory path and a fault are user content; neither record is egress-safe.
+    expect(mayEgress("worktree.bootstrap.run.failed")).toBe(false)
   })
 
   test("runner retries separate the provider fault from the stable event identity", () => {

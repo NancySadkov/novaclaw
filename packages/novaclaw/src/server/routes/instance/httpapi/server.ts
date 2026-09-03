@@ -48,7 +48,6 @@ import { Vcs } from "@/project/vcs"
 import { Question } from "@/question"
 import { Skill } from "@/skill"
 import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
-import { Snapshot } from "@/snapshot"
 import { HostPressure } from "@/storage/host-pressure"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
@@ -368,7 +367,6 @@ const app = LayerNode.group([
   // Demand-loaded local inference. The same global node is injected into every location's model
   // resolver and serves the Instance controls, so there is exactly one llama.cpp child per instance.
   LocalModelRuntime.managerNode,
-  Snapshot.node,
   ModelsDev.node,
   Agent.node,
   Skill.node,

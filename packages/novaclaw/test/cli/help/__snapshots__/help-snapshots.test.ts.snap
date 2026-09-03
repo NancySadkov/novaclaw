@@ -75,7 +75,6 @@ Commands:
   nova-cli debug rg            ripgrep debugging utilities
   nova-cli debug file          file system debugging utilities
   nova-cli debug skill         list all available skills
-  nova-cli debug snapshot      snapshot debugging utilities
   nova-cli debug startup       print startup timing
   nova-cli debug agent <name>  show agent configuration details
   nova-cli debug v2            debug v2 catalog and built-in plugins

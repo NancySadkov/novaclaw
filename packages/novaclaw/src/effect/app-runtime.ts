@@ -9,7 +9,6 @@ import { Config } from "@/config/config"
 import { Git } from "@/git"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { HostPressure } from "@/storage/host-pressure"
-import { Snapshot } from "@/snapshot"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
@@ -38,7 +37,6 @@ export const AppLayer = Layer.mergeAll(
   Config.defaultLayer,
   Git.defaultLayer,
   HostPressure.defaultLayer,
-  Snapshot.defaultLayer,
   ModelsDev.defaultLayer,
   Agent.defaultLayer,
   Skill.defaultLayer,

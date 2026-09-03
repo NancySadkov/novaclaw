@@ -452,7 +452,7 @@ export const layer = Layer.effect(
     // config through `Config.get()`, which is this per-instance-directory `InstanceState` holding the
     // fully merged document (stores overlay + dir-discovered markdown + managed MDM + env).
     // `invalidate()` below clears only the process-global store view; nothing ever
-    // replaced THIS. So `snapshots` — which `snapshot/index.ts:170` already re-reads on every call,
+    // replaced THIS. So `snapshots` — which its reader already re-read on every call,
     // i.e. a key that looked read-through — was stale anyway, because the document it reads from was.
     //
     // `makeRematerializable` rather than `make` is a declaration with teeth: re-running this

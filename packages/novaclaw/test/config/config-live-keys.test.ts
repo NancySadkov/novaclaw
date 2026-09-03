@@ -28,12 +28,14 @@ import { testEffect } from "../lib/effect"
  * — and the middle link is the one nothing ever refreshed. `Config.invalidate()` clears only the
  * process-global store view; the per-instance MERGED DOCUMENT stayed at its first-read value for the
  * life of the process, and the only thing that ever replaced it was the instance being destroyed
- * (`markInstanceForDisposal`). So `snapshots` was stale even though `snapshot/index.ts:170` re-reads
- * `config.get().snapshots` on every single call: the read was through, the document was not.
+ * (`markInstanceForDisposal`). So `snapshots` was stale even though its reader re-read
+ * `config.get().snapshots` on every single call: the read was through, the document was not. (That
+ * reader was the novaclaw Snapshot fork, deleted 2026-09-03; core's `snapshot.ts` `enabled()` reads
+ * the same key through `Config.latest`, and the experiment below is unchanged.)
  *
  * Which is why the two tests below are the honest pair. `Config.get()` freshness IS the whole cure
- * for `snapshots` (there is no derived snapshot cache — the sixth cache at `snapshot/index.ts:67`
- * holds git paths, and no config value at all). `formatter` needs that PLUS its own derived table
+ * for `snapshots` (there is no derived snapshot cache holding a config value). `formatter` needs
+ * that PLUS its own derived table
  * re-built, which is the ordering `RELOAD_DOMAINS` encodes and
  * `packages/core/test/config-reload-order-ledger.test.ts` pins.
  *

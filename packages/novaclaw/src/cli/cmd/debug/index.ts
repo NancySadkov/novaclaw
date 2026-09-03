@@ -11,7 +11,6 @@ import { ConfigCommand } from "./config"
 import { FileCommand } from "./file"
 import { RipgrepCommand } from "./ripgrep"
 import { SkillCommand } from "./skill"
-import { SnapshotCommand } from "./snapshot"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
 import { V2Command } from "./v2"
@@ -25,7 +24,6 @@ export const DebugCommand = cmd({
       .command(RipgrepCommand)
       .command(FileCommand)
       .command(SkillCommand)
-      .command(SnapshotCommand)
       .command(StartupCommand)
       .command(AgentCommand)
       .command(V2Command)
