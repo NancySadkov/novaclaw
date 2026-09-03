@@ -632,9 +632,6 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "Пошук в інтернеті",
   "settings.permissions.tool.external_directory.title": "Зовнішній каталог",
   "settings.permissions.tool.external_directory.description": "Доступ до файлів за межами каталогу проєкту",
-  "settings.permissions.tool.doom_loop.title": "Цикл приреченості",
-  "settings.permissions.tool.doom_loop.description":
-    "Виявлення повторюваних викликів інструментів з однаковими вхідними даними",
 
   "session.delete.failed.title": "Не вдалося видалити сесію",
   "session.delete.title": "Видалити сесію",

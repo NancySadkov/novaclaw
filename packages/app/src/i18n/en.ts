@@ -2627,8 +2627,6 @@ export const dict = {
   "settings.permissions.tool.external_directory_write.title": "Write External Directory",
   "settings.permissions.tool.external_directory_write.description":
     "Modify, create, or delete files outside the project directory",
-  "settings.permissions.tool.doom_loop.title": "Doom Loop",
-  "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
 
   "session.gone.title": "This chat was deleted or has expired",
   "session.gone.body":

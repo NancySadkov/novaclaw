@@ -478,8 +478,6 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "ウェブを検索",
   "settings.permissions.tool.external_directory.title": "外部ディレクトリ",
   "settings.permissions.tool.external_directory.description": "プロジェクトディレクトリ外のファイルへのアクセス",
-  "settings.permissions.tool.doom_loop.title": "無限ループ",
-  "settings.permissions.tool.doom_loop.description": "同一入力による繰り返しのツール呼び出しを検出",
   "session.delete.failed.title": "セッションの削除に失敗しました",
   "session.delete.title": "セッションの削除",
   "session.delete.confirm": 'セッション "{{name}}" を削除しますか？',

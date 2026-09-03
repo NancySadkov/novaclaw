@@ -485,8 +485,6 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "Das Web durchsuchen",
   "settings.permissions.tool.external_directory.title": "Externes Verzeichnis",
   "settings.permissions.tool.external_directory.description": "Zugriff auf Dateien außerhalb des Projektverzeichnisses",
-  "settings.permissions.tool.doom_loop.title": "Doom Loop",
-  "settings.permissions.tool.doom_loop.description": "Wiederholte Tool-Aufrufe mit identischer Eingabe erkennen",
   "session.delete.failed.title": "Sitzung konnte nicht gelöscht werden",
   "session.delete.title": "Sitzung löschen",
   "session.delete.confirm": 'Sitzung "{{name}}" löschen?',

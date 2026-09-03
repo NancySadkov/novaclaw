@@ -545,9 +545,6 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "Поиск в интернете",
   "settings.permissions.tool.external_directory.title": "Внешняя директория",
   "settings.permissions.tool.external_directory.description": "Доступ к файлам вне директории проекта",
-  "settings.permissions.tool.doom_loop.title": "Doom Loop",
-  "settings.permissions.tool.doom_loop.description":
-    "Обнаружение повторяющихся вызовов инструментов с одинаковыми входными данными",
 
   "session.delete.failed.title": "Не удалось удалить сессию",
   "session.delete.title": "Удалить сессию",

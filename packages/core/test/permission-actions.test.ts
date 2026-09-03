@@ -89,10 +89,63 @@ describe("the permission gate vocabulary", () => {
 
   test("the list only names things that exist — no aspirational entries", () => {
     // The other direction: an action nothing asserts and no rule names is a row the user is invited
-    // to write a rule about that can never fire. `question` was exactly that until it was removed,
-    // and `doom_loop` is one today — a config key with a translated Settings row and no evaluator.
+    // to write a rule about that can never fire. `question` and `doom_loop` were exactly that; both
+    // are gone (RF-17-20, 2026-09-04) and the config-key test below is what keeps them gone.
     const known = new Set([...toolActions, ...ruleActions])
     expect(PermissionActions.ALL.filter((action) => !known.has(action)).sort()).toEqual([])
+  })
+
+  /**
+   * 🔴 THE THIRD SOURCE, and the one `doom_loop` came through. `config/permission.ts` names a struct
+   * of permission keys for config authoring, generated types and docs — a vocabulary of its own, and
+   * until 2026-09-04 nothing tied it to the actions that actually exist. `doom_loop` sat there with a
+   * translated Settings string in eighteen locales and no `evaluate("doom_loop", …)` anywhere;
+   * `question` outlived the tool it gated. Both were rules a user could write that could never fire.
+   *
+   * The scan reads only the EXPLICIT struct keys. The trailing `Schema.Record` rest is deliberately
+   * open (an MCP tool's action is the remote tool's name, and a model can define a tool at runtime),
+   * so an unknown key must stay accepted — which is exactly why the NAMED list is the only place a
+   * retired key can be answered.
+   */
+  const configKeys = (() => {
+    const source = stripComments(fs.readFileSync(path.join(ROOT, "src/config/permission.ts"), "utf8"))
+    const struct = /const InputObject = Schema\.StructWithRest\(\s*Schema\.Struct\(\{([\s\S]*?)\}\)/.exec(source)
+    if (!struct) return []
+    return [...struct[1]!.matchAll(/^\s*([a-zA-Z_][a-zA-Z0-9_.\-]*):/gm)].map((match) => match[1]!)
+  })()
+
+  /**
+   * ⚠️ ONE exception, and it is a finding rather than an allowance: `external_directory` is a config
+   * key whose action nothing evaluates — the real gates are `external_directory_read` and
+   * `external_directory_write` (`location-mutation.ts`), and `Wildcard.match` anchors both ends, so a
+   * rule named `external_directory` matches neither. It stays only because `novaclaw/src/agent`'s
+   * defaults still author it, and making those rules effective would NARROW a live path
+   * (`"*": "allow"` is what currently answers external access for those agents) — a behaviour change
+   * owed its own measurement. Filed as RF-17-21. Do not extend this list to dodge a red test.
+   */
+  const UNSPENT_CONFIG_KEYS = ["external_directory"]
+
+  test("the config-key scan is real — it finds the keys we know are there", () => {
+    expect(configKeys.length).toBeGreaterThan(8)
+    expect(configKeys).toContain("bash")
+    expect(configKeys).toContain("external_directory")
+    // The retired pair, so this goes red if either is ever re-added.
+    expect(configKeys).not.toContain("doom_loop")
+    expect(configKeys).not.toContain("question")
+  })
+
+  test("🔴 every CONFIG key names an action that exists", () => {
+    // The fault from the authoring side: a key here is what a config file, the generated types and
+    // the docs invite a user to write. One naming no action is a switch wired to nothing.
+    const known = new Set([...toolActions, ...ruleActions])
+    const inert = configKeys
+      .filter((key) => !known.has(key) && !PermissionActions.ALL.includes(key))
+      .filter((key) => !UNSPENT_CONFIG_KEYS.includes(key))
+      .sort()
+    expect(
+      inert,
+      "config/permission.ts names these and nothing evaluates them — a rule a user writes for one can never fire",
+    ).toEqual([])
   })
 
   test("the groups partition the list, with no duplicate and nothing lost", () => {

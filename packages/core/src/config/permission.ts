@@ -46,6 +46,18 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // (`core/src/config/agent.ts`), so its output has never reached a V2 agent at all — but the stale
 // offer is its own legibility fault and is tracked separately, not silently inherited from here.
 //
+// `doom_loop` and `question` were removed on 2026-09-04 (RF-17-20), for the same reason and by the
+// same test that now derives this list. Neither named an action: nothing in the tree ever called
+// `evaluate("doom_loop", …)` or `evaluate("question", …)`, so a user who set either got a rule that
+// could not fire. `doom_loop` is not a permission at all — the mechanism it named is
+// `session/runner/doom-loop.ts`, an always-on harness floor that injects a redirect, and a switch
+// offering to turn a loop-breaker off is the opposite of "it never breaks in your hands".
+// `question` is principle 14: the chat IS the channel, there is no question tool, and its runtime
+// rules had already gone in RF-12-14 (2026-09-01) leaving this key as the last residue.
+// ⚠️ The door they came through is now shut from the config side too:
+// `test/permission-actions.test.ts` re-derives the named keys BELOW from this file and fails when
+// one of them is not a real action. Adding a key here for a gate you have not written is a red test.
+
 // ⚠️ `task` STAYS, and is not a V2 action. Nothing on the V2 path spends it, but ONE legacy consumer
 // still does: `packages/novaclaw/src/tool/truncate.ts` calls `evaluate("task", "*", …)` to choose a
 // truncation hint. Removing a documented key for a gate that still fires would be the wrong
@@ -67,10 +79,8 @@ const InputObject = Schema.StructWithRest(
     external_directory: Schema.optional(Rule),
     todowrite: Schema.optional(Action),
     resource_status: Schema.optional(Action),
-    question: Schema.optional(Action),
     webfetch: Schema.optional(Action),
     websearch: Schema.optional(Action),
-    doom_loop: Schema.optional(Action),
     skill: Schema.optional(Rule),
   }),
   [Schema.Record(Schema.String, Rule)],

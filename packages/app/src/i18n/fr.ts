@@ -486,8 +486,6 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "Rechercher sur le web",
   "settings.permissions.tool.external_directory.title": "Répertoire externe",
   "settings.permissions.tool.external_directory.description": "Accéder aux fichiers en dehors du répertoire du projet",
-  "settings.permissions.tool.doom_loop.title": "Boucle infernale",
-  "settings.permissions.tool.doom_loop.description": "Détecter les appels d'outils répétés avec une entrée identique",
   "session.delete.failed.title": "Échec de la suppression de la session",
   "session.delete.title": "Supprimer la session",
   "session.delete.confirm": 'Supprimer la session "{{name}}" ?',

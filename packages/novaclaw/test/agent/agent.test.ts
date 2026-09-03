@@ -436,10 +436,13 @@ it.instance("Agent.get returns undefined for non-existent agent", () =>
   }),
 )
 
-it.instance("default permission includes doom_loop and external_directory as ask", () =>
+// `doom_loop` was asserted here too until 2026-09-04 (RF-17-20). It resolved to "ask" and always
+// would have: the assertion read back the default this same file writes, and nothing in the tree
+// ever spent the action. A default that resolves is not a gate that fires — the key is gone, and
+// `core/test/permission-actions.test.ts` now fails on the next config key that names no action.
+it.instance("default permission asks before an unwhitelisted external directory", () =>
   Effect.gen(function* () {
     const build = yield* load((svc) => svc.get("build"))
-    expect(evalPerm(build, "doom_loop")).toBe("ask")
     expect(evalPerm(build, "external_directory")).toBe("ask")
   }),
 )
