@@ -34,8 +34,7 @@
     "electron-log": "^5",
     "electron-store": "11.0.2",
     "electron-window-state": "^5.0.3",
-    "jsonc-parser": "3.3.1",
-    "marked": "^15"
+    "jsonc-parser": "3.3.1"
   },
   "devDependencies": {
     "@novaclaw/app": "workspace:*",
