@@ -8,38 +8,34 @@ import { Duration, Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
 import { ConfigCommand } from "./config"
-import { FileCommand } from "./file"
-import { RipgrepCommand } from "./ripgrep"
 import { SkillCommand } from "./skill"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
 import { V2Command } from "./v2"
 import { CommandSpec } from "../../command-spec"
 
+/**
+ * ⚠️ THREE LEAVES LEFT on 2026-09-03, and the reason is principle 7: the CLI is vestigial and
+ * headless-only, so a leaf that reimplements something the shell already does is a second product
+ * surface with a second set of bugs. `debug rg` and `debug file` were a search-and-browse console
+ * (`rg files|search`, `file search|read|list`) over the same engines the Files and Search surfaces
+ * use; `debug wait` slept for a day. What stays is the diagnostic set — `info`, `paths`, `config`,
+ * `v2`, `startup`, `skill`, `agent` — which reports state rather than operating on it, and which a
+ * support conversation needs from a machine with no window open.
+ */
 export const DebugCommand = cmd({
   ...CommandSpec.debug,
   builder: (yargs) =>
     yargs
       .command(ConfigCommand)
-      .command(RipgrepCommand)
-      .command(FileCommand)
       .command(SkillCommand)
       .command(StartupCommand)
       .command(AgentCommand)
       .command(V2Command)
       .command(InfoCommand)
       .command(PathsCommand)
-      .command(WaitCommand)
       .demandCommand(),
   async handler() {},
-})
-
-const WaitCommand = effectCmd({
-  command: "wait",
-  describe: "wait indefinitely (for debugging)",
-  handler: Effect.fn("Cli.debug.wait")(function* () {
-    yield* Effect.sleep(Duration.days(1))
-  }),
 })
 
 const InfoCommand = effectCmd({

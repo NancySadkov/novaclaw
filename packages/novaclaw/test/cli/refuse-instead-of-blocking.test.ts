@@ -50,114 +50,7 @@ function catalogFixture(home: string): string {
 
 const CREDENTIAL = JSON.stringify({ openai: { type: "api", key: "stored-key" } })
 
-describe("the CLI refuses instead of blocking on a human", () => {
-  cliIt.concurrent(
-    "providers login names the environment variable the API key must come from — it never prompts",
-    ({ home, novaclaw }) =>
-      Effect.gen(function* () {
-        // THE headline leaf: `Prompt.password({message: "Enter your API key"})` had no
-        // non-interactive escape of any kind, so a CI job or scheduled agent running this exact
-        // argv got a process that never returned — and a killed process's output is discarded, so
-        // the operator saw nothing at all.
-        const refused = yield* novaclaw.spawn(["providers", "login", "--provider", "openai"], {
-          env: { NOVACLAW_MODELS_PATH: catalogFixture(home) },
-          timeoutMs: 25_000,
-        })
-        expectRefused(refused, 2, "NOVACLAW_API_KEY", "openai")
-
-        // Control: the same argv, with the value it asked for, completes. A refusal that fires on a
-        // fully-specified invocation is not a refusal, it is a broken command.
-        const ok = yield* novaclaw.spawn(["providers", "login", "--provider", "openai"], {
-          env: { NOVACLAW_MODELS_PATH: catalogFixture(home), NOVACLAW_API_KEY: "sk-supplied-by-the-caller" },
-          timeoutMs: 25_000,
-        })
-        novaclaw.expectExit(ok, 0)
-      }),
-    90_000,
-  )
-
-  cliIt.concurrent(
-    "providers login and logout refuse when the provider is not named, and name the ones that exist",
-    ({ home, novaclaw }) =>
-      Effect.gen(function* () {
-        const models = catalogFixture(home)
-        // Was `Prompt.autocomplete({message: "Select provider"})` in both commands.
-        const login = yield* novaclaw.spawn(["providers", "login"], {
-          env: { NOVACLAW_MODELS_PATH: models },
-          timeoutMs: 25_000,
-        })
-        expectRefused(login, 2, "--provider")
-
-        const logout = yield* novaclaw.spawn(["providers", "logout"], {
-          env: { NOVACLAW_MODELS_PATH: models, NOVACLAW_AUTH_CONTENT: CREDENTIAL },
-          timeoutMs: 25_000,
-        })
-        // The list the prompt would have rendered is printed instead — same information, no wait.
-        expectRefused(logout, 2, "openai")
-
-        // Control: named, it removes the credential and exits 0. Without this the refusal above
-        // could be a command that simply never works.
-        const removed = yield* novaclaw.spawn(["providers", "logout", "openai"], {
-          env: { NOVACLAW_MODELS_PATH: models, NOVACLAW_AUTH_CONTENT: CREDENTIAL },
-          timeoutMs: 25_000,
-        })
-        novaclaw.expectExit(removed, 0)
-      }),
-    90_000,
-  )
-
-  cliIt.concurrent(
-    "mcp add refuses without a name instead of walking seven prompts",
-    ({ home, novaclaw }) =>
-      Effect.gen(function* () {
-        const dbFile = path.join(home, "instance.db")
-        const refused = yield* novaclaw.spawn(["mcp", "add"], { env: { NOVACLAW_DB: dbFile }, timeoutMs: 25_000 })
-        expectRefused(refused, 2, "--url", "nova-cli mcp add <name>")
-
-        // Control: the flag form still writes, and still says so.
-        const added = yield* novaclaw.spawn(["mcp", "add", "oauthy", "--url", "https://example.com/mcp"], {
-          env: { NOVACLAW_DB: dbFile },
-          timeoutMs: 25_000,
-        })
-        novaclaw.expectExit(added, 0)
-        expect(added.stdout + added.stderr).toContain("added to this instance's config")
-
-        // And with a server configured, `mcp auth` with no positional refuses and lists it rather
-        // than opening `Select MCP server to authenticate`.
-        const auth = yield* novaclaw.spawn(["mcp", "auth"], { env: { NOVACLAW_DB: dbFile }, timeoutMs: 25_000 })
-        expectRefused(auth, 2, "oauthy", "nova-cli mcp auth <name>")
-      }),
-    120_000,
-  )
-})
-
 describe("a CLI command that fails exits non-zero", () => {
-  cliIt.concurrent(
-    "mcp auth, mcp logout and mcp debug report their failures in the exit code",
-    ({ home, novaclaw }) =>
-      Effect.gen(function* () {
-        const env = { NOVACLAW_DB: path.join(home, "instance.db") }
-
-        // Each of these was `log.error(...); outro("Done"); return` — printed, then exited 0.
-        const auth = yield* novaclaw.spawn(["mcp", "auth", "nothing-configured"], { env, timeoutMs: 25_000 })
-        expectRefused(auth, 1, "No OAuth-capable MCP servers configured")
-
-        const logout = yield* novaclaw.spawn(["mcp", "logout", "never-stored"], { env, timeoutMs: 25_000 })
-        expectRefused(logout, 1, "No MCP OAuth credentials stored")
-
-        // `mcp debug`'s three guards lived INSIDE an `Effect.promise`, where `return` ends the async
-        // body successfully — so the refusal never reached the exit code.
-        const debug = yield* novaclaw.spawn(["mcp", "debug", "never-added"], { env, timeoutMs: 25_000 })
-        expectRefused(debug, 1, "MCP server not found: never-added")
-
-        // Control: a command that succeeds still exits 0, so the assertions above are not simply
-        // "this binary always fails now".
-        const list = yield* novaclaw.spawn(["mcp", "list"], { env, timeoutMs: 25_000 })
-        novaclaw.expectExit(list, 0)
-      }),
-    120_000,
-  )
-
   cliIt.concurrent(
     "a usage refusal exits 2 and a failed operation exits 1 — the codes are not both flattened to 1",
     ({ home, novaclaw }) =>
@@ -166,14 +59,58 @@ describe("a CLI command that fails exits non-zero", () => {
         // catch block with an unconditional `process.exitCode = 1`, run AFTER `FormatError` had
         // applied the code the CliError carried — so BOTH of these exited 1 and a script could not
         // tell "you invoked me wrong" from "the operation failed".
+        //
+        // ⚠️ RE-POINTED 2026-09-03. The original pair drove `mcp add` and `mcp logout`, and the
+        // prune deleted both. The invariant is about the CODES, not those leaves, so it moved to
+        // two surviving commands rather than leaving with them: `export` with no id is the usage
+        // refusal (it used to open an autocomplete instead), and `mcp debug` on an unknown server
+        // is the failed operation — whose three guards once lived inside an `Effect.promise`, where
+        // `return` ends the async body SUCCESSFULLY and the refusal never reached the exit code.
         const env = { NOVACLAW_DB: path.join(home, "instance.db") }
-        const usage = yield* novaclaw.spawn(["mcp", "add", "named", "--url", "not a url"], { env, timeoutMs: 25_000 })
-        expect(usage.exitCode).toBe(2)
 
-        const failed = yield* novaclaw.spawn(["mcp", "logout", "never-stored"], { env, timeoutMs: 25_000 })
-        expect(failed.exitCode).toBe(1)
+        const usage = yield* novaclaw.spawn(["export"], { env, timeoutMs: 25_000 })
+        expectRefused(usage, 2, "nova-cli export <sessionID>")
+
+        const failed = yield* novaclaw.spawn(["mcp", "debug", "never-added"], { env, timeoutMs: 25_000 })
+        expectRefused(failed, 1, "MCP server not found: never-added")
+
+        // Control: a command that succeeds still exits 0, so the two above are not simply "this
+        // binary always fails now".
+        const list = yield* novaclaw.spawn(["mcp", "list"], { env, timeoutMs: 25_000 })
+        novaclaw.expectExit(list, 0)
       }),
-    90_000,
+    120_000,
+  )
+
+  cliIt.concurrent(
+    "the pruned leaves are GONE, and the shell says so rather than half-working",
+    ({ home, novaclaw }) =>
+      Effect.gen(function* () {
+        // 🔴 The prune's own ratchet. Five of these blocked on a human and the other four were a
+        // parallel product UI; all nine are now Settings pages or nothing. A leaf that came BACK
+        // would come back with its prompt, so this asserts absence directly rather than trusting
+        // that nobody re-registers one.
+        const env = { NOVACLAW_DB: path.join(home, "instance.db") }
+        for (const argv of [
+          ["providers", "login"],
+          ["providers", "logout"],
+          ["agent", "create"],
+          ["mcp", "add"],
+          ["mcp", "auth"],
+          ["mcp", "logout"],
+          ["session", "list"],
+          ["debug", "rg"],
+          ["debug", "file"],
+          ["debug", "wait"],
+        ]) {
+          const result = yield* novaclaw.spawn(argv, { env, timeoutMs: 25_000 })
+          // Not "exited non-zero": a HANG also exits non-zero once the harness kills it, and a leaf
+          // that blocks is exactly what this file exists to catch.
+          expect(result.outputDiscarded ?? false, `\`${argv.join(" ")}\` blocked instead of being unknown`).toBe(false)
+          expect(result.exitCode, `\`${argv.join(" ")}\` still runs`).not.toBe(0)
+        }
+      }),
+    240_000,
   )
 })
 
@@ -204,11 +141,16 @@ const BLOCKING_CALLS = [
   "UI.input(",
 ]
 
-/** Files that may still block, each because its own prune is not in this change. */
-const STILL_INTERACTIVE = ["cmd/agent.ts", "cmd/export.ts"]
+/**
+ * EMPTY since 2026-09-03, as its own comment below asked. `agent create` and `export`'s session
+ * picker were the last two allowances; the wizard is deleted and `export` now requires its
+ * positional and refuses with exit 2. An allowlist that outlives what it excused exempts a file
+ * nobody meant to, so it is emptied rather than left holding names that no longer apply.
+ */
+const STILL_INTERACTIVE: string[] = []
 
-/** The leaves this change made non-blocking. A prompt returning to any of them is a regression. */
-const MUST_NOT_BLOCK = ["cmd/mcp.ts", "cmd/providers.ts", "cmd/stats.ts", "cmd/run.ts"]
+/** Every leaf that must never block. A prompt returning to any of them is a regression. */
+const MUST_NOT_BLOCK = ["cmd/mcp.ts", "cmd/providers.ts", "cmd/stats.ts", "cmd/run.ts", "cmd/agent.ts", "cmd/export.ts"]
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -245,9 +187,15 @@ test("no CLI command leaf gains a new blocking prompt", () => {
 
   // Print the LINES, never a count: a bare total tells the next reader nothing about what moved.
   const files = [...new Set(offenders.map((entry) => entry.split(":")[0]))]
-  expect(files.filter((file) => !STILL_INTERACTIVE.includes(file)), offenders.join("\n")).toEqual([])
+  expect(
+    files.filter((file) => !STILL_INTERACTIVE.includes(file)),
+    offenders.join("\n"),
+  ).toEqual([])
   for (const owned of MUST_NOT_BLOCK) {
-    expect(offenders.filter((entry) => entry.startsWith(owned)), `${owned} must never block on a human`).toEqual([])
+    expect(
+      offenders.filter((entry) => entry.startsWith(owned)),
+      `${owned} must never block on a human`,
+    ).toEqual([])
   }
   // ⚠️ `STILL_INTERACTIVE` is an allowance, not a requirement: when one of those leaves is fixed,
   // delete its entry — an allowlist that outlives what it excused exempts a file nobody meant to.

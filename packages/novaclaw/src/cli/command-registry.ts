@@ -89,14 +89,6 @@ export const ExportCommand = lazyCommand({
   },
 })
 
-export const SessionCommand = lazyCommand({
-  ...CommandSpec.session,
-  async load() {
-    const { SessionCommand } = await import("./cmd/session")
-    return SessionCommand
-  },
-})
-
 export const DbCommand = lazyCommand({
   ...CommandSpec.db,
   async load() {

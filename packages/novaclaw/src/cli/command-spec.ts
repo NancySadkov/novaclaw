@@ -44,10 +44,6 @@ export const CommandSpec = {
     command: "export [sessionID]",
     describe: "export session data as JSON",
   },
-  session: {
-    command: "session",
-    describe: "manage sessions",
-  },
   db: {
     command: "db",
     describe: "database tools",

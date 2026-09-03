@@ -494,7 +494,9 @@ export const layer = Layer.effect(
                 lastStatus = { status: "needs_auth" as const }
                 return Log.event("mcp.auth.required", {
                   server: key,
-                  "mcp.hint": `nova-cli mcp auth ${key}`,
+                  // Repointed 2026-09-03: `nova-cli mcp auth` is deleted. Sending an operator to a
+                  // command that answers "Unknown argument" is worse than sending them nowhere.
+                  "mcp.hint": `Authorize ${key} in Settings \u2192 MCP`,
                 }).pipe(Effect.as(undefined))
               }
             }

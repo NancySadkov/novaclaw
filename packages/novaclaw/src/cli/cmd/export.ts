@@ -8,7 +8,6 @@ import { InstanceRef } from "@/effect/instance-ref"
 import { SessionID } from "../../session/schema"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
-import * as prompts from "@clack/prompts"
 import { EOL } from "os"
 import { DateTime, Effect, Schema } from "effect"
 import { CommandSpec } from "../command-spec"
@@ -190,7 +189,7 @@ export const ExportCommand = effectCmd({
   builder: (yargs) =>
     yargs
       .positional("sessionID", {
-        describe: "session id to export",
+        describe: "session id to export (required — this command never prompts)",
         type: "string",
       })
       .option("sanitize", {
@@ -212,43 +211,12 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
   process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
 
-  if (!sessionID) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
-    UI.empty()
-    prompts.intro("Export session", { output: process.stderr })
-
-    const sessions = [...(yield* SessionRead.list(db, { under: AbsolutePath.make(ctx.worktree) }))]
-
-    if (sessions.length === 0) {
-      prompts.log.error("No sessions found", { output: process.stderr })
-      prompts.outro("Done", { output: process.stderr })
-      return
-    }
-
-    sessions.sort((a, b) => DateTime.toEpochMillis(b.time.updated) - DateTime.toEpochMillis(a.time.updated))
-
-    const selectedSession = yield* Effect.promise(() =>
-      prompts.autocomplete({
-        message: "Select session to export",
-        maxItems: 10,
-        options: sessions.map((session) => ({
-          label: session.title,
-          value: session.id,
-          hint: `${new Date(DateTime.toEpochMillis(session.time.updated)).toLocaleString()} • ${session.id.slice(-8)}`,
-        })),
-        output: process.stderr,
-      }),
-    )
-
-    if (prompts.isCancel(selectedSession)) {
-      return yield* Effect.die(new UI.CancelledError())
-    }
-
-    sessionID = selectedSession
-
-    prompts.outro("Exporting session...", { output: process.stderr })
-  }
+  // 🔴 REQUIRED, not prompted. Without an id this used to open an autocomplete over the instance's
+  // sessions and wait — on a surface that runs in CI, in a scheduled agent and inside a `Bash` tool
+  // call, where nobody is watching and a killed process's output is discarded. Principle 7 makes the
+  // CLI headless; principle 14 says the chat is the channel, not a terminal prompt. So it refuses
+  // and says what to pass, which is the pattern `run.ts` already uses for its permission flag.
+  if (!sessionID) return yield* fail("Pass a session id: nova-cli export <sessionID>", 2)
 
   const sessionInfo = yield* SessionRead.get(db, sessionID)
   if (!sessionInfo) return yield* fail(`Session not found: ${sessionID}`)
