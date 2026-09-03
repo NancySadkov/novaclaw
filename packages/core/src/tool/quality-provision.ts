@@ -35,6 +35,8 @@ import type { Commands } from "../session/runner/quality"
 import { QualityProvision } from "../session/runner/quality-provision"
 import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
+import { Quality as QualitySchema } from "@novaclaw/schema/quality"
+import { QualityDetect } from "../session/runner/quality-detect"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -75,13 +77,8 @@ export const description =
 export const manifestsToRead = (entries: readonly string[]): readonly string[] =>
   QualityProvision.MANIFEST_READS.filter((manifest) => entries.includes(manifest))
 
-const CommandOverrides = Schema.Struct({
-  syntax: Schema.String.pipe(Schema.optional),
-  check: Schema.String.pipe(Schema.optional),
-  typecheck: Schema.String.pipe(Schema.optional),
-  test: Schema.String.pipe(Schema.optional),
-  lint: Schema.String.pipe(Schema.optional),
-})
+/** The same five slots the runner spends and the contract carries — see `@novaclaw/schema/quality`. */
+const CommandOverrides = QualitySchema.Commands
 
 export const Input = Schema.Struct({
   commands: CommandOverrides.pipe(Schema.optional).annotate({
@@ -141,27 +138,12 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
+                // Rung 0, shared with Settings → Quality's "Detect from this project" button. It was
+                // inline here until 2026-09-03; two copies of a manifest loader drift the moment
+                // either side gains an ecosystem, which is the drift this file's own header spends
+                // three bullets warning about.
                 const directory = location.directory
-                const entries = yield* Effect.tryPromise(() => fs.readdir(directory)).pipe(
-                  Effect.catch(() => Effect.succeed([] as string[])),
-                )
-                const contents = new Map<string, string | undefined>()
-                for (const manifest of manifestsToRead(entries))
-                  contents.set(
-                    manifest,
-                    yield* Effect.tryPromise(() => fs.readFile(path.join(directory, manifest), "utf8")).pipe(
-                      Effect.catch(() => Effect.succeed(undefined)),
-                    ),
-                  )
-                const proposal = QualityProvision.scan({
-                  files: entries,
-                  read: (file) => contents.get(file),
-                  // The family of the shell these commands will actually run in — Git Bash on
-                  // Windows whenever one is found, cmd.exe only as the documented fallback. It
-                  // decides `./gradlew` vs `gradlew.bat`; guessing from process.platform would get
-                  // the common Windows case backwards.
-                  shell: Shell.agentShellIsPosix() ? "posix" : "cmd",
-                })
+                const proposal = yield* QualityDetect.detect(directory)
                 // The model's per-file overrides must carry `{file}`: rung-1 verification strips it and
                 // so cannot tell a whole-project verifier filed in a per-file slot from a real one
                 // (see `QualityProvision.overrideProblem`). Refused before anything runs or lands.

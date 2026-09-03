@@ -6177,6 +6177,30 @@ class ApiV2Vcs extends NovaClawApiClient {
   }
 }
 
+class ApiV2Quality extends NovaClawApiClient {
+  /**
+   * Detect quality commands
+   *
+   * Scan the location's own manifests and propose check, typecheck, test and lint commands, with the evidence for each. Proposes only: nothing is run and nothing is saved.
+   */
+  public detect<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2QualityDetectResponses, T.V2QualityDetectErrors, ThrowOnError>({
+      url: "/api/quality/detect",
+      ...options,
+      query,
+    })
+  }
+}
+
 class ApiV2Skill extends NovaClawApiClient {
   /**
    * List skills
@@ -6770,6 +6794,11 @@ class ApiV2 extends NovaClawApiClient {
   private _vcs?: ApiV2Vcs
   get vcs(): ApiV2Vcs {
     return (this._vcs ??= new ApiV2Vcs({ client: this.client }))
+  }
+
+  private _quality?: ApiV2Quality
+  get quality(): ApiV2Quality {
+    return (this._quality ??= new ApiV2Quality({ client: this.client }))
   }
 
   private _skill?: ApiV2Skill

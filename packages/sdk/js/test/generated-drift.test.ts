@@ -296,7 +296,12 @@ const GENERATE_TIMEOUT_MS = 60_000
 // now the contract's own `InvalidRequestError`, with the reason in its `kind`; the six VCS wire
 // shapes kept their names because they moved package without changing shape. 506 -> 505 entries,
 // reviewed with a HEAD-versus-working-tree diff of the table rather than by re-running the pin.
-const SCHEMA_NAME_FINGERPRINT = "0b9f5f25a036c29a204e0ff60f59bbb582b25f133fee72855095decc95d4e5db"
+// 2026-09-03, last: Settings -> Quality gained "Detect from this project", so `GET
+// /api/quality/detect` joined the contract and brought exactly two names with it -
+// `QualityCommands` (the five slots, which were a TypeScript interface in core and a hand-written
+// Schema.Struct in the tool, held equal by nothing) and `QualityDetection` (those plus the
+// evidence). Nothing left. 505 -> 507 entries, reviewed with a HEAD-versus-working-tree diff.
+const SCHEMA_NAME_FINGERPRINT = "85dd7c8e4cca55df0f875011f84fccd1ba02f30085018b61e103729aca12b80b"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

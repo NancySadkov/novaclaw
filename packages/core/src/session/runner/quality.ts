@@ -16,14 +16,14 @@ export * as Quality from "./quality"
 // A missing command skips its step ("not everything has an automatic check").
 
 import type { SessionMessage } from "../message"
+import type { Quality as QualitySchema } from "@novaclaw/schema/quality"
 
-export interface Commands {
-  readonly syntax?: string
-  readonly check?: string
-  readonly typecheck?: string
-  readonly test?: string
-  readonly lint?: string
-}
+/**
+ * The five slots, defined once in `@novaclaw/schema/quality` so the CONTRACT can carry them too.
+ * They were declared here as an interface and again in `tool/quality-provision.ts` as a
+ * `Schema.Struct`, with nothing holding the two equal.
+ */
+export type Commands = QualitySchema.Commands
 
 export interface Config {
   readonly enabled: boolean

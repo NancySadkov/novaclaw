@@ -25,6 +25,7 @@ import { AppHandler } from "./handlers/app"
 import { ConfigHandler } from "./handlers/config"
 import { LogHandler } from "./handlers/log"
 import { TelemetryHandler } from "./handlers/telemetry"
+import { QualityHandler } from "./handlers/quality"
 
 type HandlerLayers =
   | typeof HealthHandler
@@ -53,6 +54,7 @@ type HandlerLayers =
   | typeof ConfigHandler
   | typeof LogHandler
   | typeof TelemetryHandler
+  | typeof QualityHandler
 
 export const handlers: Layer.Layer<
   Layer.Success<HandlerLayers>,
@@ -85,4 +87,5 @@ export const handlers: Layer.Layer<
   ConfigHandler,
   LogHandler,
   TelemetryHandler,
+  QualityHandler,
 )

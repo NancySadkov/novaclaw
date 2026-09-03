@@ -1,8 +1,10 @@
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { type Component } from "solid-js"
+import { Show, createSignal, type Component } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -32,6 +34,13 @@ interface QualityConfig {
   commands?: QualityCommands
 }
 
+/**
+ * ⚠️ These placeholders are EXAMPLES OF A SHAPE, and until 2026-09-03 they were the only guidance
+ * this panel offered. They are right for this repository and arbitrary for a Python or Rust project,
+ * whose owner was shown five TypeScript incantations as the model of what to type. "Detect from this
+ * project" is the answer to that (principle 12(b)): the product can read the manifests and say what
+ * THIS project uses, and it already did so for the model through `quality_provision`.
+ */
 const COMMAND_FIELDS: Array<{ key: keyof QualityCommands; placeholder: string }> = [
   { key: "syntax", placeholder: "bun build --no-bundle {file}" },
   { key: "check", placeholder: "eslint {file}" },
@@ -43,6 +52,9 @@ const COMMAND_FIELDS: Array<{ key: keyof QualityCommands; placeholder: string }>
 export const SettingsQualityV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const serverSdk = useServerSDK()
+  const [detecting, setDetecting] = createSignal(false)
+  const [evidence, setEvidence] = createSignal<readonly string[]>([])
 
   const current = (): QualityConfig => (serverSync().data.config as { quality?: QualityConfig }).quality ?? {}
 
@@ -61,6 +73,45 @@ export const SettingsQualityV2: Component = () => {
 
   const persistCommand = (key: keyof QualityCommands, value: string) =>
     persist({ commands: { ...(current().commands ?? {}), [key]: value.trim() } })
+
+  /**
+   * 🔴 It FILLS, it does not replace. A slot the user already typed into is theirs — the scan is a
+   * proposal, and silently overwriting a hand-written command with a guessed one would make the
+   * button dangerous to press twice. Empty slots take the proposal; the rest are left alone, and the
+   * evidence below says which manifest produced what so a person can check the answer.
+   */
+  async function detectFromProject() {
+    setDetecting(true)
+    try {
+      const response = await serverSdk().client.v2.quality.detect()
+      const detected = response.data?.data
+      if (!detected) throw new Error(language.t("settings.quality.detect.empty"))
+      const existing = current().commands ?? {}
+      const merged = { ...existing }
+      let filled = 0
+      for (const field of COMMAND_FIELDS) {
+        const proposed = detected.commands?.[field.key]
+        if (!proposed || existing[field.key]) continue
+        merged[field.key] = proposed
+        filled += 1
+      }
+      setEvidence(detected.evidence ?? [])
+      if (filled === 0) {
+        showToast({ title: language.t("settings.quality.detect.nothing") })
+        return
+      }
+      await persist({ commands: merged })
+      showToast({ variant: "success", title: language.plural("settings.quality.detect.filled", filled) })
+    } catch (error: unknown) {
+      showToast({
+        variant: "error",
+        title: language.t("settings.quality.detect.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setDetecting(false)
+    }
+  }
 
   return (
     <>
@@ -130,6 +181,32 @@ export const SettingsQualityV2: Component = () => {
         <div class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.quality.commands.title")}</h3>
           <p class="settings-v2-field-description">{language.t("settings.quality.commands.description")}</p>
+          {/* 12(b)'s offer, for a list that has to be COMPUTED to be offered. The boxes stay as the
+              override — this fills what is empty and never argues with what a person typed. */}
+          <div class="flex flex-wrap items-center gap-2 pb-2">
+            <ButtonV2
+              variant="outline"
+              size="small"
+              data-action="quality-detect"
+              disabled={detecting()}
+              onClick={() => void detectFromProject()}
+            >
+              {detecting()
+                ? language.t("settings.quality.detect.running")
+                : language.t("settings.quality.detect.action")}
+            </ButtonV2>
+            <span class="text-[11px] leading-4 text-v2-text-text-faint">
+              {language.t("settings.quality.detect.description")}
+            </span>
+          </div>
+          {/* The trail, so the proposal can be checked rather than trusted. */}
+          <Show when={evidence().length > 0}>
+            <ul class="flex flex-col gap-0.5 pb-2" data-quality-detect-evidence>
+              {evidence().map((line) => (
+                <li class="text-[11px] leading-4 break-all text-v2-text-text-faint">{line}</li>
+              ))}
+            </ul>
+          </Show>
           <SettingsListV2>
             {COMMAND_FIELDS.map((field) => (
               <SettingsRowV2

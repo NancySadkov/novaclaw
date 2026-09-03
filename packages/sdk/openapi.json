@@ -20799,6 +20799,84 @@
         ]
       }
     },
+    "/api/quality/detect": {
+      "get": {
+        "tags": ["quality"],
+        "operationId": "v2.quality.detect",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/QualityDetection"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Scan the location's own manifests and propose check, typecheck, test and lint commands, with the evidence for each. Proposes only: nothing is run and nothing is saved.",
+        "summary": "Detect quality commands",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.quality.detect({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/skill": {
       "get": {
         "tags": ["skills"],
@@ -28794,6 +28872,43 @@
           }
         },
         "required": ["file", "additions", "deletions"],
+        "additionalProperties": false
+      },
+      "QualityCommands": {
+        "type": "object",
+        "properties": {
+          "syntax": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "typecheck": {
+            "type": "string"
+          },
+          "test": {
+            "type": "string"
+          },
+          "lint": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "QualityDetection": {
+        "type": "object",
+        "properties": {
+          "commands": {
+            "$ref": "#/components/schemas/QualityCommands"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["commands", "evidence"],
         "additionalProperties": false
       },
       "messenger.account.status": {
@@ -47861,6 +47976,10 @@
     {
       "name": "vcs",
       "description": "Version control routes for a location."
+    },
+    {
+      "name": "quality",
+      "description": "Quality-command detection for a location."
     },
     {
       "name": "skills",

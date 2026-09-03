@@ -8,6 +8,7 @@ import { makeSessionGroups } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
+import { QualityGroup } from "./groups/quality"
 import { VcsGroup } from "./groups/vcs"
 import { SkillGroup } from "./groups/skill"
 import { EventGroup } from "./groups/event"
@@ -76,6 +77,8 @@ const makeApiFromGroup = <
     .add(CommandGroup.middleware(locationMiddleware))
     // Location-scoped like `fs` and for the same reason: a diff belongs to one working tree.
     .add(VcsGroup.middleware(locationMiddleware))
+    // Location-scoped: the manifests it reads are the ones in THAT working tree.
+    .add(QualityGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
@@ -155,6 +158,7 @@ type ApiFromGroup<
       | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof VcsGroup, LocationId>
+      | HttpApiGroup.AddMiddleware<typeof QualityGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof SkillGroup, LocationId>
       | Group
       | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>

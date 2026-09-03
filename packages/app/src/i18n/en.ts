@@ -2288,6 +2288,15 @@ export const dict = {
   "settings.quality.row.testTimeout.title": "Test timeout (minutes)",
   "settings.quality.row.testTimeout.description": "Hard limit for the test gate — a hung test counts as a failure",
   "settings.quality.commands.title": "Provisioned commands",
+  "settings.quality.detect.action": "Detect from this project",
+  "settings.quality.detect.running": "Detecting…",
+  "settings.quality.detect.description":
+    "Reads this project’s own manifests and fills the empty rows below. Nothing is run and nothing you have typed is replaced.",
+  "settings.quality.detect.filled.one": "Filled {{count}} command from this project.",
+  "settings.quality.detect.filled.other": "Filled {{count}} commands from this project.",
+  "settings.quality.detect.nothing": "Nothing new to fill — every command this project declares is already set.",
+  "settings.quality.detect.empty": "The server answered without a proposal.",
+  "settings.quality.detect.failed": "Could not read this project’s manifests",
   "settings.quality.commands.description":
     "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). An agent can fill these in for you with the quality_provision tool.",
   "settings.quality.command.syntax.title": "Syntax check",

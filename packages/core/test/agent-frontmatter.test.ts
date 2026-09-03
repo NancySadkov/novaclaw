@@ -69,16 +69,34 @@ describe("markdown-agent frontmatter: what the decoder REALLY does", () => {
   })
 })
 
-describe("novaclaw agent create writes the key the loader actually reads", () => {
-  test("it assigns `permissions`, and declares no singular `permission` frontmatter field", () => {
-    expect(CLI_SOURCE).toContain("frontmatter.permissions")
-    // The exact regression: a frontmatter type declaring the singular key, or an assignment to it.
-    expect(CLI_SOURCE).not.toMatch(/^\s*permission\?:/m)
-    expect(CLI_SOURCE).not.toMatch(/frontmatter\.permission\b(?!s)/)
+describe("nothing writes agent frontmatter from the CLI any more", () => {
+  /**
+   * ⚠️ RE-POINTED 2026-09-03. Three tests here scanned `cli/cmd/agent.ts` for the writer that
+   * emitted `frontmatter.permissions`, and the CLI prune deleted `agent create` — an LLM-backed
+   * creation wizard on a surface principle 7 makes vestigial and headless-only, and one that dropped
+   * into `prompts.select` whenever three of its four flags were passed.
+   *
+   * The decoder half above is untouched and is where the value always was: it pins what the LOADER
+   * does with a singular `permission:` key, which is the fault the deleted command shipped for its
+   * whole life. That fault is now unreachable from the CLI, and this asserts the unreachability
+   * directly rather than leaving three scans looking for a symbol nothing defines — a scan whose
+   * subject is gone passes or fails for reasons that have nothing to do with the invariant.
+   */
+  test("the CLI's agent command writes no frontmatter at all — it only lists", () => {
+    // Non-vacuity first: the file still exists and still defines a command, so an empty read cannot
+    // make the assertions below pass forever.
+    expect(CLI_SOURCE.length).toBeGreaterThan(200)
+    expect(CLI_SOURCE).toContain("AgentListCommand")
+
+    expect(CLI_SOURCE).not.toContain("frontmatter")
+    expect(CLI_SOURCE).not.toContain("AgentCreateCommand")
+    // The wizard's permission menu went with it; an offer list nothing offers is a door left open.
+    expect(CLI_SOURCE).not.toContain("AVAILABLE_PERMISSIONS")
   })
 
   test("the emitted ruleset round-trips through the real schema with its denies intact", () => {
-    // Mirrors the CLI's construction: deny every offered action the user did not select.
+    // Kept because it never needed the CLI: it constructs the shape that command produced and holds
+    // the DECODER to it. If agent creation returns on any surface, this is the property it must have.
     const offered = ["bash", "read", "edit", "explore", "webfetch", "todowrite", "websearch", "skill"]
     const selected = ["read", "explore"]
     const permissions = offered
@@ -90,7 +108,7 @@ describe("novaclaw agent create writes the key the loader actually reads", () =>
     const kept = Option.getOrThrow(decoded).permissions
     expect(kept).toEqual(permissions)
     // The denies a user asked for are actually present — the property that was false for the entire
-    // lifetime of this command.
+    // lifetime of that command.
     expect(kept?.map((rule) => rule.action).sort()).toEqual([
       "bash",
       "edit",
@@ -100,17 +118,8 @@ describe("novaclaw agent create writes the key the loader actually reads", () =>
       "websearch",
     ])
     expect(kept?.every((rule) => rule.effect === "deny")).toBe(true)
-  })
-
-  test("AVAILABLE_PERMISSIONS offers no action the V2 path has retired", () => {
-    const block = CLI_SOURCE.match(/const AVAILABLE_PERMISSIONS = \[([\s\S]*?)\]/)
-    // Guard the instrument: if the const is renamed or reshaped, fail loudly rather than vacuously.
-    expect(block).not.toBeNull()
-    const offered = [...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
-    expect(offered.length).toBeGreaterThan(0)
-    expect(offered.filter((action) => RETIRED_ACTIONS.includes(action))).toEqual([])
-    // `explore` replaced the retired glob/grep pair. Without it the command can no longer express
-    // "deny search", which is the capability the retirement was supposed to preserve.
-    expect(offered).toContain("explore")
+    // And none of them names an action the V2 path retired, which is what the old
+    // `AVAILABLE_PERMISSIONS` scan was guarding.
+    expect(permissions.filter((rule) => RETIRED_ACTIONS.includes(rule.action))).toEqual([])
   })
 })

@@ -23,6 +23,7 @@ import { AppGroup } from "@novaclaw/protocol/groups/app"
 import { ReferenceGroup } from "@novaclaw/protocol/groups/reference"
 import { SkillGroup } from "@novaclaw/protocol/groups/skill"
 import { TelemetryGroup } from "@novaclaw/protocol/groups/telemetry"
+import { QualityGroup } from "@novaclaw/protocol/groups/quality"
 import { VcsGroup } from "@novaclaw/protocol/groups/vcs"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { SchemaErrorMiddleware } from "@novaclaw/protocol/middleware/schema-error"
@@ -77,6 +78,7 @@ export const TelemetryApi = fragment(TelemetryGroup)
 // here happens to be served next door in `handlers/`; this one is the exception, and saying so is
 // cheaper than letting the next reader conclude the handler was forgotten.
 export const VcsApi = fragment(VcsGroup.middleware(LocationMiddleware))
+export const QualityApi = fragment(QualityGroup.middleware(LocationMiddleware))
 
 /** Name a handler layer's exact public contract without widening its error or service requirements. */
 export function handlerLayer<Name extends string, Error, Requirements>(

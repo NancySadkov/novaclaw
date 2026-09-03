@@ -13,17 +13,6 @@ import { CommandSpec } from "../command-spec"
 
 type AgentMode = "all" | "primary" | "subagent"
 
-// Permission ACTIONS (not raw tool names). Several tools map to one action — write/edit/apply_patch
-// all gate on `edit`, and glob/grep both gate on `explore` — so agents are configured at the action
-// level, which is how the runtime actually enforces it.
-//
-// ⚠️ Every entry must be an action the V2 runtime SPENDS, because an entry nobody spends produces a
-// rule that silently does nothing while this command reports that it denied it — ruling 2's *a fault
-// is never described falsely*, on a surface a user drives by hand. Retired 2026-07-30: `glob`/`grep`
-// (both remapped onto `explore`, see `core/src/config/permission.ts`) and `task` (live only on the
-// legacy `packages/novaclaw/src/agent` island, never on the V2 path these files are loaded by).
-const AVAILABLE_PERMISSIONS = ["bash", "read", "edit", "explore", "webfetch", "todowrite", "websearch", "skill"]
-
 const AgentListCommand = effectCmd({
   command: "list",
   describe: "list all available agents",

@@ -1801,6 +1801,19 @@ export type VcsFileDiff = {
   status?: "added" | "deleted" | "modified"
 }
 
+export type QualityCommands = {
+  syntax?: string
+  check?: string
+  typecheck?: string
+  test?: string
+  lint?: string
+}
+
+export type QualityDetection = {
+  commands: QualityCommands
+  evidence: Array<string>
+}
+
 export type MessengerAccountStatus = {
   id: string
   metadata?: {
@@ -17002,6 +17015,43 @@ export type V2VcsApplyResponses = {
 }
 
 export type V2VcsApplyResponse = V2VcsApplyResponses[keyof V2VcsApplyResponses]
+
+export type V2QualityDetectData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/quality/detect"
+}
+
+export type V2QualityDetectErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2QualityDetectError = V2QualityDetectErrors[keyof V2QualityDetectErrors]
+
+export type V2QualityDetectResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: QualityDetection
+  }
+}
+
+export type V2QualityDetectResponse = V2QualityDetectResponses[keyof V2QualityDetectResponses]
 
 export type V2SkillListData = {
   body?: never
