@@ -8,6 +8,22 @@ import { createClient } from "./gen/client/client.gen.js"
 import { type Config } from "./gen/client/types.gen.js"
 import { NovaclawClient } from "./gen/sdk.gen.js"
 import { wrapClientError } from "../error-interceptor.js"
+
+/**
+ * The server answered an API call with a page instead of a body: an older server without the
+ * route, or a proxy handing back its own HTML. Thrown by the response interceptor below.
+ *
+ * ⚠️ A CLASS, not a sentence. A caller that wants to ignore this case (the terminal does — an
+ * instance without the pty routes is not an error worth a toast) tests `instanceof`; until
+ * 2026-09-03 the one caller matched `message.includes("Request is not supported")`, which meant
+ * rewording this text would have turned a quiet fallback into a thrown error two packages away.
+ */
+export class UnsupportedRequestError extends Error {
+  override readonly name = "UnsupportedRequestError"
+  constructor(readonly contentType: string) {
+    super(`Request is not supported by this version of NovaClaw Server (Server responded with ${contentType})`)
+  }
+}
 export { type Config as NovaclawClientConfig, NovaclawClient }
 
 /**
@@ -111,8 +127,7 @@ export function createNovaclawClient(config?: Config & { directory?: string; exp
   )
   client.interceptors.response.use((response) => {
     const contentType = response.headers.get("content-type")
-    if (contentType === "text/html")
-      throw new Error("Request is not supported by this version of NovaClaw Server (Server responded with text/html)")
+    if (contentType === "text/html") throw new UnsupportedRequestError(contentType)
 
     return response
   })

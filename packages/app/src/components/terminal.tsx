@@ -1,4 +1,5 @@
 import { withAlpha } from "@novaclaw/ui/theme/color"
+import { UnsupportedRequestError } from "@novaclaw/sdk/v2/client"
 import { useTheme } from "@novaclaw/ui/theme/context"
 import { resolveThemeVariant } from "@novaclaw/ui/theme/resolve"
 import type { HexColor } from "@novaclaw/ui/theme/types"
@@ -596,7 +597,7 @@ export const Terminal = (props: TerminalProps) => {
             },
           )
           .catch((err: unknown) => {
-            if (err instanceof Error && err.message.includes("Request is not supported")) return
+            if (err instanceof UnsupportedRequestError) return
             throw err
           })
         if (!result) return
