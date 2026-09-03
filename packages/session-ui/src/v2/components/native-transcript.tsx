@@ -184,6 +184,26 @@ export function NativeTranscript(props: {
   )
   const busy = createMemo(() => props.status?.type === "busy" || props.status?.type === "retry")
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
+  /**
+   * When THIS stretch of work began — across every turn in it.
+   *
+   * The status carries only the current turn's timing, so nothing on the wire says how long the
+   * session has been working. A step that calls a tool ends one turn and starts another, and the
+   * user is still waiting on the same piece of work: the number they want is the one that keeps
+   * counting. Held here because this is the component that watches the status change.
+   *
+   * ⚠️ Cleared when the session stops being busy, NOT when a turn ends. That distinction is the
+   * whole feature; clearing per turn would rebuild the bug it fixes.
+   */
+  let runStart: number | undefined
+  const runStartedAt = createMemo(() => {
+    if (props.status?.type !== "busy") {
+      runStart = undefined
+      return undefined
+    }
+    runStart ??= props.status.timing?.startedAt ?? Date.now()
+    return runStart
+  })
   return (
     <ReasoningFoldContext.Provider
       value={() => ({
@@ -229,7 +249,9 @@ export function NativeTranscript(props: {
               </Show>
             }
           >
-            {(timing) => <TurnReceipt timing={timing()} live developer={props.developer} />}
+            {(timing) => (
+              <TurnReceipt timing={timing()} live developer={props.developer} runStartedAt={runStartedAt()} />
+            )}
           </Show>
           <Show when={props.status?.type === "retry" && props.status.message}>
             {(message) => (
@@ -681,18 +703,39 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
   return <span data-slot="native-turn-elapsed">{seconds(elapsedMs(props.startedAt, props.completedAt, now()))}</span>
 }
 
-function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: boolean }) {
+/**
+ * The receipt's summary is ONE label and ONE clock, and both are about the RUN.
+ *
+ * Owner, 2026-09-03: *"everything should be inside a single Working fold with a count of generated
+ * tokens so the user knows it is going somewhere … the time also resets after each agent's action,
+ * instead of keeping the total so the user could see how long the work is going on."*
+ *
+ * Two defects, one cause: the summary was describing the current TURN rather than the work. It took
+ * its title from the current PHASE (`Writing the answer…`), which is a stage name doing duty as the
+ * name of a fold full of stage names — and it took its clock from `timing.startedAt`, which is the
+ * start of THIS provider turn. A step that calls a tool ends one turn and begins another, so the
+ * clock went back to zero at every action while the user waited on one continuous piece of work.
+ *
+ * So: the title is the working label, always — the phase is inside the fold, where the rest of the
+ * stages are — and the clock counts from `runStartedAt`, which the transcript holds across turns.
+ */
+function TurnReceipt(props: {
+  timing?: TurnTiming
+  live: boolean
+  developer?: boolean
+  /** When this stretch of work began, across every turn in it. Falls back to this turn's own start. */
+  runStartedAt?: number
+}) {
   const timing = () => props.timing
   // One live line, one label. The transcript's own status row, this receipt's fallback and the
   // phase label are three places that can claim "the turn is live"; they must not do it in two
   // different words, and only the host app knows the translated one.
   const actions = useContext(TranscriptActionsContext)
   const working = () => actions().labels?.working ?? "Working…"
-  const liveLabel = () => {
-    const value = timing()
-    const phase = value ? currentPhase(value) : undefined
-    return phase ? `${phaseLabel(phase.phase)}…` : working()
-  }
+  // ⚠️ The phase is NOT the title. It is one row inside, marked `data-current`, which is where a
+  // reader looks for "which stage" — and it stops the fold renaming itself every few seconds while
+  // the user is trying to read it.
+  const liveLabel = () => working()
   const attempts = (value: TurnTiming) =>
     value.providerAttempts.filter((attempt) => attempt.outcome !== "completed" || value.providerAttempts.length > 1)
   // A stage that runs long gets a sentence saying WHY it might. Ticked once a second — the note
@@ -733,7 +776,10 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
                 {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
                   there for whoever wants to open the hood, and a longer name advertises them. */}
                 <span>{props.live ? liveLabel() : "Details"}</span>
-                <ElapsedTime startedAt={value().startedAt} completedAt={value().completedAt} />
+                <ElapsedTime
+                  startedAt={props.live ? (props.runStartedAt ?? value().startedAt) : value().startedAt}
+                  completedAt={value().completedAt}
+                />
               </span>
             </summary>
             <ol data-slot="native-turn-phases">
