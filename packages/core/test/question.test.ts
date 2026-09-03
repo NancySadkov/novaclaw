@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { QuestionV2 } from "@novaclaw/core/question"
+import { Question } from "@novaclaw/schema/question"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
@@ -87,6 +88,9 @@ describe("QuestionV2", () => {
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(exit.cause.toString()).toContain("QuestionV2.RejectedError")
+      // The sentence the transcript decides "dismissed" on: ONE definition, in the schema, and this is
+      // the writer honouring it. Rewording the class without the constant would fail here first.
+      expect(new QuestionV2.RejectedError().message).toBe(Question.DISMISSED_MESSAGE)
       expect(published.map((event) => event.data)).toEqual([{ sessionID, requestID: request.id }])
 
       const unknown = QuestionV2.ID.ascending("que_unknown")

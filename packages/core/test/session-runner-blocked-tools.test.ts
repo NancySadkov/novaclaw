@@ -354,7 +354,10 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
           {
             type: "tool",
             id: "call-question",
-            state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+            state: {
+              status: "error",
+              error: { type: "unknown", message: QuestionV2.DISMISSED_MESSAGE, _tag: "Interrupted" },
+            },
           },
         ],
       },

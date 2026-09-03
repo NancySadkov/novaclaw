@@ -67,6 +67,18 @@ export const Reply = Schema.Struct({
 }).annotate({ identifier: "QuestionV2.Reply" })
 export interface Reply extends Schema.Schema.Type<typeof Reply> {}
 
+/**
+ * The sentence a dismissed ask fails with — on the wire, and in the stored tool row.
+ *
+ * ⚠️ ONE definition, imported by everyone who writes it (`core/src/question.ts`, the legacy
+ * `novaclaw/src/question/index.ts`) and by the one reader that DECIDES on it (the transcript's
+ * question card, which shows a quiet "dismissed" line instead of a red error card). Until
+ * 2026-09-03 it was a literal in `core` and a regex in `session-ui`, two packages apart with nothing
+ * tying them: rewording either side would have turned every dismissal into an error card. Rows
+ * written before then carry this exact text, which is why the VALUE must not change either.
+ */
+export const DISMISSED_MESSAGE = "The user dismissed this question"
+
 const Asked = define({ type: "question.v2.asked", schema: Request.fields })
 const Replied = define({
   type: "question.v2.replied",

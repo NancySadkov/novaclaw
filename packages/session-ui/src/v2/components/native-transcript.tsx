@@ -27,6 +27,7 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
+import { Question } from "@novaclaw/schema/question"
 import { isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
@@ -1084,7 +1085,11 @@ function QuestionTool(props: { part: SessionMessageAssistantTool }) {
     return Array.isArray(raw) ? (raw as string[][]) : []
   }
   const answered = () => answers().length > 0
-  const dismissed = () => state().status === "error" && /dismissed this question/i.test(toolErrorMessage(state()) ?? "")
+  // Decided on the ONE definition of the sentence core writes into the row, not on a local regex
+  // that had to guess it from two packages away. `includes`, not `===`: the runner may wrap a tool's
+  // failure in its own prefix, and the sentence is the part that means "dismissed".
+  const dismissed = () =>
+    state().status === "error" && (toolErrorMessage(state()) ?? "").includes(Question.DISMISSED_MESSAGE)
 
   return (
     <Switch>

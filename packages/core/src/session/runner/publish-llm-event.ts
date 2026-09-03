@@ -343,9 +343,10 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     const assistantMessageID = yield* startAssistant()
     assistantActive = false
     assistantFailed = true
-    assistantFailureMessage = typeof (fault as { message?: unknown }).message === "string"
-      ? ((fault as { message?: string }).message ?? undefined)
-      : undefined
+    assistantFailureMessage =
+      typeof (fault as { message?: unknown }).message === "string"
+        ? ((fault as { message?: string }).message ?? undefined)
+        : undefined
     yield* events.publish(SessionEvent.Step.Failed, {
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
@@ -367,24 +368,35 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     stepSettlement = { finish: "broken", tokens: tokens(undefined) }
   })
 
+  /**
+   * Fail ONE unsettled call with the fault that is true of it. A no-op for a settled or unknown
+   * call, so a caller can name the call it knows about and then sweep the rest with
+   * {@link failUnsettledTools} — the sweep skips what was already written.
+   */
+  const failTool = Effect.fn("SessionRunner.failTool")(function* (callID: string, fault: Fault) {
+    const tool = tools.get(callID)
+    if (tool === undefined || tool.settled) return
+    tool.settled = true
+    yield* events.publish(SessionEvent.Tool.Failed, {
+      sessionID: input.sessionID,
+      timestamp: yield* timestamp,
+      assistantMessageID: tool.assistantMessageID,
+      callID,
+      error: wireError(fault),
+      provider: {
+        executed: tool.providerExecuted,
+        ...(tool.providerMetadata === undefined ? {} : { metadata: tool.providerMetadata }),
+      },
+    })
+  })
+
   const failUnsettledTools = Effect.fn("SessionRunner.failUnsettledTools")(function* (
     fault: Fault,
     hostedOnly = false,
   ) {
     for (const [callID, tool] of tools) {
       if (tool.settled || (hostedOnly && !tool.providerExecuted)) continue
-      tool.settled = true
-      yield* events.publish(SessionEvent.Tool.Failed, {
-        sessionID: input.sessionID,
-        timestamp: yield* timestamp,
-        assistantMessageID: tool.assistantMessageID,
-        callID,
-        error: wireError(fault),
-        provider: {
-          executed: tool.providerExecuted,
-          ...(tool.providerMetadata === undefined ? {} : { metadata: tool.providerMetadata }),
-        },
-      })
+      yield* failTool(callID, fault)
     }
   })
 
@@ -595,6 +607,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     flush,
     failAssistant,
     breakAssistant,
+    failTool,
     failUnsettledTools,
     hasActiveAssistant: () => assistantActive,
     hasAssistantStarted: () => assistantMessageID !== undefined,

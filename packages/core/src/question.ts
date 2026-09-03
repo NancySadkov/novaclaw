@@ -33,9 +33,12 @@ export type Reply = typeof Reply.Type
 
 export const Event = Question.Event
 
+/** The sentence a dismissed ask fails with; see the schema for why it is one definition. */
+export const DISMISSED_MESSAGE = Question.DISMISSED_MESSAGE
+
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionV2.RejectedError", {}) {
   override get message() {
-    return "The user dismissed this question"
+    return Question.DISMISSED_MESSAGE
   }
 }
 

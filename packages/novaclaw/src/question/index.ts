@@ -5,6 +5,7 @@ import { SessionID } from "@/session/schema"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { QuestionRequest } from "@novaclaw/schema/question-request"
+import { Question } from "@novaclaw/schema/question"
 import { Log } from "@novaclaw/schema/log"
 
 export const Option = QuestionRequest.Option
@@ -27,7 +28,7 @@ export const Event = QuestionRequest.Event
 
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {}) {
   override get message() {
-    return "The user dismissed this question"
+    return Question.DISMISSED_MESSAGE
   }
 }
 
