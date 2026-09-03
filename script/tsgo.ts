@@ -54,6 +54,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path"
 import { platform } from "node:os"
 
+import { isStandingGuard } from "./lib/guard-record"
+
 /** Hard ceiling. Above this the process is killed: per-package peaks at 2.2 GB, so 4 GB is slack. */
 const CEILING_MB = Number(process.env.TSGO_CEILING_MB ?? 4096)
 /**
@@ -192,6 +194,26 @@ const binary = getExePath()
 const args = process.argv.slice(2)
 if (process.env.TSGO_SINGLE_THREADED === "1" && !args.includes("--singleThreaded")) args.push("--singleThreaded")
 
+const guardPath = join(root, "tmp", "tsgo-guard.pid")
+/** Measured 2026-08-18: a PowerShell helper costs ~600–1000 ms to appear. Wait a little past that. */
+const GUARD_START_WAIT_MS = 3_000
+
+/**
+ * Is a guard standing right now?
+ *
+ * ⚠️ **A live pid is not enough, and this is the half that broke when the guard learned to exit.**
+ * The rule and the reasoning live in `lib/guard-record.ts`, where they can be exercised; this is the
+ * I/O around it.
+ */
+function standingGuard(): boolean {
+  if (!existsSync(guardPath)) return false
+  try {
+    return isStandingGuard(readFileSync(guardPath, "utf8"), Date.now(), alive)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Make sure the long-lived guard is up before running anything.
  *
@@ -199,6 +221,13 @@ if (process.env.TSGO_SINGLE_THREADED === "1" && !args.includes("--singleThreaded
  * finishes inside its own helper's startup latency; the standing guard has no startup cost because it
  * is already running, and it is the one that has actually killed runaways on this box. Starting it
  * here means "use the wrapper" is the only thing anyone has to remember.
+ *
+ * ⚠️ **It WAITS for the guard to come up, and that wait is what makes the guard's idle-exit safe.**
+ * The guard now ends itself once `tsgo` has finished, so the first typecheck after a quiet spell
+ * starts one — and returning immediately would hand that run the exact hole the standing guard exists
+ * to close: unguarded for the ~1 s the helper takes to appear, which is where a cold `packages/core`
+ * (4097–4158 MB, over the ceiling) begins climbing. Paying up to a second, once per idle period,
+ * against a runaway that has locked this box, is the trade taken deliberately.
  */
 function ensureGuard() {
   if (platform() !== "win32") return // the .ps1 guard is Windows-only; the in-process watcher still applies
@@ -207,12 +236,8 @@ function ensureGuard() {
     // command line contains "tsgo-guard.ps1" — and the counting command's own command line contains
     // that string, so it matched ITSELF, always answered "one is running", and the guard was never
     // started. The bug is invisible: everything looks fine until a runaway is not caught.
-    const guardPid = join(root, "tmp", "tsgo-guard.pid")
-    if (existsSync(guardPid)) {
-      const held = Number(readFileSync(guardPid, "utf8").trim())
-      if (Number.isFinite(held) && alive(held)) return
-      rmSync(guardPid, { force: true })
-    }
+    if (standingGuard()) return
+    rmSync(guardPath, { force: true })
     const guard = join(root, "script", "tsgo-guard.ps1")
     if (!existsSync(guard)) return
     // ⚠️ `-ExecutionPolicy Bypass` is REQUIRED, not belt-and-braces: this machine runs the default
@@ -234,6 +259,16 @@ function ensureGuard() {
       "-Command",
       `Start-Process -FilePath "${shell}" -ArgumentList '${inner}' -WindowStyle Hidden`,
     ])
+    // Wait for the guard's own heartbeat rather than for a fixed delay: the spawn above returns as
+    // soon as `Start-Process` has been ASKED, which says nothing about whether the script ran. An
+    // ExecutionPolicy refusal or a missing pwsh lands here as "the beat never came", not as a hang.
+    const deadline = Date.now() + GUARD_START_WAIT_MS
+    while (Date.now() < deadline && !standingGuard()) Bun.sleepSync(50)
+    if (!standingGuard()) {
+      log(`the standing guard did not report within ${GUARD_START_WAIT_MS} ms — running on the in-process watcher`)
+      console.error(`[tsgo] the memory guard did not start; the in-process watcher still applies.`)
+      return
+    }
     log(`started the standing guard at ${CEILING_MB} MB`)
     console.error(`[tsgo] started the memory guard (${CEILING_MB} MB ceiling).`)
   } catch {
