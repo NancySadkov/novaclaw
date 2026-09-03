@@ -53,7 +53,22 @@ export interface RuntimeStatus {
 }
 
 let currentRuntimeStatus: RuntimeStatus = { stage: "not-loaded" }
-export const runtimeStatus = (): RuntimeStatus => currentRuntimeStatus
+/** Reads the open engine's `publishBlocked`; `undefined` until one is open. */
+let publishBlockedRead: () => string | undefined = () => undefined
+
+/**
+ * A ready store whose durable writes are not landing is reported as ready WITH the reason, on
+ * every read — the same argument `recovery` already makes for the open side ("a silent fallback is
+ * indistinguishable from a healthy boot"), applied to the write side. `publishBlocked` was written
+ * on every failed checkpoint and read by nothing until 2026-09-03, so a repeating checkpoint
+ * failure left the user writing memories that lived only in MEMFS while nova-health said healthy.
+ */
+export const describeRuntimeStatus = (status: RuntimeStatus, publishBlocked: string | undefined): RuntimeStatus => {
+  if (status.stage !== "ready" || publishBlocked === undefined) return status
+  const blocked = `durable writes blocked: ${publishBlocked}`
+  return { stage: "ready", detail: status.detail === undefined ? blocked : `${status.detail}; ${blocked}` }
+}
+export const runtimeStatus = (): RuntimeStatus => describeRuntimeStatus(currentRuntimeStatus, publishBlockedRead())
 
 const DEFAULT_GLOBAL_STAGED_CAP = 5000
 // Backfill batch per idle pass — bounded so the drain never monopolises the engine lock or the device.
@@ -104,6 +119,7 @@ export const layerFromConfig = (
       }
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "graph")
       currentRuntimeStatus = { stage: "not-loaded" }
+      publishBlockedRead = () => undefined
       let engine: WasmMemory | undefined
       let opening: Promise<MemoryClient.Interface> | undefined
       const open = () => {
@@ -119,6 +135,7 @@ export const layerFromConfig = (
             const discarded = await opened.discardLegacyGlobalExtracts().catch(() => 0)
             if (discarded > 0) Effect.runFork(Log.event("kb.memory.legacy.discarded", { "memory.rows": discarded }))
             engine = opened
+            publishBlockedRead = () => opened.publishBlocked
             // A store that opened by FALLING BACK is ready, but not the same ready — the user is
             // reading an older generation and some of their newest memories are gone. Reporting it
             // through `detail` puts it in front of nova-health and the instance status without a
