@@ -371,3 +371,128 @@ describe("the guard actually bites (negative control)", () => {
     expect(legacyOperations(fabricated)).toEqual(["GET /file", "POST /file"])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// THE SECOND HOME (RF-13-7, 2026-09-03). The pin above says a path is contract iff it sits under
+// `/api/*` — and that is exactly the escape hatch: a route DECLARED in the instance family
+// (`packages/novaclaw/src/server/routes/instance/httpapi/groups/*.ts`) under an `/api/…` path
+// read as contract to the ledger above while living in the home ruling 11 says is welded to server
+// internals. Forty-three had been added that way, and the group files cite the ledger as the
+// precedent. So the escape hatch is now NAMED: every `/api/*` path in the spec must be declared in
+// `packages/protocol`, or be on this list — which, like the one above, may only shrink.
+//
+// "Declared in protocol" is measured against the SOURCE (`packages/protocol/src/groups/*.ts`), by
+// path literal, `:param` normalised to `{param}`; a wildcard path (`/api/fs/read/*`) is declared by
+// its prefix literal. A spec path this scan cannot find in protocol source and cannot find here
+// fails; a listed path the spec drops, or that protocol now declares, fails with "delete the line".
+// ─────────────────────────────────────────────────────────────────────────────────────────
+export const INSTANCE_DECLARED_API_PATHS: readonly string[] = [
+  "/api/capability",
+  "/api/capability/{name}/retry",
+  "/api/community/ask",
+  "/api/community/channel",
+  "/api/community/channel/archived",
+  "/api/community/channel/{name}",
+  "/api/community/channel/{name}/history",
+  "/api/community/channel/{name}/listed",
+  "/api/community/channel/{name}/mute",
+  "/api/community/channel/{name}/post",
+  "/api/community/channel/{name}/sync",
+  "/api/community/contact",
+  "/api/community/contact/{networkID}",
+  "/api/community/contact/{networkID}/block",
+  "/api/community/direct",
+  "/api/community/direct/{networkID}",
+  "/api/community/direct/{networkID}/history",
+  "/api/community/discover",
+  "/api/community/dm",
+  "/api/community/doorman",
+  "/api/community/filter",
+  "/api/community/identity",
+  "/api/community/inbound",
+  "/api/community/listed",
+  "/api/community/nearby",
+  "/api/community/offer",
+  "/api/community/offer/mine",
+  "/api/community/offers",
+  "/api/community/participation",
+  "/api/community/peers",
+  "/api/community/rotate",
+  "/api/community/search",
+  "/api/community/search-channels",
+  "/api/community/succession",
+  "/api/community/sync/ids",
+  "/api/community/sync/messages",
+  "/api/community/sync/summary",
+  "/api/community/transport",
+  "/api/diagnosis",
+  "/api/identity/backup",
+  "/api/identity/restore",
+  "/api/policy",
+  "/api/project",
+]
+
+const PROTOCOL_GROUPS = path.resolve(import.meta.dir, "../../../protocol/src/groups")
+
+/** Every `/api/…` path literal `packages/protocol` declares, in the spec's `{param}` spelling. */
+export function protocolDeclaredApiPaths(dir: string = PROTOCOL_GROUPS): Set<string> {
+  const declared = new Set<string>()
+  if (!fs.existsSync(dir)) return declared
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".ts")) continue
+    const source = fs
+      .readFileSync(path.join(dir, name), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    for (const match of source.matchAll(/"(\/api\/[^"]*)"/g))
+      declared.add(match[1]!.replace(/:([A-Za-z0-9_]+)/g, "{$1}"))
+  }
+  return declared
+}
+
+const isProtocolDeclared = (route: string, declared: ReadonlySet<string>): boolean =>
+  declared.has(route) || (route.endsWith("/*") && declared.has(route.slice(0, -1)))
+
+describe("the second home — /api/* paths declared outside packages/protocol", () => {
+  const declared = protocolDeclaredApiPaths()
+  const listed = new Set(INSTANCE_DECLARED_API_PATHS)
+
+  test("the protocol scan sees the contract — it is not an empty set that makes every path an escape", () => {
+    expect(
+      declared.size,
+      "no /api literals found under packages/protocol/src/groups — repoint the scan",
+    ).toBeGreaterThan(50)
+    expect(isProtocolDeclared("/api/fs/read/*", declared)).toBe(true)
+  })
+
+  test("🔴 every /api/* path in the spec is declared in packages/protocol, or is on the list", () => {
+    const unlisted = API_PATHS.filter((route) => !isProtocolDeclared(route, declared) && !listed.has(route)).sort()
+    expect(
+      unlisted,
+      [
+        "These /api/* paths are declared OUTSIDE packages/protocol and are not on INSTANCE_DECLARED_API_PATHS.",
+        "The instance family is welded to server internals (todo.md ruling 11); a route added there under",
+        "/api/* read as contract to the ledger above while growing the second home. Declare it in",
+        "packages/protocol/src/groups/*.ts, or — only if it genuinely cannot live there — add it to the",
+        "list and expect to justify growing a set that is supposed to shrink.",
+      ].join("\n  "),
+    ).toEqual([])
+  })
+
+  test("the list only SHRINKS — a path the spec dropped or protocol now declares must leave it", () => {
+    const specPaths = new Set(API_PATHS)
+    const stale = INSTANCE_DECLARED_API_PATHS.filter((route) => !specPaths.has(route)).map(
+      (route) => `${route} (the spec no longer declares it — DELETE the line)`,
+    )
+    const promoted = INSTANCE_DECLARED_API_PATHS.filter((route) => isProtocolDeclared(route, declared)).map(
+      (route) => `${route} (packages/protocol declares it now — DELETE the line; it is contract)`,
+    )
+    expect([...stale, ...promoted]).toEqual([])
+    expect(new Set(INSTANCE_DECLARED_API_PATHS).size).toBe(INSTANCE_DECLARED_API_PATHS.length)
+  })
+
+  test("the scan bites (negative control)", () => {
+    expect(isProtocolDeclared("/api/no/such/route", declared)).toBe(false)
+    expect(protocolDeclaredApiPaths(path.join(PROTOCOL_GROUPS, "no-such-dir")).size).toBe(0)
+  })
+})
