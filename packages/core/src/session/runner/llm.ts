@@ -53,7 +53,7 @@ import { SessionComponentRegistry } from "../component-registry"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
-import { rootSessionType, stanceOf } from "../config-resolve"
+import { EFFECTIVE_CONFIG_DEFAULTS, rootSessionType, stanceOf } from "../config-resolve"
 import { SessionEffectiveConfig } from "../effective-config"
 import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
@@ -1666,7 +1666,18 @@ export const layer = Layer.effect(
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(
-            agent.info?.permissions,
+            // The horizon sees what the verdict will refuse everywhere — the mode overlay, the Tuning
+            // switches and the unattended stance, not the agent's own rules alone — so a tool the
+            // model could never use is withdrawn rather than advertised and refused (see
+            // `PermissionV2.horizonLayers` for what stays out, and why).
+            PermissionV2.horizonLayers({
+              agent: agent.info?.permissions,
+              mode: config.permissionMode ?? EFFECTIVE_CONFIG_DEFAULTS.permissionMode,
+              resolved: config,
+              // The NARROWED root type: an unreadable chain reads as unattended here exactly as it does
+              // for the jail, and this file does not become another holder of the tri-state.
+              rootType: yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID)),
+            }),
             (name) =>
               !(drivingASet && name === SpawnTool.name) &&
               ShortChat.offered(config.shortChat, name) &&

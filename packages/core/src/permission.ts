@@ -25,6 +25,7 @@ import {
   stanceOf,
   unattendedStanceRules,
   type PermissionMode,
+  type RootType,
 } from "./session/config-resolve"
 import { ConfigPluginGlob } from "./config/plugin/glob"
 import { FSUtil } from "./fs-util"
@@ -35,6 +36,80 @@ import { ShortChat } from "./session/runner/short-chat"
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
  *  baseline already whitelists for external read/write. Slashed to match `LocationMutation.resolve`. */
 const REPORT_RESOURCE = path.join(Global.Path.tmp, "*").replaceAll("\\", "/")
+
+/**
+ * The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
+ * may still write its findings somewhere — a review that cannot save its own report is not much use.
+ * The allows land AFTER the mode denies (findLast) so they apply to the temp dir and nowhere else, and
+ * they are folded into the same array the early deny-fast arm checks, or that arm would refuse the
+ * write before ever seeing the exception.
+ */
+export const modeRulesFor = (mode: PermissionMode): Permission.Ruleset =>
+  mode === "plan"
+    ? [
+        ...MODE_RULES[mode],
+        { action: "create", resource: REPORT_RESOURCE, effect: "allow" as const },
+        { action: "write", resource: REPORT_RESOURCE, effect: "allow" as const },
+        { action: "edit", resource: REPORT_RESOURCE, effect: "allow" as const },
+        { action: "external_directory_write", resource: REPORT_RESOURCE, effect: "allow" as const },
+      ]
+    : MODE_RULES[mode]
+
+/** The Tuning switches and the Chat stance as read by the evaluator and the horizon alike. */
+export interface FeatureSwitches {
+  readonly shortChat?: boolean | undefined
+  readonly surgicalEdits?: boolean | undefined
+  readonly askBeforeChanges?: boolean | undefined
+}
+
+/**
+ * The two Tuning switches that were once modes, plus the Chat stance. All NARROW whatever mode is
+ * active and never widen it, so they sit after the mode overlay and are included in the deny-fast
+ * arm. Both switches default OFF (no global `{ enabled }` block to inherit from), which is why absent
+ * means "do not apply".
+ */
+export const featureRulesFor = (resolved: FeatureSwitches): Permission.Ruleset => [
+  ...ShortChat.permissionRules(resolved.shortChat),
+  // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
+  ...(stanceOf("surgicalEdits", resolved.surgicalEdits)
+    ? [{ action: "write", resource: "*", effect: "deny" as const }]
+    : []),
+  // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
+  // Literally THE SAME list `MODE_RULES.ask` is (config-resolve.ts, ASK_BEFORE_CHANGES_RULES) —
+  // it used to be a second copy of it, with nothing but a comment claiming they agreed.
+  ...(stanceOf("askBeforeChanges", resolved.askBeforeChanges) ? ASK_BEFORE_CHANGES_RULES : []),
+]
+
+/**
+ * The LAYERS the tool horizon is filtered against: what `evaluateInput` will refuse on every target,
+ * so a tool the model could never use is not advertised and then refused (`registry.ts`'s
+ * `whollyDisabled`). Until 2026-09-03 `materialize` was handed the agent's own ruleset alone, and an
+ * Analyze session advertised eight tools it always refused.
+ *
+ * ⚠️ Layers, not one concatenated ruleset, because that is how the verdict reads them: the evaluator
+ * refuses when the agent's rules OR the mode OR the switches OR the stance deny, each by its own
+ * last match. Concatenated, a later layer's wildcard allow (Build allows `bash` on `*`) would mask
+ * an earlier layer's wildcard deny (an agent floor that withdraws `bash`) and the horizon would
+ * re-advertise a tool the verdict refuses — the fault this exists to remove, from the other side.
+ *
+ * Deliberately NOT the whole verdict:
+ *  · project narrowing stays out — a project may not change the horizon, only the verdict;
+ *  · saved answers and attachment protection stay out — they are per-target, never wildcard denies;
+ *  · the auto-mode grant stays out — it can only make the mode MORE restrictive than `mode`
+ *    (`autoResolvedMode` folds it under `autoCeiling`), so the horizon computed without it withdraws
+ *    a subset of what the verdict refuses and never withholds a tool the verdict would allow.
+ */
+export const horizonLayers = (input: {
+  readonly agent: Permission.Ruleset | undefined
+  readonly mode: PermissionMode
+  readonly resolved: FeatureSwitches
+  readonly rootType: RootType
+}): ReadonlyArray<Permission.Ruleset> => [
+  input.agent ?? [],
+  modeRulesFor(input.mode),
+  featureRulesFor(input.resolved),
+  unattendedStanceRules(input.rootType, input.mode),
+]
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -931,30 +1006,11 @@ export const layer = Layer.effect(
       // The allows land AFTER the mode denies (findLast) so they apply to the temp dir and nowhere else, and
       // they are folded into the same array the early deny-fast arm checks, or that arm would refuse the
       // write before ever seeing the exception.
-      const modeRules =
-        mode === "plan"
-          ? [
-              ...MODE_RULES[mode],
-              { action: "create", resource: REPORT_RESOURCE, effect: "allow" as const },
-              { action: "write", resource: REPORT_RESOURCE, effect: "allow" as const },
-              { action: "edit", resource: REPORT_RESOURCE, effect: "allow" as const },
-              { action: "external_directory_write", resource: REPORT_RESOURCE, effect: "allow" as const },
-            ]
-          : MODE_RULES[mode]
+      const modeRules = modeRulesFor(mode)
       // The two Tuning switches that were once modes. Both NARROW whatever mode is active and never widen
       // it, so they sit after the mode overlay and are included in the deny-fast arm below. Both default
       // OFF (no global `{ enabled }` block to inherit from), which is why absent means "do not apply".
-      const featureRules: Permission.Ruleset = [
-        ...ShortChat.permissionRules(resolved.shortChat),
-        // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
-        ...(stanceOf("surgicalEdits", resolved.surgicalEdits)
-          ? [{ action: "write", resource: "*", effect: "deny" as const }]
-          : []),
-        // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
-        // Literally THE SAME list `MODE_RULES.ask` is (config-resolve.ts, ASK_BEFORE_CHANGES_RULES) —
-        // it used to be a second copy of it, with nothing but a comment claiming they agreed.
-        ...(stanceOf("askBeforeChanges", resolved.askBeforeChanges) ? ASK_BEFORE_CHANGES_RULES : []),
-      ]
+      const featureRules = featureRulesFor(resolved)
       // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK,
       // another checkout, or any other host-readable file. Every permission mode gets this same
       // capability; only WRITES distinguish `yolo` from the other modes. It sits at the lowest

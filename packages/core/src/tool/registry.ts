@@ -59,7 +59,8 @@ export interface Interface {
   /** Every currently registered canonical tool, before per-agent visibility filters. */
   readonly catalogue: () => Effect.Effect<ReadonlyArray<ToolCatalogue.Source>>
   readonly materialize: (
-    permissions?: PermissionV2.Ruleset,
+    /** One ruleset, or the LAYERS of `PermissionV2.horizonLayers` — withdrawn when any layer wholly disables. */
+    permissions?: PermissionV2.Ruleset | ReadonlyArray<PermissionV2.Ruleset>,
     offered?: (name: string) => boolean,
     discovered?: ReadonlySet<string>,
     /**
@@ -380,7 +381,7 @@ const registryLayer = Layer.effect(
         return [...sources.values()].toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (
-        permissions = [],
+        permissions: PermissionV2.Ruleset | ReadonlyArray<PermissionV2.Ruleset> = [],
         offered = () => true,
         discovered = new Set<string>(),
         variantOf = () => undefined,
@@ -402,8 +403,11 @@ const registryLayer = Layer.effect(
         // registration. Routing runs only over survivors, so a `true` route decision can undo an
         // earlier ROUTING decision but can never resurrect a permission-withdrawn tool. Live tool
         // availability runs last, and a routed-off tool never pays its predicate's I/O.
+        // One ruleset or several LAYERS (`PermissionV2.horizonLayers`): a tool is withdrawn when any
+        // layer wholly disables it, which is how the verdict reads them — see that function.
+        const layers: ReadonlyArray<PermissionV2.Ruleset> = isLayered(permissions) ? permissions : [permissions]
         for (const [name, registration] of registrations) {
-          if (whollyDisabled(permission(registration.tool, name), permissions)) {
+          if (layers.some((layer) => whollyDisabled(permission(registration.tool, name), layer))) {
             registrations.delete(name)
             continue
           }
@@ -596,6 +600,10 @@ function stringifyStructured(value: unknown) {
  * `resource: "*"` withdraws while a deny on a NARROWER resource does not. Stating that in a comment
  * beside the floor got it wrong once already; `agent-floor-horizon.test.ts` drives this instead.
  */
+const isLayered = (
+  permissions: PermissionV2.Ruleset | ReadonlyArray<PermissionV2.Ruleset>,
+): permissions is ReadonlyArray<PermissionV2.Ruleset> => permissions.length > 0 && Array.isArray(permissions[0])
+
 export function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
   const rule = rules.findLast((rule) => Wildcard.match(action, rule.action))
   return rule?.resource === "*" && rule.effect === "deny"
