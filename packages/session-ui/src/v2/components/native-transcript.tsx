@@ -204,6 +204,17 @@ export function NativeTranscript(props: {
    * displays (`~525` in the owner's screenshot), over every part the open message has streamed —
    * reasoning AND answer, because both are the model generating.
    */
+  /** The open message's reasoning, so the working fold can hold it instead of a second fold beside it. */
+  const liveReasoning = createMemo(() => {
+    const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
+    if (open?.type !== "assistant") return undefined
+    const text = open.content
+      .filter((part) => part.type === "reasoning")
+      .map((part) => (part.type === "reasoning" ? part.text : ""))
+      .join("")
+      .trim()
+    return text.length === 0 ? undefined : text
+  })
   const liveTokens = createMemo(() => {
     const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
     if (open?.type !== "assistant") return undefined
@@ -273,6 +284,7 @@ export function NativeTranscript(props: {
                 developer={props.developer}
                 runStartedAt={runStartedAt()}
                 tokens={liveTokens()}
+                reasoning={liveReasoning()}
               />
             )}
           </Show>
@@ -648,7 +660,11 @@ function AssistantMessage(props: {
             </Match>
             <Match when={part.type === "reasoning" && part}>
               {(p) => (
-                <Show when={p().text.trim()}>
+                // ⚠️ Hidden ONLY while the live working fold is holding this same text — otherwise it
+                // would render twice, which is the two-rows-one-wait defect facing the other way. The
+                // gate is the same one the per-message receipt already uses, so the two cannot
+                // disagree about which of them is showing.
+                <Show when={p().text.trim() && !(props.liveTiming && !props.message.time.completed)}>
                   <ReasoningPart part={p()} tokens={reasoningTokens()} />
                 </Show>
               )}
@@ -750,6 +766,20 @@ function TurnReceipt(props: {
   runStartedAt?: number
   /** Approximate tokens generated so far, already formatted with its `~`. Live turns only. */
   tokens?: string
+  /**
+   * The model's reasoning while this run is live, held INSIDE the working fold.
+   *
+   * 🔴 One fold, not two. Owner, 2026-09-03: *"everything being inside a single Working fold with a
+   * count of generated tokens"* — and principle 12(d) says the same thing on its own: state what is
+   * in force in ONE line, with the rest on demand. A separate `Reasoning…` row beside a separate
+   * `Working…` row is two lines about one wait, which is what the screenshot showed.
+   *
+   * ⚠️ LIVE only, and that is the whole distinction. Once the turn settles the reasoning goes back to
+   * its own fold in the transcript, because a finished turn's reasoning is a RECORD somebody opens
+   * deliberately — folding it into a list of stage timings would bury it. What is merged here is the
+   * live status, which is one thing happening now.
+   */
+  reasoning?: string
 }) {
   const timing = () => props.timing
   // One live line, one label. The transcript's own status row, this receipt's fallback and the
@@ -810,6 +840,13 @@ function TurnReceipt(props: {
                 />
               </span>
             </summary>
+            <Show when={props.reasoning}>
+              {(text) => (
+                <div data-slot="native-turn-reasoning">
+                  <Markdown text={text()} />
+                </div>
+              )}
+            </Show>
             <ol data-slot="native-turn-phases">
               <For each={value().phases}>
                 {(phase) => (

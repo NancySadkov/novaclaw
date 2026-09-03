@@ -227,6 +227,13 @@
   color: var(--v2-text-text-faint);
   font-variant-numeric: tabular-nums;
 }
+/* The reasoning text, inside the working fold and above the stage list: what the model is thinking
+   comes before how long each stage took. Muted like the rest of the fold's body. */
+[data-slot="native-turn-reasoning"] {
+  margin-top: 0.375rem;
+  margin-bottom: 0.5rem;
+  color: var(--v2-text-text-muted);
+}
 [data-slot="native-turn-phases"] {
   display: grid;
   gap: 0.25rem;
