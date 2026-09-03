@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
+import { Context, Effect, Layer, Scope } from "effect"
+import { Database } from "@novaclaw/core/database/database"
+import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { Server } from "../../src/server/server"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { withTimeout } from "../../src/util/timeout"
@@ -355,6 +360,46 @@ describe("HttpApi Server.listen", () => {
       await withTimeout(socket.closed, 5_000, "timed out waiting for websocket close before graceful stop resolved")
     } finally {
       if (!stopped) await stop(listener, "timed out cleaning up overlapping stop listener").catch(() => undefined)
+    }
+  })
+
+  /**
+   * One process, ONE graph. `novaclaw serve` materialises `AppLayer` through `AppRuntime` and then
+   * calls `Server.listen`. Until 2026-09-03 the listener built its routes against a FRESH
+   * `Layer.makeMemoMapUnsafe()`, so the shipped process ran two complete instance graphs: two
+   * `Database.Service`s over the live file (which falsified `config-store-write.ts`'s
+   * single-connection argument for `PATCH /config`), a second MCP child manager, and a second event
+   * bus whose `EventV2Bridge` never saw what the server published. Every other build site threads
+   * the shared `memoMap`.
+   *
+   * Under this package's `NOVACLAW_DB=":memory:"` a database is identified by its layer BUILD, which
+   * makes the defect directly observable rather than inferred: a session written behind the shared
+   * `memoMap` is served by a listener that shares the map, and is a 404 to one that built its own.
+   * A/B'd against the fresh-map line on the day this landed — 404 there, 200 here.
+   */
+  test("🔴 one process, one graph: a session seeded behind the shared memo map is served by Server.listen", async () => {
+    const listener = await startListener()
+    await using tmp = await tmpdir()
+    try {
+      const id = SessionSchema.ID.make("ses_listenonegraph")
+      const services = await Effect.runPromise(
+        Layer.buildWithMemoMap(Database.defaultLayer, memoMap, Scope.makeUnsafe()),
+      )
+      const { db } = Context.get(services, Database.Service)
+      await Effect.runPromise(
+        db
+          .insert(SessionTable)
+          .values({ id, slug: id, directory: tmp.path, title: id, version: "test" })
+          .run()
+          .pipe(Effect.orDie),
+      )
+      const response = await fetch(new URL(`/api/session/${id}`, listener.url), {
+        headers: { authorization: authorization(), "x-novaclaw-directory": tmp.path },
+      })
+      expect(response.status).toBe(200)
+      expect(((await response.json()) as { data: { id: string } }).data.id).toBe(id)
+    } finally {
+      await listener.stop(true)
     }
   })
 

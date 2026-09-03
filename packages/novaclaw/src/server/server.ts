@@ -6,6 +6,7 @@ import { HttpIncomingMessage, HttpRouter, HttpServer } from "effect/unstable/htt
 import * as FileSystem from "effect/FileSystem"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
+import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
@@ -201,7 +202,13 @@ function startWithPortFallback(opts: ListenOptions) {
 
 function startListener(opts: ListenOptions, port: number) {
   const scope = Scope.makeUnsafe()
-  return Layer.buildWithMemoMap(listenerLayer(opts, port), Layer.makeMemoMapUnsafe(), scope).pipe(
+  // The SHARED memo map, as every other build site uses (`app-runtime.ts`, `run-service.ts`,
+  // `httpapi/server.ts`). Effect memoizes a layer by object identity within one map, so a fresh
+  // `Layer.makeMemoMapUnsafe()` here built a second complete instance graph beside the one
+  // `AppRuntime` had already materialized for the CLI command: a second `Database.Service` over the
+  // live database, a second MCP child manager, a second event bus whose bridge saw nothing the
+  // server published. `database.ts`'s single-connection argument only holds when the map is shared.
+  return Layer.buildWithMemoMap(listenerLayer(opts, port), memoMap, scope).pipe(
     Effect.provide(HttpApiApp.context),
     Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
     Effect.map(
