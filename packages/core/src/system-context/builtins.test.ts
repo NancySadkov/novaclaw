@@ -72,7 +72,8 @@ test("core/environment is wired to the diff, not to a full re-render", () => {
   expect(source, "the core/environment source moved — re-point this, do not delete it").toContain(
     'SystemContext.Key.make("core/environment")',
   )
-  expect(source).toContain("update: environmentUpdate,")
+  expect(source).toContain("update: (previous, current) => environmentUpdate(previous.rendered, current.rendered),")
+  expect(source).toContain("equivalent: environmentEquivalent,")
   expect(source, "the old whole-block re-render must not come back for this key").not.toContain(
     'update: (_previous, environment) => ["The environment you are running in is now:"',
   )

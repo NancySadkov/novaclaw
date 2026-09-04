@@ -15416,6 +15416,22 @@
         },
         "description": "Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.",
         "summary": "Interrupt session execution",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
         "x-codeSamples": [
           {
             "lang": "js",
@@ -23309,6 +23325,9 @@
             "$ref": "#/components/schemas/EventSessionNextToolCalled"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextToolLabelled"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextToolProgress"
           },
           {
@@ -23349,6 +23368,9 @@
           },
           {
             "$ref": "#/components/schemas/EventAppRegistered"
+          },
+          {
+            "$ref": "#/components/schemas/EventAgentStatusUpdated"
           },
           {
             "$ref": "#/components/schemas/EventMemoryClaimRecorded"
@@ -25878,6 +25900,45 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.next.tool.labelled"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "assistantMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "callID": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["session.next.tool.progress"]
                   },
                   "properties": {
@@ -26390,6 +26451,37 @@
                       }
                     },
                     "required": ["id", "title"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["agent.status.updated"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "agent": {
+                        "type": "string"
+                      },
+                      "task": {
+                        "type": "string"
+                      },
+                      "observed": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["agent", "task", "observed"],
                     "additionalProperties": false
                   }
                 },
@@ -29438,6 +29530,9 @@
             "$ref": "#/components/schemas/SessionNextToolCalled"
           },
           {
+            "$ref": "#/components/schemas/SessionNextToolLabelled"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextToolProgress"
           },
           {
@@ -29478,6 +29573,9 @@
           },
           {
             "$ref": "#/components/schemas/AppRegistered"
+          },
+          {
+            "$ref": "#/components/schemas/AgentStatusUpdated"
           },
           {
             "$ref": "#/components/schemas/MemoryClaimRecorded"
@@ -30846,6 +30944,9 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           },
           "provider": {
@@ -34799,6 +34900,9 @@
           "shortChat": {
             "type": "boolean"
           },
+          "reground": {
+            "type": "boolean"
+          },
           "description": {
             "type": "string"
           },
@@ -37241,6 +37345,9 @@
             "additionalProperties": false
           },
           "shortChat": {
+            "type": "boolean"
+          },
+          "reground": {
             "type": "boolean"
           },
           "mode": {
@@ -42544,6 +42651,67 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionNextToolLabelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.tool.labelled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "callID": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "SessionNextCompactionDelta": {
         "type": "object",
         "properties": {
@@ -42836,6 +43004,59 @@
               }
             },
             "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "AgentStatusUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["agent.status.updated"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "task": {
+                "type": "string"
+              },
+              "observed": {
+                "type": "number"
+              }
+            },
+            "required": ["agent", "task", "observed"],
             "additionalProperties": false
           }
         },
@@ -46511,6 +46732,45 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextToolLabelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.tool.labelled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "callID": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextToolProgress": {
         "type": "object",
         "properties": {
@@ -47015,6 +47275,37 @@
               }
             },
             "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventAgentStatusUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["agent.status.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "task": {
+                "type": "string"
+              },
+              "observed": {
+                "type": "number"
+              }
+            },
+            "required": ["agent", "task", "observed"],
             "additionalProperties": false
           }
         },

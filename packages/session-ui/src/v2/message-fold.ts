@@ -319,6 +319,11 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       match.state = { status: "running", input: event.data.input, structured: {}, content: [] }
       break
     }
+    case "session.next.tool.labelled": {
+      const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
+      if (match) match.title = event.data.title
+      break
+    }
     case "session.next.tool.progress": {
       const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
       if (match?.state.status !== "running") break
@@ -434,8 +439,14 @@ function messageCreatedAt(message: SessionMessage): number | undefined {
   return undefined
 }
 
-function isInFlightAssistant(message: SessionMessage): boolean {
-  return message.type === "assistant" && !message.time?.completed
+export function isInFlightAssistant(message: SessionMessage): boolean {
+  return (
+    message.type === "assistant" &&
+    (!message.time?.completed ||
+      message.content.some(
+        (part) => part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"),
+      ))
+  )
 }
 
 /**

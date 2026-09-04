@@ -34,6 +34,8 @@ import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { EventV2 } from "@novaclaw/core/event"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { resolveConfigView } from "./session-config"
 
 const DefaultSessionsLimit = 50
@@ -973,6 +975,7 @@ const SessionObservationHandler = handlerLayer(
       const session = yield* SessionV2.Service
       const attempts = yield* SessionExecutionAttempt.Service
       const execution = yield* SessionExecution.Service
+      const events = yield* EventV2.Service
 
       return handlers
         .handle(
@@ -1052,6 +1055,16 @@ const SessionObservationHandler = handlerLayer(
           "session.interrupt",
           Effect.fn(function* (ctx) {
             yield* session.interrupt(ctx.params.sessionID)
+            const reason = ctx.payload.reason?.trim()
+            if (reason) {
+              const timestamp = yield* DateTime.now
+              yield* events.publish(SessionEvent.Synthetic, {
+                sessionID: ctx.params.sessionID,
+                messageID: SessionMessage.ID.create(),
+                timestamp,
+                text: `You stopped the running command: ${reason}`,
+              })
+            }
             return HttpApiSchema.NoContent.make()
           }),
         )

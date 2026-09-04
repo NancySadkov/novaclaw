@@ -364,6 +364,29 @@
   overflow-x: auto;
   max-height: 24rem;
 }
+[data-slot="native-command-stop"] {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+[data-slot="native-command-stop"] input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 0.375rem;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+}
+[data-slot="native-command-stop"] button {
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--v2-state-fg-danger) 18%, transparent);
+  color: var(--v2-state-fg-danger);
+}
+[data-slot="native-command-stop"] button:disabled {
+  opacity: 0.45;
+}
 
 /* tool: unified-diff body */
 [data-slot="native-tool-diff"] {

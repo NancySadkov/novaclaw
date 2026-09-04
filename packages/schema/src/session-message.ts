@@ -238,6 +238,8 @@ export const AssistantTool = Schema.Struct({
   type: Schema.Literal("tool"),
   id: Schema.String,
   name: Schema.String,
+  /** Live, model-authored plain-language label for the tool card. */
+  title: Schema.String.pipe(optional),
   provider: Schema.Struct({
     executed: Schema.Boolean,
     metadata: ProviderMetadata.pipe(optional),

@@ -1078,6 +1078,7 @@ export const makeSessionGroups = <
       .add(
         HttpApiEndpoint.post("session.interrupt", "/api/session/:sessionID/interrupt", {
           params: { sessionID: Session.ID },
+          payload: Schema.Struct({ reason: Schema.String.pipe(Schema.optional) }),
           success: HttpApiSchema.NoContent,
           error: SessionNotFoundError,
         })

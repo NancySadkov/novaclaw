@@ -28,7 +28,7 @@ import type {
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Question } from "@novaclaw/schema/question"
-import { isOptimistic, unqueuedPending } from "../message-fold"
+import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
@@ -51,6 +51,7 @@ import {
 import { useI18n, type UiI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
 import { messageTime } from "../message-time"
+import { commandElapsed, shellActionTitle } from "../shell-card"
 import {
   attemptLabel,
   currentPhase,
@@ -122,6 +123,7 @@ type TranscriptActions = {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
+  onStopCommand?: (reason: string) => void | Promise<void>
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 
@@ -151,6 +153,7 @@ export function NativeTranscript(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
+  onStopCommand?: (reason: string) => void | Promise<void>
   status?: SessionStatus
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
@@ -168,9 +171,7 @@ export function NativeTranscript(props: {
   const visible = createMemo(() => {
     return selectTranscriptMessages(props.messages)
   })
-  const hasOpenAssistant = createMemo(() =>
-    visible().some((message) => message.type === "assistant" && !message.time.completed),
-  )
+  const hasOpenAssistant = createMemo(() => visible().some(isInFlightAssistant))
   // A harness steer rides the `user` role, so the turn boundary is "a user message the USER wrote".
   //
   // ⚠️ `stableGroups` is load-bearing, not an optimisation. `<For>` keys by reference, so returning
@@ -250,6 +251,7 @@ export function NativeTranscript(props: {
           onRetry: props.onRetry,
           onChooseModel: props.onChooseModel,
           onUnpinDevice: props.onUnpinDevice,
+          onStopCommand: props.onStopCommand,
         })}
       >
         <div data-component="native-transcript" class={props.class}>
@@ -327,7 +329,7 @@ function Turn(props: {
 }) {
   const i18n = useI18n()
   const body = () => props.group.body
-  const running = () => props.busy || body().some((message) => message.type === "assistant" && !message.time.completed)
+  const running = () => props.busy || body().some(isInFlightAssistant)
   /** The turn's closing assistant message — the only one that can carry the answer. */
   const closing = () => {
     const tail = body().at(-1)
@@ -1059,6 +1061,18 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
   const faultText = useFaultText()
+  const actions = useContext(TranscriptActionsContext)
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (props.part.name !== "bash" || props.part.state.status !== "running") return
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const shellCommand = () => (props.part.name === "bash" ? str(toolInput(props.part.state).command) : undefined)
+  const elapsed = () =>
+    props.part.name === "bash"
+      ? commandElapsed(props.part.time.ran ?? props.part.time.created, props.part.time.completed, now())
+      : undefined
   return (
     <Switch>
       <Match when={props.part.name === "todowrite"}>
@@ -1067,7 +1081,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
       <Match when={props.part.name === "question"}>
         <QuestionV2Tool part={props.part} />
       </Match>
-      <Match when={props.part.state.status === "error" && props.part.state}>
+      <Match when={props.part.name !== "bash" && props.part.state.status === "error" && props.part.state}>
         {(state) => (
           <ToolErrorCardV2
             data-slot="native-tool"
@@ -1082,16 +1096,55 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           data-slot="native-tool"
           status={props.part.state.status}
           defaultOpen={toolOpenDefault(foldMode().tool)}
+          expandWhilePending={props.part.name === "bash"}
           trigger={{
-            title: meta().title,
-            subtitle: meta().subtitle,
+            title:
+              props.part.name === "bash"
+                ? `🖥 ${props.part.title ?? shellActionTitle(shellCommand() ?? "")}`
+                : meta().title,
+            subtitle: props.part.name === "bash" ? elapsed() : meta().subtitle,
             args: meta().args,
           }}
         >
           <ToolBody part={props.part} />
+          <Show when={props.part.name === "bash" && props.part.state.status === "running" && actions().onStopCommand}>
+            <CommandStop onStop={(reason) => actions().onStopCommand?.(reason)} />
+          </Show>
         </BasicToolV2>
       </Match>
     </Switch>
+  )
+}
+
+function CommandStop(props: { onStop: (reason: string) => void | Promise<void> }) {
+  const i18n = useI18n()
+  const [reason, setReason] = createSignal("")
+  const [stopping, setStopping] = createSignal(false)
+  const stop = async () => {
+    const why = reason().trim()
+    if (!why || stopping()) return
+    setStopping(true)
+    try {
+      await props.onStop(why)
+    } finally {
+      setStopping(false)
+    }
+  }
+  return (
+    <div data-slot="native-command-stop">
+      <input
+        value={reason()}
+        placeholder={i18n.t("ui.transcript.command.stopReason")}
+        aria-label={i18n.t("ui.transcript.command.stopReason")}
+        onInput={(event) => setReason(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void stop()
+        }}
+      />
+      <button type="button" disabled={!reason().trim() || stopping()} onClick={() => void stop()}>
+        {stopping() ? i18n.t("ui.transcript.command.stopping") : i18n.t("ui.transcript.command.stop")}
+      </button>
+    </div>
   )
 }
 

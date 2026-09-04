@@ -35,6 +35,14 @@ export interface Source<A> {
   readonly load: Effect.Effect<A | Unavailable>
   readonly baseline: (current: A) => string
   readonly update: (previous: A, current: A) => string
+  /**
+   * Semantic equality for sources whose observation contains volatile detail that should not become
+   * a durable model-visible update every time it moves. The codec equality remains the default.
+   *
+   * The previous value is the last value actually ADMITTED to the session snapshot, so a cadence
+   * comparison here is per session and rolling rather than process-global or wall-clock-bucketed.
+   */
+  readonly equivalent?: (previous: A, current: A) => boolean
   readonly removed?: (previous: A) => string
 }
 
@@ -138,7 +146,7 @@ export const empty = context([])
 export function make<A>(source: Source<A>): Context {
   const decode = Schema.decodeUnknownOption(source.codec)
   const encode = Schema.encodeSync(source.codec)
-  const equivalent = Schema.toEquivalence(source.codec)
+  const equivalent = source.equivalent ?? Schema.toEquivalence(source.codec)
   return context([
     {
       key: source.key,

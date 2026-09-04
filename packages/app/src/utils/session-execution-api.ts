@@ -35,11 +35,17 @@ export async function retrySessionExecution(server: ServerConnection.HttpBase, s
   })
 }
 
-export async function stopSessionExecution(server: ServerConnection.HttpBase, sessionID: string, directory: string) {
+export async function stopSessionExecution(
+  server: ServerConnection.HttpBase,
+  sessionID: string,
+  directory: string,
+  reason?: string,
+) {
   await instanceFetch(server, {
     route: `api/session/${encodeURIComponent(sessionID)}/interrupt`,
     method: "POST",
     directory,
     directoryVia: "header",
+    ...(reason?.trim() ? { body: { reason: reason.trim() } } : {}),
   })
 }

@@ -1,6 +1,7 @@
 export * as EventManifest from "./event-manifest"
 
 import { AppEvent } from "./app-event"
+import { AgentStatusEvent } from "./agent-status-event"
 import { Catalog } from "./catalog"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
@@ -44,6 +45,7 @@ const foundationDefinitions = Event.inventory(
 
 const featureDefinitions = Event.inventory(
   ...AppEvent.Definitions,
+  ...AgentStatusEvent.Definitions,
   // The memory store's lifecycle. SERVER-visible on purpose: auto-recall and auto-extraction run
   // inside the session worker, and `session-worker/services.ts` forwards a publish to the host bus
   // only for types in `ServerDefinitions`. Leaving them out would have made every memory event

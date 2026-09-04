@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { OfficerName } from "@novaclaw/core/agent/officer-name"
-import { agentPortraitPlaceholder, agentPortraitSource } from "./agent-portrait"
+import { BESPOKE_AGENT_PORTRAITS, agentPortraitPlaceholder, agentPortraitSource } from "./agent-portrait"
 
 describe("builtin agent portraits", () => {
   test("has a lazy client resource for Nova and every pooled officer name", async () => {
@@ -11,6 +11,16 @@ describe("builtin agent portraits", () => {
     for (const resource of resources) {
       const file = new URL(`../../public${resource}`, import.meta.url)
       expect(await Bun.file(file).exists(), resource).toBe(true)
+    }
+  })
+
+  test("bespoke portraits are real PNGs, not WebP files behind a renamed extension", async () => {
+    const signature = [137, 80, 78, 71, 13, 10, 26, 10]
+    for (const name of BESPOKE_AGENT_PORTRAITS) {
+      const resource = agentPortraitSource(name)!
+      expect(resource.endsWith(".png"), resource).toBe(true)
+      const bytes = new Uint8Array(await Bun.file(new URL(`../../public${resource}`, import.meta.url)).arrayBuffer())
+      expect([...bytes.slice(0, 8)], resource).toEqual(signature)
     }
   })
 

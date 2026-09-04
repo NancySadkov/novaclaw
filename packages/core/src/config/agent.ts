@@ -112,6 +112,12 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   }).pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = the fast local Chat stance, no project access or memory. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * Whether this colleague gets the finish re-grounding nudge after a substantial, confident turn.
+   * Absent = inherit the instance harness default (ON). This is per colleague because the nudge is
+   * part of how that officer works, while the instance setting remains the fleet-wide fallback.
+   */
+  reground: Schema.Boolean.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

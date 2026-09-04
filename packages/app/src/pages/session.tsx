@@ -1156,6 +1156,11 @@ export default function Page() {
                           onRetry={retryFailedTurn}
                           onChooseModel={chooseAnotherModel}
                           onUnpinDevice={unpinDevice}
+                          onStopCommand={async (reason) => {
+                            const conn = server.current
+                            if (!conn) return
+                            await stopSessionExecution(conn.http, _id, sdk().directory, reason)
+                          }}
                           revertMessageID={revertMessageID()}
                         />
                       </ErrorBoundary>

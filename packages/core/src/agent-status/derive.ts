@@ -11,17 +11,17 @@ import { SYSTEM, clean } from "./label"
 import { recentText } from "./recent"
 
 /**
- * The model half of the sweep: a colleague's recent work in, one status line out.
+ * The model half of lifecycle sampling: a colleague's recent work in, one status line out.
  *
  * 🔴 **Each colleague is summarised INSIDE ITS OWN LOCATION, and that is the whole reason this
- * module exists rather than a closure in the sweep.** `SessionRunnerModel` is a LOCATION node, not a
+ * module exists rather than a closure in the observer.** `SessionRunnerModel` is a LOCATION node, not a
  * global one — which model answers depends on the project a chat lives in. A global sweep holding
  * one model would summarise every colleague with whatever the instance's default happened to be,
  * quietly ignoring a project that pins its own; and on an instance where the default is unreachable
  * it would fail for colleagues whose own model is fine.
  *
- * ⚠️ The cost of that is one location entry per colleague, per pass — which is why the pass runs at
- * most once every few hours and only for colleagues with genuinely new work.
+ * ⚠️ The cost is one location entry per sampled session. Superseded lifecycle revisions are
+ * coalesced by the observer before their result can be published.
  */
 
 /**
@@ -53,6 +53,34 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
   const llm = yield* LLMClient.Service
   const scheduler = yield* SessionScheduler.Service
 
+  /** The common short-answer path for lifecycle presentation labels. */
+  const short = (sessionID: string, input: { system: string; text: string; task: string }) =>
+    Effect.gen(function* () {
+      const session = yield* store.get(sessionID as never)
+      if (!session) return undefined
+      const located = locations.get(session.location)
+      return yield* Effect.gen(function* () {
+        const models = yield* SessionRunnerModel.Service
+        const { model, device } = yield* models.resolveWithDevice(session)
+        return yield* ShortAnswer.generate({
+          model,
+          llm,
+          system: input.system,
+          text: input.text,
+          reasoningBudget: LABEL_REASONING_BUDGET,
+          maxTokens: LABEL_MAX_TOKENS,
+          scheduler,
+          maintenance: {
+            ownerID: sessionID,
+            task: input.task,
+            deviceKey: device.key,
+            ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+            ...(device.locality === undefined ? {} : { locality: device.locality }),
+          },
+        })
+      }).pipe(Effect.provide(located))
+    }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+
   /** The colleague's recent conversation as text, read in its own location. */
   const recent = (sessionID: string) =>
     Effect.gen(function* () {
@@ -66,37 +94,15 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
   /** One status line for the session, resolved and generated in that session's location. */
   const label = (sessionID: string, text: string) =>
     Effect.gen(function* () {
-      const session = yield* store.get(sessionID as never)
-      if (!session) return undefined
-      const located = locations.get(session.location)
-      return yield* Effect.gen(function* () {
-        const models = yield* SessionRunnerModel.Service
-        const { model, device } = yield* models.resolveWithDevice(session)
-        // ⚠️ The SAME call the chat titler makes — `ShortAnswer` exists because this sweep wrote its
-        // own and got it wrong. A reasoning model with no guard returns an empty completion, which
-        // the titler had already solved.
-        const raw = yield* ShortAnswer.generate({
-          model,
-          llm,
-          system: SYSTEM,
-          text,
-          reasoningBudget: LABEL_REASONING_BUDGET,
-          maxTokens: LABEL_MAX_TOKENS,
-          scheduler,
-          maintenance: {
-            ownerID: sessionID,
-            task: "agent-status",
-            deviceKey: device.key,
-            ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
-            ...(device.locality === undefined ? {} : { locality: device.locality }),
-          },
-        })
-        // ⚠️ `clean` decides whether anything usable came back; the sweep treats `undefined` as
-        // "leave the previous line alone". An empty completion is a broken call, not a colleague
-        // with nothing to say.
-        return clean(raw)
-      }).pipe(Effect.provide(located))
-    }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+      // ⚠️ The SAME call the chat titler makes — `ShortAnswer` exists because the old sweep wrote its
+      // own and got it wrong. A reasoning model with no guard returns an empty completion, which
+      // the titler had already solved.
+      const raw = yield* short(sessionID, { system: SYSTEM, text, task: "agent-status" })
+      // ⚠️ `clean` decides whether anything usable came back; the sampler treats `undefined` as
+      // "leave the previous line alone". An empty completion is a broken call, not a colleague
+      // with nothing to say.
+      return raw === undefined ? undefined : clean(raw)
+    })
 
-  return { recent, label }
+  return { recent, label, short }
 })

@@ -18,11 +18,26 @@ export type Analysis =
 type Family = "posix" | "powershell" | "cmd" | "unknown"
 
 const familyOf = (shell: string): Family => {
-  const name = path.basename(shell).toLowerCase().replace(/\.exe$/, "")
+  const name = path
+    .basename(shell)
+    .toLowerCase()
+    .replace(/\.exe$/, "")
   if (name === "pwsh" || name === "powershell") return "powershell"
   if (name === "cmd") return "cmd"
   if (["bash", "sh", "ash", "dash", "zsh", "ksh"].includes(name)) return "posix"
   return "unknown"
+}
+
+/**
+ * Translate a path written for the selected shell into the host spelling used by permission and
+ * exclusion analysis. On Windows every accepted POSIX shell is an MSYS shell (w64devkit or Git
+ * Bash), where `/c/...` means `C:/...`; Node's win32 resolver instead reads it as `C:/c/...`.
+ */
+export function hostPath(value: string, shell: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32" || familyOf(shell) !== "posix") return value
+  const match = /^\/([A-Za-z])(?:\/(.*))?$/.exec(value)
+  if (!match) return value
+  return `${match[1]!.toUpperCase()}:/${match[2] ?? ""}`
 }
 
 const unquote = (value: string) => {
@@ -86,8 +101,7 @@ function matchingParen(command: string, open: number, family: Family): number | 
   return undefined
 }
 
-const dynamicTarget = (target: string) =>
-  /[$%`*?\[]/.test(target) || target.startsWith("~")
+const dynamicTarget = (target: string) => /[$%`*?\[]/.test(target) || target.startsWith("~")
 
 const sinkTarget = (target: string, family: Exclude<Family, "unknown">) =>
   (family === "posix" && /^\/dev\/(?:null|stdout|stderr|fd\/\d+)$/.test(target)) ||
@@ -108,13 +122,13 @@ function words(command: string, family: Exclude<Family, "unknown">): ReadonlyArr
   return result
 }
 
-function commandRedirects(
-  command: string,
-  family: Exclude<Family, "unknown">,
-): ReadonlyArray<Redirect> | "dynamic" {
+function commandRedirects(command: string, family: Exclude<Family, "unknown">): ReadonlyArray<Redirect> | "dynamic" {
   const tokens = words(command, family)
   if (!tokens?.length) return []
-  const executable = path.basename(tokens[0]!).toLowerCase().replace(/\.exe$/, "")
+  const executable = path
+    .basename(tokens[0]!)
+    .toLowerCase()
+    .replace(/\.exe$/, "")
   const targets: Array<{ target: string; append: boolean }> = []
   if (executable === "tee") {
     const append = tokens.includes("-a") || tokens.includes("--append")

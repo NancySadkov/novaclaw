@@ -4017,7 +4017,7 @@ export const layer = Layer.effect(
               // one — so every batch-file measurement before this switch was taken with at
               // least one mitigation live. This switch is what lets that baseline finally be taken.
               if (
-                harness.drives.reground &&
+                (handoff.reground ?? harness.drives.reground) &&
                 !regrounded &&
                 shouldReground(finalText, toolCallsSinceLastUser(context).length)
               ) {

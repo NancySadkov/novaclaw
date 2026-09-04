@@ -596,7 +596,10 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   const err = collector(CAPTURE_MAX_BYTES)
   let timedOut = false
   let spawnErrno: string | undefined
-  const child = spawn("bun", argv, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true })
+  // Run the interpreter that is executing this harness. On Windows `bun` may be available only as
+  // a PowerShell shim (`bun.ps1`), which `child_process.spawn` does not resolve as an executable;
+  // `process.execPath` is the real bun.exe on every supported host and cannot drift from the parent.
+  const child = spawn(process.execPath, argv, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true })
   liveChildren.add(child)
   child.stdout?.on("data", out.push)
   child.stderr?.on("data", err.push)

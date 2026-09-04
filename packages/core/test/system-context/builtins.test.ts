@@ -154,6 +154,61 @@ describe("SystemContextBuiltIns", () => {
     }),
   )
 
+  itWithResourcePressure.effect("admits at most one moving memory warning per rolling hour", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      resourceLines = [
+        "Memory headroom is low: 34816 MB of 40960 MB committed. Avoid memory-intensive work.",
+        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+      ]
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      yield* TestClock.setTime(timestamp + 30 * 60 * 1000)
+      resourceLines = [
+        "Memory headroom is low: 35840 MB of 40960 MB committed. Avoid memory-intensive work.",
+        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+      ]
+      expect(yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)).toEqual({
+        _tag: "Unchanged",
+      })
+
+      yield* TestClock.setTime(timestamp + 60 * 60 * 1000)
+      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+      expect(refreshed).toMatchObject({ _tag: "Updated" })
+      if (refreshed._tag !== "Updated") return
+      expect(refreshed.text).toContain("35840 MB of 40960 MB committed")
+    }),
+  )
+
+  itWithResourcePressure.effect("reports escalation and recovery without waiting for the cadence", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(timestamp)
+      resourceLines = [
+        "Memory headroom is low: 34816 MB of 40960 MB committed. Avoid memory-intensive work.",
+        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+      ]
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      yield* TestClock.setTime(timestamp + 1000)
+      resourceLines = [
+        "Memory headroom is critically low: 38912 MB of 40960 MB committed. Avoid memory-intensive work.",
+        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
+      ]
+      const escalated = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+      expect(escalated).toMatchObject({ _tag: "Updated" })
+      if (escalated._tag !== "Updated") return
+      expect(escalated.text).toContain("critically low")
+
+      resourceLines = []
+      const recovered = yield* SystemContext.reconcile(yield* context.load(), escalated.snapshot)
+      expect(recovered).toMatchObject({ _tag: "Updated" })
+      if (recovered._tag !== "Updated") return
+      expect(recovered.text).toContain("No longer applies: Memory headroom is critically low")
+    }),
+  )
+
   // 🔴 The exception-only contract of `McpHealthContext`, at the SPLICE point rather than only at the
   // derivation (`novaclaw/test/mcp/health-context.test.ts` covers the sentences). The first case is
   // what keeps this seam free: a healthy MCP set must leave the `<env>` block byte-identical to one

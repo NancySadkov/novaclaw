@@ -30,7 +30,7 @@ import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolv
 
 /** The fields a colleague may declare. Deliberately small: these are standing WORK choices, not the
  *  whole session config — a colleague does not get to preset somebody's thinking budget. */
-export const DECLARABLE = ["permissionMode", "strict", "shortChat"] as const
+export const DECLARABLE = ["permissionMode", "strict", "shortChat", "reground"] as const
 export type Declarable = (typeof DECLARABLE)[number]
 
 /** Fold a colleague's standing choices under a base. Absent fields leave the base untouched. */
@@ -61,9 +61,10 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
   }
   for (const field of DECLARABLE) {
     const value = (agent as unknown as Record<string, unknown>)[field]
-    if (value === undefined) continue
-    // Assigned rather than merged: a colleague's declaration IS the baseline for its chats, and the
-    // narrowing rules that matter run later, over the chain (`resolveConfig`) and the ceilings.
+    if (value === undefined)
+      continue
+      // Assigned rather than merged: a colleague's declaration IS the baseline for its chats, and the
+      // narrowing rules that matter run later, over the chain (`resolveConfig`) and the ceilings.
     ;(next as unknown as Record<string, unknown>)[field] = value
   }
   return next

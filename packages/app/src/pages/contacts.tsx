@@ -213,9 +213,11 @@ export function ContactsPage() {
       showToast({
         variant: "error",
         title: copy.headline,
-        description: copy.remedy ? `${copy.remedy}
+        description: copy.remedy
+          ? `${copy.remedy}
 
-${copy.detail}` : copy.detail,
+${copy.detail}`
+          : copy.detail,
       })
     } finally {
       setStarting(undefined)
@@ -448,9 +450,6 @@ function ContactRow(props: {
   // so the badge froze on the ten-minute window that ended when the page painted and went on
   // presenting it as a live rate. The ticker below is the only thing that makes "per minute" true.
   const rate = createMemo(() => ratePerMinute(props.usage, { now: nowTick(), window: RATE_WINDOW_MINUTES }))
-  const task = createMemo(() =>
-    rosterTask({ status: props.view.status, title: live().title, colleagueName: props.view.name }),
-  )
   /**
    * The scheduler's own answer about this colleague's chat.
    *
@@ -469,6 +468,11 @@ function ContactRow(props: {
       execution: props.executions.get(sessionID),
     })
   })
+  const task = createMemo(
+    () =>
+      rosterTask({ status: props.view.status, title: live().title, colleagueName: props.view.name }) ??
+      (state() === "working" ? language.t("contacts.state.working") : undefined),
+  )
   /**
    * The APPROXIMATE live rate, from the same snapshot the retired chat list showed.
    *

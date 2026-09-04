@@ -4446,10 +4446,12 @@ class ApiV2Session extends NovaClawApiClient {
   public interrupt<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
+      reason?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { sessionID: parameters?.["sessionID"] }
+    const body = { reason: parameters?.["reason"] }
     return (options?.client ?? this.client).post<
       T.V2SessionInterruptResponses,
       T.V2SessionInterruptErrors,
@@ -4458,6 +4460,8 @@ class ApiV2Session extends NovaClawApiClient {
       url: "/api/session/{sessionID}/interrupt",
       ...options,
       path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 

@@ -56,8 +56,7 @@ export const environmentUpdate = (previous: string, current: string): string => 
   const gone = before.filter((line) => !after.includes(line) && !addedSubjects.has(subject(line)))
   // Nothing line-level to report (wrapper or whitespace churn): fall back to the whole render
   // rather than emitting an empty notice.
-  if (added.length === 0 && gone.length === 0)
-    return ["The environment you are running in is now:", current].join("\n")
+  if (added.length === 0 && gone.length === 0) return ["The environment you are running in is now:", current].join("\n")
   return [
     "The environment you are running in has changed:",
     ...added.map((line) => `  ${line}`),
@@ -65,6 +64,27 @@ export const environmentUpdate = (previous: string, current: string): string => 
   ].join("\n")
 }
 
+/** A moving commit count is useful once, then noise until the warning changes or an hour passes. */
+export const RESOURCE_NOTICE_INTERVAL_MS = 60 * 60 * 1000
+const MEMORY_PRESSURE_VALUE = /(Memory headroom is (?:low|critically low):) \d+ MB of \d+ MB committed\./g
+
+export interface EnvironmentObservation {
+  readonly rendered: string
+  readonly observedAt: number
+}
+
+/**
+ * Compare the MEANING of two environment observations while retaining the exact current figures in
+ * the admitted snapshot. A recovery, escalation, disk/MCP/capability change stays immediate. Only
+ * the numeric wobble inside the same memory-pressure sentence is rate-limited.
+ */
+export const environmentEquivalent = (previous: EnvironmentObservation, current: EnvironmentObservation): boolean => {
+  if (previous.rendered === current.rendered) return true
+  const before = previous.rendered.replace(MEMORY_PRESSURE_VALUE, "$1 <live> committed.")
+  const after = current.rendered.replace(MEMORY_PRESSURE_VALUE, "$1 <live> committed.")
+  if (before !== after) return false
+  return current.observedAt - previous.observedAt < RESOURCE_NOTICE_INTERVAL_MS
+}
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -86,9 +106,15 @@ const builtIns = Layer.effectDiscard(
       const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`
     })
-    const environment = Effect.all([resourcePressure.lines(), mcpHealth.lines(), capabilities.lines()]).pipe(
-      Effect.map(([resourceLines, mcpLines, capabilityLines]) =>
-        [
+    const environment = Effect.all([
+      resourcePressure.lines(),
+      mcpHealth.lines(),
+      capabilities.lines(),
+      DateTime.nowAsDate,
+    ]).pipe(
+      Effect.map(([resourceLines, mcpLines, capabilityLines, observedAt]) => ({
+        observedAt: observedAt.getTime(),
+        rendered: [
           "<env>",
           // 🔴 The working folder/project horizon is deliberately NOT frozen into this baseline, and
           // this block is NOT one of its owners in any posture. `runner/project-grounding.ts` holds
@@ -141,12 +167,17 @@ const builtIns = Layer.effectDiscard(
           ...peerLines,
           "</env>",
         ].join("\n"),
-      ),
+      })),
     )
     const context = SystemContext.combine([
       SystemContext.make({
         key: SystemContext.Key.make("core/environment"),
-        codec: Schema.toCodecJson(Schema.String),
+        codec: Schema.toCodecJson(
+          Schema.Struct({
+            rendered: Schema.String,
+            observedAt: Schema.Number,
+          }),
+        ),
         // Resource headroom and MCP server health are both live per turn. Keeping this as an Effect
         // instead of freezing the string at location boot lets SystemContext.reconcile tell the model
         // when the machine moves across a pressure line — or when a configured MCP server drops or
@@ -154,8 +185,11 @@ const builtIns = Layer.effectDiscard(
         // a prompt-prefix re-render.
         load: environment,
         baseline: (environment) =>
-          ["Here is some useful information about the environment you are running in:", environment].join("\n"),
-        update: environmentUpdate,
+          ["Here is some useful information about the environment you are running in:", environment.rendered].join(
+            "\n",
+          ),
+        update: (previous, current) => environmentUpdate(previous.rendered, current.rendered),
+        equivalent: environmentEquivalent,
       }),
       SystemContext.make({
         key: SystemContext.Key.make("core/date"),

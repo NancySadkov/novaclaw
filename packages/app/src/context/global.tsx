@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
-import { createEffect, createMemo, createResource, createRoot, createSignal } from "solid-js"
+import { createEffect, createMemo, createResource, createRoot, createSignal, onCleanup } from "solid-js"
 import { createServerProjects, ServerConnection, useServer } from "./server"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
@@ -10,7 +10,11 @@ import type { ServerScope } from "@/utils/server-scope"
 import { listAgents } from "@/apps/agent-list"
 import type { AgentLike } from "@/apps/contacts"
 
-export const { use: useGlobal, provider: GlobalProvider, context: GlobalContext } = createSimpleContext({
+export const {
+  use: useGlobal,
+  provider: GlobalProvider,
+  context: GlobalContext,
+} = createSimpleContext({
   name: "Global",
   init: () => {
     const server = useServer()
@@ -174,6 +178,11 @@ function createServerCtx(
     error: () => rosterError(),
     refetch: () => void agentRosterActions.refetch(),
   }
+
+  // Status labels are written by the lifecycle sampler after the roster's initial fetch. The event
+  // is a cache-invalidation hint; GET /agent remains the one source of the joined roster row.
+  const stopAgentStatus = sync.onAgentStatus(() => void agentRosterActions.refetch())
+  onCleanup(stopAgentStatus)
 
   function enrich(project: { worktree: string; expanded: boolean; sandboxes?: string[]; id?: string }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })

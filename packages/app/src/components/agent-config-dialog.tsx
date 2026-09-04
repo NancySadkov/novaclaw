@@ -124,6 +124,7 @@ export function AgentConfigDialog(props: {
   const [posture, setPosture] = createSignal<boolean | undefined>()
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
   const [strict, setStrict] = createSignal<boolean | undefined>()
+  const [reground, setReground] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
   /**
@@ -153,6 +154,7 @@ export function AgentConfigDialog(props: {
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
     strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
+  const regroundValue = () => reground() ?? (agent()?.config?.["reground"] as boolean | undefined) ?? true
   /**
    * Where this colleague's own workspace is, as the server computed it.
    *
@@ -494,6 +496,7 @@ export function AgentConfigDialog(props: {
             ...(posture() === undefined ? {} : { shortChat: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+            ...(reground() === undefined ? {} : { reground: reground()! }),
             archiveChats: archiveValue(),
             // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
             // is simply not sent — `undefined` is how this config says "ask the chain above me".
@@ -512,6 +515,7 @@ export function AgentConfigDialog(props: {
       setPosture(undefined)
       setPermissionMode(undefined)
       setStrict(undefined)
+      setReground(undefined)
       setArchive(undefined)
       setModel(undefined)
       setNeedsTier(undefined)
@@ -812,6 +816,17 @@ export function AgentConfigDialog(props: {
                 />
                 <span>{language.t("agentConfig.strict")}</span>
               </label>
+              <label class="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={regroundValue()}
+                  disabled={governing()}
+                  onChange={(event) => setReground(event.currentTarget.checked)}
+                />
+                <span>{language.t("agentConfig.reground")}</span>
+              </label>
+              <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.regroundDescription")}</p>
             </div>
           </section>
 

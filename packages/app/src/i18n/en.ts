@@ -24,6 +24,7 @@ export const dict = {
   "files.nameError.empty": "Enter a name.",
   "files.nameError.reserved": "That name is reserved by the filesystem.",
   "files.nameError.separator": "Enter one name, without slashes.",
+  "files.nameError.exists": "That name already exists here. Choose another name.",
   "files.trash": "Trash",
   "files.showHidden": "Hidden files",
   "files.trashHint": "You can restore it for about 2 days",
@@ -2834,6 +2835,9 @@ export const dict = {
   "agentConfig.work": "How it works",
   "agentConfig.posture": "Mode",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
+  "agentConfig.reground": "Double-check the request before finishing",
+  "agentConfig.regroundDescription":
+    "On by default. Turn this off when this colleague should stop without Nova's final acceptance-check reminder.",
   "agentConfig.folder": "What it works on",
   "agentConfig.folderScratch": "Its own workspace",
   "agentConfig.folderOwn": "Back to its own",

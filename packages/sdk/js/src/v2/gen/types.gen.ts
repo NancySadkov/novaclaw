@@ -52,6 +52,7 @@ export type Event =
   | EventSessionNextToolInputProgress
   | EventSessionNextToolInputEnded
   | EventSessionNextToolCalled
+  | EventSessionNextToolLabelled
   | EventSessionNextToolProgress
   | EventSessionNextToolSuccess
   | EventSessionNextToolFailed
@@ -66,6 +67,7 @@ export type Event =
   | EventInstallationUpdateAvailable
   | EventServerInstanceDisposed
   | EventAppRegistered
+  | EventAgentStatusUpdated
   | EventMemoryClaimRecorded
   | EventMemoryItemRecorded
   | EventMemoryClaimStatus
@@ -809,6 +811,17 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.tool.labelled"
+        properties: {
+          timestamp: number
+          sessionID: string
+          assistantMessageID: string
+          callID: string
+          title: string
+        }
+      }
+    | {
+        id: string
         type: "session.next.tool.progress"
         properties: {
           timestamp: number
@@ -952,6 +965,15 @@ export type GlobalEvent = {
         properties: {
           id: string
           title: string
+        }
+      }
+    | {
+        id: string
+        type: "agent.status.updated"
+        properties: {
+          agent: string
+          task: string
+          observed: number
         }
       }
     | {
@@ -1898,6 +1920,7 @@ export type V2Event =
   | SessionNextToolInputProgress
   | SessionNextToolInputEnded
   | SessionNextToolCalled
+  | SessionNextToolLabelled
   | SessionNextToolProgress
   | SessionNextToolSuccess
   | SessionNextToolFailed
@@ -1912,6 +1935,7 @@ export type V2Event =
   | InstallationUpdateAvailable
   | ServerInstanceDisposed
   | AppRegistered
+  | AgentStatusUpdated
   | MemoryClaimRecorded
   | MemoryItemRecorded
   | MemoryClaimStatus
@@ -2402,6 +2426,7 @@ export type SessionMessageAssistantTool = {
   type: "tool"
   id: string
   name: string
+  title?: string
   provider?: {
     executed: boolean
     metadata?: LlmProviderMetadata
@@ -3600,6 +3625,7 @@ export type ConfigV2Agent = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  reground?: boolean
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4444,6 +4470,7 @@ export type AgentV2Info = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  reground?: boolean
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   paused?: boolean
@@ -6166,6 +6193,27 @@ export type SessionNextToolInputDelta = {
   }
 }
 
+export type SessionNextToolLabelled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.tool.labelled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    callID: string
+    title: string
+  }
+}
+
 export type SessionNextCompactionDelta = {
   id: string
   metadata?: {
@@ -6270,6 +6318,25 @@ export type AppRegistered = {
   data: {
     id: string
     title: string
+  }
+}
+
+export type AgentStatusUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "agent.status.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    agent: string
+    task: string
+    observed: number
   }
 }
 
@@ -7478,6 +7545,18 @@ export type EventSessionNextToolCalled = {
   }
 }
 
+export type EventSessionNextToolLabelled = {
+  id: string
+  type: "session.next.tool.labelled"
+  properties: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    callID: string
+    title: string
+  }
+}
+
 export type EventSessionNextToolProgress = {
   id: string
   type: "session.next.tool.progress"
@@ -7636,6 +7715,16 @@ export type EventAppRegistered = {
   properties: {
     id: string
     title: string
+  }
+}
+
+export type EventAgentStatusUpdated = {
+  id: string
+  type: "agent.status.updated"
+  properties: {
+    agent: string
+    task: string
+    observed: number
   }
 }
 
@@ -14457,7 +14546,9 @@ export type V2SessionEventsResponses = {
 export type V2SessionEventsResponse = V2SessionEventsResponses[keyof V2SessionEventsResponses]
 
 export type V2SessionInterruptData = {
-  body?: never
+  body: {
+    reason?: string
+  }
   path: {
     sessionID: string
   }

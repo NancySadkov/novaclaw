@@ -33,7 +33,12 @@ export function useFilesystemOperations(input: {
   const confirm = useConfirm()
   const language = useLanguage()
 
-  const askName = (options: { title: string; initial?: string; action: string }) =>
+  const askName = (options: {
+    title: string
+    initial?: string
+    action: string
+    perform: (name: string) => Promise<void>
+  }) =>
     new Promise<string | undefined>((resolve) => {
       let done = false
       const settle = (value?: string) => {
@@ -45,7 +50,8 @@ export function useFilesystemOperations(input: {
         () => {
           const [name, setName] = createSignal(options.initial ?? "")
           const [error, setError] = createSignal("")
-          const submit = () => {
+          const [saving, setSaving] = createSignal(false)
+          const submit = async () => {
             const reason = filesystemEntryNameError(name())
             if (reason) {
               setError(
@@ -59,8 +65,23 @@ export function useFilesystemOperations(input: {
               )
               return
             }
-            settle(name().trim())
-            dialog.close()
+            if (saving()) return
+            setSaving(true)
+            try {
+              await options.perform(name().trim())
+              settle(name().trim())
+              dialog.close()
+            } catch (cause) {
+              // Expected conflicts belong beside the name that caused them. The dialog remains
+              // open so a person can correct it; nothing escapes into the root error boundary.
+              setError(
+                /already exists|path exists/i.test(String(cause))
+                  ? language.t("files.nameError.exists")
+                  : String(cause),
+              )
+            } finally {
+              setSaving(false)
+            }
           }
           return (
             <Dialog size="content">
@@ -68,7 +89,7 @@ export function useFilesystemOperations(input: {
                 class="flex min-w-[22rem] max-w-[28rem] flex-col gap-4 px-7 py-6"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  submit()
+                  void submit()
                 }}
               >
                 <label class="flex flex-col gap-2 text-[13px] text-v2-text-text-muted">
@@ -99,7 +120,7 @@ export function useFilesystemOperations(input: {
                   >
                     {language.t("common.cancel")}
                   </ButtonV2>
-                  <ButtonV2 type="submit" variant="gold">
+                  <ButtonV2 type="submit" variant="gold" disabled={saving()}>
                     {options.action}
                   </ButtonV2>
                 </div>
@@ -117,14 +138,17 @@ export function useFilesystemOperations(input: {
   async function createFolder(parent: string) {
     const server = input.server()
     if (!server) return
-    const name = await askName({
-      title: language.t("files.newFolderTitle"),
-      action: language.t("files.createFolder"),
-    })
-    if (!name) return
     try {
-      await fsMkdir(server, { directory: parent, path: name, exclusive: true })
-      input.changed({ type: "create", path: filesystemJoin(parent, name) })
+      // The caller intentionally fires this async UI action with `void`, so THIS function owns every
+      // rejection — including the dialog promise, not only the final HTTP request.
+      await askName({
+        title: language.t("files.newFolderTitle"),
+        action: language.t("files.createFolder"),
+        perform: async (name) => {
+          await fsMkdir(server, { directory: parent, path: name, exclusive: true })
+          input.changed({ type: "create", path: filesystemJoin(parent, name) })
+        },
+      })
     } catch (error) {
       fail(error)
     }
@@ -134,15 +158,17 @@ export function useFilesystemOperations(input: {
     const server = input.server()
     const parent = filesystemParent(target.path)
     if (!server || !parent) return
-    const name = await askName({
-      title: language.t("files.renameTitle", { name: filesystemName(target.path) }),
-      initial: filesystemName(target.path),
-      action: language.t("common.rename"),
-    })
-    if (!name || name === filesystemName(target.path)) return
     try {
-      const result = await fsRename(server, { directory: parent, path: filesystemName(target.path), name })
-      input.changed({ type: "rename", before: target.path, path: result.path })
+      await askName({
+        title: language.t("files.renameTitle", { name: filesystemName(target.path) }),
+        initial: filesystemName(target.path),
+        action: language.t("common.rename"),
+        perform: async (name) => {
+          if (name === filesystemName(target.path)) return
+          const result = await fsRename(server, { directory: parent, path: filesystemName(target.path), name })
+          input.changed({ type: "rename", before: target.path, path: result.path })
+        },
+      })
     } catch (error) {
       fail(error)
     }
@@ -152,14 +178,14 @@ export function useFilesystemOperations(input: {
     const server = input.server()
     const parent = filesystemParent(target.path)
     if (!server || !parent) return
-    const accepted = await confirm({
-      title: language.t("files.deleteTitle", { name: filesystemName(target.path) }),
-      description: language.t("files.deleteDescription"),
-      confirmLabel: language.t("files.delete"),
-      destructive: true,
-    })
-    if (!accepted) return
     try {
+      const accepted = await confirm({
+        title: language.t("files.deleteTitle", { name: filesystemName(target.path) }),
+        description: language.t("files.deleteDescription"),
+        confirmLabel: language.t("files.delete"),
+        destructive: true,
+      })
+      if (!accepted) return
       await fsTrash(server, { directory: parent, path: filesystemName(target.path) })
       input.changed({ type: "delete", path: target.path })
     } catch (error) {

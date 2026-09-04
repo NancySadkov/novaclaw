@@ -18,12 +18,14 @@ import { Schema } from "effect"
  * Same argument, one layer up: a harness feature you cannot switch off is a harness feature nobody
  * can measure.
  *
- * ⚠️ **INSTANCE-level, not per-session, and that is a deliberate narrowing.** The per-session feature
+ * ⚠️ **INSTANCE DEFAULT, with a per-agent re-ground override.** The per-session feature
  * family (`schema/session-feature.ts`) carries a contract this does not need: a DB column, a
  * migration, and a composer control — *"a switch the kernel accepts while no surface offers it is
  * the ruling-2 shape safe mode itself was caught in."* These are operator/developer switches for a
  * measurement, so they ride the settings store like `provider_capability` and `tool_routing` do.
- * **If a per-session stance is ever wanted, promote them through the full nine-step chain rather
+ * Re-grounding alone also has a colleague-level stance because an officer may opt out without
+ * changing its peers (`ConfigAgent.Info.reground` → `SessionEffectiveConfig`).
+ * **If a per-session stance is ever wanted, promote it through the full nine-step chain rather
  * than widening this block** — half a feature in each place is how two answers to one question start.
  *
  * ⚠️ **Turning a drive off makes the product WORSE, on purpose.** These are not preferences: each

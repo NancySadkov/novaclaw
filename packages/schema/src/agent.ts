@@ -86,6 +86,8 @@ export const Info = Schema.Struct({
     wallMinutes: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
+  /** Finish re-grounding stance for this colleague; absent = the instance harness default. */
+  reground: Schema.Boolean.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   /**

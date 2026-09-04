@@ -135,10 +135,9 @@ export const node = makeGlobalNode({
         // name never opens into its predecessor's transcript — and a roster row describing a
         // colleague by a stranger's work breaks it just as loudly, in the one place a person looks.
         //
-        // ⚠️ It does not heal itself either. `everything` archives the old chats, and `candidates()`
-        // excludes archived transcripts, so the redrawn id has no activity to refresh FROM and
-        // `shouldRefresh` says no. The stale line stands until the new colleague generates traffic
-        // of its own, which may be never.
+        // ⚠️ It cannot heal itself either. `everything` archives the old chats and a redrawn id may
+        // generate no lifecycle event for hours. Cleanup is therefore synchronous with retirement,
+        // not deferred until a future sample happens to overwrite the row.
         status.remove(agentID),
       )
       yield* register((agentID) =>

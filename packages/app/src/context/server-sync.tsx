@@ -211,6 +211,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   recovery.register("apps.persisted", () => void loadPersistedApps(serverSDK.server.http))
   recovery.sweep()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
+  const agentStatusListeners = new Set<() => void>()
 
   const children = createChildStoreManager({
     owner,
@@ -454,6 +455,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     // stream that just failed.
     if ((event.type as string) === "server.connected") void nativeMessages.reconcileAll()
 
+    // Agent status is an instance component even though the event carries the session's location.
+    // Notify subscribers before directory routing so Contacts updates whether that folder is open.
+    if ((event.type as string) === "agent.status.updated") {
+      for (const listener of agentStatusListeners) listener()
+    }
+
     if (directory === "global") {
       applyGlobalEvent({
         event,
@@ -624,6 +631,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     project: projectApi,
     session,
     nativeMessages,
+    onAgentStatus(listener: () => void) {
+      agentStatusListeners.add(listener)
+      return () => agentStatusListeners.delete(listener)
+    },
     mcp: {
       toggle: async (directory: string, name: string) => {
         const key = directoryKey(directory)

@@ -593,6 +593,19 @@ export namespace Tool {
   export type Called = typeof Called.Type
 
   /**
+   * A parallel short-answer label for a running tool. Live-only: replay derives an immediate,
+   * deterministic fallback from the command, so this presentation hint never delays execution.
+   */
+  export const Labelled = Event.define({
+    type: "session.next.tool.labelled",
+    schema: {
+      ...ToolBase,
+      title: Schema.String,
+    },
+  })
+  export type Labelled = typeof Labelled.Type
+
+  /**
    * Replayable bounded running-tool state. Tools should checkpoint semantic
    * transitions or at a bounded cadence, not persist every stdout/stderr chunk.
    */
@@ -793,6 +806,7 @@ export const Definitions = Event.inventory(
   Tool.Input.Progress,
   Tool.Input.Ended,
   Tool.Called,
+  Tool.Labelled,
   Tool.Progress,
   Tool.Success,
   Tool.Failed,

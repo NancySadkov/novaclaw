@@ -116,10 +116,10 @@ const jobSnapshotOutput = (job: BashJobs.Snapshot): Output => ({
 
 const shellTokens = (command: string) => command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []
 const unquote = (value: string) => value.replace(/^(['"])(.*)\1$/, "$2")
-const externalCommandDirectories = (command: string, cwd: string) => {
+const externalCommandDirectories = (command: string, cwd: string, shell: string) => {
   const directories = new Set<string>()
   for (const token of shellTokens(command)) {
-    const value = unquote(token).replace(/[;,|&]+$/, "")
+    const value = ShellApproval.hostPath(unquote(token).replace(/[;,|&]+$/, ""), shell)
     if (!path.isAbsolute(value)) continue
     const resolved = FSUtil.resolve(value)
     if (FSUtil.contains(cwd, resolved)) continue
@@ -144,19 +144,20 @@ const externalCommandDirectories = (command: string, cwd: string) => {
  * confinement is the OPERATOR's boundary (Agent Jail; AGENTS.md design principle 13) rather than ours. What it does
  * buy is that the OBVIOUS reach is refused, loudly and with the reason, instead of quietly working.
  */
-const commandPathTokens = (command: string, cwd: string) => {
+const commandPathTokens = (command: string, cwd: string, shell: string) => {
   const candidates = new Map<string, string>()
   for (const token of shellTokens(command)) {
-    const value = unquote(token)
+    const written = unquote(token)
       .replace(/^[<>]+/, "")
       .replace(/[;,|&]+$/, "")
+    const value = ShellApproval.hostPath(written, shell)
     if (value.length === 0) continue
     // A token is a path candidate when it is absolute, or relative-looking (has a separator or an
     // extension). A bare word like `cat` or `--flag` is not worth a stat.
     const looksLikePath = path.isAbsolute(value) || /[\\/]/.test(value) || /^[^-][^\s]*\.[A-Za-z0-9]+$/.test(value)
     if (!looksLikePath) continue
     if (value.startsWith("-")) continue
-    candidates.set(FSUtil.resolve(path.resolve(cwd, value)), value)
+    candidates.set(FSUtil.resolve(path.resolve(cwd, value)), written)
   }
   return candidates
 }
@@ -348,6 +349,15 @@ export const layer = Layer.effectDiscard(
               // entitled to (`HostExec.decide`), and by here it can only be `"raw"` or `"confined"`.
               const humanCouldAnswer = jailDecision === "raw" && attendedRoot(rootType)
 
+              // Resolve the executing shell BEFORE interpreting any path authored for it. On
+              // Windows a POSIX shell's `/c/...` is absolute even though `node:path` says it is not.
+              const entries = yield* config.entries()
+              const mergedConfig = Object.assign(
+                {},
+                ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
+              ) as { shell?: string }
+              const shell = HostExec.resolveShell(mergedConfig.shell)
+
               const external = target.externalDirectory
               if (external)
                 yield* permission.assert({
@@ -359,7 +369,7 @@ export const layer = Layer.effectDiscard(
               // The exclusion screen for the one tool that does not name its target. See
               // `commandPathTokens` for what this buys and what it cannot. Run BEFORE the command
               // approval so an excluded path is refused with its reason rather than asked about.
-              for (const [canonical, written] of commandPathTokens(commandText, target.canonical)) {
+              for (const [canonical, written] of commandPathTokens(commandText, target.canonical, shell)) {
                 const declaration = yield* mutation.exclusionsFor(path.dirname(canonical))
                 if (!declaration) continue
                 const verdict = ProjectExclusion.screen(declaration, canonical, false)
@@ -371,17 +381,11 @@ export const layer = Layer.effectDiscard(
                   })
               }
 
-              const warnings = externalCommandDirectories(commandText, target.canonical).map(
+              const warnings = externalCommandDirectories(commandText, target.canonical, shell).map(
                 (directory) =>
                   `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
               )
 
-              const entries = yield* config.entries()
-              const mergedConfig = Object.assign(
-                {},
-                ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
-              ) as { shell?: string }
-              const shell = HostExec.resolveShell(mergedConfig.shell)
               const approval = ShellApproval.analyze(commandText, shell)
               const approvalSegments = approval.status === "parsed" ? approval.segments : [commandText]
               for (const segment of approvalSegments)
@@ -400,9 +404,8 @@ export const layer = Layer.effectDiscard(
 
               if (approval.status === "parsed")
                 for (const redirect of approval.redirects) {
-                  const redirectPath = path.isAbsolute(redirect.target)
-                    ? redirect.target
-                    : path.resolve(target.canonical, redirect.target)
+                  const authored = ShellApproval.hostPath(redirect.target, shell)
+                  const redirectPath = path.isAbsolute(authored) ? authored : path.resolve(target.canonical, authored)
                   // `readsContent: false` — a redirect TARGET is written, not read. `<` input redirections are
                   // not in `approval.redirects`; the token screen above covers them.
                   const redirectTarget = yield* mutation.resolve({

@@ -6,8 +6,21 @@ import {
   appendMessage,
   applySessionNextEvent,
   findAssistant,
+  isInFlightAssistant,
   mergeNativeMessages,
 } from "./message-fold"
+
+test("a running tool remains in-flight even if its assistant timestamp was already completed", () => {
+  const message = assistantMsg("msg_tool", 1, { completed: 2 }) as Extract<SessionMessage, { type: "assistant" }>
+  message.content.push({
+    type: "tool",
+    id: "call_1",
+    name: "bash",
+    time: { created: 1, ran: 2 },
+    state: { status: "running", input: { command: "bun test" }, structured: {}, content: [] },
+  } as never)
+  expect(isInFlightAssistant(message)).toBe(true)
+})
 
 // The raw event bus delivers `{ type, properties }`; the fold consumes the typed
 // `{ type, data }` shape (as the deleted TUI adapter did). These fixtures build the
@@ -175,6 +188,13 @@ describe("applySessionNextEvent", () => {
         input: { path: 1 },
         provider: { executed: true },
       }),
+      ev("session.next.tool.labelled", {
+        timestamp: 9,
+        sessionID: "s",
+        assistantMessageID: "msg_a",
+        callID: "c1",
+        title: "Inspect the requested file",
+      }),
       ev("session.next.tool.success", {
         timestamp: 10,
         sessionID: "s",
@@ -208,6 +228,7 @@ describe("applySessionNextEvent", () => {
     const tool = assistant.content[1]!
     expect(tool.type).toBe("tool")
     if (tool.type === "tool") {
+      expect(tool.title).toBe("Inspect the requested file")
       expect(tool.state.status).toBe("completed")
       if (tool.state.status === "completed") {
         expect(tool.state.structured).toEqual({ ok: true })

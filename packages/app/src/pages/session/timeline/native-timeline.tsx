@@ -7,8 +7,9 @@ import { useServer } from "@/context/server"
 import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
-import { navigationTargetIndex, nextPinned } from "./native-scroll"
+import { createBottomPinController, navigationTargetIndex } from "./native-scroll"
 import { keepEqualRows, startPendingPoll } from "./pending-poll"
+import { isInFlightAssistant } from "@novaclaw/session-ui/v2/message-fold"
 
 export type NativeTimelineController = {
   navigateUser: (offset: number) => void
@@ -38,6 +39,7 @@ export function NativeTimeline(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
+  onStopCommand?: (reason: string) => void | Promise<void>
   /**
    * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
    * after it leave the transcript — a staged revert is a reversible HIDE, so the rows stay in the
@@ -106,7 +108,7 @@ export function NativeTimeline(props: {
     const list = stored()
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const message = list[i]!
-      if (message.type === "assistant") return !message.time?.completed
+      if (message.type === "assistant") return isInFlightAssistant(message)
     }
     return false
   })
@@ -138,13 +140,13 @@ export function NativeTimeline(props: {
   // unpin once they scroll up. Reactive so the scroll-to-bottom affordance can show when
   // unpinned. (F-b's virtualizer.scrollToEnd later supersedes the stick mechanism.)
   const [pinned, setPinned] = createSignal(true)
+  let pinController: ReturnType<typeof createBottomPinController> | undefined
   const stick = () => {
-    const el = scroller
-    if (pinned() && el) el.scrollTop = el.scrollHeight
+    pinController?.stick()
   }
   const scrollToBottom = () => {
-    setPinned(true)
-    if (scroller) scroller.scrollTop = scroller.scrollHeight
+    if (pinController) pinController.scrollToBottom()
+    else setPinned(true)
   }
 
   const navigateUser = (offset: number) => {
@@ -229,12 +231,15 @@ export function NativeTimeline(props: {
   onMount(() => {
     props.setController?.({ navigateUser, scrollToUser, scrollToBottom })
     onCleanup(() => props.setController?.(undefined))
-    if (!content) return
-    // Streaming deltas + async markdown reflow grow the content without changing the
-    // message-array length — a ResizeObserver catches those growth events.
-    const observer = new ResizeObserver(() => stick())
-    observer.observe(content)
-    onCleanup(() => observer.disconnect())
+    if (!content || !scroller) return
+    pinController = createBottomPinController({ scroller, content, pinned, setPinned })
+    onCleanup(() => {
+      pinController?.dispose()
+      pinController = undefined
+    })
+    // Re-entering Chat mounts an already-populated list: the length effect may have run before the
+    // refs existed, so establish the pin here rather than waiting for content to change.
+    stick()
   })
 
   return (
@@ -264,14 +269,7 @@ export function NativeTimeline(props: {
           could match. It is deleted now. Citing it as precedent is what nearly put this rule in:
           a stylesheet with no reachable selector still reads exactly like a decision somebody made
           on purpose. */}
-      <div
-        ref={(el) => (scroller = el)}
-        class="h-full overflow-y-auto"
-        data-component="native-timeline"
-        onScroll={() => {
-          if (scroller) setPinned(nextPinned(pinned(), scroller))
-        }}
-      >
+      <div ref={(el) => (scroller = el)} class="h-full overflow-y-auto" data-component="native-timeline">
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}
@@ -283,6 +281,7 @@ export function NativeTimeline(props: {
             onRetry={props.onRetry}
             onChooseModel={props.onChooseModel}
             onUnpinDevice={props.onUnpinDevice}
+            onStopCommand={props.onStopCommand}
             status={serverSync().session.data.session_status[props.sessionID]}
           />
         </div>

@@ -60,6 +60,7 @@ describe("who declared what", () => {
       permissionMode: "plan",
       shortChat: true,
       strict: { enabled: true },
+      reground: false,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
     const changed = Object.keys(folded).filter(
@@ -101,10 +102,10 @@ describe("a colleague's standing choices", () => {
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, undefined)).toEqual({ ...EFFECTIVE_CONFIG_DEFAULTS })
   })
 
-  test("only the three WORK choices are declarable", () => {
+  test("only the four WORK choices are declarable", () => {
     // A colleague does not get to preset somebody's thinking budget: these are standing choices about
     // how it works, not a second copy of the session config.
-    expect([...AgentDefaults.DECLARABLE].sort()).toEqual(["permissionMode", "shortChat", "strict"])
+    expect([...AgentDefaults.DECLARABLE].sort()).toEqual(["permissionMode", "reground", "shortChat", "strict"])
     const folded = AgentDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
       agent({ thinkingBudget: false, memory: false, permissionMode: "plan" }),
@@ -116,6 +117,12 @@ describe("a colleague's standing choices", () => {
   test("declaredBy reports what the colleague actually set", () => {
     expect(AgentDefaults.declaredBy(agent({ strict: { enabled: true }, title: "Bookkeeper" }))).toEqual(["strict"])
     expect(AgentDefaults.declaredBy(undefined)).toEqual([])
+  })
+
+  test("two colleagues can hold opposite re-ground stances", () => {
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reground: true })).reground).toBe(true)
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reground: false })).reground).toBe(false)
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({})).reground).toBeUndefined()
   })
 })
 

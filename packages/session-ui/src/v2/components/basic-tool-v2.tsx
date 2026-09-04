@@ -41,6 +41,8 @@ export interface BasicToolV2Props extends Omit<ComponentProps<"div">, "children"
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
   onSubtitleClick?: () => void
+  /** A running command already has useful input and must remain inspectable while it runs. */
+  expandWhilePending?: boolean
 }
 
 export function BasicToolV2(props: BasicToolV2Props) {
@@ -52,6 +54,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
     "defaultOpen",
     "onOpenChange",
     "onSubtitleClick",
+    "expandWhilePending",
     "class",
     "classList",
   ])
@@ -64,10 +67,10 @@ export function BasicToolV2(props: BasicToolV2Props) {
     return true
   })
 
-  const canExpand = createMemo(() => hasChildren() && !pending())
+  const canExpand = createMemo(() => hasChildren() && (!pending() || local.expandWhilePending === true))
 
   const handleOpenChange = (value: boolean) => {
-    if (pending()) return
+    if (pending() && local.expandWhilePending !== true) return
     local.onOpenChange?.(value)
   }
 
@@ -92,7 +95,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
                 <span data-slot="basic-tool-v2-title">
                   <TextShimmerV2 text={title().title} active={pending()} />
                 </span>
-                <Show when={!pending() && title().subtitle}>
+                <Show when={title().subtitle}>
                   <span data-slot="basic-tool-v2-sep" aria-hidden="true">
                     ·
                   </span>
@@ -117,7 +120,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
                     <DiffChanges changes={title().changes!} />
                   </span>
                 </Show>
-                <Show when={!pending() && title().action}>{(action) => action()}</Show>
+                <Show when={title().action}>{(action) => action()}</Show>
               </>
             )}
           </Show>

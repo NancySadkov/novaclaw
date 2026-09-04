@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { ShellApproval } from "@novaclaw/core/tool/shell-approval"
 
 describe("shell approval reduction", () => {
+  test("maps MSYS drive roots only for a Windows POSIX shell", () => {
+    expect(ShellApproval.hostPath("/c/Users/nangl/My Project/out.txt", "C:/w64devkit/bin/sh.exe", "win32")).toBe(
+      "C:/Users/nangl/My Project/out.txt",
+    )
+    expect(ShellApproval.hostPath("/D/tmp", "C:/Program Files/Git/bin/bash.exe", "win32")).toBe("D:/tmp")
+    expect(ShellApproval.hostPath("/c/tmp", "pwsh.exe", "win32")).toBe("/c/tmp")
+    expect(ShellApproval.hostPath("/c/tmp", "/bin/bash", "linux")).toBe("/c/tmp")
+    expect(ShellApproval.hostPath("C:/tmp", "C:/w64devkit/bin/sh.exe", "win32")).toBe("C:/tmp")
+  })
   test("splits POSIX chains without splitting quoted separators", () => {
     expect(ShellApproval.analyze(`printf 'a && b' && git status | wc -l & notify`, "/bin/bash")).toEqual({
       status: "parsed",
