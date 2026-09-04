@@ -63,7 +63,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
 
       yield* ConfigSkillPlugin.Plugin.effect(
         host({
-          skill: { transform, reload: () => Effect.void },
+          skill: { transform, reload: () => Effect.void, declare: () => Effect.die("unused skill.declare") },
         }),
       ).pipe(
         Effect.provideService(SkillConfigStore.Service, store),

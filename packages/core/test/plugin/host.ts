@@ -23,6 +23,7 @@ export function host(overrides: Overrides = {}): PluginContext {
       reload: () => Effect.die("unused catalog.reload"),
     },
     command: overrides.command ?? {
+      declare: () => Effect.die("unused command.declare"),
       transform: () => Effect.die("unused command.transform"),
       reload: () => Effect.die("unused command.reload"),
     },
@@ -47,10 +48,12 @@ export function host(overrides: Overrides = {}): PluginContext {
       remove: () => Effect.die("unused plugin.remove"),
     },
     reference: overrides.reference ?? {
+      declare: () => Effect.die("unused reference.declare"),
       transform: () => Effect.die("unused reference.transform"),
       reload: () => Effect.die("unused reference.reload"),
     },
     skill: overrides.skill ?? {
+      declare: () => Effect.die("unused skill.declare"),
       transform: () => Effect.die("unused skill.transform"),
       reload: () => Effect.die("unused skill.reload"),
     },

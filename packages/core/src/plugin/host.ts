@@ -225,6 +225,25 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
     },
     command: {
       reload: commands.reload,
+      /** Declarative form, applied through the SAME draft as the callback — see `agent.declare`. */
+      declare: (items) =>
+        commands.transform((draft) => {
+          for (const item of items) {
+            if (item.remove) {
+              draft.remove(item.id)
+              continue
+            }
+            draft.update(item.id, (command) => {
+              if (item.set) Object.assign(command, item.set)
+              for (const [key, values] of Object.entries(item.append ?? {})) {
+                if (!Array.isArray(values)) continue
+                const target = (command as unknown as Record<string, unknown>)[key]
+                if (Array.isArray(target)) target.push(...values)
+                else (command as unknown as Record<string, unknown>)[key] = [...values]
+              }
+            })
+          }
+        }),
       transform: commands.transform,
     },
     event: {
@@ -337,6 +356,15 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
     },
     reference: {
       reload: reference.reload,
+      // A reference is a NAME bound to a whole source, so the declaration adds or removes rather
+      // than patching fields — the domain has no partial source to `set`.
+      declare: (items) =>
+        reference.transform((draft) => {
+          for (const item of items) {
+            if ("remove" in item) draft.remove(item.name)
+            else draft.add(item.name, Schema.decodeUnknownSync(Reference.Source)(item.source))
+          }
+        }),
       transform: (callback) =>
         reference.transform((draft) =>
           callback({
@@ -348,6 +376,11 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
     },
     skill: {
       reload: skill.reload,
+      // Skills are an append-only list of sources with no id, so the declaration IS the list.
+      declare: (sources) =>
+        skill.transform((draft) => {
+          for (const source of sources) draft.source(Schema.decodeUnknownSync(SkillV2.Source)(source))
+        }),
       transform: (callback) =>
         skill.transform((draft) =>
           callback({

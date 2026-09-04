@@ -69,7 +69,7 @@ Review files`,
           ])
 
           const command = yield* CommandV2.Service
-          yield* ConfigCommandPlugin.Plugin.effect(host({ command: { ...command, reload: command.reload } })).pipe(
+          yield* ConfigCommandPlugin.Plugin.effect(host({ command: { ...command, reload: command.reload, declare: () => Effect.die("unused command.declare") } })).pipe(
             Effect.provideService(CommandConfigStore.Service, store),
             Effect.provideService(
               Config.Service,

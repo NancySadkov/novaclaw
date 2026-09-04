@@ -1,4 +1,5 @@
 import type { CommandV2Info as CommandV2InfoWire } from "@novaclaw/sdk/v2/types"
+import type { Declarative } from "./declaration.js"
 import type { Hooks } from "./registration.js"
 
 /** The draft-facing view of the wire type: generated OpenAPI types can't express `readonly`
@@ -15,4 +16,6 @@ export interface CommandDraft {
 
 export type CommandHooks = Hooks<{
   transform: CommandDraft
-}>
+}> &
+  /** The marshallable form — see `declaration.ts`. Same entity-with-id shape as agents. */
+  Declarative<CommandV2Info>

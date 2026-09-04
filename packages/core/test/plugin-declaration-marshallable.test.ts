@@ -86,3 +86,46 @@ describe("a plugin declaration is marshallable", () => {
     }),
   )
 })
+
+describe("every facet that CAN be declarative has a marshallable form", () => {
+  /**
+   * 🔴 **Three shapes, not one, because the domains differ and pretending otherwise would invent
+   * concepts the domain does not have.** An agent and a command are entities with patchable fields,
+   * so they take `set`/`append`/`remove`. A reference is a NAME bound to a WHOLE source, so it is
+   * add-or-remove — there is no partial source to `set`. A skill is an append-only list of sources
+   * with no id at all, so the declaration IS the list.
+   *
+   * ⚠️ **And two facets have NO declarative form on purpose.** `integration` carries `authorize`,
+   * `refresh` and `label` — an OAuth flow IS behaviour — and `tool` carries an async `execute`.
+   * Neither is data and neither can be made data by rearranging it. That is not a gap in this work:
+   * the out-of-process seam for BEHAVIOUR is MCP, which ruling 5 already named, and a plugin that
+   * needs to run code out of process is describing an MCP server rather than a declaration.
+   */
+  test("the declaration shapes survive a wire, each in its own shape", () => {
+    const wire = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+
+    const command = [{ id: "build", set: { description: "compile it" } }]
+    expect(wire(command), "command declaration did not survive").toEqual(command)
+
+    const reference = [
+      { name: "docs", source: { type: "local", path: "/tmp/docs" } },
+      { name: "stale", remove: true },
+    ]
+    expect(wire(reference), "reference declaration did not survive").toEqual(reference)
+
+    const skill = [{ type: "directory", path: "/tmp/skills" }]
+    expect(wire(skill), "skill declaration did not survive").toEqual(skill)
+  })
+
+  test("🔴 the two BEHAVIOURAL facets are honestly not marshallable, and that is the point", () => {
+    // An OAuth registration and a tool definition both carry functions. Asserting the loss here
+    // stops a later reader concluding the omission was an oversight and "finishing the job" by
+    // inventing a data shape that silently drops the behaviour.
+    const oauth = { integrationID: "x", authorize: () => undefined, refresh: () => undefined }
+    const tool = { name: "run", execute: async () => "done" }
+    const roundOauth = JSON.parse(JSON.stringify(oauth)) as Record<string, unknown>
+    const roundTool = JSON.parse(JSON.stringify(tool)) as Record<string, unknown>
+    expect(Object.keys(roundOauth)).toEqual(["integrationID"])
+    expect(Object.keys(roundTool)).toEqual(["name"])
+  })
+})
