@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { AgentJail } from "../src/agent-jail"
 import { HostExec } from "../src/host-exec"
 import { JhProcessRunner } from "../src/jh/process-runner"
+import { stripComments } from "./lib/source-scan"
 
 // The ONE host-execution gate (v0.2.0 ruling 6). Two rules are pinned here, because both used to be
 // re-derived per call site and both drifted:
@@ -672,8 +673,6 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
 
   /** The comment stripper the other ledgers use — `//` must not eat the `//` in a URL. This answers
    *  "does the file DO it", never "does it talk about it". */
-  const stripComments = (source: string): string =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   // ⚠️ Both names, because the value travels under two: `hostileInput` at the call sites and the
   // field, `hostility` inside the gate's resolver. Keying on one spelling is how the first draft of

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **There is exactly ONE process-tree kill in this repository**, and this is the check that makes
@@ -68,8 +69,6 @@ interface Source {
 }
 
 /** The comment stripper `src/jh/imports.test.ts` uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string, out: Source[]): Source[] {
   let entries: fs.Dirent[]

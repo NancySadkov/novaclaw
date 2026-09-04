@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * 🔴 The community moves no money, asserted mechanically.
@@ -23,8 +24,6 @@ const SRC = path.resolve(import.meta.dir, "..", "src", "community")
  * lands on somebody's clipboard"), so an unstripped scan would fail on the very comments that
  * promise the behaviour being checked.
  */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const sources = fs
   .readdirSync(SRC)

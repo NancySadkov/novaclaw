@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { FILENAME } from "@novaclaw/core/project-file"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * 🔴 **No first-boot seed may read a file named `novaclaw.json` — that name belongs to the PROJECT
@@ -33,8 +34,6 @@ import { FILENAME } from "@novaclaw/core/project-file"
  */
 const SRC = path.resolve(import.meta.dir, "..", "src")
 
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/[^\n]*/g, "$1")
 
 /** Every `const …NAMES = [ … ]` array literal in `core/src`, with the file it came from. */
 const nameLists = (() => {

@@ -15,6 +15,7 @@ import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **Every `Config.Info` key is routed into a store, or it is on the ledger with a reason.** This is
@@ -52,8 +53,6 @@ const CORE = path.resolve(import.meta.dir, "..")
 const ROUTER_PATH = path.join(CORE, "src", "config-store-write.ts")
 
 /** The comment stripper `kill-tree-ledger.test.ts` uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 /**
  * CODE ONLY. The header of the router quotes several of the key names it routes, so reading the

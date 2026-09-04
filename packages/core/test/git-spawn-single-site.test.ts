@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * 🔴 **ONE git spawn in `packages/novaclaw/src`, and this is what makes that true rather than
@@ -37,12 +38,13 @@ const SCOPE = path.join(ROOT, "packages", "novaclaw", "src")
  * Source with comments removed, then matched. ⚠️ The regex-over-raw-source version of this counts
  * PROSE: `worktree/index.ts` carries the line *"`Git.spawn`, not a local `ChildProcess.make`"*, and
  * a scanner that reads comments would report the very file the rule fixed as a violation.
+ *
+ * 🔴 It had its OWN stripper until 2026-09-04, and so did eight other ledgers. All nine ran
+ * block comments before line comments, so a slash-star inside a line comment or a string opened a
+ * comment that ran to the next closing delimiter and deleted real code in between. This one’s
+ * variant blanked comments with SPACES to keep offsets, which `gitSpawnLines` below depends on —
+ * the shared implementation keeps that property, which is why it could replace this one.
  */
-export const stripComments = (source: string) =>
-  source
-    .replaceAll(/\/\*[\s\S]*?\*\//g, (hit) => hit.replaceAll(/[^\n]/g, " "))
-    .replaceAll(/(^|[^:])\/\/[^\n]*/g, (hit, keep: string) => keep + " ".repeat(hit.length - keep.length))
-
 const SPAWN = /ChildProcess\.make\(\s*(?:"git"|gitBinary\(\))/g
 
 /** Every line in `source` that hands the literal `"git"` to `ChildProcess.make`, comments excluded. */

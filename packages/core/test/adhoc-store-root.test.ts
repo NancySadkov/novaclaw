@@ -19,6 +19,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
 import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **ONE resolution path to the ad-hoc session store's root.**
@@ -230,8 +231,6 @@ const SKIP_DIRS = new Set(["node_modules", "dist", "out", "build", "coverage", "
 /** The store's public verbs. A file that calls one of these has picked a root, explicitly or not. */
 const VERBS = /\b(listSessionRecipes|saveSessionRecipe|removeSessionRecipe|copySessionRecipes)\s*\(/
 
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string, out: { name: string; text: string }[]): { name: string; text: string }[] {
   let entries: fs.Dirent[]
