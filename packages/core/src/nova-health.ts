@@ -126,6 +126,42 @@ export const fromCredentials = (input: { readonly unreadable: number; readonly n
 }
 
 /**
+ * A config document in the instance config dir that cannot be read → a row.
+ *
+ * 🔴 **Why this row exists.** Decoding a config document is ALL-OR-NOTHING: one malformed
+ * provider entry costs the user every provider, agent and command in that file. The loss used to
+ * reach nobody — it was a log line, readable only in Developer mode by someone who knew the event's
+ * name — and the user met it much later as *"every turn fails model resolution"*, a symptom that
+ * names the wrong subsystem entirely.
+ *
+ * ⚠️ **RE-DERIVED, never remembered, and that is the design rather than a shortcut.** The
+ * obvious build is to persist the drop when the seed happens, because a first boot precedes any open
+ * UI. But a remembered drop goes STALE the moment the user fixes the file, and a health screen
+ * confidently reporting a problem that has been repaired is worse than one that says nothing. The
+ * file is still on disk, so "this document cannot be read" is a fact about the present, and reading
+ * it at check time is correct by construction — for a first-boot drop and for a file that broke
+ * afterwards alike.
+ */
+export const fromConfigDocument = (input: {
+  readonly unreadable: readonly { readonly path: string; readonly notice: string }[]
+}): Signal => {
+  if (input.unreadable.length === 0) return { id: "config-document", label: "Config file", status: "ok" }
+  const [first] = input.unreadable
+  const rest = input.unreadable.length - 1
+  return {
+    id: "config-document",
+    label: "Config file",
+    status: "problem",
+    // The FILE and the REASON, because "a config file is invalid" sends someone to the wrong file
+    // when they keep more than one, and "invalid" alone does not say what to change.
+    detail:
+      `${first!.path} could not be read — ${first!.notice}. Nothing in it was applied` +
+      `${rest > 0 ? `, and ${rest} other document${rest === 1 ? " is" : "s are"} in the same state` : ""}.`,
+    action: "Fix the file and restart, or delete it and configure from Settings.",
+  }
+}
+
+/**
  * `ProviderReach.Verdict` → a row.
  *
  * ⚠️ `blocked` is a WARNING with no repair, not a problem: the user turned the airgap on, and

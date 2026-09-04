@@ -22,6 +22,7 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
+import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { NovaHealth } from "@novaclaw/core/nova-health"
 import { CapabilityRegistry, type Snapshot as CapabilitySnapshot } from "@novaclaw/core/effect/capability-registry"
 import { ProviderReach } from "@novaclaw/core/provider-reach"
@@ -279,6 +280,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             return { unreadable: found.length, notice: CredentialRepair.notice(found, directory) }
           }).pipe(Effect.catchCause(() => Effect.succeed({ unreadable: 0, notice: undefined })))
 
+          // Read at CHECK time, not remembered from the seed: a drop recorded at first boot goes
+          // stale the moment the user fixes the file, and it would miss a file that broke afterwards.
+          // Best-effort — a health board must never be the thing that fails.
+          const unreadableConfig = yield* CatalogSeed.unreadableDocuments(
+            (yield* Global.Service).config,
+          ).pipe(Effect.orElseSucceed(() => [] as readonly { readonly path: string; readonly notice: string }[]))
+
           const signals = [
             NovaHealth.fromCredentials(
               credentials.notice === undefined
@@ -296,6 +304,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             // server-side board cannot read it; reporting "updates are off" would describe the
             // user's own configuration falsely.
             NovaHealth.fromUpdater(undefined),
+            NovaHealth.fromConfigDocument({ unreadable: unreadableConfig }),
             ...(providerRow === undefined ? [] : [providerRow]),
             ...downCapabilities,
           ]

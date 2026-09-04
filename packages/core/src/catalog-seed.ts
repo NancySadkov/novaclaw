@@ -158,3 +158,43 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     for (const info of infos) if (info.model !== undefined) defaultModel = info.model
     if (defaultModel !== undefined) yield* store.setDefaultIfEmpty(defaultModel)
   })
+
+
+/**
+ * 🔴 **Which config documents in the config dir cannot be read, RIGHT NOW.**
+ *
+ * The health surface needs this and it must not be a remembered event. Decoding is all-or-nothing
+ * per document, so one malformed provider entry costs every provider, agent and command in that
+ * file — and the loss reached nobody: a log line, readable only in Developer mode by someone who
+ * knew the event name, met much later as *"every turn fails model resolution"*.
+ *
+ * ⚠️ **It re-reads rather than recalling, and that is what makes it correct.** A drop recorded at
+ * seed time goes stale the moment the user fixes the file, and a health screen confidently reporting
+ * a repaired problem is worse than one that says nothing. This also covers the case a persisted
+ * notice would MISS entirely: a file that was fine at first boot and was broken afterwards.
+ *
+ * ⚠️ Uses the SAME decode this module seeds with. A second reader would be a second answer to
+ * "is this file valid", and the two would drift.
+ */
+export const unreadableDocuments = (globalConfigDir: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FSUtil.Service
+    const out: { path: string; notice: string }[] = []
+    for (const name of NAMES) {
+      const filepath = path.join(globalConfigDir, name)
+      const text = yield* fs.readFileStringSafe(filepath).pipe(Effect.orElseSucceed(() => undefined))
+      if (text === undefined) continue
+      const errors: ParseError[] = []
+      const input: unknown = parse(text, errors, { allowTrailingComma: true })
+      if (errors.length) {
+        out.push({
+          path: filepath,
+          notice: `not valid JSON (${errors.length} parse error${errors.length === 1 ? "" : "s"})`,
+        })
+        continue
+      }
+      if (Option.getOrUndefined(decodeInfo(expandFlatModels(input))) === undefined)
+        out.push({ path: filepath, notice: "did not match the config schema" })
+    }
+    return out as readonly { readonly path: string; readonly notice: string }[]
+  })

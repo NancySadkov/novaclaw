@@ -518,6 +518,13 @@ describe("instance HttpApi", () => {
         ).toContain(id)
       }
 
+      // 🔴 The config-document row rides the wire too. It is `ok` here because this fixture has
+      // no unreadable file — what matters is that the row EXISTS, since a reading that only appears
+      // when it has bad news is a reading nobody can tell apart from one that stopped running.
+      const configRow = body.signals.find((signal) => signal.id === "config-document")
+      expect(configRow, "the config-document row is missing from a live diagnosis").toBeDefined()
+      expect(configRow!.status).toBe("ok")
+
       // ⚠️ Opening the board must not contact anyone. Reachability is the ONE reading that costs
       // egress, so without ?probe=provider a provider row may exist but must never carry a probed
       // verdict — a health screen that phones out because someone glanced at it is not local-first.
