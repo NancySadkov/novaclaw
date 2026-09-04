@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b2d4f392-e2ea-4a0f-a830-a5acb4583610",
+  "id": "b5ce1a9f-0553-4bba-ae53-6db942e7413f",
   "prevIds": [
-    "3babd21e-56a6-419d-a0e8-0a6a6ba1d885"
+    "b2d4f392-e2ea-4a0f-a830-a5acb4583610"
   ],
   "ddl": [
     {
@@ -4071,16 +4071,6 @@
       "default": null,
       "generated": null,
       "name": "revert",
-      "entityType": "columns",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "permission",
       "entityType": "columns",
       "table": "session"
     },

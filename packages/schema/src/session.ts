@@ -10,7 +10,6 @@ import { SessionID } from "./session-id"
 import { SessionStrict } from "./session-strict"
 import { SessionType } from "./session-type"
 import { Revert } from "./revert"
-import { PermissionRuleset } from "./permission-ruleset"
 import { SessionProviderRecovery } from "./session-provider-recovery"
 
 export const ID = SessionID

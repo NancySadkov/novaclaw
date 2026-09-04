@@ -5,7 +5,6 @@ import type { SessionMessage } from "./message"
 import type { Prompt } from "./prompt"
 import type { SessionInput } from "./input"
 import type { Snapshot } from "../snapshot"
-import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import type { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
@@ -45,7 +44,17 @@ export const SessionTable = sqliteTable(
     tokens_cache_read: integer().notNull().default(0),
     tokens_cache_write: integer().notNull().default(0),
     revert: text({ mode: "json" }).$type<Revert.State>(),
-    permission: text({ mode: "json" }).$type<PermissionRuleset.Ruleset>(),
+    // ⚠️ A `permission` ruleset column stood here until 2026-09-04 and was DROPPED. It was declared,
+    // typed and migrated, and across all 418 references to this table in the tree, this line was the
+    // only one that named it — no select, no insert, no update, and `Session.Info` never surfaced
+    // it. `schema/src/session.ts` still imported its type for nothing, which was the last trace.
+    // The per-session ruleset it was meant to hold is not blocked, it was never built; the MODE half
+    // (`permission_mode` below) is what actually narrows down the parent chain.
+    // 🔴 If a per-session ruleset ever returns it must be DENY-WINS BY CONSTRUCTION — a reducer that
+    // cannot express last-wins — never by a comment asserting it. `config-resolve.ts`'s header
+    // records why (v0.2.0 ruling 16 / decisions C6: the old `permissionRules` field's "deny-wins
+    // accumulation" was in fact last-wins over a concatenated list, so the escalation hole was a
+    // hole in dead code). Resurrecting an untyped JSON column would be the wrong start for it.
     agent: text(),
     model: text({ mode: "json" }).$type<{
       id: string
