@@ -73,14 +73,6 @@ export const ModelsCommand = lazyCommand({
   },
 })
 
-export const StatsCommand = lazyCommand({
-  ...CommandSpec.stats,
-  async load() {
-    const { StatsCommand } = await import("./cmd/stats")
-    return StatsCommand
-  },
-})
-
 export const ExportCommand = lazyCommand({
   ...CommandSpec.export,
   async load() {

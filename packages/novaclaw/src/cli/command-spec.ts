@@ -36,10 +36,6 @@ export const CommandSpec = {
     command: "models [provider]",
     describe: "list all available models",
   },
-  stats: {
-    command: "stats",
-    describe: "show token usage and cost statistics",
-  },
   export: {
     command: "export [sessionID]",
     describe: "export session data as JSON",

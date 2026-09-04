@@ -18,7 +18,6 @@ import {
   ProvidersCommand,
   RunCommand,
   ServeCommand,
-  StatsCommand,
   WebCommand,
 } from "./cli/command-registry"
 
@@ -102,7 +101,6 @@ const cli = yargs(args)
   .command(ServeCommand)
   .command(WebCommand)
   .command(ModelsCommand)
-  .command(StatsCommand)
   .command(ExportCommand)
   .command(DbCommand)
   .fail((msg, err) => {

@@ -150,7 +150,7 @@ const BLOCKING_CALLS = [
 const STILL_INTERACTIVE: string[] = []
 
 /** Every leaf that must never block. A prompt returning to any of them is a regression. */
-const MUST_NOT_BLOCK = ["cmd/mcp.ts", "cmd/providers.ts", "cmd/stats.ts", "cmd/run.ts", "cmd/agent.ts", "cmd/export.ts"]
+const MUST_NOT_BLOCK = ["cmd/mcp.ts", "cmd/providers.ts", "cmd/run.ts", "cmd/agent.ts", "cmd/export.ts"]
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
