@@ -7,6 +7,7 @@ import {
   scopedDirectory,
   type DirectoryResolvable,
 } from "@/utils/routing-directory"
+import { stripComments } from "./strip-comments"
 
 /**
  * **The two directory answers, and the fact that they are two.**
@@ -119,9 +120,6 @@ describe("nothing resolves the routing directory by hand any more", () => {
   const SRC = path.resolve(import.meta.dir, "..")
   const SELF = path.resolve(import.meta.dir, "routing-directory.test.ts")
   const OWNER = path.resolve(import.meta.dir, "routing-directory.ts")
-
-  const stripComments = (text: string) =>
-    text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   /** `x.directory || y.home` / `x.home || y.directory`, however the two sides are spelled. */
   const BY_HAND = /\.\s*directory\s*\|\|[^\n]*?\.\s*home\b|\.\s*home\s*\|\|[^\n]*?\.\s*directory\b/

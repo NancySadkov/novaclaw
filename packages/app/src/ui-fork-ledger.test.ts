@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, normalize, relative, resolve } from "node:path"
+import { stripComments } from "@/utils/strip-comments"
 
 /**
  * **The retired v1→v2 design-system fork must stay absent.**
@@ -63,9 +64,6 @@ const SKIP_DIRS = new Set([
  * the thing it hunted, one on a test title — and this file's own ledger is full of widget names, so
  * a sweep that reads prose would report itself.
  */
-export function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<!:)\/\/[^\n]*/g, "")
-}
 
 /**
  * Anchored on purpose — the second half of the self-detection defence. An unanchored specifier match
