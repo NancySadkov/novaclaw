@@ -50,6 +50,19 @@ import { VariantPlugin } from "./variant"
  * particular is data-plane egress handed to in-process third-party code by default, in a product
  * whose data plane is meant to be airgappable (principle 4).
  *
+ * 🔴 **Seven more left on 2026-09-04, and they were DUPLICATES rather than grants.** `AgentV2`,
+ * `Catalog`, `CommandV2`, `EventV2`, `Integration`, `Reference` and `SkillV2` were provided here AND
+ * handed to every plugin as `ctx` — `PluginHost.make` resolves each one and builds the context object
+ * out of them. No plugin ever `yield*`ed them; every one reaches those capabilities through `ctx`,
+ * which is the third channel and the one that actually carries them. So this list is now the six a
+ * plugin genuinely resolves — `CatalogStore`, `Config`, `FSUtil`, `Global`, `Location`, `ModelsDev` —
+ * measured against the declarations in `capabilities`, not guessed.
+ *
+ * ⚠️ **THREE channels, then, not two:** this per-plugin block, the ambient node `deps`, and the `ctx`
+ * object. A plugin cannot tell the first two apart from the inside and does not need to; `ctx` is the
+ * one that looks different and is therefore the one people notice. Counting only the first was what
+ * made this list look like thirteen grants when six of them were real and seven were shadows.
+ *
  * ⚠️ This is the SAFE half of the narrowing. The unsafe half — provide each plugin only what it
  * declares — is a different job, because a second provisioning channel exists: this node's `deps`
  * carry `AgentConfigStore`, `CommandConfigStore`, `ReferenceConfigStore`, `SkillConfigStore` and
@@ -59,19 +72,16 @@ import { VariantPlugin } from "./variant"
  * plugin can, at BOOT, because these run at startup.
  */
 export type Requirements =
-  | AgentV2.Service
-  | Catalog.Service
+  | AgentConfigStore.Service
   | CatalogStore.Service
-  | CommandV2.Service
+  | CommandConfigStore.Service
   | Config.Service
-  | EventV2.Service
   | FSUtil.Service
   | Global.Service
-  | Integration.Service
   | Location.Service
   | ModelsDev.Service
-  | Reference.Service
-  | SkillV2.Service
+  | ReferenceConfigStore.Service
+  | SkillConfigStore.Service
 
 /**
  * ⚠️ **`Npm.Service` is deliberately NOT in this union** (removed 2026-09-04). Ruling 5 deleted the
@@ -175,40 +185,42 @@ export function define<R>(plugin: Plugin<R>) {
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const catalog = yield* Catalog.Service
     const catalogStore = yield* CatalogStore.Service
-    const commands = yield* CommandV2.Service
     const plugin = yield* PluginV2.Service
-    const integration = yield* Integration.Service
-    const agents = yield* AgentV2.Service
     const config = yield* Config.Service
     const location = yield* Location.Service
     const modelsDev = yield* ModelsDev.Service
-    const events = yield* EventV2.Service
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
-    const skill = yield* SkillV2.Service
-    const reference = yield* Reference.Service
-    const add = <R>(input: Plugin<R>) => {
+    // The four config stores were reached AMBIENTLY until 2026-09-04 — present in this node's deps
+    // and never provided per plugin, so a plugin resolved them without anything saying it could.
+    // Resolving them here makes the second channel explicit; the services are identical and already
+    // in this layer's environment, so nothing about what runs changes.
+    const agentConfigStore = yield* AgentConfigStore.Service
+    const commandConfigStore = yield* CommandConfigStore.Service
+    const referenceConfigStore = yield* ReferenceConfigStore.Service
+    const skillConfigStore = yield* SkillConfigStore.Service
+    // ⚠️ `R` is CONSTRAINED here, and that constraint is the whole point of narrowing the list
+    // above. `define<R>` still accepts anything (see its own note), but nothing may be ADDED whose
+    // requirements this block does not satisfy — so the compiler, not a boot, is what tells you the
+    // provision and the plugins have drifted apart.
+    const add = <R extends Requirements | Scope.Scope>(input: Plugin<R>) => {
       const loaded = {
         id: input.id,
         effect: (context: PluginContext) =>
           input
             .effect(context)
             .pipe(
-              Effect.provideService(Catalog.Service, catalog),
               Effect.provideService(CatalogStore.Service, catalogStore),
-              Effect.provideService(CommandV2.Service, commands),
-              Effect.provideService(Integration.Service, integration),
-              Effect.provideService(AgentV2.Service, agents),
               Effect.provideService(Config.Service, config),
               Effect.provideService(Location.Service, location),
               Effect.provideService(ModelsDev.Service, modelsDev),
-              Effect.provideService(EventV2.Service, events),
               Effect.provideService(FSUtil.Service, fs),
               Effect.provideService(Global.Service, global),
-              Effect.provideService(SkillV2.Service, skill),
-              Effect.provideService(Reference.Service, reference),
+              Effect.provideService(AgentConfigStore.Service, agentConfigStore),
+              Effect.provideService(CommandConfigStore.Service, commandConfigStore),
+              Effect.provideService(ReferenceConfigStore.Service, referenceConfigStore),
+              Effect.provideService(SkillConfigStore.Service, skillConfigStore),
             ),
       }
       return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect)

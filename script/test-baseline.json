@@ -1,12 +1,13 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
+    "core": "11 as of 2026-09-04, RAISED from 9 — the two reifying `npm` tests (`Npm.add`, `Npm.install`) are `describe.skip` by owner ruling: \"just disable this test completely, since we are local for now\". They complete a REAL package install, so on a machine that cannot reach a registry they hang to their budget and take the whole unit red; it had been red on most runs for a week and was being narrated around rather than read. ⚠️ A RAISED skip count is the direction this ratchet exists to catch, so it is owed more than a number: what is now uncovered is `Npm.add`'s cache-directory-exists reify branch and `Npm.install`'s `.npmrc` omit handling, the capability is LIVE (`Npm.which` resolves prettier/oxfmt/biome on the formatter path), and re-enabling them means making `reify` complete offline for a `file:` spec rather than raising a timeout — the budget note in that file already tried that and its number was an order of magnitude short. Filed as SW-07.",
     "llm": "28 as of 2026-09-01, lowered from 29. The refactor sweep deleted the unused provider surface and its tests (`test/exports.test.ts`, `test/provider/cloudflare.test.ts`, `test/provider/openrouter.test.ts` and others); one of those files carried a skipped test, so the skip left with the file it lived in. A skip count that drops because tests were REMOVED is a ratchet working, not a regression — but it is lowered deliberately and in the same commit, never left to drift.",
     "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true."
   },
   "units": {
     "llm": 28,
-    "core": 9,
+    "core": 11,
     "novaclaw:server": 13,
     "novaclaw:v2": 3,
     "schema": 0,
