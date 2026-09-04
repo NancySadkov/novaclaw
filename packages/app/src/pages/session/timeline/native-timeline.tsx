@@ -257,10 +257,13 @@ export function NativeTimeline(props: {
           why it would be so hard to find afterwards: `scrollTop` never changes, so no scroll event
           fires and nothing in this file can notice the drift.
 
-          The `overflow-anchor: none` in `session-ui/src/components/session-turn.css` is not a
-          counter-example. Nothing imports that stylesheet and no component sets that
-          `data-component`; it is dead CSS, and citing it as precedent is what nearly put this rule
-          in. */}
+          The `overflow-anchor: none` that used to sit in `session-ui/src/components/session-turn.css`
+          was not a counter-example either. That sheet WAS imported and did ship — through
+          `styles/index.css`, which is the part a search for `.tsx` imports misses — but no component
+          ever set the `data-component` every one of its rules was scoped under, so not a single one
+          could match. It is deleted now. Citing it as precedent is what nearly put this rule in:
+          a stylesheet with no reachable selector still reads exactly like a decision somebody made
+          on purpose. */}
       <div
         ref={(el) => (scroller = el)}
         class="h-full overflow-y-auto"
