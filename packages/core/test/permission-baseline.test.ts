@@ -15,6 +15,7 @@ import { Wildcard } from "@novaclaw/core/util/wildcard"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { agentHost, host } from "./plugin/host"
+import { stripComments } from "./lib/source-scan"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // v0.2.0 B4c — the permission baseline is an ALLOWLIST, and this file is the ratchet that keeps it
@@ -532,8 +533,6 @@ describe("the explore subagent can actually glob and grep", () => {
 describe("glob and grep still assert `explore`, and still remap their horizon onto it", () => {
   // CODE ONLY: both files EXPLAIN the shared action at length, and a guard that read prose would be
   // satisfied by the comment describing the very rule it is meant to pin.
-  const stripComments = (source: string): string =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
   const read = (file: string) =>
     stripComments(fs.readFileSync(nodePath.join(import.meta.dir, "..", "src", "tool", file), "utf8"))
 

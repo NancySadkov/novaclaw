@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { PermissionActions } from "@novaclaw/core/permission-actions"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * The gate vocabulary is DERIVED here and only DECLARED there.
@@ -17,9 +18,6 @@ import { PermissionActions } from "@novaclaw/core/permission-actions"
  * no instance and no registry. The same trade `legacy-path-ledger` and `plan-citation-ledger` make.
  */
 const ROOT = path.resolve(import.meta.dir, "..")
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/[^\n]*/g, "$1")
 
 const actionsIn = (file: string): string[] => {
   const source = stripComments(fs.readFileSync(path.join(ROOT, file), "utf8"))

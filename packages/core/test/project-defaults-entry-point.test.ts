@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { ProjectDefaults } from "@novaclaw/core/session/project-defaults"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **A folder's tune reaches every reader of a `WIRED` component, or it reaches none of them.**
@@ -27,8 +28,6 @@ import { ProjectDefaults } from "@novaclaw/core/session/project-defaults"
 const SRC = path.resolve(import.meta.dir, "..", "src")
 
 /** The comment stripper `config-routing-ledger.test.ts` uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const walk = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

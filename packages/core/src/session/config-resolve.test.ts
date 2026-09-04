@@ -21,6 +21,7 @@ import {
   type SessionLike,
   type SessionType,
 } from "./config-resolve"
+import { stripComments } from "../../test/lib/source-scan"
 
 const DEFAULTS: EffectiveConfig = {
   type: "interactive",
@@ -435,8 +436,6 @@ describe("the root tri-state has ONE collapse point (shrink-only ledger)", () =>
   const SELF = path.resolve(import.meta.dir, "config-resolve.test.ts")
 
   /** Comments discuss the old boolean-ish world freely; only CODE is swept. */
-  const stripComments = (text: string) =>
-    text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   const SHAPES: ReadonlyArray<{ readonly pattern: RegExp; readonly what: string }> = [
     { pattern: /\brootAttendance\s*\(/, what: "reads the three-valued root answer" },

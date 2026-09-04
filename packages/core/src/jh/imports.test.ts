@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../../test/lib/source-scan"
 
 // §0.7.2 — mechanical import-whitelist guard. Every engine source file under src/jh/ may import ONLY:
 //   effect · ./… (jh-relative) · ../util/hash · node:… (process-runner/tools-basic/store only) ·
@@ -72,12 +73,6 @@ function violationFor(filename: string, spec: string): string | undefined {
       : `../database import "${spec}" only allowed in store.ts (got ${filename})`
   }
   return `disallowed import "${spec}" in ${filename}`
-}
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "") // block comments
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1") // line comments (but not the // in ://)
 }
 
 function specifiersOf(source: string): string[] {

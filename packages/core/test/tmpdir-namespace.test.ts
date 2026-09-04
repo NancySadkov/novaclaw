@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **ONE producer of the `novaclaw-core-test-*` temp namespace.**
@@ -42,9 +43,6 @@ const SKIP_DIRS = new Set(["node_modules", "dist", "out", "build", "coverage", "
 
 /** The prefix as it appears in a string literal of any quoting style. */
 const CLAIMS_PREFIX = /["'`]novaclaw-core-test/
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(
   dir: string,

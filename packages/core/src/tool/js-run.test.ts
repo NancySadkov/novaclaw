@@ -13,6 +13,7 @@ import {
   type JsRun,
   type JsRunOptions,
 } from "./js-run"
+import { stripComments } from "../../test/lib/source-scan"
 
 // ─── the spawn seam ─────────────────────────────────────────────────────────────────────────────
 //
@@ -419,8 +420,6 @@ describe("the spawn ledger", () => {
   const SPAWN_BUDGET = SPAWN_LEDGER.reduce((sum, [children]) => sum + children, 0)
 
   /** The comment stripper `src/jh/imports.test.ts` uses — `//` must not eat the `//` in a URL. */
-  const stripComments = (source: string): string =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   /** Call sites of the imported evaluator. A loop is invisible to this, which is why the RUNTIME
    *  counter is the ratchet and this check only guarantees the counter cannot be bypassed. */

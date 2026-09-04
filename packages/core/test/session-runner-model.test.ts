@@ -18,6 +18,7 @@ import { healthyAlternative, usableFallback } from "@novaclaw/core/session/runne
 import { SessionV2 } from "@novaclaw/core/session"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { it } from "./lib/effect"
+import { stripComments } from "./lib/source-scan"
 
 type Api =
   | {
@@ -756,8 +757,6 @@ describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
 // expression verbatim.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("the runner CONSULTS the device key (source ratchet)", () => {
-  const stripComments = (text: string) =>
-    text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   const runnerSource = () => {
     const file = path.resolve(import.meta.dir, "../src/session/runner/llm.ts")

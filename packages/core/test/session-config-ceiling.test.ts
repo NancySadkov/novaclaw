@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { EFFECTIVE_CONFIG_DEFAULTS, stanceOf } from "@novaclaw/core/session/config-resolve"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **An instance ceiling clamps down and never up.**
@@ -18,8 +19,6 @@ const SRC = path.resolve(import.meta.dir, "..", "src")
 
 /** ⚠️ Comments first. A regex over raw source counts PROSE, and this file's own subject is discussed
  *  by name in two of the modules it scans. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const walkDir = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

@@ -22,6 +22,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import { location } from "./fixture/location"
 import { it } from "./lib/effect"
 import { executeTool, toolIdentity } from "./lib/tool"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * `todo/projects.md` — **Project exclusions**, the enforcement half.
@@ -516,8 +517,6 @@ describe("project exclusions — the refusal is legible", () => {
    * the guard. That matters more now that the ledger is empty and this test is the only thing
    * standing. `//` must not eat the `//` in a URL.
    */
-  const stripComments = (source: string): string =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
   /** Every `src/tool/*.ts` that resolves a caller-supplied path, and whether it absorbs legibly. */
   const sweepTools = (): { readonly scanned: string[]; readonly offenders: string[] } => {

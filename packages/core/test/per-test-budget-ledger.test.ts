@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **The shrink-only ledger of per-test timeout overrides in `packages/core/test/`.**
@@ -53,9 +54,6 @@ const SELF = path
   .join("/")
 
 const SKIP_DIRS = new Set(["node_modules", "dist", "out", "build", "coverage", "gen", ".git", ".turbo", ".vite"])
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const DECLARATION = /\bconst\s+BUDGET_MS\s*=\s*([0-9][0-9_]*)\b/g
 /** Every integer literal, `_` separators allowed; the size filter is applied after parsing, not by the regex. */

@@ -26,6 +26,7 @@ import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
+import { stripComments } from "./lib/source-scan"
 
 const current = Layer.succeed(
   Location.Service,
@@ -1281,8 +1282,6 @@ describe("quality_provision asserts the action it actually performs", () => {
   const TOOL = nodePath.join(import.meta.dir, "..", "src", "tool", "quality-provision.ts")
   // CODE ONLY. That file now explains this rule at length, and a guard that read prose would be
   // satisfied by the very explanation of the bug it exists to catch.
-  const stripComments = (source: string): string =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
   const source = stripComments(fs.readFileSync(TOOL, "utf8"))
 
   /** It starts a host process with a candidate command… */

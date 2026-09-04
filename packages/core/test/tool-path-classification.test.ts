@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "./lib/source-scan"
 
 // The sweep, as a standing guard rather than a one-off audit.
 //
@@ -31,8 +32,6 @@ interface Source {
 }
 
 /** Comment stripper (the shape `src/jh/imports.test.ts` uses — `//` must not eat a `://` in a URL). */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string): Source[] {
   const out: Source[] = []

@@ -16,6 +16,7 @@ import {
   unreadableToolMediaNotice,
   type InputCapabilities,
 } from "@novaclaw/core/session/runner/to-llm-message"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **A screenshot returned as TOOL OUTPUT bypassed both guardrails.**
@@ -325,10 +326,6 @@ const sourcePath = path.join(
  * (`test/untrusted-framing.test.ts` records it: a wildcard MIME string spells both a comment opener
  * and a closer, and blanks real code between two of them).
  */
-const stripComments = (source: string): string =>
-  source
-    .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, (comment) => comment.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (_all, lead: string) => lead)
 
 /**
  * Every read of the raw settled state that is NOT an argument to the gate.

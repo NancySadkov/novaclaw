@@ -10,6 +10,7 @@ import { Cause, Effect, Exit, JsonSchema, Layer, Option, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { bypassedPolicyGate, toolDefinitions } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * `Tool.withPermission(tool, <its own registered name>)` is a LITERAL NO-OP, and nine tools shipped
@@ -266,10 +267,6 @@ interface Source {
 }
 
 /** Line- and column-preserving, so a commented-out call cannot be counted and indentation survives. */
-const stripComments = (source: string): string =>
-  source
-    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (_all, lead: string) => lead)
 
 function collect(dir: string, out: Source[]): Source[] {
   let entries: fs.Dirent[]

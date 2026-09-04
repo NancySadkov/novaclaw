@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { RipgrepBinary } from "@novaclaw/core/ripgrep/binary"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **ripgrep is embedded from a local build-host binary and executed as this agent OS's tree-search
@@ -30,8 +31,6 @@ const SOURCE_PATH = path.join(import.meta.dir, "..", "src", "ripgrep", "binary.t
 const RAW_SOURCE = fs.readFileSync(SOURCE_PATH, "utf8")
 
 /** The comment stripper the rest of the suite uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 /** CODE ONLY, so the assertions below answer "does it DO it", never "does it mention it". */
 const SOURCE = stripComments(RAW_SOURCE)

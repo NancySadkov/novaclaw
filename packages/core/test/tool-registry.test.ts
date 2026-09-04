@@ -13,6 +13,7 @@ import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { bypassedPolicyGate, settleTool } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
+import { stripComments } from "./lib/source-scan"
 
 // The unknown-tool horizon (ported from outside contribution #4, @DassaultFalconKing).
 //
@@ -308,8 +309,6 @@ interface Source {
 }
 
 /** The comment stripper `src/jh/imports.test.ts` uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string, out: Source[]): Source[] {
   let entries: fs.Dirent[]

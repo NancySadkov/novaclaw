@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { Offline } from "@novaclaw/core/offline"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * ─── the transports the HttpClient chokepoint cannot see ────────────────────────────────────────
@@ -28,8 +29,6 @@ import { Offline } from "@novaclaw/core/offline"
 const CORE = path.resolve(import.meta.dir, "..")
 
 /** `//` must not eat the `//` in a URL — the idiom the other source sweeps in this repo use. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const codeOf = (relative: string): string => stripComments(fs.readFileSync(path.join(CORE, relative), "utf8"))
 

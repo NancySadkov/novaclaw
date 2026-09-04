@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { Presence } from "@novaclaw/core/presence"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * ─── the ratchet under `Presence`: an `existsSync` may never become an accusation ────────────────
@@ -46,8 +47,6 @@ const REPO = path.resolve(import.meta.dir, "..", "..", "..")
 const PACKAGES = path.join(REPO, "packages")
 
 /** `//` must not eat the `//` in a URL — the idiom the other source sweeps in this repo use. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 /**
  * What the site DOES with the answer. The classes are about the sentence, not about the call.

@@ -8,6 +8,7 @@ import {
   SESSION_CONFIG_FIELDS,
   stanceOf,
 } from "@novaclaw/core/session/config-resolve"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **Every field's default is declared once, on the descriptor, and applied from there.**
@@ -26,9 +27,6 @@ import {
 
 /** `packages/core/test` → `packages/core/src`. */
 const SRC = path.resolve(import.meta.dir, "..", "src")
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const walk = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

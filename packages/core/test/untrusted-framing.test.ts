@@ -30,6 +30,7 @@ import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * **The prompt-injection frame covered ONE source out of several.**
@@ -81,10 +82,6 @@ const TOOL_DIR = path.resolve(import.meta.dir, "..", "src", "tool")
  * file's negative control. Every doc comment in this tree opens at column 0 (prettier), so a
  * mid-line comment opener is far likelier to be a string than a comment.
  */
-const stripComments = (source: string): string =>
-  source
-    .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, (comment) => comment.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (_all, lead: string) => lead)
 
 const readTool = (name: string) => fs.readFileSync(path.join(TOOL_DIR, name), "utf8")
 

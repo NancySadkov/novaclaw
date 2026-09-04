@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { ToolFailure } from "@novaclaw/llm"
 import { PermissionV2 } from "../permission"
 import { Tool } from "./tool"
+import { stripComments } from "../../test/lib/source-scan"
 
 /**
  * **A tool that asserts a permission must be able to REPORT a refusal (1J).**
@@ -33,7 +34,6 @@ const HERE = import.meta.dir
 const SELF = path.resolve(HERE, "absorb-ledger.test.ts")
 
 /** Comments discuss `denialMessage` freely; only CODE is swept. */
-const stripComments = (text: string) => text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const SOURCES = fs
   .readdirSync(HERE, { withFileTypes: true })
