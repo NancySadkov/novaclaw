@@ -116,10 +116,22 @@ export const seedFromDirectory = (globalConfigDir: string) =>
         const info = yield* loadInfo(path.join(dir, name))
         if (info) infos.push(info)
       }
-    // NOVACLAW_CONFIG_CONTENT is a first-class config source (the SDK's server launcher passes app
-    // config exclusively through it, and headless/test embeddings rely on it). Without importing it
-    // here, such an instance boots with an EMPTY catalog and every V2 turn fails model resolution.
+    // NOVACLAW_CONFIG_CONTENT is an inline config source: without importing it here, an instance
+    // configured that way boots with an EMPTY catalog and every V2 turn fails model resolution.
     // Appended last = most specific (mirrors the V1 loader treating it as a "local" source).
+    //
+    // 🔴 **CORRECTED 2026-09-04. This used to justify itself with "the SDK's server launcher passes
+    // app config exclusively through it", and that launcher no longer exists** — `sdk/js/src/v2/
+    // server.ts` and its `process.ts` helper were deleted on 2026-07-29 (the SDK's own
+    // `zero-runtime-dependencies.test.ts` records why), and launching an instance became the
+    // harness's job. Swept the tree: **nothing in the shipped product sets this variable.** Its only
+    // live writers are tests (`cli/providers-login.test.ts`, `cli/run/run-process.test.ts`) and the
+    // V1 reader in `novaclaw/src/config/config.ts`.
+    //
+    // ⚠️ That does not make the arm dead — a headless embedder can still set it, and the tests that
+    // do are real users of the path. What it makes false is the REASON, and a comment that names a
+    // deleted consumer as the load-bearing one sends the next person to defend a requirement nobody
+    // has. Ruling 2: a fault is never described falsely, and neither is a justification.
     const inlineResult = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
     if (inlineResult.notice)
       yield* Log.event("config.catalog.seed.dropped", {
