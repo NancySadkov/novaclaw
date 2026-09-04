@@ -231,6 +231,14 @@ describe("the check itself can fail", () => {
 })
 
 describe("NovaClaw full-tier process boundaries", () => {
+  test("the full tier discovers tests beside source as well as under test/", () => {
+    const units = novaclawSubUnits(join(ROOT, "packages/novaclaw"), new Set(PROMOTED_NOVACLAW_SUBDIRS))
+    const sourceTests = units.flatMap((unit) => unit.args).filter((file) => file.startsWith("src/") && file.endsWith(".test.ts"))
+
+    expect(sourceTests.length, "the full-tier discovery must not silently ignore colocated source tests").toBeGreaterThan(0)
+    expect(sourceTests).toContain("src/cli/supervise.test.ts")
+  })
+
   test("every solo file runs exactly once and never shares the bulk process", () => {
     const units = novaclawSubUnits(join(ROOT, "packages/novaclaw"), new Set(PROMOTED_NOVACLAW_SUBDIRS))
     const bulk = units.find((unit) => unit.unit === "test/*")

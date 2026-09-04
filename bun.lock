@@ -393,6 +393,9 @@
         "solid-js": "^1.9.0",
       },
     },
+    "packages/watchdog": {
+      "name": "@novaclaw/watchdog",
+    },
     "script": {
       "name": "@novaclaw/repo-script",
       "devDependencies": {
@@ -852,6 +855,8 @@
     "@novaclaw/session-ui": ["@novaclaw/session-ui@workspace:packages/session-ui"],
 
     "@novaclaw/ui": ["@novaclaw/ui@workspace:packages/ui"],
+
+    "@novaclaw/watchdog": ["@novaclaw/watchdog@workspace:packages/watchdog"],
 
     "@npm/types": ["@npm/types@1.0.2", "", {}, "sha512-KXZccTDEnWqNrrx6JjpJKU/wJvNeg9BDgjS0XhmlZab7br921HtyVbsYzJr4L+xIvjdJ20Wh9dgxgCI2a5CEQw=="],
 

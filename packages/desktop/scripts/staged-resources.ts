@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs"
+import { closeSync, existsSync, openSync, readdirSync, readSync, statSync, type Dirent } from "node:fs"
 import path from "node:path"
 
 import type { Channel } from "./utils"
@@ -97,9 +97,9 @@ function isRequired(policy: Policy, channel: Channel): boolean {
 /** The first non-empty regular file at or under `directory`, or undefined. Short-circuits on the
  *  first hit, so proving the 594 MB w64devkit tree is not empty costs one `readdir`. */
 function firstFile(directory: string, depth = 3): string | undefined {
-  let entries: ReturnType<typeof readdirSync>
+  let entries: Dirent<string>[]
   try {
-    entries = readdirSync(directory, { withFileTypes: true })
+    entries = readdirSync(directory, { withFileTypes: true, encoding: "utf8" })
   } catch {
     return undefined
   }

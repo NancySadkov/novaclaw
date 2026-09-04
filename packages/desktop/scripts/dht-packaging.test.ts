@@ -129,12 +129,17 @@ test("a successful build publishes atomically with the compiled source identity"
       writeFileSync(path.join(root, "target", "release", executable), "new binary")
       return { success: true, exitCode: 0 }
     },
-    verify: (_path, expected) => expect(expected).toEqual(compiledIdentity),
+    verify: (_path, expected) => {
+      if (compiledIdentity === undefined) throw new Error("fixture cargo did not publish an artifact identity")
+      expect(expected).toEqual(compiledIdentity)
+    },
   })
 
   expect(result.status).toBe("published")
+  if (compiledIdentity === undefined) throw new Error("fixture cargo did not publish an artifact identity")
+  const identity = compiledIdentity
   const manifest = JSON.parse(await readFile(path.join(dhtRoot, "build", "manifest.json"), "utf8"))
-  expect(manifest).toEqual({ schema: DHT_ARTIFACT_SCHEMA, executable, ...compiledIdentity })
+  expect(manifest).toEqual({ schema: DHT_ARTIFACT_SCHEMA, executable, ...identity })
   expect(await readFile(path.join(dhtRoot, "build", executable), "utf8")).toBe("new binary")
 })
 

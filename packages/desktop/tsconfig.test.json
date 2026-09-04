@@ -18,7 +18,7 @@
   // `src/**/*.d.ts` is here because a test that imports renderer source pulls the ambient
   // `Window.api` augmentation with it; without the declarations this project reports the
   // augmentation missing rather than the test being wrong.
-  "include": ["src/**/*.test.ts", "src/**/*.d.ts", "electron-builder.config.test.ts"],
+  "include": ["src/**/*.test.ts", "src/**/*.d.ts", "electron-builder.config.test.ts", "scripts/**/*.ts"],
   // Must be reset: `extends` inherits the parent's exclude, which is exactly these files.
   "exclude": []
 }

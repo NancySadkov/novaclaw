@@ -36,7 +36,7 @@
  * Usage:  bun ./scripts/smoke-artifact.ts [path\to\NovaClaw.exe]
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { copyFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import os from "node:os"
@@ -44,6 +44,7 @@ import path from "node:path"
 
 import { canonicalVersion, type Channel } from "./utils"
 import { verifyPackagedDht } from "./dht-packaging"
+import { checkRendererI18n, readPackagedRenderer } from "./renderer-artifact"
 import { channelConfigured, resolveChannel } from "@novaclaw/script/channel"
 
 /** How long the app gets to boot, open a window and answer /global/health. */
@@ -577,6 +578,21 @@ async function run() {
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
   const exe = await stageArtifact(sourceExe, tempHome)
   console.log(`staged   : ${exe} (isolated from workspace dependencies)`)
+  try {
+    const bundle = readPackagedRenderer(exe)
+    const appEnglish = readFileSync(path.join(APP_ROOT, "packages", "app", "src", "i18n", "en.ts"), "utf8")
+    const desktopEnglish = readFileSync(path.join(APP_ROOT, "packages", "desktop", "src", "renderer", "i18n", "en.ts"), "utf8")
+    const result = checkRendererI18n([appEnglish, desktopEnglish], bundle)
+    check(result.controlPresent, "renderer-i18n-control", `the packaged renderer does not contain ${result.controlKey}`)
+    check(
+      result.expected > 0 && result.missing.length === 0,
+      "renderer-i18n-complete",
+      `${result.missing.length} of ${result.expected} source locale keys are absent from resources/app.asar` +
+        (result.missing.length > 0 ? `: ${result.missing.slice(0, 12).join(", ")}` : ""),
+    )
+  } catch (error) {
+    check(false, "renderer-i18n-complete", `could not inspect resources/app.asar: ${String(error)}`)
+  }
   try {
     const dht = await verifyPackagedDht({ channel, executable: exe, appRoot: APP_ROOT })
     check(

@@ -1,4 +1,5 @@
 import { readdirSync } from "node:fs"
+import { join } from "node:path"
 
 /**
  * The RUN-UNIT table — which directories `bun run test` actually executes, and with what arguments.
@@ -63,19 +64,26 @@ export const SOLO_NOVACLAW_TEST_FILES = [
  * a side effect, which is the same unobservable-configuration hole `PACKAGES` was moved here to close.
  */
 export function novaclawSubUnits(dir: string, promoted: ReadonlySet<string>): { unit: string; args: string[] }[] {
-  const root = `${dir}/test`
   const paths: string[] = []
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (promoted.has(entry.name)) continue
-      for (const found of readdirSync(`${root}/${entry.name}`, { recursive: true })) {
-        const name = String(found).replaceAll("\\", "/")
-        if (name.endsWith(".test.ts")) paths.push(`test/${entry.name}/${name}`)
+  const ignored = new Set([".git", "node_modules", "build", "dist", "out", ".ts-dist"])
+  const walk = (relative: string) => {
+    for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
+      const next = relative === "" ? entry.name : `${relative}/${entry.name}`
+      if (entry.isDirectory()) {
+        // Promoted directories already have their own fast-tier units. This check is deliberately
+        // about the package's test tree; a source directory called `server` is not promoted.
+        if (relative === "test" && promoted.has(entry.name)) continue
+        if (!ignored.has(entry.name)) walk(next)
+      } else if (/\.test\.tsx?$/.test(entry.name)) {
+        paths.push(next.replaceAll("\\", "/"))
       }
-    } else if (entry.name.endsWith(".test.ts")) {
-      paths.push(`test/${entry.name}`)
     }
   }
+  // The package's own `bun test` script scans from its root. Discover from that same root here so
+  // tests colocated with implementation (`src/**`) cannot disappear between the package script and
+  // the full-tier gate. Previously this started at `test/`, leaving 21 committed source tests out of
+  // every gate while `run-units.test.ts` claimed the package was covered.
+  walk("")
   const solo = SOLO_NOVACLAW_TEST_FILES.filter((file) => paths.includes(file))
   const bulk = paths.filter((file) => !solo.includes(file as (typeof SOLO_NOVACLAW_TEST_FILES)[number]))
   return [
