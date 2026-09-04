@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { JSX } from "solid-js"
+import { createSignal, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { render } from "solid-js/web"
 import { LanguageContext } from "@/context/language"
@@ -8,6 +8,7 @@ import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
 import { SettingsStrictV2 } from "@/components/settings-v2/strict"
 import { SettingsTunesV2 } from "@/components/settings-v2/tunes"
+import { SettingsNumberFieldV2 } from "@/components/settings-v2/parts/number-field"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
 
@@ -31,7 +32,6 @@ import { languageStub } from "./language-stub"
  * "typing does not write"; the control is that a real commit still persists, that three distinct
  * commits are three writes, and that an in-range value raises no refusal.
  */
-
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined
@@ -227,5 +227,43 @@ describe("Strict — Attempts stores the value its own copy documents", () => {
     expect((config().strict as { attempts?: number } | undefined)?.attempts).toBeUndefined()
     expect(refusals()).toHaveLength(1)
     expect(refusals()[0]!.textContent).toBe("Enter a whole number between 1 and 8")
+  })
+})
+
+describe("a human-unit duration may explicitly accept fractions", () => {
+  test("0.5 commits and empty clears through the same door", async () => {
+    const commits: number[] = []
+    let clears = 0
+    const [value, setValue] = createSignal<number | undefined>()
+    mount(
+      () => (
+        <SettingsNumberFieldV2
+          value={value}
+          min={0.5}
+          max={60}
+          step={0.5}
+          allowDecimal
+          ariaLabel="Timeout"
+          onCommit={(next) => {
+            commits.push(next)
+            setValue(next)
+          }}
+          onClear={() => {
+            clears += 1
+            setValue(undefined)
+          }}
+        />
+      ),
+      {},
+    )
+
+    commit(box("Timeout"), "0.5")
+    await settle()
+    expect(commits).toEqual([0.5])
+
+    commit(box("Timeout"), "")
+    await settle()
+    expect(clears).toBe(1)
+    expect(refusals()).toHaveLength(0)
   })
 })

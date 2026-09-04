@@ -1228,6 +1228,7 @@ export const dict = {
   // rules exist to end — and because the alternative the boxes used to do (silently clamp the
   // half-typed value and write it) made the legal value unreachable.
   "settings.field.number.range": "Enter a whole number between {{min}} and {{max}}",
+  "settings.field.number.rangeDecimal": "Enter a number between {{min}} and {{max}}",
 
   "settings.tunes.title": "Tunes",
   "settings.tunes.description":

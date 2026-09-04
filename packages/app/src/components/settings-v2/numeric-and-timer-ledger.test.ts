@@ -41,10 +41,7 @@ const NUMBER_FIELD = "parts/number-field.tsx"
 
 /** Measured against this directory on 2026-09-02. Every number may only DECREASE. */
 const RAW_NUMBER_BOXES: Record<string, number> = {
-  "introspection.tsx": 1,
   "messengers.tsx": 1,
-  "quality.tsx": 2,
-  "web-search.tsx": 1,
 }
 
 /** Timer schedules in a file that never registers an `onCleanup`. Measured the same day. */
@@ -90,6 +87,13 @@ describe("settings panels — the hand-rolled number box", () => {
     expect(count(field!.text, /onChange=/g)).toBe(1)
     // The whole point: there is no per-keystroke path for a caller to reach.
     expect(count(field!.text, /onInput=/g)).toBe(0)
+  })
+
+  test("the one raw number box is a local dialog draft and uses the shared refusal parser", () => {
+    const messenger = panels().find((p) => p.name === "messengers.tsx")
+    expect(messenger).toBeDefined()
+    expect(messenger!.text).toContain("parseSettingsNumber(cps(), { min: PACE_MIN, max: PACE_MAX })")
+    expect(messenger!.text).toContain('setError(language.t("settings.field.number.range"')
   })
 })
 

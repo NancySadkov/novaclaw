@@ -51,6 +51,13 @@ const datetimeLocal = (ms: number) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Preserve the draft text until submit, then accept only a real calendar day. */
+export function calendarDay(raw: string): number {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1 || value > 31) throw new Error("Choose a whole day from 1 to 31")
+  return value
+}
+
 function describeRecurrence(r: Recurrence): string {
   switch (r.kind) {
     case "once":
@@ -220,9 +227,9 @@ export function CalendarPage() {
   const [time, setTime] = createSignal("09:00")
   const [onceAt, setOnceAt] = createSignal("")
   const [weekdays, setWeekdays] = createSignal<number[]>([1])
-  const [monthDay, setMonthDay] = createSignal(1)
+  const [monthDay, setMonthDay] = createSignal("1")
   const [yearMonth, setYearMonth] = createSignal(1)
-  const [yearDay, setYearDay] = createSignal(1)
+  const [yearDay, setYearDay] = createSignal("1")
   const [agent, setAgent] = createSignal("")
   const [model, setModel] = createSignal("")
   const [folder, setFolder] = createSignal("")
@@ -241,9 +248,9 @@ export function CalendarPage() {
     setTime("09:00")
     setOnceAt("")
     setWeekdays([1])
-    setMonthDay(1)
+    setMonthDay("1")
     setYearMonth(1)
-    setYearDay(1)
+    setYearDay("1")
     setAgent("")
     setModel("")
     setFolder("")
@@ -274,12 +281,12 @@ export function CalendarPage() {
         break
       case "monthly":
         setTime(hm(schedule.recurrence.time))
-        setMonthDay(schedule.recurrence.day)
+        setMonthDay(String(schedule.recurrence.day))
         break
       case "yearly":
         setTime(hm(schedule.recurrence.time))
         setYearMonth(schedule.recurrence.month)
-        setYearDay(schedule.recurrence.day)
+        setYearDay(String(schedule.recurrence.day))
         break
     }
     queueMicrotask(() => editor?.scrollIntoView({ block: "nearest" }))
@@ -296,9 +303,9 @@ export function CalendarPage() {
       case "weekly":
         return { kind: "weekly", time: t, weekdays: weekdays() }
       case "monthly":
-        return { kind: "monthly", time: t, day: monthDay() }
+        return { kind: "monthly", time: t, day: calendarDay(monthDay()) }
       case "yearly":
-        return { kind: "yearly", time: t, month: yearMonth(), day: yearDay() }
+        return { kind: "yearly", time: t, month: yearMonth(), day: calendarDay(yearDay()) }
       case "daily":
       default:
         return { kind: "daily", time: t }
@@ -650,7 +657,7 @@ export function CalendarPage() {
                 min={1}
                 max={31}
                 value={monthDay()}
-                onInput={(e) => setMonthDay(Number(e.currentTarget.value))}
+                onInput={(e) => setMonthDay(e.currentTarget.value)}
               />
             </Show>
             <Show when={kind() === "yearly"}>
@@ -669,7 +676,7 @@ export function CalendarPage() {
                 min={1}
                 max={31}
                 value={yearDay()}
-                onInput={(e) => setYearDay(Number(e.currentTarget.value))}
+                onInput={(e) => setYearDay(e.currentTarget.value)}
               />
             </Show>
           </div>

@@ -11,6 +11,7 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 import { resumeInterruptedOn, resumeInterruptedPatch } from "./recovery-state"
+import { useSettingsConfigWrite } from "./parts/config-write"
 
 // The UI-preference surface, and ONLY that. localStorage is the app's whole persistence backend on
 // web (servers, drafts, prompt history all live there — see utils/persist.ts), so a blanket
@@ -57,6 +58,7 @@ export const SettingsRecoveryV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const serverSync = useServerSync()
+  const writeConfig = useSettingsConfigWrite()
 
   // Read/patch logic lives in `recovery-state.ts` so it can be ratcheted against the kernel's own
   // default — see that file and its test.
@@ -64,11 +66,7 @@ export const SettingsRecoveryV2: Component = () => {
   const resumeOn = () => resumeInterruptedOn(config())
 
   async function setResume(value: boolean) {
-    await serverSync()
-      .updateConfig(resumeInterruptedPatch(config(), value))
-      .catch(() => {
-        /* the row reflects the store on the next sync; a failed write simply does not move it */
-      })
+    await writeConfig(resumeInterruptedPatch(config(), value))
   }
 
   // Two-step confirm for the destructive-ish action: first click arms, second click fires.

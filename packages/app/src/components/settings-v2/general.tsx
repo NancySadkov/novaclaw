@@ -27,6 +27,7 @@ import { DialogExpertise } from "./dialog-expertise"
 import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { useSettingsConfigWrite } from "./parts/config-write"
 import { SettingsExplainV2 } from "./explain"
 import { scopedDirectory } from "@/utils/routing-directory"
 
@@ -60,6 +61,7 @@ export const SettingsGeneralV2: Component<{
   const platform = usePlatform()
   const dialog = useDialog()
   const serverSync = useServerSync()
+  const writeConfig = useSettingsConfigWrite()
   const serverSdk = useServerSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
 
@@ -343,7 +345,7 @@ export const SettingsGeneralV2: Component<{
             onSelect={(option) => {
               if (!option) return
               if (option.value === currentShell()) return
-              serverSync().updateConfig({ shell: option.value })
+              void writeConfig({ shell: option.value })
             }}
           />
         </SettingsRowV2>
@@ -398,10 +400,7 @@ export const SettingsGeneralV2: Component<{
           description={`${language.t("settings.general.row.offline.description")}${offlineLabel() ? ` — ${offlineLabel()}` : ""}`}
         >
           <div data-action="settings-offline-mode">
-            <Switch
-              checked={offlineEnabled()}
-              onChange={(checked) => void serverSync().updateConfig({ offline: checked } as never)}
-            />
+            <Switch checked={offlineEnabled()} onChange={(checked) => void writeConfig({ offline: checked })} />
           </div>
         </SettingsRowV2>
 
@@ -413,7 +412,7 @@ export const SettingsGeneralV2: Component<{
           <div data-action="settings-virtual-fs">
             <Switch
               checked={(serverSync().data.config as { virtualFs?: boolean }).virtualFs === true}
-              onChange={(checked) => void serverSync().updateConfig({ virtualFs: checked } as never)}
+              onChange={(checked) => void writeConfig({ virtualFs: checked })}
             />
           </div>
         </SettingsRowV2>
@@ -454,7 +453,7 @@ export const SettingsGeneralV2: Component<{
             <Switch
               checked={telemetryConsent()}
               disabled={offlineEnabled()}
-              onChange={(checked) => void serverSync().updateConfig({ telemetry: { enabled: checked } } as never)}
+              onChange={(checked) => void writeConfig({ telemetry: { enabled: checked } })}
             />
           </div>
         </SettingsRowV2>

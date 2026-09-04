@@ -9,6 +9,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
 
 // P2 (2D) — the Introspection settings tab. A cadence-gated judge model watches a running
 // session and steers an interjection when it answers "yes, this agent is stuck" (2A/2B).
@@ -53,9 +54,7 @@ export const SettingsIntrospectionV2: Component = () => {
     return ids
   })
   const modelOptions = createMemo(() => {
-    const options = [
-      { value: INHERIT_MODEL, label: language.t("settings.introspection.row.model.placeholder") },
-    ]
+    const options = [{ value: INHERIT_MODEL, label: language.t("settings.introspection.row.model.placeholder") }]
     for (const id of catalogModels()) options.push({ value: id, label: id })
     options.push({ value: CUSTOM_MODEL, label: language.t("settings.introspection.row.model.custom") })
     return options
@@ -110,20 +109,16 @@ export const SettingsIntrospectionV2: Component = () => {
               title={language.t("settings.introspection.row.cadence.title")}
               description={language.t("settings.introspection.row.cadence.description")}
             >
-              <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  value={current().cadence || ""}
-                  placeholder={String(DEFAULT_CADENCE)}
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ cadence: Number.isFinite(parsed) && parsed >= 1 ? parsed : 0 })
-                  }}
-                  aria-label={language.t("settings.introspection.row.cadence.title")}
-                />
-              </div>
+              <SettingsNumberFieldV2
+                class="w-full sm:w-[100px]"
+                value={() => current().cadence || undefined}
+                min={1}
+                max={100_000}
+                placeholder={String(DEFAULT_CADENCE)}
+                ariaLabel={language.t("settings.introspection.row.cadence.title")}
+                onCommit={(cadence) => void persist({ cadence })}
+                onClear={() => void persist({ cadence: 0 })}
+              />
             </SettingsRowV2>
 
             {/*

@@ -93,7 +93,6 @@ const LEDGER: { console: Record<string, number>; discarded: Record<string, numbe
   discarded: {
     "components/dialog-select-directory-v2.tsx": 1,
     "components/expertise-mirror.tsx": 1,
-    "components/settings-v2/recovery.tsx": 1,
     "pages/files.tsx": 1,
   },
 }
@@ -210,6 +209,15 @@ describe("reportedWrite hands back a verdict instead of swallowing one", () => {
 })
 
 describe("the silent-write ledger", () => {
+  test("General's four immediate controls and Recovery's resume control all use the reported door", () => {
+    const general = stripComments(readFileSync(resolve(APP_SRC, "components/settings-v2/general.tsx"), "utf8"))
+    const recovery = stripComments(readFileSync(resolve(APP_SRC, "components/settings-v2/recovery.tsx"), "utf8"))
+    expect(general.match(/writeConfig\s*\(/g)).toHaveLength(4)
+    expect(recovery.match(/writeConfig\s*\(/g)).toHaveLength(1)
+    expect(general).not.toMatch(/updateConfig\s*\(/)
+    expect(recovery).not.toMatch(/updateConfig\s*\(/)
+  })
+
   test("no new failure is reported only to the console, and no ledger line is stale", () => {
     expect(drift(scan().console, LEDGER.console, "console-only failure report(s)")).toEqual([])
   })

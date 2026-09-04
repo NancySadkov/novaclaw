@@ -1,12 +1,13 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { SECOND_MS, fromMs, toMs } from "./units"
+import { SECOND_MS, fromMs } from "./units"
 import { type Component, Show } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
 
 // The Web Search settings tab (todo.md → "a built-in fallback so it just works for lay users").
 // Advanced/Developer level: a normal person never needs to touch this — search just works via the
@@ -46,6 +47,7 @@ const THROTTLE_FIELDS: Array<{
   min: number
   /** Present only on a duration: what one displayed unit is worth in stored milliseconds. */
   unitMs?: number
+  max: number
 }> = [
   {
     key: "hostIntervalMs",
@@ -54,6 +56,7 @@ const THROTTLE_FIELDS: Array<{
     fallback: 4000,
     min: 0,
     unitMs: SECOND_MS,
+    max: 86_400,
   },
   {
     key: "burst",
@@ -61,6 +64,7 @@ const THROTTLE_FIELDS: Array<{
     hint: "settings.webSearch.throttle.burst.hint",
     fallback: 3,
     min: 1,
+    max: 10_000,
   },
   {
     key: "perHostConcurrency",
@@ -68,6 +72,7 @@ const THROTTLE_FIELDS: Array<{
     hint: "settings.webSearch.throttle.concurrency.hint",
     fallback: 1,
     min: 1,
+    max: 1_000,
   },
   {
     key: "dailyPerHost",
@@ -75,6 +80,7 @@ const THROTTLE_FIELDS: Array<{
     hint: "settings.webSearch.throttle.daily.hint",
     fallback: 150,
     min: 1,
+    max: 1_000_000,
   },
   {
     key: "sameUrlLimit",
@@ -82,6 +88,7 @@ const THROTTLE_FIELDS: Array<{
     hint: "settings.webSearch.throttle.sameUrl.hint",
     fallback: 3,
     min: 1,
+    max: 1_000,
   },
 ]
 
@@ -214,29 +221,21 @@ export const SettingsWebSearchV2: Component = () => {
         <SettingsListV2>
           {THROTTLE_FIELDS.map((field) => (
             <SettingsRowV2 title={language.t(field.label)} description={language.t(field.hint)}>
-              <TextInputV2
-                type="number"
-                appearance="large"
-                min={field.min}
+              <SettingsNumberFieldV2
                 class="!w-32 self-stretch"
-                value={
-                  field.unitMs
-                    ? fromMs(Number(fieldValue(field.key)) || undefined, field.unitMs)
-                    : fieldValue(field.key)
+                value={() => {
+                  const raw = Number(fieldValue(field.key)) || undefined
+                  if (raw === undefined) return undefined
+                  return field.unitMs ? raw / field.unitMs : raw
+                }}
+                min={field.min}
+                max={field.max}
+                placeholder={field.unitMs ? fromMs(field.fallback, field.unitMs) : String(field.fallback)}
+                ariaLabel={language.t(field.label)}
+                onCommit={(shown) =>
+                  void persistThrottle(field.key, String(field.unitMs ? shown * field.unitMs : shown))
                 }
-                placeholder={
-                  field.unitMs ? fromMs(field.fallback, field.unitMs) : String(field.fallback)
-                }
-                spellcheck={false}
-                autocomplete="off"
-                onChange={(event) =>
-                  void persistThrottle(
-                    field.key,
-                    field.unitMs
-                      ? String(toMs(event.currentTarget.value, field.unitMs) ?? "")
-                      : event.currentTarget.value,
-                  )
-                }
+                onClear={() => void persistThrottle(field.key, "")}
               />
             </SettingsRowV2>
           ))}

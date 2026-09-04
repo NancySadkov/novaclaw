@@ -8,7 +8,8 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { MINUTE_MS, fromMs, toMs } from "./units"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
+import { MINUTE_MS, fromMs } from "./units"
 
 // QE-D — the Quality Enforcement settings tab. Edits the QE-C config: the
 // provisioned check commands the runner executes at write/turn boundaries, the
@@ -140,20 +141,16 @@ export const SettingsQualityV2: Component = () => {
               title={language.t("settings.quality.row.cadence.title")}
               description={language.t("settings.quality.row.cadence.description")}
             >
-              <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  value={current().cadence || ""}
-                  placeholder="2"
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ cadence: Number.isFinite(parsed) && parsed >= 1 ? parsed : 0 })
-                  }}
-                  aria-label={language.t("settings.quality.row.cadence.title")}
-                />
-              </div>
+              <SettingsNumberFieldV2
+                class="w-full sm:w-[100px]"
+                value={() => current().cadence || undefined}
+                min={1}
+                max={100_000}
+                placeholder="2"
+                ariaLabel={language.t("settings.quality.row.cadence.title")}
+                onCommit={(cadence) => void persist({ cadence })}
+                onClear={() => void persist({ cadence: 0 })}
+              />
             </SettingsRowV2>
 
             <SettingsRowV2
@@ -162,18 +159,21 @@ export const SettingsQualityV2: Component = () => {
             >
               {/* Minutes in, milliseconds stored. `300000` asked a person to count zeros to say
                   "five minutes"; the config keeps ms, which is right, and only the box changes. */}
-              <div class="w-full sm:w-[140px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="0"
-                  step="0.5"
-                  value={fromMs(current().testTimeout, MINUTE_MS)}
-                  placeholder="5"
-                  onChange={(event) => void persist({ testTimeout: toMs(event.currentTarget.value, MINUTE_MS) ?? 0 })}
-                  aria-label={language.t("settings.quality.row.testTimeout.title")}
-                />
-              </div>
+              <SettingsNumberFieldV2
+                class="w-full sm:w-[140px]"
+                value={() => {
+                  const shown = fromMs(current().testTimeout, MINUTE_MS)
+                  return shown === "" ? undefined : Number(shown)
+                }}
+                min={0.5}
+                max={1_440}
+                step={0.5}
+                allowDecimal
+                placeholder="5"
+                ariaLabel={language.t("settings.quality.row.testTimeout.title")}
+                onCommit={(minutes) => void persist({ testTimeout: minutes * MINUTE_MS })}
+                onClear={() => void persist({ testTimeout: 0 })}
+              />
             </SettingsRowV2>
           </SettingsListV2>
         </div>

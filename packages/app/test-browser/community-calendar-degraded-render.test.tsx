@@ -53,8 +53,6 @@ import { languageStub } from "./language-stub"
  * sentence a person reads rather than a key echoed back.
  */
 
-
-
 const HOME = "/home/tester"
 const HTTP = { url: "http://localhost:4096" }
 const connection = { type: "http", key: "local", url: HTTP.url, http: HTTP }
@@ -67,6 +65,7 @@ let contactsMode: ReadMode = "ok"
 let identityMode: ReadMode = "ok"
 /** Whether the instance has told us which folder it works in. */
 let storedPath: Record<string, unknown> | undefined = { home: HOME, directory: HOME }
+let calendarWrites = 0
 
 const CONTACTS = [
   { networkID: "nid_alice", petname: "Alice", routes: ["1.2.3.4:443"], blocked: false, addedAt: 1 },
@@ -121,6 +120,7 @@ afterEach(() => {
   contactsMode = "ok"
   identityMode = "ok"
   storedPath = { home: HOME, directory: HOME }
+  calendarWrites = 0
   localStorage.clear()
 })
 
@@ -133,8 +133,9 @@ const json = (body: unknown) =>
  */
 function stubFetch() {
   const original = globalThis.fetch
-  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL) => {
+  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : ((input as Request).url ?? String(input))
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     if (url.includes("api/community/participation")) {
       if (participationMode === "fail") throw new TypeError("Failed to fetch")
       if (participationMode === "empty")
@@ -156,7 +157,10 @@ function stubFetch() {
     // dereference `undefined.length` — a fixture fault that looks exactly like the crash under test.
     if (url.includes("/history")) return json({ messages: [], hidden: 0, held: 0 })
     if (url.includes("/sync")) return json({ peers: 0, fetched: 0 })
-    if (url.includes("api/calendar/schedule")) return json([])
+    if (url.includes("api/calendar/schedule")) {
+      if (method !== "GET") calendarWrites += 1
+      return json(method === "GET" ? [] : {})
+    }
     if (url.includes("api/calendar/fire")) return json([])
     if (url.includes("api/community/offer/mine")) return json({ servable: true })
     return json([])
@@ -349,5 +353,50 @@ describe("Calendar explains a disabled Add task instead of greying out in silenc
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add task"))
     expect(submit, "the Add task button must still be rendered").toBeTruthy()
     expect((submit as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe("Calendar refuses impossible monthly days before sending a schedule", () => {
+  test("empty, fractional, below-minimum and above-maximum days stay drafts and name the valid range", async () => {
+    mount(() => <CalendarPage />)
+    await settle()
+
+    const repeat = document.querySelector("#calendar-repeat") as HTMLSelectElement
+    repeat.value = "monthly"
+    repeat.dispatchEvent(new Event("change", { bubbles: true }))
+    const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
+    prompt.value = "send the report"
+    prompt.dispatchEvent(new Event("input", { bubbles: true }))
+    for (const day of ["", "1.5", "0", "32"]) {
+      const dayBox = document.querySelector(`input[aria-label="${en["calendar.page.dayOfMonth"]}"]`) as HTMLInputElement
+      dayBox.value = day
+      dayBox.dispatchEvent(new Event("input", { bubbles: true }))
+      ;[...document.querySelectorAll("button")]
+        .find((button) => button.textContent?.includes("Add task"))!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await settle()
+      expect(calendarWrites).toBe(0)
+      expect(bodyText()).toContain("Choose a whole day from 1 to 31")
+      expect(dayBox.value).toBe(day)
+    }
+  })
+
+  test("CONTROL — a real monthly day is sent unchanged", async () => {
+    mount(() => <CalendarPage />)
+    await settle()
+    const repeat = document.querySelector("#calendar-repeat") as HTMLSelectElement
+    repeat.value = "monthly"
+    repeat.dispatchEvent(new Event("change", { bubbles: true }))
+    const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
+    prompt.value = "send the report"
+    prompt.dispatchEvent(new Event("input", { bubbles: true }))
+    const dayBox = document.querySelector(`input[aria-label="${en["calendar.page.dayOfMonth"]}"]`) as HTMLInputElement
+    dayBox.value = "31"
+    dayBox.dispatchEvent(new Event("input", { bubbles: true }))
+    ;[...document.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("Add task"))!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await settle()
+    expect(calendarWrites).toBe(1)
   })
 })

@@ -25,8 +25,8 @@ import { useLanguage } from "@/context/language"
  *    are declared once and used for the HTML attributes AND the check, so the box and the handler
  *    cannot disagree the way `min="1"` beside `parsed > 1` did.
  *
- * ⚠️ **Whole numbers only**, deliberately: every settings row that uses it counts messages, tokens,
- * percent or attempts. A row that needs decimals should extend this, not hand-roll its own box.
+ * Whole numbers are the default. A duration may explicitly allow decimals; it still gets the same
+ * commit boundary and visible range refusal instead of rebuilding a raw number input.
  */
 export interface SettingsNumberFieldProps {
   /** The stored value, reactive. `undefined` shows the placeholder — the row is on its default. */
@@ -41,12 +41,25 @@ export interface SettingsNumberFieldProps {
   readonly min: number
   readonly max: number
   readonly step?: number
+  /** Opt in only for a value whose displayed human unit is legitimately fractional. */
+  readonly allowDecimal?: boolean
   readonly placeholder?: string
   readonly ariaLabel: string
   /** A unit shown beside the box (`msg`, `tok`, `%`) — decoration, so it is hidden from screen readers. */
   readonly unit?: string
   /** Sizing for the box row. The refusal message is placed under it either way. */
   readonly class?: string
+}
+
+export function parseSettingsNumber(
+  raw: string,
+  range: { min: number; max: number; allowDecimal?: boolean },
+): number | undefined {
+  const parsed = Number(raw.trim())
+  if (!Number.isFinite(parsed)) return undefined
+  if (!range.allowDecimal && !Number.isInteger(parsed)) return undefined
+  if (parsed < range.min || parsed > range.max) return undefined
+  return parsed
 }
 
 export function SettingsNumberFieldV2(props: SettingsNumberFieldProps) {
@@ -68,8 +81,8 @@ export function SettingsNumberFieldV2(props: SettingsNumberFieldProps) {
       else input.value = text()
       return
     }
-    const parsed = Number(typed)
-    if (!Number.isInteger(parsed) || parsed < props.min || parsed > props.max) {
+    const parsed = parseSettingsNumber(typed, props)
+    if (parsed === undefined) {
       setRefused(true)
       return
     }
@@ -110,7 +123,10 @@ export function SettingsNumberFieldV2(props: SettingsNumberFieldProps) {
           data-slot="settings-v2-number-refused"
           class="text-[11px] leading-tight text-v2-state-fg-danger"
         >
-          {language.t("settings.field.number.range", { min: props.min, max: props.max })}
+          {language.t(props.allowDecimal ? "settings.field.number.rangeDecimal" : "settings.field.number.range", {
+            min: props.min,
+            max: props.max,
+          })}
         </span>
       </Show>
     </div>

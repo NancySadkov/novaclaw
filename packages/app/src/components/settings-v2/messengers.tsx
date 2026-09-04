@@ -30,6 +30,7 @@ import {
 } from "@/utils/messenger-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { parseSettingsNumber } from "./parts/number-field"
 
 // Settings → Messengers — "which messenger apps can NovaClaw use?"
 // A headline lay feature (Normal level): connect NovaClaw to Telegram & friends so the agent can
@@ -686,18 +687,20 @@ const DialogMessengerSpeed: Component<{
   )
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
-  const value = () => {
-    const n = Number(cps())
-    return Number.isFinite(n) ? Math.min(PACE_MAX, Math.max(PACE_MIN, Math.round(n))) : PACE_DEFAULT
-  }
-  const risky = () => value() > PACE_RISKY
+  const value = () => parseSettingsNumber(cps(), { min: PACE_MIN, max: PACE_MAX })
+  const risky = () => (value() ?? 0) > PACE_RISKY
 
   const save = async () => {
+    const next = value()
+    if (next === undefined) {
+      setError(language.t("settings.field.number.range", { min: PACE_MIN, max: PACE_MAX }))
+      return
+    }
     setBusy(true)
     setError(undefined)
     try {
       await messengerUpdateAccount(sdk().server.http, props.account.id, {
-        settings: { ...props.account.settings, [PACE_KEY]: String(value()) },
+        settings: { ...props.account.settings, [PACE_KEY]: String(next) },
       })
       props.onDone()
       dialog.close()
@@ -723,7 +726,12 @@ const DialogMessengerSpeed: Component<{
               min={PACE_MIN}
               max={PACE_MAX}
               value={cps()}
-              onInput={(event) => setCps(event.currentTarget.value)}
+              invalid={value() === undefined}
+              aria-label={language.t("settings.messengers.speed.title", { label: props.account.label })}
+              onInput={(event) => {
+                setCps(event.currentTarget.value)
+                setError(undefined)
+              }}
             />
             <span class="settings-v2-field-description">{language.t("settings.messengers.speed.unit")}</span>
           </label>
