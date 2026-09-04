@@ -348,6 +348,20 @@ export const CORRELATION_ATTRIBUTES = {
    */
   "provider.id": "correlate",
   "model.id": "correlate",
+  /**
+   * A third-party plugin's own id, as its package declares it.
+   *
+   * ⚠️ **`correlate`, and it is NOT the same decision as `plugin.event.id` two entries down** — the
+   * shared prefix is the trap. That one is a frame on our in-process bus, minted per process and
+   * dead with it. This one is chosen by the plugin's AUTHOR, persists for as long as the package is
+   * installed, and is on every line about that plugin's work.
+   *
+   * So it behaves like `provider.id` and `model.id`: not a unit of the user's own work, but a stable
+   * key naming something the user CONFIGURED. A stream of them is the person's installed set, which
+   * is a fingerprint of a machine and an organization — an in-house plugin is routinely named after
+   * the company that wrote it. It stays on the data plane.
+   */
+  "plugin.id": "correlate",
 
   // ── the two arguable exceptions, argued ────────────────────────────────────────────────────
   /**
@@ -1734,6 +1748,30 @@ export const EVENTS = {
     level: "warn",
     message: "external plugin failed to load and is UNAVAILABLE — every other plugin still loaded",
     attributes: { "plugin.package": "text", "plugin.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/config/plugin/external.ts",
+  },
+  /**
+   * An external plugin was loaded, and what it DECLARED it needs.
+   *
+   * ⚠️ The declaration is a claim, never a gate — `import()` has already run the plugin's module
+   * scope by the time it is read (principle 13). This record exists so "what did this third-party
+   * code say it wanted" has an answer that is not "read its source".
+   *
+   * `plugin.capabilities` reports `<undeclared>` and `<none>` as DIFFERENT things: the first is a
+   * plugin that said nothing, the second one that said it needs nothing. `plugin.capabilities.unknown`
+   * is `<none>` in the ordinary case, and otherwise lists any name this host does not recognise —
+   * usually a typo, and always a declaration that told the reader less than it appeared to.
+   */
+  "plugin.external.loaded": {
+    level: "info",
+    message: "external plugin loaded — capabilities are DECLARED by the plugin, not enforced by us",
+    attributes: {
+      "plugin.package": "text",
+      "plugin.id": "correlate",
+      "plugin.capabilities": "text",
+      "plugin.capabilities.unknown": "text",
+    },
     content: "user",
     file: "packages/core/src/config/plugin/external.ts",
   },

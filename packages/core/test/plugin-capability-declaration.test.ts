@@ -23,8 +23,26 @@ import { CAPABILITIES, CAPABILITY_SERVICE, type Capability } from "@novaclaw/cor
  */
 const SRC = path.resolve(import.meta.dir, "..", "src")
 
+/**
+ * Comments out; string and template literals left INTACT.
+ *
+ * ⚠️ **A two-pass strip gets the ORDER wrong, and it cost a real miss.** `config/plugin/external.ts`
+ * line 48 is a LINE comment that quotes the loader's glob. Stripping block comments in a first pass
+ * read the slash-star inside that glob as an opening delimiter and swallowed everything up to the
+ * next closing one — ninety lines, including the file's own declaration. The file then had nothing
+ * to find and dropped out of the scan.
+ *
+ * It stayed latent for as long as there was no closing delimiter after line 48; adding an ordinary
+ * doc comment further down the same file is what completed the pair. So this is one left-to-right
+ * pass over an alternation: whichever construct STARTS first consumes its own text, and a literal is
+ * consumed intact so that neither a slash-star inside it nor a `://` can open anything.
+ */
 const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/[^\n]*/g, "$1")
+  source.replace(
+    /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    // Only a comment can start with a slash here; literals are returned unchanged.
+    (match) => (match.startsWith("/") ? "" : match),
+  )
 
 /** Service identifier → capability name, inverted from the map the host declares. */
 const BY_SERVICE = new Map<string, Capability>(
@@ -33,7 +51,8 @@ const BY_SERVICE = new Map<string, Capability>(
 
 interface PluginFile {
   readonly file: string
-  readonly declared: readonly string[]
+  /** `null` means the file calls the internal `define` but declares NOTHING — distinct from `[]`. */
+  readonly declared: readonly string[] | null
   readonly used: readonly string[]
 }
 
@@ -47,14 +66,25 @@ const plugins = (): PluginFile[] => {
         continue
       }
       if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue
-      const raw = fs.readFileSync(full, "utf8")
+      const source = stripComments(fs.readFileSync(full, "utf8"))
       // Only files that call the INTERNAL `define` — `plugin/promise.ts` uses the SDK's, a different
       // door with a different contract, and sweeping it in would be a false positive every run.
-      if (!/from "(?:\.{1,2}\/)+plugin\/internal"|from "\.\/internal"/.test(raw)) continue
-      const source = stripComments(raw)
+      //
+      // ⚠️ Both halves are load-bearing, and for a while only the first was written. Testing the
+      // IMPORT alone swept in `location-services.ts` (it imports the host namespace) and
+      // `plugin/internal.ts` (it re-exports itself) — neither is a plugin. That went unnoticed
+      // because a file with no declaration was silently skipped, so the filter's mistake and the
+      // skip hid each other. Requiring the CALL is what the comment always claimed.
+      const imports = /from "(?:\.{1,2}\/)+plugin\/internal"|from "\.\/internal"/.test(source)
+      if (!imports || !/\bdefine\(\{/.test(source)) continue
+      // ⚠️ A file with no declaration is REPORTED, never skipped. It used to `continue`, so when the
+      // strip above ate a declaration the file simply left the scan and the only symptom was the
+      // count below coming up one short. A scan that drops what it cannot parse describes a smaller
+      // world than the one it is checking.
       const declaration = /capabilities:\s*\[([^\]]*)\]/.exec(source)
-      if (!declaration) continue
-      const declared = [...declaration[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).sort()
+      const declared = declaration
+        ? [...declaration[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).sort()
+        : null
       // What the file really reaches: `yield* <Service>.Service`. Both provisioning channels look
       // exactly like this from inside a plugin, which is the point — the declaration spans both.
       const used = [
@@ -80,12 +110,18 @@ describe("plugin capability declarations", () => {
     expect(found.map((entry) => entry.file)).toContain("config/plugin/skill.ts")
     // A plugin that genuinely needs nothing must still be found, or "declared []" and "not scanned"
     // become the same observation.
-    expect(found.some((entry) => entry.declared.length === 0)).toBe(true)
+    expect(found.some((entry) => entry.declared?.length === 0)).toBe(true)
+    // And nothing may be present-but-unparsed. This is the assertion that would have named
+    // `config/plugin/external.ts` directly instead of leaving a count one short to be explained.
+    expect(
+      found.filter((entry) => entry.declared === null).map((entry) => entry.file),
+      "a file calls the internal `define` but declares no capabilities — add one, or the scan is describing a world with a hole in it",
+    ).toEqual([])
   })
 
   test("🔴 every declaration matches what the file actually reaches", () => {
     const drift = plugins()
-      .filter((entry) => entry.declared.join(",") !== entry.used.join(","))
+      .filter((entry) => entry.declared !== null && entry.declared.join(",") !== entry.used.join(","))
       .map((entry) => `${entry.file}: declared [${entry.declared}] but reaches [${entry.used}]`)
     expect(
       drift,

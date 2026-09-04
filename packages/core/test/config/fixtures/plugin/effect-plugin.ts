@@ -6,6 +6,10 @@ import { Effect } from "effect"
 
 const plugin: Plugin = define({
   id: "effect-directory-plugin",
+  // Declares one name the host knows and one it does not — the loader must report BOTH, because a
+  // typo swallowed silently is a declaration that reads as complete. The promise-shaped sibling
+  // declares nothing at all, so one run covers declared, unknown and undeclared.
+  capabilities: ["config", "netwrok"],
   effect: (ctx) =>
     ctx.agent
       .transform((agents) => {

@@ -36,6 +36,20 @@ const entriesOf = (...dirs: string[]) =>
   })
 
 /** Collect every WARN emitted while `effect` runs — including from fibers it forks. */
+/**
+ * ⚠️ Sibling of `collectWarnings`, and a separate function rather than a parameter: the warning
+ * collector's level filter is load-bearing in the test below it (a broken plugin must WARN, not
+ * merely log), so widening it in place would have quietly weakened that assertion.
+ */
+const collectInfo = () => {
+  const records: unknown[][] = []
+  const collector = Logger.make((options: Logger.Options<unknown>) => {
+    if (options.logLevel !== "Info") return
+    records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
+  })
+  return { records, layer: Logger.layer([collector]) }
+}
+
 const collectWarnings = () => {
   const records: unknown[][] = []
   const collector = Logger.make((options: Logger.Options<unknown>) => {
@@ -120,6 +134,61 @@ describe("ConfigExternalPlugin", () => {
     }),
   )
 
+  /**
+   * 🔴 **A third-party plugin's declaration must SURVIVE the decode and be reported.**
+   *
+   * `PluginModule` is an Effect `Schema.Struct`, which keeps only what it names — so a plugin's
+   * `capabilities` was dropped on the way IN until the schema declared it, and every plugin would
+   * have been reported as declaring nothing. A field lost at decode reads exactly like a field
+   * nobody set, which is why this asserts the VALUE and not merely that a log arrived.
+   *
+   * ⚠️ It also pins the three states apart. `<undeclared>` (said nothing) and `<none>` (said it
+   * needs nothing) are different answers, and an unknown name is surfaced rather than swallowed —
+   * a typo that vanishes leaves a declaration reading as complete.
+   */
+  it.live("reports what an external plugin DECLARED, including names it does not recognise", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const fs = yield* FSUtil.Service
+      const host = yield* PluginHost.make(plugins)
+      const { records, layer } = collectInfo()
+
+      yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
+        Effect.provide(layer),
+        Effect.provideService(PluginV2.Service, plugins),
+        Effect.provideService(FSUtil.Service, fs),
+        Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
+      )
+
+      // ⚠️ The loader FORKS (`Effect.forkScoped`), so the effect returning proves nothing has been
+      // loaded yet — asserting here without waiting captured zero records at every log level. The
+      // fixture's own agent landing is the loader's "this file was processed" signal, which is the
+      // same handle the sibling test uses.
+      const agents = yield* AgentV2.Service
+      yield* waitForAgent(agents, "effect-directory")
+
+      const loaded = records.filter(
+        (record) => (record[0] as { event?: string } | undefined)?.event === "plugin.external.loaded",
+      )
+      const byId = new Map(
+        loaded.map((record) => [
+          (record[2] as Record<string, string>)["plugin.id"],
+          record[2] as Record<string, string>,
+        ]),
+      )
+
+      // The declaring fixture: its known name survived the decode, and its typo is NAMED.
+      const declaring = byId.get("effect-directory-plugin")
+      expect(declaring?.["plugin.capabilities"]).toBe("config,netwrok")
+      expect(declaring?.["plugin.capabilities.unknown"]).toBe("netwrok")
+
+      // The silent fixture: "said nothing" must not read as "needs nothing".
+      const silent = [...byId.values()].find((row) => row["plugin.id"] !== "effect-directory-plugin")
+      expect(silent?.["plugin.capabilities"]).toBe("<undeclared>")
+      expect(silent?.["plugin.capabilities.unknown"]).toBe("<none>")
+    }),
+  )
+
   // ⚠️ Ruling 2 (a fault is never described falsely). `ignoreCause` alone made a user's broken
   // plugin fail INVISIBLY once the V1 arm — the only thing that ever surfaced a failed load — was
   // deleted. The two fixtures cover both fault SHAPES: `a-throws-on-import.ts` throws out of
@@ -149,8 +218,9 @@ describe("ConfigExternalPlugin", () => {
         (record) => (record[0] as { event?: string } | undefined)?.event === "plugin.external.load.failed",
       )
       expect(reported).toHaveLength(2)
-      expect(reported.map((record) => path.basename((record[2] as { "plugin.package": string })["plugin.package"]))
-        .sort()).toEqual(["a-throws-on-import.ts", "b-wrong-shape.ts"])
+      expect(
+        reported.map((record) => path.basename((record[2] as { "plugin.package": string })["plugin.package"])).sort(),
+      ).toEqual(["a-throws-on-import.ts", "b-wrong-shape.ts"])
       for (const record of reported) {
         expect(record).toEqual([
           { event: "plugin.external.load.failed" },

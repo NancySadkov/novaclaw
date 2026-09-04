@@ -2,6 +2,8 @@ import type { PluginContext } from "./context.js"
 
 export interface Plugin {
   readonly id: string
+  /** What this plugin needs, named. See the effect-style `Plugin` for what it is and is not. */
+  readonly capabilities?: readonly string[]
   readonly setup: (context: PluginContext) => Promise<void> | void
 }
 

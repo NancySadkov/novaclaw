@@ -10,18 +10,25 @@ import { FSUtil } from "../../fs-util"
 import { Global } from "../../global"
 import { ConfigPluginGlob } from "./glob"
 import { define } from "../../plugin/internal"
+import { CAPABILITIES } from "../../plugin/internal"
 import { PluginPromise } from "../../plugin/promise"
 
 const PluginModule = Schema.Struct({
   default: Schema.Union([
     Schema.Struct({
       id: Schema.String,
+      // ⚠️ Declared here or it is DROPPED. Effect Schema keeps only what a struct names, so a
+      // plugin's `capabilities` would decode away silently and the host would report every plugin
+      // as declaring nothing — a field lost on the way IN, which reads exactly like a field nobody
+      // set.
+      capabilities: Schema.optional(Schema.Array(Schema.String)),
       effect: Schema.declare<EffectPlugin["effect"]>(
         (input): input is EffectPlugin["effect"] => typeof input === "function",
       ),
     }),
     Schema.Struct({
       id: Schema.String,
+      capabilities: Schema.optional(Schema.Array(Schema.String)),
       setup: Schema.declare<PromisePlugin["setup"]>(
         (input): input is PromisePlugin["setup"] => typeof input === "function",
       ),
@@ -114,6 +121,32 @@ export const Plugin = define({
           const mod = yield* Effect.tryPromise(() => import(entrypoint))
           const value = (yield* Schema.decodeUnknownEffect(PluginModule)(mod)).default
           const plugin = "effect" in value ? value : PluginPromise.fromPromise(value)
+          /**
+           * 🔴 **Disclosure, not enforcement, and the log says which.** A third-party plugin's
+           * `capabilities` is a CLAIM: `import()` above already ran its module scope, so nothing
+           * here restrains it (principle 13). What this buys is an answer to *what did this thing
+           * say it wanted* that does not require reading the plugin's source — recorded at the one
+           * point third-party code enters the process.
+           *
+           * ⚠️ Absent and empty are reported DIFFERENTLY. `undefined` means the plugin declared
+           * nothing, `[]` means it declared needing nothing, and folding them together would turn a
+           * missing answer into a confident one — the shape ruling 2 forbids.
+           *
+           * ⚠️ Names the host does not know are reported rather than dropped. A plugin asking for
+           * `"netwrok"` has told the user nothing, and a typo silently swallowed is a declaration
+           * that reads as complete.
+           */
+          const declared = value.capabilities
+          const unknown = declared?.filter((name) => !(CAPABILITIES as readonly string[]).includes(name)) ?? []
+          yield* Log.event("plugin.external.loaded", {
+            "plugin.package": file,
+            "plugin.id": plugin.id,
+            "plugin.capabilities": declared === undefined ? "<undeclared>" : declared.join(",") || "<none>",
+            // Always present, never spread-conditionally: an attribute that appears only sometimes
+            // reads as missing data on the run where it is absent, and the registry types it as
+            // required anyway.
+            "plugin.capabilities.unknown": unknown.join(",") || "<none>",
+          })
           yield* ctx.plugin.add({
             id: plugin.id,
             // `options` stays in the host shape because the plugin API declares it; with the config
