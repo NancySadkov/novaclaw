@@ -8,8 +8,8 @@ export * as ConfigPluginGlob from "./glob"
  * anything here is widened.
  *
  * ⚠️ **A LEAF module on purpose — it must never grow an import.** `external.ts` pulls in
- * `plugin/internal.ts`, which drags Catalog, Integration, ModelsDev, Npm and the HTTP client behind
- * it; the CLI's `debug info` prints this same directory and must not pay for that graph at startup
+ * `plugin/internal.ts`, which drags Catalog, Integration, ModelsDev and the HTTP client behind it;
+ * the CLI's `debug info` prints this same directory and must not pay for that graph at startup
  * (startup speed is first-class, and `config-store-write.ts` makes the identical argument about its
  * own import direction). So the pattern lives here, where both sides can read it for free.
  */

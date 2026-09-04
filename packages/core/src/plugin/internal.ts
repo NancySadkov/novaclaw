@@ -27,7 +27,6 @@ import { Global } from "../global"
 import { Integration } from "../integration"
 import { Location } from "../location"
 import { ModelsDev } from "../models-dev"
-import { Npm } from "../npm"
 import { PluginV2 } from "../plugin"
 import { Reference } from "../reference"
 import { SkillV2 } from "../skill"
@@ -52,10 +51,24 @@ export type Requirements =
   | Integration.Service
   | Location.Service
   | ModelsDev.Service
-  | Npm.Service
   | Reference.Service
   | SkillV2.Service
 
+/**
+ * ⚠️ **`Npm.Service` is deliberately NOT in this union** (removed 2026-09-04). Ruling 5 deleted the
+ * arm that took a package name from config, fetched it with `npm.add` and `import()`ed the result —
+ * *"remote code at this process's privilege"* — and named MCP as THE out-of-process extension seam.
+ * The fetching arm went; the capability stayed injected here for weeks, spent by no plugin in the
+ * tree. Granting third-party in-process code the ability to install packages is the retired arm
+ * rebuilt one call at a time, and it is data-plane egress in a product whose data plane is meant to
+ * be airgappable (principle 4).
+ *
+ * 🔴 **Adding a service to this union is a widening of what EVERY plugin may do**, first-party and
+ * third-party alike, because the host provides the whole union unconditionally — `R` narrows what a
+ * plugin *declares*, and types are erased before anything runs. That gap is the subject of its own
+ * refactor item; until it closes, treat this list as the real permission surface for plugins and add
+ * to it the way you would add a permission, not the way you would add an import.
+ */
 export interface Plugin<R = never> {
   readonly id: string
   readonly effect: (context: PluginContext) => Effect.Effect<void, never, R | Scope.Scope>
@@ -76,7 +89,6 @@ const layer = Layer.effectDiscard(
     const config = yield* Config.Service
     const location = yield* Location.Service
     const modelsDev = yield* ModelsDev.Service
-    const npm = yield* Npm.Service
     const events = yield* EventV2.Service
     const fs = yield* FSUtil.Service
     const filesystem = yield* FileSystem.Service
@@ -99,7 +111,6 @@ const layer = Layer.effectDiscard(
               Effect.provideService(Config.Service, config),
               Effect.provideService(Location.Service, location),
               Effect.provideService(ModelsDev.Service, modelsDev),
-              Effect.provideService(Npm.Service, npm),
               Effect.provideService(EventV2.Service, events),
               Effect.provideService(FSUtil.Service, fs),
               Effect.provideService(FileSystem.Service, filesystem),
@@ -162,7 +173,6 @@ export const node = makeLocationNode({
     Config.node,
     Location.node,
     ModelsDev.node,
-    Npm.node,
     EventV2.node,
     FSUtil.node,
     FileSystem.node,
