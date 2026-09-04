@@ -268,7 +268,7 @@ const seedFromInfos = (infos: readonly Config.Info[]) =>
     }
   })
 
-const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
+const NAMES = ["config.json", "novaclaw.jsonc"]
 
 /**
  * A top-level config key that failed schema validation, so it could not be applied verbatim —

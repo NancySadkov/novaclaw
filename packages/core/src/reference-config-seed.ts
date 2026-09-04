@@ -9,7 +9,7 @@ import { ConfigReference } from "./config/reference"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 
-const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
+const NAMES = ["config.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 

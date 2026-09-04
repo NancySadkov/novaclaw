@@ -118,7 +118,7 @@ export function checkUrl(url: string, policy: Policy): Verdict {
 
 const truthy = (value: string | undefined) => value === "true" || value === "1"
 
-const CONFIG_NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
+const CONFIG_NAMES = ["config.json", "novaclaw.jsonc"]
 
 /** Read the GLOBAL config file (first of the known names that parses). Sync + tolerant. Post
  *  config-sqlite this is ONLY the pre-first-boot fallback: before `seedAll` has imported the file
