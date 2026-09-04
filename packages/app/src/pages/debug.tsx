@@ -12,6 +12,8 @@ import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
 import { capabilities, retryCapability } from "@/utils/capability-api"
+import { loadedPlugins } from "@/utils/plugin-api"
+import { createSettledResource } from "@/utils/settled-resource"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPresenceOrphans } from "./debug-presence"
@@ -230,6 +232,18 @@ function DebugAppPage() {
     },
     ({ conn, dir }) => capabilities(conn.http, dir).catch(() => undefined),
   )
+  // `createSettledResource`, not a bare `createResource` with a `.catch(() => undefined)`: swallowing
+  // the rejection makes "the request failed" and "there are no plugins" the same observation, and on
+  // a disclosure surface the wrong one of those is a claim that nothing third-party is loaded.
+  const [pluginList] = createSettledResource(
+    () => {
+      const conn = focused()
+      const dir = schedDirectory()
+      return conn && dir !== undefined ? { conn, dir } : undefined
+    },
+    ({ conn, dir }) => loadedPlugins(conn.http, dir),
+  )
+
   const retryUnavailableCapability = async (name: string) => {
     const conn = focused()
     if (!conn) return
@@ -576,6 +590,60 @@ function DebugAppPage() {
         </div>
 
         {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
+        <div class={section} data-panel="plugins">
+          <div class={heading}>
+            <span class={title}>Loaded plugins</span>
+            <span class={hint}>what each one DECLARES it needs — a claim, not a granted permission</span>
+          </div>
+          <div class="px-4 pb-3">
+            <Show
+              when={pluginList()}
+              fallback={
+                <div class={hint}>
+                  {pluginList.loading
+                    ? "checking…"
+                    : pluginList.failed
+                      ? "could not be read — this is NOT the same as no plugins being loaded"
+                      : "no instance connected"}
+                </div>
+              }
+            >
+              {(items) => (
+                <Show when={items().length > 0} fallback={<div class={hint}>no plugins loaded</div>}>
+                  <For each={items()}>
+                    {(item) => (
+                      <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                        <div class="flex items-center gap-2 text-[12px]">
+                          <span class="font-mono font-medium text-v2-text-text-base">{item.id}</span>
+                          <span
+                            classList={{
+                              "text-v2-state-fg-warning": item.source === "external",
+                              "text-v2-text-text-faint": item.source === "internal",
+                            }}
+                          >
+                            {item.source === "external" ? "third-party" : "built in"}
+                          </span>
+                        </div>
+                        <div class={`${hint} mt-0.5 font-mono`}>
+                          {/* Three DISTINCT states, never collapsed: an external plugin that declared
+                              nothing is not the same as one that declared it needs nothing, and a
+                              built-in's declaration is checked against its source by a core guard
+                              while an external one is only ever a claim. */}
+                          {item.capabilities === undefined
+                            ? "declared nothing"
+                            : item.capabilities.length === 0
+                              ? "declares it needs nothing"
+                              : item.capabilities.join(", ")}
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+              )}
+            </Show>
+          </div>
+        </div>
+
         <div class={section} data-panel="scheduler">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.scheduler")}</span>

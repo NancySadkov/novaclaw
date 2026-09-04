@@ -149,6 +149,10 @@ export const Plugin = define({
           })
           yield* ctx.plugin.add({
             id: plugin.id,
+            // The same value the log line above reports, carried into the host so the disclosure
+            // surface shows what THIS plugin claimed rather than a blank for every external one.
+            // `undefined` survives as undefined: "declared nothing" is not "declared an empty set".
+            capabilities: declared,
             // `options` stays in the host shape because the plugin API declares it; with the config
             // key gone there is nothing left that could carry a value, so it is always empty.
             effect: (host) => plugin.effect({ ...host, options: {} }),

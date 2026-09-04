@@ -21,9 +21,31 @@ export const ID = Plugin.ID
 export type ID = typeof ID.Type
 export const Event = Plugin.Event
 
+/**
+ * What a loaded plugin says about itself, for the disclosure surface.
+ *
+ * `capabilities` is a CLAIM and never a grant — principle 13 is explicit that the plugin contract is
+ * not a gate, because `import()` runs module scope before anything is validated. Its worth is 12(d):
+ * a person can be shown what the code in their instance says it needs. `undefined` means the plugin
+ * declared nothing, which is a different statement from declaring an empty set and is kept distinct
+ * all the way to the screen.
+ */
+export interface Loaded {
+  readonly id: ID
+  readonly capabilities: readonly string[] | undefined
+  /** `internal` for a plugin this build ships, `external` for one loaded from the config dir. */
+  readonly source: "internal" | "external"
+}
+
 export interface Interface {
-  readonly add: (id: ID, effect: PluginRuntime["effect"]) => Effect.Effect<void>
+  readonly add: (
+    id: ID,
+    effect: PluginRuntime["effect"],
+    declaration?: { readonly capabilities?: readonly string[]; readonly source?: "internal" | "external" },
+  ) => Effect.Effect<void>
   readonly remove: (id: ID) => Effect.Effect<void>
+  /** Every plugin currently loaded, with what it declared. Ordered by id so a render is stable. */
+  readonly list: Effect.Effect<readonly Loaded[]>
   readonly wait: (id: ID) => Effect.Effect<void>
   /**
    * Resolves once the location's INITIAL plugin boot batch has completed — every built-in
@@ -45,13 +67,19 @@ export const layer = Layer.effect(
     const locks = KeyedMutex.makeUnsafe<ID>()
     const scope = yield* Scope.make()
     const active = new Map<ID, Scope.Closeable>()
+    /** Kept beside `active` and cleared with it, so the list can never name a plugin that is gone. */
+    const declared = new Map<ID, { capabilities: readonly string[] | undefined; source: "internal" | "external" }>()
     const loading = new Set<ID>()
     const waiters = new Map<ID, Set<Deferred.Deferred<void>>>()
     const failures = new Map<ID, Exit.Exit<void, never>>()
     const booted = yield* Deferred.make<void>()
     let host: Parameters<PluginRuntime["effect"]>[0]
 
-    const add = Effect.fn("Plugin.add")(function* (id: ID, effect: PluginRuntime["effect"]) {
+    const add = Effect.fn("Plugin.add")(function* (
+      id: ID,
+      effect: PluginRuntime["effect"],
+      declaration?: { readonly capabilities?: readonly string[]; readonly source?: "internal" | "external" },
+    ) {
       if (loading.has(id)) return yield* Effect.die(`Plugin load cycle detected for ${id}`)
 
       yield* locks.withLock(id)(
@@ -74,6 +102,10 @@ export const layer = Layer.effect(
                 )
                 yield* events.publish(Event.Added, { id })
                 active.set(id, child)
+                declared.set(id, {
+                  capabilities: declaration?.capabilities,
+                  source: declaration?.source ?? "internal",
+                })
                 yield* Effect.forEach(waiters.get(id) ?? [], (waiter) => Deferred.succeed(waiter, undefined), {
                   discard: true,
                 })
@@ -101,6 +133,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const current = active.get(id)
             active.delete(id)
+            declared.delete(id)
             failures.delete(id)
             if (current) yield* Scope.close(current, Exit.void).pipe(Effect.ignore)
           }),
@@ -146,6 +179,15 @@ export const layer = Layer.effect(
     const service = Service.of({
       add,
       remove,
+      // Derived from `active` rather than kept as a third structure: a list that could disagree with
+      // what is loaded is worse than none, and this file already keeps two maps in step.
+      list: Effect.sync(() =>
+        [...active.keys()].sort().map((id) => ({
+          id,
+          capabilities: declared.get(id)?.capabilities,
+          source: declared.get(id)?.source ?? "internal",
+        })),
+      ),
       wait,
       ready: Deferred.await(booted),
       markReady: Deferred.succeed(booted, undefined).pipe(Effect.asVoid),

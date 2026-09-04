@@ -487,6 +487,57 @@ class ApiCapability extends NovaClawApiClient {
   }
 }
 
+class ApiPlugin extends NovaClawApiClient {
+  /**
+   * List loaded plugins
+   *
+   * What is loaded and what each one declared it needs. Declarations from external plugins are unverified claims: the plugin contract is not a gate.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    return (options?.client ?? this.client).get<T.PluginListResponses, T.PluginListErrors, ThrowOnError>({
+      url: "/api/plugin",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiUsage extends NovaClawApiClient {
+  /**
+   * Usage summary
+   *
+   * Roll up sessions, messages, cost, tokens, per-model and per-tool usage. Reads every session's message list, so it is a report rather than a hot path.
+   */
+  public summary<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      days?: string
+      project?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      directory: parameters?.["directory"],
+      workspace: parameters?.["workspace"],
+      days: parameters?.["days"],
+      project: parameters?.["project"],
+    }
+    return (options?.client ?? this.client).get<T.UsageSummaryResponses, T.UsageSummaryErrors, ThrowOnError>({
+      url: "/api/usage",
+      ...options,
+      query,
+    })
+  }
+}
+
 class ApiCommunityContact extends NovaClawApiClient {
   /**
    * List contacts
@@ -6866,6 +6917,14 @@ export class NovaclawClient extends NovaClawApiClient {
   private _capability?: ApiCapability
   get capability(): ApiCapability {
     return (this._capability ??= new ApiCapability({ client: this.client }))
+  }
+  private _plugin?: ApiPlugin
+  get plugin(): ApiPlugin {
+    return (this._plugin ??= new ApiPlugin({ client: this.client }))
+  }
+  private _usage?: ApiUsage
+  get usage(): ApiUsage {
+    return (this._usage ??= new ApiUsage({ client: this.client }))
   }
   private _community?: ApiCommunity
   get community(): ApiCommunity {

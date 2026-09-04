@@ -207,6 +207,7 @@ const layer = Layer.effectDiscard(
     const add = <R extends Requirements | Scope.Scope>(input: Plugin<R>) => {
       const loaded = {
         id: input.id,
+        capabilities: input.capabilities,
         effect: (context: PluginContext) =>
           input
             .effect(context)
@@ -223,7 +224,14 @@ const layer = Layer.effectDiscard(
               Effect.provideService(SkillConfigStore.Service, skillConfigStore),
             ),
       }
-      return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect)
+      // The declaration travels with the plugin. `capabilities` is REQUIRED on an internal plugin
+      // and cross-checked against its source by `plugin-capability-declaration.test.ts`, so what the
+      // disclosure surface shows for a built-in is a checked statement rather than a claim — unlike
+      // an external plugin's, which is only ever what its author wrote.
+      return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect, {
+        capabilities: loaded.capabilities,
+        source: "internal",
+      })
     }
 
     yield* State.batch(

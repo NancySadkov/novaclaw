@@ -80,6 +80,51 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  /**
+   * 🔴 **The disclosure surface for third-party code, exercised against the real mounted API.**
+   *
+   * `Plugin.capabilities` was added so a person can be told what the code inside their instance says
+   * it needs (12(d)). Until this route existed the declaration reached exactly one place — a log
+   * line — and a declaration nobody can read is worth what an undeclared one is.
+   *
+   * ⚠️ It is DISCLOSURE, never enforcement: principle 13 is explicit that the plugin contract is not
+   * a gate, since `import()` runs module scope before anything is validated. What this asserts is
+   * that the claim survives the trip, not that anything is constrained by it.
+   */
+  it.live("lists loaded plugins with what each DECLARED", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const list = yield* HttpClient.get(`/api/plugin?directory=${encodeURIComponent(dir)}`)
+      expect(list.status).toBe(200)
+
+      const body = (yield* list.json) as ReadonlyArray<{
+        id: string
+        source: string
+        capabilities?: readonly string[]
+      }>
+      // Non-vacuity: an empty list would make every assertion below pass forever, and this instance
+      // demonstrably loads its built-ins.
+      expect(body.length).toBeGreaterThan(5)
+
+      // The declarations the core checker derives from source must be the ones served here — this is
+      // the join between the two halves, and a join is exactly what nothing tests by accident.
+      const byId = new Map(body.map((item) => [item.id, item]))
+      expect(byId.get("config-skill")?.capabilities?.slice().sort()).toEqual([
+        "config",
+        "global",
+        "location",
+        "skillConfigStore",
+      ])
+      expect(byId.get("agent")?.capabilities).toEqual(["location"])
+      // A plugin that genuinely needs nothing declares an EMPTY set, and that must not arrive as
+      // `undefined` — "declared nothing" is a different statement and the surface renders it apart.
+      expect(byId.get("variant")?.capabilities).toEqual([])
+
+      // Every built-in is marked as such; `external` is reserved for code the config dir contributed.
+      expect(body.every((item) => item.source === "internal")).toBe(true)
+    }),
+  )
+
   it.live("🔴 health reports the VERIFIABLE identity, not just the claimable one", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/global/health")

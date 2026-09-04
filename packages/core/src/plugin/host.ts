@@ -296,7 +296,14 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
         ),
     },
     plugin: {
-      add: (input) => plugin.add(PluginV2.ID.make(input.id), input.effect),
+      // The declaration rides through to the host so the disclosure surface can show what an
+      // EXTERNAL plugin claimed. `capabilities` is optional on the SDK type and stays optional here:
+      // undefined means "declared nothing", which is not the same as declaring an empty set.
+      add: (input) =>
+        plugin.add(PluginV2.ID.make(input.id), input.effect, {
+          capabilities: input.capabilities,
+          source: "external",
+        }),
       remove: (id) => plugin.remove(PluginV2.ID.make(id)),
     },
     reference: {

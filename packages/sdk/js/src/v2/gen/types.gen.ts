@@ -8701,6 +8701,114 @@ export type CapabilityRetryResponses = {
 
 export type CapabilityRetryResponse = CapabilityRetryResponses[keyof CapabilityRetryResponses]
 
+export type PluginListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/plugin"
+}
+
+export type PluginListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type PluginListError = PluginListErrors[keyof PluginListErrors]
+
+export type PluginListResponses = {
+  /**
+   * Every plugin currently loaded, with the capabilities it declared — a claim, not a grant
+   */
+  200: Array<{
+    id: string
+    capabilities?: Array<string>
+    source: "internal" | "external"
+  }>
+}
+
+export type PluginListResponse = PluginListResponses[keyof PluginListResponses]
+
+export type UsageSummaryData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    days?: string
+    project?: string
+  }
+  url: "/api/usage"
+}
+
+export type UsageSummaryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type UsageSummaryError = UsageSummaryErrors[keyof UsageSummaryErrors]
+
+export type UsageSummaryResponses = {
+  /**
+   * Token, cost and tool usage across this instance's sessions, optionally windowed to the last N days
+   */
+  200: {
+    totalSessions: number
+    totalMessages: number
+    totalCost: number
+    totalTokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    toolUsage: {
+      [key: string]: number
+    }
+    modelUsage: {
+      [key: string]: {
+        messages: number
+        tokens: {
+          input: number
+          output: number
+          cache: {
+            read: number
+            write: number
+          }
+        }
+        cost: number
+      }
+    }
+    dateRange: {
+      earliest: number
+      latest: number
+    }
+    days: number
+    costPerDay: number
+    tokensPerSession: number
+    medianTokensPerSession: number
+  }
+}
+
+export type UsageSummaryResponse = UsageSummaryResponses[keyof UsageSummaryResponses]
+
 export type CommunityContactListData = {
   body?: never
   path?: never

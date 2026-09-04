@@ -1653,6 +1653,287 @@
         ]
       }
     },
+    "/api/plugin": {
+      "get": {
+        "tags": ["plugin"],
+        "operationId": "plugin.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Every plugin currently loaded, with the capabilities it declared — a claim, not a grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "capabilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": ["internal", "external"]
+                      }
+                    },
+                    "required": ["id", "source"],
+                    "additionalProperties": false
+                  },
+                  "description": "Every plugin currently loaded, with the capabilities it declared — a claim, not a grant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "What is loaded and what each one declared it needs. Declarations from external plugins are unverified claims: the plugin contract is not a gate.",
+        "summary": "List loaded plugins",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.plugin.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/usage": {
+      "get": {
+        "tags": ["Usage"],
+        "operationId": "usage.summary",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Token, cost and tool usage across this instance's sessions, optionally windowed to the last N days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalSessions": {
+                      "type": "number"
+                    },
+                    "totalMessages": {
+                      "type": "number"
+                    },
+                    "totalCost": {
+                      "type": "number"
+                    },
+                    "totalTokens": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "number"
+                        },
+                        "output": {
+                          "type": "number"
+                        },
+                        "reasoning": {
+                          "type": "number"
+                        },
+                        "cache": {
+                          "type": "object",
+                          "properties": {
+                            "read": {
+                              "type": "number"
+                            },
+                            "write": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["read", "write"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["input", "output", "reasoning", "cache"],
+                      "additionalProperties": false
+                    },
+                    "toolUsage": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "modelUsage": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "messages": {
+                            "type": "number"
+                          },
+                          "tokens": {
+                            "type": "object",
+                            "properties": {
+                              "input": {
+                                "type": "number"
+                              },
+                              "output": {
+                                "type": "number"
+                              },
+                              "cache": {
+                                "type": "object",
+                                "properties": {
+                                  "read": {
+                                    "type": "number"
+                                  },
+                                  "write": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["read", "write"],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": ["input", "output", "cache"],
+                            "additionalProperties": false
+                          },
+                          "cost": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["messages", "tokens", "cost"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "dateRange": {
+                      "type": "object",
+                      "properties": {
+                        "earliest": {
+                          "type": "number"
+                        },
+                        "latest": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["earliest", "latest"],
+                      "additionalProperties": false
+                    },
+                    "days": {
+                      "type": "number"
+                    },
+                    "costPerDay": {
+                      "type": "number"
+                    },
+                    "tokensPerSession": {
+                      "type": "number"
+                    },
+                    "medianTokensPerSession": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "totalSessions",
+                    "totalMessages",
+                    "totalCost",
+                    "totalTokens",
+                    "toolUsage",
+                    "modelUsage",
+                    "dateRange",
+                    "days",
+                    "costPerDay",
+                    "tokensPerSession",
+                    "medianTokensPerSession"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Token, cost and tool usage across this instance's sessions, optionally windowed to the last N days"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Roll up sessions, messages, cost, tokens, per-model and per-tool usage. Reads every session's message list, so it is a report rather than a hot path.",
+        "summary": "Usage summary",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.usage.summary({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/community/contact": {
       "get": {
         "tags": ["community"],
@@ -47840,6 +48121,13 @@
     {
       "name": "capability",
       "description": "Live optional-capability status and recovery controls for the Developer-mode Debug app."
+    },
+    {
+      "name": "plugin",
+      "description": "Loaded plugins and their declared capabilities, for the Developer-mode Debug app."
+    },
+    {
+      "name": "Usage"
     },
     {
       "name": "community",
