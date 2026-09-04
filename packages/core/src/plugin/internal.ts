@@ -31,12 +31,33 @@ import { PluginV2 } from "../plugin"
 import { Reference } from "../reference"
 import { SkillV2 } from "../skill"
 import { State } from "../state"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/unstable/http"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
 import { ModelsDevPlugin } from "./models-dev"
 import { VariantPlugin } from "./variant"
 
+/**
+ * ⚠️ **`FileSystem` and `HttpClient` left this union on 2026-09-04, and neither was a capability
+ * anyone was using.** Measured across all fourteen plugin files: not one references either, by any
+ * spelling — the only hits were the word "filesystem" in two prose comments. Removing them from
+ * PLUGIN scope is provably inert for resolution (nothing's `R` required them) and narrows the
+ * contract, which is the direction this seam has to move.
+ *
+ * 🔴 The LAYER still merges `FileSystem.locationLayer` and `FetchHttpClient.layer` below, and must:
+ * the services in this layer fetch and read on their own account. What changed is that a plugin no
+ * longer receives ambient filesystem and network handles it never asked for — `HttpClient` in
+ * particular is data-plane egress handed to in-process third-party code by default, in a product
+ * whose data plane is meant to be airgappable (principle 4).
+ *
+ * ⚠️ This is the SAFE half of the narrowing. The unsafe half — provide each plugin only what it
+ * declares — is a different job, because a second provisioning channel exists: this node's `deps`
+ * carry `AgentConfigStore`, `CommandConfigStore`, `ReferenceConfigStore`, `SkillConfigStore` and
+ * more, which plugins reach ambiently and which are NOT in this union. `define<R>` leaves `R`
+ * unconstrained, so a plugin may require anything and typecheck; whether it resolves depends on
+ * which channel carries it. Removing a service NOTHING requires cannot break that. Narrowing per
+ * plugin can, at BOOT, because these run at startup.
+ */
 export type Requirements =
   | AgentV2.Service
   | Catalog.Service
@@ -44,10 +65,8 @@ export type Requirements =
   | CommandV2.Service
   | Config.Service
   | EventV2.Service
-  | FileSystem.Service
   | FSUtil.Service
   | Global.Service
-  | HttpClient.HttpClient
   | Integration.Service
   | Location.Service
   | ModelsDev.Service
@@ -91,9 +110,7 @@ const layer = Layer.effectDiscard(
     const modelsDev = yield* ModelsDev.Service
     const events = yield* EventV2.Service
     const fs = yield* FSUtil.Service
-    const filesystem = yield* FileSystem.Service
     const global = yield* Global.Service
-    const http = yield* HttpClient.HttpClient
     const skill = yield* SkillV2.Service
     const reference = yield* Reference.Service
     const add = <R>(input: Plugin<R>) => {
@@ -113,9 +130,7 @@ const layer = Layer.effectDiscard(
               Effect.provideService(ModelsDev.Service, modelsDev),
               Effect.provideService(EventV2.Service, events),
               Effect.provideService(FSUtil.Service, fs),
-              Effect.provideService(FileSystem.Service, filesystem),
               Effect.provideService(Global.Service, global),
-              Effect.provideService(HttpClient.HttpClient, http),
               Effect.provideService(SkillV2.Service, skill),
               Effect.provideService(Reference.Service, reference),
             ),
