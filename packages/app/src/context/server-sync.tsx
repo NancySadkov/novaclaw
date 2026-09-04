@@ -28,6 +28,7 @@ import type { ProjectMeta } from "./global-sync/types"
 import { SESSION_RECENT_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
+import { createInstanceRecovery } from "./global-sync/instance-recovery"
 import { createRefreshQueue } from "./global-sync/queue"
 import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
@@ -191,12 +192,24 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   const session = createServerSession(serverSDK.client)
-  // Tags component bootstrap (notes/reports/entities-review-2026-07-06.md T0) — instance-wide, once per server connection.
-  void session.loadTags()
-  // Presence component bootstrap — who is attached to what, right now. Once per server connection;
-  // everything after that arrives as `session.presence.updated`. This read doubles as the
-  // instance's sweep for rooms whose last viewer vanished without saying goodbye.
-  void session.loadPresence()
+
+  // 🔴 Instance-scoped bootstraps. REGISTERED, not called — `recovery.sweep()` below performs the
+  // first load, and `server.connected` performs every later one. Before this they were bare calls
+  // here, so they ran once per ctx and never again: a dropped stream left tags, presence and the
+  // app manifests stale until the user reloaded the page, because the reconnect sweep enumerates
+  // DIRECTORY stores and none of these is one. See `instance-recovery.ts` for the class.
+  const recovery = createInstanceRecovery()
+  // Tags component bootstrap (notes/reports/entities-review-2026-07-06.md T0) — instance-wide.
+  recovery.register("session.tags", () => void session.loadTags())
+  // Presence — who is attached to what, right now. Everything after the read arrives as
+  // `session.presence.updated`. This read doubles as the instance's sweep for rooms whose last
+  // viewer vanished without saying goodbye, which is precisely why it must run again on reconnect:
+  // the viewers that vanished DURING the outage are the ones nothing else will report.
+  recovery.register("session.presence", () => void session.loadPresence())
+  // Persisted app manifests. `app.registered` refreshes them while connected; nothing refreshed them
+  // after an outage, so an app registered while the stream was down stayed invisible.
+  recovery.register("apps.persisted", () => void loadPersistedApps(serverSDK.server.http))
+  recovery.sweep()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
 
   const children = createChildStoreManager({
@@ -461,6 +474,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       // is exactly what the bus carries — names neither, while this stream delivers both.
       if ((event.type as string) === "server.connected" || (event.type as string) === "global.disposed") {
         if (recent) return
+        // Instance-scoped state first: it has no directory to be queued under, and it is the half
+        // that had no sweep at all before 2026-09-04.
+        recovery.sweep()
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)
         }
