@@ -222,7 +222,37 @@ export const floor = (input: {
   { action: "plan_exit", resource: "*", effect: "deny" },
 ]
 
-/** The scratch locations both floors whitelist. */
+/**
+ * The scratch locations both floors whitelist.
+ *
+ * 🔴 **A SKILL or REFERENCE directory is deliberately not among them, and this is the decision rather
+ * than an omission.** The question was live on 2026-09-04, when a legacy rule that pretended to grant
+ * exactly that was deleted for never having matched anything: should an officer be able to write into
+ * its own skill folder — notes beside a skill, a generated reference — without asking?
+ *
+ * **No, and not because a skill folder is dangerous to execute.** It is not: a skill is
+ * `name · description · slash · location · content`, its content is prompt text, and nothing in this
+ * package executes a skill's assets. The plugin door's pre-emptive refusal exists for code; this is a
+ * different argument and a stronger one.
+ *
+ * **A skill is durable INSTRUCTION, injected into the prompt of sessions that do not exist yet.** An
+ * agent that can author one is an agent granting itself influence over every session that comes
+ * after it, which is precisely what the org metaphor forbids: *authority narrows downward and never
+ * widens*, and *a CEO that can grant itself more than the charter allows is a coup*. The write being
+ * scoped to the agent's OWN skill folder does not soften that — the thing it writes outlives the
+ * scope it wrote from.
+ *
+ * **And the need it would have served is already met.** Notes, drafts and probes belong in the
+ * colleague's own workspace, which {@link scratchDirsFor} grants with no permission at all, exactly
+ * as AGENTS.md's menial-needs corollary describes. An officer is not short of somewhere to write; it
+ * is short of a reason to write THERE.
+ *
+ * ⚠️ Nothing about the BEHAVIOUR changed when this was decided — such a write was already `ask`, and
+ * asking has resolved to a refusal since 2026-08-20. What was missing was the reason, and a reason
+ * that lives only in a comment is the weakest rung. So it is pinned too: `permission-baseline.test.ts`
+ * drives the real predicate against `<config>/skill`, `/skills` and `/reference` and fails if any of
+ * them ever answers `allow`. Adding either directory here turns that test red, which is the point.
+ */
 export const SCRATCH_DIRS: readonly string[] = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
 
 /**

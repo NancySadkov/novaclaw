@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { Global } from "@novaclaw/core/global"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { AgentPlugin } from "@novaclaw/core/plugin/agent"
@@ -374,6 +375,35 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
       expect(effectFor(build, "external_directory_read", outside)).toBe("allow")
       // `ask`, and asking resolves to a refusal — what matters here is that it is not `allow`.
       expect(effectFor(build, "external_directory_write", outside)).not.toBe("allow")
+    }),
+  )
+
+  /**
+   * 🔴 **A skill or reference directory is NOT scratch, and that is a decision — see `SCRATCH_DIRS`.**
+   *
+   * A skill is durable INSTRUCTION injected into the prompt of sessions that do not exist yet, so an
+   * agent able to author one grants itself influence over every session after it: *authority narrows
+   * downward and never widens*. The legitimate need it would have served — notes, drafts, probes —
+   * is already met by the colleague's own workspace, which `scratchDirsFor` grants without asking.
+   *
+   * Decided 2026-09-04, when a legacy rule that pretended to grant exactly this was deleted for
+   * never having matched anything. Nothing about the behaviour changed then; this is the assertion
+   * that says the intent was recorded rather than merely inherited from a rule that did nothing.
+   */
+  it.effect("a skill or reference directory is NOT writable — it is instruction, not scratch", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      const build = agents.get(String(AgentV2.BUILD_ID))!
+      // The shapes `config/plugin/skill.ts` really registers: `<config dir>/skill` and `/skills`.
+      const dirs = ["skill", "skills", "reference"].map((name) =>
+        nodePath.join(Global.Path.config, name, "note.md").replaceAll("\\", "/"),
+      )
+      for (const resource of dirs) {
+        // Reading stays allowed — 1I's ambient read baseline, asserted above for an arbitrary path.
+        expect(effectFor(build, "external_directory_read", resource), `read ${resource}`).toBe("allow")
+        // `ask`, which the assert path refuses. What matters is that it is never `allow`.
+        expect(effectFor(build, "external_directory_write", resource), `write ${resource}`).not.toBe("allow")
+      }
     }),
   )
 
