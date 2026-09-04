@@ -12,6 +12,7 @@ import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsAboutV2 } from "./about"
 import { SettingsStorageV2 } from "./storage"
+import { SettingsUsageV2 } from "./usage"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsModelsV2 } from "./models"
@@ -194,6 +195,10 @@ export const DialogSettings: Component<{
                       <div class="flex flex-col gap-1.5">
                         <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
+                          <TabsV2.Trigger value="usage">
+                            <Icon name="bullet-list" size="large" />
+                            {language.t("settings.usage.title")}
+                          </TabsV2.Trigger>
                           <TabsV2.Trigger value="storage">
                             <Icon name="folder" size="large" />
                             {language.t("settings.tab.storage")}
@@ -283,6 +288,9 @@ export const DialogSettings: Component<{
                   <SettingsQualityV2 />
                 </TabsV2.Content>
               </Show>
+              <TabsV2.Content value="usage" class="settings-v2-panel">
+                <SettingsUsageV2 />
+              </TabsV2.Content>
               <TabsV2.Content value="storage" class="settings-v2-panel">
                 <SettingsStorageV2 />
               </TabsV2.Content>

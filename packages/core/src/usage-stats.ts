@@ -11,8 +11,7 @@ import { SessionMessageRead } from "./session/message-read"
  *
  * 🔴 **This lived in `novaclaw/src/cli/cmd/stats.ts` until 2026-09-04, which is why it is being
  * moved rather than written.** Principle 7 — one UI, for humans — says an analytics dashboard is an
- * app in the shell, never a developer surface, and `RF-14-6` is the ledger entry for that. The
- * numbers could not move to a page while the only code that produced them lived inside a CLI command
+ * app in the shell, never a developer surface. The numbers could not move to a page while the only code that produced them lived inside a CLI command
  * that printed ASCII bar charts: `packages/app` cannot import `packages/novaclaw`, and even if it
  * could, the aggregation was interleaved with `console.log`.
  *

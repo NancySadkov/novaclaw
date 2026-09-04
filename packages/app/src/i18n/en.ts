@@ -1200,6 +1200,26 @@ export const dict = {
   // translated bundles still say the older word; that is translation backlog, not a fork.
   "settings.tab.recovery": "Health",
   "settings.tab.about": "About",
+  "settings.usage.title": "Usage",
+  "settings.usage.description":
+    "What this instance has spent, in tokens and money. Counted from your own sessions on this machine \u2014 nothing is sent anywhere to produce it.",
+  "settings.usage.window.all": "All time",
+  "settings.usage.window.days": "Last {{days}} days",
+  "settings.usage.totals": "Totals",
+  "settings.usage.sessions": "Sessions",
+  "settings.usage.messages": "Messages",
+  "settings.usage.cost": "Total cost",
+  "settings.usage.costPerDay": "Average per day",
+  "settings.usage.tokensIn": "Input tokens",
+  "settings.usage.tokensOut": "Output tokens",
+  "settings.usage.cacheRead": "Cache reads",
+  "settings.usage.tokensPerSession": "Average tokens per chat",
+  "settings.usage.byModel": "By model",
+  "settings.usage.byTool": "By tool",
+  "settings.usage.empty":
+    "Nothing to report yet \u2014 this instance has no finished chats. The numbers appear as you use it.",
+  "settings.usage.unreachable":
+    "Nova could not be reached to read these numbers. Nothing has been lost; try again in a moment.",
   "settings.tab.storage": "Storage",
 
   // The one message every settings number box refuses with. It names the RANGE, because a control
