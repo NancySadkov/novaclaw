@@ -139,7 +139,16 @@ afterEach(async () => {
 const writeManagedSettingsEffect = (settings: object, filename?: string) =>
   FSUtil.use.writeWithDirs(path.join(managedConfigDir, filename ?? "novaclaw.json"), JSON.stringify(settings))
 
-const writeConfigEffect = (dir: string, config: object, name = "novaclaw.json") =>
+/**
+ * ⚠️ `name` is REQUIRED, and the missing default is the point. It used to default to
+ * `novaclaw.json` while this helper served both the GLOBAL config dir and a PROJECT directory — two
+ * places where that filename means opposite things. When the first-boot seeds stopped reading
+ * `novaclaw.json` on 2026-09-04 (it is `ProjectFile.FILENAME`, untrusted narrow-only input under
+ * principle 13), the global-dir tests silently stopped writing a file the reader would look at, and
+ * one of them failed for a reason that had nothing to do with what it asserts. Making the caller
+ * name the file means the next author picks a side rather than inheriting one.
+ */
+const writeConfigEffect = (dir: string, config: object, name: string) =>
   FSUtil.use.writeWithDirs(path.join(dir, name), JSON.stringify(config))
 
 // Point the GLOBAL CONFIG DIR at `dir` for the duration of `effect`.
@@ -169,13 +178,14 @@ const withGlobalConfigDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R
       }),
   )
 
+/** `name` rides with `config` and is required alongside it — see `writeConfigEffect`. */
 const withGlobalConfig = <A, E, R>(
-  input: { config?: object; name?: string },
+  input: { config?: object; name: string } | { config?: undefined; name?: string },
   fn: (input: { dir: string }) => Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped()
-    if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name)
+    if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name!)
     return yield* withGlobalConfigDir(dir, fn({ dir }))
   })
 
@@ -336,7 +346,7 @@ it.effect("imports the global-dir jsonc into the stores on first read — and ne
 )
 
 it.effect("import concats + dedups instructions across the global dir and NOVACLAW_CONFIG_CONTENT", () =>
-  withGlobalConfig({ config: { instructions: ["dup.md", "global-only.md"] } }, ({ dir }) =>
+  withGlobalConfig({ config: { instructions: ["dup.md", "global-only.md"] }, name: "novaclaw.jsonc" }, ({ dir }) =>
     withProcessEnv(
       "NOVACLAW_CONFIG_CONTENT",
       JSON.stringify(schemaConfig({ instructions: ["dup.md", "content-only.md"] })),
@@ -351,7 +361,13 @@ it.effect("import concats + dedups instructions across the global dir and NOVACL
 it.instance("a project-directory jsonc is NOT a runtime config source", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, schemaConfig({ model: "project/model", username: "project-user" }))
+    // A PROJECT directory, so the project filename is the right one here — and the assertion is that
+    // it is NOT read as config, which is exactly the trust split the seeds now respect.
+    yield* writeConfigEffect(
+      test.directory,
+      schemaConfig({ model: "project/model", username: "project-user" }),
+      "novaclaw.json",
+    )
     yield* Config.use.invalidate()
 
     const config = yield* Config.use.get()
