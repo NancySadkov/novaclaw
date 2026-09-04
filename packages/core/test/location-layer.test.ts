@@ -372,12 +372,7 @@ describe("LocationServiceMap", () => {
             id: "reviewer",
             effect: (ctx) =>
               ctx.agent
-                .transform((agent) => {
-                  agent.update("reviewer", (item) => {
-                    item.description = "Reviews code"
-                    item.mode = "subagent"
-                  })
-                })
+                .declare([{ id: "reviewer", set: { description: "Reviews code", mode: "subagent" } }])
                 .pipe(Effect.asVoid),
           })
           yield* plugins.add(PluginV2.ID.make(reviewer.id), reviewer.effect)

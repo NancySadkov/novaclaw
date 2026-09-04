@@ -5,12 +5,7 @@ const plugin: Plugin = define({
   id: "config-effect-plugin",
   effect: (ctx) =>
     ctx.agent
-      .transform((agents) => {
-        agents.update("effect-configured", (agent) => {
-          agent.description = ctx.options.description
-          agent.mode = "subagent"
-        })
-      })
+      .declare([{ id: "effect-configured", set: { description: ctx.options.description, mode: "subagent" } }])
       .pipe(Effect.asVoid),
 })
 

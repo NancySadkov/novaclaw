@@ -49,13 +49,7 @@ describe("PluginV2", () => {
         define({
           id: "managed",
           effect: (ctx) =>
-            ctx.agent
-              .transform((agents) =>
-                agents.update("configured", (agent) => {
-                  agent.description = description
-                }),
-              )
-              .pipe(Effect.asVoid),
+            ctx.agent.declare([{ id: "configured", set: { description } }]).pipe(Effect.asVoid),
         })
 
       yield* plugins.add(PluginV2.ID.make("managed"), managed().effect)
