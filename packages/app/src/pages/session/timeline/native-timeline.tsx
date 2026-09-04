@@ -239,6 +239,28 @@ export function NativeTimeline(props: {
 
   return (
     <div style={{ position: "relative", height: "100%" }} data-component="native-timeline-wrap">
+      {/* 🔴 **DO NOT SET `overflow-anchor: none` HERE.** It is the obvious hardening — the browser
+          moving `scrollTop` on its own sounds like something a pin-to-bottom chat should forbid —
+          and measuring it in a real Chromium on 2026-09-04 showed it does the exact opposite.
+
+          The case is content ABOVE the viewport growing while the reader is pinned at the bottom (a
+          turn expanding, a reconcile inserting rows). Four configurations, same content, nobody
+          scrolling, `scrollTop` starting at 894 of a 1110px transcript that grows to 2273:
+
+            · anchoring ON  + ResizeObserver  →  top 2057, gap 0,    pinned   ← what ships
+            · anchoring ON  + no observer     →  top 2057, gap 0,    pinned
+            · anchoring OFF + ResizeObserver  →  top  894, gap 1163, UNPINNED
+            · anchoring OFF + no observer     →  top  894, gap 1163, and ZERO scroll events
+
+          Scroll anchoring is what holds the pin, not the observer — the second row proves it alone.
+          Turning it off manufactures the very fault it looks like it prevents, and the fourth row is
+          why it would be so hard to find afterwards: `scrollTop` never changes, so no scroll event
+          fires and nothing in this file can notice the drift.
+
+          The `overflow-anchor: none` in `session-ui/src/components/session-turn.css` is not a
+          counter-example. Nothing imports that stylesheet and no component sets that
+          `data-component`; it is dead CSS, and citing it as precedent is what nearly put this rule
+          in. */}
       <div
         ref={(el) => (scroller = el)}
         class="h-full overflow-y-auto"
