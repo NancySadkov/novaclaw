@@ -156,6 +156,35 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
     options: {},
     agent: {
       reload: agents.reload,
+      /**
+       * The declarative form, applied through the SAME draft the callback form uses — so there is
+       * one place where a contribution actually lands, and `declare` cannot drift into meaning
+       * something subtly different from `transform`.
+       *
+       * ⚠️ Order inside one call is the caller's: later declarations win for the same field, which
+       * is the only rule that makes a list of patches readable without knowing the host's internals.
+       */
+      declare: (items) =>
+        agents.transform((draft) => {
+          for (const item of items) {
+            const id = AgentV2.ID.make(item.id)
+            // `remove` is exclusive by type; honouring it first means a malformed declaration that
+            // set both cannot half-apply.
+            if (item.remove) {
+              draft.remove(id)
+              continue
+            }
+            draft.update(id, (agent) => {
+              if (item.set) Object.assign(agent, item.set)
+              for (const [key, values] of Object.entries(item.append ?? {})) {
+                if (!Array.isArray(values)) continue
+                const target = (agent as unknown as Record<string, unknown>)[key]
+                if (Array.isArray(target)) target.push(...values)
+                else (agent as unknown as Record<string, unknown>)[key] = [...values]
+              }
+            })
+          }
+        }),
       transform: (callback) =>
         agents.transform((draft) =>
           callback({

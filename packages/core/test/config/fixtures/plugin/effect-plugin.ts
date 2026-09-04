@@ -10,14 +10,17 @@ const plugin: Plugin = define({
   // typo swallowed silently is a declaration that reads as complete. The promise-shaped sibling
   // declares nothing at all, so one run covers declared, unknown and undeclared.
   capabilities: ["config", "netwrok"],
+  // 🔴 DECLARATIVE, not a transform callback. This is the whole shape being proven: an external
+  // plugin's contribution is DATA, so the same value could arrive over a transport from a confined
+  // process. A closure could not, which is what forecloses an out-of-process plugin host.
   effect: (ctx) =>
     ctx.agent
-      .transform((agents) => {
-        agents.update("effect-directory", (agent) => {
-          agent.description = "Loaded from plugin directory as an Effect plugin"
-          agent.mode = "subagent"
-        })
-      })
+      .declare([
+        {
+          id: "effect-directory",
+          set: { description: "Loaded from plugin directory as an Effect plugin", mode: "subagent" },
+        },
+      ])
       .pipe(Effect.asVoid),
 })
 

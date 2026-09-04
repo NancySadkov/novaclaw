@@ -14,6 +14,7 @@ export function host(overrides: Overrides = {}): PluginContext {
   return {
     options: {},
     agent: overrides.agent ?? {
+      declare: () => Effect.die("unused agent.declare"),
       transform: () => Effect.die("unused agent.transform"),
       reload: () => Effect.die("unused agent.reload"),
     },
@@ -62,6 +63,27 @@ export function host(overrides: Overrides = {}): PluginContext {
 export function agentHost(agent: AgentV2.Interface): PluginContext["agent"] {
   return {
     reload: agent.reload,
+    // Mirrors `plugin/host.ts`: the declarative form lands through the same draft the callback form
+    // does, so a test that exercises `declare` exercises the real application path.
+    declare: (items) =>
+      agent.transform((draft) => {
+        for (const item of items) {
+          const id = AgentV2.ID.make(item.id)
+          if (item.remove) {
+            draft.remove(id)
+            continue
+          }
+          draft.update(id, (current) => {
+            if (item.set) Object.assign(current, item.set)
+            for (const [key, values] of Object.entries(item.append ?? {})) {
+              if (!Array.isArray(values)) continue
+              const target = (current as unknown as Record<string, unknown>)[key]
+              if (Array.isArray(target)) target.push(...values)
+              else (current as unknown as Record<string, unknown>)[key] = [...values]
+            }
+          })
+        }
+      }),
     transform: (callback) =>
       agent.transform((draft) =>
         callback({
