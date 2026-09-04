@@ -353,6 +353,9 @@ describe("Calendar explains a disabled Add task instead of greying out in silenc
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add task"))
     expect(submit, "the Add task button must still be rendered").toBeTruthy()
     expect((submit as HTMLButtonElement).disabled).toBe(false)
+    expect(document.querySelector('[data-component="control-scope"][data-scope="draft"]')?.textContent).toContain(
+      "saved when you confirm",
+    )
   })
 })
 

@@ -928,6 +928,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               value={
                 <>
                   {language.t("prompt.action.attachFile")}
+                  <span class="text-v2-text-text-faint"> · {language.t("prompt.action.attachFile.scope")}</span>
                   <KeybindV2 keys={command.keybindParts("file.attach")} variant="neutral" />
                 </>
               }

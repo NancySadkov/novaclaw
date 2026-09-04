@@ -1,5 +1,6 @@
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { ControlScope } from "@/components/control-scope"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { displayName as folderDisplayName } from "@/pages/layout/helpers"
@@ -576,6 +577,7 @@ export function AgentConfigDialog(props: {
               {agent()?.title ?? language.t("agentConfig.noTitle")}
             </span>
           </span>
+          <ControlScope kind="colleague" class="hidden sm:inline-flex" />
           {/* HELP, beside Close: the one door to everything this screen used to explain inline. It sits
               in the header rather than by a control because it explains the MODEL, not this field. */}
           <button

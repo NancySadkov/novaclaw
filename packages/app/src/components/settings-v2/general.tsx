@@ -30,6 +30,7 @@ import { SettingsRowV2 } from "./parts/row"
 import { useSettingsConfigWrite } from "./parts/config-write"
 import { SettingsExplainV2 } from "./explain"
 import { scopedDirectory } from "@/utils/routing-directory"
+import { ControlScope } from "../control-scope"
 
 type ShellOption = {
   path: string
@@ -289,8 +290,9 @@ export const SettingsGeneralV2: Component<{
           <SettingsRowV2
             title={language.t("settings.general.row.instance.title")}
             description={
-              <Show when={tempSwitched()} fallback={language.t("settings.general.row.instance.description")}>
-                <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <ControlScope kind="window" />
+                <Show when={tempSwitched()} fallback={language.t("settings.general.row.instance.description")}>
                   <span>
                     {language.t("settings.general.row.instance.temporary", {
                       default: serverName(defaultInstance()!.item),
@@ -304,8 +306,8 @@ export const SettingsGeneralV2: Component<{
                   >
                     {language.t("settings.general.row.instance.return")}
                   </button>
-                </span>
-              </Show>
+                </Show>
+              </span>
             }
           >
             <SelectV2

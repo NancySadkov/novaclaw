@@ -22,6 +22,7 @@ import { AppPage, AppPageHeader } from "@/components/app-page"
 import { scopedDirectory } from "@/utils/routing-directory"
 import { createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
+import { ControlScope } from "@/components/control-scope"
 
 // Calendar app: the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
@@ -575,8 +576,11 @@ export function CalendarPage() {
         {/* Create/edit task form */}
         <form ref={editor} class={`${CARD} flex flex-col gap-3`} onSubmit={submit}>
           <div class="flex items-center justify-between gap-3">
-            <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
-              {editingID() ? "Edit task" : "New task"}
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
+                {editingID() ? "Edit task" : "New task"}
+              </div>
+              <ControlScope kind="draft" />
             </div>
             <Show when={editingID()}>
               <button class={BTN} type="button" onClick={resetEditor} disabled={busy()}>

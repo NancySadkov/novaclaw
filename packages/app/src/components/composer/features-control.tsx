@@ -5,6 +5,7 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
+import { ControlScope } from "@/components/control-scope"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import { useLanguage } from "@/context/language"
 import { useGlobal } from "@/context/global"
@@ -328,6 +329,7 @@ export function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
   return (
     <div class="flex flex-col gap-1.5" data-section="remote-chat">
       <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.remote.title")}</span>
+      <ControlScope kind="chat" />
       <Show
         when={props.remote.binding}
         fallback={
@@ -613,9 +615,7 @@ function MakeDefaultSection(props: {
     void props.state
       .write(makeDefaultPayload(plan()))
       .then((result) => setReceipt(result))
-      .catch((error) =>
-        setReceipt({ kind: "failed", detail: error instanceof Error ? error.message : String(error) }),
-      )
+      .catch((error) => setReceipt({ kind: "failed", detail: error instanceof Error ? error.message : String(error) }))
       .finally(() => setBusy(false))
   }
 
@@ -679,9 +679,18 @@ function MakeDefaultSection(props: {
           user can go and read the result rather than take our word for it. */}
       <Show when={receipt()}>
         {(result) => (
-          <div class="flex flex-col gap-0.5 rounded-md border border-border-base px-2.5 py-1.5" data-make-default-receipt>
+          <div
+            class="flex flex-col gap-0.5 rounded-md border border-border-base px-2.5 py-1.5"
+            data-make-default-receipt
+          >
             <Switch>
-              <Match when={result().kind === "written" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "written" }>) : undefined}>
+              <Match
+                when={
+                  result().kind === "written"
+                    ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "written" }>)
+                    : undefined
+                }
+              >
                 {(written) => (
                   <>
                     <span class="text-[12px] leading-4 break-all text-v2-text-text-base">
@@ -710,7 +719,13 @@ function MakeDefaultSection(props: {
                   </>
                 )}
               </Match>
-              <Match when={result().kind === "refused" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "refused" }>) : undefined}>
+              <Match
+                when={
+                  result().kind === "refused"
+                    ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "refused" }>)
+                    : undefined
+                }
+              >
                 {(refused) => (
                   <>
                     {/* Two reasons, two opposite actions — "update NovaClaw" and "fix your file" —
@@ -729,7 +744,13 @@ function MakeDefaultSection(props: {
                   </>
                 )}
               </Match>
-              <Match when={result().kind === "failed" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "failed" }>) : undefined}>
+              <Match
+                when={
+                  result().kind === "failed"
+                    ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "failed" }>)
+                    : undefined
+                }
+              >
                 {(failed) => (
                   <span class="text-[12px] leading-4 text-v2-text-text-base">
                     {language.t("composer.tune.makeDefault.receipt.failed", { detail: failed().detail })}
@@ -766,7 +787,11 @@ function MakeDefaultSection(props: {
  * line is load-bearing for a reason recorded at its own site.
  */
 export function useTunePanelOpener(state: () => ComposerFeaturesControlState) {
-  const props = { get state() { return state() } }
+  const props = {
+    get state() {
+      return state()
+    },
+  }
   return composerTunePanel(props)
 }
 
@@ -881,14 +906,15 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
   // its own modal shell (a dialog inside a dialog) nor its own title (the section already carries
   // one). Standalone is kept for any caller that still wants the panel on its own.
   const body = (
-      <div
-        data-component="prompt-features-panel"
-        classList={{
-          "flex flex-col gap-3": true,
-          "max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto p-5": !props.embedded,
-        }}
-      >
-        <Show when={!props.embedded}>
+    <div
+      data-component="prompt-features-panel"
+      classList={{
+        "flex flex-col gap-3": true,
+        "max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto p-5": !props.embedded,
+      }}
+    >
+      <ControlScope kind="chat" />
+      <Show when={!props.embedded}>
         <div class="flex flex-col gap-1">
           <span class="text-[13px] font-[560] text-v2-text-text-base">
             {language.t("prompt.features.popover.title")}
@@ -897,181 +923,177 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
             {language.t("prompt.features.popover.description")}
           </span>
         </div>
-        </Show>
-        <div class="flex flex-col gap-1.5" data-section="posture">
-          <span class="text-[13px] font-[560] text-v2-text-text-base">
-            {language.t("prompt.posture.section.title")}
-          </span>
-          <div role="radiogroup" aria-label={language.t("prompt.posture.section.title")} class="flex flex-col gap-1">
-            {(["chat", "agent"] as const).map((posture) => {
-              const selected = () => props.state.current.shortChat === (posture === "chat")
-              return (
-                <button
-                  type="button"
-                  role="radio"
-                  data-posture-option={posture}
-                  aria-checked={selected()}
-                  onClick={() => props.state.set("shortChat", posture === "chat")}
-                  class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
-                  classList={{
-                    "border-v2-border-border-focus bg-v2-background-bg-layer-01": selected(),
-                    "border-transparent": !selected(),
-                  }}
-                >
-                  <span class="flex flex-col gap-0.5">
-                    <span class="text-[13px] text-v2-text-text-base">
-                      {language.t(`prompt.posture.${posture}.title`)}
-                    </span>
-                    <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                      {language.t(`prompt.posture.${posture}.description`)}
-                    </span>
-                  </span>
-                  <Show when={selected()}>
-                    <Icon name="check" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
-                  </Show>
-                </button>
-              )
-            })}
-          </div>
-          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-posture-source>
-            {props.state.override.shortChat === undefined
-              ? language.t("prompt.features.source.inherit", {
-                  state: language.t(`prompt.posture.${props.state.current.shortChat ? "chat" : "agent"}.title`),
-                })
-              : language.t("prompt.features.source.override")}
-          </span>
-          <Show when={props.state.override.shortChat !== undefined}>
-            <button
-              type="button"
-              data-action="prompt-posture-inherit"
-              class="self-start text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
-              onClick={() => props.state.inherit("shortChat")}
-            >
-              {language.t("prompt.features.useDefault")}
-            </button>
-          </Show>
-        </div>
-        {/* The chat's Mode — plain radio rows (a Kobalte Select re-emits onChange; see the
-              per-session-toggle template notes), and the unattended options explain their
-              guardrails inline so the switch teaches what it does. */}
-        <div class="flex flex-col gap-1.5" data-section="mode">
-          <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.mode.title")}</span>
-          <div role="radiogroup" aria-label={language.t("prompt.mode.title")} class="flex flex-col gap-1">
-            {COMPOSER_MODES.map((mode) => (
+      </Show>
+      <div class="flex flex-col gap-1.5" data-section="posture">
+        <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.posture.section.title")}</span>
+        <div role="radiogroup" aria-label={language.t("prompt.posture.section.title")} class="flex flex-col gap-1">
+          {(["chat", "agent"] as const).map((posture) => {
+            const selected = () => props.state.current.shortChat === (posture === "chat")
+            return (
               <button
                 type="button"
                 role="radio"
-                data-mode-option={mode}
-                aria-checked={props.state.mode === mode}
-                onClick={() => props.state.setMode(mode)}
+                data-posture-option={posture}
+                aria-checked={selected()}
+                onClick={() => props.state.set("shortChat", posture === "chat")}
                 class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
                 classList={{
-                  "border-v2-border-border-focus bg-v2-background-bg-layer-01": props.state.mode === mode,
-                  "border-transparent": props.state.mode !== mode,
+                  "border-v2-border-border-focus bg-v2-background-bg-layer-01": selected(),
+                  "border-transparent": !selected(),
                 }}
               >
                 <span class="flex flex-col gap-0.5">
-                  <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.mode.${mode}.title`)}</span>
+                  <span class="text-[13px] text-v2-text-text-base">
+                    {language.t(`prompt.posture.${posture}.title`)}
+                  </span>
                   <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                    {language.t(`prompt.mode.${mode}.description`)}
+                    {language.t(`prompt.posture.${posture}.description`)}
                   </span>
                 </span>
-                {props.state.mode === mode && (
+                <Show when={selected()}>
                   <Icon name="check" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
-                )}
+                </Show>
               </button>
-            ))}
-          </div>
+            )
+          })}
         </div>
-        <RemoteChatSection remote={props.state.remote} />
-        {/*
+        <span class="text-[11px] leading-4 text-v2-text-text-faint" data-posture-source>
+          {props.state.override.shortChat === undefined
+            ? language.t("prompt.features.source.inherit", {
+                state: language.t(`prompt.posture.${props.state.current.shortChat ? "chat" : "agent"}.title`),
+              })
+            : language.t("prompt.features.source.override")}
+        </span>
+        <Show when={props.state.override.shortChat !== undefined}>
+          <button
+            type="button"
+            data-action="prompt-posture-inherit"
+            class="self-start text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
+            onClick={() => props.state.inherit("shortChat")}
+          >
+            {language.t("prompt.features.useDefault")}
+          </button>
+        </Show>
+      </div>
+      {/* The chat's Mode — plain radio rows (a Kobalte Select re-emits onChange; see the
+              per-session-toggle template notes), and the unattended options explain their
+              guardrails inline so the switch teaches what it does. */}
+      <div class="flex flex-col gap-1.5" data-section="mode">
+        <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.mode.title")}</span>
+        <div role="radiogroup" aria-label={language.t("prompt.mode.title")} class="flex flex-col gap-1">
+          {COMPOSER_MODES.map((mode) => (
+            <button
+              type="button"
+              role="radio"
+              data-mode-option={mode}
+              aria-checked={props.state.mode === mode}
+              onClick={() => props.state.setMode(mode)}
+              class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
+              classList={{
+                "border-v2-border-border-focus bg-v2-background-bg-layer-01": props.state.mode === mode,
+                "border-transparent": props.state.mode !== mode,
+              }}
+            >
+              <span class="flex flex-col gap-0.5">
+                <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.mode.${mode}.title`)}</span>
+                <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                  {language.t(`prompt.mode.${mode}.description`)}
+                </span>
+              </span>
+              {props.state.mode === mode && (
+                <Icon name="check" size="normal" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      <RemoteChatSection remote={props.state.remote} />
+      {/*
           THE FOLDER'S OWN LAYER, named. `notes/spec` calls a project file a layer BENEATH the chat:
           it supplies what no chat declared and loses to every chat that did. That is invisible in a
           list of switches, so the panel says it out loud — the file, what it set, and what it asked
           for and did not get.
         */}
-        <Show when={props.state.project}>
-          {(project) => (
-            <div class="flex flex-col gap-0.5" data-section="project-tune">
-              <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.project.title")}</span>
-              <span class="text-[12px] leading-4 break-all text-v2-text-text-faint" data-project-file>
-                {project().file}
+      <Show when={props.state.project}>
+        {(project) => (
+          <div class="flex flex-col gap-0.5" data-section="project-tune">
+            <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.project.title")}</span>
+            <span class="text-[12px] leading-4 break-all text-v2-text-text-faint" data-project-file>
+              {project().file}
+            </span>
+            <Show
+              when={project().applied.length > 0}
+              fallback={
+                <span class="text-[11px] leading-4 text-v2-text-text-faint">{language.t("prompt.project.none")}</span>
+              }
+            >
+              <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-applied>
+                {language.t("prompt.project.applied", {
+                  list: project().applied.map(featureTitle).join(", "),
+                })}
               </span>
-              <Show
-                when={project().applied.length > 0}
-                fallback={
-                  <span class="text-[11px] leading-4 text-v2-text-text-faint">
-                    {language.t("prompt.project.none")}
-                  </span>
-                }
-              >
-                <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-applied>
-                  {language.t("prompt.project.applied", {
-                    list: project().applied.map(featureTitle).join(", "),
-                  })}
-                </span>
-              </Show>
-              <Show when={project().refused.length > 0}>
-                <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-refused>
-                  {language.t("prompt.project.refused", {
-                    list: project().refused.map(featureTitle).join(", "),
-                  })}
-                </span>
-              </Show>
-            </div>
-          )}
-        </Show>
-        {COMPOSER_FEATURES.map((feature) => (
-          <div class="flex items-start justify-between gap-3" data-feature={feature}>
-            <div class="flex flex-col gap-0.5">
-              <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.features.${feature}.title`)}</span>
-              <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                {language.t(`prompt.features.${feature}.description`)}
-                {/* uix.md §1.4 — the line states what the switch does; the trade and the cases it
+            </Show>
+            <Show when={project().refused.length > 0}>
+              <span class="text-[11px] leading-4 text-v2-text-text-faint" data-project-refused>
+                {language.t("prompt.project.refused", {
+                  list: project().refused.map(featureTitle).join(", "),
+                })}
+              </span>
+            </Show>
+          </div>
+        )}
+      </Show>
+      {COMPOSER_FEATURES.map((feature) => (
+        <div class="flex items-start justify-between gap-3" data-feature={feature}>
+          <div class="flex flex-col gap-0.5">
+            <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.features.${feature}.title`)}</span>
+            <span class="text-[12px] leading-4 text-v2-text-text-faint">
+              {language.t(`prompt.features.${feature}.description`)}
+              {/* uix.md §1.4 — the line states what the switch does; the trade and the cases it
                     does not affect are one gesture away. Conditional because only some features have
                     a second half, and a `?` with nothing behind it is a dead control. */}
-                <Show when={feature === "safeMode"}>
-                  <SettingsExplainV2 label={language.t(`prompt.features.${feature}.title`)}>
-                    {language.t("prompt.features.safeMode.description.more")}
-                  </SettingsExplainV2>
-                </Show>
-              </span>
-              <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
-                {featureSource(feature)}
-              </span>
-            </div>
-            <div class="flex shrink-0 flex-col items-end gap-1">
-              <SwitchToggle
-                checked={props.state.current[feature]}
-                onChange={(checked) => props.state.set(feature, checked)}
-                hideLabel
-              >
-                {language.t(`prompt.features.${feature}.title`)}
-              </SwitchToggle>
-              <Show when={props.state.override[feature] !== undefined}>
-                <button
-                  type="button"
-                  data-action="prompt-feature-inherit"
-                  class="text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
-                  onClick={() => props.state.inherit(feature)}
-                >
-                  {language.t("prompt.features.useDefault")}
-                </button>
+              <Show when={feature === "safeMode"}>
+                <SettingsExplainV2 label={language.t(`prompt.features.${feature}.title`)}>
+                  {language.t("prompt.features.safeMode.description.more")}
+                </SettingsExplainV2>
               </Show>
-            </div>
+            </span>
+            <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
+              {featureSource(feature)}
+            </span>
           </div>
-        ))}
-        <Show when={props.state.makeDefault}>
-          {(makeDefault) => (
-            <MakeDefaultSection
-              state={makeDefault()}
-              overrides={props.state.override}
-              mode={props.state.mode}
-              featureTitle={featureTitle}
-            />
-          )}
-        </Show>
-      </div>
+          <div class="flex shrink-0 flex-col items-end gap-1">
+            <SwitchToggle
+              checked={props.state.current[feature]}
+              onChange={(checked) => props.state.set(feature, checked)}
+              hideLabel
+            >
+              {language.t(`prompt.features.${feature}.title`)}
+            </SwitchToggle>
+            <Show when={props.state.override[feature] !== undefined}>
+              <button
+                type="button"
+                data-action="prompt-feature-inherit"
+                class="text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
+                onClick={() => props.state.inherit(feature)}
+              >
+                {language.t("prompt.features.useDefault")}
+              </button>
+            </Show>
+          </div>
+        </div>
+      ))}
+      <Show when={props.state.makeDefault}>
+        {(makeDefault) => (
+          <MakeDefaultSection
+            state={makeDefault()}
+            overrides={props.state.override}
+            mode={props.state.mode}
+            featureTitle={featureTitle}
+          />
+        )}
+      </Show>
+    </div>
   )
   return props.embedded ? body : <Dialog size="content">{body}</Dialog>
 }

@@ -187,6 +187,7 @@ describe("AgentConfigDialog renders", () => {
     // The guard on the instrument: if this is empty every assertion below is vacuous.
     expect(dialogText()).toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
+    expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
   })
 
   test("D2 · the model select shows the colleague's BOUND model, not Inherit", async () => {
