@@ -19,6 +19,7 @@ export function host(overrides: Overrides = {}): PluginContext {
       reload: () => Effect.die("unused agent.reload"),
     },
     catalog: overrides.catalog ?? {
+      declare: () => Effect.die("unused catalog.declare"),
       transform: () => Effect.die("unused catalog.transform"),
       reload: () => Effect.die("unused catalog.reload"),
     },
@@ -111,6 +112,35 @@ export function agentHost(agent: AgentV2.Interface): PluginContext["agent"] {
 export function catalogHost(catalog: Catalog.Interface): PluginContext["catalog"] {
   return {
     reload: catalog.reload,
+    // Mirrors `plugin/host.ts`, so a test exercising `declare` exercises the real application path.
+    declare: (items) =>
+      catalog.transform((draft) => {
+        const patch = (target: Record<string, unknown>, item: { set?: object; append?: object }) => {
+          if (item.set) Object.assign(target, item.set)
+          for (const [key, values] of Object.entries(item.append ?? {})) {
+            if (!Array.isArray(values)) continue
+            const current = target[key]
+            if (Array.isArray(current)) current.push(...values)
+            else target[key] = [...values]
+          }
+        }
+        for (const item of items) {
+          if (item.kind === "default-model") {
+            draft.model.default.set(ProviderV2.ID.make(item.provider), ModelV2.ID.make(item.id))
+            continue
+          }
+          if (item.kind === "provider") {
+            const id = ProviderV2.ID.make(item.id)
+            if (item.remove) draft.provider.remove(id)
+            else draft.provider.update(id, (provider) => patch(provider as unknown as Record<string, unknown>, item))
+            continue
+          }
+          const provider = ProviderV2.ID.make(item.provider)
+          const model = ModelV2.ID.make(item.id)
+          if (item.remove) draft.model.remove(provider, model)
+          else draft.model.update(provider, model, (m) => patch(m as unknown as Record<string, unknown>, item))
+        }
+      }),
     transform: (callback) =>
       catalog.transform((draft) =>
         callback({

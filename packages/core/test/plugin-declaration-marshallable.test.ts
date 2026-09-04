@@ -115,6 +115,17 @@ describe("every facet that CAN be declarative has a marshallable form", () => {
 
     const skill = [{ type: "directory", path: "/tmp/skills" }]
     expect(wire(skill), "skill declaration did not survive").toEqual(skill)
+
+    // The catalog is a TAGGED UNION because its domain is nested: a model is identified by a pair,
+    // and the default is a property of the catalog rather than of any record in it. Flattening those
+    // into one `id` would either lose the provider or invent a composite key nothing else uses.
+    const catalog = [
+      { kind: "provider", id: "acme", set: { name: "Acme" } },
+      { kind: "model", provider: "acme", id: "fast", set: { name: "Acme Fast" } },
+      { kind: "default-model", provider: "acme", id: "fast" },
+      { kind: "provider", id: "gone", remove: true },
+    ]
+    expect(wire(catalog), "catalog declaration did not survive").toEqual(catalog)
   })
 
   test("🔴 the two BEHAVIOURAL facets are honestly not marshallable, and that is the point", () => {
