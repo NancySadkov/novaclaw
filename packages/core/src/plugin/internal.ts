@@ -88,8 +88,84 @@ export type Requirements =
  * refactor item; until it closes, treat this list as the real permission surface for plugins and add
  * to it the way you would add a permission, not the way you would add an import.
  */
+/**
+ * 🔴 **What a plugin may reach, named at runtime rather than only in a type.**
+ *
+ * `Plugin<R>` already declares requirements in `R` — and `R` is erased before anything runs, so the
+ * host provided every service to every plugin regardless, and nothing could tell a user what a
+ * plugin had asked for. That is the gap: authority that cannot be enumerated cannot be narrowed
+ * (the org metaphor's *authority narrows downward*), cannot be shown (12(d), *say what is in force*),
+ * and cannot be moved behind a boundary later.
+ *
+ * ⚠️ **This list spans BOTH provisioning channels on purpose**, because the split is invisible from a
+ * plugin's side and is exactly what makes the next step dangerous. Some of these are handed over per
+ * plugin by `add` below; the config stores arrive ambiently through this node's `deps`. A plugin
+ * `yield*`s them identically and cannot tell which is which.
+ *
+ * ⚠️ **Declaring is not yet enforcing.** Nothing here changes what the host provides — this step
+ * makes the declaration exist and be checkable, and `core/test/plugin-capability-declaration.test.ts`
+ * fails when a plugin's declaration disagrees with what its source actually uses. Narrowing
+ * provisioning to the declared set comes after the declarations are proven honest, one channel at a
+ * time, because these plugins run at STARTUP: getting it wrong is a failed boot, not a red test.
+ */
+export const CAPABILITIES = [
+  "agent",
+  "agentConfigStore",
+  "catalog",
+  "catalogStore",
+  "command",
+  "commandConfigStore",
+  "config",
+  "event",
+  "fsUtil",
+  "global",
+  "integration",
+  "location",
+  "modelsDev",
+  "reference",
+  "referenceConfigStore",
+  "skill",
+  "skillConfigStore",
+] as const
+
+export type Capability = (typeof CAPABILITIES)[number]
+
+/**
+ * The service each capability names, spelled as it appears in a plugin's source.
+ *
+ * ⚠️ Kept beside the list rather than derived from the tags: the checker is a SOURCE scan (a plugin
+ * is a file long before it is a live layer), so what it needs is the identifier a reader would type,
+ * not the runtime tag. `plugin-capability-declaration.test.ts` fails if this map and `CAPABILITIES`
+ * ever disagree, so the pair cannot drift.
+ */
+export const CAPABILITY_SERVICE: Readonly<Record<Capability, string>> = {
+  agent: "AgentV2",
+  agentConfigStore: "AgentConfigStore",
+  catalog: "Catalog",
+  catalogStore: "CatalogStore",
+  command: "CommandV2",
+  commandConfigStore: "CommandConfigStore",
+  config: "Config",
+  event: "EventV2",
+  fsUtil: "FSUtil",
+  global: "Global",
+  integration: "Integration",
+  location: "Location",
+  modelsDev: "ModelsDev",
+  reference: "Reference",
+  referenceConfigStore: "ReferenceConfigStore",
+  skill: "SkillV2",
+  skillConfigStore: "SkillConfigStore",
+}
+
 export interface Plugin<R = never> {
   readonly id: string
+  /**
+   * Every capability this plugin reaches, named. REQUIRED — a plugin that declares nothing is
+   * indistinguishable from one that needs nothing, and the whole point is that the difference
+   * becomes visible. `[]` is a legitimate answer and `variant.ts` gives it.
+   */
+  readonly capabilities: readonly Capability[]
   readonly effect: (context: PluginContext) => Effect.Effect<void, never, R | Scope.Scope>
 }
 

@@ -246,6 +246,7 @@ export const scratchDirsFor = (agentID: string): readonly string[] => [
 
 export const Plugin = define({
   id: "agent",
+  capabilities: ["location"],
   effect: Effect.fn(function* (ctx) {
     const location = yield* Location.Service
     const worktree = location.directory
@@ -260,9 +261,7 @@ export const Plugin = define({
         item.system ??= BUILD_SYSTEM
         item.mode = "primary"
         item.permissions.push(
-          ...PermissionV2.merge(defaults, [
-            { action: "plan_enter", resource: "*", effect: "allow" },
-          ]),
+          ...PermissionV2.merge(defaults, [{ action: "plan_enter", resource: "*", effect: "allow" }]),
         )
       })
 
@@ -440,9 +439,7 @@ export const Plugin = define({
           item.mode = "primary"
           item.hidden = true
           item.permissions.push(
-            ...PermissionV2.merge(defaults, [
-              { action: "plan_enter", resource: "*", effect: "allow" },
-            ]),
+            ...PermissionV2.merge(defaults, [{ action: "plan_enter", resource: "*", effect: "allow" }]),
           )
         })
       }

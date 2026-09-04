@@ -17,6 +17,7 @@ import { Location } from "../../location"
 // `ReferenceConfigStore` (ordered layers per alias, last wins), not from `config.entries()`.
 export const Plugin = define({
   id: "core/config-reference",
+  capabilities: ["config", "global", "location", "referenceConfigStore"],
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const store = yield* ReferenceConfigStore.Service

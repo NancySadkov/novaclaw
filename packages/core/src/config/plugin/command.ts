@@ -21,6 +21,7 @@ type CommandDraft = Parameters<Parameters<PluginContext["command"]["transform"]>
 // commands stay filesystem-walked (locked decision D2 — user-editable documents, not settings).
 export const Plugin = define({
   id: "config-command",
+  capabilities: ["commandConfigStore", "config", "fsUtil"],
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const store = yield* CommandConfigStore.Service

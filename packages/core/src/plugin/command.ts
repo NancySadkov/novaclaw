@@ -8,6 +8,7 @@ import PROMPT_REVIEW from "./command/review.txt"
 
 export const Plugin = define({
   id: "command",
+  capabilities: ["location"],
   effect: Effect.fn(function* (ctx) {
     const location = yield* Location.Service
     yield* ctx.command.transform((draft) => {

@@ -46,6 +46,7 @@ function variants(model: ModelsDev.Model) {
 
 export const ModelsDevPlugin = define({
   id: "models-dev",
+  capabilities: ["modelsDev"],
   effect: Effect.fn(function* (ctx) {
     const modelsDev = yield* ModelsDev.Service
     yield* ctx.integration.transform(

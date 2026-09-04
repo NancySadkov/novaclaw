@@ -18,6 +18,7 @@ import { Location } from "../../location"
 // user-editable documents, not settings).
 export const Plugin = define({
   id: "config-skill",
+  capabilities: ["config", "global", "location", "skillConfigStore"],
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const store = yield* SkillConfigStore.Service

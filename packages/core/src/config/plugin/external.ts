@@ -82,6 +82,7 @@ export const PLUGIN_GLOB = ConfigPluginGlob.PATTERN
 // has no dependency on the novaclaw package's flag service.
 export const Plugin = define({
   id: "config-plugin",
+  capabilities: ["fsUtil", "global"],
   effect: Effect.fn(function* (ctx) {
     if (Flag.NOVACLAW_PURE) {
       yield* Log.event("plugin.external.skipped", {})

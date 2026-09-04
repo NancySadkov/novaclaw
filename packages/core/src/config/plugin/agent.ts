@@ -22,6 +22,7 @@ type AgentDraft = Parameters<Parameters<PluginContext["agent"]["transform"]>[0]>
 // settings store's synthetic document (the only document post-8c).
 export const Plugin = define({
   id: "config-agent",
+  capabilities: ["agentConfigStore", "config"],
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const store = yield* AgentConfigStore.Service

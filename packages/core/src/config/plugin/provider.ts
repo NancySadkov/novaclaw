@@ -9,6 +9,7 @@ import { ProviderV2 } from "../../provider"
 
 export const Plugin = define({
   id: "config-provider",
+  capabilities: ["catalogStore"],
   effect: Effect.fn(function* (ctx) {
     const store = yield* CatalogStore.Service
     yield* ctx.integration.transform(

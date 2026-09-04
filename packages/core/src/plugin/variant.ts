@@ -6,6 +6,7 @@ import { define } from "./internal"
 
 export const Plugin = define({
   id: "variant",
+  capabilities: [],
   effect: Effect.fn(function* (ctx) {
     yield* ctx.catalog.transform((catalog) => {
       for (const record of catalog.provider.list()) {
