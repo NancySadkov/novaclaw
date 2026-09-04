@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "@novaclaw/core/test/source-scan"
 
 /**
  * **Every suite that composes `httpapi-layer.ts` runs on the SHARED memo map**, and this is the check
@@ -51,8 +52,6 @@ interface Source {
 }
 
 /** The comment stripper the sibling ledgers use — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string): Source[] {
   const out: Source[] = []

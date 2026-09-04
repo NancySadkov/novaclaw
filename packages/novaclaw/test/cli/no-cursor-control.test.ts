@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve, sep } from "node:path"
+import { stripComments } from "@novaclaw/core/test/source-scan"
 
 /**
  * 🔴 **No CLI command may write a CURSOR-MOVEMENT escape to stdout.**
@@ -31,9 +32,6 @@ const CURSOR_CONTROL = /\\x1[Bb]\[[0-9;]*[ABCDHJKfsu]|\\u001[Bb]\[[0-9;]*[ABCDHJ
 
 /** Any escape at all, including colour — used only to prove the scanner can see one. */
 const ANY_ESCAPE = /\\x1[Bb]\[|\\u001[Bb]\[|\x1b\[/g
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/[^\n]*/g, "$1")
 
 const sources = (dir: string, acc: string[] = []): string[] => {
   for (const entry of readdirSync(dir)) {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "@novaclaw/core/test/source-scan"
 
 /**
  * 🔴 `packages/novaclaw/src/permission/` IS NOT THE PERMISSION GATE, and this is what makes that
@@ -22,9 +23,6 @@ import path from "node:path"
  * building the whole instance layer to observe two function calls.
  */
 const ROOT = path.resolve(import.meta.dir, "..")
-
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/[^\n]*/g, "$1")
 
 const read = (file: string) => stripComments(fs.readFileSync(path.join(ROOT, file), "utf8"))
 

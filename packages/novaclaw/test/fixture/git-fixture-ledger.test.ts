@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "@novaclaw/core/test/source-scan"
 
 /**
  * **A fixture git repository is built ONCE per process and copied**, and this is the check that
@@ -62,8 +63,6 @@ interface Source {
 }
 
 /** The comment stripper `core/src/jh/imports.test.ts` uses — `//` must not eat the `//` in a URL. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 function collect(dir: string, out: Source[]): Source[] {
   let entries: fs.Dirent[]

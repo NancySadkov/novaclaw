@@ -15,6 +15,7 @@
     "./effect/app-node": "./src/effect/app-node.ts",
     "./session/runner": "./src/session/runner/index.ts",
     "./system-context": "./src/system-context/index.ts",
+    "./test/source-scan": "./test/lib/source-scan.ts",
     "./*": "./src/*.ts"
   },
   "imports": {

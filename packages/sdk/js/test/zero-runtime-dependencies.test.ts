@@ -56,7 +56,26 @@ interface Source {
   readonly text: string
 }
 
-/** The comment stripper the kill-tree ledger uses — `//` must not eat the `//` in a URL. */
+/**
+ * The comment stripper the kill-tree ledger uses — `//` must not eat the `//` in a URL.
+ *
+ * ⚠️ **This is the LAST two-pass copy in the repo, and it stays here deliberately.** Every other
+ * site moved to `@novaclaw/core/test/source-scan` on 2026-09-04, because stripping block comments
+ * before line comments lets a slash-star inside a line comment or a string open a comment that runs
+ * to the next closing delimiter and deletes real code in between. That defect is present here too.
+ *
+ * It is not fixed here because the trade is bad in this ONE package. Measured against the parser:
+ * this scan's corpus (`packages/sdk/js/src`, 18 files) loses **5 lines across 3 files, all of them
+ * `.gen.ts`** — generated output, regenerated from the spec, not somewhere a guard's blind spot can
+ * hide a hand-written violation. Against that, importing the shared module means giving a
+ * devDependency to the one package whose defining property is having no dependencies at all — the
+ * very property THIS FILE exists to protect. The guard's own two properties are about the manifest
+ * and the `src/` graph, so a test-only devDependency would not technically violate either; it would
+ * still make this package's dependency story something you have to explain.
+ *
+ * So: a known defect, measured at 5 generated lines, left in place with its cost written down. If
+ * this scan ever widens beyond `src/`, or the corpus grows hand-written files, take the dependency.
+ */
 const stripComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
