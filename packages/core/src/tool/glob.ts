@@ -27,13 +27,54 @@ export const Input = Schema.Struct({
   }),
 })
 
-export const Output = Schema.Array(FileSystem.Entry)
+/**
+ * 🔴 A STRUCT, not the bare array it was until 2026-09-04, because **an array of survivors is a
+ * false statement about what this tool did.**
+ *
+ * A project exclusion removes rows from this result. `ProjectExclusion.screenAll` has always
+ * returned the count of what it removed, and both call sites — here and in `grep` — took `.kept` and
+ * threw the number away. So the model asked for every file, got a shorter list, and had no way to
+ * know a list existed. That is the exact shape `project-exclusion.ts`'s own refusal comment warns
+ * about for the single-file path — *"a silent 'no such file' is the shape that makes an agent retry
+ * the same path five different ways and then conclude the repository is broken"* — and the
+ * enumeration seam was doing it silently while the refusal seam explained itself carefully.
+ *
+ * **Why the fix is the SCHEMA and not the formatter**, which is the tie and is answered by the
+ * vision, not by convenience:
+ *
+ * · *A fault is never described falsely* (ruling 2). `Entry[]` can only say "these are the matches",
+ *   and that sentence is untrue once rows were screened out. The untruth is in the DATA, so a
+ *   truthful rendering laid over an untruthful structure fixes exactly one reader — whichever one
+ *   happens to call `toModelOutput` — and leaves every other reader holding the same false claim.
+ * · *Architecture quality outranks legacy compatibility* (principle 1). `Schema.Array(Entry)` is the
+ *   shape from before exclusions existed. Keeping it and carrying the truth beside it in a rendered
+ *   string is precisely "wrapping new logic in an old abstraction"; screening is part of what the
+ *   operation DID, so it belongs in the record of what the operation did.
+ * · **Storage is the direction that decides it.** This output is persisted on the message part and
+ *   read back later — by compaction, by a re-render, by whatever consumer comes next. A count that
+ *   lives only in a formatted string is gone by then, and the stored row goes on asserting a
+ *   complete result forever. A field is lost in three directions, and storage is the one nobody
+ *   notices.
+ *
+ * ⚠️ The mechanical fact — `toModelOutput` receives `{ input, output }` and nothing else, so a
+ * number the tool computes but does not RETURN is unreachable — is how the old shape's inadequacy
+ * was DISCOVERED, not why it was changed. Had the formatter been handed more, the array would still
+ * have been the wrong record.
+ */
+export const Output = Schema.Struct({
+  entries: Schema.Array(FileSystem.Entry),
+  /** How many rows a project exclusion removed. Absent when no exclusion governs the search root. */
+  withheld: Schema.optional(Schema.Number),
+  /** Absolute path of the `novaclaw.json` that declared the list, so the notice can name it. */
+  excludedBy: Schema.optional(Schema.String),
+})
 type ModelOutput = typeof Output.Encoded
 
 /** Format raw search results into the concise line-oriented output models expect. */
 export const toModelOutput = (output: ModelOutput) => {
-  const lines = output.length === 0 ? ["No files found"] : output.map((item) => item.path)
-  return lines.join("\n")
+  const lines = output.entries.length === 0 ? ["No files found"] : output.entries.map((item) => item.path)
+  const notice = ProjectExclusion.withheldNotice(output.withheld ?? 0, output.excludedBy)
+  return (notice ? [...lines, "", notice] : lines).join("\n")
 }
 
 /** Glob leaf that defaults its filesystem root to the active Location. */
@@ -72,9 +113,13 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [
               {
                 type: "text",
-                text: toModelOutput(
-                  output.map((entry) => ({ ...entry, path: path.resolve(location.directory, entry.path) })),
-                ),
+                text: toModelOutput({
+                  ...output,
+                  entries: output.entries.map((entry) => ({
+                    ...entry,
+                    path: path.resolve(location.directory, entry.path),
+                  })),
+                }),
               },
             ],
             execute: (input, context) =>
@@ -127,15 +172,24 @@ export const layer = Layer.effectDiscard(
                     limit: input.limit ?? Number.MAX_SAFE_INTEGER,
                   })
                   .pipe(
-                    Effect.map((result) =>
-                      ProjectExclusion.screenAll(exclusions, result, (entry) => path.resolve(cwd, entry.path)).kept.map(
-                        (entry) =>
+                    Effect.map((result) => {
+                      const screened = ProjectExclusion.screenAll(exclusions, result, (entry) =>
+                        path.resolve(cwd, entry.path),
+                      )
+                      return {
+                        entries: screened.kept.map((entry) =>
                           FileSystem.Entry.make({
                             ...entry,
                             path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
                           }),
-                      ),
-                    ),
+                        ),
+                        // `withheld` is 0 when no exclusion governs the root, and `screenAll` returns
+                        // the rows untouched in that case — so the notice never fires on a project
+                        // that excludes nothing.
+                        withheld: screened.withheld,
+                        excludedBy: exclusions?.file,
+                      }
+                    }),
                   )
               }).pipe(
                 Effect.mapError((error) => {

@@ -770,6 +770,44 @@ describe("project exclusions — glob and grep filter their rows", () => {
     ),
   )
 
+  it.live("🔴 the model is TOLD what was withheld — the count and the declaring file, never the paths", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        yield* project(directory, ["secrets/"])
+        const notice = ProjectExclusion.withheldNotice(2, "C:/p/novaclaw.json")!
+        // The two facts it must carry, so a model can stop rather than retry the same search.
+        expect(notice).toContain("2 matches are")
+        expect(notice).toContain("PARTIAL")
+        expect(notice).toContain("novaclaw.json")
+        // ⚠️ And the one it must NOT. Naming the excluded paths hands back exactly what the list
+        // exists to hide, which is why the exclusion covers enumerations at all — a directory
+        // listing is the cheapest way to learn what somebody was keeping out.
+        expect(notice).not.toContain("key.pem")
+        expect(notice).not.toContain("secrets")
+        // Silence when nothing was removed: a project that excludes nothing must read identically
+        // to one with no `novaclaw.json` at all.
+        expect(ProjectExclusion.withheldNotice(0, "C:/p/novaclaw.json")).toBeUndefined()
+      }),
+    ),
+  )
+
+  it.live("🔴 the NOTICE reaches the model, end to end, and still names no excluded path", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        yield* project(directory, ["secrets/"])
+        // The settled result is what the model is handed, so asserting here proves the whole chain:
+        // `screenAll` counted it, the tool RETURNED it (it did not, before this change), and
+        // `toModelOutput` rendered it. Any link missing and this string is absent.
+        for (const tool of ["glob", "grep"] as const) {
+          const text = JSON.stringify(yield* runTool(directory, tool))
+          expect(text, `${tool} must say the result is partial`).toContain("PARTIAL")
+          expect(text, `${tool} must name the declaring file`).toContain("novaclaw.json")
+          expect(text, `${tool} must not name what the list hides`).not.toContain("key.pem")
+        }
+      }),
+    ),
+  )
+
   it.live("…and both still return everything when the project excludes nothing", () =>
     withTmp((directory) =>
       Effect.gen(function* () {

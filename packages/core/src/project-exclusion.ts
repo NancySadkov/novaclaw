@@ -358,6 +358,27 @@ export class ExcludedError extends Schema.TaggedErrorClass<ExcludedError>()("Pro
  * list to the user — `permission.ts`'s sibling wording for `project-denied` ("it belongs to whoever
  * set the folder up") had this right, and ruling 2 applies in both directions.
  */
+/**
+ * What the model is told when a project exclusion shortened the result.
+ *
+ * ⚠️ **It names the COUNT and the declaring file, never the paths.** Naming them would hand back
+ * exactly what the list exists to hide — and a directory listing is the cheapest way to learn what
+ * someone was trying to keep out, which is why the exclusion covers enumerations at all.
+ *
+ * The wording tracks `ProjectExclusion.refusal`, which the model may also meet: same authority
+ * (the declaring file), same attribution (whoever set the folder up, not necessarily the user), and
+ * the same closing instruction, so the two seams do not read as two different mechanisms.
+ */
+export const withheldNotice = (withheld: number, file: string | undefined): string | undefined => {
+  if (withheld <= 0) return undefined
+  const one = withheld === 1
+  return (
+    `(${withheld} match${one ? " is" : "es are"} on this project's Excluded paths list and ${one ? "is" : "are"} not shown, so this result is PARTIAL. ` +
+    `The rule is the \`exclude\` section of ${file ? `\`${file}\`` : "this project's `novaclaw.json`"} — a deliberate privacy choice declared by whoever set the folder up, ` +
+    `for a cloned repository its author rather than the user. Re-running the search will not return them; if you genuinely need one, say so in your reply.)`
+  )
+}
+
 export function refusal(resource: string, pattern: string, file: string) {
   return (
     `Refused by a project exclusion: \`${resource}\` is on this project's Excluded paths list, so this operation did not read it. ` +

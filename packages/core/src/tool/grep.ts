@@ -33,14 +33,30 @@ export const Input = Schema.Struct({
   }),
 })
 
-export const Output = Schema.Array(FileSystem.Match)
+/**
+ * 🔴 A STRUCT, for the reason spelled out on `glob`'s `Output`: an array of survivors is a false
+ * statement about what the tool did, and ruling 2 puts that fault in the DATA rather than in how the
+ * data happens to be rendered.
+ *
+ * ⚠️ The falsehood is louder here than in `glob`, because this output leads with `Found N matches`.
+ * A count derived from a screened list reads as the total, so the model was handed a confident
+ * number that was not the answer to the question it asked — the shape of a fault described falsely,
+ * not merely a fact omitted.
+ */
+export const Output = Schema.Struct({
+  matches: Schema.Array(FileSystem.Match),
+  /** How many matches a project exclusion removed. Absent when no exclusion governs the search root. */
+  withheld: Schema.optional(Schema.Number),
+  /** Absolute path of the `novaclaw.json` that declared the list, so the notice can name it. */
+  excludedBy: Schema.optional(Schema.String),
+})
 type ModelOutput = typeof Output.Encoded
 
 /** Format raw search matches into the familiar concise model output. */
 export const toModelOutput = (output: ModelOutput) => {
-  const lines = output.length === 0 ? ["No files found"] : [`Found ${output.length} matches`]
+  const lines = output.matches.length === 0 ? ["No files found"] : [`Found ${output.matches.length} matches`]
   let current = ""
-  for (const match of output) {
+  for (const match of output.matches) {
     if (current !== match.entry.path) {
       if (current) lines.push("")
       current = match.entry.path
@@ -48,6 +64,8 @@ export const toModelOutput = (output: ModelOutput) => {
     }
     lines.push(`  Line ${match.line}: ${match.text}`)
   }
+  const notice = ProjectExclusion.withheldNotice(output.withheld ?? 0, output.excludedBy)
+  if (notice) lines.push("", notice)
   return lines.join("\n")
 }
 
@@ -80,12 +98,13 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [
               {
                 type: "text",
-                text: toModelOutput(
-                  output.map((match) => ({
+                text: toModelOutput({
+                  ...output,
+                  matches: output.matches.map((match) => ({
                     ...match,
                     entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
                   })),
-                ),
+                }),
               },
             ],
             execute: (input, context) =>
@@ -140,21 +159,26 @@ export const layer = Layer.effectDiscard(
                     limit: input.limit ?? Number.MAX_SAFE_INTEGER,
                   })
                   .pipe(
-                    Effect.map((result) =>
-                      ProjectExclusion.screenAll(exclusions, result, (match) =>
+                    Effect.map((result) => {
+                      const screened = ProjectExclusion.screenAll(exclusions, result, (match) =>
                         path.resolve(searchRoot, match.entry.path),
-                      ).kept.map((match) =>
-                        FileSystem.Match.make({
-                          ...match,
-                          entry: FileSystem.Entry.make({
-                            ...match.entry,
-                            path: RelativePath.make(
-                              path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
-                            ),
+                      )
+                      return {
+                        matches: screened.kept.map((match) =>
+                          FileSystem.Match.make({
+                            ...match,
+                            entry: FileSystem.Entry.make({
+                              ...match.entry,
+                              path: RelativePath.make(
+                                path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
+                              ),
+                            }),
                           }),
-                        }),
-                      ),
-                    ),
+                        ),
+                        withheld: screened.withheld,
+                        excludedBy: exclusions?.file,
+                      }
+                    }),
                   )
               }).pipe(
                 Effect.mapError((error) => {
