@@ -21,6 +21,7 @@ import { ProviderApi } from "./groups/provider"
 import { RegistryApi } from "./groups/registry"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
+import { UsageApi } from "./groups/usage"
 import { runtimeApi } from "@novaclaw/server/api"
 import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
@@ -68,6 +69,7 @@ export const RootHttpApi = HttpApi.make("novaclaw-root")
 export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(AdhocApi)
   .addHttpApi(CapabilityApi)
+  .addHttpApi(UsageApi)
   .addHttpApi(CommunityApi)
   .addHttpApi(CommunityPeerApi)
   .addHttpApi(ConfigApi)

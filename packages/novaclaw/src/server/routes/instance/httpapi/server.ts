@@ -112,6 +112,7 @@ import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { adhocHandlers } from "./handlers/adhoc"
 import { capabilityHandlers } from "./handlers/capability"
+import { usageHandlers } from "./handlers/usage"
 import { communityHandlers, communityPeerHandlers } from "./handlers/community"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
@@ -181,6 +182,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     adhocHandlers,
     capabilityHandlers,
+    usageHandlers,
     communityHandlers,
     communityPeerHandlers,
     configHandlers,
