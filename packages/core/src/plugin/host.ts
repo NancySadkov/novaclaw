@@ -1,6 +1,6 @@
 export * as PluginHost from "./host"
 
-import type { EventMap, EventType, PluginContext as Interface } from "@novaclaw/plugin/v2/effect"
+import type { EventMap, EventType, HostPluginContext as Interface } from "@novaclaw/plugin/v2/effect"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { Log } from "@novaclaw/schema/log"
 import { Cause, Effect, Queue, Schema, Scope, Stream } from "effect"

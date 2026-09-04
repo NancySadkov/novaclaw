@@ -1,7 +1,7 @@
 export * as ConfigCommandPlugin from "./command"
 
 import { define } from "../../plugin/internal"
-import type { PluginContext } from "@novaclaw/plugin/v2/effect"
+import type { HostPluginContext as PluginContext } from "@novaclaw/plugin/v2/effect"
 import path from "path"
 import { Effect, Option, Schema } from "effect"
 import { CommandConfigStore } from "../../command-config-store"

@@ -9,12 +9,12 @@ import { define, type Plugin } from "@novaclaw/plugin/v2/promise"
 const plugin: Plugin = define({
   id: "project-plugin",
   setup: async (ctx) => {
-    await ctx.agent.transform((agents) => {
-      agents.update("project-directory", (agent) => {
-        agent.description = "Loaded from a PROJECT directory — this must never happen"
-        agent.mode = "subagent"
-      })
-    })
+    await ctx.agent.declare([
+      {
+        id: "project-directory",
+        set: { description: "Loaded from a PROJECT directory — this must never happen", mode: "subagent" },
+      },
+    ])
   },
 })
 

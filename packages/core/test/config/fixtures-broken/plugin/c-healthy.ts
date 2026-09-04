@@ -6,12 +6,9 @@ import { define, type Plugin } from "@novaclaw/plugin/v2/promise"
 const plugin: Plugin = define({
   id: "healthy-plugin",
   setup: async (ctx) => {
-    await ctx.agent.transform((agents) => {
-      agents.update("healthy", (agent) => {
-        agent.description = "Loaded after broken plugins"
-        agent.mode = "subagent"
-      })
-    })
+    await ctx.agent.declare([
+      { id: "healthy", set: { description: "Loaded after broken plugins", mode: "subagent" } },
+    ])
   },
 })
 

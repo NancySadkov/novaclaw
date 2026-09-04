@@ -42,18 +42,30 @@ export function fromPromise(plugin: Plugin): EffectPlugin {
           (callback: (draft: Draft) => Promise<void> | void) =>
             register(domain.transform((draft) => Effect.promise(() => Promise.resolve(callback(draft)))))
 
+        /**
+         * The declarative bridge. It is deliberately the SHORTER of the two wrappers: a declaration
+         * is data, so there is nothing to adapt between the promise and effect worlds except the
+         * return. That asymmetry is the whole argument for `declare` in one line of code.
+         */
+        const declare =
+          <Item>(domain: {
+            declare: (items: readonly Item[]) => Effect.Effect<HostRegistration, never, Scope.Scope>
+          }) =>
+          (items: readonly Item[]) =>
+            register(domain.declare(items))
+
         const context2: PluginContext = {
           options: host.options,
           agent: {
-            transform: transform(host.agent),
+            declare: declare(host.agent),
             reload: () => run(host.agent.reload()),
           },
           catalog: {
-            transform: transform(host.catalog),
+            declare: declare(host.catalog),
             reload: () => run(host.catalog.reload()),
           },
           command: {
-            transform: transform(host.command),
+            declare: declare(host.command),
             reload: () => run(host.command.reload()),
           },
           // The one CALLBACK bridge in this adapter — every other member is request/response.
@@ -80,11 +92,11 @@ export function fromPromise(plugin: Plugin): EffectPlugin {
             remove: (id) => run(host.plugin.remove(id)),
           },
           reference: {
-            transform: transform(host.reference),
+            declare: declare(host.reference),
             reload: () => run(host.reference.reload()),
           },
           skill: {
-            transform: transform(host.skill),
+            declare: declare(host.skill),
             reload: () => run(host.skill.reload()),
           },
           tool: {

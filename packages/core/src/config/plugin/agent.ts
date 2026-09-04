@@ -1,7 +1,7 @@
 export * as ConfigAgentPlugin from "./agent"
 
 import { define } from "../../plugin/internal"
-import type { PluginContext } from "@novaclaw/plugin/v2/effect"
+import type { HostPluginContext as PluginContext } from "@novaclaw/plugin/v2/effect"
 import { Effect } from "effect"
 import { AgentV2 } from "../../agent"
 import { AgentPlugin } from "../../plugin/agent"

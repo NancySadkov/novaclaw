@@ -1,4 +1,4 @@
-import type { PluginContext } from "@novaclaw/plugin/v2/effect"
+import type { HostPluginContext as PluginContext } from "@novaclaw/plugin/v2/effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Catalog } from "@novaclaw/core/catalog"
 import { Credential } from "@novaclaw/core/credential"

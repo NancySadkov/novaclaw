@@ -2,7 +2,7 @@ export * as PluginInternal from "./internal"
 
 import { makeLocationNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
-import type { PluginContext } from "@novaclaw/plugin/v2/effect"
+import type { HostPluginContext as PluginContext } from "@novaclaw/plugin/v2/effect"
 import { Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"

@@ -21,12 +21,9 @@ describe("fromPromise", () => {
         id: "promise-example",
         setup: async (ctx) => {
           expect(ctx.options.mode).toBe("strict")
-          await ctx.agent.transform((draft) => {
-            draft.update("reviewer", (item) => {
-              item.description = "Reviews code"
-              item.mode = "subagent"
-            })
-          })
+          await ctx.agent.declare([
+            { id: "reviewer", set: { description: "Reviews code", mode: "subagent" } },
+          ])
         },
       })
 
@@ -49,11 +46,7 @@ describe("fromPromise", () => {
       const promisePlugin = define({
         id: "promise-dispose",
         setup: async (ctx) => {
-          const registration = await ctx.agent.transform((draft) => {
-            draft.update("temp", (item) => {
-              item.description = "temporary"
-            })
-          })
+          const registration = await ctx.agent.declare([{ id: "temp", set: { description: "temporary" } }])
           await registration.dispose()
         },
       })

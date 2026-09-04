@@ -3,12 +3,10 @@ import { define, type Plugin } from "@novaclaw/plugin/v2/promise"
 const plugin: Plugin = define({
   id: "config-promise-plugin",
   setup: async (ctx) => {
-    await ctx.agent.transform((agents) => {
-      agents.update("configured", (agent) => {
-        agent.description = ctx.options.description
-        agent.mode = "subagent"
-      })
-    })
+    // Declarative, like its effect-shaped sibling: an external plugin's contribution is DATA.
+    await ctx.agent.declare([
+      { id: "configured", set: { description: ctx.options.description, mode: "subagent" } },
+    ])
   },
 })
 

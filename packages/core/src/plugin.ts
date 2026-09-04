@@ -2,7 +2,18 @@ export * as PluginV2 from "./plugin"
 
 import { makeLocationNode } from "./effect/app-node"
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
-import type { Plugin as PluginRuntime } from "@novaclaw/plugin/v2/effect"
+import type { HostPluginContext, Plugin as PluginRuntime } from "@novaclaw/plugin/v2/effect"
+
+/**
+ * The host runs every plugin against the FULL in-process context, first-party and external alike.
+ *
+ * ⚠️ The SDK's `Plugin["effect"]` is typed against the narrow external `PluginContext`, because that
+ * is the contract a third party writes against. Here the parameter is the HOST view: an internal
+ * plugin's effect legitimately asks for `transform`, and a function that demands more of its
+ * argument cannot stand in for one that demands less. Narrowing this instead would have forced
+ * first-party plugins to pretend they only ever declare.
+ */
+type HostEffect = (context: HostPluginContext) => ReturnType<PluginRuntime["effect"]>
 import { Plugin } from "@novaclaw/schema/plugin"
 import { AgentV2 } from "./agent"
 import { Catalog } from "./catalog"
@@ -40,7 +51,7 @@ export interface Loaded {
 export interface Interface {
   readonly add: (
     id: ID,
-    effect: PluginRuntime["effect"],
+    effect: HostEffect,
     declaration?: { readonly capabilities?: readonly string[]; readonly source?: "internal" | "external" },
   ) => Effect.Effect<void>
   readonly remove: (id: ID) => Effect.Effect<void>
@@ -73,11 +84,11 @@ export const layer = Layer.effect(
     const waiters = new Map<ID, Set<Deferred.Deferred<void>>>()
     const failures = new Map<ID, Exit.Exit<void, never>>()
     const booted = yield* Deferred.make<void>()
-    let host: Parameters<PluginRuntime["effect"]>[0]
+    let host: HostPluginContext
 
     const add = Effect.fn("Plugin.add")(function* (
       id: ID,
-      effect: PluginRuntime["effect"],
+      effect: HostEffect,
       declaration?: { readonly capabilities?: readonly string[]; readonly source?: "internal" | "external" },
     ) {
       if (loading.has(id)) return yield* Effect.die(`Plugin load cycle detected for ${id}`)
