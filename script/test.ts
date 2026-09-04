@@ -290,10 +290,23 @@ function failureExcerpt(output: string): string {
  * Matching is by PARENT PID, not by command line: the survivor keeps `proc.pid` as its recorded parent
  * even after that parent dies, which identifies it exactly. A command-line match would risk killing an
  * intentional long-lived `bun` (a dev server, a `novaclaw serve`) that merely looked similar.
+ *
+ * 🔴 **It also RECORDS what it reaped, and that is a diagnostic rather than decoration.** A unit
+ * killed on the wall clock reports which pids survived and nothing about what they were, so a hang
+ * whose cause is a leaked child names no subsystem at all. `bun` cannot supply the missing half: it
+ * prints a test file's output only when that file FINISHES, so the file that never finishes is the
+ * one that never prints, and three ways of asking it for the executing file were tried on 2026-09-04
+ * and none exists (`expect.getState`, a preload `beforeAll` plus stack, a `Bun.plugin` onLoad).
+ *
+ * The command line is the one identifying detail the harness can get WITHOUT bun's cooperation. The
+ * CIM query already runs; asking it for a second column costs nothing, and the next wall-clock kill
+ * says `git.exe clone …` or `bun … some.test.ts` instead of a bare number.
  */
 function reapOrphans(pid: number | undefined, label: string) {
   if (pid === undefined) return
   const survivors: number[] = []
+  /** pid -> what it was running, so the report names a subsystem and not just a number. */
+  const command = new Map<number, string>()
   if (process.platform === "win32") {
     const probe = spawnSync(
       "powershell",
@@ -301,19 +314,26 @@ function reapOrphans(pid: number | undefined, label: string) {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { $_.ProcessId }`,
+        `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { ` +
+          `$_.ProcessId.ToString() + '|' + $_.CommandLine }`,
       ],
       { encoding: "utf8", timeout: 20_000 },
     )
     for (const line of (probe.stdout ?? "").split(/\r?\n/)) {
-      const child = Number(line.trim())
-      if (Number.isFinite(child) && child > 0) survivors.push(child)
+      const [head, ...rest] = line.trim().split("|")
+      const child = Number(head)
+      if (!Number.isFinite(child) || child <= 0) continue
+      survivors.push(child)
+      if (rest.length) command.set(child, rest.join("|"))
     }
   } else {
-    const probe = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8", timeout: 20_000 })
+    const probe = spawnSync("pgrep", ["-P", String(pid), "-a"], { encoding: "utf8", timeout: 20_000 })
     for (const line of (probe.stdout ?? "").split("\n")) {
-      const child = Number(line.trim())
-      if (Number.isFinite(child) && child > 0) survivors.push(child)
+      const [head, ...rest] = line.trim().split(" ")
+      const child = Number(head)
+      if (!Number.isFinite(child) || child <= 0) continue
+      survivors.push(child)
+      if (rest.length) command.set(child, rest.join(" "))
     }
   }
   if (!survivors.length) return
@@ -333,9 +353,17 @@ function reapOrphans(pid: number | undefined, label: string) {
       }
     }
   }
+  // The command line is TRUNCATED, not dropped: a bun test child's argv carries the whole shard's
+  // file list, which would bury the one line that matters. The head names the binary and its first
+  // arguments, which is what identifies the subsystem.
+  const describe = (child: number) => {
+    const line = command.get(child)
+    if (!line) return String(child)
+    return `${child} (${line.length > 160 ? `${line.slice(0, 160)}…` : line})`
+  }
   process.stderr.write(
-    `  \x1b[33mreaped ${survivors.length} orphaned child process(es) left by the ${label} kill: ` +
-      `${survivors.join(", ")}\x1b[0m\n`,
+    `  \x1b[33mreaped ${survivors.length} orphaned child process(es) left by the ${label} kill:\x1b[0m\n` +
+      survivors.map((child) => `    \x1b[33m${describe(child)}\x1b[0m\n`).join(""),
   )
 }
 
