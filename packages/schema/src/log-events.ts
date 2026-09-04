@@ -631,6 +631,24 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/catalog-seed.ts",
   },
+  /**
+   * An authored config file is present and did NOT apply, because the stores it would seed already
+   * have rows.
+   *
+   * ⚠️ This is not a fault and its level says so — `info`, not `warn`. The gate is correct: a jsonc
+   * file is an import wire and never a runtime source, so re-applying it every boot would overwrite
+   * whatever the user changed in the UI since. What was wrong was that a file could be edited on a
+   * live instance and be ignored in COMPLETE silence, which is a rule deciding the outcome with
+   * nothing on screen. It fires only when a source actually exists AND a store actually refused it,
+   * so an ordinary boot with no config file emits nothing.
+   */
+  "config.seed.ignored": {
+    level: "info",
+    message: "a config file is present but did not apply — these stores already have rows",
+    attributes: { "config.path": "text", "config.stores": "list" },
+    content: "user",
+    file: "packages/core/src/config-seed-startup.ts",
+  },
   /** Some settings keys were dropped as invalid; the rest applied. The notice names them. */
   "config.settings.skipped": {
     level: "warn",
