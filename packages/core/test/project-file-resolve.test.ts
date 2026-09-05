@@ -185,6 +185,24 @@ describe("resolving against the filesystem", () => {
   // was actually found in, and the test would fail for a reason that has nothing to do with the code.
   const tmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-project-")))
 
+  it.effect("stops the real resolver at the nearest declaration", () =>
+    Effect.gen(function* () {
+      const base = at("work")
+      const nested = path.join(base, "repo", "src")
+      const reads: string[] = []
+      const result = yield* ProjectFileResolve.resolveWith(
+        { from: nested, boundary: base },
+        (candidate) =>
+          Effect.sync(() => {
+            reads.push(candidate)
+            return candidate === path.join(nested, "novaclaw.json") ? project({ name: "nearest" }) : undefined
+          }),
+      )
+      expect(result.kind).toBe("project")
+      expect(reads).toEqual([path.join(nested, "novaclaw.json")])
+    }),
+  )
+
   it.effect("finds a real file from a nested folder", () =>
     Effect.gen(function* () {
       const base = tmp()

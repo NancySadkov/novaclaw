@@ -118,6 +118,27 @@ function bounded(options: WalkOptions): { readonly from: string; readonly bounda
 
 const samePath = (left: string, right: string) => path.relative(left, right) === ""
 
+const resolutionFromText = (file: string, text: ReadResult): Resolution | undefined => {
+  if (text === undefined) return undefined
+  if (typeof text === "object")
+    return {
+      kind: "invalid",
+      file,
+      failure: "unreadable",
+      reason: "unreadable",
+      detail: text.detail,
+    }
+  const parsed = ProjectFile.parse(text)
+  if (parsed.ok) return { kind: "project", root: path.dirname(file), file, info: parsed.info }
+  return {
+    kind: "invalid",
+    file,
+    failure: parsed.reason === "future-version" ? "future-version" : "invalid",
+    reason: parsed.reason,
+    detail: parsed.detail,
+  }
+}
+
 /**
  * The walk, with reading injected so it can be tested without a filesystem.
  *
@@ -132,26 +153,9 @@ export function walk(options: WalkOptions, read: (file: string) => ReadResult): 
   let dir = plan.from
   for (;;) {
     const file = path.join(dir, FILENAME)
-    const text = read(file)
-    if (typeof text === "object")
-      return {
-        kind: "invalid",
-        file,
-        failure: "unreadable",
-        reason: "unreadable",
-        detail: text.detail,
-      }
-    if (text !== undefined) {
-      const parsed = ProjectFile.parse(text)
-      if (parsed.ok) return { kind: "project", root: dir, file, info: parsed.info }
-      return {
-        kind: "invalid",
-        file,
-        failure: parsed.reason === "future-version" ? "future-version" : "invalid",
-        reason: parsed.reason,
-        detail: parsed.detail,
-      }
-    }
+    const result = resolutionFromText(file, read(file))
+    if (result !== undefined)
+      return result.kind === "project" ? { ...result, root: dir } : result
     // The boundary is checked AFTER reading, so a `novaclaw.json` in the trusted root itself counts;
     // one in its parent never does.
     if (samePath(dir, boundary)) return { kind: "none" }
@@ -189,26 +193,32 @@ export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string,
     from: start.path,
     boundary: start.trusted && requested.trusted ? requested.path : start.path,
   })
-  // Two passes: collect the candidate paths, read them, then run the pure walk over what was read.
-  // The alternative — an Effect-shaped loop — would put the interesting logic somewhere it cannot be
-  // tested without a filesystem, which is where it was easiest to get wrong.
+  return yield* resolveWith(plan, (file) =>
+    fs.readFileStringSafe(file).pipe(
+      Effect.match({
+        onFailure: (error) => ({ kind: "unreadable" as const, detail: error.message }),
+        onSuccess: (text) => text,
+      }),
+    ),
+  )
+})
+
+/** The real-filesystem loop with its reader injected, so nearest-stop I/O is testable. */
+export const resolveWith = Effect.fn("ProjectFile.resolveWith")(function* (
+  options: WalkOptions,
+  read: (file: string) => Effect.Effect<ReadResult>,
+) {
+  const plan = bounded(options)
   let dir = plan.from
   const limit = plan.boundary
   for (;;) {
     const file = path.join(dir, FILENAME)
-    texts.set(
-      file,
-      yield* fs.readFileStringSafe(file).pipe(
-        Effect.match({
-          onFailure: (error) => ({ kind: "unreadable" as const, detail: error.message }),
-          onSuccess: (text) => text,
-        }),
-      ),
-    )
+    const result = resolutionFromText(file, yield* read(file))
+    if (result !== undefined) return result
     if (samePath(dir, limit)) break
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
   }
-  return walk(plan, (file) => texts.get(file))
+  return { kind: "none" as const }
 })
