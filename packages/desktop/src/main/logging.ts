@@ -90,7 +90,10 @@ export async function exportDebugLogs(serverDiagnostics?: string) {
     await netLog.stopLogging().catch((error) => write("network", "failed to stop net log", { error }))
   }
 
-  const output = join(app.getPath("downloads"), `novaclaw-debug-${stamp()}.zip`)
+  // Keep the archive inside NovaClaw's own log directory; when that directory is unavailable, the
+  // OS temp directory is the allowed fallback. The recovery action opens the resulting file's
+  // folder, so there is no need to scatter an unsolicited archive into the user's Downloads.
+  const output = join(root || tmpdir(), `novaclaw-debug-${stamp()}.zip`)
   const controller = new AbortController()
   const deadlineAt = Date.now() + DEFAULT_DEBUG_EXPORT_LIMITS.timeoutMs
   const timer = setTimeout(
