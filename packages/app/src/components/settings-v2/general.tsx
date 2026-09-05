@@ -399,7 +399,14 @@ export const SettingsGeneralV2: Component<{
         <SettingsRowV2
           minLevel="advanced"
           title={language.t("settings.general.row.offline.title")}
-          description={`${language.t("settings.general.row.offline.description")}${offlineLabel() ? ` — ${offlineLabel()}` : ""}`}
+          description={
+            <details>
+              <summary class="cursor-pointer">
+                {offlineLabel() || language.t("settings.general.row.offline.title")}
+              </summary>
+              <p>{language.t("settings.general.row.offline.description")}</p>
+            </details>
+          }
         >
           <div data-action="settings-offline-mode">
             <Switch checked={offlineEnabled()} onChange={(checked) => void writeConfig({ offline: checked })} />

@@ -106,8 +106,9 @@ describe("shell/offline HttpApi", () => {
       expect(hot.status).toBe(200)
       const hotBody = yield* json(hot)
       expect(hotBody.enabled).toBe(true)
-      expect(hotBody.active).toBe(8)
-      expect(hotBody.layers.every((layer) => layer.active)).toBe(true)
+      expect(hotBody.active).toBe(7)
+      expect(hotBody.layers.slice(0, 7).every((layer) => layer.active)).toBe(true)
+      expect(hotBody.layers[7]!.active).toBe(false)
     }).pipe(Effect.ensuring(Effect.sync(() => Offline.resetPolicy()))),
   )
 })

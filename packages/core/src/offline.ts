@@ -17,8 +17,8 @@
 //     (The old "project-scoped providers are invisible here" caveat predated config-sqlite.) Plus
 //   - `NOVACLAW_OFFLINE_ALLOW` env: comma-separated extra hosts (e.g. a LAN SearXNG).
 //   - Loopback (localhost / 127.0.0.0/8 / ::1) is ALWAYS allowed: the app talking to
-//     itself is not egress; the airgap threat model is the WAN. Layer 9 (OFF-C)
-//     handles the model's own shell processes.
+//     itself is not egress. OFF-C supplies proxy hints to shell processes; it cannot
+//     enforce a network boundary on programs that ignore them.
 //
 // The block error is an HttpClientError with an InvalidUrlError reason — the platform's reason
 // union is closed, so a policy verdict has to borrow one of its arms. ⚠️ The tag alone is
@@ -266,7 +266,7 @@ export function serviceBuilds(): number {
   return builds
 }
 
-// ── OFF-C (layer 9): process-level egress guard ─────────────────────────────────────────
+// ── OFF-C: child-process proxy hints ────────────────────────────────────────────────────
 //
 // The model's own bash/curl/python can reach the WAN directly — layers 1-8 only bind OUR
 // HttpClient. OFF-C wraps the child process environment so the shell's HTTP clients
@@ -277,11 +277,9 @@ export function serviceBuilds(): number {
 //     SearXNG/KB) bypass the sink and still work;
 //   - a lowercase alias set (curl uses lowercase) mirrors each var.
 // This is best-effort for the RAW/attended path: a determined static binary that ignores
-// *_PROXY and opens raw sockets escapes it. That escape is CLOSED for confined (unattended)
-// commands — Agent Jail P2 (agent-jail.ts) runs them in an empty network namespace where a raw
-// socket also fails ("Network is unreachable"), the airgap-complete backstop this comment used
-// to call "out of scope" (proof: tests/agent-jail-netns-smoke.sh). The env overlay stays as the
-// portable common-case guard (curl/pip/npm/git) and the only guard where no netns applies.
+// *_PROXY and opens raw sockets escapes it. An independently probed Agent Jail backend may
+// confine individual commands, but enabling Offline does not establish that boundary for every
+// subprocess. Never count this overlay as OS-enforced process confinement in the manifest.
 // Loopback stays reachable through the overlay (the app talking to itself is not egress).
 
 /** The unreachable sink every non-allowlisted request is pointed at. */
@@ -293,7 +291,7 @@ export function noProxyList(policy: Policy): string {
 }
 
 /**
- * Child-process env overlay enforcing OFF-C. Returns `undefined` when offline mode is off
+ * Child-process proxy hints for OFF-C. Returns `undefined` when offline mode is off
  * (no-op — never touch the child env otherwise). Keys are set in BOTH cases (curl reads
  * lowercase; most others uppercase).
  */
@@ -322,7 +320,7 @@ export interface LayerStatus {
   readonly detail?: string
 }
 
-/** Snapshot the 9-layer offline posture for the UI/status endpoint. */
+/** Snapshot the eight offline layers. A policy request cannot attest OS process confinement. */
 export function layerManifest(policy: Policy): {
   readonly enabled: boolean
   readonly active: number
@@ -356,15 +354,15 @@ export function layerManifest(policy: Policy): {
       detail: "the closed crash sender applies the live airgap gate before every report",
     },
     { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
-    { layer: 6, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
+    { layer: 6, name: "LAN services", active: on, detail: "loopback and explicitly allowed service hosts only" },
     { layer: 7, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
     {
       layer: 8,
       name: "process egress guard",
-      active: on,
+      active: false,
       detail: on
-        ? "child *_PROXY → dead sink; allowlist in NO_PROXY (confined commands: real deny-all netns, Agent Jail P2)"
-        : "OFF-C",
+        ? "Proxy hints are on. Programs can ignore them; OS-enforced confinement is not established by Offline mode."
+        : "OS-enforced process confinement is not established by Offline mode.",
     },
   ]
   return { enabled: on, active: layers.filter((layer) => layer.active).length, total: layers.length, layers }

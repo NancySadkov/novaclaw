@@ -104,12 +104,13 @@ describe("offline layer manifest (N/8 indicator)", () => {
     expect(manifest.layers.every((l) => !l.active)).toBe(true)
   })
 
-  test("enabled → 8/8 active, layer 8 is the process guard", () => {
+  test("enabling a policy cannot attest OS process confinement", () => {
     const manifest = layerManifest({ enabled: true, allowedHosts: new Set(["x.lan"]) })
-    expect(manifest.active).toBe(8)
+    expect(manifest.active).toBe(7)
     expect(manifest.layers[7]!.layer).toBe(8)
     expect(manifest.layers[7]!.name).toMatch(/process egress/i)
-    expect(manifest.layers[7]!.active).toBe(true)
+    expect(manifest.layers[7]!.active).toBe(false)
+    expect(manifest.layers[7]!.detail).toContain("Programs can ignore them")
   })
 })
 
@@ -373,7 +374,8 @@ describe("A3: a config write engages the airgap without a restart", () => {
         expect(offline.egressEnv()?.HTTP_PROXY).toBe(PROXY_SINK)
         expect(offline.egressEnv()?.NO_PROXY).toContain("192.168.178.40")
         expect(offline.manifest().enabled).toBe(true)
-        expect(offline.manifest().active).toBe(8)
+        expect(offline.manifest().active).toBe(7)
+        expect(offline.manifest().layers[7]!.active).toBe(false)
 
         expect(frozen.enabled).toBe(false)
         expect(checkUrl("https://api.openai.com/v1/chat", frozen).allowed).toBe(true)

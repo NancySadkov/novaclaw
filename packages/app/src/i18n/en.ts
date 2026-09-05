@@ -1539,10 +1539,10 @@ export const dict = {
   // does not withdraw consent, it overrides it — so the copy states the override rather than
   // silently flipping the toggle the user set.
   "settings.general.row.telemetry.forcedOff": "forced off — offline/airgap mode is on",
-  "settings.general.row.offline.title": "Offline / airgap mode",
+  "settings.general.row.offline.title": "Offline mode",
   "settings.general.row.offline.description":
-    "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
-  "settings.general.row.offline.active": "airgapped",
+    "Restrict NovaClaw's network requests to local connections, configured model providers and explicitly allowed hosts. Maintenance uploads and package downloads stop. Changes apply to new requests immediately. Shell programs can ignore proxy settings; a complete airgap needs operating-system or network isolation.",
+  "settings.general.row.offline.active": "on — process isolation not guaranteed",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
 
   // Settings → General → Confinement — the honest posture surface. ⚠️ ENGLISH-ONLY on
@@ -2554,7 +2554,7 @@ export const dict = {
   "settings.webSearch.status": "Right now",
   "settings.webSearch.status.builtin": "Using NovaClaw's built-in search (DuckDuckGo + Wikipedia).",
   "settings.webSearch.status.searxng": "Using your SearXNG instance.",
-  "settings.webSearch.status.airgapped": "Off — NovaClaw is in offline / airgap mode, so nothing leaves this machine.",
+  "settings.webSearch.status.airgapped": "Web search is off while Offline mode is on.",
   "settings.webSearch.row.searxng.title": "Your SearXNG instance",
   "settings.webSearch.row.searxng.description":
     "A SearXNG URL to use instead of the built-in engines. Leave empty to use the built-in search.",
