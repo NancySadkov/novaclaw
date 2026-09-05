@@ -623,6 +623,36 @@ describe("JhEngine.runTask", () => {
     expect(resumed.state.log.map((e) => e.type)).toEqual(fullTypes)
   })
 
+  test("resume counts previously spent wall time before any new model or tool call", async () => {
+    const first = scriptedDeps({ replies: [] })
+    const stopped = await Effect.runPromise(
+      JhEngine.runTask(
+        {
+          ...first.deps,
+          aborted: () => true,
+          budget: { startedAt: 0, now: () => 600, wallMs: 1000 },
+        },
+        { goal: "task" },
+      ),
+    )
+    expect(stopped.state.controller.elapsedMs).toBe(600)
+    const next = scriptedDeps({ replies: [] })
+    const resumed = await Effect.runPromise(
+      JhEngine.runTask(
+        {
+          ...next.deps,
+          budget: { startedAt: 10, now: () => 510, wallMs: 1000 },
+        },
+        { goal: "task" },
+        stopped.state,
+      ),
+    )
+    expect(resumed.reason).toBe("wall_exhausted")
+    expect(resumed.state.controller.elapsedMs).toBe(1100)
+    expect(next.modelCalls()).toBe(0)
+    expect(next.runnerCalls()).toBe(0)
+  })
+
   test("16. adversarial replies never throw — always a Report", async () => {
     const hostiles = [
       "",

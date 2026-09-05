@@ -1,3 +1,4 @@
+import { JhController } from "@novaclaw/core/jh/controller"
 import { describe, expect } from "bun:test"
 import { asc, eq } from "drizzle-orm"
 import { Effect } from "effect"
@@ -122,6 +123,7 @@ describe("SessionTodo", () => {
           { seq: 0, type: "verification", step: "root", ok: true, detail: "bun test exited 0" },
           { seq: 1, type: "committed", step: "root" },
         ],
+        controller: JhController.create(),
         telemetry: new Map(),
       }
       yield* SessionPlan.projectJh(components, { sessionID, goal: "Ship C8", state, now: 456 })

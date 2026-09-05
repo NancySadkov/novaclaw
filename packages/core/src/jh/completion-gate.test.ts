@@ -197,6 +197,18 @@ describe("completion gate — the MECHANICAL hard stop", () => {
     assertNoUnverifiedDone(r, true)
   })
 
+  test("resume cannot replenish a spent completion-verifier budget", async () => {
+    const first = harness({ gate: [true], checks: 1 })
+    const done = await run(first)
+    expect(done.status).toBe("done")
+    expect(done.state.controller.gateChecks).toBe(1)
+    const next = harness({ gate: [true], checks: 1 })
+    const resumed = await run(next, done.state)
+    expect(next.gateCalls()).toBe(0)
+    expect(resumed.status).toBe("blocked")
+    expect(resumed.reason).toBe("completion_unverified")
+  })
+
   test("a repeatedly-re-asked spent gate logs its refusal ONCE (the log is not unbounded)", async () => {
     // A graded oracle re-arms the done short-circuit on every sample, so the spent gate is re-asked
     // every loop iteration. Each refusal still holds; only the entry is deduplicated — an entry per
@@ -229,7 +241,7 @@ describe("completion gate — every done path asks", () => {
   })
 
   test("a RESUMED tree whose root is already committed is re-verified, not trusted", async () => {
-    // The gate is per-PROCESS state; a checkpoint carries a tree, not a verification. A resume that
+    // The successful verification latch is per-process; spent checks survive. A resume that
     // walked straight to `done` would let a crash launder an unverified completion.
     const seed = await run(harness({ gate: [true] }))
     expect(seed.status).toBe("done")

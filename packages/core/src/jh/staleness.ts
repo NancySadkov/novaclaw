@@ -5,9 +5,10 @@ export * as JhStaleness from "./staleness"
 // + the source fingerprint it consumed), so a check that would execute a STALE binary after source edits
 // can auto-rebuild it (the make discipline) instead of re-running the stale product and reading every
 // edit as "the same failure". Pure + deterministic — no fs, no clock; the engine feeds it snapshots of the
-// working directory. Engine-run-scoped, in-memory (jh-improve1 L4 — not persisted in State this wave).
+// working directory. Owned by the versioned engine controller and restored from its checkpoints.
 
 import { Hash } from "../util/hash"
+import type { JhController } from "./controller"
 
 export interface FileSnap {
   readonly name: string
@@ -21,6 +22,7 @@ export interface StaleProduct {
 }
 
 export interface Tracker {
+  readonly snapshot: () => JhController.Products
   /** hashes of the CURRENT workspace listing (name+content per file), sorted by name for determinism. */
   readonly snap: (files: ReadonlyArray<{ readonly name: string; readonly content: string }>) => ReadonlyArray<FileSnap>
   /** Called AFTER each action with (tool, ok, before, after, command?):
@@ -120,9 +122,11 @@ export const compileSegment = (command: string, baseFile: string): string | unde
   return undefined
 }
 
-export function tracker(): Tracker {
-  const products = new Map<string, { command: string; sourceDigest: string }>()
-  const sources = new Set<string>() // files the model authored — never a product (product→source migration)
+export function tracker(saved?: JhController.Products): Tracker {
+  const products = new Map<string, { command: string; sourceDigest: string }>(
+    saved?.products.map(([name, value]) => [name, { ...value }]),
+  )
+  const sources = new Set<string>(saved?.sources) // files the model authored — never a product (product→source migration)
 
   const snap: Tracker["snap"] = (files) =>
     files
@@ -297,6 +301,7 @@ export function tracker(): Tracker {
   }
 
   return {
+    snapshot: () => ({ products: [...products].map(([name, value]) => [name, { ...value }]), sources: [...sources] }),
     snap,
     recordAction,
     staleProducts,

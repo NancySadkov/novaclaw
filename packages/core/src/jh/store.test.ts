@@ -1,15 +1,16 @@
+import { JhController } from "./controller"
 import { describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { eq, sql } from "drizzle-orm"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
 import { migrations } from "../database/migration.gen"
 import { Hash } from "../util/hash"
-import { JhArtifactTable, JhLogTable } from "./sql"
+import { JhArtifactTable, JhLogTable, JhPlanTable } from "./sql"
 import { JhArtifact } from "./artifact"
 import { JhBudget } from "./budget"
 import { JhBasicTools } from "./tools-basic"
@@ -56,11 +57,55 @@ const sampleState = (): JhEngine.State => {
       { type: "task_started", goal: "root goal", seq: 0 },
       { type: "committed", step: "root", seq: 1 },
     ],
+    controller: JhController.create(),
     telemetry: new Map([["root", { attempts: 2, verifierFails: 1, parseFails: 0 }]]),
   }
 }
 
 describe("JhStore", () => {
+  test("a failed log write rolls back the plan, controller and artifact replacement together", async () => {
+    await withDb((db) =>
+      Effect.gen(function* () {
+        const before = sampleState()
+        yield* JhStore.save(db, { id: "atomic", goal: "before", status: "running", state: before, now: 1 })
+        yield* db
+          .run(
+            sql`CREATE TEMP TRIGGER reject_checkpoint BEFORE INSERT ON jh_log WHEN NEW.seq = 2 BEGIN SELECT RAISE(ABORT, 'forced checkpoint failure'); END`,
+          )
+          .pipe(Effect.orDie)
+        const controller = JhController.clone(before.controller)
+        controller.gateChecks = 2
+        const after: JhEngine.State = {
+          ...before,
+          controller,
+          artifacts: [{ id: "new.c", type: "file", content: "new", hash: "new" }],
+          log: [...before.log, { type: "task_done", seq: 2 }],
+        }
+        const failed = yield* Effect.exit(
+          JhStore.save(db, { id: "atomic", goal: "after", status: "done", state: after, now: 2 }),
+        )
+        expect(Exit.isFailure(failed)).toBe(true)
+        const loaded = yield* JhStore.load(db, "atomic")
+        expect(loaded).toEqual({ goal: "before", status: "running", state: before })
+      }),
+    )
+  })
+
+  test("an old tree-only row cannot resume with a fresh controller", async () => {
+    await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "invalid", goal: "goal", status: "running", state: sampleState(), now: 1 })
+        yield* db
+          .update(JhPlanTable)
+          .set({ state: { tree: {}, telemetry: [] } })
+          .where(eq(JhPlanTable.id, "invalid"))
+          .run()
+          .pipe(Effect.orDie)
+        expect(Exit.isFailure(yield* Effect.exit(JhStore.load(db, "invalid")))).toBe(true)
+      }),
+    )
+  })
+
   test("save → load round-trips the State exactly", async () => {
     const loaded = await withDb((db) =>
       Effect.gen(function* () {

@@ -5,6 +5,7 @@ import { JhBudget } from "./budget"
 import { JhBasicTools } from "./tools-basic"
 import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
+import { JhController } from "./controller"
 
 // jh-improve4 P1 — the persistent regression suite, ENGINE integration. The centrepiece is the run75
 // fixture: after a primitive test (`t_mul`) is locked green, an edit to the library it depends on
@@ -202,6 +203,52 @@ const BREAK_MUL = atom({
 const committedSteps = (r: JhEngine.Report) => log(r, "committed").map((e) => (e as { step: string }).step)
 
 describe("jh-improve4 P1 — regression suite engine integration", () => {
+  test.each(["MUL_BROKEN", "BUILDERR"])(
+    "resume retains a committed foundation when a later edit introduces %s",
+    async (damage) => {
+      const world = buildWorld({
+        initial: { "bigint.c": "lib MUL_OK", "pi.c": "formula v1" },
+        programs: { "t_mul.exe": mulProgram, "t_add.exe": addProgram, "pi.exe": () => ({ code: 0, output: "3.14" }) },
+      })
+      let saved: JhEngine.State | undefined
+      const first = await run({
+        ...harness({
+          world,
+          replies: [compound(["verify multiply", "verify add", "edit the formula"]), REGISTER_MUL, REGISTER_ADD],
+        }),
+        aborted: () => saved !== undefined,
+        checkpoint: (state) =>
+          Effect.sync(() => {
+            if (state.controller.regression?.length === 2) saved = state
+          }),
+      })
+      expect(first.reason).toBe("aborted")
+      expect(saved?.controller.regression).toHaveLength(2)
+      const state: JhEngine.State = {
+        ...saved!,
+        controller: JhController.decode(JSON.parse(JSON.stringify(JhController.encode(saved!.controller)))),
+      }
+      const next = harness({
+        world,
+        autoRevert: false,
+        replies: [
+          atom({
+            tool: "edit_file",
+            args: { path: "bigint.c", old_string: "MUL_OK", new_string: damage },
+            check: { type: "compile", command: "gcc pi.c bigint.c -o pi.exe" },
+          }),
+        ],
+      })
+      const resumed = await Effect.runPromise(JhEngine.runTask(next, { goal: "compute Pi to 100 digits" }, state))
+      expect(log(resumed, "test_registered")).toHaveLength(2)
+      expect(log(resumed, "regression").length).toBeGreaterThan(0)
+      expect(
+        verifDetails(resumed).some((detail) => detail.includes("REGRESSION:") && detail.includes("bigint.c")),
+      ).toBe(true)
+      expect(resumed.state.controller.regression?.some((entry) => entry.failures > 0)).toBe(true)
+    },
+  )
+
   test("the run75 fixture: an edit to bigint.c (while 'working on pi.c') is caught by re-running t_mul and NAMES bigint.c", async () => {
     const world = buildWorld({
       initial: { "bigint.c": "lib MUL_OK", "pi.c": "formula v1" },

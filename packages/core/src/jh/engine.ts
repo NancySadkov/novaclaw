@@ -21,6 +21,7 @@ import type { Presence } from "../presence"
 import { Hash } from "../util/hash"
 import { Token } from "../util/token"
 import { JhTree } from "./tree"
+import { JhController } from "./controller"
 import { JhStep } from "./step"
 import { JhDataflow } from "./dataflow"
 import { JhContext } from "./context"
@@ -303,6 +304,7 @@ export interface Deps {
 }
 
 export interface State {
+  readonly controller: JhController.State
   readonly tree: JhTree.Tree
   readonly artifacts: ReadonlyArray<JhArtifact.Stored>
   readonly log: ReadonlyArray<JhLog.Sequenced>
@@ -645,112 +647,41 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   const { maxDepth, maxTotalSteps } = deps.limits
   const workspaceBudget = workspaceCharBudget(deps.limits.contextTokens)
 
+  const controller = resume ? JhController.clone(resume.controller) : JhController.create()
+  const elapsedBefore = controller.elapsedMs
+  const elapsed = () => elapsedBefore + (deps.budget ? Math.max(0, deps.budget.now() - deps.budget.startedAt) : 0)
+
   // ---- mutable engine state (closed over by every helper below) ----
   let tree: JhTree.Tree =
     resume?.tree ?? JhTree.create({ goal: task.goal, size: "atomic", success: "the task is complete" })
   const telemetry = new Map<string, JhBudget.Telemetry>(resume?.telemetry ?? [])
   const logArr: JhLog.Sequenced[] = [...(resume?.log ?? [])]
   let seq = logArr.length
-  let lastBlockReason: string | undefined
-  // The most recent `run` action's stdout — a program prints its RESULT to stdout, not to a file, so the
-  // goal-checks (which otherwise only see workspace FILES) need it to judge whether a computed RESULT is
-  // actually correct (iter 22: a program that ran and printed wrong digits false-passed a file-only check).
-  let lastRunOutput = ""
-  // R1: engine-run-scoped derived-artifact tracker (a minimal build graph). Active only when the caller
-  // supplies `listFiles` (the workspace ground truth it needs) and hasn't opted out. Products persist
-  // across leaves — a compile in one leaf, a check in another (jh-improve1 L4: in-memory, not in State).
-  const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker() : undefined
+
+  // Build provenance survives checkpoints; only its live helper is reconstructed.
+  const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker(controller.staleness) : undefined
   const snapFiles = (): ReadonlyArray<JhStaleness.FileSnap> => (staleness ? staleness.snap(deps.listFiles!()) : [])
   const baseName = (s: string): string =>
     s
       .replace(/^\.[/\\]/, "")
       .split(/[/\\]/)
       .pop() ?? s // improve5 P2: match a tool path to a listFiles entry
-  // improve4 P1 (§I6): the persistent regression registry — active only WITH staleness (it feeds off the
-  // tracker's source digests). Registers the model's own passing product-executing checks and re-runs the
-  // digest-stale ones after later edits. Engine-run-scoped, in-memory (L4).
-  const regression = deps.regressionGate !== false && staleness ? JhRegression.registry() : undefined
+  // A registered passing test remains a guard after the process restarts.
+  const regression =
+    deps.regressionGate !== false && staleness ? JhRegression.registry(controller.regression) : undefined
   const now = deps.now ?? (() => Date.now())
   const checkTimeout = deps.checkTimeoutMs ?? JhVerifier.DEFAULT_TIMEOUT_MS // improve8 P1 (C9)
   const phaseGateOn = deps.phaseGate !== false && regression !== undefined // improve4 P2 (requires regressionGate)
   const txEditsOn = deps.txEdits !== false && staleness !== undefined // improve5 P2 (needs the per-file compile registry)
   const SOURCE_EDIT_TOOLS = new Set(["write_file", "edit_file", "replace_lines"])
-  // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
-  let bestScore = Number.NEGATIVE_INFINITY
-  let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
-  // improve6 P2: keep-best tiebreak — at an EQUAL score, a state with more registered tests passing is
-  // better (the suite green-count is a second gradient the safety layer must read, not ignore).
-  let bestSuiteGreen = -1
-  let lastSweepGreen = 0
-  // improve6 P5: numeric-divergence tracking — samples since the best score last improved; the hint is
-  // one-shot per plateau (re-armed by any improvement).
-  let scoreStagnant = 0
-  let numericsArmed = true
-  let pendingNumericsHint: string | undefined
-  // improve7 P1 (K5): consecutive below-best samples (reset by any sample at-or-above best). The sampler is
-  // sync, so it only ARMS the restore; the call site performs it (Effect land).
-  let dropStreak = 0
-  let pendingDropRestore = false
-  // improve9 P1a/P1b: the near-done oracle directive (one-shot per episode) + the oracle-done flag the
-  // main loop short-circuits on (re-checked against the oracle before committing — never on the sample alone).
-  let pendingOracleHint: string | undefined
-  let oracleHintArmed = true
-  let oracleDone = false
-  // improve9 P2: the workspace text-file contents at the most recent PASSING verification — a
-  // best-snapshot file whose on-disk content matches NEITHER the best snapshot NOR this capture is
-  // trailing UNVERIFIED drift, and loses to the verified best at finalize. A verified-green tail
-  // (its state captured here) is never overwritten.
-  let lastGreenFiles: ReadonlyMap<string, string> | undefined
-  // improve7 P2 (C7): per-file consecutive edit_file mis-quotes + the files locked to coordinate edits.
-  const editMisses = new Map<string, number>()
-  const coordLocked = new Set<string>()
-  // improve10 P2: LIFETIME per-file misses — past COORD_CUMULATIVE the lock is sticky (interleaved
-  // successful edits reset the consecutive counter but not this one; run140: 17 misses, 0 locks).
-  const editMissesTotal = new Map<string, number>()
-  // improve10 P1 (§K6): never-green tracking — per normalized command, the identical failure detail and
-  // how many DISTINCT source states produced it; one test-fix growth per command.
-  const neverGreenFails = new Map<string, { detail: string; count: number; lastDigest: string }>()
-  const neverGreenGrown = new Set<string>()
-  // improve6 P3: suspect-test bookkeeping — the score when a test FIRST went red (the non-regression guard),
-  // and the tests whose one-time fix node was already grown.
-  const scoreAtFirstFail = new Map<string, number>()
-  const testFixGrown = new Set<string>()
-  // improve6 P1: consecutive gate rejections per file — ENGINE-scoped, not per-leaf: wave-5's 73-123
-  // rejections spanned GROWN FIX SIBLINGS (each a fresh leaf), so a per-leaf counter would reset before
-  // ever yielding. Reset by a clean gate compile or by the yield itself.
-  const gateRejects = new Map<string, number>()
-  const ladders = new Map<string, JhLadder.LadderState>() // parentID → escalation state
-  const lastFixBest = new Map<string, number>() // parentID → bestScore at its last grown fix node (for scoreImproved)
-  const analyzeNodes = new Set<string>() // nodeIds the harness forced to be instrumented "analyze" steps
-  // improve4 P4: re-derive bookkeeping (engine-run-scoped, L4). `rederivePressure` = consecutive fix attempts
-  // per FOUNDATION file (the deepest source in the failing chain); at REDERIVE_AFTER the harness grows a
-  // from-scratch re-implementation of that file. `rederived` = files already re-derived (once per run).
-  const rederivePressure = new Map<string, number>()
-  const rederived = new Set<string>()
-  // improve3 P1: consecutive build-DAMAGING edits (reset on any green build); when it hits AUTO_REVERT_AFTER the
-  // harness restores the last verified checkpoint. `autoRevertOn` disables itself if a revert ever fails (never
-  // loop on a broken revert). `pendingRevertMessage` is delivered to the very next introspection.
-  let buildDamage = 0
-  let autoRevertOn = deps.autoRevert !== false && !!deps.revertWorkspace
-  let pendingRevertMessage: string | undefined
-  const firedBudget = new Set<number>() // improve5 P4: wall-clock thresholds already steered (one-shot each)
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
     logArr.push(seqd)
     deps.onLog?.(seqd)
   }
-  // ── v0.2.0 COMPLETION GATE state ──────────────────────────────────────────────────────────────
-  // How many times the caller's mechanical verifier has been EXECUTED this run (the hard stop), and
-  // whether it has ever come back green (the finalize chokepoint reads this, so a path that forgets to
-  // ask cannot smuggle a `done` past a verifier that never passed).
-  let gateChecks = 0
+  // A resumed run must verify completion again; its spent check budget lives in the controller.
   let completionVerified = false
-  // The spent-budget refusal is logged ONCE. A caller that arms both `taskComplete` and
-  // `completionGate` re-asks on every loop iteration (each sample can re-set `oracleDone`), and an
-  // entry per iteration would be an unbounded log — which is also an unbounded number of `jh_log` rows
-  // the next checkpoint writes. The refusal itself still happens every time; only the noise is capped.
-  let gateSpentLogged = false
   /** The whole-task veto. `ok` = the run may declare itself done; otherwise `detail` names what
    *  failed and `retry` says whether growing a fix node is still in budget. Absent gate = always ok
    *  (today's behaviour, byte-for-byte). */
@@ -760,31 +691,37 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     Effect.gen(function* () {
       if (!deps.completionGate) return { ok: true } as const
       const cap = deps.completionGateChecks ?? COMPLETION_GATE_MAX_CHECKS
-      if (gateChecks >= cap) {
+      if (controller.gateChecks >= cap) {
         // Spent, and therefore REFUSING — the cap bounds how much verifier time a run may spend, it
         // does not license a self-attested pass (ruling 2: a task that cannot be verified complete is
         // reported "not verified", never "complete").
-        const detail = `the deliverable was checked ${gateChecks} time(s) against this project's own verification commands and did not pass; the harness will not report the task complete on the model's say-so`
-        if (!gateSpentLogged) {
-          gateSpentLogged = true
+        const detail = `the verification budget of ${controller.gateChecks} check(s) is spent; this run has no current passing verification, so the task cannot be reported complete`
+        if (!controller.gateSpentLogged) {
+          controller.gateSpentLogged = true
           emit({ type: "completion_gate", step: nodeId, ok: false, spent: true, detail })
         }
         return { ok: false, detail, retry: false } as const
       }
-      gateChecks++
+      controller.gateChecks++
       const verdict = yield* deps.completionGate()
       emit({ type: "completion_gate", step: nodeId, ok: verdict.ok, spent: false, detail: verdict.detail })
       if (verdict.ok) {
         completionVerified = true
         return { ok: true } as const
       }
-      return { ok: false, detail: verdict.detail, retry: gateChecks < cap } as const
+      return { ok: false, detail: verdict.detail, retry: controller.gateChecks < cap } as const
     })
   const telemetryOf = (id: string): JhBudget.Telemetry => telemetry.get(id) ?? JhBudget.emptyTelemetry
   const updateTelemetry = (id: string, fn: (t: JhBudget.Telemetry) => JhBudget.Telemetry): void => {
     telemetry.set(id, fn(telemetryOf(id)))
   }
   const snapshot = (): State => ({
+    controller: JhController.clone({
+      ...controller,
+      elapsedMs: elapsed(),
+      staleness: staleness?.snapshot() ?? controller.staleness,
+      regression: regression?.all() ?? controller.regression,
+    }),
     tree,
     artifacts: deps.artifacts.snapshot(),
     log: [...logArr],
@@ -798,7 +735,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     status,
     reason,
     state: snapshot(),
-    keptBest: deps.keepBest !== false && bestSnapshot !== undefined,
+    keptBest: deps.keepBest !== false && controller.bestSnapshot !== undefined,
   })
   const checkpoint = (): Effect.Effect<void> =>
     Effect.gen(function* () {
@@ -854,23 +791,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     }
     // D7 (jh-improve1): grown fix/analyze nodes must SEE the program's most recent stdout (the diagnostics) —
     // otherwise a step told to "fix what the values show" is acting blind (the 160-char cross-node collapse).
-    const outputBlock = lastRunOutput
-      ? `\n\n# Most recent program output (stdout, tail)\n\`\`\`\n${lastRunOutput.length > 2000 ? lastRunOutput.slice(-2000) : lastRunOutput}\n\`\`\``
+    const outputBlock = controller.lastRunOutput
+      ? `\n\n# Most recent program output (stdout, tail)\n\`\`\`\n${controller.lastRunOutput.length > 2000 ? controller.lastRunOutput.slice(-2000) : controller.lastRunOutput}\n\`\`\``
       : ""
     // improve3 P1: after an auto-revert, deliver the restore notice to the NEXT introspection, then clear it
     // (consume-once). The workspace listing above already reflects the restored files.
-    const revertBlock = pendingRevertMessage
-      ? `\n\n# ⚠️ Workspace restored by the harness\n${pendingRevertMessage}`
+    const revertBlock = controller.pendingRevertMessage
+      ? `\n\n# ⚠️ Workspace restored by the harness\n${controller.pendingRevertMessage}`
       : ""
-    pendingRevertMessage = undefined
+    controller.pendingRevertMessage = undefined
     // improve5 P4: wall-clock budget steer — at 50%/75% consumed (one-shot each) inject a calm "simplify /
     // land an end-to-end result" nudge (the engine otherwise has no time sense; run79/87 gold-plated to the wall).
     let budgetBlock = ""
     if (deps.budgetAware !== false && deps.budget && deps.budget.wallMs > 0) {
-      const frac = (deps.budget.now() - deps.budget.startedAt) / deps.budget.wallMs
+      const frac = elapsed() / deps.budget.wallMs
       for (const th of [0.5, 0.75]) {
-        if (frac >= th && !firedBudget.has(th)) {
-          firedBudget.add(th)
+        if (frac >= th && !controller.firedBudget.has(th)) {
+          controller.firedBudget.add(th)
           emit({ type: "budget_note", step: nodeId, fraction: th })
           budgetBlock =
             th >= 0.75
@@ -881,15 +818,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     }
     // improve6 P5: consume-once numerics hint — delivered to the working context (recovery/fix), never a
     // planning prompt (this builder feeds introspections mid-work; the signature only arms mid-leaf).
-    const numericsBlock = pendingNumericsHint
-      ? `\n\n# Numerical-computation guidance (the output has stopped improving)\n${pendingNumericsHint}`
+    const numericsBlock = controller.pendingNumericsHint
+      ? `\n\n# Numerical-computation guidance (the output has stopped improving)\n${controller.pendingNumericsHint}`
       : ""
-    pendingNumericsHint = undefined
+    controller.pendingNumericsHint = undefined
     // improve9 P1a: consume-once near-done oracle directive — the caller's own verdict, verbatim (L1).
-    const oracleBlock = pendingOracleHint
-      ? `\n\n# ⚡ THE TASK ORACLE: the task is ONE SMALL FIX from complete\n${pendingOracleHint}\nDo EXACTLY this now — do not edit or build ANYTHING else first.`
+    const oracleBlock = controller.pendingOracleHint
+      ? `\n\n# ⚡ THE TASK ORACLE: the task is ONE SMALL FIX from complete\n${controller.pendingOracleHint}\nDo EXACTLY this now — do not edit or build ANYTHING else first.`
       : ""
-    pendingOracleHint = undefined
+    controller.pendingOracleHint = undefined
     const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}${numericsBlock}${oracleBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
@@ -917,67 +854,79 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       : renderFiles(files, { numbered: false, fullFiles: deps.fullFiles !== false }, workspaceBudget)
   // R3: the current graded progress score (from the caller's oracle), or undefined if ungraded.
   const currentScore = (): number | undefined =>
-    deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput }).score
+    deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: controller.lastRunOutput }).score
   // R3: sample the score after a successful run; on a new best, snapshot the TEXT files (keep-best).
   // improve6 P2: an EQUAL score with MORE registered tests passing is also a new best (the suite green-count
   // tiebreak — the safety layer reads both gradients). improve6 P5: no improvement across NUMERIC_PLATEAU
   // samples while some digits are provably right (score ≥ floor) = the numeric-divergence signature → arm
   // the caller's numerics hint for the NEXT introspection context (one-shot per plateau).
   const sampleScore = (nodeId: JhStep.StepID): void => {
-    const verdict = deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+    const verdict = deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: controller.lastRunOutput })
     const s = verdict?.score
     // improve9 P1a/P1b: the oracle speaks WHEN IT KNOWS. done=true arms the main-loop short-circuit
     // (re-checked there — never committed on the sample alone). A near-done NOT-done verdict (the D5
     // class: every digit measured correct, only formatting wrong) is delivered to the NEXT
     // introspection — run136 held that verdict for ~370 events without the model ever seeing it.
     if (verdict !== undefined) {
-      if (verdict.done) oracleDone = true
+      if (verdict.done) controller.oracleDone = true
       const near = s !== undefined && s >= NEAR_DONE && !verdict.done
-      if (near && deps.oracleHint !== false && oracleHintArmed && verdict.detail) {
-        oracleHintArmed = false
-        pendingOracleHint = verdict.detail
+      if (near && deps.oracleHint !== false && controller.oracleHintArmed && verdict.detail) {
+        controller.oracleHintArmed = false
+        controller.pendingOracleHint = verdict.detail
         emit({ type: "oracle_hint", step: nodeId })
       }
-      if (!near) oracleHintArmed = true
+      if (!near) controller.oracleHintArmed = true
     }
     if (s === undefined) return
-    const improved = s > bestScore
-    const greenTiebreak = s === bestScore && lastSweepGreen > bestSuiteGreen
+    const improved = s > controller.bestScore
+    const greenTiebreak = s === controller.bestScore && controller.lastSweepGreen > controller.bestSuiteGreen
     if (improved || greenTiebreak) {
-      bestScore = s
-      bestSuiteGreen = lastSweepGreen
-      dropStreak = 0 // improve7 P1: at-or-above best is not a drop
+      controller.bestScore = s
+      controller.bestSuiteGreen = controller.lastSweepGreen
+      controller.dropStreak = 0 // improve7 P1: at-or-above best is not a drop
       if (improved) {
-        scoreStagnant = 0
-        numericsArmed = true
+        controller.scoreStagnant = 0
+        controller.numericsArmed = true
         emit({ type: "scored", step: nodeId, score: s })
       }
       if (deps.keepBest !== false && deps.listFiles) {
-        bestSnapshot = deps
+        controller.bestSnapshot = deps
           .listFiles()
           .filter((f) => !f.content.startsWith("<compiled binary"))
           .map((f) => ({ name: f.name, content: f.content }))
       }
       return
     }
-    scoreStagnant++
+    controller.scoreStagnant++
     // improve7 P1 (K5): a sample strictly BELOW the best is a regression walk — after DROP_RESTORE_AFTER
     // consecutive ones (and a best worth restoring) arm the restore; the call site performs it.
-    if (deps.restoreOnDrop !== false && deps.keepBest !== false && s < bestScore && bestScore >= RESTORE_FLOOR) {
-      dropStreak++
-      if (dropStreak >= DROP_RESTORE_AFTER) {
-        dropStreak = 0
-        pendingDropRestore = true
+    if (
+      deps.restoreOnDrop !== false &&
+      deps.keepBest !== false &&
+      s < controller.bestScore &&
+      controller.bestScore >= RESTORE_FLOOR
+    ) {
+      controller.dropStreak++
+      if (controller.dropStreak >= DROP_RESTORE_AFTER) {
+        controller.dropStreak = 0
+        controller.pendingDropRestore = true
       }
     } else {
-      dropStreak = 0
+      controller.dropStreak = 0
     }
     // improve7 P3 (K4): the caller-formatted precise directive (bestScore → "~N digits") is preferred over
     // the static text; delivery mechanics unchanged (plateau signature, one-shot, working context only).
-    const hintText = deps.numericsHintFor ? deps.numericsHintFor({ bestScore }) : deps.numericsHint
-    if (hintText && numericsArmed && bestScore >= NUMERIC_SCORE_FLOOR && scoreStagnant >= NUMERIC_PLATEAU) {
-      numericsArmed = false
-      pendingNumericsHint = hintText
+    const hintText = deps.numericsHintFor
+      ? deps.numericsHintFor({ bestScore: controller.bestScore })
+      : deps.numericsHint
+    if (
+      hintText &&
+      controller.numericsArmed &&
+      controller.bestScore >= NUMERIC_SCORE_FLOOR &&
+      controller.scoreStagnant >= NUMERIC_PLATEAU
+    ) {
+      controller.numericsArmed = false
+      controller.pendingNumericsHint = hintText
       emit({ type: "numerics_hint", step: nodeId })
     }
   }
@@ -988,11 +937,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     reason: "escalation" | "drop" | "final" = "escalation",
   ): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      if (deps.keepBest === false || !bestSnapshot) return false
+      if (deps.keepBest === false || !controller.bestSnapshot) return false
       const cur = currentScore()
-      if (cur !== undefined && cur >= bestScore) return false // not a regression
+      if (cur !== undefined && cur >= controller.bestScore) return false // not a regression
       const beforeRestore = snapFiles()
-      for (const f of bestSnapshot)
+      for (const f of controller.bestSnapshot)
         yield* deps.executor.run({
           tool: "write_file",
           args: { path: f.name, content: f.content },
@@ -1002,7 +951,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // Re-sync staleness (the auto-revert precedent): the restore changed sources outside a model action, so
       // record it — the next check auto-rebuilds the now-stale products through the normal path.
       if (staleness) staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
-      emit({ type: "restored_best", step: nodeId, score: bestScore, reason })
+      emit({ type: "restored_best", step: nodeId, score: controller.bestScore, reason })
       return true
     })
   // improve7 P1 (K5): every terminal path delivers the BEST state — a run must never END on a workspace that
@@ -1028,16 +977,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // whose on-disk content matches NEITHER the best snapshot NOR the last verified-green capture is
       // unverified surgery (run136's tail — invisible to the score because no successful run
       // re-sampled it); restore the proven snapshot. A verified-green tail is never overwritten (L2).
-      if (status !== "done" && deps.keepBest !== false && bestSnapshot && deps.listFiles) {
+      if (status !== "done" && deps.keepBest !== false && controller.bestSnapshot && deps.listFiles) {
         const onDisk = new Map(deps.listFiles().map((f) => [f.name, f.content]))
-        const drifted = bestSnapshot.some((f) => {
+        const drifted = controller.bestSnapshot.some((f) => {
           const cur = onDisk.get(f.name)
-          return cur !== f.content && cur !== lastGreenFiles?.get(f.name)
+          return cur !== f.content && cur !== controller.lastGreenFiles?.get(f.name)
         })
         const cur = currentScore()
-        if (drifted && (cur === undefined || cur >= bestScore)) {
+        if (drifted && (cur === undefined || cur >= controller.bestScore)) {
           const beforeRestore = snapFiles()
-          for (const f of bestSnapshot)
+          for (const f of controller.bestSnapshot)
             yield* deps.executor.run({
               tool: "write_file",
               args: { path: f.name, content: f.content },
@@ -1046,7 +995,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             })
           if (staleness)
             staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
-          emit({ type: "restored_best", step: tree.root, score: bestScore, reason: "final" })
+          emit({ type: "restored_best", step: tree.root, score: controller.bestScore, reason: "final" })
         }
       }
       yield* restoreBest(tree.root, "final")
@@ -1070,11 +1019,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // was the wrong one). Supersedes the normal stage fix for this growth.
       if (deps.rederive !== false && staleness && failingCommand) {
         const target = staleness.deepestSource(failingCommand, snapFiles())
-        if (target && !rederived.has(target)) {
-          const n = (rederivePressure.get(target) ?? 0) + 1
-          rederivePressure.set(target, n)
+        if (target && !controller.rederived.has(target)) {
+          const n = (controller.rederivePressure.get(target) ?? 0) + 1
+          controller.rederivePressure.set(target, n)
           if (n >= REDERIVE_AFTER) {
-            rederived.add(target)
+            controller.rederived.add(target)
             const rdGoal = `Component ${target} keeps FAILING its test after ${n} repeated fix attempts — patching it is not working. Write a COMPLETELY FRESH implementation of ${target} from first principles: do NOT read or patch the old code (it will be REPLACED), keep the SAME function signatures so everything that links against it still builds, and make it pass \`${failingCommand}\` AND the boundary cases (the largest operands your representation allows, a carry/borrow across the limb/digit boundary, and the zero/identity cases). Then the whole test suite re-runs.`
             const rdDraft: JhStep.StepDraft = {
               goal: rdGoal,
@@ -1088,19 +1037,19 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
               emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
               return
             }
-            rederived.delete(target) // couldn't grow (depth/budget) — undo the mark; fall through to a normal fix
+            controller.rederived.delete(target) // couldn't grow (depth/budget) — undo the mark; fall through to a normal fix
           }
         }
       }
       const sig = errorSig(fullDetail)
-      const prevBest = lastFixBest.get(parentID) ?? Number.NEGATIVE_INFINITY
-      const scoreImproved = bestScore > prevBest
-      lastFixBest.set(parentID, bestScore)
+      const prevBest = controller.lastFixBest.get(parentID) ?? Number.NEGATIVE_INFINITY
+      const scoreImproved = controller.bestScore > prevBest
+      controller.lastFixBest.set(parentID, controller.bestScore)
       const childCount = JhTree.get(tree, parentID)!.children.length
       let stage: JhLadder.Stage
       if (deps.ladder !== false) {
-        const state = JhLadder.next(ladders.get(parentID), { sig, scoreImproved })
-        ladders.set(parentID, state)
+        const state = JhLadder.next(controller.ladders.get(parentID), { sig, scoreImproved })
+        controller.ladders.set(parentID, state)
         stage = state.stage
         // improve4 P5: an opaque crash at the blind (tweak) stage jumps straight to analyze — instrument, don't
         // tweak in the dark. (An analyze run yields NAME=value output, so the next failure is no longer opaque.)
@@ -1114,7 +1063,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           ? stageFixGoal(stage, baseGoal, fullDetail, deps.forcedAnalyze !== false)
           : { goal: fixNodeGoal(baseGoal, sig, childCount), analyze: false }
       const goal = restored
-        ? `The best attempt so far (progress score ${bestScore.toFixed(3)}) has been RESTORED to the working directory — improve on IT; do not start over. ${fix.goal}`
+        ? `The best attempt so far (progress score ${controller.bestScore.toFixed(3)}) has been RESTORED to the working directory — improve on IT; do not start over. ${fix.goal}`
         : fix.goal
       const fixDraft: JhStep.StepDraft = {
         goal,
@@ -1126,7 +1075,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!(appended instanceof JhTree.AttachError)) {
         tree = appended
         const newId = JhTree.get(tree, parentID)!.children.at(-1)
-        if (fix.analyze && newId !== undefined) analyzeNodes.add(newId)
+        if (fix.analyze && newId !== undefined) controller.analyzeNodes.add(newId)
         emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
       }
     })
@@ -1184,7 +1133,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // R2: run-scoped LLM goal-check cache + verdict result. `cached` lets the caller mark the transcript;
   // `evidenceFault` = an achieved:true claim without a verifiable verbatim quote (a checker fault, not a
   // model-action fault, so it must NOT accrue toward the leaf's stuck counter).
-  const goalCheckCache = new Map<string, { achieved: boolean; missing: string; evidenceFault: boolean }>()
+
   interface GoalVerdict {
     readonly achieved: boolean
     readonly missing: string
@@ -1203,14 +1152,18 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // from what the model saw is findable in the material — only holds if they are the same snapshot.
       const files = deps.listFiles?.() ?? []
       const workspace = renderWorkspaceFrom(files)
-      const key = Hash.sha256(`${applyEvidence ? "E" : "-"}|${goal}|${workspace}|${lastRunOutput}`)
+      const key = Hash.sha256(`${applyEvidence ? "E" : "-"}|${goal}|${workspace}|${controller.lastRunOutput}`)
       if (deps.goalCheckCache !== false) {
-        const hit = goalCheckCache.get(key)
+        const hit = controller.goalCheckCache.get(key)
         if (hit) return { ...hit, cached: true }
       }
       const gc = yield* Effect.exit(
         deps.introspect(
-          JhExpander.goalCheckPrompt({ goal, workspace: renderWorkspaceForPrompt(files), lastOutput: lastRunOutput }),
+          JhExpander.goalCheckPrompt({
+            goal,
+            workspace: renderWorkspaceForPrompt(files),
+            lastOutput: controller.lastRunOutput,
+          }),
         ),
       )
       // 🔴 A VERIFIER THAT COULD NOT RUN HAS NOT VERIFIED (ruling 2: a failed mutation never reports
@@ -1233,7 +1186,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // Evidence rule (root-only): a whole-task success claim must quote verbatim proof from the workspace/output.
       if (deps.evidence !== false && applyEvidence && parsed.achieved) {
         const ev = (parsed.evidence ?? "").replace(/\s+/g, " ").trim()
-        const material = `${workspace}\n${lastRunOutput}`.replace(/\s+/g, " ")
+        const material = `${workspace}\n${controller.lastRunOutput}`.replace(/\s+/g, " ")
         if (ev.length === 0 || !material.includes(ev))
           verdict = {
             achieved: false,
@@ -1241,7 +1194,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             evidenceFault: true,
           }
       }
-      if (deps.goalCheckCache !== false) goalCheckCache.set(key, verdict)
+      if (deps.goalCheckCache !== false) controller.goalCheckCache.set(key, verdict)
       return { ...verdict, cached: false }
     })
   // improve19 — the THINK/DO split (`notes/jh/think-stage.md`). Run the optional reasoning stage for
@@ -1330,7 +1283,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       }
     })
   const blockNode = (node: JhTree.Node, reason: string): void => {
-    lastBlockReason = reason
+    controller.lastBlockReason = reason
     tree = JhTree.setStatus(tree, node.id, "blocked")
     emit({ type: "blocked", step: node.id, reason })
     const ancestors = JhTree.ancestors(tree, node.id) // root-first
@@ -1579,7 +1532,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         regression.recordResult(t.command, ok, staleness.sourceDigestNow(snapFiles()))
         if (ok) {
           green++
-          scoreAtFirstFail.delete(t.command)
+          controller.scoreAtFirstFail.delete(t.command)
           continue
         }
         if (t.suspect) {
@@ -1591,10 +1544,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // build (compiler diagnostics naming a file no OTHER registered test references — run101's t_arctan);
         // red for SUSPECT_AFTER consecutive rounds while the program's measured score did NOT regress.
         if (suspectOn) {
-          if (t.failures === 0) scoreAtFirstFail.set(t.command, bestScore)
+          if (t.failures === 0) controller.scoreAtFirstFail.set(t.command, controller.bestScore)
           const newFailures = t.failures + 1
           const ownFile = buildErr !== undefined ? exclusiveSourceIn(t.command, buildErr) : undefined
-          const scoreGuard = bestScore >= (scoreAtFirstFail.get(t.command) ?? Number.POSITIVE_INFINITY)
+          const scoreGuard =
+            controller.bestScore >= (controller.scoreAtFirstFail.get(t.command) ?? Number.POSITIVE_INFINITY)
           const suspicious =
             (t.unsanitized && newFailures >= 1) || ownFile !== undefined || (newFailures >= SUSPECT_AFTER && scoreGuard)
           if (suspicious) {
@@ -1607,7 +1561,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         redTest = { command: t.command, detail, priorFailures: t.failures }
         break
       }
-      lastSweepGreen = green // improve6 P2: the keep-best suite-green tiebreak reads the latest sweep
+      controller.lastSweepGreen = green // improve6 P2: the keep-best suite-green tiebreak reads the latest sweep
       return { green, red: redTest ? 1 : 0, redTest, skipped, suspectNote, newlySuspect }
     })
 
@@ -1675,8 +1629,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // the TEST itself from the unit's header with a small, definitely-correct case (run101's t_arctan wall).
   const growTestFixNode = (parentID: JhStep.StepID, command: string): Effect.Effect<void> =>
     Effect.gen(function* () {
-      if (deps.suspectTests === false || testFixGrown.has(command) || JhTree.size(tree) >= maxTotalSteps) return
-      testFixGrown.add(command)
+      if (deps.suspectTests === false || controller.testFixGrown.has(command) || JhTree.size(tree) >= maxTotalSteps)
+        return
+      controller.testFixGrown.add(command)
       emit({ type: "suspect_test", step: parentID, command })
       const draft: JhStep.StepDraft = {
         goal: `The test run by \`${command}\` appears to be WRONG itself (it kept failing while the program's measured output improved, or the test's own file does not build). Re-derive the TEST: include the unit's real header, call the real functions with their real signatures, and use a SMALL hand-computable case whose expected value is definitely correct. Do NOT weaken it into a tautology — a trivial-but-correct case beats an impossible one. Then compile and run it until it passes.`,
@@ -1718,6 +1673,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // E — the atomic execution loop.
   const atomicLoop = (node: JhTree.Node, initialDraft: JhStep.StepDraft): Effect.Effect<void> =>
     Effect.gen(function* () {
+      let leaf = controller.leaves.get(node.id)
+      if (!leaf) {
+        leaf = {
+          errorCounts: new Map(),
+          lastFailDigest: undefined,
+          lastFailDetail: "",
+          budget: JhBudget.budgetFor(initialDraft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry),
+        }
+        controller.leaves.set(node.id, leaf)
+      }
       let draft = initialDraft
       let currentTool = draft.tool ?? ""
       let currentArgs: Readonly<Record<string, unknown>> = draft.args ?? {}
@@ -1727,20 +1692,18 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       let check: JhStep.Check = draft.check ?? { type: "artifact_present" }
       // Budget is seeded by the prior and fixed for this leaf (telemetry is recorded but does not
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
-      const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
-      const errorCounts = new Map<string, number>() // verify-failure signature → how many times seen (THIS leaf)
+      const budget = leaf.budget
+      // verify-failure signature → how many times seen (THIS leaf)
       // R1 idempotence (per-leaf): the digest + detail of the last EXECUTED check that FAILED. An identical
       // check over an unchanged workspace cannot newly pass, so we return the cached fail (which DOES count
       // toward stuck — an unchanged retry IS the rut) instead of re-running the same command.
-      let lastFailDigest: string | undefined
-      let lastFailDetail = ""
+
       for (;;) {
         // improve7.1: the wall can expire MID-LEAF — a leaf's exploration loop can run for many minutes
         // without returning to the outer scheduler, so the probe-11550 run sailed past its wall inside a
         // rut and the harness backstop race had to kill it, skipping the terminal best-restore. Bail out
         // of the leaf (node stays pending); the outer loop's wall check then finalizes THROUGH the restore.
-        if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs)
-          return
+        if (deps.budget && deps.budget.wallMs > 0 && elapsed() >= deps.budget.wallMs) return
         if (deps.aborted?.()) return // improve11 P1: a losing racer bails mid-leaf; the outer loop finalizes
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
@@ -1762,7 +1725,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // improve10 P2: past COORD_CUMULATIVE lifetime misses the lock is STICKY (run140's interleave evasion).
         const coordIntercepted =
           coordBase !== undefined &&
-          (coordLocked.has(coordBase) || (editMissesTotal.get(coordBase) ?? 0) >= COORD_CUMULATIVE)
+          (controller.coordLocked.has(coordBase) ||
+            (controller.editMissesTotal.get(coordBase) ?? 0) >= COORD_CUMULATIVE)
         // 🔴 THE TOOL VOCABULARY IS A CONSTRAINT, NOT A SUGGESTION. `deps.toolNames` decided which atoms
         // this run may perform, and until now it only shaped the PROMPT: whatever the model named was
         // handed straight to the executor. A caller that withdraws a tool because running it would be
@@ -1789,15 +1753,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
                 cwd: deps.cwd,
               })
         if (currentTool === "run" && observation.ok) {
-          lastRunOutput = observation.output // remember the program's stdout for the goal-checks
+          controller.lastRunOutput = observation.output // remember the program's stdout for the goal-checks
           sampleScore(node.id) // R3: track the best progress score + snapshot on improvement
           // improve7 P1 (K5): the sampler armed a drop-restore (consecutive below-best scores) — perform it
           // here (Effect land) and tell the NEXT introspection what happened and what to do.
-          if (pendingDropRestore) {
-            pendingDropRestore = false
+          if (controller.pendingDropRestore) {
+            controller.pendingDropRestore = false
             const did = yield* restoreBest(node.id, "drop")
             if (did)
-              pendingRevertMessage = `your recent edits made the measured output WORSE — the harness has RESTORED the best-known state (progress score ${bestScore.toFixed(3)}). Improve FROM this state with a SMALL, different change; do not repeat the reverted approach. (After any source edit, recompile before re-running.)`
+              controller.pendingRevertMessage = `your recent edits made the measured output WORSE — the harness has RESTORED the best-known state (progress score ${controller.bestScore.toFixed(3)}). Improve FROM this state with a SMALL, different change; do not repeat the reverted approach. (After any source edit, recompile before re-running.)`
           }
         }
         emit({ type: "observation", step: node.id, ok: observation.ok })
@@ -1819,17 +1783,17 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             !observation.ok &&
             observation.output.startsWith("old_string not found in")
           ) {
-            const n = (editMisses.get(base) ?? 0) + 1
-            editMisses.set(base, n)
-            const total = (editMissesTotal.get(base) ?? 0) + 1
-            editMissesTotal.set(base, total)
-            if ((n >= COORD_AFTER || total >= COORD_CUMULATIVE) && !coordLocked.has(base)) {
-              coordLocked.add(base)
+            const n = (controller.editMisses.get(base) ?? 0) + 1
+            controller.editMisses.set(base, n)
+            const total = (controller.editMissesTotal.get(base) ?? 0) + 1
+            controller.editMissesTotal.set(base, total)
+            if ((n >= COORD_AFTER || total >= COORD_CUMULATIVE) && !controller.coordLocked.has(base)) {
+              controller.coordLocked.add(base)
               emit({ type: "coord_mode", step: node.id, file: base })
             }
           } else if (SOURCE_EDIT_TOOLS.has(currentTool) && observation.ok) {
-            editMisses.delete(base)
-            coordLocked.delete(base)
+            controller.editMisses.delete(base)
+            controller.coordLocked.delete(base)
           }
         }
 
@@ -1841,10 +1805,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         let txSig: string | undefined // improve6 P1: a STABLE per-file stuck signature (tx:<file>) — the varying compiler tail evaded the counter (K3)
         if (txEditsOn && staleness && observation.ok && editedFile && preImage !== undefined) {
           const base = baseName(editedFile)
-          if ((gateRejects.get(base) ?? 0) >= GATE_YIELD_AFTER) {
+          if ((controller.gateRejects.get(base) ?? 0) >= GATE_YIELD_AFTER) {
             // improve6 P1: the gate YIELDS — this attempt lands regardless, restoring iteration with the
             // attempt VISIBLE in the workspace; the rebuild/regression machinery takes over from here.
-            gateRejects.delete(base)
+            controller.gateRejects.delete(base)
             emit({ type: "gate_yielded", step: node.id, file: base })
           } else {
             // improve6 P1 (gate surgery): the gate runs ONLY the compile SEGMENT for this file (staleness
@@ -1872,14 +1836,14 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
                 }) // tool-level undo
                 staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
                 emit({ type: "edit_rejected", step: node.id, file: base })
-                gateRejects.set(base, (gateRejects.get(base) ?? 0) + 1)
+                controller.gateRejects.set(base, (controller.gateRejects.get(base) ?? 0) + 1)
                 txSig = `tx:${base}`
                 txRejected = {
                   ok: false,
                   detail: `edit NOT applied — ${base} no longer compiles:\n${rb.output.slice(-REGRESSION_TAIL)}\nThe file is UNCHANGED (restored to the last version). Fix the compiler error above with a SMALLER edit, then reapply.`,
                 }
               } else {
-                gateRejects.delete(base) // a clean compile resets the consecutive-rejection count
+                controller.gateRejects.delete(base) // a clean compile resets the consecutive-rejection count
               }
             }
           }
@@ -1976,12 +1940,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             vr = short
           } else if (
             staleness &&
-            lastFailDigest !== undefined &&
-            staleness.checkDigest(check, curSnap) === lastFailDigest
+            leaf.lastFailDigest !== undefined &&
+            staleness.checkDigest(check, curSnap) === leaf.lastFailDigest
           ) {
             vr = {
               ok: false,
-              detail: `${lastFailDetail}\n(nothing has changed since the last attempt — a repeat run cannot pass; change the source or the command)`,
+              detail: `${leaf.lastFailDetail}\n(nothing has changed since the last attempt — a repeat run cannot pass; change the source or the command)`,
             }
           } else {
             vr = yield* JhVerifier.verify({
@@ -2004,7 +1968,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             // that no longer exists, and the oracle could call a task done on digits the current binary
             // no longer prints. The same gap was already found and patched for the staleness tracker
             // directly below; this is the reader it missed.
-            if (vr.runOutput !== undefined) lastRunOutput = vr.runOutput
+            if (vr.runOutput !== undefined) controller.lastRunOutput = vr.runOutput
             // Record artifacts the CHECK's command PRODUCED (e.g. pi.o from a `gcc -c pi.c` compile check) so a
             // later source edit auto-rebuilds them instead of nagging — the D1 gap baseline run39/40 exposed
             // (recordAction previously saw only ACTION runs + rebuilds, never verify-check runs).
@@ -2023,8 +1987,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             // the leaf on a verdict our instrument never reached AND swallow the goal check below, which
             // is the one thing that can still answer. `ok` stays false; only the memo is withheld.
             if (staleness && !vr.ok && vr.inconclusive !== true) {
-              lastFailDigest = staleness.checkDigest(check, curSnap)
-              lastFailDetail = vr.detail
+              leaf.lastFailDigest = staleness.checkDigest(check, curSnap)
+              leaf.lastFailDetail = vr.detail
             }
           }
         } else {
@@ -2072,7 +2036,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
         // R4 forced-analyze: an "analyze" node's job is to PRODUCE diagnostics — a passing check that emitted
         // no labeled NAME=value lines has not instrumented anything (run-30's 0-printf rut). Demote it.
-        if (vr.ok && analyzeNodes.has(node.id) && !hasInstrumentation(lastRunOutput)) {
+        if (vr.ok && controller.analyzeNodes.has(node.id) && !hasInstrumentation(controller.lastRunOutput)) {
           vr = {
             ok: false,
             detail:
@@ -2083,7 +2047,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // bypasses the root-completion gate + the taskComplete oracle → a false-done. Gate the root's own
         // commit through the precise oracle: it cannot declare the whole task done unless taskComplete agrees.
         if (vr.ok && node.id === tree.root && deps.taskComplete) {
-          const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+          const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: controller.lastRunOutput })
           if (!tc.done) vr = { ok: false, detail: `the whole task is not done yet — ${tc.detail}` }
         }
         // v0.2.0: the same D12 hole for the MECHANICAL gate — an atomic root commits straight from
@@ -2098,7 +2062,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // improve9 P2: a green verification blesses the CURRENT workspace text — capture it so the
         // finalize drift check can tell a verified tail from unverified surgery.
         if (vr.ok && deps.keepBest !== false && deps.listFiles)
-          lastGreenFiles = new Map(
+          controller.lastGreenFiles = new Map(
             deps
               .listFiles()
               .filter((f) => !f.content.startsWith("<compiled binary"))
@@ -2106,7 +2070,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           )
 
         if (vr.ok) {
-          buildDamage = 0 // improve3 P1: a green verify clears the consecutive-build-damage counter
+          controller.buildDamage = 0 // improve3 P1: a green verify clears the consecutive-build-damage counter
           // improve4 P1: register a passing run/output_equals check that EXECUTES a workspace product as a
           // persistent regression test (keyed by its command); re-registration refreshes the digest. A
           // compile-only check never registers (builds are the staleness tracker's job — its type is excluded).
@@ -2146,10 +2110,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const sig = txSig ?? (coordIntercepted ? `coord:${coordBase}` : errorSig(vr.detail))
         // A STALE-artifact bookkeeping fail (noCountSig) never accrues toward "stuck" — it is not a model rut,
         // just a signal to recompile (which the next step does). Everything else counts (incl. idempotence).
-        let seen = errorCounts.get(sig) ?? 0
+        let seen = leaf.errorCounts.get(sig) ?? 0
         if (!noCountSig) {
           seen += 1
-          errorCounts.set(sig, seen)
+          leaf.errorCounts.set(sig, seen)
         }
         const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
@@ -2168,18 +2132,18 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         ) {
           const key = JhRegression.normalizeCommand(check.command)
           const registeredAlready = regression?.all().some((t) => t.command === key) ?? false
-          if (!registeredAlready && !neverGreenGrown.has(key)) {
+          if (!registeredAlready && !controller.neverGreenGrown.has(key)) {
             const digestNow = staleness.sourceDigestNow(snapFiles())
             const detailNow = vr.detail.slice(0, 400)
-            const prev = neverGreenFails.get(key)
+            const prev = controller.neverGreenFails.get(key)
             if (!prev || prev.detail !== detailNow) {
-              neverGreenFails.set(key, { detail: detailNow, count: 1, lastDigest: digestNow })
+              controller.neverGreenFails.set(key, { detail: detailNow, count: 1, lastDigest: digestNow })
             } else if (prev.lastDigest !== digestNow) {
               prev.count += 1
               prev.lastDigest = digestNow
               const parentID = JhTree.get(tree, node.id)?.parent
               if (prev.count >= NEVERGREEN_AFTER && parentID !== undefined && JhTree.size(tree) < maxTotalSteps) {
-                neverGreenGrown.add(key)
+                controller.neverGreenGrown.add(key)
                 const ngDraft: JhStep.StepDraft = {
                   goal: `The check \`${check.command}\` has FAILED IDENTICALLY across ${prev.count} different versions of the source — the TEST'S EXPECTED VALUES are the likely bug (hand-computed constants are error-prone; the program may already be CORRECT). Re-derive the TEST, not the source: recompute every expected value from FIRST PRINCIPLES, digit by digit — or REPLACE the case with one whose answer is trivially checkable (e.g. 1+1, 10/3, one small carry). A small correct case beats an impressive wrong one. Then re-run the check.`,
                   size: "atomic",
@@ -2215,12 +2179,17 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           (regressionPreempt !== undefined
             ? preemptDamage
             : vr.detail.startsWith("REBUILD FAILED") || check.type === "compile")
-        buildDamage = buildDamaged ? buildDamage + 1 : 0
-        if (autoRevertOn && buildDamage >= AUTO_REVERT_AFTER) {
+        controller.buildDamage = buildDamaged ? controller.buildDamage + 1 : 0
+        if (
+          deps.autoRevert !== false &&
+          deps.revertWorkspace &&
+          !controller.autoRevertFailed &&
+          controller.buildDamage >= AUTO_REVERT_AFTER
+        ) {
           const beforeRevert = snapFiles()
           const rv = yield* deps.revertWorkspace!()
           if (rv.ok) {
-            buildDamage = 0
+            controller.buildDamage = 0
             emit({ type: "reverted", step: node.id, reason: sig })
             // Re-sync staleness: the revert changed source files outside any tool action. Feed it as a
             // model-written change so product digests stay coherent — the next check auto-rebuilds the products
@@ -2229,10 +2198,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             if (staleness)
               staleness.recordAction({ tool: "write_file", ok: true, before: beforeRevert, after: snapFiles() })
             // Delivered to the NEXT introspection (recovery re-introspect or the grown fix node) via buildContext.
-            pendingRevertMessage =
+            controller.pendingRevertMessage =
               "IMPORTANT: your last edits kept breaking the build and could not be repaired — the harness has RESTORED the last verified working state. The files are exactly as they were after the last successful step. Do NOT retry the same edit. Make a SMALLER, DIFFERENT change (one function, a few lines at a time), recompile, and verify it before editing anything else."
           } else {
-            autoRevertOn = false // never loop on a broken revert
+            controller.autoRevertFailed = true // never loop on a broken revert
             emit({ type: "reverted", step: node.id, reason: `revert unavailable — ${rv.detail}` })
           }
         }
@@ -2506,12 +2475,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
 
   return Effect.gen(function* () {
     if (!resume) emit({ type: "task_started", goal: task.goal })
-    let guard = 0
+
     for (;;) {
       // improve7 P1.3: the engine owns its wall — at exhaustion it exits through the NORMAL terminal path
       // (terminal best-restore included) instead of relying on the harness's hard race, which bypasses
       // finalization entirely (the race stays as an infra backstop at wallMs + grace).
-      if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) {
+      if (deps.budget && deps.budget.wallMs > 0 && elapsed() >= deps.budget.wallMs) {
         emit({ type: "task_blocked", reason: "wall_exhausted" })
         return yield* finalizeReport("blocked", "wall_exhausted")
       }
@@ -2524,8 +2493,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // the completion authority (D4/E8); remaining tree nodes are scaffolding. RE-CHECK before
       // committing (the flag never bypasses the authority it delegates to); a disagreeing re-check
       // clears the flag and resumes normal flow.
-      if (oracleDone && deps.taskComplete) {
-        const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+      if (controller.oracleDone && deps.taskComplete) {
+        const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: controller.lastRunOutput })
         // v0.2.0: a short-circuit is still a way to say "done", so it asks the mechanical gate too. A
         // refusal simply resumes normal flow (the oracle keeps its verdict, it just does not get to
         // END the run on it) — no fix node here, because the tree still has pending work to do.
@@ -2536,9 +2505,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           emit({ type: "task_done" })
           return yield* finalizeReport("done")
         }
-        oracleDone = false
+        controller.oracleDone = false
       }
-      if (++guard > (maxTotalSteps + 8) * 16) {
+      if (++controller.guard > (maxTotalSteps + 8) * 16) {
         emit({ type: "task_blocked", reason: "loop_guard" })
         return yield* finalizeReport("blocked", "loop_guard")
       }
@@ -2584,7 +2553,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           let verdict: { achieved: boolean; missing: string }
           let cachedMarker = ""
           if (deps.taskComplete) {
-            const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+            const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: controller.lastRunOutput })
             verdict = { achieved: tc.done, missing: tc.detail }
           } else if (deps.verifyGoal) {
             const res = yield* runGoalCheck(task.goal, true) // R2: cached + evidence-quoted (root whole-task LLM fallback)
@@ -2641,7 +2610,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           emit({ type: "task_blocked", reason: "goal_unmet" })
           return yield* finalizeReport("blocked", "goal_unmet")
         }
-        const reason = lastBlockReason ?? "no_progress"
+        const reason = controller.lastBlockReason ?? "no_progress"
         emit({ type: "task_blocked", reason })
         return yield* finalizeReport("blocked", reason)
       }

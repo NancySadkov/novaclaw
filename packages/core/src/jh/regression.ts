@@ -8,7 +8,7 @@ export * as JhRegression from "./regression"
 // and names the file that broke it — instead of the model thrashing the formula while the real bug is in the
 // foundation (run75: `pi.c` edited 74× while the bug was a `bigint` precision error whose weak one-shot test
 // had passed and was never re-run). Pure + deterministic — no fs, no clock; the engine feeds it digests +
-// results. Engine-run-scoped, in-memory (jh-improve1 L4 — not persisted in State this wave).
+// results. Owned by the versioned engine controller and restored from its checkpoints.
 
 export interface TestEntry {
   readonly command: string // normalized run command (the registry key)
@@ -52,8 +52,8 @@ export interface Registry {
  *  differences (`.\t_mul.exe` vs `.\t_mul.exe `) don't register two entries for the same test. */
 export const normalizeCommand = (command: string): string => command.trim().replace(/\s+/g, " ")
 
-export function registry(): Registry {
-  const tests = new Map<string, TestEntry>() // normalized command → entry (insertion order = registration order)
+export function registry(saved?: ReadonlyArray<TestEntry>): Registry {
+  const tests = new Map<string, TestEntry>(saved?.map((entry) => [entry.command, { ...entry }])) // insertion order = registration order
 
   const register: Registry["register"] = ({ command, expect, depsDigest }) => {
     const key = normalizeCommand(command)

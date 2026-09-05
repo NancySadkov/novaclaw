@@ -1,3 +1,4 @@
+import { JhController } from "../../jh/controller"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import fs from "node:fs"
@@ -375,7 +376,13 @@ describe("SessionStrict.terminalNotice (the honest terminal claim)", () => {
 describe("SessionStrict.runTask resume (P14.1)", () => {
   test("the resumed tree is continued, not re-planned from the user's resume message", async () => {
     const tree = JhTree.create({ goal: "THE-RESUMED-GOAL", size: "atomic", success: "the task is complete" })
-    const state = { tree, artifacts: [], log: [], telemetry: new Map() } as JhEngine.State
+    const state = {
+      tree,
+      artifacts: [],
+      log: [],
+      controller: JhController.create(),
+      telemetry: new Map(),
+    } as JhEngine.State
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "jh-resume-"))
     const report = await SessionStrict.runTask({
       task: "resume", // the user's continuation word — must NOT become the goal
@@ -589,6 +596,7 @@ describe("SessionStrict.reviveForResume (P14.1 resume fix)", () => {
       tree: { root: "root", nodes: new Map([node("root", "blocked")]) },
       artifacts: [],
       log: [],
+      controller: JhController.create(),
       telemetry: new Map(),
     } as never
     const revived = SessionStrict.reviveForResume(state) as never as {
@@ -599,7 +607,13 @@ describe("SessionStrict.reviveForResume (P14.1 resume fix)", () => {
 
   test("committed and expanded work is never touched; untouched states return the SAME object", () => {
     const nodes = new Map([node("root", "expanded"), node("root.1", "committed"), node("root.2", "pending")])
-    const state = { tree: { root: "root", nodes }, artifacts: [], log: [], telemetry: new Map() } as never
+    const state = {
+      tree: { root: "root", nodes },
+      artifacts: [],
+      log: [],
+      controller: JhController.create(),
+      telemetry: new Map(),
+    } as never
     const revived = SessionStrict.reviveForResume(state)
     expect(revived).toBe(state) // no blocked nodes → identity (no copy churn)
     const mixed = {
@@ -609,6 +623,7 @@ describe("SessionStrict.reviveForResume (P14.1 resume fix)", () => {
       },
       artifacts: [],
       log: [],
+      controller: JhController.create(),
       telemetry: new Map(),
     } as never
     const out = SessionStrict.reviveForResume(mixed) as never as { tree: { nodes: Map<string, { status: string }> } }

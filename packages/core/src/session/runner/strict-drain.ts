@@ -389,16 +389,30 @@ export const make = (dependencies: Dependencies) => {
           }).pipe(Effect.as(0)),
         ),
       )
+      let resumeReadFailed = false
       const saved = yield* JhStore.latest(db, `jh_${sessionID}_`).pipe(
         Effect.catchDefect((defect) =>
-          Log.event("session.strict.resume.failed", {
-            "session.id": sessionID,
-            "session.defect": Log.fault(defect),
-          }).pipe(Effect.as(undefined)),
+          Effect.sync(() => {
+            resumeReadFailed = true
+          }).pipe(
+            Effect.andThen(
+              Log.event("session.strict.resume.failed", {
+                "session.id": sessionID,
+                "session.defect": Log.fault(defect),
+              }),
+            ),
+            Effect.as(undefined),
+          ),
         ),
       )
       const resumable = saved !== undefined && saved.status !== "done"
       const wantsResume = SessionStrict.resumeIntent(task)
+      if (wantsResume && resumeReadFailed) {
+        yield* notice(
+          "Strict could not safely read the saved controller state. Your working files remain available. Describe a new task to continue from those files.",
+        )
+        return "handled" as const
+      }
       const resuming = wantsResume && resumable
       const goal = resuming ? saved!.goal : task
       const resumeState = resuming ? saved!.state : undefined
@@ -506,7 +520,9 @@ export const make = (dependencies: Dependencies) => {
       let forks: string[] = []
       const removeForks = (dirs: readonly string[]) =>
         Effect.all(
-          dirs.map((dir) => Effect.promise(() => fs.promises.rm(dir, { recursive: true, force: true }).catch(() => undefined))),
+          dirs.map((dir) =>
+            Effect.promise(() => fs.promises.rm(dir, { recursive: true, force: true }).catch(() => undefined)),
+          ),
           { concurrency: "unbounded", discard: true },
         )
       if (attempts > 1) {
@@ -830,7 +846,9 @@ export const make = (dependencies: Dependencies) => {
         if (!single) {
           const winner = winnerIdx
           if (winner !== undefined && baseline) {
-            appliedFiles = yield* Effect.promise(() => SessionStrict.applyBack(forks[winner]!, location.directory, baseline))
+            appliedFiles = yield* Effect.promise(() =>
+              SessionStrict.applyBack(forks[winner]!, location.directory, baseline),
+            )
             yield* notice(
               `🏁 Attempt ${winner + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`,
             )

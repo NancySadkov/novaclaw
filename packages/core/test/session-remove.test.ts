@@ -1,3 +1,4 @@
+import { JhController } from "@novaclaw/core/jh/controller"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer } from "effect"
@@ -129,6 +130,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
         tree: JhTree.create({ goal: "g", size: "atomic", success: "ok" }),
         artifacts: [{ id: "a.c", type: "file", hash: "h", content: "int main(){}" }],
         log: [{ type: "task_started", goal: "g", seq: 0 }],
+        controller: JhController.create(),
         telemetry: new Map(),
       }
       const key = `${JhStore.sessionPrefix(created.id)}msg_1`
