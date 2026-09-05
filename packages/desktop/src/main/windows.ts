@@ -46,6 +46,7 @@ const RENDERER_CSP = () => (rendererCspCache ??= rendererCsp(THEME_PRELOAD_SHA25
 
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
+export const PRELOAD_READY_TIMEOUT_MS = 15_000
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -268,6 +269,8 @@ function loadWindow(win: BrowserWindow, html: string) {
 
 function wireWindowRecovery(win: BrowserWindow, name: string) {
   let showing = false
+  let preloadSettled = false
+  let preloadWatchdog: NodeJS.Timeout | undefined
   const sampler = createUnresponsiveSampler(win, name)
 
   const handle = async (button: string | undefined, wait: boolean) => {
@@ -309,6 +312,25 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     } finally {
       showing = false
     }
+  }
+
+  const clearPreloadWatchdog = () => {
+    if (preloadWatchdog === undefined) return
+    clearTimeout(preloadWatchdog)
+    preloadWatchdog = undefined
+  }
+
+  const markPreloadReady = () => {
+    if (preloadSettled) return
+    preloadSettled = true
+    clearPreloadWatchdog()
+  }
+
+  const reportPreloadFailure = (recovery: { readonly message: string; readonly detail: string }) => {
+    if (preloadSettled) return
+    preloadSettled = true
+    clearPreloadWatchdog()
+    void show(recovery.message, recovery.detail, false)
   }
 
   const failed = (
@@ -378,8 +400,28 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   win.webContents.on("preload-error", (_event, preloadPath, error) => {
     writeLog("preload", "preload error", { window: name, preloadPath, error }, "error")
     const recovery = preloadFailureRecovery({ window: name, preloadPath, error })
-    void show(recovery.message, recovery.detail, false)
+    reportPreloadFailure(recovery)
   })
+
+  // Electron reports a throwing preload, but a hung module evaluation can leave neither that event
+  // nor a renderer process fault. The renderer cannot reach an HTML error boundary until this
+  // handshake arrives, so the main process owns a bounded native fallback.
+  win.webContents.on("ipc-message", (_event, channel) => {
+    if (channel === "preload-ready") markPreloadReady()
+  })
+  preloadWatchdog = setTimeout(() => {
+    reportPreloadFailure(
+      {
+        message: "NovaClaw could not start",
+        detail: [
+          `Window: ${name}`,
+          "The privileged preload bridge did not initialize within 15 seconds.",
+          "Relaunch NovaClaw or export the logs for diagnosis.",
+        ].join("\n"),
+      },
+    )
+  }, PRELOAD_READY_TIMEOUT_MS)
+  win.once("closed", clearPreloadWatchdog)
 }
 
 // Document-level headers for renderer HTML served over `nc://`. The CSP is set here AND in

@@ -107,3 +107,7 @@ const api: ElectronAPI = {
 }
 
 contextBridge.exposeInMainWorld("api", api)
+// This is the main process's only positive proof that the privileged bridge evaluated. It is
+// deliberately sent after exposure and never awaited: startup instrumentation must not become a
+// second failure seam for the bridge it is proving.
+ipcRenderer.send("preload-ready")
