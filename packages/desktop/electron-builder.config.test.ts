@@ -66,6 +66,12 @@ test("does not carry an updater runtime dependency", () => {
   expect(pkg.dependencies?.[dependency]).toBeUndefined()
 })
 
+test("replaces copied sidecar chunks instead of overlaying generations", async () => {
+  const config = await Bun.file(join(import.meta.dir, "electron.vite.config.ts")).text()
+  expect(config).toContain('await rm(output, { recursive: true, force: true })')
+  expect(config).toContain('await mkdir(output, { recursive: true })')
+})
+
 test("embeds the prepared w64devkit tree in Windows packages", async () => {
   const module = await import(`./electron-builder.config.ts?resource=${Date.now()}`)
   const config = module.default as Configuration

@@ -2,7 +2,7 @@ import { defineConfig } from "electron-vite"
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import appPlugin from "@novaclaw/app/vite"
-import { copyFile, mkdir, readdir } from "node:fs/promises"
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises"
 
 import { resolveChannel } from "@novaclaw/script/channel"
 
@@ -70,6 +70,9 @@ export default defineConfig({
         name: "novaclaw:copy-server-assets",
         async writeBundle() {
           const output = "./out/main/chunks"
+          // The sidecar build rotates content hashes. Replace this destination before copying so a
+          // prior desktop build cannot leave an unreachable generation inside the packaged app.
+          await rm(output, { recursive: true, force: true })
           await mkdir(output, { recursive: true })
           for (const name of await readdir(NOVACLAW_SERVER_DIST)) {
             // 🔴 CHUNKS TOO. The sidecar bundle is built with `splitting: true`, so the entry is a
