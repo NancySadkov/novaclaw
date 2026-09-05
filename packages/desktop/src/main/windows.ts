@@ -20,6 +20,7 @@ import { resolveRendererDevUrl } from "./renderer-url"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { preloadFailureRecovery } from "./preload-recovery"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -376,6 +377,8 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   })
   win.webContents.on("preload-error", (_event, preloadPath, error) => {
     writeLog("preload", "preload error", { window: name, preloadPath, error }, "error")
+    const recovery = preloadFailureRecovery({ window: name, preloadPath, error })
+    void show(recovery.message, recovery.detail, false)
   })
 }
 
