@@ -64,21 +64,24 @@ import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHre
 import { isSessionNotFoundError } from "./utils/server-errors"
 import { showToast } from "@/utils/toast"
 
-import Session from "@/pages/session"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
-import { FilesPage } from "@/pages/files"
-import { NotesPage } from "@/pages/notes"
-import { CalendarPage } from "@/pages/calendar"
-import { RecipesPage } from "@/pages/recipes"
-import { SkillsPage } from "@/pages/skills"
-import { DebugPage } from "@/pages/debug"
-import { RegistryPage } from "@/pages/registry"
-import { ContactsPage } from "@/pages/contacts"
-import { MemoryGraphPage } from "@/pages/memory-graph"
-import { TrashPage } from "@/pages/trash"
-import { TerminalPage } from "@/pages/terminal"
 import { clientLogPayload, installClientLogSender, installErrorLog } from "@/utils/error-log"
 import { publicAssetUrl } from "@/utils/public-asset"
+
+const Session = lazy(() => import("@/pages/session"))
+const FilesPage = lazy(() => import("@/pages/files").then(({ FilesPage }) => ({ default: FilesPage })))
+const NotesPage = lazy(() => import("@/pages/notes").then(({ NotesPage }) => ({ default: NotesPage })))
+const CalendarPage = lazy(() => import("@/pages/calendar").then(({ CalendarPage }) => ({ default: CalendarPage })))
+const RecipesPage = lazy(() => import("@/pages/recipes").then(({ RecipesPage }) => ({ default: RecipesPage })))
+const SkillsPage = lazy(() => import("@/pages/skills").then(({ SkillsPage }) => ({ default: SkillsPage })))
+const DebugPage = lazy(() => import("@/pages/debug").then(({ DebugPage }) => ({ default: DebugPage })))
+const RegistryPage = lazy(() => import("@/pages/registry").then(({ RegistryPage }) => ({ default: RegistryPage })))
+const ContactsPage = lazy(() => import("@/pages/contacts").then(({ ContactsPage }) => ({ default: ContactsPage })))
+const MemoryGraphPage = lazy(() =>
+  import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
+)
+const TrashPage = lazy(() => import("@/pages/trash").then(({ TrashPage }) => ({ default: TrashPage })))
+const TerminalPage = lazy(() => import("@/pages/terminal").then(({ TerminalPage }) => ({ default: TerminalPage })))
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 

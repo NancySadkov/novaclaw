@@ -191,10 +191,11 @@ function gatedTiles(): GatedTile[] {
 }
 
 /**
- * The source file behind a route: `app.tsx` maps `path` → component, and its own import maps that
- * component → a `@/pages/...` module. Returns undefined when either hop fails — which the test
- * treats as a FAILURE, not as "nothing to check". A gated page moved behind `lazy()` or into a
- * component this cannot follow must announce itself here rather than quietly leaving the set.
+ * The source file behind a route: `app.tsx` maps `path` → component, and its import or explicit
+ * lazy declaration maps that component → a `@/pages/...` module. Returns undefined when either
+ * hop fails — which the test treats as a FAILURE, not as "nothing to check". A gated page moved
+ * behind an indirection this cannot follow must announce itself here rather than quietly leaving
+ * the set.
  */
 function pageFileForRoute(route: string): string | undefined {
   const app = code("app.tsx")
@@ -212,6 +213,12 @@ function pageFileForRoute(route: string): string | undefined {
     )
     if (!names.includes(component)) continue
     for (const candidate of [`${entry[3]}.tsx`, `${entry[3]}.ts`, `${entry[3]}/index.tsx`]) {
+      if (fs.existsSync(path.join(SRC, candidate))) return candidate
+    }
+  }
+  const lazyImport = new RegExp(`const\\s+${component}\\s*=\\s*lazy\\(\\(\\)\\s*=>\\s*import\\("@/(pages/[^" ]+)"\\)`).exec(app)?.[1]
+  if (lazyImport) {
+    for (const candidate of [`${lazyImport}.tsx`, `${lazyImport}.ts`, `${lazyImport}/index.tsx`]) {
       if (fs.existsSync(path.join(SRC, candidate))) return candidate
     }
   }
@@ -241,7 +248,7 @@ describe("a level-gated ROUTE explains itself instead of bouncing", () => {
     expect(
       unresolved.map((tile) => `${tile.id} -> ${tile.route ?? "(no navigate)"}`),
       "a gated tile whose page cannot be located is NOT exempt — it is unchecked. Point the tile at a " +
-        "route registered in app.tsx with a statically imported page component, or extend this resolver.",
+        "route registered in app.tsx with an imported or explicitly lazy page component, or extend this resolver.",
     ).toEqual([])
   })
 
