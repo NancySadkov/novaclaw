@@ -11,6 +11,7 @@ import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
 import { HostPressure } from "@/storage/host-pressure"
+import { Pressure } from "@/storage/pressure"
 import { ResourceUsage } from "@/storage/resource-usage"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -175,6 +176,18 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       }
     })
 
+    const pressure = Effect.fn("GlobalHttpApi.pressure")(function* () {
+      // The launcher needs only this cheap answer. Do not route it through ResourceUsage.collect:
+      // that response also inventories the database, graph, models, runtime, downloads and logs.
+      const report = yield* storage.pressure()
+      return {
+        measuredAt: Date.now(),
+        memory: report.memory,
+        level: report.level,
+        memoryLevel: Pressure.memoryLevel(report.memory, report.thresholds),
+      }
+    })
+
     const resources = Effect.fn("GlobalHttpApi.resources")(function* () {
       const base = (yield* config.getGlobal()) as Record<string, unknown>
       const merged = (yield* ConfigStoreWrite.overlay(base)) as { local_model_catalog?: ConfigLocalModelCatalog.Info }
@@ -214,6 +227,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handle("discovery", discovery)
+      .handle("pressure", pressure)
       .handle("resources", resources)
       .handle("identityBackup", identityBackup)
       .handle("identityRestore", identityRestore)

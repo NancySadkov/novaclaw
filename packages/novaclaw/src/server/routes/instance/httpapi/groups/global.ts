@@ -128,6 +128,15 @@ const GlobalResources = Schema.Struct({
   localModel: LocalModel.Status,
 })
 
+const GlobalPressure = Schema.Struct({
+  measuredAt: Schema.Finite,
+  memory: MemoryReading,
+  /** The worst verdict across memory and instance volumes. */
+  level: Schema.String,
+  /** The memory-only verdict used by the launcher hero. */
+  memoryLevel: Schema.String,
+})
+
 const SyncEventSchemas = EventManifest.Latest.values()
   .flatMap((definition) => {
     if (!definition.durable) return []
@@ -177,6 +186,7 @@ export const GlobalPaths = {
   config: "/global/config",
   dispose: "/global/dispose",
   discovery: "/global/discovery",
+  pressure: "/global/pressure",
   resources: "/global/resources",
   /**
    * ⚠️ Under `/api/*`, not `/global/*` like its neighbours. Ruling 11: `/api/*` is the ONE contract
@@ -245,6 +255,15 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.discovery",
           summary: "Discover LAN instances",
           description: "Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.",
+        }),
+      ),
+      HttpApiEndpoint.get("pressure", GlobalPaths.pressure, {
+        success: described(GlobalPressure, "Live instance memory pressure"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.pressure",
+          summary: "Get instance pressure",
+          description: "Report cheap host memory pressure without recursive storage accounting.",
         }),
       ),
       // POST rather than GET, deliberately: a secret does not belong in a URL that proxies, browser

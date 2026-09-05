@@ -13,7 +13,7 @@ import { createMemo, createResource, onCleanup, onMount } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
-import { instanceResources } from "@/utils/resource-api"
+import { instancePressure } from "@/utils/resource-api"
 import type { HeroStat } from "./registry"
 
 export interface ThreadActivity {
@@ -74,7 +74,7 @@ export function useSystemLoad(): () => SystemLoad {
   // the sidecar was killed, BEFORE the connection banner's 2 s anti-flicker gate could show it, and
   // it never cleared when the sidecar came back. An unreachable host is the "cannot be measured"
   // case this file already documents — so it degrades to `undefined` and the tile reads "—".
-  const [usage, actions] = createResource(connection, (value) => instanceResources(value.http).catch(() => undefined))
+  const [usage, actions] = createResource(connection, (value) => instancePressure(value.http).catch(() => undefined))
 
   // 🔴 GATED ON VISIBILITY, and that is not an optimisation (review H3, 2026-08-23).
   //

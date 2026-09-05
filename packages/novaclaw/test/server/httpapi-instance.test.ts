@@ -148,6 +148,25 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("serves the launcher pressure summary without the recursive usage payload", () =>
+    Effect.gen(function* () {
+      const response = yield* HttpClient.get("/global/pressure")
+      expect(response.status).toBe(200)
+      const body = (yield* response.json) as Record<string, unknown>
+      expect(body).toEqual(
+        expect.objectContaining({
+          measuredAt: expect.any(Number),
+          memory: expect.any(Object),
+          level: expect.any(String),
+          memoryLevel: expect.any(String),
+        }),
+      )
+      expect(body.disk).toBeUndefined()
+      expect(body.ram).toBeUndefined()
+      expect(body.localModel).toBeUndefined()
+    }),
+  )
+
   it.live("🔴 the identity backup carries the secret, and only this endpoint does", () =>
     Effect.gen(function* () {
       const health = (yield* (yield* HttpClient.get("/global/health")).json) as { networkID: string }

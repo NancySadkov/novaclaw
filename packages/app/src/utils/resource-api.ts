@@ -31,6 +31,19 @@ export interface InstanceResources {
   readonly localModel: LocalModelStatus
 }
 
+export interface InstancePressure {
+  readonly measuredAt: number
+  readonly level: ResourceLevel
+  readonly memoryLevel: ResourceLevel
+  readonly memory:
+    | { readonly known: true; readonly usedBytes: number; readonly limitBytes: number; readonly crosscheck: string }
+    | { readonly known: false; readonly reason: string }
+}
+
+export function instancePressure(server: ServerConnection.HttpBase, signal?: AbortSignal) {
+  return instanceFetch<InstancePressure>(server, { route: "global/pressure", signal, timeoutMs: 20_000 })
+}
+
 export function instanceResources(server: ServerConnection.HttpBase, signal?: AbortSignal) {
   return instanceFetch<InstanceResources>(server, { route: "global/resources", signal, timeoutMs: 20_000 })
 }
