@@ -27,6 +27,7 @@ import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { SpawnAdmission } from "@novaclaw/core/session/spawn-admission"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
@@ -406,6 +407,20 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
       expect(first.parentID).toBeUndefined()
       expect(first.location.directory).toBe(location.directory)
       expect(first.type).toBe("goal-oriented")
+    }),
+  )
+
+  it.live("applies the instance-wide pressure gate to a rootless launch", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      yield* SpawnAdmission.register(() => Effect.succeed({ refuse: "host resources are at the floor" }))
+
+      const error = yield* session
+        .spawn({ location, agent: rootAgent, text: PROMPT, type: "goal-oriented", title: "scheduled under pressure" })
+        .pipe(Effect.flip)
+
+      expect((error as SessionSpawner.SpawnLimitError).reason).toBe("pressure")
     }),
   )
 
