@@ -3,7 +3,7 @@ import { PtyProtocol } from "@novaclaw/core/pty/protocol"
 import { Ticket } from "@novaclaw/core/ticket"
 import { Location } from "@novaclaw/core/location"
 import { Shell } from "@novaclaw/core/shell"
-import { Effect, Queue } from "effect"
+import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -12,6 +12,10 @@ import { CorsConfig, isAllowedRequestOrigin } from "../cors"
 import { ForbiddenError, PtyNotFoundError } from "@novaclaw/protocol/errors"
 import { TICKET_QUERY, TICKET_REQUEST_HEADER, TICKET_REQUEST_HEADER_VALUE } from "@novaclaw/schema/ticket"
 import { response } from "../location"
+import { makeByteBoundedOutbox } from "./pty-outbox"
+
+const ptyFrameBytes = (frame: string | Uint8Array | Socket.CloseEvent) =>
+  frame instanceof Socket.CloseEvent ? 0 : typeof frame === "string" ? Buffer.byteLength(frame, "utf8") : frame.byteLength
 
 const ticketScope = Effect.gen(function* () {
   const location = yield* Location.Service
@@ -207,15 +211,22 @@ export const PtyHandler = handlerLayer(
                   Effect.catch(() => Effect.void),
                 )
 
-            // Outbound frames flow through one queue drained by a single writer so replay, live
-            // output, and the close frame keep their order.
+            // Outbound frames flow through one byte-bounded queue drained by a single writer so
+            // replay, live output, and the close frame keep their order. A socket that cannot keep
+            // up is closed and can resume from its last cursor; it must not become a second,
+            // lossless PTY history in the server heap.
             // TODO: Integrate graceful-shutdown socket tracking before clients migrate to this route.
-            const outbox = yield* Queue.unbounded<string | Uint8Array | Socket.CloseEvent>()
+            const outbox = yield* makeByteBoundedOutbox<string | Uint8Array | Socket.CloseEvent>(ptyFrameBytes)
+            const enqueueData = (chunk: string) => {
+              for (const frame of PtyProtocol.chunks(chunk)) {
+                if (!outbox.offerUnsafe(frame)) break
+              }
+            }
             const attachment = yield* pty
               .attach(ctx.params.ptyID, {
                 cursor,
-                onData: (chunk) => Queue.offerUnsafe(outbox, chunk),
-                onEnd: () => Queue.offerUnsafe(outbox, new Socket.CloseEvent(1000)),
+                onData: enqueueData,
+                onEnd: () => outbox.offerUnsafe(new Socket.CloseEvent(1000)),
               })
               .pipe(
                 Effect.catchTags({
@@ -227,15 +238,28 @@ export const PtyHandler = handlerLayer(
               )
             if (!attachment) return HttpServerResponse.empty()
 
-            for (const chunk of PtyProtocol.chunks(attachment.replay)) Queue.offerUnsafe(outbox, chunk)
-            Queue.offerUnsafe(outbox, PtyProtocol.metaFrame(attachment.cursor))
+            for (const chunk of PtyProtocol.chunks(attachment.replay)) {
+              if (!outbox.offerUnsafe(chunk)) break
+            }
+            outbox.offerUnsafe(PtyProtocol.metaFrame(attachment.cursor))
             attachment.activate()
 
             const drain = Effect.gen(function* () {
               while (true) {
-                const item = yield* Queue.take(outbox)
-                yield* write(item)
+                const item = yield* outbox.take
+                const written = yield* write(item).pipe(
+                  Effect.as(true),
+                  Effect.timeout("5 seconds"),
+                  Effect.catch(() => Effect.succeed(false)),
+                )
                 if (item instanceof Socket.CloseEvent) return
+                if (!written || outbox.overflowed()) {
+                  yield* write(new Socket.CloseEvent(1013, "PTY output consumer too slow; reconnect to resume.")).pipe(
+                    Effect.timeout("1 second"),
+                    Effect.catch(() => Effect.void),
+                  )
+                  return
+                }
               }
             })
 
