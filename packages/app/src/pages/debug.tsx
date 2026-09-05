@@ -24,6 +24,7 @@ import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { instanceGlobalDirectory } from "@/utils/routing-directory"
+import { listDebugSessions } from "./debug-process"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
@@ -37,8 +38,6 @@ const STATUS_TONE: Record<ServerStreamStatus, string> = {
   reconnecting: "text-v2-state-fg-warning",
   idle: "text-v2-text-text-faint",
 }
-
-const PS_LIMIT = 100
 
 // ── the ROUTE gate ────────────────────────────────────────────────────────────────────────────────
 //
@@ -86,19 +85,29 @@ function DebugAppPage() {
   const servers = createMemo(() => global.servers.list())
   const focused = createMemo(() => server.current ?? servers()[0])
 
+  const [processRosterRefresh, setProcessRosterRefresh] = createSignal(0)
+  const [processRoster] = createSettledResource(
+    () => {
+      const conn = focused()
+      return conn ? { conn, refresh: processRosterRefresh() } : undefined
+    },
+    ({ conn }) => listDebugSessions(global.ensureServerCtx(conn).sdk.client),
+  )
+
   const sessions = createMemo(() => {
     const conn = focused()
     if (!conn) return []
     const ctx = global.ensureServerCtx(conn)
     const key = ServerConnection.key(conn)
-    const info = ctx.sync.session.data.info
     const status = ctx.sync.session.data.session_status
-    const rows = Object.values(info)
-      .filter((s) => s !== undefined)
+    const rows = (processRoster() ?? [])
+      .filter((s) => s.time.archived === undefined)
       .map((s) => ({
         id: s.id,
         title: s.title,
         agent: s.agent,
+        model: s.model,
+        tokens: s.tokens,
         parentID: s.parentID,
         status: status[s.id]?.type ?? "idle",
         // The presence column's busy half. Read from the session-status signal through its ONE
@@ -108,7 +117,11 @@ function DebugAppPage() {
         href: sessionHref(key, s.id),
       }))
     // working first, then newest ids first (ids are time-sortable)
-    return rows.sort((a, b) => Number(b.status !== "idle") - Number(a.status !== "idle") || (a.id < b.id ? 1 : -1))
+    return rows.sort(
+      (a, b) =>
+        Number(["busy", "retry"].includes(b.status)) - Number(["busy", "retry"].includes(a.status)) ||
+        (a.id < b.id ? 1 : -1),
+    )
   })
 
   // ── presence: the `ps` metaphor's "who is attached / who is driving" half ────────────────────
@@ -293,9 +306,8 @@ function DebugAppPage() {
   const contextSessionID = createMemo(() => {
     const conn = focused()
     if (!conn) return undefined
-    const info = global.ensureServerCtx(conn).sync.session.data.info
-    return Object.values(info)
-      .filter((row) => row !== undefined)
+    return (processRoster() ?? [])
+      .filter((row) => row.time.archived === undefined)
       .sort((a, b) => (a!.id < b!.id ? 1 : -1))[0]?.id
   })
   const contextSession = createMemo(() => {
@@ -1031,20 +1043,22 @@ function DebugAppPage() {
           </div>
         </div>
 
-        {/* ── Sessions (ps-lite) ─────────────────────────────────────────────────────── */}
+        {/* ── Sessions (ps) ───────────────────────────────────────────────────────────── */}
         <div class={section}>
           <div class={heading}>
             <span class={title}>{language.t("debug.page.sessions")}</span>
             {/* Naming the scope is the honest move, the same way the log panel says whose ring it
                 shows: presence answers for THIS instance's own sessions and is not a directory of
-                who is online — a developer view does not widen that. */}
+                who is online — a developer view does not widen that. The rows themselves come from
+                the instance's cursor-paginated roster, not this browser's bounded event cache. */}
             <span class={hint}>
-              durable execution, recovery and attendance state for {sessions().length} cached session
+              durable execution, recovery and attendance state for {sessions().length} session
               {sessions().length === 1 ? "" : "s"} on this instance
             </span>
             <button
               class="ml-auto text-[11px] text-v2-text-text-muted hover:underline"
               onClick={() => {
+                setProcessRosterRefresh((v) => v + 1)
                 setExecutionTick((v) => v + 1)
                 refreshPresence()
               }}
@@ -1055,7 +1069,14 @@ function DebugAppPage() {
           {/* overflow-x too: seven columns outgrow a narrow window, and a table that spills past
               the viewport drags the whole page wide instead of scrolling inside its panel. */}
           <div class="max-h-72 overflow-y-auto overflow-x-auto px-4 pb-3">
-            <Show when={sessions().length > 0} fallback={<div class={hint}>no sessions cached yet</div>}>
+            <Show
+              when={!processRoster.failed}
+              fallback={<div class="text-[11px] text-v2-state-fg-danger">could not read the instance session roster</div>}
+            >
+              <Show
+                when={!processRoster.loading && sessions().length > 0}
+                fallback={<div class={hint}>{processRoster.loading ? "reading the instance session roster…" : "no sessions"}</div>}
+              >
               <table class="w-full border-collapse text-[11px]">
                 <thead>
                   <tr class="text-left text-v2-text-text-faint">
@@ -1064,13 +1085,15 @@ function DebugAppPage() {
                     <th class="py-1 pr-2 font-medium">presence</th>
                     <th class="py-1 pr-2 font-medium">phase / recovery</th>
                     <th class="py-1 pr-2 font-medium">agent</th>
+                    <th class="py-1 pr-2 font-medium">model</th>
+                    <th class="py-1 pr-2 font-medium">tokens</th>
                     <th class="py-1 pr-2 font-medium">parent</th>
                     <th class="py-1 font-medium">title</th>
                     <th class="py-1 font-medium">actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <For each={sessions().slice(0, PS_LIMIT)}>
+                  <For each={sessions()}>
                     {(row) => (
                       <tr class="align-top">
                         <td class="py-0.5 pr-2 font-mono">
@@ -1081,8 +1104,8 @@ function DebugAppPage() {
                         <td
                           class="py-0.5 pr-2"
                           classList={{
-                            "text-v2-state-fg-success": row.status !== "idle",
-                            "text-v2-text-text-faint": row.status === "idle",
+                            "text-v2-state-fg-success": ["busy", "retry"].includes(row.status),
+                            "text-v2-text-text-faint": ["idle", "exited"].includes(row.status),
                           }}
                         >
                           {executionBySession()[row.id]?.state ?? row.status}
@@ -1124,6 +1147,12 @@ function DebugAppPage() {
                           </Show>
                         </td>
                         <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
+                        <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                          {row.model ? `${row.model.providerID}/${row.model.id}` : "inherit"}
+                        </td>
+                        <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                          {row.tokens.input + row.tokens.output + row.tokens.reasoning}
+                        </td>
                         <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
                         <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
                         <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
@@ -1154,8 +1183,6 @@ function DebugAppPage() {
                   </For>
                 </tbody>
               </table>
-              <Show when={sessions().length > PS_LIMIT}>
-                <div class={hint}>+{sessions().length - PS_LIMIT} more not shown</div>
               </Show>
             </Show>
             {/* A room outlives the session row when the session is deleted (or was never cached
