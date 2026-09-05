@@ -186,7 +186,7 @@ describe("TelegramDriver", () => {
     }),
   )
 
-  it.live("sendMessage chunks HTML to the 4096 limit and reports the last id", () =>
+  it.live("sendMessage writes one gateway-shaped HTML payload and reports its id", () =>
     Effect.gen(function* () {
       const { fetchImpl, calls } = makeFakeApi([[]])
       yield* Effect.scoped(
@@ -196,16 +196,12 @@ describe("TelegramDriver", () => {
             secret: "TOKEN",
             cursor: { get: () => Effect.succeed(undefined), set: () => Effect.void },
           })
-          const long = "x".repeat(9000)
-          const result = yield* connection.send("777", { text: long })
+          const result = yield* connection.send("777", { text: "<b>ready</b>" })
           expect(result.messageID).not.toBe("0")
           const sends = calls.filter((call) => call.method === "sendMessage")
-          expect(sends.length).toBe(3) // 9000 / 4096 → 3 chunks
-          for (const send of sends) {
-            const text = (send.body as { text: string }).text
-            expect(text.length).toBeLessThanOrEqual(4096)
-            expect((send.body as { parse_mode: string }).parse_mode).toBe("HTML")
-          }
+          expect(sends.length).toBe(1)
+          expect((sends[0]?.body as { text: string }).text).toBe("<b>ready</b>")
+          expect((sends[0]?.body as { parse_mode: string }).parse_mode).toBe("HTML")
         }),
       )
     }),

@@ -22,6 +22,8 @@ import { SessionOrigin } from "../session/origin"
 import { MessengerCommands } from "./commands"
 import type { Connection, Driver, InboundEvent } from "./driver"
 import * as MessengerDriverContract from "./driver"
+import { MessengerFormat } from "./format"
+import { MessengerWire } from "./wire"
 import { MessengerGatewayHandle } from "./gateway-handle"
 import { MessengerDrivers } from "./drivers"
 import { MessengerPace } from "./pace"
@@ -590,6 +592,10 @@ const build = (options: Options) =>
     // call site. Set when the connection opens (attempt); the WeakMap drops it when the connection
     // is GC'd. The global serialization ("one hand") is unaffected — only the per-message delay.
     const connectionPace = new WeakMap<Connection, MessengerPace.PaceOptions>()
+    // The gateway is the only shaping seam: drivers receive one already-downgraded, already-sized
+    // text payload per send call. Keeping capabilities beside the live connection lets detached
+    // relay fibers use the same plan without carrying a driver through every event callback.
+    const connectionCapabilities = new WeakMap<Connection, Messenger.Capabilities>()
 
     /**
      * 🔴 **NC-REL-036 — a challenge raised by an outbound op reads as a challenge.**
@@ -635,8 +641,129 @@ const build = (options: Options) =>
       attempt: Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R>,
     ) => pacer.paced(text, retrySendOnce(attempt), connectionPace.get(connection))
 
+    /** Find the account that owns a live connection. The connection object is the only stable
+     * identity available to detached relay fibers; using it keeps those paths on the same account-
+     * aware challenge seam as tool calls. */
+    const accountForConnection = (connection: Connection) =>
+      [...entries].find(([, entry]) => entry.connection === connection)
+
+    const clearAccountState = (accountID: Messenger.AccountID): void => {
+      const prefix = `${accountID}:`
+      for (const [key, record] of pairing) if (record.accountID === accountID) pairing.delete(key)
+      for (const key of listings.keys()) if (key.startsWith(prefix)) listings.delete(key)
+      for (const key of dispatchRate.keys()) if (key.startsWith(prefix)) dispatchRate.delete(key)
+      for (const key of inboundRate.keys()) if (key.startsWith(prefix)) inboundRate.delete(key)
+      for (const key of toldUnreadable.keys()) if (key.startsWith(prefix)) toldUnreadable.delete(key)
+      for (const key of toldBadPairing.keys()) if (key.startsWith(prefix)) toldBadPairing.delete(key)
+      for (const [bindingID, record] of lastInboundChat)
+        if (record.accountID === accountID) lastInboundChat.delete(bindingID)
+      moderationRate.delete(accountID)
+    }
+
+    /** Park an account without notifying. This is used while trying to deliver a notice on another
+     * account, where recursively sending another notice would turn one provider challenge into a
+     * notification loop. The old fiber is returned so the caller can interrupt it after the status
+     * and any notice have been published. */
+    const parkEntry = (accountID: Messenger.AccountID, message: string) =>
+      Effect.suspend(() => {
+        const old = entries.get(accountID)
+        if (old === undefined || old.connection === undefined) return Effect.succeed(undefined)
+        const oldFiber = old.fiber
+        clearAccountState(accountID)
+        entries.delete(accountID)
+        const parked: Entry = { status: { state: "challenge", message }, fingerprint: old.fingerprint }
+        entries.set(accountID, parked)
+        return setStatus(accountID, parked, parked.status).pipe(Effect.map(() => ({ oldFiber, parked })))
+      })
+
+    /** The one outbound challenge fold. Park before notifying so every other outbound path sees
+     * the account as unavailable immediately; interrupt only after the notice attempt so a challenge
+     * raised from an inbound reply can still notify the operator before its own connection fiber is
+     * stopped. */
+    const parkOnChallenge = (connection: Connection, message: string) =>
+      Effect.gen(function* () {
+        const found = accountForConnection(connection)
+        if (found === undefined) return
+        const [accountID] = found
+        const parked = yield* parkEntry(accountID, message)
+        if (parked === undefined) return
+        const notice = yield* notifyOperator(
+          `⚠️ Messenger account ${accountID} needs verification (${message}). ` +
+            `Resolve it in the app, then re-enable the account.`,
+        )
+        if (notice.failed > 0)
+          yield* setStatus(accountID, parked.parked, {
+            state: "challenge",
+            message:
+              `${message} — and I couldn't message you about it` +
+              `${notice.reason === undefined ? "" : ` (${notice.reason})`}.`,
+          })
+        if (parked.oldFiber !== undefined) yield* Fiber.interrupt(parked.oldFiber).pipe(Effect.asVoid)
+      })
+
+    /** Attach account-aware challenge handling to every paced platform write, including detached
+     * relays. Ordinary send failures remain in the caller's error channel. */
+    const paceAccountOperation = <A, R>(
+      connection: Connection,
+      text: string,
+      attempt: Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R>,
+    ) =>
+      paceOperation(connection, text, attempt).pipe(
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            if (isChallenge(error)) yield* parkOnChallenge(connection, error.message)
+            return yield* Effect.fail(error)
+          }),
+        ),
+      )
+
+    const outboundChunks = (connection: Connection, text: string): readonly string[] => {
+      const capabilities = connectionCapabilities.get(connection)
+      if (capabilities === undefined) return [text]
+      return MessengerFormat.chunk(MessengerFormat.downgrade(text, capabilities.format), {
+        maxChars: capabilities.maxChars,
+        ...(capabilities.maxBytes === undefined ? {} : { maxBytes: capabilities.maxBytes }),
+      }).flatMap((chunk) =>
+        // Byte-budget line protocols (currently IRC) cannot carry a newline inside one platform
+        // message. Split those after byte chunking; each resulting line gets its own permit and
+        // delay below.
+        capabilities.maxBytes === undefined
+          ? [chunk]
+          : MessengerWire.lines(chunk).filter((line) => line.trim().length > 0),
+      )
+    }
+
+    const paceSendRaw = (connection: Connection, chatID: string, text: string, replyTo?: string) =>
+      Effect.gen(function* () {
+        const shaped = outboundChunks(connection, text)
+        let last = { messageID: "0" }
+        for (const [index, chunk] of shaped.entries())
+          last = yield* paceOperation(
+            connection,
+            chunk,
+            connection.send(chatID, {
+              text: chunk,
+              ...(index === 0 && replyTo === undefined ? {} : index === 0 ? { replyTo } : {}),
+            }),
+          )
+        return last
+      })
+
     const paceSend = (connection: Connection, chatID: string, text: string, replyTo?: string) =>
-      paceOperation(connection, text, connection.send(chatID, { text, ...(replyTo === undefined ? {} : { replyTo }) }))
+      Effect.gen(function* () {
+        const shaped = outboundChunks(connection, text)
+        let last = { messageID: "0" }
+        for (const [index, chunk] of shaped.entries())
+          last = yield* paceAccountOperation(
+            connection,
+            chunk,
+            connection.send(chatID, {
+              text: chunk,
+              ...(index === 0 && replyTo === undefined ? {} : index === 0 ? { replyTo } : {}),
+            }),
+          )
+        return last
+      })
 
     const setStatus = (accountID: Messenger.AccountID, entry: Entry, status: Messenger.AccountStatus) =>
       Effect.gen(function* () {
@@ -980,11 +1107,21 @@ const build = (options: Options) =>
           const bindings = yield* store.bindingsForAccount(accountID).pipe(Effect.orElseSucceed(() => []))
           for (const binding of bindings) {
             if (binding.trust !== "operator") continue
-            const failure = yield* paceSend(connection, binding.chatID, text).pipe(
+            const failure = yield* paceSendRaw(connection, binding.chatID, text).pipe(
               Effect.as(undefined),
-              // No account/entry in this scope, so this one reports rather than parks; the two
-              // tool-surface sites below park, and a challenge always reaches one of them.
-              Effect.catch((error) => Effect.succeed(sendFailureText(error))),
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  // This is already the recovery path for another challenge. Park a notifier that
+                  // is itself revoked, but do not recursively notify through the same failing set
+                  // of accounts.
+                  if (isChallenge(error)) {
+                    const parked = yield* parkEntry(accountID, error.message)
+                    if (parked?.oldFiber !== undefined)
+                      yield* Fiber.interrupt(parked.oldFiber).pipe(Effect.asVoid)
+                  }
+                  return sendFailureText(error)
+                }),
+              ),
             )
             if (failure === undefined) {
               delivered += 1
@@ -1640,6 +1777,7 @@ const build = (options: Options) =>
             },
           })
           entry.connection = connection
+          connectionCapabilities.set(connection, driver.capabilities(account))
           // Apply this account's user-set typing speed (Settings → Messengers) to its outbound.
           const pace = MessengerPace.paceFromSettings(account.settings)
           if (pace !== undefined) connectionPace.set(connection, pace)
@@ -1725,16 +1863,7 @@ const build = (options: Options) =>
     const stop = (accountID: Messenger.AccountID): Effect.Effect<void> =>
       Effect.suspend(() => {
         const entry = entries.get(accountID)
-        const prefix = `${accountID}:`
-        for (const [key, record] of pairing) if (record.accountID === accountID) pairing.delete(key)
-        for (const key of listings.keys()) if (key.startsWith(prefix)) listings.delete(key)
-        for (const key of dispatchRate.keys()) if (key.startsWith(prefix)) dispatchRate.delete(key)
-        for (const key of inboundRate.keys()) if (key.startsWith(prefix)) inboundRate.delete(key)
-        for (const key of toldUnreadable.keys()) if (key.startsWith(prefix)) toldUnreadable.delete(key)
-        for (const key of toldBadPairing.keys()) if (key.startsWith(prefix)) toldBadPairing.delete(key)
-        for (const [bindingID, record] of lastInboundChat)
-          if (record.accountID === accountID) lastInboundChat.delete(bindingID)
-        moderationRate.delete(accountID)
+        clearAccountState(accountID)
         entries.delete(accountID)
         return entry?.fiber === undefined ? Effect.void : Fiber.interrupt(entry.fiber).pipe(Effect.asVoid)
       })
@@ -1854,8 +1983,8 @@ const build = (options: Options) =>
           const listed = yield* live().pipe(
             Effect.catch((error) =>
               Effect.gen(function* () {
-                if (isChallenge(error) && entry !== undefined)
-                  yield* setStatus(accountID, entry, { state: "challenge", message: error.message })
+                if (isChallenge(error) && entry?.connection !== undefined)
+                  yield* parkOnChallenge(entry.connection, error.message)
                 return undefined
               }),
             ),
@@ -1932,8 +2061,8 @@ const build = (options: Options) =>
                 // as on a listing. Park BEFORE answering the model, so the banner is up by the time
                 // it reads the refusal, and say which KIND of problem this is rather than reporting
                 // a verification prompt as an ordinary read failure.
-                if (isChallenge(error))
-                  yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
+                if (isChallenge(error) && entry.connection !== undefined)
+                  yield* parkOnChallenge(entry.connection, error.message)
                 return {
                   ok: false,
                   reason: isChallenge(error) ? `verification required — ${error.message}` : error.reason,
@@ -2020,8 +2149,6 @@ const build = (options: Options) =>
               Effect.gen(function* () {
                 // Park BEFORE answering the model: the banner should be up by the time it reads the
                 // refusal, and the refusal should say which kind of problem this is.
-                if (isChallenge(error))
-                  yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
                 return { kind: "refused", reason: sendFailureText(error) } satisfies SendOutcome
               }),
             ),
@@ -2047,7 +2174,7 @@ const build = (options: Options) =>
             } satisfies SendOutcome
           // Paced like any outbound (the one hand), but send errors surface — an oversized or
           // refused upload must come back legible, never vanish.
-          return yield* paceOperation(
+          return yield* paceAccountOperation(
             entry.connection,
             `${input.file.name} ${input.caption ?? ""}`,
             entry.connection.send(input.chatID, {

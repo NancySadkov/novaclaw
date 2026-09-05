@@ -322,14 +322,14 @@ describe("WhatsAppBaileys connect", () => {
     }),
   )
 
-  it.live("send chunks long text, tracks our own sends, and files ride as a caption", () =>
+  it.live("send writes one gateway-shaped text, tracks it, and files ride as a caption", () =>
     Effect.gen(function* () {
       const fake = makeFakeWA()
       const driver = WhatsAppBaileysDriver.make(factoryFor(fake))
       yield* Effect.scoped(
         Effect.gen(function* () {
           const conn = yield* driver.connect(ctxFor(signedIn))
-          yield* conn.send("c1@g.us", { text: "x".repeat(9000) }) // > 4096 → chunks
+          yield* conn.send("c1@g.us", { text: "ready" })
           yield* conn.send("c1@g.us", {
             file: { name: "a.pdf", mime: "application/pdf", data: new Uint8Array([1]) },
             text: "the file",
@@ -337,8 +337,8 @@ describe("WhatsAppBaileys connect", () => {
         }),
       )
       const textSends = fake.state.sent.filter((entry) => !entry.file)
-      expect(textSends.length).toBeGreaterThan(1) // chunked
-      for (const entry of textSends) expect((entry.text ?? "").length).toBeLessThanOrEqual(4096)
+      expect(textSends).toHaveLength(1)
+      expect(textSends[0]?.text).toBe("ready")
       const fileSends = fake.state.sent.filter((entry) => entry.file)
       expect(fileSends).toHaveLength(1)
       expect(fileSends[0]?.text).toBe("the file") // caption

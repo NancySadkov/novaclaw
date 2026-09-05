@@ -2,7 +2,6 @@ export * as TelegramDriver from "./telegram"
 
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
-import { MessengerFormat } from "../format"
 import type {
   ChatSnapshot,
   Connection,
@@ -269,25 +268,20 @@ export const make = (fetchImpl: FetchLike): Driver => ({
             }
           }
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
-          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "html"), {
-            maxChars: CAPS.maxChars,
-          })
-          let lastID = "0"
-          for (const [index, chunk] of chunks.entries()) {
-            const raw = yield* call("sendMessage", {
-              chat_id: Number(chatID),
-              text: chunk,
-              parse_mode: "HTML",
-              ...(index === 0 && message.replyTo ? { reply_to_message_id: Number(message.replyTo) } : {}),
-            }).pipe(Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })))
-            const decoded = decodeMessage(raw)
-            if (decoded._tag === "Some" && decoded.value.ok === false)
-              return yield* Effect.fail(
-                new SendError({ reason: decoded.value.description ?? "sendMessage rejected", retryable: false }),
-              )
-            if (decoded._tag === "Some" && decoded.value.result) lastID = String(decoded.value.result.message_id)
+          const raw = yield* call("sendMessage", {
+            chat_id: Number(chatID),
+            text: message.text,
+            parse_mode: "HTML",
+            ...(message.replyTo ? { reply_to_message_id: Number(message.replyTo) } : {}),
+          }).pipe(Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })))
+          const decoded = decodeMessage(raw)
+          if (decoded._tag === "Some" && decoded.value.ok === false)
+            return yield* Effect.fail(
+              new SendError({ reason: decoded.value.description ?? "sendMessage rejected", retryable: false }),
+            )
+          return {
+            messageID: decoded._tag === "Some" && decoded.value.result ? String(decoded.value.result.message_id) : "0",
           }
-          return { messageID: lastID }
         })
 
       // The long-poll loop: getUpdates(offset) → emit → advance the durable offset. The stream is

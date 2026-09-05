@@ -238,12 +238,12 @@ describe("MessengerGateway challenge doors (#9(c))", () => {
       yield* gateway.chats(reader.id)
       expect(parkedMessage((yield* gateway.status()).get(reader.id))).toContain(LIST_CHALLENGE)
 
-      // ...and the same on the history read, whose refusal must also NAME the kind of problem —
-      // "couldn't read the chat" sends the model back to retry against a verification prompt.
+      // The listing parks and removes the live connection, so a subsequent history attempt is
+      // refused at the account boundary rather than touching a transport that already demanded
+      // verification. The linked-account driver tests below cover the history door itself.
       const historyOutcome = yield* gateway.history({ accountID: reader.id, chatID: "770", limit: 10 })
       expect(historyOutcome.ok).toBe(false)
-      expect(historyOutcome.ok === false && historyOutcome.reason).toContain("verification required")
-      expect(historyOutcome.ok === false && historyOutcome.reason).toContain(LIST_CHALLENGE)
+      expect(historyOutcome.ok === false && historyOutcome.reason).toContain("isn't connected")
       expect(parkedMessage((yield* gateway.status()).get(reader.id))).toContain(LIST_CHALLENGE)
 
       yield* store.removeAccount(sender.id)

@@ -3,7 +3,6 @@ export * as IrcDriver from "./irc"
 import { createHash } from "node:crypto"
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
-import { MessengerFormat } from "../format"
 import { MessengerWire } from "../wire"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } from "../driver"
 import { ConnectError, SendError, withAbortSignal } from "../driver"
@@ -372,6 +371,13 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       const send = (chatID: string, message: { text?: string }) =>
         Effect.gen(function* () {
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
+          if (MessengerWire.breaksLine(message.text))
+            return yield* Effect.fail(
+              new SendError({
+                reason: "IRC outbound text must be one line; the gateway should split it before calling the driver.",
+                retryable: false,
+              }),
+            )
           // 🔴 A target is REFUSED, never repaired. `formatCommand` would strip the breaks and the
           // spaces out of it, but the survivor names a DIFFERENT channel — and delivering a private
           // reply to a channel nobody asked for is a worse outcome than not sending it. The value
@@ -384,22 +390,9 @@ export const make = (factory: IrcSocketFactory): Driver => ({
                 retryable: false,
               }),
             )
-          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), {
-            maxChars: LINE_TEXT_BYTES,
-            maxBytes: LINE_TEXT_BYTES,
-          })
-          for (const chunk of chunks) {
-            // IRC is single-line: a line ending inside a chunk becomes a separate PRIVMSG. ⚠️ ANY
-            // line ending — a lone CR ends the record on the wire exactly like an LF does, so
-            // splitting on "\n" alone left the tail of a CR-carrying message to be read as a
-            // command from us.
-            for (const line of MessengerWire.lines(chunk)) {
-              if (line.trim().length === 0) continue
-              yield* sendCommand("PRIVMSG", [chatID], line).pipe(
-                Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
-              )
-            }
-          }
+          yield* sendCommand("PRIVMSG", [chatID], message.text).pipe(
+            Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
+          )
           sentSeq += 1
           return { messageID: `irc-out-${openedAt}-${sentSeq}` }
         })

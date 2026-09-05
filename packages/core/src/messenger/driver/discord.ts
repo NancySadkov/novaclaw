@@ -3,7 +3,6 @@ export * as DiscordDriver from "./discord"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Log } from "@novaclaw/schema/log"
-import { MessengerFormat } from "../format"
 import type {
   ChatSnapshot,
   Connection,
@@ -605,22 +604,14 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             return { messageID: sent._tag === "Some" ? sent.value.id : "0" }
           }
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
-          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "markdown"), {
-            maxChars: CAPS.maxChars,
+          // The gateway has already downgraded and chunked the text; one driver call is one
+          // governed Discord write. Only that one payload carries the reply reference.
+          const response = yield* post({
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: message.text, ...reference }),
           })
-          let lastID = "0"
-          let first = true
-          for (const chunk of chunks) {
-            // Only the first chunk quotes the question — a reply chain of five quotes reads awful.
-            const response = yield* post({
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ content: chunk, ...(first ? reference : {}) }),
-            })
-            first = false
-            const sent = decodeSent(response.body)
-            if (sent._tag === "Some") lastID = sent.value.id
-          }
-          return { messageID: lastID }
+          const sent = decodeSent(response.body)
+          return { messageID: sent._tag === "Some" ? sent.value.id : "0" }
         })
 
       // Read a channel's recent posts. Discord replays nothing on demand through the gateway, so this is

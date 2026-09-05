@@ -1413,6 +1413,12 @@ describe("MessengerGateway pipeline", () => {
         (sent) => sent.some((s) => s.chatID === "888" && s.text === "welcome back"),
         "reply delivered",
       )
+      const shapedBefore = fake.state.sent.length
+      const shaped = yield* gateway.send({ accountID: account.id, chatID: "888", text: "x".repeat(2501) })
+      expect(shaped.kind).toBe("sent")
+      const shapedSends = fake.state.sent.slice(shapedBefore).filter((s) => s.chatID === "888")
+      expect(shapedSends).toHaveLength(3)
+      for (const sent of shapedSends) expect((sent.text ?? "").length).toBeLessThanOrEqual(CAPS.maxChars)
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }),

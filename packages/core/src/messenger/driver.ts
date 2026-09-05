@@ -221,6 +221,10 @@ export interface Connection {
    *  recovery) sends the gateway to backoff + reconnect — drivers surface, never spin silently. */
   readonly inbound: Stream.Stream<InboundEvent, ConnectError>
   /**
+   * The gateway owns markdown downgrade, platform limits, and chunking. A driver call receives one
+   * already-shaped payload and must perform at most one platform message; pacing is the governor's
+   * responsibility, so a driver must never loop over chunks inside this effect.
+   *
    * 🔴 **NC-REL-036 — a challenge can happen HERE, not only at connect.** This was typed
    * `SendError` alone, so a driver that discovered a login veto or a revoked session during an
    * outbound operation had to demote it to an ordinary send failure. The account then never parked,

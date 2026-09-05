@@ -3,7 +3,6 @@ export * as WhatsAppBaileysDriver from "./whatsapp-baileys"
 import { Deferred, Effect, Queue, Stream } from "effect"
 import { LinkedAccount } from "./linked-account"
 import type { Messenger } from "@novaclaw/schema/messenger"
-import { MessengerFormat } from "../format"
 import type {
   ChatSnapshot,
   Connection,
@@ -395,18 +394,12 @@ export const make = (factory: WAClientFactory): Driver => {
               return { messageID: result.messageID }
             }
             if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
-            const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), {
-              maxChars: CAPS.maxChars,
+            const result = yield* Effect.tryPromise({
+              try: (signal) => withAbortSignal(signal, () => client.sendText(chatID, message.text!), client.close),
+              catch: mapSendError,
             })
-            let lastID = "0"
-            for (const chunk of chunks) {
-              const result = yield* Effect.tryPromise({
-                try: (signal) => withAbortSignal(signal, () => client.sendText(chatID, chunk), client.close),
-                catch: mapSendError,
-              })
-              sent.add(chatID, result.messageID)
-              lastID = result.messageID
-            }
+            sent.add(chatID, result.messageID)
+            const lastID = result.messageID
             return { messageID: lastID }
           })
 

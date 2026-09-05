@@ -316,21 +316,17 @@ describe("TelegramUserDriver connect", () => {
     }),
   )
 
-  it.live("long replies chunk at 4096 and markdown downgrades to plain", () =>
+  it.live("send writes one gateway-shaped plain payload", () =>
     Effect.gen(function* () {
       const { factory, state } = makeFakeClient()
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(factory, "session-string-1")
-          const long = ("word ".repeat(1000) + "\n\n").repeat(2) + "**bold** and `code`"
-          yield* connection.send("555", { text: long })
+          yield* connection.send("555", { text: "bold and code" })
         }),
       )
-      expect(state.sent.length).toBeGreaterThan(1)
-      for (const message of state.sent) expect(message.text.length).toBeLessThanOrEqual(4096)
-      const last = state.sent.at(-1)
-      expect(last?.text).toContain("bold and code")
-      expect(last?.text).not.toContain("**")
+      expect(state.sent).toHaveLength(1)
+      expect(state.sent[0]?.text).toBe("bold and code")
     }),
   )
 

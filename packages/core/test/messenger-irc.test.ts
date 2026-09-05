@@ -157,18 +157,18 @@ describe("IrcDriver", () => {
     }),
   )
 
-  it.live("sends are byte-budgeted lines that never sever a UTF-8 code point (the floor)", () =>
+  it.live("writes one gateway-shaped line without severing UTF-8 code points", () =>
     Effect.gen(function* () {
       const { factory, state } = makeFakeSocket()
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(factory, SETTINGS)
-          const long = "héllo wörld ".repeat(60) // multi-byte, ~720 chars ≈ 840 bytes
-          yield* connection.send("#support", { text: long })
+          const text = "héllo wörld ".repeat(20)
+          yield* connection.send("#support", { text })
         }),
       )
       const privmsgs = state.written.filter((line) => line.startsWith("PRIVMSG #support :"))
-      expect(privmsgs.length).toBeGreaterThan(1)
+      expect(privmsgs).toHaveLength(1)
       for (const line of privmsgs) {
         const text = line.slice("PRIVMSG #support :".length)
         expect(MessengerFormat.utf8Length(text)).toBeLessThanOrEqual(400)

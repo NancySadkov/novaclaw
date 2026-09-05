@@ -2,7 +2,6 @@ export * as EmailDriver from "./email"
 
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
-import { MessengerFormat } from "../format"
 import { MessengerWire } from "../wire"
 import type {
   ChatSnapshot,
@@ -469,16 +468,13 @@ export const makeConnect =
                 retryable: false,
               }),
             )
-          // Long replies chunk into several emails (each a proper threaded reply).
-          const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(text, "plain"), { maxChars: CAPS.maxChars })
-          let last = { messageID: "0" }
-          for (const chunk of chunks) {
-            last = yield* Effect.tryPromise({
-              try: (signal) => withAbortSignal(signal, () => client.send(buildReply(state, chunk)), client.close),
-              catch: (error) =>
-                new SendError({ reason: `Could not send the email: ${String(error)}`, retryable: true }),
-            })
-          }
+          // The gateway has already downgraded and chunked the text; one driver call is one
+          // governed email write.
+          const last = yield* Effect.tryPromise({
+            try: (signal) => withAbortSignal(signal, () => client.send(buildReply(state, text)), client.close),
+            catch: (error) =>
+              new SendError({ reason: `Could not send the email: ${String(error)}`, retryable: true }),
+          })
           sentSeq += 1
           return { messageID: last.messageID || `email-out-${sentSeq}` }
         })

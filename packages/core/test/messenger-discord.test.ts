@@ -288,13 +288,13 @@ describe("DiscordDriver", () => {
     }),
   )
 
-  it.live("sends chunk at 2000 chars; files ride multipart with the text as payload caption", () =>
+  it.live("sends one gateway-shaped text; files ride multipart with the text as payload caption", () =>
     Effect.gen(function* () {
       const fake = makeFakeGateway()
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake)
-          yield* connection.send("c-support", { text: "word ".repeat(600) }) // ~3000 chars
+          yield* connection.send("c-support", { text: "ready" })
           yield* connection.send("c-support", {
             file: { name: "logo.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg/>") },
             text: "the draft",
@@ -303,8 +303,8 @@ describe("DiscordDriver", () => {
       )
       const posts = fake.state.restCalls.filter((call) => call.method === "POST")
       const textPosts = posts.filter((call) => !call.form)
-      expect(textPosts.length).toBeGreaterThan(1)
-      for (const post of textPosts) expect((post.body as { content: string }).content.length).toBeLessThanOrEqual(2000)
+      expect(textPosts).toHaveLength(1)
+      expect((textPosts[0]?.body as { content: string }).content).toBe("ready")
       expect(posts.some((call) => call.form)).toBe(true)
     }),
   )
@@ -493,23 +493,21 @@ describe("DiscordDriver", () => {
     }),
   )
 
-  it.live("a reply attaches to the message that asked — first chunk only", () =>
+  it.live("a reply attaches to the one gateway-shaped message", () =>
     Effect.gen(function* () {
       const fake = makeFakeGateway()
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake)
-          yield* connection.send("c-support", { text: "word ".repeat(600), replyTo: "m1" }) // >2000 chars
+          yield* connection.send("c-support", { text: "ready", replyTo: "m1" })
         }),
       )
       const posts = fake.state.restCalls.filter((call) => call.method === "POST" && !call.form)
-      expect(posts.length).toBeGreaterThan(1)
+      expect(posts).toHaveLength(1)
       const references = posts.map(
         (call) => (call.body as { message_reference?: { message_id: string } }).message_reference,
       )
       expect(references[0]).toEqual({ message_id: "m1", fail_if_not_exists: false } as never)
-      // A five-deep quote chain reads awful — only the opening chunk quotes.
-      expect(references.slice(1).every((reference) => reference === undefined)).toBe(true)
     }),
   )
 
