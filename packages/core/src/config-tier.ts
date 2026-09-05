@@ -136,6 +136,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Visibility and bounded retention for NovaClaw's own derived diagnostic data. It cannot disable
   // logging, name an endpoint, carry text, or touch user-authored data.
   log: "operational",
+  // Shortening this window removes the user's recovery margin; lengthening it spends disk. The
+  // Normal-level Storage control makes that trade visible before the one-card write.
+  trash: "consequential",
   // The agent's own truncation budget. Raising it spends the agent's own context and nothing else.
   tool_output: "operational",
   // The DEVICE registry: endpoint origins grouped into one backend, for the scheduler's admission

@@ -18,23 +18,6 @@ import { dict as desktopBr } from "./br"
 import { dict as desktopBs } from "./bs"
 
 import { dict as appEn } from "../../../../app/src/i18n/en"
-import { dict as appZh } from "../../../../app/src/i18n/zh"
-import { dict as appZht } from "../../../../app/src/i18n/zht"
-import { dict as appKo } from "../../../../app/src/i18n/ko"
-import { dict as appDe } from "../../../../app/src/i18n/de"
-import { dict as appEs } from "../../../../app/src/i18n/es"
-import { dict as appFr } from "../../../../app/src/i18n/fr"
-import { dict as appDa } from "../../../../app/src/i18n/da"
-import { dict as appJa } from "../../../../app/src/i18n/ja"
-import { dict as appPl } from "../../../../app/src/i18n/pl"
-import { dict as appRu } from "../../../../app/src/i18n/ru"
-import { dict as appUk } from "../../../../app/src/i18n/uk"
-import { dict as appAr } from "../../../../app/src/i18n/ar"
-import { dict as appNo } from "../../../../app/src/i18n/no"
-import { dict as appBr } from "../../../../app/src/i18n/br"
-import { dict as appBs } from "../../../../app/src/i18n/bs"
-import { dict as appTh } from "../../../../app/src/i18n/th"
-import { dict as appTr } from "../../../../app/src/i18n/tr"
 
 import { LOCALES, detectLocale, type Locale } from "@novaclaw/schema/locale"
 
@@ -91,28 +74,57 @@ const base = i18n.flatten({ ...appEn, ...desktopEn })
  * dictionary over the English desktop strings already in `base`. Partly translated beats a shell
  * that ignores the language the user chose.
  */
-const OVERLAYS: Record<Exclude<Locale, "en">, () => Dictionary> = {
-  zh: () => ({ ...base, ...i18n.flatten(appZh), ...i18n.flatten(desktopZh) }),
-  zht: () => ({ ...base, ...i18n.flatten(appZht), ...i18n.flatten(desktopZht) }),
-  ko: () => ({ ...base, ...i18n.flatten(appKo), ...i18n.flatten(desktopKo) }),
-  de: () => ({ ...base, ...i18n.flatten(appDe), ...i18n.flatten(desktopDe) }),
-  es: () => ({ ...base, ...i18n.flatten(appEs), ...i18n.flatten(desktopEs) }),
-  fr: () => ({ ...base, ...i18n.flatten(appFr), ...i18n.flatten(desktopFr) }),
-  da: () => ({ ...base, ...i18n.flatten(appDa), ...i18n.flatten(desktopDa) }),
-  ja: () => ({ ...base, ...i18n.flatten(appJa), ...i18n.flatten(desktopJa) }),
-  pl: () => ({ ...base, ...i18n.flatten(appPl), ...i18n.flatten(desktopPl) }),
-  ru: () => ({ ...base, ...i18n.flatten(appRu), ...i18n.flatten(desktopRu) }),
-  uk: () => ({ ...base, ...i18n.flatten(appUk), ...i18n.flatten(desktopUk) }),
-  ar: () => ({ ...base, ...i18n.flatten(appAr), ...i18n.flatten(desktopAr) }),
-  no: () => ({ ...base, ...i18n.flatten(appNo), ...i18n.flatten(desktopNo) }),
-  br: () => ({ ...base, ...i18n.flatten(appBr), ...i18n.flatten(desktopBr) }),
-  bs: () => ({ ...base, ...i18n.flatten(appBs), ...i18n.flatten(desktopBs) }),
-  th: () => ({ ...base, ...i18n.flatten(appTh) }),
-  tr: () => ({ ...base, ...i18n.flatten(appTr) }),
+type AppLocaleModule = { readonly dict: Record<string, string> }
+
+/**
+ * The desktop owns only its small shell strings at boot. App dictionaries are loaded for the
+ * selected locale after the stored preference is known; statically importing every one here made
+ * the renderer pay for fifteen unused app bundles before it could show a shell.
+ */
+const appOverlayLoaders: Record<Exclude<Locale, "en">, () => Promise<AppLocaleModule>> = {
+  zh: () => import("../../../../app/src/i18n/zh"),
+  zht: () => import("../../../../app/src/i18n/zht"),
+  ko: () => import("../../../../app/src/i18n/ko"),
+  de: () => import("../../../../app/src/i18n/de"),
+  es: () => import("../../../../app/src/i18n/es"),
+  fr: () => import("../../../../app/src/i18n/fr"),
+  da: () => import("../../../../app/src/i18n/da"),
+  ja: () => import("../../../../app/src/i18n/ja"),
+  pl: () => import("../../../../app/src/i18n/pl"),
+  ru: () => import("../../../../app/src/i18n/ru"),
+  uk: () => import("../../../../app/src/i18n/uk"),
+  ar: () => import("../../../../app/src/i18n/ar"),
+  no: () => import("../../../../app/src/i18n/no"),
+  br: () => import("../../../../app/src/i18n/br"),
+  bs: () => import("../../../../app/src/i18n/bs"),
+  th: () => import("../../../../app/src/i18n/th"),
+  tr: () => import("../../../../app/src/i18n/tr"),
 }
 
-export function build(locale: Locale): Dictionary {
-  return locale === "en" ? base : OVERLAYS[locale]()
+const desktopOverlays: Record<Exclude<Locale, "en">, () => Dictionary> = {
+  zh: () => ({ ...base, ...i18n.flatten(desktopZh) }),
+  zht: () => ({ ...base, ...i18n.flatten(desktopZht) }),
+  ko: () => ({ ...base, ...i18n.flatten(desktopKo) }),
+  de: () => ({ ...base, ...i18n.flatten(desktopDe) }),
+  es: () => ({ ...base, ...i18n.flatten(desktopEs) }),
+  fr: () => ({ ...base, ...i18n.flatten(desktopFr) }),
+  da: () => ({ ...base, ...i18n.flatten(desktopDa) }),
+  ja: () => ({ ...base, ...i18n.flatten(desktopJa) }),
+  pl: () => ({ ...base, ...i18n.flatten(desktopPl) }),
+  ru: () => ({ ...base, ...i18n.flatten(desktopRu) }),
+  uk: () => ({ ...base, ...i18n.flatten(desktopUk) }),
+  ar: () => ({ ...base, ...i18n.flatten(desktopAr) }),
+  no: () => ({ ...base, ...i18n.flatten(desktopNo) }),
+  br: () => ({ ...base, ...i18n.flatten(desktopBr) }),
+  bs: () => ({ ...base, ...i18n.flatten(desktopBs) }),
+  th: () => base,
+  tr: () => base,
+}
+
+export async function build(locale: Locale): Promise<Dictionary> {
+  if (locale === "en") return base
+  const app = await appOverlayLoaders[locale]()
+  return { ...desktopOverlays[locale](), ...i18n.flatten(app.dict) }
 }
 
 const state = {
@@ -120,8 +132,6 @@ const state = {
   dict: base as Dictionary,
   init: undefined as Promise<Locale> | undefined,
 }
-
-state.dict = build(state.locale)
 
 const translate = i18n.translator(() => state.dict, i18n.resolveTemplate)
 
@@ -142,7 +152,7 @@ export function initI18n(): Promise<Locale> {
     const next = pickLocale(value) ?? state.locale
 
     state.locale = next
-    state.dict = build(next)
+    state.dict = await build(next)
     return next
   })().catch(() => state.locale)
 

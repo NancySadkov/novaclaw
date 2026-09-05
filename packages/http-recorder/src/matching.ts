@@ -6,7 +6,7 @@ const JsonValue = Schema.fromJsonString(Schema.Unknown)
 export const decodeJson = Schema.decodeUnknownOption(JsonValue)
 
 /**
- * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): it is UNREACHABLE from
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (, 2026-09-01): it is UNREACHABLE from
  * here.** `packages/http-recorder/package.json` declares no `@novaclaw/*` dependency at all — like
  * `packages/ui` — and this package is a dependency OF `@novaclaw/llm`, so the edge would also have
  * to not create a cycle. Moving this line costs a manifest change plus a lockfile cycle, which is

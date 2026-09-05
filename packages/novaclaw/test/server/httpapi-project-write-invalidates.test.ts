@@ -15,7 +15,7 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 /**
  * **The write→read ROUND TRIP: `POST /api/project` invalidates the cache the KERNEL reads.**
  *
- * `todo/projects.md`: *"Unmeasured: that the route invalidates the SAME instance the kernel reads is
+ * ``: *"Unmeasured: that the route invalidates the SAME instance the kernel reads is
  * argued from node-identity memoization, not proven by a write-then-evaluate round trip."*
  *
  * 🔴 **Why the argument was not enough.** The two sides reach `ProjectFileCache` by different paths:

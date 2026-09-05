@@ -232,7 +232,7 @@ describe("ruling 14: a recipe states what it NEEDS and never what it GETS", () =
         //
         // ⚠️ `produces` was added on 2026-08-18 and that argument is on the record: it is the recipe
         // declaring the artifacts a finished cook leaves behind (the deterministic success artifact,
-        // `todo/recipes.md`), so it says what the recipe IS, never what it GETS — the same test the
+        // ``), so it says what the recipe IS, never what it GETS — the same test the
         // owner applied when admitting `collection` to ruling 14. It grants nothing, reaches no
         // `SessionConfig`, and its entries are plain relative file names. Full reasoning:
         // `recipe-verify.ts`'s header.

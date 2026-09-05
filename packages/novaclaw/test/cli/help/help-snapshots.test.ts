@@ -51,10 +51,7 @@ const TOP_LEVEL = [
   "serve",
   "web",
   "models",
-  "stats",
   "export",
-  "import",
-  "session",
   "db",
 ] as const
 
@@ -63,16 +60,9 @@ const TOP_LEVEL = [
 // gains user-visible flags that we want to lock in.
 const SUBCOMMANDS = [
   ["mcp", "list"],
-  ["mcp", "add"],
-  ["mcp", "auth"],
-  ["mcp", "logout"],
+  ["mcp", "debug"],
   ["providers", "list"],
-  ["providers", "login"],
-  ["providers", "logout"],
-  ["agent", "create"],
   ["agent", "list"],
-  ["session", "list"],
-  ["session", "delete"],
   ["db", "path"],
 ] as const
 

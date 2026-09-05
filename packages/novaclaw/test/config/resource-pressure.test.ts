@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import path from "node:path"
 import { Effect, Layer } from "effect"
 import { Pressure } from "@/storage/pressure"
+import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { HostPressure } from "@/storage/host-pressure"
 import { testEffect } from "../lib/effect"
 import { settingsStub, type SettingsState } from "../storage/settings-stub"
@@ -58,7 +59,7 @@ describe("Pressure — memory probes", () => {
     expect(reading.source).toBe("windows-commit")
     expect(reading.usedBytes).toBe(28_721_872 * 1024)
     expect(reading.limitBytes).toBe(46_890_040 * 1024)
-    // The operator has to be able to re-run it — todo/resource-pressure.md ②.
+    // The operator has to be able to re-run it —  ②.
     expect(reading.crosscheck).toContain("Win32_OperatingSystem")
   })
 
@@ -201,7 +202,7 @@ describe("Pressure — thresholds", () => {
   })
 
   test("the warning line matches heavy-guard's COMMIT_CEILING, so the two gates agree", () => {
-    // todo/resource-pressure.md ②: if the Storage row and the dev guard draw different lines, the
+    //  ②: if the Storage row and the dev guard draw different lines, the
     // operator has two numbers and no way to reconcile them.
     expect(Pressure.DEFAULT_THRESHOLDS.warning.memoryUsedFraction).toBe(0.75)
     expect(Pressure.DEFAULT_THRESHOLDS.floor.memoryUsedFraction).toBeGreaterThan(
@@ -329,7 +330,7 @@ describe("Pressure — this machine", () => {
   })
 
   test.skipIf(process.platform !== "win32")(
-    "reports the SAME commit limit the OS does (todo/resource-pressure.md ②)",
+    "reports the SAME commit limit the OS does ( ②)",
     async () => {
       Pressure.resetMemoryCache()
       const reading = await Pressure.memory()
@@ -359,6 +360,18 @@ describe("Pressure — this machine", () => {
     // Same object identity proves the cache served it — a re-probe builds a new reading.
     expect(second).toBe(first)
     expect(Date.now() - started).toBeLessThan(100)
+  }, 30_000)
+
+  test("a second process-memory call inside the cache window reuses the pid reading", async () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 2000)"], { stdio: "ignore", windowsHide: true })
+    try {
+      const first = await Pressure.processMemory(child.pid)
+      const second = await Pressure.processMemory(child.pid)
+      expect(second).toBe(first)
+    } finally {
+      killTreeSync(child.pid)
+      Pressure.resetMemoryCache()
+    }
   }, 30_000)
 })
 

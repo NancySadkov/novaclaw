@@ -64,7 +64,7 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
         OpenApi.annotations({
           identifier: "v2.provider.stopLocalModel",
           summary: "Stop managed local inference",
-          description: "Unload the instance-owned llama.cpp model and release its memory.",
+          description: "Stop an active managed-model install or unload the instance-owned llama.cpp model.",
         }),
       ),
   )

@@ -436,6 +436,18 @@ describe("embedded UI caching", () => {
     }),
   )
 
+  it.live("reads and hashes one immutable embedded asset once per generated asset map", () =>
+    Effect.gen(function* () {
+      const base = yield* FSUtil.Service
+      let reads = 0
+      const fs = { ...base, readFile: () => Effect.sync(() => (reads++, new TextEncoder().encode("png"))) }
+      const embedded = { "assets/skin/tiles/notes.png": "/$bunfs/root/assets/skin/tiles/notes.png" }
+      yield* serveEmbeddedUIEffect("/assets/skin/tiles/notes.png", fs, embedded)
+      yield* serveEmbeddedUIEffect("/assets/skin/tiles/notes.png", fs, embedded)
+      expect(reads).toBe(1)
+    }),
+  )
+
   it.live("a STALE If-None-Match still gets the body — the validator is over the bytes", () =>
     Effect.gen(function* () {
       const response = yield* serve(

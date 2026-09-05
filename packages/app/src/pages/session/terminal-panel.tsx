@@ -321,7 +321,7 @@ export function TerminalPanel() {
                                     terminalRecoveryKey(pty()),
                                     id,
                                     failure,
-                                    (target) => ops.clone(target),
+                                    (target) => ops.clone(target, { confirmedGone: true }),
                                     (target) => ops.disconnected(target),
                                   )
                                 }

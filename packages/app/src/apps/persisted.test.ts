@@ -3,7 +3,7 @@ import type { ServerConnection } from "@/context/server"
 import { deletePersistedApp, loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
 
 /**
- * **`apps/persisted.ts` was the app's last raw `fetch`** (RF-21-8). It is now the seam's client, and
+ * **`apps/persisted.ts` was the app's last raw `fetch`** (). It is now the seam's client, and
  * these tests exist because the conversion changed WHERE four decisions are made — the base-URL
  * join, the `Authorization` header, the non-2xx decode and the not-a-list guard — while it must not
  * change WHAT the module does with any of them.
@@ -30,7 +30,7 @@ const auth = `Basic ${btoa("novaclaw:hunter2")}`
 const manifest = (id: string): AppManifest => ({
   id,
   title: id,
-  open: { type: "route", value: "/home" },
+  open: { type: "route", value: "contacts" },
   createdAt: 1,
   updatedAt: 1,
 })
@@ -87,6 +87,33 @@ describe("loadPersistedApps still puts the same request on the wire", () => {
     const sent = await wire({ body: [] }, () => loadPersistedApps({ url: "http://instance.test:4096" }))
     expect(sent.headers.Authorization).toBeUndefined()
   })
+
+  test("separate server buckets survive reversed response order", async () => {
+    const first: ServerConnection.HttpBase = { url: "http://first.test:4096" }
+    const second: ServerConnection.HttpBase = { url: "http://second.test:4096" }
+    let resolveFirst!: (response: Response) => void
+    let resolveSecond!: (response: Response) => void
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: URL | RequestInfo) => {
+      const target = String(url)
+      const pending = target.startsWith(first.url)
+        ? new Promise<Response>((resolve) => (resolveFirst = resolve))
+        : new Promise<Response>((resolve) => (resolveSecond = resolve))
+      return pending
+    }) as unknown as typeof globalThis.fetch
+    try {
+      const loadingFirst = loadPersistedApps(first, "first")
+      const loadingSecond = loadPersistedApps(second, "second")
+      resolveSecond(new Response(JSON.stringify([manifest("second-tile")]), { status: 200 }))
+      await loadingSecond
+      resolveFirst(new Response(JSON.stringify([manifest("first-tile")]), { status: 200 }))
+      await loadingFirst
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(persistedManifests("first").map((m) => m.id)).toEqual(["first-tile"])
+    expect(persistedManifests("second").map((m) => m.id)).toEqual(["second-tile"])
+  })
 })
 
 describe("loadPersistedApps survives every answer a peer can send", () => {
@@ -112,6 +139,29 @@ describe("loadPersistedApps survives every answer a peer can send", () => {
     await wire({ body: [manifest("keep")] }, () => loadPersistedApps(server))
     await wire({ body: null }, () => loadPersistedApps(server))
     expect(persistedManifests().map((m) => m.id)).toEqual(["keep"])
+  })
+
+  test("malformed array members are skipped while valid siblings remain renderable", async () => {
+    await wire(
+      {
+        body: [
+          manifest("good"),
+          null,
+          42,
+          { ...manifest("missing-open"), open: undefined },
+          { ...manifest("bad-route"), open: { type: "route", value: "not-a-route" } },
+          { ...manifest("bad-time"), updatedAt: "now" },
+        ],
+      },
+      () => loadPersistedApps(server),
+    )
+    expect(persistedManifests().map((m) => m.id)).toEqual(["good"])
+  })
+
+  test("an array containing no valid manifests becomes an explicit empty list", async () => {
+    await wire({ body: [manifest("keep")] }, () => loadPersistedApps(server))
+    await wire({ body: [null, { title: "missing id" }] }, () => loadPersistedApps(server))
+    expect(persistedManifests()).toEqual([])
   })
 
   test("a 401 keeps the last good list and does NOT reject", async () => {

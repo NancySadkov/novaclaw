@@ -68,6 +68,19 @@ describe("AgentUsage", () => {
     }),
   )
 
+  it.effect("sinceMany returns every requested agent from one shared series", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* AgentUsage.record(db, { agent: "theron", generated: 4, at: at(700) })
+      yield* AgentUsage.record(db, { agent: "kallias", generated: 8, at: at(701) })
+
+      expect(yield* AgentUsage.sinceMany(db, { agents: ["theron", "kallias", "theron"], minute: 700 })).toEqual({
+        theron: [{ minute: 700, generated: 4 }],
+        kallias: [{ minute: 701, generated: 8 }],
+      })
+    }),
+  )
+
   it.effect("retiring a colleague forgets its series, so a re-drawn name starts clean", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url"
 import { FileSystem } from "../filesystem"
 import { DecodeError, ResizerUnavailableError, SizeError } from "../image"
 
-const JPEG_QUALITIES = [80, 85, 70, 55, 40]
+/** Try the most likely quality first; the remaining values are the measured fallback ladder. */
+export const JPEG_QUALITIES = [85, 80, 70, 55, 40] as const
+/** A malformed or unusually large image must not turn one tool call into an unbounded encode loop. */
+export const MAX_RESIZE_ATTEMPTS = 8
 
 export const make = Effect.gen(function* () {
   ;(globalThis as typeof globalThis & { __NOVACLAW_PHOTON_WASM_PATH?: string }).__NOVACLAW_PHOTON_WASM_PATH =
@@ -63,7 +66,7 @@ export const make = Effect.gen(function* () {
           maxBytes: limits.maxBase64Bytes,
         })
       const scale = Math.min(1, limits.maxWidth / width, limits.maxHeight / height)
-      const sizes = Array.from({ length: 32 }).reduce<Array<{ width: number; height: number }>>((acc) => {
+      const sizes = Array.from({ length: MAX_RESIZE_ATTEMPTS }).reduce<Array<{ width: number; height: number }>>((acc) => {
         const previous = acc.at(-1) ?? {
           width: Math.max(1, Math.round(width * scale)),
           height: Math.max(1, Math.round(height * scale)),

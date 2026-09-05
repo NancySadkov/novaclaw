@@ -493,7 +493,7 @@ export const layer = Layer.effect(
       ceilingBytes: number = MAX_PEER_RESPONSE_BYTES,
     ) =>
       // The dial itself lives in `transport.ts` — see `askPeerJson` for why the ceiling check and the
-      // call had to move together (RF-09-5). What stays here is this route family's DEFAULTS.
+      // call had to move together (). What stays here is this route family's DEFAULTS.
       askPeerJson({
         http,
         route,

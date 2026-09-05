@@ -423,7 +423,9 @@ export const INSTANCE_DECLARED_API_PATHS: readonly string[] = [
   "/api/identity/backup",
   "/api/identity/restore",
   "/api/policy",
+  "/api/plugin",
   "/api/project",
+  "/api/usage",
 ]
 
 const PROTOCOL_GROUPS = path.resolve(import.meta.dir, "../../../protocol/src/groups")

@@ -182,4 +182,10 @@ describe("Add-models — managed local model", () => {
     expect(dialog).toContain("[status.modelID]: { context: status.context, output: status.output }")
     expect(dialog).toContain("serverSync().updateConfig")
   })
+
+  test("exposes a real stop action while the instance-owned acquisition is busy", () => {
+    expect(dialog).toContain("localModelStop(props.http")
+    expect(dialog).toContain('t("settings.models.new.managed.cancel")')
+    expect(dialog).toContain("managedBusy() && status().profileID === profile.id")
+  })
 })

@@ -1,4 +1,4 @@
-import { deflateSync, gzipSync } from "node:zlib"
+import { deflate, gzip } from "node:zlib"
 import { Effect } from "effect"
 import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
@@ -14,6 +14,12 @@ const STREAMING_POST_REGEX = /^\/session\/[^/]+\/(?:message|prompt_async)$/
 const THRESHOLD_BYTES = 1024
 
 type Encoding = "gzip" | "deflate"
+
+const compress = (body: Uint8Array, encoding: Encoding): Promise<Uint8Array> =>
+  new Promise((resolve, reject) => {
+    const operation = encoding === "gzip" ? gzip : deflate
+    operation(body, (error, result) => (error ? reject(error) : resolve(result)))
+  })
 
 function pickEncoding(acceptEncoding: string | undefined): Encoding | undefined {
   if (!acceptEncoding) return undefined
@@ -54,7 +60,9 @@ export const compressionLayer = HttpRouter.middleware<{ handles: unknown }>()((e
     const encoding = pickEncoding(request.headers["accept-encoding"])
     if (!encoding) return response
 
-    const compressed = encoding === "gzip" ? gzipSync(body.body) : deflateSync(body.body)
+    // Compression can be expensive for a large JSON/file response. Use zlib's async worker-pool
+    // entry point so the instance event loop remains available for other requests while it runs.
+    const compressed = yield* Effect.tryPromise(() => compress(body.body, encoding))
     return HttpServerResponse.setHeader(
       HttpServerResponse.setBody(response, HttpBody.uint8Array(compressed, contentType)),
       "content-encoding",

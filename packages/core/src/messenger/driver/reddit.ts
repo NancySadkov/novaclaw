@@ -411,9 +411,10 @@ export const make = (
 
   const tokenCall = (config: RedditConfig, form: Record<string, string>) =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         const response = await fetchImpl(`${WWW}/api/v1/access_token`, {
           method: "POST",
+          signal,
           headers: {
             Authorization: basic(config.clientId),
             "content-type": "application/x-www-form-urlencoded",
@@ -561,9 +562,10 @@ export const make = (
           // everything the agent reads.
           const url = `${OAUTH}${path}${path.includes("?") ? "&" : "?"}raw_json=1`
           return yield* Effect.tryPromise({
-            try: async () => {
+            try: async (signal) => {
               const response = await fetchImpl(url, {
                 method: init?.method ?? "GET",
+                signal,
                 headers: {
                   Authorization: `bearer ${bearer}`,
                   "User-Agent": userAgent(config.username, version),

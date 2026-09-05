@@ -17,3 +17,10 @@ test("the other two statuses say what they are", () => {
   expect(fireStatusLabel("skipped")).toBe("skipped")
   expect(fireStatusLabel("error")).toBe("error")
 })
+
+test("terminal session outcomes replace the admission wording", () => {
+  expect(fireStatusLabel("spawned", "succeeded")).toBe("completed")
+  expect(fireStatusLabel("spawned", "failed")).toBe("failed")
+  expect(fireStatusLabel("spawned", "interrupted")).toBe("interrupted")
+  expect(fireStatusLabel("spawned", "pending")).toBe("started")
+})

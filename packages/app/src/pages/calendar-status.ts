@@ -24,7 +24,17 @@ import type { Fire } from "@/utils/calendar-api"
  * nearest real type is the app's own client model — and a hand-copied union would be one more
  * thing that goes stale in silence. A new status makes this switch non-exhaustive at compile time.
  */
-export function fireStatusLabel(status: Fire["status"]): string {
+export function fireStatusLabel(status: Fire["status"], outcome: Fire["outcome"] = "pending"): string {
+  switch (outcome) {
+    case "succeeded":
+      return "completed"
+    case "failed":
+      return "failed"
+    case "interrupted":
+      return "interrupted"
+    case "pending":
+      break
+  }
   switch (status) {
     case "spawned":
       return "started"

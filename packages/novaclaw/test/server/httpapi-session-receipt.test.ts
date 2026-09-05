@@ -189,3 +189,25 @@ describe("GET /api/session/:id/receipt", () => {
     }),
   )
 })
+
+describe("GET /api/session/execution", () => {
+  it.instance("filters the durable execution ledger by session when requested", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const first = SessionSchema.ID.make("ses_httpfilter1")
+      const second = SessionSchema.ID.make("ses_httpfilter2")
+      yield* seedSession(first, test.directory)
+      yield* seedSession(second, test.directory)
+
+      const attempts = yield* SessionExecutionAttempt.Service
+      const firstLease = yield* attempts.start(first, "owner-http")
+      yield* attempts.start(second, "owner-http")
+
+      const res = yield* requestInDirectory(`/api/session/execution?sessionID=${first}`, test.directory)
+      expect(res.status).toBe(200)
+      const body = JSON.parse(yield* res.text) as { data: Array<{ sessionID: string; attemptID: string }> }
+      expect(body.data).toHaveLength(1)
+      expect(body.data[0]).toEqual(expect.objectContaining({ sessionID: first, attemptID: firstLease.attemptID }))
+    }),
+  )
+})

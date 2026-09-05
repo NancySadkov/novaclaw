@@ -6,5 +6,8 @@
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "typecheck": "bun ../../script/tsgo.ts --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:"
   }
 }

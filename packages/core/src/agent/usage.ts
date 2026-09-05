@@ -1,6 +1,6 @@
 export * as AgentUsage from "./usage"
 
-import { and, desc, eq, gte, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 
@@ -26,10 +26,7 @@ export const generatedOf = (tokens: { readonly output?: number; readonly reasoni
  * than "observed, and it was zero". Guarded here rather than at the call site so every future caller
  * inherits the rule instead of having to remember it.
  */
-export const record = (
-  db: Db,
-  input: { readonly agent: string; readonly generated: number; readonly at: number },
-) =>
+export const record = (db: Db, input: { readonly agent: string; readonly generated: number; readonly at: number }) =>
   Effect.suspend(() => {
     if (input.generated <= 0 || input.agent === "") return Effect.void
     const minute = minuteOf(input.at)
@@ -62,6 +59,30 @@ export const since = (db: Db, input: { readonly agent: string; readonly minute: 
     .orderBy(desc(AgentTokenMinuteTable.minute))
     .all()
     .pipe(Effect.orDie)
+
+/** One query for a roster's sparse usage series. Missing agents remain present as empty arrays. */
+export const sinceMany = (db: Db, input: { readonly agents: readonly string[]; readonly minute: number }) => {
+  const agents = [...new Set(input.agents)].filter((agent) => agent.length > 0)
+  if (agents.length === 0) return Effect.succeed({} as Record<string, readonly Minute[]>)
+  return db
+    .select({
+      agent: AgentTokenMinuteTable.agent,
+      minute: AgentTokenMinuteTable.minute,
+      generated: AgentTokenMinuteTable.generated,
+    })
+    .from(AgentTokenMinuteTable)
+    .where(and(inArray(AgentTokenMinuteTable.agent, agents), gte(AgentTokenMinuteTable.minute, input.minute)))
+    .orderBy(desc(AgentTokenMinuteTable.minute))
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => {
+        const result: Record<string, Minute[]> = Object.fromEntries(agents.map((agent) => [agent, []]))
+        for (const row of rows) result[row.agent]?.push({ minute: row.minute, generated: row.generated })
+        return result
+      }),
+    )
+}
 
 /**
  * Drop everything recorded for a colleague.

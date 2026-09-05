@@ -53,6 +53,13 @@ type Db = Database.Interface["db"]
 /** One poll cycle. `now` is injected (the boot loop passes `yield* Clock.currentTimeMillis`). */
 export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<TickResult> =>
   Effect.gen(function* () {
+    // Session admission and session execution are separate lifetimes. Reconcile old admissions
+    // before claiming new work so Calendar history contains terminal truth when unattended.
+    yield* CalendarStore.reconcileFireOutcomes(db)
+    // Retention is lazy and bounded: the scheduler already wakes periodically, so no second daemon
+    // is needed. The sweep runs before due work but preserves the schedule's current occurrence,
+    // including an abandoned claim that still needs the recovery path.
+    yield* CalendarStore.pruneFires(db, now)
     const due = yield* CalendarStore.due(db, now)
     let fired = 0
     let skipped = 0

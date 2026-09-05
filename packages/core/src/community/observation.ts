@@ -120,6 +120,8 @@ export interface Interface {
    * introduce anyone — (ff) holds, an observation is not a contact.
    */
   readonly recordFirstHand: (input: Input) => Effect.Effect<string>
+  /** Whether this person has any dealing, without loading the observation history. */
+  readonly has: (networkID: string) => Effect.Effect<boolean>
   /**
    * Every dealing with this PERSON, newest first — by any key they have ever held.
    *
@@ -242,6 +244,18 @@ export const layer = Layer.effect(
 
       recordFirstHand: Effect.fn("CommunityObservation.recordFirstHand")(function* (input: Input) {
         return yield* insert(input)
+      }),
+
+      has: Effect.fn("CommunityObservation.has")(function* (networkID: string) {
+        const keys = yield* chain(networkID)
+        const row = yield* db
+          .select({ id: CommunityObservationTable.id })
+          .from(CommunityObservationTable)
+          .where(inArray(CommunityObservationTable.subject, keys))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie)
+        return row !== undefined
       }),
 
       about: Effect.fn("CommunityObservation.about")(function* (networkID: string) {

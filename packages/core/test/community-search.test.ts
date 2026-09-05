@@ -235,7 +235,7 @@ describe("a hostile TTL", () => {
      * somebody tunes one.
      */
     /**
-     * ⚠️ **Re-pointed 2026-09-01 (RF-09-5), and it now asserts something STRONGER.** It used to
+     * ⚠️ **Re-pointed 2026-09-01 (), and it now asserts something STRONGER.** It used to
      * require each dialler to contain `answerTooLarge(` — which both did, and `search.ts` still
      * passed the 4 MB `sync/messages` default to it, so the guard was green while the drift it
      * exists to catch was live. Sharing a CONSTANT that each caller may forget to pass is sharing it

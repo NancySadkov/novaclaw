@@ -13,6 +13,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { trashPath } from "../trash"
+import { TrashSettings } from "../trash-settings"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -22,7 +23,7 @@ export const name = "trash"
 export const Input = Schema.Struct({
   path: Schema.String.annotate({
     description:
-      "File or directory to delete SAFELY (moved to a restorable Trash, expires ~2 days). Relative paths resolve within the active Location. Prefer this over `bash rm` for any deletion.",
+      "File or directory to delete SAFELY (moved to a restorable Trash for the configured retention period). Relative paths resolve within the active Location. Prefer this over `bash rm` for any deletion.",
   }),
 })
 
@@ -33,7 +34,8 @@ export const Output = Schema.Struct({
 })
 export type Output = typeof Output.Type
 
-export const toModelOutput = (output: Output) => `Moved ${output.type} to trash (restorable ~2 days): ${output.id}`
+export const toModelOutput = (output: Output) =>
+  `Moved ${output.type} to trash (restorable for about ${TrashSettings.retentionDays()} days): ${output.id}`
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -47,7 +49,7 @@ export const layer = Layer.effectDiscard(
           Tool.make({
             sideEffect: "idempotent-write",
             description:
-              "Safely delete a file or directory: moves it into a dated Trash store (restorable for ~2 days) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
+              "Safely delete a file or directory: moves it into a dated Trash store (restorable for the configured retention period) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],

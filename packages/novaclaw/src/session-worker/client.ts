@@ -101,7 +101,7 @@ export interface Client {
  * both directions, response kinds are paired to request kinds, and teardown rejects every waiter.
  *
  * 🔴 **`request` takes NO `AbortSignal`, and that is load-bearing rather than an omission.** Every
- * method here and on `Capabilities` carried an optional `signal?` until 2026-09-01 (RF-15-13). No
+ * method here and on `Capabilities` carried an optional `signal?` until 2026-09-01 (). No
  * production caller ever supplied one — interruption in the worker travels through Effect
  * (`session-worker-node.ts`'s `runtime.runPromise(..., { signal })`), not through these — and the
  * path it enabled was actively harmful: `abort` deleted the pending entry while the HOST was still

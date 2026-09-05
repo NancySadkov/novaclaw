@@ -19,7 +19,7 @@ import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } fr
  * PORTED CLAIMS — which agent's system prompt reaches the provider, and in what order.
  *
  * Rewritten against the current runner on a harness that runs on **win32** (S3; ledger in
- * `session-runner-claims.test.ts`, ruling in todo/v0.2.0-prep.md). Titles are carried verbatim so the
+ * `session-runner-claims.test.ts`, ruling in ). Titles are carried verbatim so the
  * ledger can match them; expectations were re-derived rather than copied — the old fixture counted
  * post-drain memory extraction as an interactive request, so its assertions are not automatically
  * trustworthy.

@@ -31,6 +31,33 @@ function parts(formatter: Intl.DateTimeFormat, date: Date): { y: string; m: stri
   return out
 }
 
+type MessageTimeFormatters = {
+  readonly ymd: Intl.DateTimeFormat
+  readonly clock: Intl.DateTimeFormat
+  readonly dated: Intl.DateTimeFormat
+  readonly complete: Intl.DateTimeFormat
+}
+
+/** Four formatters per locale, shared by every transcript row using that locale. */
+const formatterCache = new Map<string, MessageTimeFormatters>()
+
+const formattersFor = (locale: string | undefined): MessageTimeFormatters => {
+  const key = locale ?? ""
+  const cached = formatterCache.get(key)
+  if (cached) return cached
+  const value: MessageTimeFormatters = {
+    ymd: new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric" }),
+    clock: new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }),
+    dated: new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+    complete: new Intl.DateTimeFormat(locale, { dateStyle: "full", timeStyle: "medium" }),
+  }
+  formatterCache.set(key, value)
+  return value
+}
+
+/** Test seam: clear the small locale cache between constructor-count assertions. */
+export const resetMessageTimeFormatterCache = (): void => formatterCache.clear()
+
 /**
  * Format one message's creation time.
  *
@@ -51,16 +78,12 @@ export function messageTime(input: {
   const locale = input.locale || undefined
   const now = new Date(input.now ?? Date.now())
 
-  const ymd = new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric" })
+  const { ymd, clock, dated, complete } = formattersFor(locale)
   const sameDay = (() => {
     const a = parts(ymd, date)
     const b = parts(ymd, now)
     return a.y === b.y && a.m === b.m && a.d === b.d
   })()
-
-  const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" })
-  const dated = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-  const complete = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeStyle: "medium" })
 
   return {
     label: sameDay ? clock.format(date) : dated.format(date),

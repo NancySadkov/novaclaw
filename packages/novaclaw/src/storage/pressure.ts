@@ -403,11 +403,16 @@ export const MEMORY_CACHE_MS = 3_000
 
 let cached: { readonly at: number; readonly value: MemoryReading } | undefined
 let inflight: Promise<MemoryReading> | undefined
+const processCached = new Map<
+  number,
+  { readonly at: number; readonly value?: ProcessMemoryReading; readonly inflight?: Promise<ProcessMemoryReading> }
+>()
 
 /** Drop the cache after a known large allocation/free (and between tests) so admission sees reality. */
 export function resetMemoryCache(): void {
   cached = undefined
   inflight = undefined
+  processCached.clear()
 }
 
 /**
@@ -456,8 +461,12 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
       rssBytes: process.memoryUsage().rss,
       crosscheck: process.platform === "linux" ? `grep VmRSS /proc/${pid}/status` : `Get-Process -Id ${pid}`,
     })
+  const now = Date.now()
+  const previous = processCached.get(pid)
+  if (previous?.value !== undefined && now - previous.at < MEMORY_CACHE_MS) return Promise.resolve(previous.value)
+  if (previous?.inflight !== undefined) return previous.inflight
   if (process.platform === "linux") {
-    return Promise.resolve().then(() => {
+    const probe = Promise.resolve().then(() => {
       const text = readFileOrUndefined(`/proc/${pid}/status`)
       const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(text ?? "")
       const kib = Number(match?.[1])
@@ -465,11 +474,17 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
         ? { known: true as const, rssBytes: kib * 1024, crosscheck: `grep VmRSS /proc/${pid}/status` }
         : { known: false as const, reason: `Process memory for pid ${pid} is unavailable from /proc.` }
     })
+    processCached.set(pid, { at: now, inflight: probe })
+    void probe.then(
+      (value) => processCached.set(pid, { at: Date.now(), value }),
+      () => processCached.delete(pid),
+    )
+    return probe
   }
   if (process.platform !== "win32")
     return Promise.resolve({ known: false, reason: `Process memory is not measured on ${process.platform}.` })
 
-  return new Promise((resolve) => {
+  const probe = new Promise<ProcessMemoryReading>((resolve) => {
     let stdout = ""
     let settled = false
     const child = spawn(
@@ -500,6 +515,12 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
       )
     })
   })
+  processCached.set(pid, { at: now, inflight: probe })
+  void probe.then(
+    (value) => processCached.set(pid, { at: Date.now(), value }),
+    () => processCached.delete(pid),
+  )
+  return probe
 }
 
 // ── disk ────────────────────────────────────────────────────────────────────────────────────────

@@ -26,6 +26,8 @@ export const settingsStub = (state: SettingsState = { current: {} }) =>
           return typeof password === "string" && password.length > 0 ? password : undefined
         }),
       set: (key, value) => Effect.sync(() => void (state.current = { ...state.current, [key]: value })),
+      update: (key, change) =>
+        Effect.sync(() => void (state.current = { ...state.current, [key]: change(state.current[key]) })),
       remove: (key) =>
         Effect.sync(() => {
           const next = { ...state.current }

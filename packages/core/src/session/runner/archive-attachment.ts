@@ -100,6 +100,13 @@ const CD_SIGNATURE = 0x02014b50
 const LOCAL_SIGNATURE = 0x04034b50
 
 /**
+ * Hard ceiling for one expanded ZIP entry. The digest's character budgets are not a security
+ * boundary: decompression happens before text detection and truncation, so the parser itself must
+ * refuse an expansion that could exhaust the host.
+ */
+export const MAX_EXPANDED_ENTRY_BYTES = 16 * 1024 * 1024
+
+/**
  * Read a ZIP's central directory.
  *
  * Returns `undefined` rather than throwing for anything it cannot read — a truncated upload, a
@@ -152,6 +159,10 @@ export function readZipDirectory(bytes: Uint8Array): ZipEntry[] | undefined {
 /** Decompress one entry, or `undefined` when its method or framing is not readable. */
 export function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Uint8Array | undefined {
   if (entry.directory) return undefined
+  // `entry.size` came from the archive and is not trusted as proof that the payload is safe, but it
+  // is still a useful cheap refusal for the common bomb shape. The zlib limit below is the authority
+  // for malformed headers that under-report their expansion.
+  if (entry.size > MAX_EXPANDED_ENTRY_BYTES) return undefined
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   if (entry.offset + 30 > bytes.length) return undefined
   if (view.getUint32(entry.offset, true) !== LOCAL_SIGNATURE) return undefined
@@ -167,7 +178,7 @@ export function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Uint8Array | u
   if (entry.method === 0) return payload
   if (entry.method !== 8) return undefined
   try {
-    return inflateRawSync(payload)
+    return inflateRawSync(payload, { maxOutputLength: MAX_EXPANDED_ENTRY_BYTES })
   } catch {
     return undefined
   }

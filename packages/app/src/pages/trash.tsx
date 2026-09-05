@@ -3,6 +3,7 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage, type Translator } from "@/context/language"
 import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
@@ -13,11 +14,10 @@ import { createListState } from "@/utils/list-state"
 
 // The Trash app (B8 surface — plan.md M6). A home tile over the M4 endpoints: list every trashed
 // entry (the store is GLOBAL — deletions from any root land here), restore with one click, and show
-// the TTL countdown (~2 days from trashedAt, then the lazy purge removes it for real).
-const TTL_MS = 2 * 24 * 3600 * 1000
+// the live server retention countdown.
 
-function expiresLabel(trashedAt: number, t: Translator): string {
-  const left = trashedAt + TTL_MS - Date.now()
+function expiresLabel(trashedAt: number, retentionDays: number, t: Translator): string {
+  const left = trashedAt + retentionDays * 24 * 3600 * 1000 - Date.now()
   if (left <= 0) return t("trash.expiringNow")
   const hours = Math.round(left / 3600_000)
   if (hours < 1) return t("trash.expiresUnderHour")
@@ -27,7 +27,12 @@ function expiresLabel(trashedAt: number, t: Translator): string {
 export function TrashPage() {
   const global = useGlobal()
   const server = useServer()
+  const sync = useServerSync()
   const language = useLanguage()
+  const retentionDays = createMemo(() => {
+    const trash = (sync().data.config as { trash?: { retention_days?: number } } | undefined)?.trash
+    return trash?.retention_days ?? 30
+  })
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
   const ctx = createMemo(() => {
@@ -89,7 +94,11 @@ export function TrashPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <AppPageHeader glyph="trash" title={language.t("trash.title")} hint={language.t("trash.hint")}>
+      <AppPageHeader
+        glyph="trash"
+        title={language.t("trash.title")}
+        hint={language.t("trash.hint", { days: retentionDays() })}
+      >
         <button type="button" class={btn} onClick={() => setTick((t) => t + 1)} disabled={!routeDir()}>
           {language.t("trash.refresh")}
         </button>
@@ -133,7 +142,7 @@ export function TrashPage() {
                       {new Date(entry.trashedAt).toLocaleString()}
                     </span>
                     <span class="shrink-0 text-xs text-v2-text-text-faint">
-                      {expiresLabel(entry.trashedAt, language.t)}
+                      {expiresLabel(entry.trashedAt, retentionDays(), language.t)}
                     </span>
                     <button type="button" class={btn} onClick={() => void doRestore(entry)}>
                       {language.t("trash.restore")}

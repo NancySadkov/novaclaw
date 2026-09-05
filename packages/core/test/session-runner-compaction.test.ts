@@ -500,7 +500,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       { type: "compaction", summary: "## Goal\n- Recover overflow" },
       { type: "assistant", finish: "stop" },
     ])
-    // ⏳ **The replay half of this claim is NOT asserted, deliberately — see todo/v0.2.0-prep.md.**
+    // ⏳ **The replay half of this claim is NOT asserted, deliberately — see .**
     // Measured 2026-08-05: after `replayProjection`, a compacted session comes back as its full
     // uncompacted history (`[user, assistant] × 3`) instead of `[compaction, assistant]`. The
     // compaction row is re-inserted, but the transcript no longer honours it — most likely because the

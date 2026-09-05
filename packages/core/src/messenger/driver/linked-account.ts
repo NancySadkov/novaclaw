@@ -6,7 +6,7 @@ export * as LinkedAccount from "./linked-account"
  * A linked account is one where **the human and the agent are the same identity** — we are logged in
  * as the person, not as a bot beside them. `telegram-user` and `whatsapp-baileys` are both this
  * shape, and before 2026-09-01 they carried byte-identical copies of the two helpers below
- * (RF-08-9). The copies had already drifted apart in their error mapping, which is the argument for
+ * (). The copies had already drifted apart in their error mapping, which is the argument for
  * this module existing: a rule about *our own echo* is not a per-platform decision, and two copies
  * of it drift silently because nothing compares them.
  *

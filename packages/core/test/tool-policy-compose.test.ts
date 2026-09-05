@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { ToolPolicy } from "@novaclaw/core/tool-policy"
 
 /**
- * `todo/projects.md` → **Typed pre-action policies**, the composition half.
+ * `` → **Typed pre-action policies**, the composition half.
  *
  * 🔴 **Written to fail when the rule is removed, not to describe it.** The A/B for this file, run
  * before it was believed: flip `RANK`'s `deny` below `allow` and the deny-wins block goes red;

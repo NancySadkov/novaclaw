@@ -10,7 +10,7 @@ import { SessionTable, TodoSnapshotTable, TodoTable } from "@novaclaw/core/sessi
 import { testEffect } from "./lib/effect"
 
 /**
- * The declared plan, frozen when an attempt opens (`todo/verified-autonomy.md` V1).
+ * The declared plan, frozen when an attempt opens (`` V1).
  *
  * 🔴 The defect this exists to prevent is silent and only visible later: the `todo` list is per
  * SESSION and the model edits it WHILE the attempt runs, so a receipt pointing at the live list

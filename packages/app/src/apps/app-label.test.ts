@@ -108,15 +108,15 @@ describe("home tile labels", () => {
       // stays reserved). Any surviving tile makes the same point, and the point is the FALLBACK: a
       // locale with no translation must render English rather than the key.
       expect(appSubtitle(t, "trash", BUILTIN_APP_LABELS.trash.subtitle)).toBe(
-        "Restore anything deleted in the last 2 days",
+        "Restore safely deleted files before their retention period ends",
       )
     })
 
     test("a blank translation does not blank the tile", () => {
       const { t } = translator(merged({ "home.app.trash.name": "   ", "home.app.trash.subtitle": "" }))
       expect(appName(t, "trash", "Trash")).toBe("Trash")
-      expect(appSubtitle(t, "trash", "Restore anything deleted in the last 2 days")).toBe(
-        "Restore anything deleted in the last 2 days",
+      expect(appSubtitle(t, "trash", "Restore safely deleted files before their retention period ends")).toBe(
+        "Restore safely deleted files before their retention period ends",
       )
     })
   })

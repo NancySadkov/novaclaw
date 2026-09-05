@@ -140,14 +140,20 @@ export function ContactsPage() {
   )
   // How fast each colleague is going, from the per-minute series the projector writes. Refetched on
   // the same beat the page is looked at rather than polled: a roster is a glance, not a dashboard.
-  const [usage] = createResource(
-    () => {
+  const usageSource = createMemo(() => {
       const current = ctx()
       const ids = (agents() ?? []).map((row) => row.id)
-      return current && ids.length > 0 ? { current, ids } : undefined
-    },
-    ({ current, ids }) => listUsage(current.sdk.client.v2 as never, ids),
-  )
+      if (!current || ids.length === 0) return undefined
+      return `${ServerConnection.key(conn()!)}\u0000${ids.join(",")}`
+    })
+  const [usage] = createResource(usageSource, (source) => {
+    const separator = source.indexOf("\u0000")
+    const ids = separator < 0 ? [] : source.slice(separator + 1).split(",")
+    const current = ctx()
+    return current === undefined
+      ? Promise.resolve({} as Record<string, readonly UsageMinute[]>)
+      : listUsage(current.sdk.client.v2 as never, ids)
+  })
 
   // The lifecycle says whether a chat is RUNNING; this durable row says how its last attempt
   // stopped. Refetch when a terminal status arrives, so a recovery-paused colleague cannot be

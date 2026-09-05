@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { DateTime, Effect, Schema } from "effect"
+import { eq } from "drizzle-orm"
 import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -9,7 +10,10 @@ import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { testEffect } from "./lib/effect"
 
 // Telling a colleague its folder changed (owner, 2026-08-21: *"reassigning agent to another folder
@@ -43,6 +47,33 @@ const openChat = (db: Database.Interface["db"], id: string, agent: string) =>
     ])
     .run()
     .pipe(Effect.orDie)
+
+const addAssistantOutput = (db: Database.Interface["db"], sessionID: string) => {
+  const created = DateTime.makeUnsafe(2)
+  const encoded = Schema.encodeSync(SessionMessage.Message)(
+    SessionMessage.Assistant.make({
+      id: SessionMessage.ID.make("msg_output"),
+      type: "assistant",
+      agent: "build",
+      model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+      content: [SessionMessage.AssistantText.make({ type: "text", id: "text", text: "done" })],
+      time: { created, completed: DateTime.makeUnsafe(3) },
+    }),
+  )
+  const { id, type, ...data } = encoded
+  return db
+    .insert(SessionMessageTable)
+    .values({
+      id: SessionMessage.ID.make(id),
+      session_id: SessionSchema.ID.make(sessionID),
+      type,
+      seq: 1,
+      time_created: DateTime.toEpochMillis(created),
+      data,
+    })
+    .run()
+    .pipe(Effect.orDie)
+}
 
 const move = { agentID: "theron", from: "D:/books", to: "D:/ledger", ownScratch: false }
 
@@ -82,6 +113,35 @@ describe("a moved colleague is told, in its own chat", () => {
       // `D:/ledger` fails on Windows against the `D:\ledger` that was actually written. The claim is
       // "the successor is rooted in the new folder", not "the string round-trips unchanged".
       expect(String(live[0]?.directory).replaceAll("\\", "/")).toBe(move.to)
+      const notices = yield* d.db
+        .select({ id: SessionMessageTable.id })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, live[0]!.id))
+        .all()
+      expect(notices, "an empty chat gets no assignment nudge").toHaveLength(0)
+    }),
+  )
+
+  it.effect("adds the folded assignment nudge only after model output exists", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      yield* openChat(d.db, "ses_theron", "theron")
+      yield* addAssistantOutput(d.db, "ses_theron")
+
+      expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(true)
+      const live = yield* d.db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.agent, "theron"))
+        .all()
+      const successor = live.find((row) => row.id !== "ses_theron")!
+      const notices = yield* d.db
+        .select({ type: SessionMessageTable.type, data: SessionMessageTable.data })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, successor.id))
+        .all()
+      expect(notices).toHaveLength(1)
+      expect(notices[0]).toMatchObject({ type: "synthetic", data: { text: expect.stringContaining("Your assignment changed") } })
     }),
   )
 

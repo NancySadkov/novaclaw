@@ -1,5 +1,17 @@
 import os from "os"
 import path from "path"
+import { scrubLauncherEnv } from "./fixture/launcher-env"
+
+/**
+ * 🔴 **First, drop the launcher's description of ITS install.** A suite started from inside a running
+ * desktop instance inherits `NOVACLAW_W64DEVKIT_PATH`, `NOVACLAW_IMAGEMAGICK_PATH`, `NOVACLAW_CLIENT` and
+ * friends, and every one of them makes the code under test answer correctly about a machine instead of
+ * about the tree under test — nine `core` tests failed that way on a clean `main` on 2026-09-04. See
+ * `fixture/launcher-env.ts` for the four shapes and `test/launcher-env.test.ts` for the ratchet.
+ *
+ * This runs BEFORE the four lines below on purpose: they are the developer's intent and survive.
+ */
+scrubLauncherEnv()
 
 process.env.NOVACLAW_DB = ":memory:"
 process.env.NOVACLAW_MODELS_PATH = path.join(import.meta.dir, "plugin", "fixtures", "models-dev.json")

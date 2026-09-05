@@ -107,7 +107,9 @@ export default {
           \`occurrence_millis\` integer NOT NULL,
           \`fired_at\` integer NOT NULL,
           \`session_id\` text,
-          \`status\` text NOT NULL
+          \`status\` text NOT NULL,
+          \`outcome\` text DEFAULT 'pending' NOT NULL,
+          CONSTRAINT \`fk_calendar_fire_schedule_id_calendar_schedule_id_fk\` FOREIGN KEY (\`schedule_id\`) REFERENCES \`calendar_schedule\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`
@@ -733,6 +735,7 @@ export default {
       yield* tx.run(
         `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`calendar_fire_fired_at_idx\` ON \`calendar_fire\` (\`fired_at\`);`)
       yield* tx.run(
         `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
       )
@@ -757,6 +760,7 @@ export default {
         `CREATE UNIQUE INDEX \`messenger_binding_chat_idx\` ON \`messenger_binding\` (\`account_id\`,\`chat_id\`);`,
       )
       yield* tx.run(`CREATE INDEX \`messenger_binding_session_idx\` ON \`messenger_binding\` (\`session_id\`);`)
+      yield* tx.run(`CREATE INDEX \`messenger_inbound_routed_idx\` ON \`messenger_inbound\` (\`time_routed\`);`)
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_origin_action_resource_idx\` ON \`permission\` (\`origin\`,\`action\`,\`resource\`);`,
       )

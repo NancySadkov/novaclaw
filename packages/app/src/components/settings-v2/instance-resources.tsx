@@ -13,7 +13,7 @@ import { SettingsExplainV2 } from "./explain"
 // Imported for this file's own use AND re-exported so existing importers keep working. The
 // implementation lives in a component-free sibling so its test can load without dragging Kobalte in;
 // a bare `export … from` would re-export without binding it locally.
-import { formatResourceBytes } from "./instance-resources-format"
+import { formatResourceBytes, memoryPressureLevel } from "./instance-resources-format"
 import { scopedDirectory } from "@/utils/routing-directory"
 
 export { formatResourceBytes } from "./instance-resources-format"
@@ -49,7 +49,15 @@ export const InstanceResources: Component = () => {
   })
   const canStop = createMemo(() => {
     const stage = usage()?.localModel.stage
-    return stage === "starting" || stage === "ready" || stage === "stopping"
+    return (
+      stage === "checking" ||
+      stage === "downloading-runtime" ||
+      stage === "installing-runtime" ||
+      stage === "downloading-model" ||
+      stage === "starting" ||
+      stage === "ready" ||
+      stage === "stopping"
+    )
   })
 
   return (
@@ -69,7 +77,7 @@ export const InstanceResources: Component = () => {
             </>
           }
         >
-          <span class="select-text text-[12px] text-v2-text-text-muted">{usage()?.level ?? "…"}</span>
+          <span class="select-text text-[12px] text-v2-text-text-muted">{memoryPressureLevel(usage())}</span>
         </SettingsRowV2>
         {/* The value column carries state-or-bytes; the prose detail is a focus-reachable disclosure
             (uix.md §1.4), not the mouse-only row hint it used to be. */}

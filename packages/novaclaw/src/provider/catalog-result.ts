@@ -32,7 +32,7 @@ export function sort<T extends { id: string }>(models: T[]) {
  * **The ONE read that produces a provider catalog.** Four calls in a fixed order — `provider.all`,
  * `model.all`, `provider.available`, then `listResult` — written out twice: once in
  * `cli/cmd/models.ts` and once in `httpapi/handlers/provider.ts`. The two bodies were identical
- * (RF-14-8), so a change to what "the catalog" means had to be made in two places, and the CLI
+ * (), so a change to what "the catalog" means had to be made in two places, and the CLI
  * silently answering a different question from the HTTP route is a failure nothing would report.
  *
  * ⚠️ **The PROVISION deliberately stays at the call sites, because it is the one thing that

@@ -95,6 +95,13 @@ describe("the claim timeline's evidence labels come back by key", () => {
     const history = await mem.claimHistory(claimID)
     expect(history!.claim.text).toBe("Ann works at Acme")
   }, 30_000)
+
+  test("the embedding drain hydrates bodies by key instead of losing them in the scan", async () => {
+    const pending = await mem.pendingEmbeddings(10)
+    expect(pending.length).toBe(3)
+    expect(pending.every((row) => row.text.length > 0)).toBe(true)
+    expect(pending.find((row) => row.id === claimID)).toEqual({ id: claimID, text: "Ann works at Acme" })
+  }, 30_000)
 })
 
 describe("attaching a vector to a memory that is gone REFUSES", () => {

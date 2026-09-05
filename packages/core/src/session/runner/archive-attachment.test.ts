@@ -103,6 +103,17 @@ describe("reading a real ZIP", () => {
     expect(ArchiveAttachment.looksTextual(Buffer.from("plain text"))).toBe(true)
     expect(ArchiveAttachment.looksTextual(new Uint8Array([0x89, 0x50, 0x00, 0x4e]))).toBe(false)
   })
+
+  test("🔴 refuses a deflate bomb before it can exhaust the host", () => {
+    // The digest's per-entry character cap is too late to protect this boundary: zlib must first
+    // materialise the expanded bytes. The parser's byte cap is the security check, and this archive
+    // keeps the compressed fixture small while asking for more than the allowed expansion.
+    const expanded = new Uint8Array(ArchiveAttachment.MAX_EXPANDED_ENTRY_BYTES + 1)
+    expanded.fill(0x61)
+    const bytes = zip([{ name: "bomb.txt", body: expanded }])
+    const entries = ArchiveAttachment.readZipDirectory(bytes)!
+    expect(ArchiveAttachment.readZipEntry(bytes, entries[0]!)).toBeUndefined()
+  })
 })
 
 describe("the digest a model actually sees", () => {

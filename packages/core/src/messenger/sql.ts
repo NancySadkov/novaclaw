@@ -111,7 +111,10 @@ export const MessengerInboundTable = sqliteTable(
     time_routed: integer(),
     ...Timestamps,
   },
-  (table) => [primaryKey({ columns: [table.account_id, table.chat_id, table.message_id] })],
+  (table) => [
+    primaryKey({ columns: [table.account_id, table.chat_id, table.message_id] }),
+    index("messenger_inbound_routed_idx").on(table.time_routed),
+  ],
 )
 
 /**

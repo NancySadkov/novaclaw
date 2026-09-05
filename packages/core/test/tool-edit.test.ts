@@ -476,7 +476,7 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // `novaclaw.json` exclusions — INHERITED, with no line of exclusion code in `tool/edit.ts`.
 //
-// 🔴 This is the evidence for the shape `todo/projects.md` asks for: *"enforce it below all agentic
+// 🔴 This is the evidence for the shape `` asks for: *"enforce it below all agentic
 // file tools"*, so *"a new tool inherits it rather than having to remember it"*. `edit` was NOT
 // touched when exclusions were built — it simply calls `LocationMutation.resolve`, which is where
 // the list is enforced. If this test ever needs a change inside `edit.ts` to pass, the enforcement

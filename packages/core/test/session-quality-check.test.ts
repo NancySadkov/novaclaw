@@ -7,7 +7,7 @@ import { SessionQualityCheck } from "@novaclaw/core/session/quality-check"
 import { testEffect } from "./lib/effect"
 
 /**
- * 🔴 `todo/verified-autonomy.md` V1: *"`checks` are LOG EVENTS, not evidence."*
+ * 🔴 `` V1: *"`checks` are LOG EVENTS, not evidence."*
  *
  * The program rests on *mechanical evidence is authoritative*, and the only record that a check had
  * run was a line in a rotating text log — not queryable per attempt, and unable to say what the exit

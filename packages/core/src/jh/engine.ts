@@ -1357,7 +1357,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // models mis-declare produces routinely; the per-step verify catches real problems, and a
         // hard reject on a harmless declaration error just stalls the task (§12). ⚠️ Tolerated is not
         // unread: the expander rig counts it as a `dataflowError` — see `jh/dataflow.ts`'s note on
-        // who reads which code. (A third code, `unused_produce`, was removed 2026-09-01 — RF-05-13.)
+        // who reads which code. (A third code, `unused_produce`, was removed 2026-09-01 — .)
         // improve3 (char run74): TOLERATE dangling consumes at the task ROOT — disk is truth there and the
         // declared dataflow is an unreliable proxy (§5 law-7 amendment); a strict reject hard-blocks the whole
         // run (the root has no parent to grow a fix sibling on). The tolerant trySoftDecompose path already did
@@ -1511,9 +1511,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     Effect.gen(function* () {
       if (!regression || !staleness) return { green: 0, red: 0, skipped: [] }
       const suspectOn = deps.suspectTests !== false
+      const current = snapFiles()
       // Prune tests whose product was deleted/renamed (log-free), then select the digest-stale ones.
-      regression.prune((command) => staleness!.productPresent(command, snapFiles()))
-      const curDigest = staleness.sourceDigestNow(snapFiles())
+      regression.prune((command) => staleness!.productPresent(command, current))
+      const curDigest = staleness.sourceDigestNow(current)
       const staleAll = regression.staleTests(() => curDigest)
       if (staleAll.length === 0) return { green: 0, red: 0, skipped: [] }
       // improve6 P3: non-suspect tests first (they can veto); suspect tests run LAST and never veto.

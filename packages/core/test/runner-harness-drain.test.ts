@@ -141,7 +141,7 @@ describe("the harness drives the real drain", () => {
 })
 
 /**
- * `todo/adoption.md`'s Fast Chat gate ends *"hidden startup work is timed and user-interruptible"*.
+ * ``'s Fast Chat gate ends *"hidden startup work is timed and user-interruptible"*.
  * Timed it plainly is — the receipt renders every stage. INTERRUPTIBLE was assumed: the stages run
  * inside the drain fiber, and an interrupt kills that fiber, so it follows. Nothing tested it, and
  * the one live observation was an interrupt AFTER `provider-prefill`, which is past the startup work

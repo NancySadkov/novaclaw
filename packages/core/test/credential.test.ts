@@ -131,6 +131,15 @@ describe("Credential", () => {
           value: "nc1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBBBB:CCCCCCCCCCCCCCCCCCCCCCCCCC",
         })
         .run()
+      yield* db
+        .insert(CredentialTable)
+        .values({
+          id: Credential.ID.create(),
+          integration_id: integrationID,
+          label: "Malformed",
+          value: "{not json",
+        })
+        .run()
 
       // The healthy credential still comes back, and the instance is still standing.
       expect(yield* credentials.list(integrationID)).toEqual([good])

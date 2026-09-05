@@ -62,6 +62,15 @@ export const AgentHandler = handlerLayer(
           }),
         ),
       )
+      .handle("agent.usageMany", (ctx) =>
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            const since = AgentUsage.minuteOf(Date.now()) - 24 * 60
+            return yield* AgentUsage.sinceMany(db, { agents: ctx.payload.agentIDs, minute: since })
+          }),
+        ),
+      )
       .handle(
         "agent.remove",
         Effect.fn(function* (ctx) {

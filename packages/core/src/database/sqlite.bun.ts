@@ -17,7 +17,7 @@ import { Sqlite } from "./sqlite"
 /**
  * **The bun leg. Its sibling is `sqlite.node.ts`, and they are ~80 lines the same on purpose.**
  *
- * 🔴 **Why they were NOT collapsed into a shared core plus a driver adapter (RF-11-8, decided
+ * 🔴 **Why they were NOT collapsed into a shared core plus a driver adapter (, decided
  * 2026-09-01).** The extraction is easy to write and impossible to verify here: `node:sqlite` **does
  * not exist in bun** — `import("node:sqlite")` answers *"No such built-in module"* — so
  * `sqlite.node.ts` cannot be loaded, let alone exercised, by anything `bun test` runs. That leg only

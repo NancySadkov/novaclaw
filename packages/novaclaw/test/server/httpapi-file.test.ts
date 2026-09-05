@@ -3,7 +3,7 @@ import { Context, Effect } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
-import { FilePaths } from "../../src/server/routes/instance/httpapi/groups/file"
+import { FilePaths, MAX_FILE_PREVIEW_BYTES } from "../../src/server/routes/instance/httpapi/groups/file"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 import { pollWithTimeout } from "../lib/effect"
@@ -82,6 +82,23 @@ describe("file HttpApi", () => {
     // `toEqual([])` while the handler was `return []`, which pinned the stub rather than the route:
     // it passed for a dirty tree, so it could never have told "clean" from "not implemented".
     expect(await status.json()).toContainEqual(expect.objectContaining({ path: "hello.txt", status: "added" }))
+  })
+
+  test("refuses a file larger than the preview ceiling before reading it", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const oversized = path.join(tmp.path, "large.log")
+    await Bun.write(oversized, "")
+    await fs.truncate(oversized, MAX_FILE_PREVIEW_BYTES + 1)
+
+    const response = await request(FilePaths.content, tmp.path, { path: "large.log" })
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({
+      _tag: "FilePreviewTooLargeError",
+      bytes: MAX_FILE_PREVIEW_BYTES + 1,
+      limit: MAX_FILE_PREVIEW_BYTES,
+      message: expect.stringContaining("too large to preview"),
+    })
   })
 
   test("distinguishes a clean working tree from a dirty one", async () => {

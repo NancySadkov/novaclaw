@@ -25,7 +25,7 @@ import { executeTool, toolIdentity } from "./lib/tool"
 import { stripComments } from "./lib/source-scan"
 
 /**
- * `todo/projects.md` — **Project exclusions**, the enforcement half.
+ * `` — **Project exclusions**, the enforcement half.
  *
  * ⚠️ **What was measured before any of this existed (2026-08-18).** With
  * `novaclaw.json` = `{"version":1,"exclude":["secret.txt"]}` beside a `secret.txt`,
@@ -652,7 +652,7 @@ describe("project exclusions — gitignore-style semantics", () => {
 })
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
-// 6. Distinct from the watcher/build ignore list — `todo/projects.md` requires it and they drift.
+// 6. Distinct from the watcher/build ignore list — `` requires it and they drift.
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
 describe("project exclusions — distinct from watcher/build ignores", () => {

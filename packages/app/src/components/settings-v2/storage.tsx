@@ -42,6 +42,10 @@ interface LogConfig {
   subsystems?: Record<string, LogLevel | undefined>
 }
 
+interface TrashConfig {
+  retention_days?: number
+}
+
 export const SettingsStorageV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
@@ -52,6 +56,7 @@ export const SettingsStorageV2: Component = () => {
   // uses for scratchDir); regenerating the client for a read-only display is not worth the churn.
   const paths = (): PathInfo => (sync().data.path ?? {}) as PathInfo
   const logConfig = createMemo(() => ((sync().data.config as { log?: LogConfig } | undefined)?.log ?? {}) as LogConfig)
+  const trashConfig = createMemo(() => ((sync().data.config as { trash?: TrashConfig } | undefined)?.trash ?? {}) as TrashConfig)
   const levelOptions = createMemo(() =>
     (["debug", "info", "warn", "error"] as const).map((value) => ({
       id: value,
@@ -64,6 +69,13 @@ export const SettingsStorageV2: Component = () => {
       id: String(value),
       value,
       label: language.t("settings.storage.logs.retention.days", { days: value }),
+    })),
+  )
+  const trashRetentionOptions = createMemo(() =>
+    [7, 30, 90, 180, 365].map((value) => ({
+      id: String(value),
+      value,
+      label: language.t("settings.storage.trash.retention.days", { days: value }),
     })),
   )
   const saveLog = async (next: LogConfig) => {
@@ -101,6 +113,36 @@ export const SettingsStorageV2: Component = () => {
       </div>
 
       <InstanceResources />
+
+      <div>
+        <h3 class="settings-v2-section-title">{language.t("settings.storage.trash.title")}</h3>
+        <p class="settings-v2-tab-description">{language.t("settings.storage.trash.description")}</p>
+      </div>
+
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.storage.trash.retention")}
+          description={language.t("settings.storage.trash.retention.description", {
+            days: trashConfig().retention_days ?? 30,
+          })}
+        >
+          <SelectV2
+            appearance="inline"
+            data-action="settings-trash-retention"
+            options={trashRetentionOptions()}
+            current={
+              trashRetentionOptions().find((option) => option.value === (trashConfig().retention_days ?? 30)) ??
+              trashRetentionOptions()[1]
+            }
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => {
+              if (!option || option.value === (trashConfig().retention_days ?? 30)) return
+              void sync().updateConfig({ trash: { ...trashConfig(), retention_days: option.value } } as never)
+            }}
+          />
+        </SettingsRowV2>
+      </SettingsListV2>
 
       <div>
         <h3 class="settings-v2-section-title">{language.t("settings.storage.locations.title")}</h3>

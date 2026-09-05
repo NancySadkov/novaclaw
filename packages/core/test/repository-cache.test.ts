@@ -19,7 +19,7 @@ const it = testEffect(Layer.empty)
  * **Why these tests carry an explicit budget instead of the suite's 15 s, and where 60 s comes from.**
  *
  * Two of them (`serializes …`, `replaces an existing checkout …`) timed out at 15 s under a full gate
- * three times on 2026-08-07 and passed 4/4 in isolation each time — `todo/test-speed.md`. That part
+ * three times on 2026-08-07 and passed 4/4 in isolation each time — ``. That part
  * says the question to answer FIRST is whether their work is concurrent with the rest of the unit. It
  * is not, and the whole reason for this comment is that the answer is *machine load*, not a race:
  *

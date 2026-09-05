@@ -19,15 +19,15 @@ describe("the desktop shell speaks every language the app offers", () => {
     expect(LOCALES).toBe(SHARED_LOCALES)
   })
 
-  test("every non-English locale translates a substantial share of the shell", () => {
-    const en = build("en") as Record<string, string>
+  test("every non-English locale translates a substantial share of the shell", async () => {
+    const en = (await build("en")) as Record<string, string>
     const keys = Object.keys(en)
     expect(keys.length, "the English dictionary is empty — this test is measuring nothing").toBeGreaterThan(500)
 
     const thin: string[] = []
     for (const locale of LOCALES) {
       if (locale === "en") continue
-      const dict = build(locale) as Record<string, string>
+      const dict = (await build(locale)) as Record<string, string>
       const translated = keys.filter((key) => dict[key] !== en[key]).length
       if (translated < 100) thin.push(`${locale} (${translated} of ${keys.length})`)
     }
@@ -38,11 +38,11 @@ describe("the desktop shell speaks every language the app offers", () => {
     ).toEqual([])
   })
 
-  test("`build` is total — an unknown locale cannot silently take another language's dictionary", () => {
+  test("`build` is total — an unknown locale cannot silently take another language's dictionary", async () => {
     // The `if`-chain this replaced ended in an unlabelled `return` of the KOREAN dictionary, so a
     // locale nobody wrote an arm for got Korean rather than English. `OVERLAYS` is a
     // `Record<Exclude<Locale, "en">, …>`, so a missing arm is a compile error — but a runtime miss
     // must still not resolve to somebody else's language.
-    expect(() => build("nonexistent" as never)).toThrow()
+    await expect(build("nonexistent" as never)).rejects.toThrow()
   })
 })

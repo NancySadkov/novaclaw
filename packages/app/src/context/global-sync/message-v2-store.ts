@@ -25,6 +25,11 @@ import { fetchNativeMessages } from "./message-v2-fetch"
  */
 export function createNativeMessageStore(client: NovaclawClient) {
   const [data, setData] = createStore({ messages: {} as Record<string, SessionMessage[]> })
+  // Full (no-cursor) loads are authoritative snapshots. A mount load and the busy→idle
+  // recovery load can overlap, so only the newest snapshot for a session may commit. Cursor
+  // loads deliberately do not share this fence: they add an older page and must retain their
+  // independent pagination semantics.
+  const authoritativeLoadRev = new Map<string, number>()
 
   const apply = (event: V2Event) => {
     // A retired id returns — clear everything keyed on it. `server-session` drops its own caches
@@ -57,10 +62,17 @@ export function createNativeMessageStore(client: NovaclawClient) {
   }
 
   const load = async (sessionID: string, options?: { limit?: number; order?: "asc" | "desc"; cursor?: string }) => {
+    const authoritative = options?.cursor === undefined
+    const rev = authoritative ? (authoritativeLoadRev.get(sessionID) ?? 0) + 1 : undefined
+    if (rev !== undefined) authoritativeLoadRev.set(sessionID, rev)
     // Stamp BEFORE the request: the response describes server state as of this moment, which lets the
     // merge tell a deleted row from one that arrived while the request was in flight.
     const asOf = Date.now()
     const fetched = await fetchNativeMessages(client, sessionID, options)
+    // A later authoritative request has already captured a newer server snapshot. Committing this
+    // older response would let an incomplete assistant regress a completed reply (and could also
+    // resurrect rows a newer snapshot proved deleted).
+    if (authoritative && authoritativeLoadRev.get(sessionID) !== rev) return
     setData(
       "messages",
       produce((bySession) => {
@@ -121,13 +133,15 @@ export function createNativeMessageStore(client: NovaclawClient) {
       }),
     )
 
-  const evict = (sessionID: string) =>
+  const evict = (sessionID: string) => {
+    authoritativeLoadRev.set(sessionID, (authoritativeLoadRev.get(sessionID) ?? 0) + 1)
     setData(
       "messages",
       produce((bySession) => {
         delete bySession[sessionID]
       }),
     )
+  }
   /** The id a `session.deleted` or an archiving `session.updated` retires, else `undefined`. */
   const retiredSession = (event: V2Event): string | undefined => {
     if (event.type !== "session.deleted" && event.type !== "session.updated") return undefined

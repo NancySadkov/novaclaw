@@ -13,6 +13,8 @@ import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import {
   attachmentModality,
   attachmentSupport,
+  archiveDigestCacheSize,
+  resetArchiveDigestCache,
   toLLMMessages,
   unreadableAttachmentNotice,
   unreadableTurnAttachments,
@@ -131,6 +133,18 @@ describe("attachmentSupport — the tri-state, and the third state is load-beari
 })
 
 describe("lowering — a vision model gets the bytes, a text-only model gets an honest placeholder", () => {
+  test("re-lowering the same archive reuses one bounded digest", () => {
+    const archive = FileAttachment.make({
+      uri: `data:application/zip;base64,${Buffer.from("not a zip").toString("base64")}`,
+      mime: "application/zip",
+      name: "project.zip",
+    })
+    resetArchiveDigestCache()
+    toLLMMessages([user("archive-first", [archive])], model)
+    toLLMMessages([user("archive-second", [archive])], model)
+    expect(archiveDigestCacheSize()).toBe(1)
+  })
+
   test("a vision model lowers the image as a media part", () => {
     expect(partTypes(VISION, [user("vision", [png])])).toEqual(["text", "media"])
   })

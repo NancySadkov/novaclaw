@@ -10,7 +10,7 @@ import { stripComments } from "./lib/source-scan"
  * tests now run on a larger budget because 15 s stopped being a guard for them and became a coin
  * flip — the derivations live in the files themselves, each with the measurement it came from.
  *
- * 🔴 **This exists because of the specific way that decision goes wrong.** `todo/test-speed.md`:
+ * 🔴 **This exists because of the specific way that decision goes wrong.** ``:
  * *"a timeout that was tuned and then doubled after a failure is how a real race gets papered
  * over."* The failure mode is not the first raise, which someone reasons about; it is the second and
  * third, each one line, each individually defensible, none of them measured. A number nobody has to
@@ -18,7 +18,7 @@ import { stripComments } from "./lib/source-scan"
  * one means editing a ledger that says out loud what it is for.
  *
  * **What it enforces**, over comment-stripped source so prose can never be counted as code
- * (`todo/doc-hygiene.md` — three wrong numbers landed in one day from regexes that matched
+ * (`` — three wrong numbers landed in one day from regexes that matched
  * comments):
  *
  *   1. Exactly the files below carry a `BUDGET_MS`, and none exceeds its pin.

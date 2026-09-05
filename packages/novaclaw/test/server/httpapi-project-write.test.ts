@@ -11,7 +11,7 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 /**
  * **`POST /api/project` — create or update this folder's `novaclaw.json`.**
  *
- * `todo/projects.md`: *"Write path: create or update `novaclaw.json`, replacing only the sections
+ * ``: *"Write path: create or update `novaclaw.json`, replacing only the sections
  * supplied. Refuse when the existing file does not parse."*
  *
  * ⚠️ Driven over real HTTP against real directories. The merge semantics have their own unit tests
@@ -338,7 +338,7 @@ describe("POST /api/project — the `skills` section refuses what its own reader
 /**
  * **The `policies` section, over the real route, against the REAL registry.**
  *
- * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * ``: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
  * write Permissions got."*
  *
  * 🔴 **What only this level can check: that a REMOVAL has no spelling.** A `policies` section can

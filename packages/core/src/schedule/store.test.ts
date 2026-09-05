@@ -7,6 +7,8 @@ import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
+import { SessionSchema } from "../session/schema"
+import { SessionExecutionTable, SessionTable } from "../session/sql"
 import { CalendarStore } from "./store"
 import type { Recurrence } from "./recurrence"
 
@@ -146,15 +148,22 @@ describe("CalendarStore", () => {
     expect(result).toBeUndefined()
   })
 
-  test("remove deletes the schedule", async () => {
+  test("remove deletes the schedule and its fire history", async () => {
     const after = await withDb((db) =>
       Effect.gen(function* () {
         const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        yield* CalendarStore.recordFire(db, {
+          scheduleId: s.id,
+          occurrenceMillis: MAR10_0900,
+          firedAt: MAR10_0900,
+          status: "spawned",
+        })
         yield* CalendarStore.remove(db, s.id)
-        return yield* CalendarStore.list(db)
+        return { schedules: yield* CalendarStore.list(db), fires: yield* CalendarStore.fires(db, s.id) }
       }),
     )
-    expect(after).toHaveLength(0)
+    expect(after.schedules).toHaveLength(0)
+    expect(after.fires).toHaveLength(0)
   })
 
   test("due returns only enabled schedules whose next_fire_at is at/before now", async () => {
@@ -231,5 +240,100 @@ describe("CalendarStore", () => {
     expect(out[0]!.firedAt).toBe(200) // newest first
     expect(out[0]!.status).toBe("error")
     expect(out[1]!.firedAt).toBe(100)
+  })
+
+  test("pruneFires removes old history but keeps the schedule's current occurrence", async () => {
+    const now = Date.UTC(2025, 6, 1)
+    const retention = 30 * 24 * 60 * 60_000
+    const old = now - retention - 1
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        // The schedule's next fire is still MAR10_0900. This old claim must survive so recovery can
+        // still decide whether it is an abandoned run rather than launching a duplicate.
+        yield* CalendarStore.recordFire(db, {
+          scheduleId: s.id,
+          occurrenceMillis: MAR10_0900,
+          firedAt: old,
+          status: "skipped",
+        })
+        yield* CalendarStore.recordFire(db, {
+          scheduleId: s.id,
+          occurrenceMillis: MAR10_0900 - 24 * 60 * 60_000,
+          firedAt: old - 1,
+          status: "spawned",
+        })
+        const removed = yield* CalendarStore.pruneFires(db, now, retention)
+        return { removed, fires: yield* CalendarStore.fires(db, s.id) }
+      }),
+    )
+    expect(out.removed).toBe(1)
+    expect(out.fires).toHaveLength(1)
+    expect(out.fires[0]!.status).toBe("skipped")
+  })
+
+  test("reconcileFireOutcomes projects terminal session states once", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const schedule = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const states = [
+          ["ses_succeeded", "settled"],
+          ["ses_failed", "failed"],
+          ["ses_interrupted", "interrupted"],
+          ["ses_busy", "busy"],
+        ] as const
+        yield* db
+          .insert(SessionTable)
+          .values(
+            states.map(([id]) => ({
+              id: SessionSchema.ID.make(id),
+              slug: id,
+              directory: "/tmp",
+              title: id,
+              version: "test",
+              time_created: 1,
+              time_updated: 1,
+            })),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .insert(SessionExecutionTable)
+          .values(
+            states.map(([id, state]) => ({
+              session_id: SessionSchema.ID.make(id),
+              attempt_id: `attempt_${id}`,
+              generation: 1,
+              owner_id: "test",
+              state,
+              phase: "drain" as const,
+              heartbeat_at: 1,
+              started_at: 1,
+              time_updated: 1,
+            })),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        for (const [index, [id]] of states.entries()) {
+          yield* CalendarStore.recordFire(db, {
+            scheduleId: schedule.id,
+            occurrenceMillis: MAR10_0900 + index,
+            firedAt: MAR10_0900 + index,
+            sessionId: id,
+            status: "spawned",
+          })
+        }
+        const changed = yield* CalendarStore.reconcileFireOutcomes(db)
+        const changedAgain = yield* CalendarStore.reconcileFireOutcomes(db)
+        return { changed, changedAgain, fires: yield* CalendarStore.recentFires(db) }
+      }),
+    )
+    expect(out.changed).toBe(3)
+    expect(out.changedAgain).toBe(0)
+    const bySession = new Map(out.fires.map((fire) => [fire.sessionId, fire.outcome]))
+    expect(bySession.get("ses_succeeded")).toBe("succeeded")
+    expect(bySession.get("ses_failed")).toBe("failed")
+    expect(bySession.get("ses_interrupted")).toBe("interrupted")
+    expect(bySession.get("ses_busy")).toBe("pending")
   })
 })

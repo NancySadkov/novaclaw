@@ -41,7 +41,7 @@ import { SessionStore } from "./store"
  * ⚠️ It still has to be BOUNDED, so a wedged child cannot hold a caller forever. Ten minutes is well
  * past a slow local turn and well short of a hang.
  *
- * ⚠️ **It lives here because there were TWO joins and only one of them learned this** (RF-03-1).
+ * ⚠️ **It lives here because there were TWO joins and only one of them learned this** ().
  * `tool/wait.ts` owned the measurement above; `SessionV2.wait` — the `POST /api/session/:id/wait`
  * door — was a separate hand-rolled 2000ms×60 poll that still carried the falsified 2-minute bound,
  * under a comment claiming *"same semantics as the wait TOOL"*. Two doors onto one question must not

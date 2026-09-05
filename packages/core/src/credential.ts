@@ -121,7 +121,18 @@ export const layer = Layer.effect(
           )
         : row.value
       if (plaintext === undefined) return
-      const value = decode(JSON.parse(plaintext))
+      const value = yield* Effect.try({
+        try: () => decode(JSON.parse(plaintext)),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Log.event("credential.setting.undecryptable", {
+            "credential.path": `credential:${row.id}`,
+            "credential.cause": Log.fault(cause),
+          }).pipe(Effect.as(undefined)),
+        ),
+      )
+      if (value === undefined) return
       // ⚠️ The DRAIN, and the direction is the opposite of what it was. This migration used to turn
       // plaintext into ciphertext on first read; it now writes an opened envelope back as plaintext,
       // so the ciphertext leaves the table while the key is still present. Stopping the writes

@@ -170,7 +170,7 @@ function TerminalWorkspace(props: { serverName: string }) {
   const connectError = (failure: TerminalConnectFailure, id: string) => {
     const ops = terminal.bind()
     if (shouldCloneTerminal(failure)) {
-      void ops.clone(id)
+      void ops.clone(id, { confirmedGone: true })
       return
     }
     ops.disconnected(id)

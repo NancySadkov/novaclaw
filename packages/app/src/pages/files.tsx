@@ -7,6 +7,7 @@ import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
+import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
 import { createSettledResource } from "@/utils/settled-resource"
@@ -20,7 +21,7 @@ import { ProjectChip, ProjectDetail, useProjectSummary } from "@/components/proj
 // via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
 // directory = any absolute host path); navigate folders, preview text files, "Ask AI" (opens a
 // pre-filled chat draft — the OS spawn/chat seam). Deletion is SAFE-delete only: rows trash via
-// POST /file/trash (dated store, ~2-day TTL) and the Trash panel restores — no destructive path.
+// POST /file/trash (dated store, runtime-configured TTL) and the Trash panel restores — no destructive path.
 type Entry = { name: string; path: string; absolute: string; type: "file" | "directory"; ignored: boolean }
 
 // Parent of an absolute host path. Handles Windows (C:\a\b -> C:\a, C:\ stays) and POSIX (/a/b -> /a,
@@ -40,6 +41,11 @@ export function FilesPage() {
   const server = useServer()
   const tabs = useTabs()
   const language = useLanguage()
+  const sync = useServerSync()
+  const trashRetentionDays = createMemo(() => {
+    const trash = (sync().data.config as { trash?: { retention_days?: number } } | undefined)?.trash
+    return trash?.retention_days ?? 30
+  })
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
   const ctx = createMemo(() => {
@@ -579,7 +585,9 @@ export function FilesPage() {
             <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
               <Icon name="trash" size="normal" class="shrink-0 text-v2-text-text-muted" />
               <span class="min-w-0 flex-1 truncate text-sm font-medium">{language.t("files.trash")}</span>
-              <span class="text-xs text-v2-text-text-faint">{language.t("files.trashHint")}</span>
+              <span class="text-xs text-v2-text-text-faint">
+                {language.t("files.trashHint", { days: trashRetentionDays() })}
+              </span>
             </div>
             <div class="min-h-0 flex-1 overflow-auto py-1">
               <Switch

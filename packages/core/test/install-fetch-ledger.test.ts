@@ -5,7 +5,7 @@ import path from "node:path"
 /**
  * ─── every INSTALL-TIME network fetch, and what verifies it ─────────────────────────────────────
  *
- * `todo/supply-chain.md`: *"Pin or eliminate install-time network fallbacks lacking digest/signature
+ * ``: *"Pin or eliminate install-time network fallbacks lacking digest/signature
  * verification"* — under a file header that says *"every finding is re-measured at app HEAD before
  * dispatch; stale counts are not work."* This is that re-measurement, turned into something that
  * fails when it stops being true, because an audit written into a report is a fact about the day it

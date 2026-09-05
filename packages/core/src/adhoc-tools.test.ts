@@ -85,6 +85,22 @@ describe("session store", () => {
     await fs.writeFile(path.join(root, "ses_corrupt.json"), "{not json", "utf8")
     expect(await listSessionRecipes("ses_corrupt", { root })).toEqual([])
   })
+  test("a corrupt catalogue is never replaced by a partial mutation", async () => {
+    const file = path.join(root, "ses_corrupt-mutation.json")
+    await fs.writeFile(file, "{not json", "utf8")
+    await expect(saveSessionRecipe("ses_corrupt-mutation", recipe("new"), { root })).rejects.toThrow(
+      "unreadable and was not overwritten",
+    )
+    expect(await fs.readFile(file, "utf8")).toBe("{not json")
+  })
+  test("concurrent session saves retain every distinct recipe", async () => {
+    await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        saveSessionRecipe("ses_concurrent", recipe(`tool-${index}`), { root }),
+      ),
+    )
+    expect((await listSessionRecipes("ses_concurrent", { root })).map((item) => item.name)).toHaveLength(12)
+  })
   test("a traversal session id throws", async () => {
     await expect(listSessionRecipes("../../evil", { root })).rejects.toThrow("Invalid session id")
   })

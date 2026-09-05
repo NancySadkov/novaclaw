@@ -216,7 +216,11 @@ const SessionCatalogHandler = handlerLayer(
           )
           .handle(
             "session.execution.list",
-            Effect.fn(function* () {
+            Effect.fn(function* (ctx) {
+              if (ctx.query.sessionID !== undefined) {
+                const found = yield* attempts.get(ctx.query.sessionID)
+                return { data: found === undefined ? [] : [found] }
+              }
               return { data: yield* attempts.list() }
             }),
           )

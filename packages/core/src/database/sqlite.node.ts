@@ -16,7 +16,7 @@ import { Sqlite } from "./sqlite"
 
 /**
  * **The node leg. Its sibling is `sqlite.bun.ts`, and they are ~80 lines the same on purpose** —
- * see that file's header for the full reasoning (RF-11-8, decided 2026-09-01).
+ * see that file's header for the full reasoning (, decided 2026-09-01).
  *
  * 🔴 **Nothing in the repo's test gate can load this file.** `node:sqlite` does not exist in bun, so
  * `bun test` cannot import it; this leg runs only inside the desktop server's Electron

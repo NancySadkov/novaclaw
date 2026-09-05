@@ -13,7 +13,7 @@ import {
 } from "./lib/log-event-ledger"
 
 /**
- * **The two type seams of `todo/logging.md` 1h, with the machine that keeps them closed.**
+ * **The two type seams of `` 1h, with the machine that keeps them closed.**
  *
  * 1a put redaction in the record type and 1b/1c drove every log call through it. What 1h names is
  * what the migration EXPOSED on the way: two places where the declared type is not actually the

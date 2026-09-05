@@ -1,7 +1,7 @@
 /**
  * **The log tier measures itself, once per boot — and does not open a second writer to do it.**
  *
- * `todo/logging.md` Phase 2 handed Phase 3 exactly one deliverable with a ⭐ on it: *"the
+ * `` Phase 2 handed Phase 3 exactly one deliverable with a ⭐ on it: *"the
  * bytes-written-per-hour event the defaults table asks for… Until it exists the Phase-2 defaults
  * table is still a guess — do not cite 8 MB / 256 MB / 30 d as measured."* This is that event
  * (`log.file.usage` + `log.file.rate`) proved end to end: not that the declaration exists, but that

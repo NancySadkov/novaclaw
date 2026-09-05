@@ -8,7 +8,7 @@ import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { tmpdir } from "./fixture/tmpdir"
 
 /**
- * `produces` — the **deterministic success artifact** for a cook (`todo/recipes.md`).
+ * `produces` — the **deterministic success artifact** for a cook (``).
  *
  * Until now a cook's only output was prose: the agent said it had worked, a human read the chatter, and
  * *"nothing mechanical can read its outcome."* AGENTS.md calls the bundled set the install's health check

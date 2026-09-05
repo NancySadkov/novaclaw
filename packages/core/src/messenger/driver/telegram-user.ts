@@ -15,7 +15,7 @@ import type {
   LoginSupport,
   OutboundFile,
 } from "../driver"
-import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError } from "../driver"
+import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError, withAbortSignal } from "../driver"
 
 // The Telegram USER-ACCOUNT driver (messenger-plan §0.2 + §2.2 owner decision): the agent logs
 // into the user's OWN Telegram account (MTProto) and acts as them while they're AFK — the lay
@@ -177,7 +177,7 @@ const sentTracker = LinkedAccount.sentTracker
 /**
  * The self-echo policy, shared with every other linked-account driver — see
  * `driver/linked-account.ts` for the four cases and why the rule is not per-platform. Re-exported
- * rather than re-implemented: this was a byte-identical copy until 2026-09-01 (RF-08-9), and the
+ * rather than re-implemented: this was a byte-identical copy until 2026-09-01 (), and the
  * copies had already drifted in their neighbouring error mapping.
  *
  * What Telegram supplies is the VOCABULARY, not the rule: the self-chat here is **Saved Messages**,
@@ -406,7 +406,8 @@ export const make = (factory: UserClientFactory): Driver => {
               // A file message: the text rides as the caption (Telegram semantics); no chunking —
               // captions are short by construction (the tool caps them).
               const result = yield* Effect.tryPromise({
-                try: () => client.sendFile(chatID, message.file!, message.text),
+                try: (signal) =>
+                  withAbortSignal(signal, () => client.sendFile(chatID, message.file!, message.text), client.close),
                 catch: mapSendError,
               })
               sent.add(chatID, result.messageID)
@@ -418,7 +419,7 @@ export const make = (factory: UserClientFactory): Driver => {
             })
             for (const chunk of chunks) {
               const result = yield* Effect.tryPromise({
-                try: () => client.sendText(chatID, chunk),
+                try: (signal) => withAbortSignal(signal, () => client.sendText(chatID, chunk), client.close),
                 catch: mapSendError,
               })
               sent.add(chatID, result.messageID)

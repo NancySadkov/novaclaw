@@ -10,7 +10,14 @@ import {
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
-import { InvalidRequestError } from "../errors"
+import { FilePreviewTooLargeError, InvalidRequestError } from "../errors"
+
+/**
+ * A Files preview is a convenience response, not a general-purpose download endpoint. Keep the
+ * ceiling below the client-side content cache budget so one click cannot allocate the whole cache
+ * budget in the server, base64 expansion and renderer at once.
+ */
+export const MAX_FILE_PREVIEW_BYTES = 20 * 1024 * 1024
 
 export const FileQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -185,6 +192,7 @@ export const FileApi = HttpApi.make("file")
         HttpApiEndpoint.get("content", FilePaths.content, {
           query: FileQuery,
           success: described(LegacyContent, "File content"),
+          error: FilePreviewTooLargeError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "file.read",

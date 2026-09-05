@@ -504,16 +504,18 @@ export const make = (dependencies: Dependencies) => {
           : Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strict.attempts ?? 1)))
       let baseline: ReadonlyMap<string, string> | undefined
       let forks: string[] = []
+      const removeForks = (dirs: readonly string[]) =>
+        Effect.all(
+          dirs.map((dir) => Effect.promise(() => fs.promises.rm(dir, { recursive: true, force: true }).catch(() => undefined))),
+          { concurrency: "unbounded", discard: true },
+        )
       if (attempts > 1) {
-        baseline = SessionStrict.manifestFor(location.directory)
+        baseline = yield* Effect.promise(() => SessionStrict.manifestFor(location.directory))
         for (let i = 0; i < attempts; i++) {
-          const fork = SessionStrict.forkWorkspace(location.directory, i + 1)
+          const fork = yield* Effect.promise(() => SessionStrict.forkWorkspace(location.directory, i + 1))
           if ("refused" in fork) {
             yield* notice(`🛡️ Racing is OFF for this task — ${fork.refused}. Running a single attempt instead.`)
-            for (const d of forks)
-              try {
-                fs.rmSync(d, { recursive: true, force: true })
-              } catch {}
+            yield* removeForks(forks)
             forks = []
             attempts = 1
             break
@@ -819,31 +821,23 @@ export const make = (dependencies: Dependencies) => {
                 ? `⚠️ The Strict run hit an internal error — see the server log. It had already written to your working directory (${actionSeq} action${actionSeq === 1 ? "" : "s"} above) and those changes are still there; use Revert on this message to undo them.`
                 : "⚠️ The Strict run hit an internal error — see the server log. It had not written anything yet, so your folder is unchanged.",
           )
-          for (const d of forks)
-            try {
-              fs.rmSync(d, { recursive: true, force: true })
-            } catch {}
+          yield* removeForks(forks)
           return
         }
         // The racing branch below overwrites this with `applyBack`'s authoritative list; on the
         // single path the engine's own successful writes ARE the answer.
         let appliedFiles: string[] = single ? [...SessionStrict.filesWritten(singleActions)] : []
         if (!single) {
-          if (winnerIdx !== undefined && baseline) {
-            appliedFiles = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)
+          const winner = winnerIdx
+          if (winner !== undefined && baseline) {
+            appliedFiles = yield* Effect.promise(() => SessionStrict.applyBack(forks[winner]!, location.directory, baseline))
             yield* notice(
-              `🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`,
+              `🏁 Attempt ${winner + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`,
             )
-            for (const d of forks)
-              try {
-                fs.rmSync(d, { recursive: true, force: true })
-              } catch {}
+            yield* removeForks(forks)
           } else if (stopRequested) {
             yield* notice(`🏁 The race was stopped before any attempt verified success — YOUR FOLDER IS UNCHANGED.`)
-            for (const d of forks)
-              try {
-                fs.rmSync(d, { recursive: true, force: true })
-              } catch {}
+            yield* removeForks(forks)
           } else {
             yield* notice(
               `🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`,
@@ -911,10 +905,7 @@ export const make = (dependencies: Dependencies) => {
         finalize.pipe(Effect.ensuring(Effect.sync(() => sessionTail.delete(sessionID)))),
       )
       if (worker === undefined) {
-        for (const d of forks)
-          try {
-            fs.rmSync(d, { recursive: true, force: true })
-          } catch {}
+        yield* removeForks(forks)
         yield* notice(folderBusyNotice)
         return "chat" as const
       }

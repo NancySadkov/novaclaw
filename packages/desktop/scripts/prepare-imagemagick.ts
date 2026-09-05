@@ -53,7 +53,7 @@ const required = ["magick.exe", "configure.xml", "delegates.xml", "policy.xml", 
 
 export async function prepareImageMagick() {
   // Windows only for now: POSIX hosts get `magick` from their package manager, and `shell.ts` looks
-  // for a system one there. Embedding a Linux build is `todo/linux-build.md`'s call, not this file's.
+  // for a system one there. Embedding a Linux build remains a separate packaging concern.
   if (process.platform !== "win32") return
   if (await validResource()) return
 

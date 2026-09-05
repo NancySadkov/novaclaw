@@ -70,7 +70,7 @@ type TerminalBuffers = {
 }
 
 /**
- * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): this one has no array
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (, 2026-09-01): this one has no array
  * guard.** The shared predicate rejects arrays; this one accepts them, and the only caller is the
  * duck-typed `isBuffer` below, which then requires `length`/`cursorX`/`cursorY` to be numbers — so
  * an array is rejected one line later on its shape rather than its type. Swapping in the shared

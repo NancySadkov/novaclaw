@@ -527,7 +527,7 @@ describe("the guard actually bites", () => {
 })
 
 /**
- * **The two doors onto "has this child finished?", proved to be ONE join** (RF-03-1).
+ * **The two doors onto "has this child finished?", proved to be ONE join** ().
  *
  * 🔴 `SessionV2.wait` — the `POST /api/session/:id/wait` door — used to be a hand-rolled
  * `for (let i = 0; i < 60)` loop re-reading the session row every 2000 ms and failing

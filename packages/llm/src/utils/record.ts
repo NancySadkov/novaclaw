@@ -2,7 +2,7 @@
  * Plain-record narrowing. Excludes arrays so JSON object checks don't accept tuples as key/value bags.
  *
  * ⚠️ **This was a hand-rolled copy until 2026-09-01; it is now the shared predicate under this
- * package's local name** (RF-29-6). The earlier decision to keep it a copy rested on a premise that
+ * package's local name** (). The earlier decision to keep it a copy rested on a premise that
  * no longer holds: there was no home `llm` and `novaclaw` shared *worth the trade*, since the only
  * `@novaclaw/*` dependency they have in common is `@novaclaw/schema`. That home now exists —
  * `@novaclaw/schema/record`, beside `@novaclaw/schema/text`, which is the same argument settled the

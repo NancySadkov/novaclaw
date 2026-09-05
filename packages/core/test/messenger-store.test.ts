@@ -7,6 +7,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
+import { MessengerInboundTable } from "@novaclaw/core/messenger/sql"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { testEffect } from "./lib/effect"
 
@@ -57,6 +58,43 @@ describe("MessengerStore", () => {
       expect(yield* store.claimInbound({ ...key, messageID: "m2" })).toBe("fresh")
       // ...and the same message id in a different chat is a different message.
       expect(yield* store.claimInbound({ ...key, chatID: "c2" })).toBe("fresh")
+    }),
+  )
+
+  it.effect("routed inbound retention removes superseded history but preserves recovery and chat evidence", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const { db } = yield* Database.Service
+      const account = yield* store.createAccount({ driverID: "fake", label: "retention", enabled: true, settings: {} })
+      const now = 100 * 24 * 60 * 60_000
+      const retention = 30 * 24 * 60 * 60_000
+      const old = now - retention - 1
+      yield* db
+        .insert(MessengerInboundTable)
+        .values([
+          { account_id: account.id, chat_id: "busy", message_id: "old", time_routed: old },
+          { account_id: account.id, chat_id: "busy", message_id: "new", time_routed: now - 1 },
+          { account_id: account.id, chat_id: "only", message_id: "sole", time_routed: old },
+          { account_id: account.id, chat_id: "recover", message_id: "pending", time_routed: null },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+
+      yield* MessengerStore.pruneRoutedInbound(db, now, retention)
+      const rows = yield* db
+        .select({ chatID: MessengerInboundTable.chat_id, messageID: MessengerInboundTable.message_id })
+        .from(MessengerInboundTable)
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toEqual([
+        { chatID: "busy", messageID: "new" },
+        { chatID: "only", messageID: "sole" },
+        { chatID: "recover", messageID: "pending" },
+      ])
+      expect(yield* store.hasInbound(account.id, "only")).toBe(true)
+      expect(yield* store.claimInbound({ accountID: account.id, chatID: "recover", messageID: "pending" })).toBe(
+        "recovering",
+      )
     }),
   )
 

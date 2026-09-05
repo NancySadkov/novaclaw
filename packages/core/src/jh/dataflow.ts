@@ -33,7 +33,7 @@ export interface Issue {
  *
  * ⚠️ So do not "simplify" this by dropping `duplicate_produce`: it is invisible to the engine and to
  * a `packages/`-only grep, and removing it would silently change a measured number the rig has been
- * reporting. A third code, `unused_produce` (a `warning`), was removed on 2026-09-01 (RF-05-13) —
+ * reporting. A third code, `unused_produce` (a `warning`), was removed on 2026-09-01 () —
  * that one genuinely had no reader: the engine filters it out, the rig's `severity` filter excludes
  * warnings, and it cost an O(children² × refs) second pass with a fresh `slice` per element on every
  * decomposition.

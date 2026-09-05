@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import { realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -6,7 +6,7 @@ import path from "node:path"
 import { Effect, Exit, Fiber, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { AppProcess } from "@novaclaw/core/process"
+import { AppProcess, decodeProcessOutput } from "@novaclaw/core/process"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(AppProcess.node))
@@ -27,6 +27,20 @@ const waitForFile = (file: string) =>
   })
 
 describe("AppProcess", () => {
+  describe("process output decoding", () => {
+    test("preserves valid UTF-8 before consulting the Windows code page", () => {
+      expect(decodeProcessOutput(Buffer.from("日本語", "utf8"), "437")).toBe("日本語")
+    })
+
+    test("decodes OEM CP437 bytes without replacement characters", () => {
+      expect(decodeProcessOutput(Buffer.from([0x63, 0x61, 0x66, 0x82]), "437")).toBe("café")
+    })
+
+    test("decodes Windows ANSI CP1252 bytes without replacement characters", () => {
+      expect(decodeProcessOutput(Buffer.from([0x63, 0x61, 0x66, 0xe9]), "1252")).toBe("café")
+    })
+  })
+
   describe("run", () => {
     it.effect(
       "captures stdout and exit code zero",

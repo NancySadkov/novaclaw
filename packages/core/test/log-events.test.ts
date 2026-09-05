@@ -27,7 +27,7 @@ import { Log } from "@novaclaw/schema/log"
 import { Logging } from "@novaclaw/core/observability/logging"
 
 /**
- * **The mechanical half of `todo/logging.md` 1a.** Ruling 1: an invariant whose violation compiles
+ * **The mechanical half of `` 1a.** Ruling 1: an invariant whose violation compiles
  * green ships with a check, or the invariant does not exist.
  *
  * The type in `schema/log-events.ts` closes exactly one door — an UNDECLARED key does not
@@ -568,7 +568,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   })
 
   test("the two unrelated `failed` sites are finally distinguishable", () => {
-    // `todo/logging.md` §0.4's argument in miniature: one word, two subsystems, and until now
+    // `` §0.4's argument in miniature: one word, two subsystems, and until now
     // nothing on the line could tell them apart.
     const server = lines(
       Log.event("server.request.fail", { ref: "err_1", "server.error": "e", "server.cause": "c" }),

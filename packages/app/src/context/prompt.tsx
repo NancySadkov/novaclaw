@@ -1,7 +1,7 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { base64Encode, checksum } from "@novaclaw/core/util/encode"
 import { useParams, useSearchParams } from "@solidjs/router"
-import { batch, createMemo, createRoot, getOwner, onCleanup, type Accessor } from "solid-js"
+import { createMemo, createRoot, getOwner, onCleanup, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
@@ -139,16 +139,13 @@ function createPromptActions(
   return {
     set(prompt: Prompt, cursorPosition?: number) {
       const next = clonePrompt(prompt)
-      batch(() => {
-        setStore("prompt", next)
-        if (cursorPosition !== undefined) setStore("cursor", cursorPosition)
-      })
+      setStore(() => ({
+        prompt: next,
+        ...(cursorPosition === undefined ? {} : { cursor: cursorPosition }),
+      }))
     },
     reset() {
-      batch(() => {
-        setStore("prompt", clonePrompt(DEFAULT_PROMPT))
-        setStore("cursor", 0)
-      })
+      setStore(() => ({ prompt: clonePrompt(DEFAULT_PROMPT), cursor: 0 }))
     },
   }
 }

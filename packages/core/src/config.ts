@@ -26,6 +26,7 @@ import { ConfigHarnessDrives } from "./config/harness-drives"
 import { ConfigIntrospection } from "./config/introspection"
 import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
+import { ConfigTrash } from "./config/trash"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
 import { ConfigProvider } from "./config/provider"
@@ -102,6 +103,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   log: ConfigLog.Info.pipe(Schema.optional).annotate({
     description: "Runtime-editable, instance-owned local activity-log settings",
+  }),
+  trash: ConfigTrash.Info.pipe(Schema.optional).annotate({
+    description: "Runtime-editable safe-delete retention shown in Settings → Storage",
   }),
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",

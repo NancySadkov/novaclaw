@@ -10,6 +10,7 @@ import {
   type ToolContent,
   type ToolFileContent,
 } from "@novaclaw/llm"
+import { createHash } from "node:crypto"
 import { SessionMessage } from "../message"
 import { SessionOrigin } from "../origin"
 import type { FileAttachment } from "../prompt"
@@ -332,6 +333,67 @@ const bytesFromDataUri = (uri: string): Uint8Array | undefined => {
   }
 }
 
+// Archive lowering is replayed for the same durable attachment on every later turn. The digest is
+// pure for a given URI and presentation metadata, so keep a small process-local LRU. The key is a
+// SHA-256 fingerprint rather than the URI itself: a user can attach a large data URI, and retaining
+// the entire base64 payload in a global cache would turn a CPU fix into a memory leak. Hashing the
+// URI still costs one linear pass on a cache hit, but avoids base64 decoding, ZIP directory parsing,
+// and every entry's inflation. The bound keeps old chats from pinning attachment content forever.
+const ARCHIVE_DIGEST_CACHE_LIMIT = 16
+const archiveDigestCache = new Map<string, string>()
+
+const archiveDigestCacheKey = (file: FileAttachment): string =>
+  JSON.stringify([
+    createHash("sha256").update(file.uri).digest("hex"),
+    file.uri.length,
+    file.mime,
+    file.name ?? null,
+  ])
+
+/** Clear the bounded archive lowering cache (used by lifecycle tests and controlled shutdowns). */
+export const resetArchiveDigestCache = (): void => {
+  archiveDigestCache.clear()
+}
+
+/** The cache size is observable so the no-reparse invariant has a direct focused test. */
+export const archiveDigestCacheSize = (): number => archiveDigestCache.size
+
+const cachedArchiveDigest = (file: FileAttachment): string => {
+  // A file:// archive is not opened at lowering, so it has no parse work to cache and must remain
+  // live as a path reference. Only data URIs enter this cache.
+  if (!file.uri.startsWith("data:")) {
+    return ArchiveAttachment.archiveDigest({
+      bytes: bytesFromDataUri(file.uri),
+      name: file.name,
+      mime: file.mime,
+      path: localPath(file.sourceUri) ?? localPath(file.uri),
+    })
+  }
+
+  const key = archiveDigestCacheKey(file)
+  const cached = archiveDigestCache.get(key)
+  if (cached !== undefined) {
+    // Touch the entry so repeated turns keep the active archive in the bounded window.
+    archiveDigestCache.delete(key)
+    archiveDigestCache.set(key, cached)
+    return cached
+  }
+
+  const digest = ArchiveAttachment.archiveDigest({
+    bytes: bytesFromDataUri(file.uri),
+    name: file.name,
+    mime: file.mime,
+    path: localPath(file.sourceUri) ?? localPath(file.uri),
+  })
+  archiveDigestCache.set(key, digest)
+  while (archiveDigestCache.size > ARCHIVE_DIGEST_CACHE_LIMIT) {
+    const oldest = archiveDigestCache.keys().next().value
+    if (oldest === undefined) break
+    archiveDigestCache.delete(oldest)
+  }
+  return digest
+}
+
 const textFromDataUri = (uri: string): string | undefined => {
   const match = /^data:([^,]*),([\s\S]*)$/.exec(uri)
   if (!match) return undefined
@@ -358,14 +420,7 @@ const attachment = (file: FileAttachment, capabilities: InputCapabilities | unde
   if (ArchiveAttachment.isArchive(file)) {
     return {
       type: "text",
-      text: ArchiveAttachment.archiveDigest({
-        bytes: bytesFromDataUri(file.uri),
-        name: file.name,
-        mime: file.mime,
-        // A `file://` attachment has no bytes here but IS a real file on this host, and the agent has
-        // a shell. `sourceUri` first: an inlined attachment keeps its origin there.
-        path: localPath(file.sourceUri) ?? localPath(file.uri),
-      }),
+      text: cachedArchiveDigest(file),
     }
   }
   if (file.mime.toLowerCase().startsWith("text/")) {

@@ -35,7 +35,7 @@ const entriesOf = (...dirs: string[]) =>
       Effect.succeed(dirs.map((dir) => new Config.Directory({ type: "directory", path: AbsolutePath.make(dir) }))),
   })
 
-/** Collect every WARN emitted while `effect` runs — including from fibers it forks. */
+/** Collect every WARN emitted while `effect` runs. */
 /**
  * ⚠️ Sibling of `collectWarnings`, and a separate function rather than a parameter: the warning
  * collector's level filter is load-bearing in the test below it (a broken plugin must WARN, not
@@ -160,10 +160,8 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
       )
 
-      // ⚠️ The loader FORKS (`Effect.forkScoped`), so the effect returning proves nothing has been
-      // loaded yet — asserting here without waiting captured zero records at every log level. The
-      // fixture's own agent landing is the loader's "this file was processed" signal, which is the
-      // same handle the sibling test uses.
+      // The loader now settles discovery before returning, so this observes the completed load rather
+      // than relying on a race with a detached fiber.
       const agents = yield* AgentV2.Service
       yield* waitForAgent(agents, "effect-directory")
 
@@ -250,7 +248,7 @@ describe("ConfigExternalPlugin", () => {
           Effect.provideService(FSUtil.Service, fs),
           Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
         )
-        // The loader forks its work; give it the same budget waitForAgent would have spent.
+        // The synchronous loader has no detached work to drain under pure mode.
         yield* Effect.sleep("300 millis")
       } finally {
         if (previous === undefined) delete process.env.NOVACLAW_PURE

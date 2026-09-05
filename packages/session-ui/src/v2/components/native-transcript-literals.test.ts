@@ -93,4 +93,11 @@ describe("the native transcript carries no raw English literal", () => {
     ].join("\n")
     expect(literalsIn(fixture)).toEqual(["Copy message", "Done", "Messaged ${who}", "Read", "Working…", "step"])
   })
+
+  test("assignment nudges use the folded automated-nudge renderer", () => {
+    const source = fs.readFileSync(path.join(import.meta.dir, "native-transcript.tsx"), "utf8")
+    expect(source).toContain(
+      'if (isSteerText(message.text)) return <SteerMessage text={stripSteerProvenance(message.text)} />',
+    )
+  })
 })

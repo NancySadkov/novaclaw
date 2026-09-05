@@ -50,7 +50,7 @@ function flatten(
 }
 
 /**
- * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): this adds a PROTOTYPE
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (, 2026-09-01): this adds a PROTOTYPE
  * check and is a different question.** The shared predicate is loose on purpose — `Date`, `Map`,
  * `RegExp` and class instances pass it. Here they must NOT, because `flatten` above recurses into
  * anything this accepts, and a `Date` flattened into its own keys is a log line of nothing.

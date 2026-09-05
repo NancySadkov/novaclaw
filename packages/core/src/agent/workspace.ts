@@ -1,6 +1,8 @@
 export * as AgentWorkspace from "./workspace"
 
 import { Scratch } from "../scratch"
+import type { SessionMessage } from "../session/message"
+import { applySteerProvenance } from "../session/steer-provenance"
 
 // WHERE a colleague works, and what happens when you move it (owner, 2026-08-21).
 //
@@ -53,6 +55,25 @@ export const moved = (input: {
   folderFor({ agentID: input.agentID, directory: input.to })
 
 /**
+ * Whether a transcript has given the model anything back yet.
+ *
+ * A session's assistant row is created before generation starts, so the row's existence is not
+ * enough: a cleared/new chat and an interrupted turn can both contain an assistant with no output.
+ * Tool calls count as output once they have input or have advanced past pending; a compaction counts
+ * because its summary is the durable replacement for earlier model output.
+ */
+export const hasModelOutput = (messages: readonly SessionMessage.Message[]): boolean =>
+  messages.some(
+    (message) =>
+      message.type === "compaction" ||
+      (message.type === "assistant" &&
+        message.content.some((part) => {
+          if (part.type === "text" || part.type === "reasoning") return part.text.trim().length > 0
+          return part.state.status !== "pending" || part.state.input.trim().length > 0
+        })),
+  )
+
+/**
  * What the colleague is told when its folder changes.
  *
  * ⚠️ Written as an instruction about the WORLD, not as a task. "You have been moved" invites a model
@@ -65,14 +86,16 @@ export const reassignmentNotice = (input: {
   readonly to: string
   readonly ownScratch: boolean
 }): string =>
-  input.ownScratch
-    ? `Your assignment changed: you are no longer on ${input.from}, and your folder is your own ` +
-      `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
-      `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
-      `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
-      `it matters, and wait for the next thing you are asked.`
-    : `Your assignment changed: your folder is now ${input.to}, not ${input.from}. Your previous ` +
-      `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
-      `project's files are the ones you will find here. Anything you were part-way through in the ` +
-      `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
-      `are asked.`
+  applySteerProvenance(
+    input.ownScratch
+      ? `Your assignment changed: you are no longer on ${input.from}, and your folder is your own ` +
+        `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
+        `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
+        `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
+        `it matters, and wait for the next thing you are asked.`
+      : `Your assignment changed: your folder is now ${input.to}, not ${input.from}. Your previous ` +
+        `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
+        `project's files are the ones you will find here. Anything you were part-way through in the ` +
+        `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
+        `are asked.`,
+  )

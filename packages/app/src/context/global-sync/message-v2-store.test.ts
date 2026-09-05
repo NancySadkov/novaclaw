@@ -276,4 +276,47 @@ describe("recovering a transcript after the stream dropped", () => {
     const recovered = ["s1", "s2"].filter((id) => store.messages(id)!.some((m) => m.id === "msg_ok"))
     expect(recovered.length).toBe(1)
   })
+
+  test("an older full load cannot commit after a newer full load", async () => {
+    const incomplete = {
+      id: "msg_a",
+      type: "assistant",
+      content: [{ type: "text", text: "partial" }],
+      time: { created: 1 },
+    } as unknown as SessionMessage
+    const complete = {
+      id: "msg_a",
+      type: "assistant",
+      content: [{ type: "text", text: "final" }],
+      time: { created: 1, completed: 2 },
+    } as unknown as SessionMessage
+    let call = 0
+    const barriers: Array<{ resolve: (value: unknown) => void }> = []
+    const client = {
+      v2: {
+        session: {
+          messages() {
+            call += 1
+            return new Promise((resolve) => barriers.push({ resolve }))
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+
+    const older = store.load("s")
+    const newer = store.load("s")
+    expect(call).toBe(2)
+    barriers[1]!.resolve({ data: { data: [complete] } })
+    await newer
+    barriers[0]!.resolve({ data: { data: [incomplete] } })
+    await older
+
+    const row = store.messages("s")?.[0]
+    expect(row?.type).toBe("assistant")
+    if (row?.type === "assistant") {
+      expect(row.time?.completed).toBe(2)
+      if (row.content[0]?.type === "text") expect(row.content[0].text).toBe("final")
+    }
+  })
 })

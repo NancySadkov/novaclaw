@@ -66,6 +66,24 @@ describe("McpOAuthCallback.ensureRunning", () => {
     expect(McpOAuthCallback.isRunning()).toBe(true)
   })
 
+  test("refuses an occupied callback port instead of reporting success", async () => {
+    const holder = createNetServer()
+    await new Promise<void>((resolve, reject) => {
+      holder.once("error", reject)
+      holder.listen(0, "127.0.0.1", () => resolve())
+    })
+    const address = holder.address()
+    if (!address || typeof address === "string") throw new Error("occupied test server has no port")
+    try {
+      await expect(
+        McpOAuthCallback.ensureRunning(`http://127.0.0.1:${address.port}/custom/callback`),
+      ).rejects.toThrow("already in use")
+      expect(McpOAuthCallback.isRunning()).toBe(false)
+    } finally {
+      await new Promise<void>((resolve) => holder.close(() => resolve()))
+    }
+  })
+
   test("stops after the callback completes", async () => {
     const redirectUri = "http://127.0.0.1:18003/custom/callback"
     await McpOAuthCallback.ensureRunning(redirectUri)

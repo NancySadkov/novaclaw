@@ -1116,7 +1116,7 @@ export const layer = Layer.effect(
         models.resolveWithDevice(modelSession, { requested: session.model !== undefined }),
       )
       const model = resolvedModel.model
-      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
+      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq, system.compaction)
       return {
         session,
         config,
@@ -1853,15 +1853,19 @@ export const layer = Layer.effect(
       const systemParts = SystemCompose.composeSystemParts(promptParts).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
+      const groundingEnabled = folderHorizon === "cadence"
       const groundingDecision = ProjectGrounding.decide(
         {
           // DERIVED from the ownership table, never a second independent reading of the two mode
           // flags. That second reading is what let this mechanism and `<env>` both stand down.
-          enabled: folderHorizon === "cadence",
+          enabled: groundingEnabled,
           directory: location.directory,
           ...(latestCompactionID === undefined ? {} : { compactionID: latestCompactionID }),
-          contextTokens: RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] })
-            .estimatedTokens,
+          // A fast-chat request cannot be due for cadence grounding. Do not serialize its whole
+          // transcript just to feed a decision that returns immediately when disabled.
+          contextTokens: groundingEnabled
+            ? RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] }).estimatedTokens
+            : 0,
         },
         projectGroundingStates.get(session.id),
       )
@@ -3517,6 +3521,7 @@ export const layer = Layer.effect(
             break
           }
           const context = yield* getContext(input.sessionID)
+          const callsSinceLastUser = toolCallsSinceLastUser(context)
           // 🔴 LATCH THE REQUEST HERE — on every turn, not at the finish branch.
           //
           // Measured run 16: the latch lived only in the set-completion branch, which runs when a
@@ -3552,24 +3557,7 @@ export const layer = Layer.effect(
           // steer so the next turn is nudged to change approach.
           if (result.needsContinuation) {
             consecutiveEmpty = 0 // 1N/A3: a tool call is genuine progress — re-arm empty-turn recovery.
-            const calls = context.flatMap((message) =>
-              message.type === "assistant"
-                ? message.content.flatMap((part) =>
-                    part.type === "tool"
-                      ? [
-                          {
-                            name: part.name,
-                            input:
-                              typeof part.state.input === "string"
-                                ? part.state.input
-                                : JSON.stringify(part.state.input),
-                          },
-                        ]
-                      : [],
-                  )
-                : [],
-            )
-            const looping = detectDoomLoop(calls)
+            const looping = detectDoomLoop(callsSinceLastUser)
             const key = looping ? `${looping.name}\x00${looping.input}` : undefined
             if (looping && key !== undefined && !nudged.has(key)) {
               nudged.add(key)
@@ -3578,8 +3566,7 @@ export const layer = Layer.effect(
             // 1N/A2: target-keyed failure streak + runaway self-check over the tool calls made
             // since the last user message. Catches the loops the byte-identical detector misses
             // (small models always reword) and the plausible non-failing re-read/re-grep runaway.
-            const sinceUser = toolCallsSinceLastUser(context)
-            const streak = detectFailureStreak(sinceUser)
+            const streak = detectFailureStreak(callsSinceLastUser)
             if (streak && !nudgedTargets.has(streak.target)) {
               nudgedTargets.add(streak.target)
               yield* Log.event("session.doom.streak.detected", {
@@ -3601,13 +3588,13 @@ export const layer = Layer.effect(
             // no drive in progress (`setRounds === 0`) the threshold is unchanged, so a genuine loop
             // is caught exactly as before — which is the case this detector exists for.
             const runawayThreshold = RUNAWAY_THRESHOLD + setRounds * UnfinishedSet.STEER_BATCH
-            if (!runawayNudged && detectRunaway(sinceUser.length, runawayThreshold)) {
+            if (!runawayNudged && detectRunaway(callsSinceLastUser.length, runawayThreshold)) {
               runawayNudged = true
               yield* Log.event("session.doom.runaway.detected", {
                 "session.id": input.sessionID,
-                "session.tool.calls": sinceUser.length,
+                "session.tool.calls": callsSinceLastUser.length,
               })
-              yield* SessionInput.steer(db, events, input.sessionID, runawayMessage(sinceUser.length))
+              yield* SessionInput.steer(db, events, input.sessionID, runawayMessage(callsSinceLastUser.length))
             }
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
@@ -3652,7 +3639,7 @@ export const layer = Layer.effect(
             // with a body marked unreachable, and every arm below recomputed the predicates.
             const finishEmpty = isEmptyAssistantTurn(context)
             const finishAnnounced = announcedToolButCalledNone(context)
-            const finishCalls = toolCallsSinceLastUser(context).length
+            const finishCalls = callsSinceLastUser.length
             yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
               "session.finish.empty": finishEmpty,
@@ -3757,7 +3744,7 @@ export const layer = Layer.effect(
                 "session.set.calls": finishCalls,
               })
               const readsThisTurn = askedForSet
-                ? toolCallsSinceLastUser(context).flatMap((call) => {
+                ? callsSinceLastUser.flatMap((call) => {
                     // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
                     // the model sent. Treating it as an object is why the first version of this check
                     // typechecked, ran, and never fired once.
@@ -3941,7 +3928,7 @@ export const layer = Layer.effect(
                 // `childrenJoined`. `wait` carries the child id in its input and a terminal marker in
                 // its persisted structured output, so a live timeout is not mistaken for a join.
                 const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
-                for (const call of toolCallsSinceLastUser(context)) {
+                for (const call of callsSinceLastUser) {
                   if (
                     call.name !== WaitTool.name ||
                     call.failed ||
@@ -4019,7 +4006,7 @@ export const layer = Layer.effect(
               if (
                 (handoff.reground ?? harness.drives.reground) &&
                 !regrounded &&
-                shouldReground(finalText, toolCallsSinceLastUser(context).length)
+                shouldReground(finalText, callsSinceLastUser.length)
               ) {
                 regrounded = true
                 yield* Log.event("session.finish.reground", { "session.id": input.sessionID })

@@ -13,7 +13,7 @@ import type {
   LoginPending,
   LoginSupport,
 } from "../driver"
-import { ChallengeError, ConnectError, LoginCodeError, SendError } from "../driver"
+import { ChallengeError, ConnectError, LoginCodeError, SendError, withAbortSignal } from "../driver"
 
 // The EMAIL driver (messenger-plan §2.1, §0.2) — the strongest "agent covers while I'm AFK" fit:
 // the agent logs into the user's OWN mailbox (IMAP poll + SMTP send) and answers client threads as
@@ -474,7 +474,7 @@ export const makeConnect =
           let last = { messageID: "0" }
           for (const chunk of chunks) {
             last = yield* Effect.tryPromise({
-              try: () => client.send(buildReply(state, chunk)),
+              try: (signal) => withAbortSignal(signal, () => client.send(buildReply(state, chunk)), client.close),
               catch: (error) =>
                 new SendError({ reason: `Could not send the email: ${String(error)}`, retryable: true }),
             })

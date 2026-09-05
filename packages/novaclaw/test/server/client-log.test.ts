@@ -6,7 +6,7 @@ import { Effect, Logger, References } from "effect"
 import { ClientLog } from "@/server/routes/instance/httpapi/handlers/client-log"
 
 /**
- * `todo/logging.md` 1g — the refusals on `POST /log`, exercised.
+ * `` 1g — the refusals on `POST /log`, exercised.
  *
  * The claim under test is not "the sanitizer returns a nice object"; it is **that a caller cannot
  * put a column of its choosing onto a line in `novaclaw.log`.** That is a claim about the LINE, so

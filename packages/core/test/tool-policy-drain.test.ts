@@ -10,7 +10,7 @@ import type { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
- * `todo/projects.md` → **Typed pre-action policies**: what makes `halt` DIFFERENT from `deny`.
+ * `` → **Typed pre-action policies**: what makes `halt` DIFFERENT from `deny`.
  *
  * 🔴 The seam proves the call was refused (`tool-policy.test.ts`); that is the half a deny already
  * has. The half only a halt has is that the drain STOPS — and a latch nothing reads is a latch that

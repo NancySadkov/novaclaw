@@ -43,7 +43,7 @@ export function parseJSONC(content: string): unknown {
 }
 
 /**
- * The JSONC-shaped name for the shared plain-record predicate (RF-29-6). Re-exported rather than
+ * The JSONC-shaped name for the shared plain-record predicate (). Re-exported rather than
  * re-pointed at the callers because both of them live in `components/settings-v2/`, and the name
  * reads better there than `isRecord` does: after `parseJSONC`, "is this an object and not an array"
  * IS the JSON question.

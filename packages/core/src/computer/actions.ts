@@ -164,7 +164,7 @@ const point = (p: Point): Invalid | undefined => {
  * Both are guarded mechanically rather than by this prose: `plan()` refuses to let an argv shape
  * fall through to the `via:"shell"` arm, and `computer/one-exec-gate.test.ts` fails if anything in
  * the computer path starts a process itself. (Moved here 2026-09-01 from a `REQUIRES_ARGV_SHAPE =
- * true` constant that existed only to anchor it — RF-06-15.)
+ * true` constant that existed only to anchor it — .)
  */
 export const build = (action: Action, options: Options): Built => {
   // The display travels in `env`, not in argv — `xdotool` has no `--display` flag (measured).

@@ -295,7 +295,7 @@ describe("KbTool (memory)", () => {
 
   it.effect("🔴 ingest: a project exclusion refuses in the SAME words every other tool uses", () =>
     Effect.gen(function* () {
-      // `todo/projects.md`: *"`kb.ts` inherits enforcement but not the legible refusal message."*
+      // ``: *"`kb.ts` inherits enforcement but not the legible refusal message."*
       // It inherited the ENFORCEMENT for free — the gate is in `LocationMutation.resolve` — but its
       // own absorber flattened the refusal to `Couldn't ingest "x" — ProjectExclusion.ExcludedError:
       // …`, i.e. an internal tag in front of the sentence, and it was the ONE path-taking tool that

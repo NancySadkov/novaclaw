@@ -2,6 +2,8 @@ import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import iconv from "iconv-lite"
+import { execFileSync } from "node:child_process"
 import { CrossSpawnSpawner } from "./cross-spawn-spawner"
 import { makeGlobalNode } from "./effect/app-node"
 
@@ -35,6 +37,69 @@ export interface RunStreamOptions {
   readonly maxErrorBytes?: number
 }
 
+/**
+ * The bytes at a Windows pipe are not necessarily UTF-8. Console programs use the active output code
+ * page (normally 437 or 1252), while runtimes such as Node use UTF-8 even when the host console does
+ * not. Decode the complete line first: a valid UTF-8 line keeps the runtime path, and a line containing
+ * legacy bytes falls back to the host's code page. This keeps the decision at the process boundary and
+ * avoids making every caller learn about Windows encodings.
+ */
+const windowsOutputEncoding = (): iconv.Encoding => {
+  if (process.platform !== "win32") return "utf8"
+
+  const configured = process.env.NOVACLAW_OUTPUT_CODE_PAGE?.trim()
+  const detected = configured || (() => {
+    try {
+      const output = execFileSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", "chcp"], {
+        encoding: "buffer",
+        timeout: 1_000,
+        windowsHide: true,
+      })
+      return /\b(\d{3,5})\b/.exec(output.toString("ascii"))?.[1]
+    } catch {
+      return undefined
+    }
+  })()
+
+  if (detected === "65001") return "utf8"
+  if (detected && iconv.encodingExists(detected)) return detected
+  // A failed probe must preserve the old UTF-8 behavior rather than inventing a locale.
+  return "utf8"
+}
+
+/** The one process-output decoder used by buffered errors and streaming lines. */
+export const processOutputEncoding = windowsOutputEncoding()
+
+export const decodeProcessOutput = (bytes: Uint8Array, encoding: iconv.Encoding = processOutputEncoding): string => {
+  try {
+    // Prefer UTF-8 for runtimes/tools that deliberately emit it, even on a legacy-code-page host.
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  } catch {
+    return iconv.decode(bytes, encoding)
+  }
+}
+
+/** Split raw bytes into lines before decoding, so a legacy multibyte sequence cannot be split at a pipe chunk. */
+const splitByteLines = <E>(source: Stream.Stream<Uint8Array, E>): Stream.Stream<Buffer, E> =>
+  source.pipe(
+    Stream.mapAccum(
+      () => Buffer.alloc(0),
+      (pending, chunk) => {
+        const bytes = Buffer.concat([pending, Buffer.from(chunk)])
+        const lines: Buffer[] = []
+        let start = 0
+        for (;;) {
+          const end = bytes.indexOf(0x0a, start)
+          if (end === -1) break
+          lines.push(bytes.subarray(start, end))
+          start = end + 1
+        }
+        return [bytes.subarray(start), lines]
+      },
+      { onHalt: (pending) => (pending.length > 0 ? [pending] : []) },
+    ),
+  )
+
 export interface RunResult {
   readonly command: string
   readonly exitCode: number
@@ -63,7 +128,7 @@ export const requireSuccess = (result: RunResult): Effect.Effect<RunResult, AppP
         new AppProcessError({
           command: result.command,
           exitCode: result.exitCode,
-          stderr: result.stderr.toString("utf8"),
+          stderr: decodeProcessOutput(result.stderr),
         }),
       )
 
@@ -76,7 +141,7 @@ export const requireExitIn =
           new AppProcessError({
             command: result.command,
             exitCode: result.exitCode,
-            stderr: result.stderr.toString("utf8"),
+            stderr: decodeProcessOutput(result.stderr),
           }),
         )
 
@@ -221,12 +286,14 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const handle = yield* spawner.spawn(command)
           const stderrFiber = yield* Effect.forkScoped(
-            collectStream(handle.stderr, options?.maxErrorBytes).pipe(Effect.map((x) => x.buffer.toString("utf8"))),
+            collectStream(handle.stderr, options?.maxErrorBytes).pipe(Effect.map((x) => decodeProcessOutput(x.buffer))),
           )
           const source = options?.includeStderr === true ? handle.all : handle.stdout
-          const lines = source.pipe(
-            Stream.decodeText,
-            Stream.splitLines,
+          const lines = splitByteLines(source).pipe(
+            Stream.map((line) => {
+              const decoded = decodeProcessOutput(line)
+              return decoded.endsWith("\r") ? decoded.slice(0, -1) : decoded
+            }),
             Stream.filter((line) => line.length > 0),
           )
           const tail = Stream.unwrap(

@@ -6,13 +6,13 @@ import { toModelOutput } from "./trash"
 describe("trash tool toModelOutput", () => {
   test("file entry renders the restore id", () => {
     expect(toModelOutput({ id: "2026-07-02/1751470000000-doc.txt", originalPath: "C:/w/doc.txt", type: "file" })).toBe(
-      "Moved file to trash (restorable ~2 days): 2026-07-02/1751470000000-doc.txt",
+      "Moved file to trash (restorable for about 30 days): 2026-07-02/1751470000000-doc.txt",
     )
   })
 
   test("directory entry names the type", () => {
     expect(toModelOutput({ id: "2026-07-02/1751470000000-proj", originalPath: "C:/w/proj", type: "directory" })).toBe(
-      "Moved directory to trash (restorable ~2 days): 2026-07-02/1751470000000-proj",
+      "Moved directory to trash (restorable for about 30 days): 2026-07-02/1751470000000-proj",
     )
   })
 })

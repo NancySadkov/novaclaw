@@ -6,6 +6,7 @@ import { Messenger } from "@novaclaw/schema/messenger"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { Log } from "@novaclaw/schema/log"
+import { LogSettings } from "../observability/log-settings"
 import {
   MessengerAccountTable,
   MessengerBindingTable,
@@ -15,6 +16,8 @@ import {
   MessengerCursorTable,
   MessengerInitiationTable,
 } from "./sql"
+
+type Db = Database.Interface["db"]
 
 // The Messenger module's persistence: accounts, the seen-chat
 // cache, paired contacts, bindings, and durable per-account cursors. Instance-global (accounts
@@ -277,6 +280,41 @@ export type InitiationCharge =
 /** The one row of `messenger_initiation`. See that table's note for why the budget is global. */
 export const INITIATION_SCOPE = "global"
 
+/** Keep cleanup on the routed-message write path bounded: replay claims are never swept in bulk. */
+export const MESSENGER_INBOUND_PRUNE_BATCH = 500
+
+/**
+ * Remove old routed message ids only when a newer routed row for the same chat survives.
+ *
+ * `hasInbound` needs one row as cold-start evidence, and an unrouted row is still a recovery claim.
+ * Deleting only rows with a newer routed sibling therefore bounds history without either reopening a
+ * chat or losing a message that may still need delivery after a crash.
+ */
+export const pruneRoutedInbound = (db: Db, now: number, retentionMs = LogSettings.maxAgeMs()): Effect.Effect<void> =>
+  db
+    .run(
+      sql`
+      DELETE FROM "messenger_inbound"
+      WHERE rowid IN (
+        SELECT old.rowid
+        FROM "messenger_inbound" AS old
+        WHERE old."time_routed" IS NOT NULL
+          AND old."time_routed" < ${now - retentionMs}
+          AND EXISTS (
+            SELECT 1
+            FROM "messenger_inbound" AS newer
+            WHERE newer."account_id" = old."account_id"
+              AND newer."chat_id" = old."chat_id"
+              AND newer."time_routed" IS NOT NULL
+              AND newer."time_routed" > old."time_routed"
+          )
+        ORDER BY old."time_routed" ASC
+        LIMIT ${MESSENGER_INBOUND_PRUNE_BATCH}
+      )
+    `,
+    )
+    .pipe(Effect.orDie)
+
 /**
  * Which day a moment belongs to, for the cold-start budget: the **UTC calendar date**, `YYYY-MM-DD`.
  *
@@ -499,6 +537,9 @@ export const layer = Layer.effect(
           )
           .run()
           .pipe(Effect.orDie)
+        // The delivery mark is the first point at which a row is safe to age out. Keep one newer
+        // routed row per chat as the durable cold-start fact, and never touch NULL (recoverable) rows.
+        yield* pruneRoutedInbound(db, input.at)
       }),
       seenChat: Effect.fn("MessengerStore.seenChat")(function* (input) {
         yield* db

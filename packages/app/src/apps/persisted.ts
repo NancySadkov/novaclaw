@@ -1,12 +1,13 @@
 import { createSignal } from "solid-js"
+import { isManifestRouteId } from "@novaclaw/core/app-route"
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch, instanceFetchResponse } from "@/utils/instance-fetch"
 
 // The persisted half of the app registry (B14): server-side manifests written by the agent's
 // `register-app` tool (or POST /app), fetched over the V1 instance API. A manifest is a LAUNCHER —
 // open a closed route id, a URL, or a chat draft pre-filled with a prompt — never code. This module
-// holds the DATA (a module signal, like registry.tsx); mapping manifests to HomeApps with live openers
-// is the home screen's job (openers need component scope: navigate/tabs).
+// holds the DATA in server-keyed buckets (a module signal, like registry.tsx); mapping manifests to
+// HomeApps with live openers is the home screen's job (openers need component scope: navigate/tabs).
 
 export interface AppManifest {
   readonly id: string
@@ -19,8 +20,37 @@ export interface AppManifest {
   readonly updatedAt: number
 }
 
-const [manifests, setManifests] = createSignal<readonly AppManifest[]>([])
-export const persistedManifests = manifests
+const [manifests, setManifests] = createSignal<Record<string, readonly AppManifest[]>>({})
+let lastServerKey = ""
+const loadRevision = new Map<string, number>()
+
+const defaultServerKey = (server: ServerConnection.HttpBase) => server.url.replace(/\/+$/, "")
+/** Read only the bucket belonging to the instance currently being rendered. */
+export const persistedManifests = (serverKey?: string): readonly AppManifest[] =>
+  manifests()[serverKey ?? lastServerKey] ?? []
+
+const OPEN_TYPES = new Set<AppManifest["open"]["type"]>(["route", "url", "prompt"])
+const ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
+
+/** Decode peer-supplied launcher data before it reaches a reactive render. */
+function isManifest(value: unknown): value is AppManifest {
+  if (typeof value !== "object" || value === null) return false
+  const row = value as Record<string, unknown>
+  if (typeof row.id !== "string" || !ID_PATTERN.test(row.id)) return false
+  if (typeof row.title !== "string" || row.title.trim() === "") return false
+  if (typeof row.createdAt !== "number" || !Number.isFinite(row.createdAt)) return false
+  if (typeof row.updatedAt !== "number" || !Number.isFinite(row.updatedAt)) return false
+  for (const key of ["icon", "accent", "subtitle"] as const) {
+    if (row[key] !== undefined && typeof row[key] !== "string") return false
+  }
+  if (typeof row.open !== "object" || row.open === null) return false
+  const open = row.open as Record<string, unknown>
+  if (typeof open.type !== "string" || !OPEN_TYPES.has(open.type as AppManifest["open"]["type"])) return false
+  if (typeof open.value !== "string" || open.value.trim() === "") return false
+  if (open.type === "route" && !isManifestRouteId(open.value)) return false
+  if (open.type === "url" && !/^https?:\/\//.test(open.value)) return false
+  return true
+}
 
 /**
  * Fetch `GET /app` through the one HTTP seam and publish the signal.
@@ -50,7 +80,13 @@ export const persistedManifests = manifests
  * function still never rejects: both call sites (`apps/manifest-apps.ts:42`,
  * `context/server-sync.tsx:406`) invoke it with `void`, where a rejection would be unhandled.
  */
-export async function loadPersistedApps(server: ServerConnection.HttpBase): Promise<void> {
+export async function loadPersistedApps(
+  server: ServerConnection.HttpBase,
+  serverKey = defaultServerKey(server),
+): Promise<void> {
+  lastServerKey = serverKey
+  const revision = (loadRevision.get(serverKey) ?? 0) + 1
+  loadRevision.set(serverKey, revision)
   const rows = await instanceFetch<unknown>(server, { route: "app" }).catch((error: unknown) => {
     console.warn(`apps: GET /app failed — keeping the tiles already shown. ${faultText(error)}`)
     return undefined
@@ -63,7 +99,23 @@ export async function loadPersistedApps(server: ServerConnection.HttpBase): Prom
     )
     return
   }
-  setManifests(rows as readonly AppManifest[])
+  const valid: AppManifest[] = []
+  for (const [index, row] of rows.entries()) {
+    if (isManifest(row)) {
+      valid.push(row)
+      continue
+    }
+    // Report only the bounded index/id. Never echo a prompt or URL from untrusted peer data into
+    // diagnostics, and never let one malformed tile poison valid siblings.
+    const id = typeof row === "object" && row !== null && typeof (row as Record<string, unknown>).id === "string"
+      ? ` id=${JSON.stringify((row as Record<string, unknown>).id)}`
+      : ""
+    console.warn(`apps: GET /app skipped malformed manifest at index ${index}${id}`)
+  }
+  // A background instance can finish after the focused one, so a response may only publish into
+  // the bucket whose request issued it. A newer request for this same instance wins by revision.
+  if (loadRevision.get(serverKey) !== revision) return
+  setManifests((previous) => ({ ...previous, [serverKey]: valid }))
 }
 
 const faultText = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -82,7 +134,13 @@ const faultText = (error: unknown) => (error instanceof Error ? error.message : 
  * (`pages/home-screen/home-screen.tsx:150`) branches on it to decide whether to keep the tile; the
  * fault is still decoded and named by the seam on the way past.
  */
-export async function deletePersistedApp(server: ServerConnection.HttpBase, id: string): Promise<boolean> {
+export async function deletePersistedApp(
+  server: ServerConnection.HttpBase,
+  id: string,
+  serverKey = defaultServerKey(server),
+): Promise<boolean> {
+  // Do not let an older list response reintroduce a tile after this instance's deletion succeeds.
+  loadRevision.set(serverKey, (loadRevision.get(serverKey) ?? 0) + 1)
   // `/api/app/:id` — the modern contract. Listing and registering are still the legacy `/app`, and
   // that asymmetry is deliberate: ruling 11 pins the legacy surface shrink-only, so a NEW route may
   // not join it. `sdk-js`'s legacy-path ledger enforces that, and caught the first draft of this.
@@ -105,6 +163,10 @@ export async function deletePersistedApp(server: ServerConnection.HttpBase, id: 
     console.warn(`apps: DELETE api/app/${id} failed — the tile stays. ${faultText(error)}`)
     return false
   })
-  if (ok) setManifests((prev) => prev.filter((manifest) => manifest.id !== id))
+  if (ok)
+    setManifests((previous) => ({
+      ...previous,
+      [serverKey]: (previous[serverKey] ?? []).filter((manifest) => manifest.id !== id),
+    }))
   return ok
 }

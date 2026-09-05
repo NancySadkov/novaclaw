@@ -40,6 +40,15 @@ import { join } from "node:path"
 export const PROMOTED_NOVACLAW_SUBDIRS = ["server", "v2", "config", "tool", "control-plane", "fixture"] as const
 
 /**
+ * Small CLI contracts promoted into the fast tier. Keep the expensive process-smoke files in the
+ * full tier; these two are static/help surfaces whose drift should be visible on every edit.
+ */
+export const PROMOTED_NOVACLAW_TEST_FILES = [
+  "test/cli/providers-login.test.ts",
+  "test/cli/help/help-snapshots.test.ts",
+] as const
+
+/**
  * Full-tier NovaClaw files that require their own process window.
  *
  * Keep this list surgical. A solo file pays for another Bun process and loses the cross-file
@@ -63,7 +72,11 @@ export const SOLO_NOVACLAW_TEST_FILES = [
  * file is absent from bulk and still runs exactly once. Importing `test.ts` would execute the gate as
  * a side effect, which is the same unobservable-configuration hole `PACKAGES` was moved here to close.
  */
-export function novaclawSubUnits(dir: string, promoted: ReadonlySet<string>): { unit: string; args: string[] }[] {
+export function novaclawSubUnits(
+  dir: string,
+  promoted: ReadonlySet<string>,
+  promotedFiles: ReadonlySet<string> = new Set(),
+): { unit: string; args: string[] }[] {
   const paths: string[] = []
   const ignored = new Set([".git", "node_modules", "build", "dist", "out", ".ts-dist"])
   const walk = (relative: string) => {
@@ -74,7 +87,7 @@ export function novaclawSubUnits(dir: string, promoted: ReadonlySet<string>): { 
         // about the package's test tree; a source directory called `server` is not promoted.
         if (relative === "test" && promoted.has(entry.name)) continue
         if (!ignored.has(entry.name)) walk(next)
-      } else if (/\.test\.tsx?$/.test(entry.name)) {
+      } else if (/\.test\.tsx?$/.test(entry.name) && !promotedFiles.has(next.replaceAll("\\", "/"))) {
         paths.push(next.replaceAll("\\", "/"))
       }
     }
@@ -278,6 +291,11 @@ export const PACKAGES: Pkg[] = [
     args: [`test/${sub}/`],
     ...(PROMOTED_WALLCLOCK_MS[sub] === undefined ? {} : { wallclockMs: PROMOTED_WALLCLOCK_MS[sub] }),
   })),
+  {
+    name: "novaclaw:cli-contract",
+    dir: "packages/novaclaw",
+    args: [...PROMOTED_NOVACLAW_TEST_FILES],
+  },
   {
     name: "novaclaw",
     dir: "packages/novaclaw",

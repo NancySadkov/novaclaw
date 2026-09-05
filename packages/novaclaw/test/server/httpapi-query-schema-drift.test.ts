@@ -1,8 +1,6 @@
-import { afterEach, describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
-import { Server } from "../../src/server/server"
-import { SessionID } from "../../src/session/schema"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 import {
   FilePaths,
@@ -14,8 +12,6 @@ import { VcsDiffQuery } from "@novaclaw/protocol/groups/vcs"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { SessionMessagesQuery } from "@novaclaw/protocol/groups/message"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
-import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 import { it } from "../lib/effect"
 
 type Method = "get" | "post" | "put" | "delete" | "patch"
@@ -57,7 +53,7 @@ const queryParamPatterns: Array<{ method: Method; path: string; name: string; pa
 // id-prefix guard on `requestID` (`@novaclaw/schema/permission`'s branded `ID`), plus `^ses` on
 // `sessionID`, so the invariant survived the deletion instead of leaving with it.
 //
-// RE-POINTED A SECOND TIME 2026-09-01, for the same reason. The refactor sweep's RF-12-2 deleted the
+// RE-POINTED A SECOND TIME 2026-09-01, for the same reason. The refactor sweep's  deleted the
 // consent-card island WHOLE — kernel, table, protocol group, handler and UI dock — so there is no
 // permission reply route left to carry the guard, and both `^per` rows resolved to `undefined`. The
 // surviving sibling on the same shape is the session-scoped QUESTION reply
@@ -82,24 +78,6 @@ const pathParamPatterns = [
   },
   { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },
 ] satisfies Array<{ method: Method; path: string; name: string; pattern: string }>
-
-function app() {
-  return Server.Default().app
-}
-
-function request(url: string, init?: RequestInit) {
-  return Effect.promise(async () => app().request(url, init))
-}
-
-function withTmp<A, E, R>(
-  options: Parameters<typeof tmpdir>[0],
-  fn: (tmp: Awaited<ReturnType<typeof tmpdir>>) => Effect.Effect<A, E, R>,
-) {
-  return Effect.acquireRelease(
-    Effect.promise(() => tmpdir(options)),
-    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-  ).pipe(Effect.flatMap(fn))
-}
 
 function openApiPath(path: string) {
   return path.replace(/:([A-Za-z0-9_]+)/g, "{$1}")
@@ -132,22 +110,11 @@ function assertAdvertisedQueryParamsAreRuntimeFields(input: {
   ).toEqual([])
 }
 
-afterEach(async () => {
-  await disposeAllInstances()
-  await resetDatabase()
-})
-
-// Regression for the "OpenAPI advertises ?directory&workspace, runtime
-// rejects them" drift class. Each affected route must accept both params
-// without 400.
+// Regression for the class where OpenAPI advertises query fields that the runtime decoder does not
+// accept. Keep this suite on the current contract routes: the old V1 live probes were deleted with
+// their routes, and a 404 from one of those probes was the false-green failure this suite existed
+// to prevent.
 describe("httpapi query schema drift", () => {
-  const routingParams = (dir: string) =>
-    `directory=${encodeURIComponent(dir)}&workspace=${encodeURIComponent("ws_test")}`
-
-  const expectNotSchemaRejection = (status: number, url: string) => {
-    expect(status, `route ${url} 400'd, query schema is missing routing fields`).not.toBe(400)
-  }
-
   it.effect(
     "boolean query schema accepts only true and false strings",
     Effect.sync(() => {
@@ -226,71 +193,5 @@ describe("httpapi query schema drift", () => {
         }),
       ).toThrow("advertises query params not accepted by runtime schema")
     }),
-  )
-
-  it.live(
-    "session list accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/session?${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "file find/file accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/find/file?query=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "file find/text accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/find?pattern=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "file read accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/file?path=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "experimental session list accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/experimental/session?${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "vcs diff accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/vcs/diff?mode=working&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
   )
 })

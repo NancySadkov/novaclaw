@@ -20,14 +20,14 @@ import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// `todo/startup.md` Phase 1 — the boot timeline, and the mechanical check that keeps it honest.
+// `` Phase 1 — the boot timeline, and the mechanical check that keeps it honest.
 //
 // ⚠️ THE AWKWARD PART OF TESTING A MEASUREMENT, stated so nobody "improves" it into a wall-clock
 // budget: a duration assertion on this box either flakes or is so slack that it passes while the
 // instrument is broken. So this file asserts the STRUCTURE of the timeline — that every expected
 // phase appears exactly once, that a phase nobody measured says so rather than reporting 0 ms, that
 // a repeat is visible rather than collapsed, and that the arithmetic of the waterfall closes — and
-// PRINTS the numbers. That is `todo/adoption.md` A10.2 (assert on work, not wall-clock) and the
+// PRINTS the numbers. That is `` A10.2 (assert on work, not wall-clock) and the
 // local precedent set by `config-domain-reload.test.ts`.
 //
 // Every assertion below is negative-controlled: each one is re-run against an input that violates
@@ -305,7 +305,7 @@ describe("a real location boot produces a real timeline", () => {
         const names = produced.map((entry) => entry.name)
         for (const phase of BootProfile.PHASES.location) expect(names.filter((name) => name === phase)).toHaveLength(1)
 
-        // The per-node breakdown is the thing `todo/startup.md` Phase 1 asks for by name and that
+        // The per-node breakdown is the thing `` Phase 1 asks for by name and that
         // no total could supply. It exists only under the flag — which is also the gate's negative
         // control: with the flag off this set is EMPTY and the graph is the original node objects,
         // so a normal boot pays nothing for an instrument nobody asked for.

@@ -79,51 +79,52 @@ describe("SessionStrict racing helpers (improve11 P5)", () => {
     fs.writeFileSync(path.join(src, ".git", "HEAD"), "ref: x")
     return src
   }
-  test("forkWorkspace copies the tree (without .git); applyBack applies ONLY changed+new files", () => {
+  test("forkWorkspace copies the tree (without .git); applyBack applies ONLY changed+new files", async () => {
     const src = mk()
-    const baseline = SessionStrict.manifestFor(src)
-    const fork = SessionStrict.forkWorkspace(src, 1)
+    const baseline = await SessionStrict.manifestFor(src)
+    const fork = await SessionStrict.forkWorkspace(src, 1)
     if ("refused" in fork) throw new Error(fork.refused)
     expect(fs.readFileSync(path.join(fork.dir, "a.c"), "utf8")).toBe("original A")
     expect(fs.existsSync(path.join(fork.dir, ".git"))).toBe(false)
     // the racer edits a.c, creates c.c, leaves sub/b.txt untouched, deletes nothing back-propagatable
     fs.writeFileSync(path.join(fork.dir, "a.c"), "WINNER A")
     fs.writeFileSync(path.join(fork.dir, "c.c"), "NEW C")
-    const applied = SessionStrict.applyBack(fork.dir, src, baseline)
+    const applied = await SessionStrict.applyBack(fork.dir, src, baseline)
     expect(applied.sort()).toEqual(["a.c", "c.c"])
     expect(fs.readFileSync(path.join(src, "a.c"), "utf8")).toBe("WINNER A")
     expect(fs.readFileSync(path.join(src, "c.c"), "utf8")).toBe("NEW C")
     expect(fs.readFileSync(path.join(src, "sub", "b.txt"), "utf8")).toBe("original B")
     fs.rmSync(fork.dir, { recursive: true, force: true })
   })
-  test("deletions are NOT propagated (v1 safety)", () => {
+  test("deletions are NOT propagated (v1 safety)", async () => {
     const src = mk()
-    const baseline = SessionStrict.manifestFor(src)
-    const fork = SessionStrict.forkWorkspace(src, 2)
+    const baseline = await SessionStrict.manifestFor(src)
+    const fork = await SessionStrict.forkWorkspace(src, 2)
     if ("refused" in fork) throw new Error(fork.refused)
     fs.rmSync(path.join(fork.dir, "sub", "b.txt"))
-    const applied = SessionStrict.applyBack(fork.dir, src, baseline)
+    const applied = await SessionStrict.applyBack(fork.dir, src, baseline)
     expect(applied).toEqual([])
     expect(fs.existsSync(path.join(src, "sub", "b.txt"))).toBe(true)
     fs.rmSync(fork.dir, { recursive: true, force: true })
   })
-  test("sweepStaleForks removes attempt workspaces past the retention window, keeps fresh ones", () => {
+  test("sweepStaleForks removes attempt workspaces past the retention window, keeps fresh ones", async () => {
     const src = mk()
-    const fork = SessionStrict.forkWorkspace(src, 2)
+    const fork = await SessionStrict.forkWorkspace(src, 2)
     if ("refused" in fork) throw new Error(fork.refused)
     // An aged workspace: back-date its mtime past the window (what a race nobody won leaves behind).
     const old = fs.mkdtempSync(path.join(os.tmpdir(), "jh-attempt9-stale-"))
     const aged = Date.now() - SessionStrict.FORK_RETENTION_MS - 60_000
     fs.utimesSync(old, aged / 1000, aged / 1000)
-    expect(SessionStrict.sweepStaleForks()).toBeGreaterThan(0)
+    expect(await SessionStrict.sweepStaleForks()).toBeGreaterThan(0)
     expect(fs.existsSync(old)).toBe(false)
     expect(fs.existsSync(fork.dir)).toBe(true) // today's race is never swept
     fs.rmSync(fork.dir, { recursive: true, force: true })
   })
-  test("the fork bound REFUSES with a named reason (no silent cap)", () => {
+  test("the fork bound REFUSES with a named reason (no silent cap)", async () => {
     const src = fs.mkdtempSync(path.join(os.tmpdir(), "jh-fork-big-"))
     for (let i = 0; i <= SessionStrict.MAX_FORK_FILES; i++) fs.writeFileSync(path.join(src, `f${i}`), "")
-    const refused = SessionStrict.forkWorkspace(src, 1)
+    // Attempt 2 isolates the file-count assertion from attempt 1's unrelated stale-fork sweep.
+    const refused = await SessionStrict.forkWorkspace(src, 2)
     expect("refused" in refused && refused.refused).toContain("files")
   })
 })
@@ -162,6 +163,21 @@ describe("SessionStrict.listFilesFor", () => {
     // the exe may fall outside the mtime-sorted cap window on a fast filesystem — when shown, it must
     // be a placeholder, never raw bytes
     if (exe) expect(exe.content).toContain("<compiled binary")
+  })
+
+  test("does not read an oversized file into the prompt, and refreshes a cached file after it changes", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jh-strictls-cap-"))
+    const file = path.join(dir, "notes.txt")
+    fs.writeFileSync(file, "first")
+    expect(SessionStrict.listFilesFor(dir).find((entry) => entry.name === "notes.txt")?.content).toBe("first")
+
+    fs.writeFileSync(file, "second content")
+    expect(SessionStrict.listFilesFor(dir).find((entry) => entry.name === "notes.txt")?.content).toBe("second content")
+
+    fs.truncateSync(file, SessionStrict.MAX_FILE_CONTENT_BYTES + 1)
+    expect(SessionStrict.listFilesFor(dir).find((entry) => entry.name === "notes.txt")?.content).toContain(
+      "workspace preview cap",
+    )
   })
 })
 
@@ -299,9 +315,9 @@ describe("SessionStrict.summaryPrompt (P14.1 final answer)", () => {
 
   test("the instruction survives every outcome, because the failure was on a blocked run", () => {
     for (const status of ["done", "blocked"] as const)
-      expect(
-        SessionStrict.summaryPrompt({ goal: "g", status, milestones: [], keptBest: false }).system,
-      ).toContain("say NOTHING about it")
+      expect(SessionStrict.summaryPrompt({ goal: "g", status, milestones: [], keptBest: false }).system).toContain(
+        "say NOTHING about it",
+      )
   })
 })
 
@@ -626,9 +642,9 @@ describe("SessionStrict.filesWritten", () => {
   })
 
   test("reads and runs are not writes", () => {
-    expect(SessionStrict.filesWritten([act("read_file", "a.ts"), act("run", undefined), act("note", undefined)])).toEqual(
-      [],
-    )
+    expect(
+      SessionStrict.filesWritten([act("read_file", "a.ts"), act("run", undefined), act("note", undefined)]),
+    ).toEqual([])
   })
 
   test("🔴 a FAILED write is not reported — it did not change the folder", () => {
@@ -729,7 +745,14 @@ describe("SessionStrict — a project that starts red", () => {
   test("the clause never leaks onto unrelated outcomes", () => {
     for (const reason of ["aborted", "wall_exhausted"] as const)
       expect(
-        SessionStrict.terminalNotice({ status: "blocked", reason, steps: 1, single: true, keptBest: false, baselineRed: true }),
+        SessionStrict.terminalNotice({
+          status: "blocked",
+          reason,
+          steps: 1,
+          single: true,
+          keptBest: false,
+          baselineRed: true,
+        }),
       ).not.toContain("before this run started")
     expect(
       SessionStrict.terminalNotice({ status: "done", steps: 1, single: true, keptBest: false, baselineRed: true }),

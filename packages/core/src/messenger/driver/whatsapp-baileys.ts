@@ -15,7 +15,7 @@ import type {
   LoginSupport,
   OutboundFile,
 } from "../driver"
-import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError } from "../driver"
+import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError, withAbortSignal } from "../driver"
 
 // The WhatsApp driver (messenger-plan §2.1; owner decision 2026-07-23: the Baileys linked-device
 // bridge, shipped OUT OF KERNEL as a plugin). This is the fake-testable POLICY half — the telegram-
@@ -155,7 +155,7 @@ export const foldSelfAddress = (jid: string, self: { readonly id: string; readon
 /**
  * The self-echo policy, shared with every other linked-account driver — see
  * `driver/linked-account.ts` for the four cases and why the rule is not per-platform. Re-exported
- * rather than re-implemented: this was a byte-identical copy until 2026-09-01 (RF-08-9).
+ * rather than re-implemented: this was a byte-identical copy until 2026-09-01 ().
  *
  * 🔴 **WhatsApp's contribution is the one thing that must happen BEFORE this is called:** fold the
  * address with `foldSelfAddress` above. The self-chat case is an equality test against `selfID`, and
@@ -387,7 +387,8 @@ export const make = (factory: WAClientFactory): Driver => {
             if (message.file !== undefined) {
               // A file rides with the text as its caption (WhatsApp semantics); no chunking.
               const result = yield* Effect.tryPromise({
-                try: () => client.sendFile(chatID, message.file!, message.text),
+                try: (signal) =>
+                  withAbortSignal(signal, () => client.sendFile(chatID, message.file!, message.text), client.close),
                 catch: mapSendError,
               })
               sent.add(chatID, result.messageID)
@@ -400,7 +401,7 @@ export const make = (factory: WAClientFactory): Driver => {
             let lastID = "0"
             for (const chunk of chunks) {
               const result = yield* Effect.tryPromise({
-                try: () => client.sendText(chatID, chunk),
+                try: (signal) => withAbortSignal(signal, () => client.sendText(chatID, chunk), client.close),
                 catch: mapSendError,
               })
               sent.add(chatID, result.messageID)

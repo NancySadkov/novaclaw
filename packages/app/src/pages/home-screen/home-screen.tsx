@@ -15,7 +15,7 @@ import { useConfirm } from "@/components/dialog-confirm"
 import { useExpertise } from "@/context/expertise"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
-import { useServer } from "@/context/server"
+import { ServerConnection, useServer } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
@@ -147,7 +147,7 @@ export const HomeScreen: Component = () => {
     if (!proceed) return
     const conn = server.current ?? global.servers.list()[0]
     if (!conn) return
-    const removed = await deletePersistedApp(conn.http, app.id)
+    const removed = await deletePersistedApp(conn.http, app.id, ServerConnection.key(conn))
     if (!removed) {
       showToast({ variant: "error", title: language.t("home.launcher.delete.failed", { app: app.title }) })
       return

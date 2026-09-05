@@ -11,7 +11,7 @@ import { ProjectFile } from "@novaclaw/schema/project-file"
 import { testEffect } from "./lib/effect"
 
 /**
- * `todo/projects.md`: *"Write path: create or update `novaclaw.json`, replacing only the sections
+ * ``: *"Write path: create or update `novaclaw.json`, replacing only the sections
  * supplied. Refuse when the existing file does not parse — an edit is a merge onto the raw object,
  * and there is none."*
  *
@@ -336,7 +336,7 @@ describe("writing novaclaw.json", () => {
     }),
   )
 
-  // ── CLEARING A SECTION — the item `todo/projects.md` recorded as needing a decision ───────────
+  // ── CLEARING A SECTION — the item `` recorded as needing a decision ───────────
   //
   // Decided per principle 10: an explicit `clear` list. `Schema.optional` cannot tell "absent" from
   // "cleared", so `undefined` was unreachable from a client and "remove all of this folder's

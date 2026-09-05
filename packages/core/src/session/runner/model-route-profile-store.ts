@@ -1,6 +1,6 @@
 export * as ModelRouteProfileStore from "./model-route-profile-store"
 
-import { Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../../effect/app-node"
 import { SettingsConfigStore } from "../../settings-config-store"
 import { PromptCalibration } from "./prompt-calibration"
@@ -161,7 +161,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const settings = yield* SettingsConfigStore.Service
-    const gate = yield* Semaphore.make(1)
 
     const all = Effect.fn("ModelRouteProfileStore.all")(function* () {
       return decodeAll((yield* settings.all())[SETTINGS_KEY])
@@ -170,38 +169,18 @@ export const layer = Layer.effect(
       return (yield* all())[key(scope)]
     })
     /**
-     * 🔴 **The ONE write path, and the read it is derived from happens INSIDE the permit.**
-     *
-     * Every route's profile lives in a single settings row — one JSON map under `SETTINGS_KEY` —
-     * and `SettingsConfigStore.set` replaces that row whole, so a writer that reads the map,
-     * changes one entry and sets the result is a read-modify-write. Two of them lose one another's
-     * entry with nothing failing: a calibration observed on one route quietly disappears and the
-     * next turn re-derives it from the protocol default.
-     *
-     * The gate itself is not new; what changed is that it can no longer be sidestepped. The
-     * previous shape read (`read`), decided, then called an UNGATED `replace` that read the map a
-     * SECOND time — correct only because both callers happened to wrap themselves in the permit,
-     * and a convention a future method has to remember is the thing this codebase keeps paying for.
-     * Here the permit, the read and the write are one closure, `change` is handed the current
-     * profile and cannot fetch a stale one, and the map written back is the same snapshot the
-     * decision was made on.
-     *
-     * ⚠️ The permit is IN-PROCESS, which is exact for this store's writers (fibers of one instance)
-     * and is not a cross-process lock. Closing that needs the atomic `update` the key/value
-     * primitive now has (`config-store-factory.ts`), reached through a `SettingsConfigStore.update`
-     * that does not exist yet.
+     * 🔴 The read and write stay inside the key/value store's BEGIN IMMEDIATE transaction. This is
+     * cross-process safe, unlike the old in-process semaphore: concurrent route calibrations cannot
+     * replace one another's profiles.
      */
     const mutate = (scope: Scope, change: (current: Profile | undefined) => Profile | undefined) =>
-      gate.withPermit(
-        Effect.gen(function* () {
-          const stored = yield* all()
-          const next = change(stored[key(scope)])
-          if (next === undefined) return
-          const normalized = decode(next)
-          if (normalized === undefined) return
-          yield* settings.set(SETTINGS_KEY, { ...stored, [key(scope)]: normalized })
-        }),
-      )
+      settings.update(SETTINGS_KEY, (raw) => {
+        const stored = decodeAll(raw)
+        const next = change(stored[key(scope)])
+        if (next === undefined) return raw
+        const normalized = decode(next)
+        return normalized === undefined ? raw : { ...stored, [key(scope)]: normalized }
+      })
 
     return Service.of({
       read,

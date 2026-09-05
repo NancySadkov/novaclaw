@@ -62,6 +62,17 @@ describe("WebGovernor.readLimits", () => {
   test("keeps a 0 so the policy can treat it as 'use default' rather than losing the distinction", () => {
     expect(WebGovernor.readLimits({ throttle: { dailyPerHost: 0 } })).toEqual({ dailyLimit: 0 })
   })
+
+  test("host lanes stay bounded, but active lanes are never evicted", () => {
+    const lanes = new Map([
+      ["old-idle", { active: 0, lastUsed: 1 }],
+      ["active", { active: 1, lastUsed: 2 }],
+      ["new-idle", { active: 0, lastUsed: 3 }],
+    ])
+    expect(WebGovernor.evictOldestIdle(lanes, 3)).toBe("old-idle")
+    expect([...lanes.keys()]).toEqual(["active", "new-idle"])
+    expect(WebGovernor.evictOldestIdle(lanes, 3)).toBeUndefined()
+  })
 })
 
 describe("WebGovernor.guard", () => {

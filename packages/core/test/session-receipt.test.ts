@@ -12,7 +12,7 @@ import { SessionTable, TodoTable } from "@novaclaw/core/session/sql"
 import { testEffect } from "./lib/effect"
 
 /**
- * "What Nova checked" — `todo/verified-autonomy.md` V1.
+ * "What Nova checked" — `` V1.
  *
  * 🔴 The claim the whole programme rests on is *mechanical evidence is authoritative*, so what is
  * tested here is that every field came from a table something else wrote as it happened — and, above

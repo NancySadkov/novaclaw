@@ -161,7 +161,7 @@ describe("what a refused permission tells the model", () => {
    * generic line and still invented a cause.
    */
   /**
-   * ⚠️ **RE-POINTED 2026-09-01 (RF-04-6).** This was a private copy of the tool's `_tag` string
+   * ⚠️ **RE-POINTED 2026-09-01 ().** This was a private copy of the tool's `_tag` string
    * compare, and the test below asserted the SOURCE still contained that exact string — so the test
    * and the code said the same thing twice and neither checked the other. The tool now classifies
    * with `cause instanceof PermissionV2.DeniedError`, which is the class `permission.ts` already
@@ -191,7 +191,7 @@ describe("what a refused permission tells the model", () => {
     // which is how a sweep reports a tree healthy on the day it broke.
     const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
     const mapper = code.slice(code.indexOf("Effect.mapError"))
-    // 🔴 RE-POINTED 2026-09-01 (RF-04-6): was `expect(mapper).toContain('tag === "PermissionV2.DeniedError"')`,
+    // 🔴 RE-POINTED 2026-09-01 (): was `expect(mapper).toContain('tag === "PermissionV2.DeniedError"')`,
     // i.e. this test restated the implementation and could only fail if someone edited the string.
     // The classification is now the exported CLASS, so a rename is a type error rather than a
     // silent revert to the generic line, and the old private `_tag` compare must be gone.

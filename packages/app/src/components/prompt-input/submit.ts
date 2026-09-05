@@ -171,12 +171,12 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     return true
   }
 
-  // ⚠️ A custom-command branch stood here until 2026-09-01 (RF-18-5). It was unreachable: the only
+  // ⚠️ A custom-command branch stood here until 2026-09-01 (). It was unreachable: the only
   // caller, `handleSubmit`, applies the identical test against the identical store and returns before
   // ever reaching this call, so no input could arrive here naming a command. Its one piece of live
   // reasoning — refusing a command that carries attachments — was NOT deleted with it; it now sits on
   // `handleSubmit`'s command and shell branches, before `clearInput()`, where it can actually fire
-  // (RF-18-4). `git log -S "A command with file attachments"` has the original.
+  // (). `git log -S "A command with file attachments"` has the original.
 
   const messageID = input.messageID ?? Identifier.ascending("message")
   const prompt = buildPrompt({
@@ -602,7 +602,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // `shell` nor `command` carries an attachment field, so without this the request succeeds, the
       // thumbnail vanishes from the tray, and nothing is said — ruling 2, a loss reported as success.
       // Refusing without clearing leaves the text AND the attachment in place, so the user can drop
-      // the image or send it as an ordinary message. (RF-18-4)
+      // the image or send it as an ordinary message. ()
       if (images.length > 0) {
         showToast({
           title: language.t("prompt.toast.attachmentsUnsupportedHere.title"),
@@ -631,7 +631,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const commandName = cmdName.slice(1)
       const customCommand = sync().data.command.find((c) => c.name === commandName)
       if (customCommand) {
-        // Same refusal as the shell branch above, and for the same reason — see there. (RF-18-4)
+        // Same refusal as the shell branch above, and for the same reason — see there. ()
         if (images.length > 0) {
           showToast({
             title: language.t("prompt.toast.attachmentsUnsupportedHere.title"),

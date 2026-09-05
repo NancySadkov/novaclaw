@@ -583,7 +583,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     // shared location-service map for the instance directory (cf. experimental.ts).
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const directory = (yield* InstanceState.context).directory
-      // RF-14-8: the four-call catalog read lives in `ProviderCatalogResult.listCatalog`, shared
+      // : the four-call catalog read lives in `ProviderCatalogResult.listCatalog`, shared
       // with `cli/cmd/models.ts`. Only the directory differs between the two callers, so only this
       // provision is local.
       return yield* ProviderCatalogResult.listCatalog.pipe(

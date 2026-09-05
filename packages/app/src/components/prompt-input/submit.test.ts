@@ -323,10 +323,10 @@ describe("prompt submit worktree selection", () => {
     expect(toasts).toEqual([{ title: "common.requestFailed", description: "interrupt unavailable" }])
   })
 
-  // 🔴 RF-18-4: paste a screenshot, type `/review` or a shell command, press Enter — neither `shell`
+  // 🔴 : paste a screenshot, type `/review` or a shell command, press Enter — neither `shell`
   // nor `command` carries an attachment field, so the request used to succeed while `clearInput()`
   // wiped the image and nothing was said. A loss reported as success. The refusal was written, but in
-  // `sendFollowupDraft`, which `handleSubmit` returns before ever reaching (RF-18-5).
+  // `sendFollowupDraft`, which `handleSubmit` returns before ever reaching ().
   //
   // ⚠️ Asserts BOTH halves, because either alone passes over the bug: that nothing was sent, AND that
   // the user was told. A test that only checked the toast would pass while the shell command still ran.

@@ -47,6 +47,11 @@ export type LocalPTY = {
 const WORKSPACE_KEY = "__workspace__"
 const MAX_TERMINAL_SESSIONS = 20
 
+export type CloneOptions = {
+  /** The connection layer already received a server-confirmed 404 for the old PTY. */
+  confirmedGone?: boolean
+}
+
 function text(value: unknown) {
   return typeof value === "string" ? value : undefined
 }
@@ -318,6 +323,27 @@ export async function inspectTerminalClose(
     .catch(() => "unknown")
 }
 
+export async function prepareTerminalReplacement(
+  client: DirectorySDK["client"],
+  directory: string,
+  terminal: Pick<LocalPTY, "ptyID" | "workspaceID">,
+  options: CloneOptions,
+  confirmClose: (state: "foreground" | "unknown") => Promise<boolean>,
+  reportCloseError: (error: unknown) => void,
+): Promise<"ready" | "cancelled" | "failed"> {
+  if (!terminal.ptyID || options.confirmedGone) return "ready"
+
+  const activity = await inspectTerminalClose(client, directory, terminal.ptyID, terminal.workspaceID)
+  if (activity !== "idle" && !(await confirmClose(activity))) return "cancelled"
+  try {
+    await stopWorkspaceTerminal(client, directory, terminal.ptyID, terminal.workspaceID)
+    return "ready"
+  } catch (error) {
+    reportCloseError(error)
+    return "failed"
+  }
+}
+
 function createWorkspaceTerminalSession(
   sdk: DirectorySDK,
   dir: string,
@@ -444,37 +470,70 @@ function createWorkspaceTerminalSession(
       })
   }
 
-  const clone = async (client: DirectorySDK["client"], directory: string, id: string) => {
-    const index = store.all.findIndex((x) => x.id === id)
-    const pty = store.all[index]
-    if (!pty) return
-    setStore("all", index, (item) => ({ ...item, status: "starting", ptyID: undefined, exitCode: undefined }))
-    const next = await client.v2.pty
-      .create({
-        location: { directory, workspace: pty.workspaceID },
-        title: pty.title,
-      })
-      .catch((error: unknown) => {
-        console.error("Failed to clone terminal", error)
-        const currentIndex = store.all.findIndex((item) => item.id === id)
-        if (currentIndex >= 0) setStore("all", currentIndex, pty)
-        return undefined
-      })
-    if (!next?.data?.data) return
+  const cloning = new Set<string>()
+  const clone = async (
+    client: DirectorySDK["client"],
+    directory: string,
+    id: string,
+    options: CloneOptions = {},
+  ) => {
+    if (cloning.has(id)) return
+    cloning.add(id)
+    try {
+      const index = store.all.findIndex((x) => x.id === id)
+      const pty = store.all[index]
+      if (!pty) return
 
-    const currentIndex = store.all.findIndex((item) => item.id === id)
-    if (currentIndex === -1) {
-      // The user closed the starting tab before creation returned. Terminate the now-orphaned PTY
-      // instead of leaking a process with no UI handle.
-      await stopWorkspaceTerminal(client, directory, next.data.data.id, pty.workspaceID).catch(() => undefined)
-      return
+      // A manually requested replacement is an ownership transaction: a disconnected WebSocket
+      // does not prove that the server PTY is dead. Keep its id until activity is inspected and
+      // removal succeeds, so a failed stop/create leaves the user an actionable old tab rather
+      // than an invisible shell. The automatic path passes confirmedGone only after a 404 probe.
+      const replacement = await prepareTerminalReplacement(
+        client,
+        directory,
+        pty,
+        options,
+        confirmClose,
+        reportCloseError,
+      )
+      if (replacement !== "ready") return
+      const oldRemoved = pty.ptyID !== undefined
+
+      const currentIndex = store.all.findIndex((item) => item.id === id)
+      if (currentIndex === -1) return
+      setStore("all", currentIndex, (item) => ({ ...item, status: "starting", ptyID: undefined, exitCode: undefined }))
+      const next = await client.v2.pty
+        .create({
+          location: { directory, workspace: pty.workspaceID },
+          title: pty.title,
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to clone terminal", error)
+          const currentIndex = store.all.findIndex((item) => item.id === id)
+          if (currentIndex >= 0) {
+            // The old id is no longer valid after a successful stop. Never resurrect it in the UI.
+            setStore("all", currentIndex, oldRemoved ? { ...pty, status: "disconnected", ptyID: undefined } : pty)
+          }
+          return undefined
+        })
+      if (!next?.data?.data) return
+
+      const createdIndex = store.all.findIndex((item) => item.id === id)
+      if (createdIndex === -1) {
+        // The user closed the starting tab before creation returned. Terminate the now-orphaned PTY
+        // instead of leaking a process with no UI handle.
+        await stopWorkspaceTerminal(client, directory, next.data.data.id, pty.workspaceID).catch(() => undefined)
+        return
+      }
+
+      batch(() => {
+        // Every volatile/dead-process field is cleared by the pure constructor. `setStore(path, object)`
+        // MERGES, so omission here would carry an exit code or old shell through a successful clone.
+        setStore("all", createdIndex, bindCreatedTerminal(pty, next.data.data))
+      })
+    } finally {
+      cloning.delete(id)
     }
-
-    batch(() => {
-      // Every volatile/dead-process field is cleared by the pure constructor. `setStore(path, object)`
-      // MERGES, so omission here would carry an exit code or old shell through a successful clone.
-      setStore("all", currentIndex, bindCreatedTerminal(pty, next.data.data))
-    })
   }
 
   return {
@@ -538,8 +597,8 @@ function createWorkspaceTerminalSession(
         return next
       })
     },
-    async clone(id: string) {
-      await clone(sdk.client, sdk.directory, id)
+    async clone(id: string, options?: CloneOptions) {
+      await clone(sdk.client, sdk.directory, id, options)
     },
     bind() {
       const client = sdk.client
@@ -552,8 +611,8 @@ function createWorkspaceTerminalSession(
         update(pty: Partial<LocalPTY> & { id: string }) {
           update(client, sdk.directory, pty)
         },
-        async clone(id: string) {
-          await clone(client, sdk.directory, id)
+        async clone(id: string, options?: CloneOptions) {
+          await clone(client, sdk.directory, id, options)
         },
         connected(id: string) {
           const index = store.all.findIndex((item) => item.id === id)

@@ -5,7 +5,7 @@ import path from "node:path"
 /**
  * S1: the CLAIMS LEDGER for `session-runner.test.ts`.
  *
- * That file was ruled a SPEC, not a gate (2026-08-05 — see its own header and todo/v0.2.0-prep.md):
+ * That file was ruled a SPEC, not a gate (2026-08-05 — see its own header and ):
  * it has never passed on any platform, it wedges, and its harness is the defect. But its 77 titles
  * are the only written statement of what the drain is supposed to DO — steering and queued-input
  * FIFO, compaction, overflow recovery, durable tool settlement, provider-error projection. The

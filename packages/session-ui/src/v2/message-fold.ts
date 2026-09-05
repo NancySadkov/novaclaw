@@ -536,8 +536,13 @@ export function mergeNativeMessages(
     const fetchedCopy = byId.get(message.id)
     if (fetchedCopy) {
       // Keep our streaming copy while the server's is still incomplete, else take the server's.
+      // Settlement is monotonic too: a response captured before the turn ended must not replace a
+      // completed current assistant after a newer live event or fetch has settled it. This is the
+      // lower-level backstop for callers whose overlapping fetches cannot be fenced together.
       const fetchedCompleted = fetchedCopy.type === "assistant" && !!fetchedCopy.time?.completed
-      if (isInFlightAssistant(message) && !fetchedCompleted) byId.set(message.id, message)
+      const currentCompleted =
+        message.type === "assistant" && !!message.time?.completed && !isInFlightAssistant(message)
+      if ((isInFlightAssistant(message) || currentCompleted) && !fetchedCompleted) byId.set(message.id, message)
       continue
     }
     // Absent from the fetch. An in-flight assistant simply has not been persisted yet — always keep it.

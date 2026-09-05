@@ -351,8 +351,8 @@ function countOccurrences(haystack: string, term: string): number {
   }
 }
 
-export function scanMentions(content: string): Mention[] {
-  const haystack = authorBody(content).toLowerCase()
+function scanMentionBody(body: string): Mention[] {
+  const haystack = body.toLowerCase()
   const out: Mention[] = []
   for (const topic of Object.keys(TERMS) as MentionTopic[]) {
     const terms = TERMS[topic]
@@ -362,6 +362,10 @@ export function scanMentions(content: string): Mention[] {
     if (terms.length > 0) out.push({ topic, terms })
   }
   return out
+}
+
+export function scanMentions(content: string): Mention[] {
+  return scanMentionBody(authorBody(content))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -408,6 +412,7 @@ export interface SkillView {
 export function toView(skill: SkillInfo, context: SkillContext, agents?: readonly AgentLike[]): SkillView {
   const origin = describeOrigin(skill, context)
   const description = authorText(skill.description, 400)
+  const body = authorBody(skill.content)
   return {
     // The engine dedups by name (last source wins), so the raw name is a stable key even when the
     // DISPLAY name has been sanitized down to nothing.
@@ -419,11 +424,11 @@ export function toView(skill: SkillInfo, context: SkillContext, agents?: readonl
     slash: skill.slash === true,
     location: skill.location,
     folder: skillFolder(skill.location),
-    body: authorBody(skill.content),
+    body,
     origin,
     remote: isRemote(origin),
     enablement: describeEnablement(skill.name, agents, instanceIsWindows(context.paths)),
-    mentions: scanMentions(skill.content),
+    mentions: scanMentionBody(body),
   }
 }
 

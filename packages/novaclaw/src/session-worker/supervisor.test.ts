@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import path from "node:path"
 import fs from "node:fs/promises"
 import os from "node:os"
+import { Readable } from "node:stream"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { EventV2 } from "@novaclaw/core/event"
 import { Effect } from "effect"
@@ -12,9 +13,10 @@ import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
-import { activeWorkerCount, spawn } from "./supervisor"
+import { activeWorkerCount, readLines, spawn } from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
+import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 
 const joinStub: SessionJoin.Interface = {
   awaitCompletion: () => Effect.die(new Error("join is not exercised by this test")),
@@ -23,6 +25,20 @@ const joinStub: SessionJoin.Interface = {
 const spawnerStub: SessionSpawner.Interface = {
   spawn: () => Effect.die(new Error("spawn is not exercised by this test")),
 }
+
+test("worker line framing decodes split UTF-8 once per complete line", async () => {
+  const lines: string[] = []
+  await readLines(
+    Readable.from([Buffer.from("first\r"), Buffer.from("\nsecond "), Buffer.from([0xc3]), Buffer.from([0xa9, 0x0a]), Buffer.from("tail")]),
+    (line) => lines.push(line),
+  )
+  expect(lines).toEqual(["first", "second é", "tail"])
+})
+
+test("worker line framing rejects an oversized line before delivery", async () => {
+  const chunk = Buffer.alloc(SessionWorkerProtocol.MAX_LINE_BYTES + 1)
+  await expect(readLines(Readable.from([chunk]), () => undefined)).rejects.toThrow("worker line exceeds limit")
+})
 
 const fixture = path.resolve(import.meta.dir, "../../test/fixtures/session-worker.ts")
 const entrypointFixture = path.resolve(import.meta.dir, "../../test/fixtures/session-worker-entrypoint.ts")

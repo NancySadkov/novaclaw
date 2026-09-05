@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
-import { formatResourceBytes } from "./instance-resources-format"
+import { formatResourceBytes, memoryPressureLevel } from "./instance-resources-format"
 
 const source = fs.readFileSync(new URL("./instance-resources.tsx", import.meta.url), "utf8")
 
@@ -14,5 +14,16 @@ describe("Instance resource visibility", () => {
     expect(source).toContain("localModelStop")
     expect(source).toContain("settings.storage.resources.stop")
     expect(source).toContain("settings.storage.resources.unknown")
+  })
+
+  test("keeps the resource stop control reachable through every acquisition stage", () => {
+    for (const stage of ["checking", "downloading-runtime", "installing-runtime", "downloading-model", "starting"])
+      expect(source).toContain(`stage === "${stage}"`)
+  })
+
+  test("the host-memory row uses memory's verdict when disk owns the aggregate", () => {
+    expect(memoryPressureLevel({ memoryLevel: "ok" })).toBe("ok")
+    expect(memoryPressureLevel({ memoryLevel: "warning" })).toBe("warning")
+    expect(source).not.toContain("usage()?.level")
   })
 })

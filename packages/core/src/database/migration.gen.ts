@@ -121,5 +121,9 @@ export const migrations = (
     import("./migration/20260828125640_lumpy_paladin"),
     import("./migration/20260901051852_crazy_sheva_callister"),
     import("./migration/20260904004405_drop_inert_session_permission"),
+    import("./migration/20260905030820_dry_energizer"),
+    import("./migration/20260905090000_bound_calendar_fire_history"),
+    import("./migration/20260905100000_bound_messenger_inbound_history"),
+    import("./migration/20260905110000_calendar_fire_outcome"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -424,19 +424,6 @@ export const collectionInfo = (id: Collection): CollectionInfo =>
 export const collectionOf = (slug: string): Collection => (BUILTIN_SLUGS.has(slug) ? "examples" : "mine")
 
 /**
- * Group a listing onto its shelves, in {@link COLLECTIONS} order, dropping shelves with nothing on them.
- * The grouping the `builtin` boolean could not do; the order within a group is whatever the caller's
- * listing already had (`Recipe.list` is name-sorted).
- */
-export const grouped = (
-  recipes: readonly Recipe.Recipe[],
-): readonly { readonly collection: CollectionInfo; readonly recipes: readonly Recipe.Recipe[] }[] =>
-  COLLECTIONS.map((collection) => ({
-    collection,
-    recipes: recipes.filter((recipe) => collectionOf(recipe.slug) === collection.id),
-  })).filter((group) => group.recipes.length > 0)
-
-/**
  * Write any missing builtin into the recipes folder. Idempotent and NON-destructive: a slug that already
  * exists is left alone, so a user's edits to a shipped recipe survive every upgrade — they own it once it
  * is on their disk. A single failure never blocks the rest (or startup).

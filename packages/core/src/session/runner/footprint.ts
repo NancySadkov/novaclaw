@@ -123,15 +123,6 @@ const mediaFreeJson = (json: string): { readonly text: string; readonly media: n
   return { text, media, pixels }
 }
 
-/**
- * `JSON.stringify` can throw on a cycle and returns `undefined` for `undefined`.
- *
- * ⚠️ A diagnostic that throws takes down the turn it was measuring, which trades a real conversation
- * for a number nobody asked for. Every failure here degrades to 0 and the reading stays honest by
- * being low rather than absent.
- */
-const bytesOf = (value: unknown): number => measureValue(value).bytes
-
 /** Bytes with every base64 `data:` payload removed, plus how many there were and their pixels. */
 const measureValue = (
   value: unknown,
@@ -150,6 +141,25 @@ const measureValue = (
 const nameOf = (tool: { readonly name?: string }): string => tool.name ?? "(unnamed)"
 
 /**
+ * Measure each element once. Keeping the result lets callers report both bytes and media facts
+ * without serializing the same message again for the second projection.
+ */
+type ElementMeasurement = { readonly bytes: number; readonly media: number; readonly pixels: number }
+
+const measureElements = (elements: ReadonlyArray<unknown>): ElementMeasurement =>
+  elements.reduce<ElementMeasurement>(
+    (total, element) => {
+      const measured = measureValue(element)
+      return {
+        bytes: total.bytes + measured.bytes,
+        media: total.media + measured.media,
+        pixels: total.pixels + measured.pixels,
+      }
+    },
+    { bytes: 0, media: 0, pixels: 0 },
+  )
+
+/**
  * Sum of the ELEMENTS, not the serialized array.
  *
  * 🔴 **The first draft measured `JSON.stringify(section)` and its own test refuted it.** An empty
@@ -161,28 +171,18 @@ const nameOf = (tool: { readonly name?: string }): string => tool.name ?? "(unna
  * were never wire bytes (see the header) and a per-element sum is the more honest thing to compare
  * across turns — it moves when the request's CONTENT moves, and not otherwise.
  */
-const sumBytes = (elements: ReadonlyArray<unknown>): number =>
-  elements.reduce<number>((total, element) => total + bytesOf(element), 0)
-
 export const measure = (input: Input): Footprint => {
-  const systemBytes = sumBytes(input.system)
-  const messageBytes = sumBytes(input.messages)
-  const toolBytes = sumBytes(input.tools)
+  const system = measureElements(input.system)
+  const messages = measureElements(input.messages)
+  const tools = input.tools.map((tool) => ({ tool, measured: measureValue(tool) }))
+  const systemBytes = system.bytes
+  const messageBytes = messages.bytes
+  const toolBytes = tools.reduce((total, entry) => total + entry.measured.bytes, 0)
   const totalBytes = systemBytes + messageBytes + toolBytes
-  // Counted over the MESSAGES only: system parts and tool schemas carry no media, and scanning them
-  // would be paying for a match that cannot occur.
-  const media = input.messages.reduce(
-    (total, message) => {
-      const measured = measureValue(message)
-      return { count: total.count + measured.media, pixels: total.pixels + measured.pixels }
-    },
-    { count: 0, pixels: 0 },
-  )
-
   let largestTool: Footprint["largestTool"]
-  for (const tool of input.tools) {
-    const bytes = bytesOf(tool)
-    if (largestTool === undefined || bytes > largestTool.bytes) largestTool = { name: nameOf(tool), bytes }
+  for (const entry of tools) {
+    const bytes = entry.measured.bytes
+    if (largestTool === undefined || bytes > largestTool.bytes) largestTool = { name: nameOf(entry.tool), bytes }
   }
 
   return {
@@ -197,8 +197,8 @@ export const measure = (input: Input): Footprint => {
     // NaN in a log attribute is worse than 0 — it renders, it sorts, and it means nothing.
     toolSharePercent: totalBytes === 0 ? 0 : Math.round((toolBytes / totalBytes) * 100),
     estimatedTokens: Token.estimateFromChars(totalBytes),
-    mediaCount: media.count,
-    mediaPixels: media.pixels,
+    mediaCount: messages.media,
+    mediaPixels: messages.pixels,
     ...(largestTool === undefined ? {} : { largestTool }),
   }
 }

@@ -14,7 +14,7 @@ import {
 } from "@novaclaw/core/session/config-resolve"
 import { PermissionTool } from "@novaclaw/core/tool/permission"
 
-// Auto mode (todo/permissions.md) — the PURE half: the ceiling algebra in `session/config-resolve.ts`
+// Auto mode () — the PURE half: the ceiling algebra in `session/config-resolve.ts`
 // and the decision function in `tool/permission.ts`. The effectful halves are pinned separately by
 // `permission-auto-mode.test.ts` (the live evaluator) and `tool-permission.test.ts` (the tool).
 

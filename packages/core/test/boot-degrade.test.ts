@@ -9,7 +9,7 @@
  *     ENOSPC on any one of them was a defect nothing could catch.
  *   · `observability.ts` piped **`Layer.orDie` over `Logger.toFile`**, whose error channel is
  *     `PlatformError`. An unwritable log directory killed the boot — in the subsystem you most need
- *     when a boot is failing, and against `todo/logging.md` phase 2's own rule that logging must
+ *     when a boot is failing, and against `` phase 2's own rule that logging must
  *     never take the instance down.
  *
  * Why that class matters more than its size: AGENTS.md's self-healing law — *as long as at least one

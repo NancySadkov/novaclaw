@@ -142,6 +142,9 @@ export function topConsumers(limit = 5): string[] {
 
 /** How many times the commit probe may miss before the runner refuses. See `windowsCommit`. */
 const COMMIT_PROBE_ATTEMPTS = 3
+/** The admission pass asks for the same commit pair more than once; keep those reads coherent. */
+const COMMIT_CACHE_MS = 1_000
+let commitCache: { readonly at: number; readonly value: { usedGb: number; limitGb: number } | undefined } | undefined
 
 /** One attempt at the commit charge. `undefined` = this probe did not answer. */
 function windowsCommitOnce(): { usedGb: number; limitGb: number } | undefined {
@@ -172,9 +175,14 @@ function windowsCommitOnce(): { usedGb: number; limitGb: number } | undefined {
  * transient miss as an answer.
  */
 function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
+  const now = Date.now()
+  if (commitCache !== undefined && now - commitCache.at < COMMIT_CACHE_MS) return commitCache.value
   for (let attempt = 1; attempt <= COMMIT_PROBE_ATTEMPTS; attempt++) {
     const reading = windowsCommitOnce()
-    if (reading) return reading
+    if (reading) {
+      commitCache = { at: Date.now(), value: reading }
+      return reading
+    }
     if (attempt < COMMIT_PROBE_ATTEMPTS) {
       // Announced, because a silent pause before a refusal is indistinguishable from a slow unit —
       // which is exactly how the 2026-08-06 abort read for ten minutes.
@@ -187,6 +195,7 @@ function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
       })
     }
   }
+  commitCache = { at: Date.now(), value: undefined }
   return undefined
 }
 

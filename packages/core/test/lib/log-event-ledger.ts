@@ -109,7 +109,7 @@ export const scanLogSource = (file: string, sourceText: string): readonly LogSit
   return sites
 }
 
-// ── the attribute half (todo/logging.md 1h) ─────────────────────────────────────────────────────
+// ── the attribute half ( 1h) ─────────────────────────────────────────────────────
 
 /** One `name: <expression>` assignment inside a `Log.event(key, { … })` call. */
 export interface AttributeSite {
@@ -203,7 +203,7 @@ const sourceFiles = (directory: string): readonly string[] => {
  */
 const LOGGER_IMPLEMENTATION = "packages/schema/src/log.ts"
 
-/** Walk the shipping source boundary named by `todo/logging.md`: every package's `src` tree. */
+/** Walk the shipping source boundary named by ``: every package's `src` tree. */
 export const scanPackageSources = (root: string): readonly LogSite[] => {
   const packages = path.join(root, "packages")
   return fs

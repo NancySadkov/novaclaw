@@ -115,7 +115,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   const running = await isPortInUse(port)
   if (running) {
-    return
+    throw new Error(`MCP OAuth callback port ${port} is already in use by another process.`)
   }
 
   currentPort = port

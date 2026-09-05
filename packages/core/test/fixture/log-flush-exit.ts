@@ -1,7 +1,7 @@
 /**
  * **The short-lived-CLI flush defect, reproduced and fixed, in one process.**
  *
- * 🔴 The filed defect (`todo/logging.md`): `Logger.toFile` batches into a `setTimeout`, so a process
+ * 🔴 The filed defect (``): `Logger.toFile` batches into a `setTimeout`, so a process
  * that exits before the batch window writes NOTHING — `novaclaw.log` was empty for the CLI entry
  * point, for every event, while a long-lived `serve` flushed fine. A log nobody can read after a
  * crash is the same defect as a crash-telemetry packet that is issued and then lost.

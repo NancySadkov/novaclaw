@@ -96,6 +96,7 @@
         "fuzzysort": "catalog:",
         "gray-matter": "4.0.3",
         "htmlparser2": "8.0.2",
+        "iconv-lite": "0.7.2",
         "immer": "11.1.4",
         "jsonc-parser": "3.3.1",
         "mime-types": "3.0.2",
@@ -159,6 +160,9 @@
     },
     "packages/dht": {
       "name": "@novaclaw/dht",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+      },
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@novaclaw/effect-drizzle-sqlite",
@@ -175,6 +179,9 @@
     },
     "packages/host": {
       "name": "@novaclaw/host",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+      },
     },
     "packages/http-recorder": {
       "name": "@novaclaw/http-recorder",
@@ -395,6 +402,9 @@
     },
     "packages/watchdog": {
       "name": "@novaclaw/watchdog",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+      },
     },
     "script": {
       "name": "@novaclaw/repo-script",

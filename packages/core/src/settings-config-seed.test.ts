@@ -40,6 +40,7 @@ const VALID: Record<string, unknown> = {
   formatter: {},
   attachments: {},
   log: { level: "info", retention_days: 30, subsystems: { mcp: "debug" } },
+  trash: { retention_days: 30 },
   tool_output: {},
   tool_routing: { rules: [{ provider: "qwen", tools: { edit: true, write: false } }] },
   resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },

@@ -197,7 +197,7 @@ describe("runner/llm.ts actually spends the verdict", () => {
   })
 
   /**
-   * 🔴 `todo/verified-autonomy.md` V1: checks were LOG EVENTS, not evidence. The durable write lives
+   * 🔴 `` V1: checks were LOG EVENTS, not evidence. The durable write lives
    * in `session/quality-check.ts` and is exercised for real in `session-quality-check.test.ts`; what
    * only a source ratchet can pin on this machine is that the RUNNER calls it — and the defect a
    * durable-evidence table exists to close is precisely "nobody wrote the row".

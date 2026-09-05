@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { listAgents } from "./agent-list"
+import { listAgents, listUsage } from "./agent-list"
 
 /**
  * WHAT SURVIVES THE TRIP from the roster response to the UI.
@@ -101,5 +101,43 @@ describe("a failed read is a fault, not an empty roster", () => {
     // The control: without this the three tests above would pass against a function that always threw.
     const rows = await listAgents(response([{ id: "nova", mode: "primary", name: "Nova" }]) as never)
     expect(rows.map((row) => row.id)).toEqual(["nova"])
+  })
+})
+
+describe("roster usage uses one batch response", () => {
+  test("keeps every requested agent and parses the batched map", async () => {
+    let calls = 0
+    const usage = await listUsage(
+      {
+        agent: {
+          usageMany: async ({ agentIDs }: { agentIDs: readonly string[] }) => {
+            calls += 1
+            expect(agentIDs).toEqual(["nova", "theron"])
+            return {
+              data: {
+                data: {
+                  nova: [{ minute: 10, generated: 3 }],
+                  theron: [{ minute: 9, generated: 7 }],
+                },
+              },
+            }
+          },
+        },
+      } as never,
+      ["nova", "theron"],
+    )
+    expect(calls).toBe(1)
+    expect(usage).toEqual({
+      nova: [{ minute: 10, generated: 3 }],
+      theron: [{ minute: 9, generated: 7 }],
+    })
+  })
+
+  test("a failed batch dims rates without rejecting the roster", async () => {
+    const usage = await listUsage(
+      { agent: { usageMany: async () => ({ error: { _tag: "Unavailable" } }) } } as never,
+      ["nova", "theron"],
+    )
+    expect(usage).toEqual({ nova: [], theron: [] })
   })
 })

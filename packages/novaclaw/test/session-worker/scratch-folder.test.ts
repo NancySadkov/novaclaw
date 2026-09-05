@@ -6,7 +6,7 @@ import { SessionSchema } from "@novaclaw/core/session/schema"
 import { scratchDirectory, workingDirectory } from "../../src/session-worker/scratch-folder"
 
 /**
- * Ruling 1 for the lost-working-folder recovery (`todo/session-recovery.md`, owner 2026-08-07).
+ * Ruling 1 for the lost-working-folder recovery (``, owner 2026-08-07).
  *
  * Measured before the fix: a session whose folder vanished could not start its worker and was
  * ISOLATED, and the prompt that triggered it was accepted with `200` then stranded — `promoted_seq`

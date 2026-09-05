@@ -59,7 +59,7 @@ const isolatedRun: Runner = (value, layer) =>
 // that is ~164 ms → ~30 ms to build and ~337 ms → ~40 ms to tear down. In WALL CLOCK it is worth
 // less than that sounds — an interleaved five-pair A/B on that file measured a median 17.7 s → 16.2 s
 // against a box that swings ±30% — so take this for what it is: a real cost removed, not the lever
-// that gets the gate under five minutes (todo/test-speed.md).
+// that gets the gate under five minutes ().
 //
 // ⚠️ **The memo map alone does NOT make a graph shared — an OBSERVER does.** Effect's `MemoMap`
 // entries are REFERENCE COUNTED (`Layer.ts` → `memoMapBuild`/`memoMapReuse`): a build sets

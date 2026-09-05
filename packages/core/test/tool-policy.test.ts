@@ -28,7 +28,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import { toolIdentity } from "./lib/tool"
 
 /**
- * `todo/projects.md` → **Typed pre-action policies**, the SEAM.
+ * `` → **Typed pre-action policies**, the SEAM.
  *
  * 🔴 Every case here goes through `ToolRegistry.materialize().settle(…)` — the same function the
  * runner calls for every model tool call — against a tool that really executes and really returns.

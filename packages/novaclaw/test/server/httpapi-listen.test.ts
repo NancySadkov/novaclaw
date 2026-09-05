@@ -532,7 +532,7 @@ describe("HttpApi Server.listen", () => {
     //     server) was ACCEPTED and parked here for the whole test — the measured ~5.2 s poisoner;
     //  3. every stage draws on one shared deadline, so a stuck stage names itself instead of being
     //     buried under bun's anonymous per-test kill.
-    // See todo/test-speed.md §gate hygiene: do not pin this, and do not raise the suite timeout.
+    // See  §gate hygiene: do not pin this, and do not raise the suite timeout.
     const budget = deadline(FALLBACK_BUDGET_MS, FALLBACK_CLEANUP_FLOOR_MS)
     const occupied = await budget.stage(occupyPort(4096), 5_000, "could not settle who holds 4096")
     try {

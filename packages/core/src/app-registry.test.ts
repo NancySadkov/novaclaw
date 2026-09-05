@@ -87,6 +87,16 @@ describe("AppRegistry save/list/remove", () => {
     expect(listed.map((m) => m.id)).toEqual(["ok"])
   })
 
+  test("a corrupt manifest is never replaced by a partial update", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const file = path.join(root, "broken.json")
+    await fs.writeFile(file, "{ not json", "utf8")
+    await expect(
+      AppRegistry.saveApp({ id: "broken", title: "Replacement", open: { type: "route", value: "notes" } }, opts()),
+    ).rejects.toThrow("unreadable and was not overwritten")
+    expect(await fs.readFile(file, "utf8")).toBe("{ not json")
+  })
+
   test("an unknown route id performs no write and offers the available ids", async () => {
     await expect(
       AppRegistry.saveApp({ id: "stocks", title: "Stocks", open: { type: "route", value: "stocks" } }, opts()),

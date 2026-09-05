@@ -1,5 +1,5 @@
 import { Presence } from "@novaclaw/core/presence"
-import { killTreeSync } from "@novaclaw/core/util/kill-tree"
+import { killTree, killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -288,8 +288,13 @@ export function spawn(input: Input): Handle {
     activePIDs.delete(childPID)
     lifetime.abort()
     if (monitor) clearInterval(monitor)
-    killTreeSync(childPID)
-    const cleanup = Promise.resolve().then(() => input.onExit?.(outcome))
+    // The normal terminal path can await: keep the parent-map walk and Windows taskkill off the
+    // server event loop, while still holding result settlement behind the tree teardown so callers
+    // never observe a finished worker whose descendants are still alive.
+    const cleanup = Promise.all([
+      killTree(childPID),
+      Promise.resolve().then(() => input.onExit?.(outcome)),
+    ])
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<void>((resolve) => {
       deadlineTimer = setTimeout(resolve, input.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS)
@@ -678,23 +683,51 @@ export function spawn(input: Input): Handle {
   return { pid: childPID, result, interrupt, send }
 }
 
-async function readLines(stream: Readable, onLine: (line: string) => void) {
+export async function readLines(stream: Readable, onLine: (line: string) => void) {
+  const encoder = new TextEncoder()
   const decoder = new TextDecoder()
-  let pending = ""
-  for await (const chunk of stream) {
-    pending += decoder.decode(chunk, { stream: true })
-    for (;;) {
-      const newline = pending.indexOf("\n")
-      if (newline < 0) break
-      const line = pending.slice(0, newline).replace(/\r$/, "")
-      pending = pending.slice(newline + 1)
-      if (new TextEncoder().encode(line).byteLength > SessionWorkerProtocol.MAX_LINE_BYTES)
-        throw new Error("worker line exceeds limit")
-      if (line) onLine(line)
-    }
-    if (new TextEncoder().encode(pending).byteLength > SessionWorkerProtocol.MAX_LINE_BYTES)
-      throw new Error("worker line exceeds limit")
+  let pending: Uint8Array[] = []
+  let pendingBytes = 0
+
+  const append = (bytes: Uint8Array) => {
+    if (bytes.length === 0) return
+    pending.push(bytes)
+    pendingBytes += bytes.byteLength
+    if (pendingBytes > SessionWorkerProtocol.MAX_LINE_BYTES) throw new Error("worker line exceeds limit")
   }
-  pending += decoder.decode()
-  if (pending) onLine(pending)
+
+  const joinPending = () => {
+    if (pending.length === 1) return pending[0]
+    const joined = new Uint8Array(pendingBytes)
+    let offset = 0
+    for (const part of pending) {
+      joined.set(part, offset)
+      offset += part.byteLength
+    }
+    return joined
+  }
+
+  const emitPending = () => {
+    if (pendingBytes === 0) return
+    const line = decoder.decode(joinPending()).replace(/\r$/, "")
+    pending = []
+    pendingBytes = 0
+    if (line) onLine(line)
+  }
+
+  for await (const chunk of stream) {
+    const bytes = typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk as Uint8Array)
+    let offset = 0
+    while (offset < bytes.byteLength) {
+      const newline = bytes.indexOf(10, offset)
+      if (newline < 0) {
+        append(bytes.slice(offset))
+        break
+      }
+      append(bytes.slice(offset, newline))
+      emitPending()
+      offset = newline + 1
+    }
+  }
+  emitPending()
 }

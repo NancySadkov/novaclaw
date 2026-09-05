@@ -5,7 +5,7 @@ import { join } from "node:path"
 /**
  * The crash matrix, as a LEDGER over the recovery suites.
  *
- * `todo/session-recovery.md` asks for *"a bounded Windows/Linux crash matrix: before dispatch,
+ * `` asks for *"a bounded Windows/Linux crash matrix: before dispatch,
  * during execution, after side effect, during result persistence, worker crash, host crash,
  * cancellation, and restart"*. Twenty-one recovery tests existed and covered most of that — but
  * spread across four files under names chosen for what each asserts, so **nobody could say which
@@ -113,7 +113,7 @@ const MATRIX: readonly Point[] = [
 /**
  * The INPUT half of the same guarantee.
  *
- * `todo/session-recovery.md` asks for a durable terminal projection for *every admitted input* as
+ * `` asks for a durable terminal projection for *every admitted input* as
  * well as every tool-bearing turn — *"a crash must not ... strand the input"*. `session_input`
  * carries that projection as `admitted_seq` (durable the moment it is accepted) and `promoted_seq`
  * (set when it enters a turn), so an input is admitted-not-promoted or promoted, and a crash can

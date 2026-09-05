@@ -3,6 +3,7 @@ export * as Trash from "./trash"
 import fs from "fs/promises"
 import path from "path"
 import { Global } from "./global"
+import { TrashSettings } from "./trash-settings"
 
 // The safe-delete store (B8): agent/file deletions MOVE dated copies here instead of destroying
 // them, so the user can restore to a specific date, an agent can self-restore a misfired rm, and
@@ -33,7 +34,7 @@ import { Global } from "./global"
 // moment call `purgeExpired` directly — it is exported for exactly that, and must never be called
 // from a read.
 
-export const DEFAULT_TTL_MS = 2 * 24 * 3600 * 1000 // 2 days
+export const DEFAULT_TTL_MS = TrashSettings.DEFAULT_RETENTION_DAYS * 24 * 3600 * 1000 // 30 days
 
 export interface Entry {
   readonly id: string
@@ -91,7 +92,7 @@ async function move(from: string, to: string, options?: Options) {
  * for expiry on purpose and want to know whether it worked.
  */
 async function sweepRetention(options?: Options): Promise<void> {
-  await purgeExpired(DEFAULT_TTL_MS, options).catch(() => {})
+  await purgeExpired(TrashSettings.maxAgeMs(), options).catch(() => {})
 }
 
 /** Move a file or directory into the trash. Sweeps expired entries first (this is a WRITE). */
@@ -203,7 +204,7 @@ export async function restore(id: string, input?: { overwrite?: boolean }, optio
  * mutations, this one throws). **Never call it from a read path** — that is the exact defect this
  * module was fixed for.
  */
-export async function purgeExpired(ttlMs: number = DEFAULT_TTL_MS, options?: Options): Promise<void> {
+export async function purgeExpired(ttlMs: number = TrashSettings.maxAgeMs(), options?: Options): Promise<void> {
   const root = trashRoot(options)
   const now = (options?.now ?? (() => new Date()))()
   const cutoff = dateDir(new Date(now.getTime() - ttlMs))

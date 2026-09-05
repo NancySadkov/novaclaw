@@ -61,6 +61,8 @@ export const MAX_ROUTES_PER_PEER = 8
 export interface Interface {
   /** Every peer we might reach, most recently seen first. */
   readonly list: () => Effect.Effect<ReadonlyArray<Peer>>
+  /** Look up one peer without materializing the routing table. */
+  readonly get: (networkID: string) => Effect.Effect<Peer | undefined>
   /**
    * Record an address for a peer. Additive: routes accumulate rather than replace, because two
    * sources describe the same peer differently (a LAN address and a public one are both true).
@@ -167,6 +169,16 @@ export const layer = Layer.effect(
     return Service.of({
       list: Effect.fn("CommunityPeers.list")(function* () {
         return (yield* all()).map(rowPeer)
+      }),
+
+      get: Effect.fn("CommunityPeers.get")(function* (networkID: string) {
+        const row = yield* db
+          .select()
+          .from(CommunityPeerTable)
+          .where(eq(CommunityPeerTable.network_id, networkID))
+          .get()
+          .pipe(Effect.orDie)
+        return row === undefined ? undefined : rowPeer(row)
       }),
 
       learn: Effect.fn("CommunityPeers.learn")(function* (networkID, routes, source = "px", introducedBy) {

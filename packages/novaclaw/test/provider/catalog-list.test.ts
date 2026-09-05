@@ -7,7 +7,7 @@ import { ProviderCatalogResult } from "@/provider/catalog-result"
 
 /**
  * **`listCatalog` — the read `cli/cmd/models.ts` and `httpapi/handlers/provider.ts` now share**
- * (RF-14-8). The two used to spell the same four calls out separately, so "what the CLI thinks the
+ * (). The two used to spell the same four calls out separately, so "what the CLI thinks the
  * catalog is" and "what the HTTP route thinks it is" could drift with nothing reporting it.
  *
  * ⚠️ What this pins is the part a caller cannot see and would not notice going wrong: that

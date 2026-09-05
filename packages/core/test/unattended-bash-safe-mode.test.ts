@@ -131,7 +131,7 @@ describe("② safe mode restores the refusal, and the refusal NAMES ITSELF (ruli
 
   test("safe mode never buys an untrusted messenger turn the host", () => {
     // The directive reversed the ATTENDANCE arm. The trust arm answers a different adversary
-    // (AGENTS.md principle 9(c), todo/jail.md's surviving threat model), so turning safe mode OFF
+    // (AGENTS.md principle 9(c), 's surviving threat model), so turning safe mode OFF
     // must not relax it — including the `"unknown"` tri-state, where we could not find out.
     for (const hostileInput of [true, "unknown"] as const)
       for (const safeMode of [undefined, false, true]) {

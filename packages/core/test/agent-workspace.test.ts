@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { AgentWorkspace } from "@novaclaw/core/agent/workspace"
 import { Scratch } from "@novaclaw/core/scratch"
+import type { SessionMessage } from "@novaclaw/core/session/message"
+import { isSteerText } from "@novaclaw/core/session/steer-provenance"
 
 // WHERE a colleague works (owner, 2026-08-21: the folder is part of the agent's configuration,
 // defaulting to that agent's scratch, and reassigning it messages the agent).
@@ -43,6 +45,32 @@ describe("whether a reassignment happened at all", () => {
   })
 })
 
+describe("whether a transcript has model output", () => {
+  const message = (value: unknown) => value as SessionMessage.Message
+
+  test("a new chat, a user-only chat, and an empty assistant turn are not output", () => {
+    expect(AgentWorkspace.hasModelOutput([])).toBe(false)
+    expect(AgentWorkspace.hasModelOutput([message({ type: "user", text: "hello" })])).toBe(false)
+    expect(
+      AgentWorkspace.hasModelOutput([message({ type: "assistant", content: [{ type: "text", text: "" }] })]),
+    ).toBe(false)
+  })
+
+  test("text, reasoning, and an actual tool call count as model output", () => {
+    for (const content of [
+      [{ type: "text", text: "done" }],
+      [{ type: "reasoning", text: "checking" }],
+      [{ type: "tool", state: { status: "pending", input: '{"path":"a"}' } }],
+      [{ type: "tool", state: { status: "completed", input: {} } }],
+    ])
+      expect(AgentWorkspace.hasModelOutput([message({ type: "assistant", content })])).toBe(true)
+  })
+
+  test("a compaction is evidence that earlier model output existed", () => {
+    expect(AgentWorkspace.hasModelOutput([message({ type: "compaction", summary: "answer", recent: "" })])).toBe(true)
+  })
+})
+
 describe("what the colleague is told", () => {
   const move = { from: "D:/books", to: "D:/ledger", ownScratch: false }
 
@@ -50,6 +78,7 @@ describe("what the colleague is told", () => {
     const notice = AgentWorkspace.reassignmentNotice(move)
     expect(notice).toContain("D:/books")
     expect(notice).toContain("D:/ledger")
+    expect(isSteerText(notice), "the renderer can fold this automated nudge").toBe(true)
   })
 
   /**

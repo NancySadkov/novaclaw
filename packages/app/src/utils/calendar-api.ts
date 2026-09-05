@@ -47,6 +47,7 @@ export interface Fire {
   readonly firedAt: number
   readonly sessionId: string | null
   readonly status: "spawned" | "skipped" | "error"
+  readonly outcome: "pending" | "succeeded" | "failed" | "interrupted"
 }
 
 export interface CreateScheduleInput {

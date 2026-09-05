@@ -97,6 +97,7 @@ const Fire = Schema.Struct({
   firedAt: Schema.Finite,
   sessionId: Schema.NullOr(Schema.String),
   status: Schema.Literals(["spawned", "skipped", "error"]),
+  outcome: Schema.Literals(["pending", "succeeded", "failed", "interrupted"]),
 }).annotate({ identifier: "Calendar.Fire" })
 
 export const CreateInput = Schema.Struct({

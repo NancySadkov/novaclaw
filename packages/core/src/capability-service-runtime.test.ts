@@ -50,6 +50,7 @@ const graph = (input: {
         }),
       serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
+      update: () => Effect.void,
       remove: () => Effect.void,
       unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.succeed(false),

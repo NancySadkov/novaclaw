@@ -218,6 +218,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "snapshots",
       "strict",
       "tool_routing",
+      "trash",
       "virtualFs",
       "watcher",
     ])

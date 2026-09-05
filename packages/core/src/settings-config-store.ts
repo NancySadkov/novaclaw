@@ -8,6 +8,7 @@ import { makeGlobalNode } from "./effect/app-node"
 import { RuntimeSettingTable } from "./settings-config/sql"
 import { CredentialCipher } from "./credential-cipher"
 import { LogSettings } from "./observability/log-settings"
+import { TrashSettings } from "./trash-settings"
 import { Log } from "@novaclaw/schema/log"
 import { isRecord } from "@novaclaw/schema/record"
 
@@ -43,6 +44,14 @@ export interface Interface {
   readonly serverPassword: () => Effect.Effect<string | undefined>
   /** Insert or replace one setting's whole value (latest() semantics — no layers). */
   readonly set: (key: string, value: unknown) => Effect.Effect<void>
+  /**
+   * Atomically transform one unprotected composite setting. The closed key set makes callers
+   * acknowledge that this bypasses secret reveal/preservation; protected settings use `set`.
+   */
+  readonly update: (
+    key: "provider_capability" | "provider_route_profile",
+    change: (current: unknown) => unknown,
+  ) => Effect.Effect<void>
   /** Remove one stored setting (the key falls back to config documents until step 8). */
   readonly remove: (key: string) => Effect.Effect<void>
   /** True when no settings are stored (used to gate the one-time jsonc seed). */
@@ -155,9 +164,9 @@ export const layer = Layer.effect(
      * read, and someone's real secret could equal it.
      */
     const revealSecret = Effect.fn("SettingsConfigStore.revealSecret")(function* (value: unknown, path: string) {
-      // A plaintext string is already where this is going; rewriting it is a no-op that keeps the
-      // one write path honest.
-      if (typeof value === "string") return { value, migrated: true, damaged: [] as string[] }
+      // A plaintext string is already where this is going; it needs no drain write. Only an opened
+      // legacy envelope is marked migrated, so repeated reads do not issue a pointless SQLite UPDATE.
+      if (typeof value === "string") return { value, migrated: false, damaged: [] as string[] }
       const opened = yield* CredentialCipher.decryptJson(cipher, value, secretAad(path)).pipe(
         // `catchCause`, not `catchAll`: Effect 4 has no `catchAll`, and the cause is what the log
         // entry wants anyway — a DecryptError alone does not say whether the key was missing,
@@ -282,17 +291,17 @@ export const layer = Layer.effect(
           // recoverable when the original key is restored. Repair must stay possible after a boot
           // in the damaged state.
           //
-          // ⚠️ `opened.migrated` now covers BOTH directions, and that is the unwind's whole safety
-          // property: it is true for a legacy plaintext value (which used to be re-encrypted, and
-          // is now simply rewritten unchanged) and true for an envelope this read successfully
-          // OPENED. The second is what drains the ciphertext while the key is still present. A
-          // value that could not be opened sets `damaged` instead and is never touched.
+          // ⚠️ `opened.migrated` means a legacy envelope this read successfully OPENED. That is
+          // what drains ciphertext while the key is still present. Plaintext is already canonical
+          // and does not need a write; a value that could not be opened sets `damaged` instead and
+          // is never touched.
           // ⚠️ `.length === 0`, not `!opened.damaged` — `damaged` is now the LIST of unreadable
           // paths (NC-REL-030(b)), and an empty array is truthy. The negation would have been false
           // forever, silently stopping the drain that removes ciphertext while the key still exists.
           if (opened.migrated && opened.damaged.length === 0) yield* settings.set(key, protect(key, opened.value))
         }
         LogSettings.apply(result.log)
+        TrashSettings.apply(result.trash)
         return result
       }),
       /**
@@ -336,6 +345,12 @@ export const layer = Layer.effect(
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
         yield* settings.set(key, protect(key, yield* preserveSecrets(key, value)))
+      }),
+      update: Effect.fn("SettingsConfigStore.update")(function* (key, change) {
+        // These are the only composite settings currently mutated by read-modify-write. They hold
+        // measurements, not credentials, so their raw JSON value is the decoded value the caller
+        // expects and the factory can keep the read and write inside BEGIN IMMEDIATE.
+        yield* settings.update(key, change)
       }),
       remove: Effect.fn("SettingsConfigStore.remove")(function* (key) {
         yield* settings.remove(key)

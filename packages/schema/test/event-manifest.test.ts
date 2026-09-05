@@ -35,7 +35,7 @@ describe("public event manifest", () => {
     // 75" while Definitions and Latest had BOTH also moved — a reviewer reading that failure would
     // have reviewed a third of the change. A contract pin must report the whole delta in one run.
     //
-    // 2026-08-25 — the five `memory.*` store events (`todo/rag.md` P2). Reviewed, not bumped:
+    // 2026-08-25 — the five `memory.*` store events (`` P2). Reviewed, not bumped:
     //   Â· NOT durable â none takes a `durable` block, so `Durable.size` stays 48. The graph is its
     //     own record and `claimHistory` is the timeline; a replayable second log of the same
     //     lifecycle is a copy that drifts. A missed event costs an animation, never a fact.

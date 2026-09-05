@@ -2,7 +2,7 @@
  * **A real boot of `Observability.layer`, reporting what landed in the log and how many writers
  * were open while it landed.**
  *
- * `todo/logging.md` Phase 2 → Phase 3: the writer's 8 MB / 256 MB / 30 d defaults ship with their
+ * `` Phase 2 → Phase 3: the writer's 8 MB / 256 MB / 30 d defaults ship with their
  * own author's confession that they are *"a guess dressed in a measurement"*, and the thing that
  * fixes it is one line per boot saying how big this instance's log is and how fast it grows.
  *

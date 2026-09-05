@@ -1140,9 +1140,23 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
   if (!input.name.trim()) throw new Error("A recipe needs a name")
   if (!input.prompt.trim()) throw new Error("A recipe needs a prompt — that is the whole recipe")
   const root = recipesRoot(options)
-  const release = await acquireSlugLease(root, slug)
+  // A save of an existing recipe is an update, but a save racing an import is a new recipe even when
+  // both callers chose the same slug. Decide which intent was present before taking the lease, then
+  // reserve new slugs through the same claim path as imports/duplicates. Without this second check,
+  // an import that wins the lease can be overwritten by the save that was already in flight.
+  const existingFile = path.join(root, slug, RECIPE_FILE)
+  const wasExisting = await fs.lstat(existingFile).then(
+    () => true,
+    (error) => {
+      if (missing(error)) return false
+      throw error
+    },
+  )
+  const claim = wasExisting ? undefined : await requireClaimedSlug(root, slug)
+  const savedSlug = claim?.slug ?? slug
+  const release = claim?.release ?? (await acquireSlugLease(root, slug))
   try {
-    const dir = path.join(root, slug)
+    const dir = path.join(root, savedSlug)
     await fs.mkdir(dir, { recursive: true })
     const file = path.join(dir, RECIPE_FILE)
     // ⚠️ **A save onto an EXISTING file is an edit of that file, not a re-render of it.** `SaveInput` carries
@@ -1177,8 +1191,8 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
             ...(input.produces === undefined ? {} : { produces: input.produces }),
           })
     await writeIfChanged(file, existing, markdown)
-    const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
-    if (!saved) throw new Error(`Recipe "${slug}" could not be read back after saving`)
+    const saved = await readOne(root, savedSlug, input.builtin ? new Set([savedSlug]) : new Set())
+    if (!saved) throw new Error(`Recipe "${savedSlug}" could not be read back after saving`)
     return saved
   } finally {
     await release()

@@ -19,7 +19,7 @@ import { stripComments } from "@novaclaw/core/test/source-scan"
  * `httpapi-workspace` + `httpapi-workspace-routing` + `httpapi-instance-context`: 23 `git: true`
  * call sites cost **184 git processes**, 10.4 s of setup plus 1.7 s of teardown inside a 38.2 s
  * run. `packages/novaclaw/test/` holds **199** `git: true` sites in all, 75 of them under
- * `test/server/` alone, so the per-site cost is the gate's cost (todo/test-speed.md, owner cap: 5
+ * `test/server/` alone, so the per-site cost is the gate's cost (, owner cap: 5
  * minutes).
  *
  * ⚠️ **This file lives under `test/fixture/` on purpose.** That is one of

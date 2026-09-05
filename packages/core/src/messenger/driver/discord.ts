@@ -139,6 +139,11 @@ const decodeMessages = Schema.decodeUnknownOption(Schema.Array(MessageCreate))
 // A cap on catch-up per channel: after a very long downtime we replay the most recent page and note
 // the gap rather than paging endlessly through a backlog nobody will read.
 const BACKFILL_PAGE = 100
+// A live gateway can deliver a burst of messages. Rewriting the complete resume cursor and every
+// channel anchor for each one turns that burst into one SQLite write per message. Keep the replay
+// window bounded while flushing much more often than a human would notice.
+const CURSOR_FLUSH_MESSAGES = 25
+const CURSOR_FLUSH_MS = 1_000
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -272,9 +277,10 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
 
       const rest = (route: string, init?: RequestInit) =>
         Effect.tryPromise({
-          try: async () => {
+          try: async (signal) => {
             const response = await fetchImpl(`${API_BASE}${route}`, {
               ...init,
+              signal,
               headers: { Authorization: `Bot ${token}`, ...(init?.headers ?? {}) },
             })
             return { status: response.status, body: (await response.json().catch(() => undefined)) as unknown }
@@ -378,26 +384,54 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
 
       // Persist the resume state AND the anchors together; anchors are written even with no live
       // session (after an invalid-session wipe) so the next fresh connect can still catch up.
+      let cursorDirty = false
+      let liveMessagesSinceCursor = 0
+      let lastCursorPersistAt = 0
       const persistCursor = Effect.suspend(() =>
-        ctx.cursor
-          .set({
-            ...(session === undefined
-              ? {}
-              : {
-                  sessionID: session.sessionID,
-                  seq,
-                  ...(session.resumeURL === undefined ? {} : { resumeURL: session.resumeURL }),
-                }),
-            anchors: Object.fromEntries(anchors),
-          })
-          .pipe(Effect.ignore),
+        cursorDirty
+          ? Effect.sync(() => {
+              cursorDirty = false
+              liveMessagesSinceCursor = 0
+              lastCursorPersistAt = Date.now()
+            }).pipe(
+              Effect.andThen(
+                ctx.cursor
+                  .set({
+                    ...(session === undefined
+                      ? {}
+                      : {
+                          sessionID: session.sessionID,
+                          seq,
+                          ...(session.resumeURL === undefined ? {} : { resumeURL: session.resumeURL }),
+                        }),
+                    anchors: Object.fromEntries(anchors),
+                  })
+                  .pipe(Effect.ignore),
+              ),
+            )
+          : Effect.void,
       )
+
+      // A short crash window may replay a few messages, which is the safe side of the cursor
+      // contract: the durable inbound claim deduplicates them, while dropping an unpersisted anchor
+      // would lose a message after a sleeping laptop reconnects. Scope shutdown always flushes the
+      // latest state, and control-plane transitions below remain immediate.
+      const persistLiveCursorIfDue = Effect.suspend(() => {
+        liveMessagesSinceCursor += 1
+        return liveMessagesSinceCursor >= CURSOR_FLUSH_MESSAGES || Date.now() - lastCursorPersistAt >= CURSOR_FLUSH_MS
+          ? persistCursor
+          : Effect.void
+      })
+      yield* Effect.addFinalizer(() => persistCursor)
 
       // Deliver one normalized message, moving its channel anchor forward. Used by both the live
       // pump and the backfill so anchoring and dedup are identical on either path.
       const deliver = (message: typeof MessageCreate.Type, meta: ChannelMeta | undefined) =>
         Effect.gen(function* () {
-          anchors.set(message.channel_id, message.id) // anchor on EVERY message (incl. our own) so we never refetch it
+          if (anchors.get(message.channel_id) !== message.id) {
+            anchors.set(message.channel_id, message.id) // anchor on EVERY message (incl. our own) so we never refetch it
+            cursorDirty = true
+          }
           if (!deliverOnce(message.id)) return
           yield* Queue.offer(queue, toInbound(message, selfID, meta))
         })
@@ -439,7 +473,10 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           const frame = decodeFrame(JSON.parse(item.data) as unknown)
           if (frame._tag === "None") continue
           const { op, d, t } = frame.value
-          if (typeof frame.value.s === "number") seq = frame.value.s
+          if (typeof frame.value.s === "number" && frame.value.s !== seq) {
+            seq = frame.value.s
+            cursorDirty = true
+          }
           switch (op) {
             case 10: {
               const hello = decodeHello(d)
@@ -473,6 +510,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               // Invalid session: drop the resume state but KEEP the catch-up anchors — the next
               // fresh identify uses them to backfill exactly the messages this gap would have lost.
               session = undefined
+              cursorDirty = true
               yield* persistCursor
               return yield* Effect.fail(new ConnectError({ reason: "Discord session invalidated — re-identifying" }))
             case 0: {
@@ -486,6 +524,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                       ? {}
                       : { resumeURL: ready.value.resume_gateway_url }),
                   }
+                  cursorDirty = true
                   yield* persistCursor
                 }
                 continue
@@ -495,7 +534,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                 if (message._tag === "Some") {
                   const meta = yield* describeChannel(message.value.channel_id, message.value.guild_id === undefined)
                   yield* deliver(message.value, meta)
-                  yield* persistCursor
+                  yield* persistLiveCursorIfDue
                 }
                 continue
               }

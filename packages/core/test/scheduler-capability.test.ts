@@ -5,7 +5,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 
 /**
- * Fault-injection for the SCHEDULER edge — `todo/v0.2.0-prep.md` §1: *"Boot reaches a usable shell
+ * Fault-injection for the SCHEDULER edge — `` §1: *"Boot reaches a usable shell
  * when KB, scheduler, telemetry, updates, sidecar, or one provider fails."*
  *
  * ⚠️ The capability-wrapped scheduler is the CALENDAR one (`schedule/scheduler.ts`), not

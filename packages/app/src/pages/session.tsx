@@ -345,7 +345,7 @@ export default function Page() {
   const executionQuery = createQuery(() => ({
     queryKey: ["session-execution", server.current?.http.url ?? "", params.id ?? ""],
     enabled: !!server.current && !!params.id,
-    queryFn: () => sessionExecutions(server.current!.http),
+    queryFn: () => sessionExecutions(server.current!.http, params.id),
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))

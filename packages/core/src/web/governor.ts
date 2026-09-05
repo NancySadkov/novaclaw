@@ -76,12 +76,38 @@ interface Deps {
 interface HostLane {
   readonly budget: Semaphore.Semaphore
   readonly inflight: Semaphore.Semaphore
+  /** Includes work waiting for the budget permit, so a queued lane cannot be evicted. */
+  active: number
+  lastUsed: number
+}
+
+/** A loop guard is process-local by design, but a long-lived instance still needs a hard memory cap. */
+export const MAX_SEEN_URLS = 10_000
+/** Host lanes are also process-local and must not grow with the lifetime of the instance. */
+export const MAX_HOST_LANES = 10_000
+
+/** Remove the least-recently-used idle lane when a bounded cache is full. */
+export function evictOldestIdle<T extends { active: number; lastUsed: number }>(
+  lanes: Map<string, T>,
+  capacity: number,
+): string | undefined {
+  if (lanes.size < capacity) return undefined
+  let oldest: string | undefined
+  let oldestUse = Number.POSITIVE_INFINITY
+  for (const [host, lane] of lanes) {
+    if (lane.active !== 0 || lane.lastUsed >= oldestUse) continue
+    oldest = host
+    oldestUse = lane.lastUsed
+  }
+  if (oldest !== undefined) lanes.delete(oldest)
+  return oldest
 }
 
 export const make = (deps: Deps): Interface => {
   const lanes = new Map<string, HostLane>()
   // sessionID+url -> times fetched. Process-local: a loop happens within a run.
   const seen = new Map<string, number>()
+  let laneClock = 0
 
   /**
    * ⚠️ **Synchronous on purpose.** The obvious version reads the map, `yield*`s a `Semaphore.make`, then
@@ -93,10 +119,17 @@ export const make = (deps: Deps): Interface => {
    */
   const laneFor = (host: string, permits: number): HostLane => {
     const existing = lanes.get(host)
-    if (existing) return existing
+    if (existing) {
+      existing.lastUsed = ++laneClock
+      return existing
+    }
+    // Evict only idle lanes; a lane with queued or in-flight work still owns synchronization state.
+    evictOldestIdle(lanes, MAX_HOST_LANES)
     const created: HostLane = {
       budget: Semaphore.makeUnsafe(1),
       inflight: Semaphore.makeUnsafe(Math.max(1, permits)),
+      active: 0,
+      lastUsed: ++laneClock,
     }
     lanes.set(host, created)
     return created
@@ -189,22 +222,31 @@ export const make = (deps: Deps): Interface => {
         return yield* Effect.fail(
           new WebBudgetError(input.loopReason?.(count) ?? WebFetchPace.loopReason(input.url, count)),
         )
+      if (!seen.has(key) && seen.size >= MAX_SEEN_URLS) {
+        const oldest = seen.keys().next().value
+        if (oldest !== undefined) seen.delete(oldest)
+      }
       seen.set(key, count + 1)
 
       const lane = laneFor(host, limits.perHostConcurrency ?? 1)
+      // Reserve the lane before the first suspension below. This protects a request waiting for its
+      // durable budget permit from an idle-lane eviction by another host's first read.
+      lane.active++
 
-      // 2. Pace + daily cap, against the durable per-host row — serialized per host (see `charge`).
-      const decision = yield* charge(lane, host, limits)
-      if (decision.kind === "deny") return yield* Effect.fail(new WebBudgetError(decision.reason))
+      return yield* Effect.gen(function* () {
+        // 2. Pace + daily cap, against the durable per-host row — serialized per host (see `charge`).
+        const decision = yield* charge(lane, host, limits)
+        if (decision.kind === "deny") return yield* Effect.fail(new WebBudgetError(decision.reason))
 
-      // The wait is OUTSIDE the budget permit: the slot is already claimed and written, so holding the
-      // lock through a multi-second sleep would only stall the next decider's bookkeeping without
-      // protecting anything.
-      const wait = WebFetchPace.jitter(decision.waitMs, deps.random)
-      if (wait > 0) yield* deps.sleep(wait)
+        // The wait is OUTSIDE the budget permit: the slot is already claimed and written, so holding the
+        // lock through a multi-second sleep would only stall the next decider's bookkeeping without
+        // protecting anything.
+        const wait = WebFetchPace.jitter(decision.waitMs, deps.random)
+        if (wait > 0) yield* deps.sleep(wait)
 
-      // 3. Hold the host's slot for the duration of the fetch itself.
-      return yield* lane.inflight.withPermits(1)(input.fetch)
+        // 3. Hold the host's slot for the duration of the fetch itself.
+        return yield* lane.inflight.withPermits(1)(input.fetch)
+      }).pipe(Effect.ensuring(Effect.sync(() => void lane.active--)))
     })
 
   return { guard }

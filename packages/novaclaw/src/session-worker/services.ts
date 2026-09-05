@@ -28,6 +28,22 @@ const unavailable = (operation: string) => new Error(`${operation} is host-only 
 // 2026-09-03 (the manifest's `ServerDefinitions` note), so the set is the manifest's alone.
 const hostEvents = new Set<string>(EventManifest.ServerDefinitions.map((definition) => definition.type))
 
+const LIVE_DELTA_TYPES = new Set([
+  "session.next.text.delta",
+  "session.next.reasoning.delta",
+])
+const LIVE_DELTA_FLUSH_MS = 16
+
+type QueuedLiveDelta = {
+  readonly definition: EventV2.Definition
+  readonly data: Record<string, unknown>
+  readonly metadata: Record<string, unknown> | undefined
+  readonly key: string
+}
+
+const liveDeltaKey = (type: string, data: Record<string, unknown>) =>
+  [type, data.sessionID, data.assistantMessageID, data.textID ?? data.reasoningID].join("\0")
+
 /** Effect service implementations consumed by the real runner layer. Read/list/reply surfaces stay
  * host-only; only capabilities the draining worker legitimately needs cross the boundary. */
 export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
@@ -42,6 +58,42 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly localModel: LocalModelManager.Interface
   readonly driveState: SessionDriveState.Interface
 } {
+  // Text/reasoning deltas are deliberately live-only. Progress checkpoints and Ended events are
+  // the storage-linear/replayable boundaries, so a dropped live fragment is corrected by the next
+  // checkpoint or the final value. Keep the queue here, at the worker seam, because this is where a
+  // single model delta otherwise becomes a host RPC. Consecutive fragments for one stream become
+  // one host publication; different streams stay ordered queue entries.
+  let liveDeltaQueue: QueuedLiveDelta[] = []
+  let liveDeltaTimer: ReturnType<typeof setTimeout> | undefined
+  let liveDeltaWrites = Promise.resolve()
+
+  const flushLiveDeltas = () => {
+    if (liveDeltaTimer !== undefined) {
+      clearTimeout(liveDeltaTimer)
+      liveDeltaTimer = undefined
+    }
+    if (liveDeltaQueue.length === 0) return liveDeltaWrites
+    const queued = liveDeltaQueue
+    liveDeltaQueue = []
+    liveDeltaWrites = liveDeltaWrites.then(async () => {
+      for (const item of queued) {
+        const encoded = Schema.encodeUnknownSync(item.definition.data)(item.data)
+        await capabilities.publishEvent(item.definition.type, encoded, item.metadata)
+      }
+    })
+    return liveDeltaWrites
+  }
+
+  const scheduleLiveDeltaFlush = () => {
+    if (liveDeltaTimer !== undefined) return
+    liveDeltaTimer = setTimeout(() => {
+      liveDeltaTimer = undefined
+      // Live-only delivery is best effort by design. A following progress/end event still reports
+      // the authoritative value and propagates any host publication failure through the normal path.
+      void flushLiveDeltas().catch(() => {})
+    }, LIVE_DELTA_FLUSH_MS)
+  }
+
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
       if (options?.commit) return Effect.die(unavailable("event commit callback"))
@@ -59,8 +111,37 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           ...(options?.metadata === undefined ? {} : { metadata: options.metadata }),
         })
       }
+
+      if (LIVE_DELTA_TYPES.has(definition.type)) {
+        const delta = data as Record<string, unknown>
+        const key = liveDeltaKey(definition.type, delta)
+        const metadata = options?.metadata
+        const previous = liveDeltaQueue.at(-1)
+        if (previous && previous.key === key && previous.metadata === metadata) {
+          previous.data.delta = `${previous.data.delta as string}${delta.delta as string}`
+        } else {
+          liveDeltaQueue.push({
+            definition,
+            data: { ...delta },
+            metadata,
+            key,
+          })
+        }
+        scheduleLiveDeltaFlush()
+        return Effect.succeed({
+          id: EventV2.ID.create(),
+          type: definition.type,
+          data,
+          ...(metadata === undefined ? {} : { metadata }),
+        })
+      }
+
+      // A checkpoint, terminal value, or any other host event is the ordering boundary for queued
+      // live fragments. Awaiting this chain keeps the host's event sequence identical to the
+      // worker's logical publication order.
       const encoded = Schema.encodeUnknownSync(definition.data)(data)
-      return Effect.promise(() => capabilities.publishEvent(definition.type, encoded, options?.metadata)).pipe(
+      return Effect.promise(() => flushLiveDeltas()).pipe(
+        Effect.andThen(Effect.promise(() => capabilities.publishEvent(definition.type, encoded, options?.metadata))),
         Effect.map((published) => ({
           id: published.eventID,
           type: definition.type,

@@ -20,7 +20,7 @@ export function NewSessionView() {
   // worktree PICKER died with them: this view carried `sandboxes` (a constant `[]`), an `options`
   // list built from it, an `isWorktree` that was a constant `false`, and `create`/filename arms that
   // no value could reach — `newSessionWorktree` in `pages/session.tsx` is seeded "main" and only ever
-  // set back to "main". All that survived the folding is the branch line below. (RF-18-15, 2026-09-01)
+  // set back to "main". All that survived the folding is the branch line below. (, 2026-09-01)
   const branchLabel = createMemo(() => {
     const branch = sync().data.vcs?.branch
     return branch

@@ -24,6 +24,16 @@ export class McpServerNotFoundError extends Schema.TaggedErrorClass<McpServerNot
   { httpApiStatus: 404 },
 ) {}
 
+export class FilePreviewTooLargeError extends Schema.TaggedErrorClass<FilePreviewTooLargeError>()(
+  "FilePreviewTooLargeError",
+  {
+    message: Schema.String,
+    bytes: Schema.Number,
+    limit: Schema.Number,
+  },
+  { httpApiStatus: 413 },
+) {}
+
 export class ApiNotFoundError extends Schema.ErrorClass<ApiNotFoundError>("NotFoundError")(
   {
     name: Schema.Literal("NotFoundError"),

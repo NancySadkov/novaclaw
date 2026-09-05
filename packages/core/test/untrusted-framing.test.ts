@@ -716,8 +716,8 @@ const NO_EXTERNAL = [
   // Emits a screenshot PATH and this process's own `xdotool` output -- never third-party bytes.
   // ⚠️ The moment it returns the IMAGE inline it becomes FRAMED, and the reason is the whole point
   // of the computer-use program: screen pixels are attacker-controlled text rendered as an image,
-  // and a page can address the model through them. That seam is filed in todo/computer-use.md (P4)
-  // and todo/jail.md's threat model; moving this entry is part of paying it, not a formality.
+  // and a page can address the model through them. That seam is filed in  (P4)
+  // and 's threat model; moving this entry is part of paying it, not a formality.
   "computer.ts",
   "configure.ts",
   "define-tool.ts",

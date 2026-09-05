@@ -3,7 +3,7 @@ import { isTruncatedToolArgs, repairToolJson, stripSpecialTokens } from "./share
 import { recoverToolCallsFromText } from "./utils/tool-recovery"
 import { truncatedArgsInput, truncatedArgsMessage, truncatedArgsResult } from "./utils/truncated-args"
 
-describe("stripSpecialTokens (RF-23-8 — one definition for the decode path)", () => {
+describe("stripSpecialTokens ( — one definition for the decode path)", () => {
   test("erases the token shapes local models actually leak", () => {
     expect(stripSpecialTokens("<|channel|>analysis<|message|>")).toBe("analysis")
     expect(stripSpecialTokens("<|im_start|>assistant<|im_end|>")).toBe("assistant")

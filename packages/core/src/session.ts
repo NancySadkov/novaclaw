@@ -1644,7 +1644,7 @@ export const layer = Layer.effect(
         yield* execution.wake(input.sessionID)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
-        // 🔴 **This is the SAME join the `wait` tool uses now — it was a second one** (RF-03-1).
+        // 🔴 **This is the SAME join the `wait` tool uses now — it was a second one** ().
         //
         // It used to be a hand-rolled `for (let i = 0; i < 60)` loop re-reading the session row every
         // 2000 ms, under a comment claiming *"same semantics as the wait TOOL"*. It had neither the

@@ -562,9 +562,9 @@ export function CalendarPage() {
                     <span class="min-w-0 flex-1 truncate text-sm">{titleFor(f.scheduleId)}</span>
                     <span class="text-xs text-v2-text-text-faint">{new Date(f.firedAt).toLocaleString()}</span>
                     <span
-                      class={`text-xs ${f.status === "error" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}
+                      class={`text-xs ${f.status === "error" || f.outcome === "failed" || f.outcome === "interrupted" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}
                     >
-                      {fireStatusLabel(f.status)}
+                      {fireStatusLabel(f.status, f.outcome)}
                     </span>
                   </div>
                 )}

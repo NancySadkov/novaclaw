@@ -7,17 +7,23 @@ export * as CalendarStore from "./store"
 // create and advance, and on an update only when that update changes WHEN the schedule fires; it is null
 // while a schedule is disabled.
 
-import { and, desc, eq, lte } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, lte, lt } from "drizzle-orm"
 import { Effect } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
 import { PermissionMode } from "@novaclaw/schema/session-message"
 import type { Database } from "../database/database"
 import { nextFire, sameRecurrence, type EpochMillis, type Recurrence } from "./recurrence"
 import { CalendarFireTable, CalendarScheduleTable } from "./calendar.sql"
+import type { FireOutcome } from "./calendar.sql"
+import { LogSettings } from "../observability/log-settings"
+import { SessionExecutionTable, SessionTable } from "../session/sql"
 
 type Db = Database.Interface["db"]
 
 export type FireStatus = "spawned" | "skipped" | "error"
+
+/** Keep one scheduler pass bounded even when an old instance has a large backlog. */
+export const FIRE_PRUNE_BATCH = 500
 
 /**
  * 🔴 THE LEDGER MAY NEVER CLAIM MORE THAN HAPPENED.
@@ -248,7 +254,14 @@ export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis)
 
 export const remove = (db: Db, id: string): Effect.Effect<void> =>
   Effect.gen(function* () {
-    yield* db.delete(CalendarScheduleTable).where(eq(CalendarScheduleTable.id, id)).run().pipe(Effect.orDie)
+    // Keep the explicit delete in the store boundary as well as the database cascade: this path remains
+    // correct for a database opened before the relationship migration, and is safe on fresh databases.
+    yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        yield* tx.delete(CalendarFireTable).where(eq(CalendarFireTable.schedule_id, id)).run().pipe(Effect.orDie)
+        yield* tx.delete(CalendarScheduleTable).where(eq(CalendarScheduleTable.id, id)).run().pipe(Effect.orDie)
+      }),
+    ).pipe(Effect.orDie)
   })
 
 /** Enabled schedules whose next fire is now due (next_fire_at != null is implied by the `<=` filter). */
@@ -294,6 +307,7 @@ export const recordFire = (db: Db, input: FireInput): Effect.Effect<boolean> =>
         fired_at: input.firedAt,
         session_id: input.sessionId ?? null,
         status: input.status,
+        outcome: input.status === "error" ? "failed" : "pending",
       })
       .onConflictDoNothing()
       .run()
@@ -393,7 +407,11 @@ export const setFireOutcome = (
   Effect.gen(function* () {
     yield* db
       .update(CalendarFireTable)
-      .set({ session_id: input.sessionId ?? null, status: input.status })
+      .set({
+        session_id: input.sessionId ?? null,
+        status: input.status,
+        outcome: input.status === "error" ? "failed" : "pending",
+      })
       .where(
         and(
           eq(CalendarFireTable.schedule_id, input.scheduleId),
@@ -403,6 +421,98 @@ export const setFireOutcome = (
       )
       .run()
       .pipe(Effect.orDie)
+  })
+
+/**
+ * Project the terminal state of scheduled sessions into the fire ledger.
+ *
+ * `calendar_fire.status = spawned` only means that durable session admission succeeded. The
+ * session execution row is the authoritative lifecycle for what happened after that point; copying
+ * its terminal state here makes Calendar history answerable without joining live session tables at
+ * read time. The `outcome = pending` predicate is the fence: a later manual prompt cannot rewrite a
+ * scheduled occurrence that has already been accounted for.
+ */
+export const reconcileFireOutcomes = (db: Db): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const pending = yield* db
+      .select({
+        id: CalendarFireTable.id,
+        sessionResult: SessionTable.result,
+        executionState: SessionExecutionTable.state,
+      })
+      .from(CalendarFireTable)
+      .leftJoin(SessionTable, eq(CalendarFireTable.session_id, SessionTable.id))
+      .leftJoin(SessionExecutionTable, eq(CalendarFireTable.session_id, SessionExecutionTable.session_id))
+      .where(and(eq(CalendarFireTable.outcome, "pending"), isNotNull(CalendarFireTable.session_id)))
+      .all()
+      .pipe(Effect.orDie)
+
+    let changed = 0
+    for (const row of pending) {
+      const outcome: FireOutcome | undefined =
+        row.sessionResult !== null && row.sessionResult !== undefined
+          ? "succeeded"
+          : row.executionState === "settled"
+            ? "succeeded"
+            : row.executionState === "failed"
+              ? "failed"
+              : row.executionState === "interrupted"
+                ? "interrupted"
+                : undefined
+      if (outcome === undefined) continue
+      const updated = yield* db
+        .update(CalendarFireTable)
+        .set({ outcome })
+        .where(and(eq(CalendarFireTable.id, row.id), eq(CalendarFireTable.outcome, "pending")))
+        .returning({ id: CalendarFireTable.id })
+        .all()
+        .pipe(Effect.orDie)
+      changed += updated.length
+    }
+    return changed
+  })
+
+/**
+ * Delete historical fire rows without touching the occurrence currently owned by a schedule.
+ *
+ * The `skipped` status is also the in-flight claim marker. A time-only DELETE would therefore make
+ * an old-but-still-due claim look absent and could launch it a second time. The schedule's
+ * `next_fire_at` is the authoritative exception: rows older than that instant are historical, while
+ * the equal row is the live claim and stays until the scheduler settles or advances it. Orphan rows
+ * are safe to remove because no schedule can ask the idempotency ledger about them again.
+ */
+export const pruneFires = (db: Db, now: EpochMillis, retentionMs = LogSettings.maxAgeMs()): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const cutoff = now - retentionMs
+    const stale = yield* db
+      .select({
+        id: CalendarFireTable.id,
+        scheduleId: CalendarFireTable.schedule_id,
+        occurrenceMillis: CalendarFireTable.occurrence_millis,
+      })
+      .from(CalendarFireTable)
+      .where(lt(CalendarFireTable.fired_at, cutoff))
+      .orderBy(asc(CalendarFireTable.fired_at))
+      .limit(FIRE_PRUNE_BATCH)
+      .all()
+      .pipe(Effect.orDie)
+    if (stale.length === 0) return 0
+
+    const schedules = yield* db
+      .select({ id: CalendarScheduleTable.id, nextFireAt: CalendarScheduleTable.next_fire_at })
+      .from(CalendarScheduleTable)
+      .all()
+      .pipe(Effect.orDie)
+    const nextFireBySchedule = new Map(schedules.map((schedule) => [schedule.id, schedule.nextFireAt]))
+    const removable = stale
+      .filter((fire) => {
+        const next = nextFireBySchedule.get(fire.scheduleId)
+        return next === undefined || next === null || fire.occurrenceMillis < next
+      })
+      .map((fire) => fire.id)
+    if (removable.length === 0) return 0
+    yield* db.delete(CalendarFireTable).where(inArray(CalendarFireTable.id, removable)).run().pipe(Effect.orDie)
+    return removable.length
   })
 
 /** After firing, stamp last_fired_at and advance next_fire_at to the next occurrence strictly after `now`. */
@@ -432,6 +542,7 @@ export interface Fire {
   readonly firedAt: number
   readonly sessionId: string | null
   readonly status: FireStatus
+  readonly outcome: FireOutcome
 }
 
 const toFire = (row: typeof CalendarFireTable.$inferSelect): Fire => ({
@@ -441,6 +552,7 @@ const toFire = (row: typeof CalendarFireTable.$inferSelect): Fire => ({
   firedAt: row.fired_at,
   sessionId: row.session_id,
   status: row.status,
+  outcome: row.outcome,
 })
 
 /** Recent fires across all schedules, newest first — the "recent runs" history for the Calendar UI. */

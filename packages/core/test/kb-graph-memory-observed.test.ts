@@ -10,7 +10,7 @@ import { MemoryObserved } from "@novaclaw/core/kb-graph/memory-observed"
 import { testEffect } from "./lib/effect"
 
 /**
- * `todo/rag.md` P2 — **the graph watches STORE events, not agent call sites.**
+ * `` P2 — **the graph watches STORE events, not agent call sites.**
  *
  * The claim under test is not "these events exist"; it is that they come from the STORE, so every
  * producer behaves identically. The way to test that is to drive the wrapper through the ordinary

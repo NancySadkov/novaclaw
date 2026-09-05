@@ -38,6 +38,10 @@ const memorySettings = (values: Record<string, unknown>) =>
         Effect.sync(() => {
           values[key] = value
         }),
+      update: (key, change) =>
+        Effect.sync(() => {
+          values[key] = change(values[key])
+        }),
       remove: (key) =>
         Effect.sync(() => {
           delete values[key]

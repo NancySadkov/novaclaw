@@ -469,9 +469,9 @@ export interface Result {
 /**
  * Walk segments newest-first, keeping the newest `limit` matches.
  *
- * ⚠️ It stops as soon as it HAS `limit` matches *and* has finished the segment it found them in —
- * never mid-segment — so the returned window is always a contiguous suffix of the log rather than
- * an arbitrary sample of one.
+ * ⚠️ It stops as soon as it HAS `limit` matches, including mid-segment. Reading newest-first means
+ * the returned window is still the newest matching suffix, while old lines in that segment do not
+ * pay parse cost after the answer is complete.
  */
 export function scan(query: Query): Result {
   const budget = query.scanBytes ?? SCAN_BYTES
@@ -495,7 +495,8 @@ export function scan(query: Query): Result {
       scanned += 1
       const line = parse(raw)
       if (!matches(line, query)) continue
-      if (collected.length < query.limit) collected.push(line)
+      collected.push(line)
+      if (collected.length >= query.limit) break
     }
     if (collected.length >= query.limit) break
   }

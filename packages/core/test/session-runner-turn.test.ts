@@ -9,7 +9,7 @@ import { HARNESS_SESSION, completeTurn, conversation, drive, makeRunnerHarness }
  *
  * These are `session-runner.test.ts` claims rewritten against the current runner on a harness that
  * runs on **win32** (S3; see `session-runner-claims.test.ts` for the ledger and
- * todo/v0.2.0-prep.md for the ruling). The claim TITLES are the spec and are carried verbatim so the
+ *  for the ruling). The claim TITLES are the spec and are carried verbatim so the
  * ledger can match them. **Their old expectations are not automatically carried** — the old fixture
  * counted post-drain memory extraction as an interactive request, so an assertion there may encode
  * fixture staleness rather than runner behaviour. Each one below was re-derived.

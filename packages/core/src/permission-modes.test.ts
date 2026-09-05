@@ -209,7 +209,7 @@ describe("MODE_RULES overlays (1K)", () => {
   // ⚠️ The action here is deliberately ARBITRARY — the rule under test is that a `yolo` overlay widens
   // only the FILE actions and leaves everything else where it found it, so any non-file action with an
   // explicit deny demonstrates it. It read `question` until 2026-09-01, which was misleading twice
-  // over: the deny came from this line, not from `agentDefaults`, and RF-12-14 then removed the
+  // over: the deny came from this line, not from `agentDefaults`, and  then removed the
   // `question` vocabulary entirely (no tool asserts it), so the name promised a gating that no longer
   // exists anywhere to check.
   test("a yolo overlay widens file actions only, and leaves a non-file deny standing", () => {

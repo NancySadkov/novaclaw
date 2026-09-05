@@ -585,6 +585,15 @@ describe("mergeNativeMessages", () => {
     if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("Hello (live)")
   })
 
+  test("a completed current assistant wins over an incomplete fetched snapshot", () => {
+    const current = [assistantMsg("msg_a", 1, { completed: 2, text: "final" })]
+    const fetched = [assistantMsg("msg_a", 1, { text: "partial" })]
+    const merged = mergeNativeMessages(current, fetched)
+    const a = merged[0]!
+    if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("final")
+    if (a.type === "assistant") expect(a.time.completed).toBe(2)
+  })
+
   test("current-only in-flight tail is preserved when the fetch page omits it", () => {
     const current = [userMsg("msg_1", 1), assistantMsg("msg_2", 2)] // assistant streaming, not yet persisted
     const fetched = [userMsg("msg_1", 1)] // snapshot predates the assistant

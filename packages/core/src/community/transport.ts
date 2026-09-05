@@ -150,7 +150,7 @@ export const answerTooLarge = (
 
 /**
  * Dial one peer, decode its answer, and answer `undefined` for every way that can fail. THE one
- * implementation — `sync.ts` and `search.ts` each had their own until 2026-09-01 (RF-09-5).
+ * implementation — `sync.ts` and `search.ts` each had their own until 2026-09-01 ().
  *
  * 🔴 **The constant living here was not enough, and that is the lesson this module keeps recording.**
  * `MAX_PEER_RESPONSE_BYTES` above was moved here precisely so two dialling files could not drift on

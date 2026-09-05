@@ -57,7 +57,23 @@ export const MAX_ATTEMPTS = 8
 // The workspace render is the model's working set — a session cwd can be a whole user project, so the
 // listing is bounded (most-recently-modified first; the tail entry names how many files were omitted).
 export const FILE_LIST_CAP = 24
+/** Do not synchronously pull a multi-megabyte source/blob into every Strict step's prompt. */
+export const MAX_FILE_CONTENT_BYTES = 512 * 1024
 const BINARY_EXTS = new Set([".exe", ".o", ".obj", ".dll", ".so", ".dylib", ".bin", ".a", ".lib"])
+
+type WorkspaceContentCacheEntry = Readonly<{ mtimeMs: number; ctimeMs: number; size: number; content: string }>
+const WORKSPACE_CONTENT_CACHE_LIMIT = 512
+const workspaceContentCache = new Map<string, WorkspaceContentCacheEntry>()
+
+const cacheWorkspaceContent = (full: string, entry: WorkspaceContentCacheEntry): void => {
+  workspaceContentCache.delete(full)
+  workspaceContentCache.set(full, entry)
+  while (workspaceContentCache.size > WORKSPACE_CONTENT_CACHE_LIMIT) {
+    const oldest = workspaceContentCache.keys().next().value
+    if (oldest === undefined) break
+    workspaceContentCache.delete(oldest)
+  }
+}
 
 // ── P14.1 routing (jh MVP): TASK vs CHAT ────────────────────────────────────────────────────────
 // With Strict enabled, EVERY message would otherwise launch a full engine run — including "thanks"
@@ -461,13 +477,15 @@ export function listFilesFor(cwd: string): ReadonlyArray<{ readonly name: string
       .map((e) => {
         const full = path.join(cwd, e.name)
         let mtimeMs = 0
+        let ctimeMs = 0
         let size = 0
         try {
           const st = fs.statSync(full)
           mtimeMs = Math.round(st.mtimeMs)
+          ctimeMs = st.ctimeMs
           size = st.size
         } catch {}
-        return { name: e.name, full, mtimeMs, size }
+        return { name: e.name, full, mtimeMs, ctimeMs, size }
       })
       .sort((a, b) => b.mtimeMs - a.mtimeMs)
     const shown = entries.slice(0, FILE_LIST_CAP)
@@ -475,8 +493,18 @@ export function listFilesFor(cwd: string): ReadonlyArray<{ readonly name: string
       if (BINARY_EXTS.has(path.extname(e.name).toLowerCase()))
         // R1: the placeholder must CHANGE when the binary is rebuilt (staleness hashes name+content).
         return { name: e.name, content: `<compiled binary — ${e.size} bytes, mtime ${e.mtimeMs} (build succeeded)>` }
+      if (e.size > MAX_FILE_CONTENT_BYTES)
+        return {
+          name: e.name,
+          content: `<file omitted — ${e.size} bytes exceeds the ${MAX_FILE_CONTENT_BYTES} byte workspace preview cap; name it to read it>`,
+        }
+      const cached = workspaceContentCache.get(e.full)
+      if (cached?.mtimeMs === e.mtimeMs && cached.ctimeMs === e.ctimeMs && cached.size === e.size)
+        return { name: e.name, content: cached.content }
       try {
-        return { name: e.name, content: fs.readFileSync(e.full, "utf8") }
+        const content = fs.readFileSync(e.full, "utf8")
+        cacheWorkspaceContent(e.full, { mtimeMs: e.mtimeMs, ctimeMs: e.ctimeMs, size: e.size, content })
+        return { name: e.name, content }
       } catch {
         return { name: e.name, content: "<unreadable>" }
       }
@@ -494,34 +522,34 @@ export function listFilesFor(cwd: string): ReadonlyArray<{ readonly name: string
 }
 
 // ── best-of-N racing helpers (improve11 P5) ────────────────────────────────────────────────────
-const walkFiles = (root: string): Array<{ rel: string; full: string; size: number }> => {
+const walkFiles = async (root: string): Promise<Array<{ rel: string; full: string; size: number }>> => {
   const out: Array<{ rel: string; full: string; size: number }> = []
-  const walk = (dir: string, rel: string) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    for (const e of await fs.promises.readdir(dir, { withFileTypes: true })) {
       if (e.name === ".git") continue
       const full = path.join(dir, e.name)
       const r = rel ? `${rel}/${e.name}` : e.name
-      if (e.isDirectory()) walk(full, r)
+      if (e.isDirectory()) await walk(full, r)
       else if (e.isFile()) {
         let size = 0
         try {
-          size = fs.statSync(full).size
+          size = (await fs.promises.stat(full)).size
         } catch {}
         out.push({ rel: r, full, size })
       }
     }
   }
-  walk(root, "")
+  await walk(root, "")
   return out
 }
 const sha1 = (buf: Buffer): string => crypto.createHash("sha1").update(buf).digest("hex")
 
 /** Content manifest of a workspace (rel path → sha1), .git excluded — the apply-back baseline. */
-export function manifestFor(root: string): Map<string, string> {
+export async function manifestFor(root: string): Promise<Map<string, string>> {
   const m = new Map<string, string>()
-  for (const f of walkFiles(root)) {
+  for (const f of await walkFiles(root)) {
     try {
-      m.set(f.rel, sha1(fs.readFileSync(f.full)))
+      m.set(f.rel, sha1(await fs.promises.readFile(f.full)))
     } catch {}
   }
   return m
@@ -539,11 +567,11 @@ export const FORK_RETENTION_MS = 3 * 24 * 60 * 60 * 1000
  * inspection" only means anything for a few days; after that it is litter in the user's temp dir.
  * Best-effort and never throws — a sweep failure must not affect the run.
  */
-export function sweepStaleForks(now: number = Date.now(), retentionMs: number = FORK_RETENTION_MS): number {
+export async function sweepStaleForks(now: number = Date.now(), retentionMs: number = FORK_RETENTION_MS): Promise<number> {
   let removed = 0
   let entries: string[]
   try {
-    entries = fs.readdirSync(os.tmpdir())
+    entries = await fs.promises.readdir(os.tmpdir())
   } catch {
     return 0
   }
@@ -551,9 +579,9 @@ export function sweepStaleForks(now: number = Date.now(), retentionMs: number = 
     if (!name.startsWith("jh-attempt")) continue
     const full = path.join(os.tmpdir(), name)
     try {
-      const st = fs.statSync(full)
+      const st = await fs.promises.stat(full)
       if (!st.isDirectory() || now - st.mtimeMs < retentionMs) continue
-      fs.rmSync(full, { recursive: true, force: true })
+      await fs.promises.rm(full, { recursive: true, force: true })
       removed++
     } catch {}
   }
@@ -562,9 +590,12 @@ export function sweepStaleForks(now: number = Date.now(), retentionMs: number = 
 
 /** Fork the workspace into an isolated temp copy (bounded — L2: racers never touch the live folder).
  *  Returns the fork path, or the reason racing cannot fork (the caller degrades to one attempt). */
-export function forkWorkspace(src: string, attempt: number): { readonly dir: string } | { readonly refused: string } {
-  if (attempt === 1) sweepStaleForks()
-  const files = walkFiles(src)
+export async function forkWorkspace(
+  src: string,
+  attempt: number,
+): Promise<{ readonly dir: string } | { readonly refused: string }> {
+  if (attempt === 1) await sweepStaleForks()
+  const files = await walkFiles(src)
   const bytes = files.reduce((a, f) => a + f.size, 0)
   if (files.length > MAX_FORK_FILES)
     return { refused: `the folder has ${files.length} files (racing forks are capped at ${MAX_FORK_FILES})` }
@@ -572,27 +603,31 @@ export function forkWorkspace(src: string, attempt: number): { readonly dir: str
     return {
       refused: `the folder is ${(bytes / 1e6).toFixed(0)} MB (racing forks are capped at ${MAX_FORK_BYTES / 1e6} MB)`,
     }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `jh-attempt${attempt}-`))
-  fs.cpSync(src, dir, { recursive: true, filter: (p) => path.basename(p) !== ".git" })
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `jh-attempt${attempt}-`))
+  await fs.promises.cp(src, dir, { recursive: true, filter: (p) => path.basename(p) !== ".git" })
   return { dir }
 }
 
 /** Apply the WINNER's changes back onto the live folder: files that differ from the fork-time
  *  manifest (or are new) are copied over; deletions are NOT propagated (v1 — safer for user data).
  *  Returns the applied rel paths. */
-export function applyBack(winnerDir: string, dst: string, baseline: ReadonlyMap<string, string>): string[] {
+export async function applyBack(
+  winnerDir: string,
+  dst: string,
+  baseline: ReadonlyMap<string, string>,
+): Promise<string[]> {
   const applied: string[] = []
-  for (const f of walkFiles(winnerDir)) {
+  for (const f of await walkFiles(winnerDir)) {
     let content: Buffer
     try {
-      content = fs.readFileSync(f.full)
+      content = await fs.promises.readFile(f.full)
     } catch {
       continue
     }
     if (baseline.get(f.rel) === sha1(content)) continue // unchanged since the fork
     const target = path.join(dst, f.rel)
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.writeFileSync(target, content)
+    await fs.promises.mkdir(path.dirname(target), { recursive: true })
+    await fs.promises.writeFile(target, content)
     applied.push(f.rel)
   }
   return applied

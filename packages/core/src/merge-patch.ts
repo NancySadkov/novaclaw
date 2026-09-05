@@ -93,7 +93,7 @@ export function removeAt(base: unknown, path: Path): { readonly value: unknown }
 /** A mergeable/prunable object: not null, not an array. Schema.Class instances qualify — their
  *  fields are own enumerable properties, so a spread reproduces them.
  *
- *  🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01), even though the expression
+ *  🔴 **Deliberately NOT `@novaclaw/schema/record` (, 2026-09-01), even though the expression
  *  is identical today.** This is a CONTRACT, not a copy: the sentence above is a promise to the
  *  callers that spread these values, and it is allowed to diverge from the shared predicate — which
  *  is free to tighten — without anything noticing. Importing would silently couple that promise to

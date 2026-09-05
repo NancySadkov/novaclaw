@@ -5,7 +5,7 @@ import { Effect, Fiber } from "effect"
  *
  * S2's admission test is that the rewritten session-runner suite runs on win32 in the default tier —
  * which means no case in it may hang. The old suite hangs, and the reason is measured (2026-08-05, see
- * todo/v0.2.0-prep.md → S2):
+ *  → S2):
  *
  *  1. ⚠️ **A bound expressed in EFFECT time never fires under `TestContext`.** The virtual clock does
  *     not advance on its own, so `Effect.timeout` inside the test waits forever — Effect itself warns

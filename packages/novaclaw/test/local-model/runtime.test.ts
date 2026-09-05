@@ -75,6 +75,15 @@ describe("managed local-model lifecycle", () => {
     expect(source).toContain("It will load when you send it a prompt")
   })
 
+  test("Stop interrupts acquisition and leaves verified partials resumable", () => {
+    const source = fs.readFileSync(new URL("../../src/local-model/runtime.ts", import.meta.url), "utf8")
+    expect(source).toContain("const currentJob = installActive ? job : undefined")
+    expect(source).toContain("Fiber.interrupt(currentJob)")
+    expect(source).toContain("preservePartialOnInterrupt: true")
+    expect(source).toContain('message: "The local model installation was stopped."')
+    expect(source).toContain("Verified partial downloads are kept so you can resume later.")
+  })
+
   test("a constructor defect degrades, stays cached, and retries without waking for a remote model", async () => {
     let refuse = true
     let builds = 0

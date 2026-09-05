@@ -58,7 +58,7 @@ describe("SettingsConfigStore", () => {
   )
 
   /**
-   * 🔴 The unwind of app-managed encryption (`todo/code-review.md`, NC-REL-030).
+   * 🔴 The unwind of app-managed encryption (``, NC-REL-030).
    *
    * This test asserted the opposite until 2026-08-28: that secrets were stored encrypted. Decision
    * §5 of `decisions-v0.2.0.md` — recorded six days AFTER the cipher landed with a one-line commit
@@ -279,6 +279,10 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
         set: (key, value) =>
           Effect.sync(() => {
             values[key] = value
+          }),
+        update: (key, change) =>
+          Effect.sync(() => {
+            values[key] = change(values[key])
           }),
         remove: (key) =>
           Effect.sync(() => {

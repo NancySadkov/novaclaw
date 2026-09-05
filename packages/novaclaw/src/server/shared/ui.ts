@@ -110,12 +110,18 @@ function cacheControlFor(file: string, mime: string) {
   return "public, max-age=3600, must-revalidate"
 }
 
-function embeddedUIResponse(file: string, body: Uint8Array, ifNoneMatch?: string) {
+interface EmbeddedAsset {
+  readonly body: Uint8Array
+  readonly etag: string
+}
+
+// The generated asset map is immutable for the life of the process. Cache by that map's identity,
+// so a second request does not re-read or re-hash the same embedded bytes from disk.
+const embeddedAssets = new WeakMap<Record<string, string>, Map<string, EmbeddedAsset>>()
+
+function embeddedUIResponse(file: string, asset: EmbeddedAsset, ifNoneMatch?: string) {
   const mime = FSUtil.mimeType(file)
-  // A STRONG validator over the bytes we already hold in memory. Hashing the body rather than stat'ing
-  // the file is deliberate: the embedded UI is baked into the binary, so mtime is a property of the
-  // install rather than of the content, and two installs of the same build must agree.
-  const etag = `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`
+  const { body, etag } = asset
   if (ifNoneMatch && ifNoneMatch.split(",").some((candidate) => candidate.trim() === etag)) {
     return HttpServerResponse.empty({
       status: 304,
@@ -138,8 +144,25 @@ export function serveEmbeddedUIEffect(
   const file = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
   if (!file) return Effect.succeed(notFound())
 
+  let assets = embeddedAssets.get(embeddedWebUI)
+  if (!assets) {
+    assets = new Map()
+    embeddedAssets.set(embeddedWebUI, assets)
+  }
+  const cached = assets.get(file)
+  if (cached) return Effect.succeed(embeddedUIResponse(file, cached, ifNoneMatch))
+
   return fs.readFile(file).pipe(
-    Effect.map((body) => embeddedUIResponse(file, body, ifNoneMatch)),
+    Effect.map((body) => {
+      // A STRONG validator over the bytes we already hold in memory. The embedded UI is baked into
+      // the binary, so mtime is a property of the install rather than of the content.
+      const asset = {
+        body,
+        etag: `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`,
+      }
+      assets!.set(file, asset)
+      return embeddedUIResponse(file, asset, ifNoneMatch)
+    }),
     Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(notFound())),
   )
 }

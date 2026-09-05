@@ -3,7 +3,7 @@ import { ProjectExclusion } from "@novaclaw/core/project-exclusion"
 import { ProjectGitignore } from "@novaclaw/core/project-gitignore"
 
 /**
- * `todo/projects.md` — **`.gitignore` import**, the suggestion half.
+ * `` — **`.gitignore` import**, the suggestion half.
  *
  * 🔴 **The failure this file is written to catch is a proposal the matcher does not honour.** The
  * `exclude` section spent its whole first life as a promise nothing enforced; an importer that

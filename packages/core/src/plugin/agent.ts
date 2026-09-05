@@ -183,7 +183,7 @@ export const floor = (input: {
   // and took the tool off the horizon.
   //
   // ⚠️ A `deny` floor and FOUR re-allows for this action survived that removal until 2026-09-01
-  // (RF-12-14): six rules over a vocabulary nothing asserts, with this comment reading as a standing
+  // (): six rules over a vocabulary nothing asserts, with this comment reading as a standing
   // prohibition while the file below reversed it four times. Inert either way — no tool means no
   // `evaluate("question", …)` ever happens — so they were removed rather than reconciled. **If a
   // question tool is ever proposed, principle 14 is the answer, and it is a structural rule, not a

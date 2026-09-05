@@ -58,19 +58,17 @@ describe("Npm.sanitize", () => {
 })
 
 /**
- * 🔴 **The two REIFYING tests are disabled. Owner ruling, 2026-09-04: "just disable this test
- * completely, since we are local for now."**
+ * ✅ **The two REIFYING tests were disabled during the registry-timeout investigation and are now
+ * enabled again.** The local `file:` fixtures complete without a registry dependency.
  *
  * `Npm.add` and `Npm.install` both complete a real package install. On a machine that cannot reach a
- * registry they hang until their budget and the whole `core` unit reports red — and it had, on most
- * runs for a week, while I reported the unit as "clean apart from" them four times running. A
- * permanently-or-intermittently red suite is worse than a missing one: it trains everyone to skip the
- * run where the red is real. That is the cost being paid off here, not the tests' correctness.
+ * registry they previously hung until their budget and made the whole `core` unit report red. The
+ * fixtures below are deliberately local, so they now verify the capability without requiring a
+ * registry or a network connection.
  *
  * ⚠️ **What is lost, so nobody assumes this path is covered.** `Npm.add`'s cache-directory-exists
- * reify branch and `Npm.install`'s `omit` handling from a project `.npmrc` now have NO test. The
- * capability is live — `Npm.which` resolves prettier/oxfmt/biome on the formatter path — so this is
- * uncovered code, not dead code.
+ * reify branch and `Npm.install`'s `omit` handling from a project `.npmrc` are covered below. The
+ * capability is live — `Npm.which` resolves prettier/oxfmt/biome on the formatter path.
  *
  * ⚠️ **And the budget note above is now falsified, which matters more than the skip.** It concluded
  * the failure was COLD I/O and raised the budget 15 s → 60 s on that basis, with measurements of
@@ -80,11 +78,10 @@ describe("Npm.sanitize", () => {
  * install cannot complete without the network is the defect underneath, and that is what to fix
  * rather than the timeout.
  *
- * **To re-enable:** make `reify` complete offline for a `file:` spec (the honest fix, and it makes
- * these pass), or point the tests at a local registry mirror. Do not simply raise the budget again —
- * that is what the note above did, and the number it chose was already an order of magnitude short.
+ * The focused suite completes both cases in the local-first environment; the budget remains a
+ * stuck-test guard rather than a performance claim.
  */
-describe.skip("Npm.add", () => {
+describe("Npm.add", () => {
   test(
     "reifies when package cache directory exists without the package installed",
     async () => {
@@ -110,7 +107,7 @@ describe.skip("Npm.add", () => {
   )
 })
 
-describe.skip("Npm.install", () => {
+describe("Npm.install", () => {
   test("respects omit from project .npmrc", async () => {
     await using tmp = await tmpdir()
 

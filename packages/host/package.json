@@ -14,5 +14,8 @@
   "scripts": {
     "build": "bun run build.ts",
     "typecheck": "bun ../../script/tsgo.ts --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:"
   }
 }

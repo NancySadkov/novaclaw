@@ -174,6 +174,10 @@ export const Plugin = define({
           Effect.ignoreCause,
         )
       }
-    }).pipe(Effect.forkScoped({ startImmediately: true }))
+    // External discovery is part of initial boot. Returning only after glob/import/setup settles is
+    // what gives Plugin.ready its promised meaning: the first turn cannot snapshot a catalogue before
+    // an installed plugin has had a chance to register its tools or agents. Each file still has its
+    // own fault boundary above, so one broken plugin is reported and does not block the rest.
+    })
   }),
 })

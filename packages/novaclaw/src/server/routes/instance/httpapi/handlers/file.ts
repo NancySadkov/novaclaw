@@ -14,8 +14,9 @@ import ignore from "ignore"
 import path from "path"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { InvalidRequestError } from "../errors"
+import { FilePreviewTooLargeError, InvalidRequestError } from "../errors"
 import { Log } from "@novaclaw/schema/log"
+import { MAX_FILE_PREVIEW_BYTES } from "../groups/file"
 
 export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handlers) =>
   Effect.gen(function* () {
@@ -105,6 +106,14 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       const file = path.resolve(directory, ctx.query.path)
       if (!FSUtil.contains(directory, file)) return yield* Effect.die(new Error("Path escapes the location"))
       if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "missing" as const, content: "" }
+      const stat = yield* FSUtil.Service.use((fs) => fs.stat(file)).pipe(Effect.orDie)
+      if (stat.type === "File" && Number(stat.size) > MAX_FILE_PREVIEW_BYTES) {
+        return yield* new FilePreviewTooLargeError({
+          bytes: Number(stat.size),
+          limit: MAX_FILE_PREVIEW_BYTES,
+          message: `File is too large to preview (${Number(stat.size)} bytes; limit ${MAX_FILE_PREVIEW_BYTES} bytes)`,
+        })
+      }
       return yield* filesystem(
         FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),
       ).pipe(

@@ -5,6 +5,7 @@ import {
   novaclawSubUnits,
   PACKAGES,
   PROMOTED_NOVACLAW_SUBDIRS,
+  PROMOTED_NOVACLAW_TEST_FILES,
   scanRoots,
   SOLO_NOVACLAW_TEST_FILES,
   type Pkg,
@@ -100,6 +101,20 @@ describe("every test file in the tree belongs to a run unit", () => {
         "the unit's args (or add a unit) rather than moving the test.",
     ).toEqual([])
   })
+})
+
+test("promoted CLI contract files are removed from the full bulk unit", () => {
+  const subUnits = novaclawSubUnits(
+    join(ROOT, "packages/novaclaw"),
+    new Set(PROMOTED_NOVACLAW_SUBDIRS),
+    new Set(PROMOTED_NOVACLAW_TEST_FILES),
+  )
+  const bulk = subUnits.find((unit) => unit.unit === "test/*")
+  expect(bulk).toBeDefined()
+  for (const file of PROMOTED_NOVACLAW_TEST_FILES) expect(bulk?.args).not.toContain(file)
+
+  const cliUnit = PACKAGES.find((unit) => unit.name === "novaclaw:cli-contract")
+  expect(cliUnit?.args).toEqual([...PROMOTED_NOVACLAW_TEST_FILES])
 })
 
 /**

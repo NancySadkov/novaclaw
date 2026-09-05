@@ -211,10 +211,11 @@ export const make = (fetchImpl: FetchLike): Driver => ({
 
       const call = (method: string, body?: unknown) =>
         Effect.tryPromise({
-          try: () =>
+          try: (signal) =>
             fetchImpl(`${API_BASE}/bot${token}/${method}`, {
               method: "POST",
               headers: { "content-type": "application/json" },
+              signal,
               ...(body === undefined ? {} : { body: JSON.stringify(body) }),
             }).then((response) => response.json()),
           catch: (error) => new ConnectError({ reason: `Telegram ${method} failed: ${String(error)}` }),
@@ -250,8 +251,10 @@ export const make = (fetchImpl: FetchLike): Driver => ({
             )
             if (message.text !== undefined && message.text.length > 0) form.set("caption", message.text.slice(0, 1024))
             const raw = yield* Effect.tryPromise({
-              try: () =>
-                fetchImpl(`${API_BASE}/bot${token}/sendDocument`, { method: "POST", body: form }).then((r) => r.json()),
+              try: (signal) =>
+                fetchImpl(`${API_BASE}/bot${token}/sendDocument`, { method: "POST", body: form, signal }).then((r) =>
+                  r.json(),
+                ),
               catch: (error) =>
                 new SendError({ reason: `Telegram sendDocument failed: ${String(error)}`, retryable: true }),
             })
@@ -366,8 +369,8 @@ export const make = (fetchImpl: FetchLike): Driver => ({
               }),
             )
           return yield* Effect.tryPromise({
-            try: () =>
-              fetchImpl(`${API_BASE}/file/bot${token}/${decoded.value.result!.file_path}`).then(async (response) => {
+            try: (signal) =>
+              fetchImpl(`${API_BASE}/file/bot${token}/${decoded.value.result!.file_path}`, { signal }).then(async (response) => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`)
                 return new Uint8Array(await response.arrayBuffer())
               }),

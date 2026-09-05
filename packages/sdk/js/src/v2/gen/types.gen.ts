@@ -1449,6 +1449,13 @@ export type FileContent = {
   mimeType?: string
 }
 
+export type FilePreviewTooLargeError = {
+  _tag: "FilePreviewTooLargeError"
+  message: string
+  bytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  limit: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type File = {
   path: string
   added: number
@@ -3698,6 +3705,10 @@ export type ConfigV2Log = {
   }
 }
 
+export type ConfigV2Trash = {
+  retention_days?: number
+}
+
 export type ConfigV2ToolOutput = {
   max_lines?: number
   max_bytes?: number
@@ -4107,6 +4118,7 @@ export type ConfigInfo = {
       }
   attachments?: ConfigV2Attachments
   log?: ConfigV2Log
+  trash?: ConfigV2Trash
   tool_output?: ConfigV2ToolOutput
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
@@ -5878,6 +5890,7 @@ export type CalendarFire = {
   firedAt: number
   sessionId: string | null
   status: "spawned" | "skipped" | "error"
+  outcome: "pending" | "succeeded" | "failed" | "interrupted"
 }
 
 export type RecipeInfo = {
@@ -10668,6 +10681,10 @@ export type FileReadErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * FilePreviewTooLargeError
+   */
+  413: FilePreviewTooLargeError
 }
 
 export type FileReadError = FileReadErrors[keyof FileReadErrors]
@@ -12988,6 +13005,47 @@ export type V2AgentListResponses = {
 
 export type V2AgentListResponse = V2AgentListResponses[keyof V2AgentListResponses]
 
+export type V2AgentUsageManyData = {
+  body: {
+    agentIDs: Array<string>
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/usage"
+}
+
+export type V2AgentUsageManyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentUsageManyError = V2AgentUsageManyErrors[keyof V2AgentUsageManyErrors]
+
+export type V2AgentUsageManyResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      [key: string]: Array<AgentUsageMinute>
+    }
+  }
+}
+
+export type V2AgentUsageManyResponse = V2AgentUsageManyResponses[keyof V2AgentUsageManyResponses]
+
 export type V2AgentUsageData = {
   body?: never
   path: {
@@ -13339,7 +13397,9 @@ export type V2SessionActiveResponse = V2SessionActiveResponses[keyof V2SessionAc
 export type V2SessionExecutionListData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    sessionID?: string
+  }
   url: "/api/session/execution"
 }
 

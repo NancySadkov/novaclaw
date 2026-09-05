@@ -371,6 +371,7 @@ describe("workspace dependency ledger", () => {
       "server",
       "session-ui",
       "ui",
+      "watchdog",
     ])
     for (const pkg of Object.keys(KEPT_WITHOUT_IMPORTS)) {
       expect(packages, `ledger names an unknown package ${pkg}`).toHaveProperty(pkg)

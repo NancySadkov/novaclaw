@@ -50,7 +50,7 @@ test("rejects incompatible replies and all pending waits on close", async () => 
   expect(closed.pendingCount()).toBe(0)
 })
 
-// The abort half of this test went with the `AbortSignal` parameter on 2026-09-01 (RF-15-13): no
+// The abort half of this test went with the `AbortSignal` parameter on 2026-09-01 (): no
 // production caller ever supplied one, and the path it exercised turned a cancelled call into a dead
 // worker — abort dropped the pending entry while the host was still working, so the reply arrived
 // unknown and `accept` closed the transport, failing every other in-flight RPC. The stale-identity

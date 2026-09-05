@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 
 /**
- * `todo/projects.md`, first item: version the format, *"reject unknown schema versions calmly;
+ * ``, first item: version the format, *"reject unknown schema versions calmly;
  * preserve unknown fields when a newer file is edited by an older NovaClaw."*
  *
  * Both halves are failures that produce no error anywhere — a refusal that reads as corruption, and

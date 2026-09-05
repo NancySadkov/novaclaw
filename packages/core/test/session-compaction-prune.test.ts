@@ -12,7 +12,7 @@ import { LLM, LLMEvent, Model, type LLMRequest } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { DateTime, Effect, Stream } from "effect"
 
-// A2-a — `prune()`, the non-LLM reclaim lost in the V1 nuke (todo/adoption.md §A2).
+// A2-a — `prune()`, the non-LLM reclaim lost in the V1 nuke ( §A2).
 //
 // Every clause of the spec is asserted here against the PURE module, because the thresholds are the
 // feature: "protect the newest 40k tokens of tool output and the last 2 turns, exempt `skill`

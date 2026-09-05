@@ -2,7 +2,7 @@
  * Plain-record narrowing. Excludes arrays so JSON object checks don't accept tuples as key/value bags.
  *
  * ⚠️ **This was a deliberate SECOND copy of `packages/llm/src/utils/record.ts` until 2026-09-01; it
- * is now the shared predicate under this package's local name** (RF-29-6). The argument for keeping
+ * is now the shared predicate under this package's local name** (). The argument for keeping
  * two copies was that sharing three lines cost either a new export on `@novaclaw/llm`'s published
  * surface or a `record.ts` inside a package that holds schema definitions. The second of those is
  * what was built — `@novaclaw/schema/record`, beside the existing `@novaclaw/schema/text`, which is

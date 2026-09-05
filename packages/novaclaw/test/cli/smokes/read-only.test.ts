@@ -11,7 +11,7 @@
 // If a future change should make one of these commands intentionally fail in
 // an empty env, update the assertion + add a note explaining the new contract.
 //
-// Speed: each test pays ~1.5s for bun startup. 7 tests serialize within this
+// Speed: each test pays ~1.5s for bun startup. 5 tests serialize within this
 // file. See script/prebuild-test-cli.ts for an opt-in pre-built binary that
 // cuts per-spawn cost when this suite gets bigger.
 import { describe, expect } from "bun:test"
@@ -72,29 +72,6 @@ describe("novaclaw read-only commands (smoke)", () => {
       Effect.gen(function* () {
         const r = yield* novaclaw.spawn(["agent", "list"])
         novaclaw.expectExit(r, 0, "agent list")
-      }),
-    60_000,
-  )
-
-  // `session list` reads the session DB. Fresh NOVACLAW_TEST_HOME means
-  // empty DB. Exit 0 with no sessions.
-  cliIt.live(
-    "session list: exits 0",
-    ({ novaclaw }) =>
-      Effect.gen(function* () {
-        const r = yield* novaclaw.spawn(["session", "list"])
-        novaclaw.expectExit(r, 0, "session list")
-      }),
-    60_000,
-  )
-
-  // `stats` aggregates token usage from the session DB. Empty DB → all zeros.
-  cliIt.live(
-    "stats: exits 0",
-    ({ novaclaw }) =>
-      Effect.gen(function* () {
-        const r = yield* novaclaw.spawn(["stats"])
-        novaclaw.expectExit(r, 0, "stats")
       }),
     60_000,
   )

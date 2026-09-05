@@ -346,7 +346,7 @@ const applyConfig = (config: Partial<Config.Info>) =>
  * config was asserting against an empty document. Four `mcp HttpApi` tests sat in the expected-failure
  * ledger for it — and the file's ONE green test was the one asserting ABSENCE, which passed *because*
  * provisioning was broken. A vacuous pass is the tell: it is the test that would survive the feature
- * being deleted. See todo/test-speed.md.
+ * being deleted. See .
  *
  * `provisionConfig` reaches the server's memo map, invalidates, and records into the `provisioned`
  * ledger so `releaseConfig` can undo it — which is why the finalizer below is not optional.

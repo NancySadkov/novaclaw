@@ -49,6 +49,9 @@ const BACKOFF_CAP_MS = 300_000
 const STABLE_CONNECTION_MS = 60_000
 /** Pairing-code lifetime. Exported so the TTL test tracks the number instead of re-typing it. */
 export const PAIRING_TTL_MS = 10 * 60_000
+// Short-lived gateway state must not become a second database. Entries are swept when inbound
+// traffic gives us a clock tick; no maintenance daemon is needed for an idle account.
+const TRANSIENT_STATE_TTL_MS = 10 * 60_000
 // Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
 // inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
 // Exported so the test that pins the counting RULE tracks the number instead of re-typing it.
@@ -473,8 +476,9 @@ const build = (options: Options) =>
       string,
       { accountID: Messenger.AccountID; trust: Messenger.ContactTrust; expiresAt: number }
     >()
-    // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw.
-    const listings = new Map<string, string[]>()
+    // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw. The
+    // expiry keeps an abandoned chat from occupying one entry forever.
+    const listings = new Map<string, { ids: string[]; expiresAt: number }>()
     // ⚠️ The daily cold-start bucket (traffic rules §2.3) is deliberately NOT one of these maps: a
     // rate limit on this heap is per gateway INSTANCE. See `messenger_initiation` and the charge
     // site in `send`.
@@ -488,7 +492,7 @@ const build = (options: Options) =>
     // Nested-chat relay target: bindingID -> the child chat (Discord thread / forum post) whose
     // message last drove a turn on that binding. Only ever set when the inbound chat differs from
     // the bound one, so an ordinary one-chat binding stays exactly as it was.
-    const lastInboundChat = new Map<string, string>()
+    const lastInboundChat = new Map<string, { accountID: Messenger.AccountID; chatID: string }>()
     // Flood cap (§7.6): chatKey -> recent turn-driving inbound timestamps + whether we've already
     // warned this over-cap streak (so the "slow down" reply fires once, not per dropped message).
     const inboundRate = new Map<string, { times: number[]; warned: boolean }>()
@@ -540,12 +544,33 @@ const build = (options: Options) =>
     // turn every inbound message into an outbound one: that is a burst across a whole account, and
     // a burst is precisely what gets a real person's account flagged (AGENTS.md #9(a), "one hand").
     // Cleared the moment a routing read for that chat succeeds, so the NEXT outage speaks again.
-    const toldUnreadable = new Set<string>()
+    const toldUnreadable = new Map<string, number>()
     // chatKeys already told, once, that their pairing code did not work. Same shape and same
     // reason as `toldUnreadable` above: `/pair` is the one command an UNPAIRED sender may still
     // draw an answer from, so it is also the only remaining way a stranger can pull repeated
     // outbound out of the account. Cleared when that chat pairs successfully.
-    const toldBadPairing = new Set<string>()
+    const toldBadPairing = new Map<string, number>()
+
+    const pruneGatewayState = (now: number): void => {
+      for (const [code, record] of pairing) if (record.expiresAt <= now) pairing.delete(code)
+      for (const [key, listing] of listings) if (listing.expiresAt <= now) listings.delete(key)
+      for (const [key, times] of dispatchRate) {
+        const recent = times.filter((at) => now - at < DISPATCH_RATE_WINDOW_MS)
+        if (recent.length === 0) dispatchRate.delete(key)
+        else if (recent.length !== times.length) dispatchRate.set(key, recent)
+      }
+      for (const [key, times] of moderationRate) {
+        const recent = times.filter((at) => now - at < MODERATION_WINDOW_MS)
+        if (recent.length === 0) moderationRate.delete(key)
+        else if (recent.length !== times.length) moderationRate.set(key, recent)
+      }
+      for (const [key, entry] of inboundRate) {
+        entry.times = entry.times.filter((at) => now - at < INBOUND_WINDOW_MS)
+        if (entry.times.length === 0) inboundRate.delete(key)
+      }
+      for (const [key, at] of toldUnreadable) if (now - at >= TRANSIENT_STATE_TTL_MS) toldUnreadable.delete(key)
+      for (const [key, at] of toldBadPairing) if (now - at >= TRANSIENT_STATE_TTL_MS) toldBadPairing.delete(key)
+    }
 
     /** Ask both cold-start questions and collapse them once (see `invitationOf`). Never fails — an
      *  unreadable table becomes `"unknown"`, which is an ANSWER the callers must handle, not an
@@ -579,11 +604,17 @@ const build = (options: Options) =>
       error._tag === "MessengerDriver.ChallengeError"
 
     /** One sentence for either arm — the two errors carry differently-named fields. */
-    const sendFailureText = (error: MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError) =>
+    const sendFailureText = (
+      error:
+        | MessengerDriverContract.SendError
+        | MessengerDriverContract.ChallengeError
+        | MessengerPace.TimeoutError,
+    ) =>
       isChallenge(error) ? `verification required — ${error.message}` : error.reason
 
     /** One bounded retry for a transport hiccup, while the original global pacing permit remains
-     * held. Challenges and permanent provider refusals never retry. A second failure is final. */
+     * held. Challenges and permanent provider refusals never retry. A second failure is final.
+     * The pacer's finite deadline wraps this whole operation and never retries an ambiguous timeout. */
     const retrySendOnce = <A, R>(
       attempt: Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R>,
     ): Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R> =>
@@ -596,7 +627,8 @@ const build = (options: Options) =>
       )
 
     // Every outbound message — command replies, relayed assistant text, proactive tool sends —
-    // goes through one pacer permit, including its one possible retry, so nothing bursts.
+    // goes through one pacer permit, including its one possible retry, so nothing bursts. The
+    // pacer also interrupts a provider that never settles, releasing the permit for other accounts.
     const paceOperation = <A, R>(
       connection: Connection,
       text: string,
@@ -993,7 +1025,7 @@ const build = (options: Options) =>
             // ("mint a fresh one"), so a second says nothing the first did not. Cleared on a
             // SUCCESSFUL pairing below, so a later code can speak again.
             if (toldBadPairing.has(key)) return
-            toldBadPairing.add(key)
+            toldBadPairing.set(key, now)
             yield* reply(
               connection,
               event.chat.chatID,
@@ -1077,12 +1109,17 @@ const build = (options: Options) =>
                 ...(session.agent ? { agent: session.agent } : {}),
               })),
             )
-            listings.set(key, rendered.ids)
+            listings.set(key, {
+              ids: rendered.ids,
+              expiresAt: (yield* Clock.currentTimeMillis) + TRANSIENT_STATE_TTL_MS,
+            })
             yield* reply(connection, event.chat.chatID, rendered.text)
             return
           }
           case "use": {
-            const ids = listings.get(key) ?? []
+            const listing = listings.get(key)
+            const ids = listing !== undefined && listing.expiresAt > (yield* Clock.currentTimeMillis) ? listing.ids : []
+            if (listing !== undefined && ids.length === 0) listings.delete(key)
             const sessionID = ids[command.index - 1]
             if (sessionID === undefined) {
               yield* reply(connection, event.chat.chatID, "Run /sessions first, then /use a number from that list.")
@@ -1268,6 +1305,8 @@ const build = (options: Options) =>
       Effect.gen(function* () {
         if (event.kind !== "message") return
         if (event.sender.isSelf) return // echo guard #1
+        const now = yield* Clock.currentTimeMillis
+        pruneGatewayState(now)
         const claim = yield* store.claimInbound({
           accountID: account.id,
           chatID: event.chat.chatID,
@@ -1379,7 +1418,7 @@ const build = (options: Options) =>
           // signal that anyone is home) and hand a flooding stranger an outbound message per
           // inbound one, which is the traffic-rules havoc #9(a) exists to prevent.
           if (trust !== undefined && !toldUnreadable.has(chatKey)) {
-            toldUnreadable.add(chatKey)
+            toldUnreadable.set(chatKey, yield* Clock.currentTimeMillis)
             yield* reply(connection, event.chat.chatID, ROUTE_UNREADABLE)
           }
           // 🔴 NOT settled. Every other exit below is a DECISION about this message; this one is the
@@ -1392,7 +1431,7 @@ const build = (options: Options) =>
         const binding = route.binding
         if (binding !== undefined) {
           if (binding.chatID === event.chat.chatID) lastInboundChat.delete(binding.id)
-          else lastInboundChat.set(binding.id, event.chat.chatID)
+          else lastInboundChat.set(binding.id, { accountID: account.id, chatID: event.chat.chatID })
         }
         if (binding === undefined) {
           if (trust === undefined) {
@@ -1503,7 +1542,7 @@ const build = (options: Options) =>
             // the forum root instead would land the answer where nobody asked.
             yield* paceSend(
               entry.connection,
-              lastInboundChat.get(binding.id) ?? binding.chatID,
+              lastInboundChat.get(binding.id)?.chatID ?? binding.chatID,
               payload.data.text,
             ).pipe(Effect.ignore)
           }
@@ -1686,6 +1725,16 @@ const build = (options: Options) =>
     const stop = (accountID: Messenger.AccountID): Effect.Effect<void> =>
       Effect.suspend(() => {
         const entry = entries.get(accountID)
+        const prefix = `${accountID}:`
+        for (const [key, record] of pairing) if (record.accountID === accountID) pairing.delete(key)
+        for (const key of listings.keys()) if (key.startsWith(prefix)) listings.delete(key)
+        for (const key of dispatchRate.keys()) if (key.startsWith(prefix)) dispatchRate.delete(key)
+        for (const key of inboundRate.keys()) if (key.startsWith(prefix)) inboundRate.delete(key)
+        for (const key of toldUnreadable.keys()) if (key.startsWith(prefix)) toldUnreadable.delete(key)
+        for (const key of toldBadPairing.keys()) if (key.startsWith(prefix)) toldBadPairing.delete(key)
+        for (const [bindingID, record] of lastInboundChat)
+          if (record.accountID === accountID) lastInboundChat.delete(bindingID)
+        moderationRate.delete(accountID)
         entries.delete(accountID)
         return entry?.fiber === undefined ? Effect.void : Fiber.interrupt(entry.fiber).pipe(Effect.asVoid)
       })

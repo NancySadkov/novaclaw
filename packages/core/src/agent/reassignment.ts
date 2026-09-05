@@ -121,6 +121,20 @@ export const deliver = (input: {
     const chat = yield* RosterChat.chatFor(input.db, input.move.agentID)
     if (chat === undefined) return false
 
+    // The successor is an empty chat. Do not leave a world-change nudge in it when the old chat had
+    // never received model output: on a cleared/new conversation this is just transcript litter and
+    // the next real prompt already supplies the context that matters.
+    const previous = yield* input.store.context(SessionSchema.ID.make(chat.id)).pipe(
+      Effect.catchTag("Session.MessageDecodeError", (error) =>
+        Log.event("session.message.decode.failed", {
+          "session.id": error.sessionID,
+          "session.message": error.messageID,
+          "session.ref": `err_${crypto.randomUUID().slice(0, 8)}`,
+        }).pipe(Effect.as([] as SessionMessage.Message[])),
+      ),
+    )
+    const hadModelOutput = AgentWorkspace.hasModelOutput(previous)
+
     // 🔴 ARCHIVE, then open the successor in the NEW folder. The chat does not follow its colleague
     // and never could: `control-plane/move-session.ts` refuses a cross-project move outright, so the
     // old behaviour was a notice admitting the chat was stranded and telling the user to clear it
@@ -195,13 +209,16 @@ export const deliver = (input: {
     }
     const successor = created.value
 
-    yield* input.events
+    if (hadModelOutput) {
+      yield* input.events
       .publish(SessionEvent.Synthetic, {
         sessionID: successor.id,
         messageID: SessionMessage.ID.create(),
         timestamp: yield* DateTime.now,
         // Reports what HAPPENED. The old text described a stranded chat and issued an instruction;
-        // there is nothing to instruct now, because the thing it asked for has been done.
+        // there is nothing to instruct now, because the thing it asked for has been done. The notice
+        // carries steer provenance so the transcript folds it like every other automated nudge while
+        // the model still receives the full fact.
         text: notice(input.move),
       })
       // ⚠️ SAID, not swallowed. The header's "nobody registered is not an error" covers a MISSING
@@ -218,6 +235,7 @@ export const deliver = (input: {
           }),
         ),
       )
+    }
     return true
   })
 

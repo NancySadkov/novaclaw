@@ -1054,23 +1054,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  /**
-   * A retired colleague's private memories could NOT be cleared, so the cabinet outlived its owner.
-   *
-   * Filed under `kb` rather than the retirement that triggered it, because the SUBSYSTEM decides the
-   * level an operator can turn up: somebody chasing "my colleague's memories were not cleared" is
-   * debugging the knowledge tier, and should not have to raise agent-lifecycle logging to see it.
-   *
-   * This is an IDENTITY-BLEED warning, not a housekeeping note. Officer names are drawn from a fixed
-   * pool, so the retired id can be drawn again — and a colleague opening with a stranger's private
-   * memories is the one failure the per-agent partition exists to prevent. The scope is in the
-   * attributes precisely so an operator can clear it by hand.
-   */
-  /**
-   * A reassignment archived a colleague's chat and then could not open the successor, so the archive
-   * was rolled back. The colleague keeps the chat it had; the folder change still applies and it
-   * will read the new folder from its system prompt on its next turn.
-   */
   /** One subsystem's cleanup for a retired agent failed; the rest of the retirement still ran. */
   "agent.retire.cleaner.failed": {
     level: "warn",
@@ -1092,6 +1075,11 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/agent/retire.ts",
   },
+  /**
+   * A reassignment archived a colleague's chat and then could not open the successor, so the archive
+   * was rolled back. The colleague keeps the chat it had; the folder change still applies and it
+   * will read the new folder from its system prompt on its next turn.
+   */
   "agent.reassign.successor.failed": {
     level: "warn",
     message: "could not open a reassigned colleague's new chat; the archive was rolled back",
@@ -1110,6 +1098,18 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/agent/reassignment.ts",
   },
+  /**
+   * A retired colleague's private memories could NOT be cleared, so the cabinet outlived its owner.
+   *
+   * Filed under `kb` rather than the retirement that triggered it, because the SUBSYSTEM decides the
+   * level an operator can turn up: somebody chasing "my colleague's memories were not cleared" is
+   * debugging the knowledge tier, and should not have to raise agent-lifecycle logging to see it.
+   *
+   * This is an IDENTITY-BLEED warning, not a housekeeping note. Officer names are drawn from a fixed
+   * pool, so the retired id can be drawn again — and a colleague opening with a stranger's private
+   * memories is the one failure the per-agent partition exists to prevent. The scope is in the
+   * attributes precisely so an operator can clear it by hand.
+   */
   "kb.scope.clear.failed": {
     level: "warn",
     message: "could not clear a retired agent's memory scope",
@@ -1117,31 +1117,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/agent/retire.ts",
   },
-  /**
-   * A colleague's configured model could not serve the turn, so it ran on the instance default.
-   *
-   * 🔴 The audit trail for a SILENT downgrade. The turn works, which is the point — but it works on a
-   * different mind than the user chose for that colleague, and the only way to tell afterwards is
-   * this line. Both models are named: "which one did I ask for" and "what actually answered" are
-   * different questions and an operator needs both.
-   *
-   * ⚠️ `model.reason` separates the TWO faults the owner named, because they are diagnosed
-   * differently: absent (the default) means the catalog cannot resolve it — a model not pulled, a
-   * provider key gone — while `unhealthy` means it resolved fine and then failed turn after turn,
-   * which points at the endpoint rather than at the configuration. Reading a run of these without the
-   * reason would have an operator checking the wrong thing.
-   *
-   * ⚠️ Temporary by construction — nothing is written to the colleague's config, so this fires again
-   * on the next turn if the model is still missing, and stops the moment it returns.
-   */
-  /**
-   * The pre-roster leak, cleaned up once at boot.
-   *
-   * 🔴 Auto-extraction used to write to `session:<id>` and a consolidation pass promoted those rows
-   * into `global`, so one colleague's automatically-learned facts became readable by every other.
-   * Owner's ruling: discard rather than migrate. WARN, not info: rows leaving a user's store is
-   * something they should be able to find afterwards, and the count is the whole record of what went.
-   */
   /**
    * The whole store, erased on purpose.
    *
@@ -1169,6 +1144,14 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/kb-graph/memory.ts",
   },
+  /**
+   * The pre-roster leak, cleaned up once at boot.
+   *
+   * 🔴 Auto-extraction used to write to `session:<id>` and a consolidation pass promoted those rows
+   * into `global`, so one colleague's automatically-learned facts became readable by every other.
+   * Owner's ruling: discard rather than migrate. WARN, not info: rows leaving a user's store is
+   * something they should be able to find afterwards, and the count is the whole record of what went.
+   */
   "kb.memory.legacy.discarded": {
     level: "warn",
     message: "discarded pre-roster memories that had leaked into the shared pile",
@@ -1178,6 +1161,23 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/kb-graph/memory.ts",
   },
+  /**
+   * A colleague's configured model could not serve the turn, so it ran on the instance default.
+   *
+   * 🔴 The audit trail for a SILENT downgrade. The turn works, which is the point — but it works on a
+   * different mind than the user chose for that colleague, and the only way to tell afterwards is
+   * this line. Both models are named: "which one did I ask for" and "what actually answered" are
+   * different questions and an operator needs both.
+   *
+   * ⚠️ `model.reason` separates the TWO faults the owner named, because they are diagnosed
+   * differently: absent (the default) means the catalog cannot resolve it — a model not pulled, a
+   * provider key gone — while `unhealthy` means it resolved fine and then failed turn after turn,
+   * which points at the endpoint rather than at the configuration. Reading a run of these without the
+   * reason would have an operator checking the wrong thing.
+   *
+   * ⚠️ Temporary by construction — nothing is written to the colleague's config, so this fires again
+   * on the next turn if the model is still missing, and stops the moment it returns.
+   */
   "session.model.fallback": {
     level: "warn",
     message: "configured model could not serve — ran on the default",
@@ -1290,12 +1290,6 @@ export const EVENTS = {
   },
 
   // ── kb ────────────────────────────────────────────────────────────────────────────────────────
-  /** The optional in-process graph could not open; memory stays safely degraded. */
-  /**
-   * One passage could not be absorbed. Best-effort BY DESIGN: this runs detached from the request
-   * that started it, so nobody is watching to retry, and abandoning the remaining passages because
-   * one failed would lose a whole document to a single bad chunk.
-   */
   /**
    * An absorption pass FINISHED, with what it produced.
    *
@@ -1319,6 +1313,11 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/memory.ts",
   },
+  /**
+   * One passage could not be absorbed. Best-effort BY DESIGN: this runs detached from the request
+   * that started it, so nobody is watching to retry, and abandoning the remaining passages because
+   * one failed would lose a whole document to a single bad chunk.
+   */
   "kb.absorb.passage.failed": {
     level: "warn",
     message: "could not absorb a passage:",
@@ -1326,6 +1325,7 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/kb-graph/absorb.ts",
   },
+  /** The optional in-process graph could not open; memory stays safely degraded. */
   "kb.memory.open.failed": {
     level: "warn",
     message: "kb-memory failed to open:",
@@ -2044,17 +2044,6 @@ export const EVENTS = {
     file: "packages/core/src/session/runner/llm.ts",
   },
   /**
-   * The per-turn request footprint — what the outgoing request costs, and which part of it grew.
-   *
-   * `debug`, deliberately: it fires on EVERY turn, so at `info` it would drown the log it is meant
-   * to make readable. The value is the series, not any single line.
-   *
-   * ⚠️ **All-`count` is what makes `content: "none"` a fact here.** The measurement knows the largest
-   * tool's NAME and does not send it — a `define_tool` name is user-authored, so it is not the closed
-   * vocabulary `id` promises. See `session/runner/footprint.ts` for why the struct is richer than the
-   * event.
-   */
-  /**
    * The endpoint told us its per-request image cap, and we learned it.
    *
    * 🔴 Measured 2026-08-19: untreated, an image cap DEAD-ENDS the session — every later turn
@@ -2071,6 +2060,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * The per-turn request footprint — what the outgoing request costs, and which part of it grew.
+   *
+   * `debug`, deliberately: it fires on EVERY turn, so at `info` it would drown the log it is meant
+   * to make readable. The value is the series, not any single line.
+   *
+   * ⚠️ **All-`count` is what makes `content: "none"` a fact here.** The measurement knows the largest
+   * tool's NAME and does not send it — a `define_tool` name is user-authored, so it is not the closed
+   * vocabulary `id` promises. See `session/runner/footprint.ts` for why the struct is richer than the
+   * event.
+   */
   "session.request.footprint": {
     level: "debug",
     message: "outgoing request footprint",

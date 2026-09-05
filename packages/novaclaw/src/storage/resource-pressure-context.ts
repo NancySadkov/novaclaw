@@ -69,12 +69,13 @@ const mib = (bytes: number) => `${Math.round(bytes / Bytes.MIB)} MB`
  * from the task."* "Memory headroom is low" gives an agent nothing to reason with; it cannot tell
  * whether a 2 GB test run is fine or fatal. `13 900 MB of 45 800 MB committed` it can act on.
  *
- * ⚠️ **The cost of exact figures, and why it is acceptable HERE.** Byte counts move every turn, and a
- * moving system-context line regenerates the durable baseline — which is why these lines were
- * previously kept stable inside a severity band. That cost is bounded by the exception-only rule: the
- * line exists ONLY under warning/floor, so the churn happens only while the machine is already
- * struggling, which is exactly when a stale number would be the more expensive mistake. Do not extend
- * numeric lines to the healthy path without re-opening that trade.
+ * ⚠️ **The cost of exact figures, and why it is acceptable HERE.** Byte counts move every turn, so the
+ * observed line changes while the host is under pressure. The system-context owner emits a line-level
+ * tail diff and rate-limits numeric wobble; it does not append a full baseline for each measurement.
+ * The remaining trade is bounded by the exception-only rule: the line exists ONLY under warning/floor,
+ * so exact figures are spent while the machine is already struggling, which is exactly when a stale
+ * number would be the more expensive mistake. Do not extend numeric lines to the healthy path without
+ * re-opening that trade.
  */
 export function lines(report: Pressure.Report): ReadonlyArray<string> {
   const result: string[] = []

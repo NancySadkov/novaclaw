@@ -185,6 +185,10 @@ export function NativeTranscript(props: {
   )
   const busy = createMemo(() => props.status?.type === "busy" || props.status?.type === "retry")
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
+  const liveMessageID = createMemo(() => {
+    const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
+    return open?.type === "assistant" ? open.id : undefined
+  })
   /**
    * When THIS stretch of work began — across every turn in it.
    *
@@ -268,7 +272,7 @@ export function NativeTranscript(props: {
           {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
               the first prompt of a session while it waits for the runner. */}
           <For each={unqueuedPending(props.pending, props.messages)}>
-            {(item) => <QueuedMessage text={item.text} />}
+            {(item) => <QueuedMessage id={item.id} text={item.text} />}
           </For>
           <Show
             when={liveTiming()}
@@ -283,6 +287,7 @@ export function NativeTranscript(props: {
           >
             {(timing) => (
               <TurnReceipt
+                messageID={liveMessageID()}
                 timing={timing()}
                 live
                 developer={props.developer}
@@ -458,8 +463,11 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
   return (
     <Switch>
       <Match when={props.message.type === "user" && props.message}>
-        {(m) => (
-          <Show when={!isSteerText(m().text)} fallback={<SteerMessage text={stripSteerProvenance(m().text)} />}>
+         {(m) => (
+           <Show
+             when={!isSteerText(m().text)}
+             fallback={<SteerMessage text={stripSteerProvenance(m().text)} cacheKey={`${m().id}:steer`} />}
+           >
             <UserMessage message={m()} />
           </Show>
         )}
@@ -468,14 +476,22 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
         {(m) => <AssistantMessage message={m()} developer={props.developer} liveTiming={props.liveTiming} />}
       </Match>
       <Match when={props.message.type === "shell" && props.message}>{(m) => <ShellMessage message={m()} />}</Match>
-      <Match when={props.message.type === "system" && props.message}>
-        {(m) => <NoticeMessage kind="system" text={m().text} />}
+       <Match when={props.message.type === "system" && props.message}>
+         {(m) => <NoticeMessage kind="system" text={m().text} messageID={m().id} />}
       </Match>
       <Match when={props.message.type === "synthetic" && props.message}>
         {(m) => {
           const message = m() as SessionMessageSynthetic
-          return (
-            <NoticeMessage kind="synthetic" text={message.text} sessionID={message.sessionID} repair={message.repair} />
+           if (isSteerText(message.text))
+             return <SteerMessage text={stripSteerProvenance(message.text)} cacheKey={`${message.id}:steer`} />
+           return (
+             <NoticeMessage
+               kind="synthetic"
+               text={message.text}
+               messageID={message.id}
+               sessionID={message.sessionID}
+               repair={message.repair}
+             />
           )
         }}
       </Match>
@@ -497,13 +513,13 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
  * rather than interrupting a running edit or command, and without saying so people assume it was swallowed.
  * It disappears on its own when the runner promotes the input into a real user message.
  */
-function QueuedMessage(props: { text: string }) {
+function QueuedMessage(props: { id: string; text: string }) {
   const i18n = useI18n()
   return (
     <div data-slot="native-user" data-queued="true">
       <div data-slot="native-user-bubble">
         <Show when={props.text.trim()}>
-          <Markdown text={props.text} />
+          <Markdown text={props.text} cacheKey={`${props.id}:queued`} />
         </Show>
         <div data-slot="native-user-queued" aria-live="polite">
           <span data-slot="native-user-queued-dot" aria-hidden="true" />
@@ -541,7 +557,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
           )}
         </Show>
         <Show when={props.message.text.trim()}>
-          <Markdown text={props.message.text} />
+           <Markdown text={props.message.text} cacheKey={props.message.id} />
         </Show>
         <Show when={props.message.files?.length || props.message.agents?.length}>
           <div data-slot="native-user-attachments">
@@ -581,13 +597,13 @@ function UserMessage(props: { message: SessionMessageUser }) {
  * speaking, so the transcript folds it away like reasoning instead of showing a user bubble —
  * a curious reader can expand it; nobody gets barked at by their own harness.
  */
-function SteerMessage(props: { text: string }) {
+function SteerMessage(props: { text: string; cacheKey?: string }) {
   const i18n = useI18n()
   return (
     <details data-slot="native-notice" data-kind="steer">
       <summary>{i18n.t("ui.transcript.steer")}</summary>
       <div data-slot="native-notice-body">
-        <Markdown text={props.text} />
+        <Markdown text={props.text} cacheKey={props.cacheKey} />
       </div>
     </details>
   )
@@ -679,7 +695,11 @@ function AssistantMessage(props: {
               {(p) => (
                 <Show when={p().text.trim()}>
                   <div data-slot="native-assistant-text">
-                    <Markdown text={p().text} streaming={!props.message.time.completed} />
+                    <Markdown
+                      text={p().text}
+                      cacheKey={`${props.message.id}:${p().id}`}
+                      streaming={!props.message.time.completed}
+                    />
                   </div>
                 </Show>
               )}
@@ -695,7 +715,7 @@ function AssistantMessage(props: {
                     p().text.trim() && !(props.liveTiming && !props.message.time.completed) && !receiptHoldsReasoning()
                   }
                 >
-                  <ReasoningPart part={p()} tokens={reasoningTokens()} />
+                 <ReasoningPart part={p()} tokens={reasoningTokens()} cacheKey={`${props.message.id}:${p().id}`} />
                 </Show>
               )}
             </Match>
@@ -704,7 +724,8 @@ function AssistantMessage(props: {
         )}
       </For>
       <Show when={showReceipt() && ((working() && !props.liveTiming) || props.message.timing)}>
-        <TurnReceipt
+         <TurnReceipt
+           messageID={props.message.id}
           timing={props.message.timing}
           live={working() && !props.liveTiming}
           developer={props.developer}
@@ -759,11 +780,11 @@ function AssistantMessage(props: {
   )
 }
 
-function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
+function ElapsedTime(props: { startedAt: number; completedAt?: number; live: boolean }) {
   const [now, setNow] = createSignal(Date.now())
   let timer: ReturnType<typeof setInterval> | undefined
   createEffect(() => {
-    if (props.completedAt !== undefined) {
+    if (!props.live || props.completedAt !== undefined) {
       if (timer) clearInterval(timer)
       timer = undefined
       return
@@ -793,6 +814,7 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number }) {
  * stages are — and the clock counts from `runStartedAt`, which the transcript holds across turns.
  */
 function TurnReceipt(props: {
+  messageID?: string
   timing?: TurnTiming
   live: boolean
   developer?: boolean
@@ -887,20 +909,27 @@ function TurnReceipt(props: {
                 <ElapsedTime
                   startedAt={props.live ? (props.runStartedAt ?? value().startedAt) : value().startedAt}
                   completedAt={value().completedAt}
+                  live={props.live}
                 />
               </span>
             </summary>
             <Show when={props.reasoning}>
               {(text) => (
                 <div data-slot="native-turn-reasoning">
-                  <Markdown text={text()} />
+                   <Markdown text={text()} cacheKey={props.messageID ? `${props.messageID}:reasoning` : undefined} />
                 </div>
               )}
             </Show>
             <Show when={props.reasoningParts?.length}>
               <div data-slot="native-turn-reasoning-parts">
                 <For each={props.reasoningParts}>
-                  {(part) => <ReasoningPart part={part} tokens={props.reasoningTokens} />}
+                   {(part) => (
+                     <ReasoningPart
+                       part={part}
+                       tokens={props.reasoningTokens}
+                       cacheKey={props.messageID ? `${props.messageID}:reasoning:${part.id}` : undefined}
+                     />
+                   )}
                 </For>
               </div>
             </Show>
@@ -910,7 +939,7 @@ function TurnReceipt(props: {
                   <li data-current={phase.completedAt === undefined ? "" : undefined}>
                     <div data-slot="native-turn-phase">
                       <span>{phaseLabel(phase.phase)}</span>
-                      <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} />
+                      <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} live={props.live} />
                     </div>
                     <Show when={props.developer && phase.details?.length}>
                       <ul data-slot="native-turn-details">
@@ -918,7 +947,11 @@ function TurnReceipt(props: {
                           {(detail) => (
                             <li>
                               <span>{detailLabel(detail.phase)}</span>
-                              <ElapsedTime startedAt={detail.startedAt} completedAt={detail.completedAt} />
+                              <ElapsedTime
+                                startedAt={detail.startedAt}
+                                completedAt={detail.completedAt}
+                                live={props.live}
+                              />
                             </li>
                           )}
                         </For>
@@ -932,7 +965,11 @@ function TurnReceipt(props: {
                   <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
                     <div data-slot="native-turn-phase">
                       <span>{attemptLabel(attempt)}</span>
-                      <ElapsedTime startedAt={attempt.dispatchedAt} completedAt={attempt.completedAt} />
+                      <ElapsedTime
+                        startedAt={attempt.dispatchedAt}
+                        completedAt={attempt.completedAt}
+                        live={props.live}
+                      />
                     </div>
                   </li>
                 )}
@@ -1017,7 +1054,11 @@ function FaultCard(props: {
  * even with the fold closed (a frozen counter = stalled), and opening it mid-stream shows the
  * text arriving — so a user can check the model isn't looping without waiting for the answer.
  */
-function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?: number }) {
+function ReasoningPart(props: {
+  part: SessionMessageAssistantReasoning
+  tokens?: number
+  cacheKey?: string
+}) {
   const i18n = useI18n()
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
@@ -1049,7 +1090,7 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
         </Show>
       </summary>
       <div data-slot="native-reasoning-body">
-        <Markdown text={props.part.text} />
+        <Markdown text={props.part.text} cacheKey={props.cacheKey} />
       </div>
     </details>
   )
@@ -1293,6 +1334,7 @@ function ShellMessage(props: { message: SessionMessageShell }) {
 function NoticeMessage(props: {
   kind: "system" | "synthetic"
   text: string
+  messageID?: string
   sessionID?: string
   repair?: SessionMessageSynthetic["repair"]
 }) {
@@ -1329,7 +1371,7 @@ function NoticeMessage(props: {
           "font-size": "0.85rem",
         }}
       >
-        <Markdown text={props.text} />
+         <Markdown text={props.text} cacheKey={props.messageID} />
         <Show when={props.repair?.type === "unpin-device" && actions().onUnpinDevice}>
           <button
             type="button"
@@ -1359,7 +1401,7 @@ function NoticeMessage(props: {
     <details data-slot="native-notice" data-kind="system">
       <summary>{i18n.t("ui.transcript.context")}</summary>
       <div data-slot="native-notice-body">
-        <Markdown text={props.text} />
+         <Markdown text={props.text} cacheKey={props.messageID} />
       </div>
     </details>
   )
@@ -1411,7 +1453,7 @@ function CompactionMessage(props: { message: SessionMessageCompaction }) {
       <details data-slot="native-notice">
         <summary>{i18n.t("ui.transcript.summary")}</summary>
         <div data-slot="native-notice-body">
-          <Markdown text={props.message.summary} />
+         <Markdown text={props.message.summary} cacheKey={`${props.message.id}:summary`} />
         </div>
       </details>
     </div>

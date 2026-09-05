@@ -259,7 +259,7 @@ describe("what it refuses to guess", () => {
  * ⚠️ Assembly only. These fixtures are the shapes the shipped `anthropic-messages` protocol encodes
  * and decodes, and they prove the probe builds the right request and reads the right fields. No
  * verdict here has been taken from a live Anthropic endpoint, which is a different claim and is
- * recorded as such in `todo/sidecar-inference.md`.
+ * recorded as such in ``.
  */
 describe("the Anthropic messages wire", () => {
   const block = (blocks: ReadonlyArray<unknown>, stop = "end_turn") =>

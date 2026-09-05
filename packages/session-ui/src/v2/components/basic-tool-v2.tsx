@@ -1,5 +1,5 @@
 import { Collapsible } from "@kobalte/core/collapsible"
-import { type ComponentProps, type JSX, For, Show, createMemo, splitProps } from "solid-js"
+import { type ComponentProps, type JSX, For, Show, createMemo, createSignal, splitProps } from "solid-js"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
 import { TextShimmerV2 } from "@novaclaw/ui/v2/text-shimmer-v2"
 
@@ -60,6 +60,8 @@ export function BasicToolV2(props: BasicToolV2Props) {
   ])
 
   const pending = createMemo(() => local.status === "pending" || local.status === "running")
+  const [uncontrolledOpen, setUncontrolledOpen] = createSignal(local.defaultOpen ?? false)
+  const expanded = createMemo(() => local.open ?? uncontrolledOpen())
 
   const hasChildren = createMemo(() => {
     const c = local.children
@@ -71,6 +73,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
 
   const handleOpenChange = (value: boolean) => {
     if (pending() && local.expandWhilePending !== true) return
+    if (local.open === undefined) setUncontrolledOpen(value)
     local.onOpenChange?.(value)
   }
 
@@ -131,7 +134,9 @@ export function BasicToolV2(props: BasicToolV2Props) {
           </Show>
         </div>
       </Collapsible.Trigger>
-      <Show when={canExpand()}>
+      {/* Do not construct tool output while the card is collapsed. Large diffs and command output
+          are the common case, and hidden DOM is still work (and memory) paid by every transcript. */}
+      <Show when={canExpand() && expanded()}>
         <Collapsible.Content data-slot="basic-tool-v2-content">
           <div data-slot="basic-tool-v2-content-inner">{local.children}</div>
         </Collapsible.Content>

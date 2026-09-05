@@ -15,7 +15,7 @@ import { stripComments } from "./lib/source-scan"
  * the ritual is eight git processes at ~100 ms each (measured: 820 ms via `execFile`, 1177 ms via
  * `bun $`) against **19–36 ms** for an `fs.cp` of the finished repository. Fourteen rebuilds across
  * five suites is the difference between a gate that fits the owner's 5-minute budget and one that
- * does not (todo/test-speed.md).
+ * does not ().
  *
  * So: any file under `packages/core/test/` that runs `git init` itself, or writes the
  * `user.email` / `user.name` fixture identity, must be **in the ledger below, with a reason**. The

@@ -111,7 +111,7 @@ describe("SkillTool", () => {
               }),
             ).toEqual({ type: "error", value: "Unable to load skill missing" })
             deny = true
-            // 🔴 **RE-POINTED 2026-09-01 (RF-04-6), and the old expectation was pinning the DEFECT.**
+            // 🔴 **RE-POINTED 2026-09-01 (), and the old expectation was pinning the DEFECT.**
             // It asserted `"Unable to load skill effect"` — the same sentence the MISSING-skill case
             // three lines above produces. A refusal and a not-found were literally indistinguishable
             // to the model, so a model that could not have the skill was told to look for a file

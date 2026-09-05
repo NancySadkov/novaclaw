@@ -91,7 +91,7 @@ const usesSharedRunner = (file: Source) => /\btestEffectShared\s*\(/.test(file.t
  * Every `httpApiLayer` consumer allowed to keep the ISOLATED runner, and WHY.
  *
  * ⚠️ Adding an entry here is a decision with a cost — one full rebuild of the instance HTTP graph per
- * test, on a gate the owner has capped at 5 minutes (todo/test-speed.md). A file belongs here only
+ * test, on a gate the owner has capped at 5 minutes (). A file belongs here only
  * when a FRESH graph is its subject (a build counter, a boot sequence, a migration from empty), not
  * when sharing merely felt risky. State which of those it is.
  */
@@ -165,7 +165,7 @@ describe("the sweep", () => {
       // the surface it exercised.
       "packages/novaclaw/test/server/httpapi-sync.test.ts",
       // `httpapi-workspace.test.ts` was here until 2026-09-01. Deleted, not moved: the refactor
-      // sweep's RF-13-9 removed the seven `/workspace/*` routes (`groups/workspace.ts`) as legacy
+      // sweep's  removed the seven `/workspace/*` routes (`groups/workspace.ts`) as legacy
       // with no caller in the app, the CLI, the SDK or any rig, and the test went with the surface
       // it exercised.
       //

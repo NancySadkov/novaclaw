@@ -12,6 +12,7 @@ import { showToast } from "@/utils/toast"
 import {
   localModelInstall,
   localModelStatus,
+  localModelStop,
   providerPresets,
   providerProbe,
   type LocalModelStatus,
@@ -477,6 +478,19 @@ export const DialogNewModel: Component<{
     else if (status.stage !== "error") managedPoll = setTimeout(() => void refreshManaged(), 500)
   }
 
+  const cancelManaged = async () => {
+    if (!managedBusy()) return
+    if (managedPoll) clearTimeout(managedPoll)
+    managedPoll = undefined
+    setError(undefined)
+    const status = await localModelStop(props.http, { directory: props.directory }).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      return undefined
+    })
+    if (!status) return
+    setManaged(status)
+  }
+
   const Field = (p: { field: "baseURL" | "apiKey"; type?: string; placeholder?: string }) => (
     <div class="flex flex-col gap-1.5">
       <label class="text-[12px] font-medium text-v2-text-text-faint">
@@ -770,29 +784,36 @@ export const DialogNewModel: Component<{
                             {status().detail ?? status().message}
                           </span>
                         </Show>
-                        <ButtonV2
-                          size="normal"
-                          variant="gold"
-                          disabled={
-                            !status().supported ||
-                            managedBusy() ||
-                            saving() ||
-                            (managedContext() === status().context && status().preflight?.ok === false)
-                          }
-                          onClick={() =>
-                            (status().stage === "installed" || status().stage === "ready") &&
+                        <div class="flex items-center gap-2">
+                          <ButtonV2
+                            size="normal"
+                            variant="gold"
+                            disabled={
+                              !status().supported ||
+                              managedBusy() ||
+                              saving() ||
+                              (managedContext() === status().context && status().preflight?.ok === false)
+                            }
+                            onClick={() =>
+                              (status().stage === "installed" || status().stage === "ready") &&
+                              managedContext() === status().context
+                                ? void useManaged(status())
+                                : void installManaged(profile.id)
+                            }
+                          >
+                            {(status().stage === "installed" || status().stage === "ready") &&
                             managedContext() === status().context
-                              ? void useManaged(status())
-                              : void installManaged(profile.id)
-                          }
-                        >
-                          {(status().stage === "installed" || status().stage === "ready") &&
-                          managedContext() === status().context
-                            ? t("settings.models.new.managed.use")
-                            : managedBusy()
-                              ? t("settings.models.new.managed.working")
-                              : t("settings.models.new.managed.install")}
-                        </ButtonV2>
+                              ? t("settings.models.new.managed.use")
+                              : managedBusy()
+                                ? t("settings.models.new.managed.working")
+                                : t("settings.models.new.managed.install")}
+                          </ButtonV2>
+                          <Show when={managedBusy() && status().profileID === profile.id}>
+                            <ButtonV2 size="normal" variant="neutral" disabled={status().stage === "stopping"} onClick={() => void cancelManaged()}>
+                              {t("settings.models.new.managed.cancel")}
+                            </ButtonV2>
+                          </Show>
+                        </div>
                       </div>
                     )}
                   </For>

@@ -3,7 +3,7 @@ import path from "node:path"
 import { InstanceRegistry } from "@novaclaw/core/instance-registry"
 
 /**
- * ─── `todo/instances.md` I1 — named instances, by pinned HOME ───────────────────────────────────
+ * ─── `` I1 — named instances, by pinned HOME ───────────────────────────────────
  *
  * 🔴 The defect the item names: an instance is implicitly `(data dir × installation channel)` today,
  * so one machine grows `novaclaw.db`, `novaclaw-dev.db` and `novaclaw-local.db` side by side —

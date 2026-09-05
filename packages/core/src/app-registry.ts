@@ -1,6 +1,7 @@
 export * as AppRegistry from "./app-registry"
 
 import fs from "fs/promises"
+import { randomUUID } from "node:crypto"
 import path from "path"
 import { isManifestRouteId, MANIFEST_ROUTE_IDS, type ManifestRouteId } from "./app-route"
 import { Global } from "./global"
@@ -52,6 +53,9 @@ const appsRoot = (options?: Options) => options?.root ?? path.join(Global.Path.d
 // HTTP endpoint + tool both feed ids from clients/models — this gate is load-bearing.
 const ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
 export const isValidId = (id: string) => ID_PATTERN.test(id)
+const LOCK_WAIT_MS = 10
+const LOCK_TIMEOUT_MS = 30_000
+const LOCK_STALE_MS = 60_000
 
 // ⚠️ **A DECLARED MIRROR of `packages/app/src/apps/registry.tsx`.** The two lists must stay
 // identical — this one guards the HTTP/tool path, that one guards the in-process `registerApp` a
@@ -92,6 +96,49 @@ const RESERVED_IDS = new Set([
 
 /** Derive a valid id from a title ("Stock Prices" -> "stock-prices"). */
 export const slugify = Slug.from
+
+const withFileLock = async <T>(file: string, action: () => Promise<T>): Promise<T> => {
+  const lock = `${file}.lock`
+  const started = Date.now()
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  while (true) {
+    try {
+      await fs.mkdir(lock)
+      try {
+        return await action()
+      } finally {
+        await fs.rm(lock, { recursive: true, force: true })
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      const stat = await fs.stat(lock).catch(() => undefined)
+      if (stat && Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+        await fs.rm(lock, { recursive: true, force: true })
+        continue
+      }
+      if (Date.now() - started >= LOCK_TIMEOUT_MS)
+        throw new Error("Timed out waiting for the app manifest lock.")
+      await new Promise<void>((resolve) => setTimeout(resolve, LOCK_WAIT_MS))
+    }
+  }
+}
+
+const atomicWrite = async (file: string, value: string): Promise<void> => {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
+  const handle = await fs.open(temporary, "wx")
+  try {
+    await handle.writeFile(value, "utf8")
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  try {
+    await fs.rename(temporary, file)
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => {})
+    throw error
+  }
+}
 
 const OPEN_TYPES: readonly OpenType[] = ["route", "url", "prompt"]
 
@@ -135,14 +182,21 @@ export function normalize(input: SaveInput, options?: Options): Manifest {
 export async function saveApp(input: SaveInput, options?: Options): Promise<Manifest> {
   const manifest = normalize(input, options)
   const root = appsRoot(options)
-  await fs.mkdir(root, { recursive: true })
   const file = path.join(root, `${manifest.id}.json`)
-  const existing = await fs.readFile(file, "utf8").catch(() => undefined)
-  const merged = existing
-    ? { ...manifest, createdAt: (JSON.parse(existing) as Manifest).createdAt ?? manifest.createdAt }
-    : manifest
-  await fs.writeFile(file, JSON.stringify(merged, null, 2), "utf8")
-  return merged
+  return withFileLock(file, async () => {
+    const existing = await fs.readFile(file, "utf8").catch(() => undefined)
+    let createdAt = manifest.createdAt
+    if (existing) {
+      try {
+        createdAt = (JSON.parse(existing) as Manifest).createdAt ?? manifest.createdAt
+      } catch {
+        throw new Error(`Existing app manifest is unreadable and was not overwritten: ${file}`)
+      }
+    }
+    const merged = { ...manifest, createdAt }
+    await atomicWrite(file, JSON.stringify(merged, null, 2))
+    return merged
+  })
 }
 
 /** All persisted manifests, title-sorted. */
@@ -170,8 +224,10 @@ export async function listApps(options?: Options): Promise<Manifest[]> {
 export async function removeApp(id: string, options?: Options): Promise<boolean> {
   if (!isValidId(id)) throw new Error(`Invalid app id: ${id}`)
   const file = path.join(appsRoot(options), `${id}.json`)
-  return fs.rm(file).then(
-    () => true,
-    () => false,
+  return withFileLock(file, () =>
+    fs.rm(file).then(
+      () => true,
+      () => false,
+    ),
   )
 }

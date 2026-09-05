@@ -57,12 +57,11 @@ export const {
       return root.serverCtx
     }
 
-    createMemo(() => {
-      for (const conn of server.list) {
-        ensureServerCtx(conn)
-      }
-    })
-
+    // Server contexts are demand-created by the active route or an explicitly opened surface.
+    // Creating one here for every configured connection starts that instance's TanStack queries,
+    // roster resource, recovery reads, and SSE stream even when the user has never selected it.
+    // `serverHealth` remains intentionally instance-wide because the server picker needs a truthful
+    // status for every configured connection; it is the only boot fan-out left in this context.
     createEffect(() => {
       for (const [key] of serverCtxs) {
         if (!server.list.find((conn) => ServerConnection.key(conn) === key)) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { messageTime } from "./message-time"
+import { messageTime, resetMessageTimeFormatterCache } from "./message-time"
 
 // A fixed instant so these assertions do not depend on when they run.
 const NOON = Date.UTC(2026, 7, 23, 12, 0, 0) // 2026-08-23T12:00:00Z
@@ -54,5 +54,24 @@ describe("messageTime", () => {
     // A locale with a different month abbreviation proves the formatter is not hardcoded to en.
     const ja = messageTime({ created: Date.UTC(2026, 7, 21, 9, 5, 0), locale: "ja-JP", now: NOON })!
     expect(ja.label).not.toBe(de.label)
+  })
+
+  test("reuses the four formatter instances for every row in one locale", () => {
+    const Original = Intl.DateTimeFormat
+    let constructions = 0
+    function Wrapped(this: unknown, ...args: any[]) {
+      constructions++
+      return new Original(...args)
+    }
+    resetMessageTimeFormatterCache()
+    Intl.DateTimeFormat = Wrapped as unknown as typeof Intl.DateTimeFormat
+    try {
+      messageTime({ created: NOON, locale: "en-GB", now: NOON })
+      messageTime({ created: NOON + 1_000, locale: "en-GB", now: NOON })
+      expect(constructions).toBe(4)
+    } finally {
+      Intl.DateTimeFormat = Original
+      resetMessageTimeFormatterCache()
+    }
   })
 })

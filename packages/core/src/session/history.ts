@@ -13,6 +13,7 @@ import { Log } from "@novaclaw/schema/log"
 type DatabaseService = Database.Interface["db"]
 type MessageRow = typeof SessionMessageTable.$inferSelect
 type CompactionRow = typeof SessionCompactionTable.$inferSelect
+export type Compaction = CompactionRow
 
 const decode = Schema.decodeUnknownEffect(SessionMessage.Message)
 
@@ -132,8 +133,9 @@ const projectedEntries = Effect.fnUntraced(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
   baselineSeq?: number,
+  knownCompaction?: CompactionRow | null,
 ) {
-  const compaction = yield* latestCompaction(db, sessionID)
+  const compaction = knownCompaction === undefined ? yield* latestCompaction(db, sessionID) : (knownCompaction ?? undefined)
   const entries = yield* Effect.forEach(yield* messageRows(db, sessionID, compaction, baselineSeq), (row) =>
     decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
   )
@@ -166,6 +168,7 @@ export const entriesForRunner = Effect.fn("SessionHistory.entriesForRunner")(fun
   db: DatabaseService,
   sessionID: SessionSchema.ID,
   baselineSeq: number,
+  knownCompaction?: CompactionRow | null,
 ) {
-  return yield* projectedEntries(db, sessionID, baselineSeq)
+  return yield* projectedEntries(db, sessionID, baselineSeq, knownCompaction)
 })

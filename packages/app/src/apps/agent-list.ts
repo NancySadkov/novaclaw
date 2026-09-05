@@ -158,36 +158,37 @@ export const listSessions = async (sdk: {
 
 /** Every colleague's per-minute output, keyed by agent id.
  *
- *  ⚠️ One request PER COLLEAGUE, and deliberately so: the endpoint is per-agent because spend
- *  belongs to a colleague, and a roster holds a handful of them by design (that is the whole point
- *  of replacing a list that grew forever). A batch endpoint would be the right answer for a hundred
- *  agents, and a hundred agents is the thing this product says no to.
- *
- *  A failure for one colleague dims that colleague's rate and nothing else — the roster still lists
- *  everyone, because "who works here" did not fail. */
+ *  The endpoint is batched so a roster refresh has one HTTP round trip, not one request per colleague.
+ *  The response keeps missing series as empty arrays, so a partial server result cannot hide a roster
+ *  row or make one colleague's read failure blank everyone else's rate.
+ */
 export const listUsage = async (
-  sdk: { agent: { usage: (input: { agentID: string }) => Promise<{ data?: unknown }> } },
+  sdk: { agent: { usageMany: (input: { agentIDs: readonly string[] }) => Promise<{ data?: unknown }> } },
   agentIDs: readonly string[],
 ): Promise<Record<string, readonly UsageMinute[]>> => {
-  const entries = await Promise.all(
-    agentIDs.map(async (agentID) => {
-      try {
-        const response = await sdk.agent.usage({ agentID })
-        const body = response.data as { readonly data?: unknown } | undefined
-        const rows = (Array.isArray(body) ? body : (body?.data ?? [])) as ReadonlyArray<Record<string, unknown>>
-        if (!Array.isArray(rows)) return [agentID, [] as UsageMinute[]] as const
-        const series = rows.flatMap((row) =>
-          typeof row["minute"] === "number" && typeof row["generated"] === "number"
-            ? [{ minute: row["minute"], generated: row["generated"] }]
-            : [],
-        )
-        return [agentID, series] as const
-      } catch {
-        return [agentID, [] as UsageMinute[]] as const
-      }
-    }),
-  )
-  return Object.fromEntries(entries)
+  const result: Record<string, readonly UsageMinute[]> = Object.fromEntries(agentIDs.map((id) => [id, []]))
+  if (agentIDs.length === 0) return result
+  try {
+    const response = await sdk.agent.usageMany({ agentIDs })
+    const body = response.data as { readonly data?: unknown } | undefined
+    const payload = body !== undefined && !Array.isArray(body) && body.data !== undefined ? body.data : body
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return result
+    for (const agentID of agentIDs) {
+      const rows = (payload as Record<string, unknown>)[agentID]
+      if (!Array.isArray(rows)) continue
+      result[agentID] = rows.flatMap((row) =>
+        row !== null &&
+        typeof row === "object" &&
+        typeof row["minute"] === "number" &&
+        typeof row["generated"] === "number"
+          ? [{ minute: row["minute"], generated: row["generated"] }]
+          : [],
+      )
+    }
+  } catch {
+    // A failed batch dims every rate, but must not reject the Contacts roster itself.
+  }
+  return result
 }
 
 /**

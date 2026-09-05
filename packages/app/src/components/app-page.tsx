@@ -38,7 +38,7 @@ export const AppPage: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) =>
  * 🔴 **Why this exists even though `AppPage` deliberately shares only the frame.** It was written out
  * SEVEN times, and in six of them the class string
  * `"flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5"` was byte-identical
- * (RF-19-14). `debug.tsx` and `registry.tsx` had already drifted to `py-3`, `gap-2` and a `size-5`
+ * (). `debug.tsx` and `registry.tsx` had already drifted to `py-3`, `gap-2` and a `size-5`
  * glyph — the drift a seven-way copy predicts, and the reason a header is not in the same category
  * as clipping. Clipping genuinely differs per page; a title row does not.
  *

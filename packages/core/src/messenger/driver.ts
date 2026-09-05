@@ -38,6 +38,51 @@ export class ModerationError extends Schema.TaggedErrorClass<ModerationError>()(
   reason: Schema.String,
 }) {}
 
+/**
+ * Give promise-only client seams the same cancellation boundary as fetch. Effect passes an
+ * AbortSignal to `Effect.tryPromise`; a client library that has no signal parameter must at least
+ * stop the waiting effect and close its connection when that signal fires. The provider result is
+ * deliberately ignored after abort because delivery is ambiguous and the gateway must not retry it.
+ */
+export const withAbortSignal = <A>(
+  signal: AbortSignal,
+  run: () => Promise<A>,
+  onAbort?: () => unknown,
+): Promise<A> =>
+  new Promise<A>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener("abort", abort)
+    const resolveOnce = (value: A) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    const rejectOnce = (error: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+    const abort = () => {
+      try {
+        void onAbort?.()
+      } catch {
+        // Closing a provider client is best effort; the timeout still owns the outcome.
+      }
+      rejectOnce(signal.reason ?? new Error("messenger send aborted"))
+    }
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    signal.addEventListener("abort", abort, { once: true })
+    run().then(
+      resolveOnce,
+      rejectOnce,
+    )
+  })
+
 /** A login-attempt completion failure. `retryable: true` means the attempt is STILL PENDING and
  *  the user may simply re-enter the code (a mistyped Telegram code stays valid to retry against
  *  the same phoneCodeHash); false ends the attempt (wrong 2FA setup, expired code, provider veto). */

@@ -10,6 +10,7 @@ let reconcileTerminalSnapshot: typeof import("./terminal").reconcileTerminalSnap
 let stopAllInstanceTerminals: typeof import("./terminal").stopAllInstanceTerminals
 let stopWorkspaceTerminal: typeof import("./terminal").stopWorkspaceTerminal
 let inspectTerminalClose: typeof import("./terminal").inspectTerminalClose
+let prepareTerminalReplacement: typeof import("./terminal").prepareTerminalReplacement
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -34,6 +35,7 @@ beforeAll(async () => {
   stopAllInstanceTerminals = mod.stopAllInstanceTerminals
   stopWorkspaceTerminal = mod.stopWorkspaceTerminal
   inspectTerminalClose = mod.inspectTerminalClose
+  prepareTerminalReplacement = mod.prepareTerminalReplacement
 })
 
 describe("disconnectLiveTerminals", () => {
@@ -323,6 +325,119 @@ describe("inspectTerminalClose", () => {
       "pty_one",
     )
     expect(state).toBe("unknown")
+  })
+})
+
+describe("prepareTerminalReplacement", () => {
+  test("removes an idle known PTY before allowing a replacement", async () => {
+    const calls: string[] = []
+    const client = {
+      v2: {
+        pty: {
+          activity: async () => {
+            calls.push("activity")
+            return { data: { data: { state: "idle" } } }
+          },
+          remove: async () => {
+            calls.push("remove")
+          },
+        },
+      },
+    }
+    await expect(
+      prepareTerminalReplacement(
+        client as never,
+        "/repo",
+        { ptyID: "pty_old", workspaceID: "workspace_one" },
+        {},
+        async () => false,
+        () => undefined,
+      ),
+    ).resolves.toBe("ready")
+    expect(calls).toEqual(["activity", "remove"])
+  })
+
+  test("requires confirmation for foreground or unknown activity", async () => {
+    let removed = false
+    let confirmed: string | undefined
+    const client = {
+      v2: {
+        pty: {
+          activity: async () => ({ data: { data: { state: "foreground" } } }),
+          remove: async () => {
+            removed = true
+          },
+        },
+      },
+    }
+    await expect(
+      prepareTerminalReplacement(
+        client as never,
+        "/repo",
+        { ptyID: "pty_old" },
+        {},
+        async (state) => {
+          confirmed = state
+          return false
+        },
+        () => undefined,
+      ),
+    ).resolves.toBe("cancelled")
+    expect(confirmed).toBe("foreground")
+    expect(removed).toBe(false)
+  })
+
+  test("reports a failed removal and blocks creation", async () => {
+    let reported: unknown
+    await expect(
+      prepareTerminalReplacement(
+        {
+          v2: {
+            pty: {
+              activity: async () => ({ data: { data: { state: "idle" } } }),
+              remove: async () => Promise.reject(new Error("offline")),
+            },
+          },
+        } as never,
+        "/repo",
+        { ptyID: "pty_old" },
+        {},
+        async () => true,
+        (error) => {
+          reported = error
+        },
+      ),
+    ).resolves.toBe("failed")
+    expect(reported).toEqual(new Error("offline"))
+  })
+
+  test("skips removal after the server already proved the PTY gone", async () => {
+    let inspected = false
+    let removed = false
+    await expect(
+      prepareTerminalReplacement(
+        {
+          v2: {
+            pty: {
+              activity: async () => {
+                inspected = true
+                return { data: { data: { state: "foreground" } } }
+              },
+              remove: async () => {
+                removed = true
+              },
+            },
+          },
+        } as never,
+        "/repo",
+        { ptyID: "pty_gone" },
+        { confirmedGone: true },
+        async () => false,
+        () => undefined,
+      ),
+    ).resolves.toBe("ready")
+    expect(inspected).toBe(false)
+    expect(removed).toBe(false)
   })
 })
 

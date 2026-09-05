@@ -128,7 +128,7 @@ export function projectForSession<T extends { id?: string; worktree: string; san
  * CLI's stderr. Measured 2026-09-01 over every error shape this tree produces — an SDK
  * `wrapClientError` output, a protocol `TaggedErrorClass`, a plain `Error`, a decoded NamedError POJO —
  * the two agree on all of them; they differ only on shapes nothing constructs. Evidence:
- * `notes/reports/refactor-sweep-2026-08-31/29-deps-duplication.md`, RF-29-11.
+ * `notes/reports/refactor-sweep-2026-08-31/29-deps-duplication.md`, .
  */
 export const errorMessage = (err: unknown, fallback: string) => {
   if (err && typeof err === "object" && "data" in err) {

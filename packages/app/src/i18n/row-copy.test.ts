@@ -17,7 +17,8 @@ import { dict as en } from "./en"
  */
 
 const t = en as Record<string, string>
-const SRC = path.join(import.meta.dir, "..", "components", "settings-v2")
+const SETTINGS_SRC = path.join(import.meta.dir, "..", "components", "settings-v2")
+const COMPONENTS_SRC = path.join(import.meta.dir, "..", "components")
 
 /** Every key whose long copy was split into `description` + `hint`. */
 const SPLIT = [
@@ -86,12 +87,12 @@ describe("settings row copy stays scannable", () => {
     // now falls back to English and then to `""`. So the miss reaches a user as a blank label, which
     // is why this test looks the key up in `en` rather than rendering and eyeballing the result.
     const files = fs
-      .readdirSync(SRC, { recursive: true, encoding: "utf8" })
+      .readdirSync(SETTINGS_SRC, { recursive: true, encoding: "utf8" })
       .filter((f) => typeof f === "string" && f.endsWith(".tsx"))
     const missing: string[] = []
     let sites = 0
     for (const f of files) {
-      const src = fs.readFileSync(path.join(SRC, f), "utf8")
+      const src = fs.readFileSync(path.join(SETTINGS_SRC, f), "utf8")
       for (const m of src.matchAll(/language\.t\("(settings\.[^"{}]+|policies\.[^"{}]+)"\)/g)) {
         sites += 1
         if (typeof t[m[1]!] !== "string") missing.push(`${f}: ${m[1]}`)
@@ -107,13 +108,15 @@ describe("settings row copy stays scannable", () => {
     // detail deleted with extra steps — and `SettingsExplainV2` is the affordance that reaches it on
     // focus and touch, not only under a mouse.
     const files = fs
-      .readdirSync(SRC, { recursive: true, encoding: "utf8" })
+      .readdirSync(COMPONENTS_SRC, { recursive: true, encoding: "utf8" })
       .filter((f) => typeof f === "string" && f.endsWith(".tsx"))
     const rendered = new Set<string>()
     for (const f of files)
-      for (const m of fs.readFileSync(path.join(SRC, f), "utf8").matchAll(/language\.t\("([^"{}]+\.more)"\)/g))
+      for (const m of fs.readFileSync(path.join(COMPONENTS_SRC, f), "utf8").matchAll(/language\.t\("([^"{}]+\.more)"\)/g))
         rendered.add(m[1]!)
-    const unreachable = pairs.map((p) => p.hint).filter((k) => !rendered.has(k))
+    const englishMore = Object.keys(t).filter((key) => key.endsWith(".more"))
+    expect(englishMore.length).toBeGreaterThan(30)
+    const unreachable = englishMore.filter((key) => !rendered.has(key))
     expect(unreachable).toEqual([])
   })
 })

@@ -129,7 +129,7 @@ export const name = "wait"
 /**
  * The bound, and its measurement, now live with the join itself — `SessionJoin.JOIN_TIMEOUT_MS`.
  *
- * ⚠️ **They moved because a SECOND join was carrying the falsified 2-minute value** (RF-03-1).
+ * ⚠️ **They moved because a SECOND join was carrying the falsified 2-minute value** ().
  * `SessionV2.wait`, behind `POST /api/session/:id/wait`, was a hand-rolled poll whose comment claimed
  * *"same semantics as the wait TOOL"* while it had neither this transport nor this bound — so the
  * HTTP door reported "operation unavailable" on healthy children the tool path was fixed for on

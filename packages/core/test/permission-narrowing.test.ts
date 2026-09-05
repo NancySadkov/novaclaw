@@ -3,7 +3,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import type { Permission } from "@novaclaw/schema/permission"
 
 /**
- * `todo/projects.md`: *"Permissions compose as narrowing, deny-wins constraints: a Project or session
+ * ``: *"Permissions compose as narrowing, deny-wins constraints: a Project or session
  * may never widen the operator's safety floor."*
  *
  * 🔴 This is a SECURITY boundary, not a preference. `evaluate` takes the LAST matching rule across

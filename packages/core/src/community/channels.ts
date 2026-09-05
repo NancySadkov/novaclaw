@@ -345,10 +345,11 @@ export const layer = Layer.effect(
      * list by picking the shorter method name.
      */
     const readable = Effect.fn("CommunityChannels.readable")(function* (channel: string, limit: number) {
+      const spellings = yield* spellingsOf(channel)
       const rows = yield* db
         .select()
         .from(CommunityMessageTable)
-        .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
+        .where(inArray(CommunityMessageTable.channel, spellings))
         // ⚠️ By RECEIVED time, never by the author's claim — see the column's note. Sorting by a
         // number the author chooses hands them the top of every reader's view.
         .orderBy(desc(CommunityMessageTable.received_at), desc(sql`rowid`))
@@ -371,7 +372,7 @@ export const layer = Layer.effect(
       const [count] = yield* db
         .select({ held: sql<number>`count(*)` })
         .from(CommunityMessageTable)
-        .where(inArray(CommunityMessageTable.channel, yield* spellingsOf(channel)))
+        .where(inArray(CommunityMessageTable.channel, spellings))
         .all()
         .pipe(Effect.orDie)
       const held = count?.held ?? all.length

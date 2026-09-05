@@ -181,10 +181,10 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       return root.state
     }
 
-    createEffect(() => {
-      global.servers.list().forEach((conn) => ensure(conn))
-    })
-
+    // Notification state follows the selected instance. Keeping one listener/store per configured
+    // connection would defeat Global's demand-created server contexts by starting every inactive
+    // instance's SSE stream and persistence work at boot. Selecting an instance reads its persisted
+    // notifications through `selected()` and creates its state on demand.
     createEffect(() => {
       const scopes = new Set(global.servers.list().map((conn) => server.scope(ServerConnection.key(conn))))
       states.forEach((value, scope) => {
@@ -390,7 +390,7 @@ function createServerNotificationState(input: {
       // will carry the one notification; a child must never appear as a second colleague.
       if (session.parentID) return
 
-      const executions = await sessionExecutions(serverSDK().server.http).catch(() => [])
+      const executions = await sessionExecutions(serverSDK().server.http, sessionID).catch(() => [])
       if (meta.disposed) return
       const execution = executions.find((item) => item.sessionID === sessionID)
       const attention = terminalAttention({ lifecycle, execution: execution?.state })

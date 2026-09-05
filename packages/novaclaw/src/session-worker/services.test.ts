@@ -61,6 +61,48 @@ test("forwards server catalog boot events through the host-owned event bridge", 
   expect(publications).toBe(1)
 })
 
+test("coalesces live text deltas and flushes them before the next host event", async () => {
+  const publications: Array<{ type: string; data: unknown }> = []
+  const services = SessionWorkerServices.make({
+    publishEvent: async (type: string, data: unknown) => {
+      publications.push({ type, data })
+      return {
+        version: 1,
+        type: "event-published",
+        sessionID,
+        attemptID: "exe_services",
+        generation: 1,
+        requestID: `rpc_${publications.length}`,
+        eventID: EventV2.ID.create(),
+      }
+    },
+  } as unknown as SessionWorkerCapabilities.Capabilities)
+  const assistantMessageID = SessionMessage.ID.create()
+  const base = {
+    sessionID,
+    assistantMessageID,
+    timestamp: DateTime.makeUnsafe(1234),
+    textID: "text-1",
+  }
+
+  await Effect.runPromise(services.events.publish(SessionEvent.Text.Delta, { ...base, delta: "a" }))
+  await Effect.runPromise(services.events.publish(SessionEvent.Text.Delta, { ...base, delta: "b" }))
+  await Effect.runPromise(services.events.publish(SessionEvent.Text.Delta, { ...base, delta: "c" }))
+  expect(publications).toHaveLength(0)
+
+  await Effect.runPromise(
+    services.events.publish(SessionEvent.Text.Ended, {
+      ...base,
+      text: "abc",
+    }),
+  )
+  expect(publications.map((item) => item.type)).toEqual([
+    SessionEvent.Text.Delta.type,
+    SessionEvent.Text.Ended.type,
+  ])
+  expect((publications[0].data as { delta: string }).delta).toBe("abc")
+})
+
 test("restores permission denial identity from the host reply", async () => {
   const services = SessionWorkerServices.make({
     assertPermission: async () => ({

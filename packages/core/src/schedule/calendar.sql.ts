@@ -1,6 +1,8 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
+export type FireOutcome = "pending" | "succeeded" | "failed" | "interrupted"
+
 // Calendar / cron-session creator. A HOT operational store — schedules +
 // their fire ledger — NOT the durable KB (two-DB discipline). `recurrence_json` holds a structured
 // `Recurrence` (schedule/recurrence.ts), never a cron string. `next_fire_at` is denormalised for a cheap
@@ -29,11 +31,17 @@ export const CalendarFireTable = sqliteTable(
   "calendar_fire",
   {
     id: text().primaryKey(),
-    schedule_id: text().notNull(),
+    schedule_id: text()
+      .notNull()
+      .references(() => CalendarScheduleTable.id, { onDelete: "cascade" }),
     occurrence_millis: integer().notNull(),
     fired_at: integer().notNull(),
     session_id: text(),
     status: text().$type<"spawned" | "skipped" | "error">().notNull(),
+    outcome: text().$type<FireOutcome>().notNull().default("pending"),
   },
-  (table) => [uniqueIndex("calendar_fire_occurrence_idx").on(table.schedule_id, table.occurrence_millis)],
+  (table) => [
+    uniqueIndex("calendar_fire_occurrence_idx").on(table.schedule_id, table.occurrence_millis),
+    index("calendar_fire_fired_at_idx").on(table.fired_at),
+  ],
 )

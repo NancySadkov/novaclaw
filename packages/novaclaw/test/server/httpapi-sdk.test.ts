@@ -26,7 +26,7 @@ import { httpApiLayer } from "./httpapi-layer"
  * Decode a `-s <session>` id and fetch it, so the assertions below can pin the SDK-visible shape of
  * both failures: a malformed id (thrown locally) and a well-formed id the server does not have.
  *
- * ⚠️ This lived at `src/cli/validate-session.ts` until 2026-09-01 (RF-14-13), where its own header
+ * ⚠️ This lived at `src/cli/validate-session.ts` until 2026-09-01 (), where its own header
  * claimed it was *"used by the headless CLI path and the server SDK tests"*. The first half was
  * false — `cmd/run.ts` has its own `--session` option and does its own check (`:480`, `:715`), so
  * nothing in `src/` ever called this. It was test scaffolding shelved in production code; re-homed

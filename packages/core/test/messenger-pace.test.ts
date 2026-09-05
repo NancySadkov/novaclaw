@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
-import { Effect, Ref } from "effect"
+import { Effect, Fiber, Ref } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { it } from "./lib/effect"
 
@@ -51,6 +52,36 @@ describe("MessengerPace serialization", () => {
       yield* Effect.all([task, task, task, task, task], { concurrency: "unbounded" })
       // If the pacer serializes, at most one task is ever in flight.
       expect(yield* Ref.get(maxSeen)).toBe(1)
+    }),
+  )
+
+  it.effect("aborts a stalled provider and releases the global hand for another account", () =>
+    Effect.gen(function* () {
+      const pacer = MessengerPace.make({ sleep: () => Effect.void })
+      let aborted = false
+      const stalled = Effect.tryPromise<never, Error>({
+        try: (signal) =>
+          new Promise<never>((_resolve, reject) => {
+            const abort = () => {
+              aborted = true
+              reject(new Error("provider aborted"))
+            }
+            if (signal.aborted) abort()
+            else signal.addEventListener("abort", abort, { once: true })
+          }),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      })
+      const first = yield* Effect.exit(pacer.paced("stalled", stalled)).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      const second = yield* Effect.exit(pacer.paced("healthy", Effect.succeed("sent"))).pipe(Effect.forkChild)
+      yield* TestClock.adjust(MessengerPace.SEND_DEADLINE_MS)
+
+      const firstExit = yield* Fiber.join(first)
+      const secondExit = yield* Fiber.join(second)
+      expect(firstExit._tag).toBe("Failure")
+      expect(aborted).toBe(true)
+      expect(secondExit._tag).toBe("Success")
+      if (secondExit._tag === "Success") expect(secondExit.value).toBe("sent")
     }),
   )
 })

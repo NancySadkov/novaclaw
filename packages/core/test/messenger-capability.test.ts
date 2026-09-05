@@ -5,7 +5,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 
 /**
- * Fault-injection for the MESSENGER edge — `todo/v0.2.0-prep.md` §1.
+ * Fault-injection for the MESSENGER edge — `` §1.
  *
  * The gateway is the edge most likely to actually break in the field: it holds a live network
  * session against someone else's service, and it is the one subsystem here whose failure mode is

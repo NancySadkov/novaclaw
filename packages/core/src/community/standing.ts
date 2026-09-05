@@ -49,7 +49,7 @@ export const rungOf = (stores: Stores, networkID: string): Effect.Effect<Rung> =
      * fact), so a row here means we dealt with them ourselves. It resolves through the succession
      * chain, which is what stops a rotation from demoting somebody we know.
      */
-    if ((yield* stores.observations.about(networkID)).length > 0) return "own"
+    if (yield* stores.observations.has(networkID)) return "own"
 
     const contact = yield* stores.contacts.get(networkID)
     /**
@@ -64,7 +64,7 @@ export const rungOf = (stores: Stores, networkID: string): Effect.Effect<Rung> =
      * ⚠️ ONE HOP, checked against the doorman set itself rather than by climbing. See the file
      * comment — this is the line that must never become a loop.
      */
-    const row = (yield* stores.peers.list()).find((peer) => peer.networkID === networkID)
+    const row = yield* stores.peers.get(networkID)
     if (row?.introducedBy !== undefined) {
       const introducer = yield* stores.contacts.get(row.introducedBy)
       if (introducer?.trust !== undefined && introducer.trust > 0) return "vouched"

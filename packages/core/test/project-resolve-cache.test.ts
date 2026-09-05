@@ -14,7 +14,7 @@ import { testEffect } from "./lib/effect"
  *
  * ⚠️ **No real git here, and that is the point.** The invariant under test is *how many times git
  * is asked*, and a wall-clock suite cannot assert that: it can only observe that a run got faster,
- * which on this box swings ±30% between identical runs anyway (todo/test-speed.md). So `Git.Service`
+ * which on this box swings ±30% between identical runs anyway (). So `Git.Service`
  * is a stub that COUNTS its three calls and answers from a table, and the whole file is arithmetic —
  * it runs in milliseconds and it fails for exactly one reason.
  *

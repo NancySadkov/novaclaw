@@ -66,10 +66,15 @@ import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import * as PeakSeries from "./lib/peak-series"
 import * as RunSchedule from "./lib/run-schedule"
-import { readFailingNames, stripAnsi } from "./lib/test-output"
+import { readFailingNames, readSkipCount, readTestCount, stripAnsi } from "./lib/test-output"
 import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
-import { novaclawSubUnits, PACKAGES, PROMOTED_NOVACLAW_SUBDIRS } from "./lib/run-units"
+import {
+  novaclawSubUnits,
+  PACKAGES,
+  PROMOTED_NOVACLAW_SUBDIRS,
+  PROMOTED_NOVACLAW_TEST_FILES,
+} from "./lib/run-units"
 
 /**
  * Refuse to run alongside a build, local inference server or another suite, or on a machine whose
@@ -205,6 +210,8 @@ type Result = {
   note: string
   /** Tests bun reported as skipped, or `undefined` when its summary could not be read (crash/kill). */
   skipped: number | undefined
+  /** Total tests Bun reported as completed, or `undefined` when its final summary was unreadable. */
+  testCount: number | undefined
   /** The names bun reported as failing, for the expected-failure ledger. */
   failing: string[]
   /** Peak MB this unit's processes held, when the sampler could measure it. Feeds the peak profile. */
@@ -238,19 +245,6 @@ type Result = {
   shards?: number
 }
 const results: Result[] = []
-
-/**
- * bun's end-of-run summary looks like ` 1234 pass` / `  12 skip` / `   0 fail`, one per line. The `pass`
- * line is the POSITIVE signal that we actually reached a summary: without it we return `undefined`
- * (unknown) rather than 0, so a crashed unit never masquerades as "zero skips".
- */
-function readSkipCount(output: string): number | undefined {
-  const plain = stripAnsi(output)
-  if (!/^\s*\d+\s+pass\b/m.test(plain)) return undefined
-  let total = 0
-  for (const match of plain.matchAll(/^\s*(\d+)\s+skip\b/gm)) total += Number(match[1])
-  return total
-}
 
 /**
  * A tsgo diagnostic: `src/foo.ts(3,31): error TS4104: The type 'readonly string[]' is 'readonly' ...`.
@@ -884,10 +878,15 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   // A skip count is only meaningful if EVERY shard produced a summary — one unreadable shard makes the
   // total an undercount, which the ledger would then read as a skip that disappeared.
   const perShardSkips = kind === "test" ? runs.map((r) => readSkipCount(r.captured)) : []
+  const perShardCounts = kind === "test" ? runs.map((r) => readTestCount(r.captured)) : []
   const skipped =
     kind !== "test" || perShardSkips.some((s) => s === undefined)
       ? undefined
       : perShardSkips.reduce<number>((a, s) => a + (s ?? 0), 0)
+  const testCount =
+    kind !== "test" || perShardCounts.some((count) => count === undefined)
+      ? undefined
+      : perShardCounts.reduce<number>((a, count) => a + (count ?? 0), 0)
   const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)
   const sampled = runs.map((r) => r.sampledMb).filter((mb): mb is number => mb !== undefined)
   const foreign = runs.map((r) => r.foreignMb).filter((mb): mb is number => mb !== undefined)
@@ -927,6 +926,7 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
       .filter(Boolean)
       .join(" · "),
     skipped,
+    testCount,
     failing: kind === "test" ? [...new Set(runs.flatMap((r) => readFailingNames(r.captured)))] : [],
     ...(peakStatus === "measured" && peaks.length ? { peakMb: Math.max(...peaks) } : {}),
     ...(kind === "test" ? { peakStatus, ownTicks, ticks } : {}),
@@ -958,6 +958,7 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
  * forever, which is exactly the bill this list replaced.
  */
 const promotedSubdirs = new Set<string>(PROMOTED_NOVACLAW_SUBDIRS)
+const promotedTestFiles = new Set<string>(PROMOTED_NOVACLAW_TEST_FILES)
 
 /**
  * ─── phase 1: does the tree COMPILE ────────────────────────────────────────────────────────────────
@@ -1033,7 +1034,7 @@ for (const pkg of PACKAGES) {
   const perTest = pkg.timeoutMs ?? PER_TEST_TIMEOUT_MS
   const argv = (args: string[]) => ["test", ...args, `--timeout=${perTest}`]
   if (pkg.perSubdir)
-    for (const sub of novaclawSubUnits(pkg.dir, promotedSubdirs))
+    for (const sub of novaclawSubUnits(pkg.dir, promotedSubdirs, promotedTestFiles))
       testJobs.push(
         nextJob(
           `${pkg.name} ${sub.unit}`,
@@ -1109,6 +1110,7 @@ function start(job: Job, reservation: RunSchedule.Reservation, sharded: number |
         ms: 0,
         note: `the runner threw: ${String(error)}`,
         skipped: undefined,
+        testCount: undefined,
         failing: [],
       })
     })
@@ -1228,6 +1230,7 @@ type Baseline = {
   note?: string
   reasons?: Record<string, string>
   units?: Record<string, number>
+  counts?: Record<string, number>
   failing?: Record<string, string[]>
   /** Measured peak MB per run unit — the input to the memory ladder. See `readPeaks` above. */
   peaks?: Record<string, number>
@@ -1236,6 +1239,7 @@ const BASELINE_PATH = join(import.meta.dir, "test-baseline.json")
 
 function readBaseline(): {
   units: Record<string, number>
+  counts: Record<string, number>
   failing: Record<string, string[]>
   seeded: boolean
   broken?: string
@@ -1244,14 +1248,21 @@ function readBaseline(): {
   try {
     raw = readFileSync(BASELINE_PATH, "utf8")
   } catch {
-    return { units: {}, failing: {}, seeded: false }
+    return { units: {}, counts: {}, failing: {}, seeded: false }
   }
   try {
     const parsed = JSON.parse(raw) as Baseline
     const units = parsed.units ?? {}
-    return { units, failing: parsed.failing ?? {}, seeded: Object.keys(units).length > 0 }
+    const counts = parsed.counts ?? {}
+    return { units, counts, failing: parsed.failing ?? {}, seeded: Object.keys(units).length > 0 }
   } catch (error) {
-    return { units: {}, failing: {}, seeded: false, broken: error instanceof Error ? error.message : String(error) }
+    return {
+      units: {},
+      counts: {},
+      failing: {},
+      seeded: false,
+      broken: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
@@ -1512,10 +1523,10 @@ if (peakVerdicts.length) {
  * over each unit's own summary line, so a `todo` line is NOT in this number — `it.todo` is a hole
  * this ledger cannot see. Widen the pattern before claiming otherwise.
  *
- * Seeding: the baseline ships with an empty `units` map because the counts can only be learned by
- * running the suite. While it is empty the ledger prints what it observed, says so, and does NOT affect
- * the exit code. Paste the observed numbers into script/test-baseline.json and commit them; from
- * then on a change to any count fails the run.
+ * Seeding: the baseline ships with an empty `units` and `counts` map because the values can only be
+ * learned by running the suite. While either map is empty its ledger prints what it observed, says so,
+ * and does NOT affect the exit code. Paste the observed numbers into script/test-baseline.json and
+ * commit them; from then on a change to any count fails the run.
  */
 // Typecheck units produce no bun summary and never could: including them here would print a row of
 // "no bun summary — crashed or killed" for every package on every GREEN run, which is this file
@@ -1588,6 +1599,46 @@ if (baseline.broken) {
   }
 }
 
+/**
+ * ─── the TEST-COUNT ledger ────────────────────────────────────────────────────────────────────────
+ * A test file can disappear while the remaining tests stay green. Bun's completed total is the cheap
+ * mechanical signal for that class of hole, so keep it beside the skip ledger rather than trusting a
+ * directory enumeration that does not prove execution. Shards contribute disjoint totals and are
+ * summed in `run()` before this comparison.
+ */
+const observedCounts = testResults.filter((r) => r.testCount !== undefined)
+const unreadableCounts = testResults.filter((r) => r.testCount === undefined)
+const countBaselineSeeded = Object.keys(baseline.counts).length > 0
+let testCountDrift = false
+process.stdout.write(`\n\x1b[1m── test counts ──\x1b[0m\n`)
+for (const r of testResults)
+  process.stdout.write(`  ${r.name.padEnd(30)} ${r.testCount === undefined ? "?" : String(r.testCount).padStart(4)}\n`)
+if (unreadableCounts.length)
+  process.stdout.write(
+    `  \x1b[33m${unreadableCounts.length} test unit(s) had no completed Bun count; their process output was incomplete.\x1b[0m\n`,
+  )
+if (!countBaselineSeeded) {
+  process.stdout.write(
+    `  \x1b[33mTEST-COUNT BASELINE NOT SEEDED\x1b[0m — copy the observed counts into the "counts" map in ${BASELINE_PATH};\n` +
+      `  until then this new ratchet reports but does not affect the exit code.\n`,
+  )
+} else {
+  const missing = observedCounts.filter((r) => baseline.counts[r.name] === undefined && (r.testCount ?? 0) > 0)
+  const changed = observedCounts
+    .filter((r) => baseline.counts[r.name] !== undefined)
+    .filter((r) => baseline.counts[r.name] !== r.testCount)
+  if (missing.length || changed.length || unreadableCounts.length) {
+    testCountDrift = true
+    process.stdout.write(`\n  \x1b[31mTEST COUNTS CHANGED OR UNREADABLE\x1b[0m — update the baseline only with an intentional test diff:\n`)
+    for (const r of missing)
+      process.stdout.write(`    ${r.name.padEnd(30)} not in baseline  ->  observed ${r.testCount}\n`)
+    for (const r of changed)
+      process.stdout.write(`    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name]}  ->  observed ${r.testCount}\n`)
+    for (const r of unreadableCounts)
+      process.stdout.write(`    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name] ?? "not recorded"}  ->  no completed count\n`)
+  }
+}
+
 let ledgerDrift = false
 for (const [unit, pinned] of expectedFailures) {
   const result = results.find((r) => r.name === unit)
@@ -1640,6 +1691,7 @@ process.stdout.write(
     `${shardedUnits.length ? `  ·  \x1b[33m${shardedUnits.length} unit(s) SHARDED — degraded\x1b[0m` : ""}` +
     `${pinnedOk.length ? `  ·  \x1b[33m${pinnedOk.length} pinned\x1b[0m` : ""}` +
     `${skipDrift ? "  ·  \x1b[31mskip-ledger drift\x1b[0m" : ""}` +
+    `${testCountDrift ? "  ·  \x1b[31mtest-count drift\x1b[0m" : ""}` +
     `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}` +
     `${peakRegressions.length ? `  ·  \x1b[31m${peakRegressions.length} peak regression(s)\x1b[0m` : ""}\n`,
 )
@@ -1658,4 +1710,4 @@ process.stdout.write(
 // So the refusals go through `abort`, which owns the killing, the sampler and the (synchronous)
 // diagnostic; see `lib/diagnostic.ts` for why the write is synchronous anyway on a target we do not
 // measure from here.
-process.exitCode = failed.length || skipDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0
+process.exitCode = failed.length || skipDrift || testCountDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0

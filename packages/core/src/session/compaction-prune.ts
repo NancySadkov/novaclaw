@@ -146,7 +146,7 @@ export const outputTokens = (tool: SessionMessage.AssistantTool, imagePatchPixel
  * represented by its summary.
  *
  * ⚠️ **It does NOT stop at an already-pruned tool result, and must not pretend to.** A second stop
- * on `time.pruned` stood here until 2026-09-01 (RF-03-10), documented as "what makes repeated prunes
+ * on `time.pruned` stood here until 2026-09-01 (), documented as "what makes repeated prunes
  * idempotent and O(new work)". It could never fire: `time.pruned` is written only by `erase()`
  * below, `erase` is IN-MEMORY within one compaction cycle (the ⛔ block at the top of this file is
  * why), and nothing persists it — so `plan` always runs over a freshly decoded transcript in which

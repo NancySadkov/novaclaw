@@ -58,6 +58,7 @@ const suspendingSettings = (values: Record<string, unknown>) =>
     SettingsConfigStore.Service.of({
       all: () => Effect.yieldNow.pipe(Effect.as({ ...values })),
       set: (setting, value) => Effect.sync(() => void (values[setting] = value)),
+      update: (setting, change) => Effect.sync(() => void (values[setting] = change(values[setting]))),
       remove: (setting) => Effect.sync(() => void delete values[setting]),
       serverPassword: () => Effect.succeed(undefined),
       unreadable: () => Effect.succeed([]),

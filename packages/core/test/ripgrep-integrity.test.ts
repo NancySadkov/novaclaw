@@ -9,7 +9,7 @@ import { stripComments } from "./lib/source-scan"
  * **ripgrep is embedded from a local build-host binary and executed as this agent OS's tree-search
  * engine.** Until 2026-07-30 the only check on the old acquisition path was
  * `if (bytes.byteLength === 0)` — a swapped release asset, a poisoned trust store or an upstream
- * account compromise was arbitrary code execution inside NovaClaw (`todo/supply-chain.md` §1, the
+ * account compromise was arbitrary code execution inside NovaClaw (`` §1, the
  * highest-severity finding that audit produced).
  *
  * The fix is a per-triple SHA-256 pin of the executable, so an embedded or inherited `rg` is verified
@@ -133,7 +133,7 @@ describe("verifyDigest is fail-closed", () => {
   })
 
   test("a MISSING pin is a refusal, never a skip", () => {
-    // The guard-shaped no-op `todo/supply-chain.md` §1 explicitly warns against: an empty hash table
+    // The guard-shaped no-op `` §1 explicitly warns against: an empty hash table
     // that "verifies" by falling through. Nothing may be installed on the strength of no evidence.
     const bytes = payload("anything at all")
     for (const bad of [undefined, "", "   ", "not-a-hash"])

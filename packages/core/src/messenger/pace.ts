@@ -1,6 +1,6 @@
 export * as MessengerPace from "./pace"
 
-import { Context, Duration, Effect, Layer, Semaphore } from "effect"
+import { Context, Duration, Effect, Layer, Schema, Semaphore } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 
 // The traffic-rules governor's PACER (AGENTS.md design principle 9): NovaClaw types
@@ -22,6 +22,12 @@ export const MIN_DELAY_MS = 700
 export const MAX_DELAY_MS = 6_000
 /** A small gap after each send so back-to-back messages don't butt together. */
 export const INTER_MESSAGE_GAP_MS = 500
+/** A provider write may be ambiguous, but it must not hold the instance's one hand forever. */
+export const SEND_DEADLINE_MS = 30_000
+
+export class TimeoutError extends Schema.TaggedErrorClass<TimeoutError>()("MessengerPace.TimeoutError", {
+  reason: Schema.String,
+}) {}
 
 export interface PaceOptions {
   readonly charsPerSecond?: number
@@ -59,9 +65,16 @@ export const typingDelayMs = (text: string, options?: PaceOptions): number => {
 export interface Pacer {
   /** Run one outbound send under the global pace: acquire the single "hand", wait the typing
    *  delay for `text`, perform `send`, then a small gap before releasing. Serializes ALL sends.
+   *  The provider effect has a finite deadline: a stalled transport cannot wedge every account
+   *  behind the one global permit. An interrupted `Effect.tryPromise` receives its AbortSignal;
+   *  drivers must pass it to fetch or close their client on abort.
    *  `perCall` overrides the typing speed / clamps for THIS message (per-account setting, §2.3) —
    *  the serialization ("one hand") stays global no matter what. */
-  readonly paced: <A, E, R>(text: string, send: Effect.Effect<A, E, R>, perCall?: PaceOptions) => Effect.Effect<A, E, R>
+  readonly paced: <A, E, R>(
+    text: string,
+    send: Effect.Effect<A, E, R>,
+    perCall?: PaceOptions,
+  ) => Effect.Effect<A, E | TimeoutError, R>
 }
 
 /** Build a process-global pacer. `sleep` is injectable so tests run instantly while still proving
@@ -77,7 +90,17 @@ export const make = (options?: PaceOptions & { readonly sleep?: (ms: number) => 
           // Per-account speed/clamps override the pacer defaults for this message; a test-injected
           // `sleep` still wins so the suite stays instant.
           yield* sleep(typingDelayMs(text, { ...options, ...perCall }))
-          const result = yield* send
+          const result = yield* send.pipe(
+            Effect.timeoutOrElse({
+              duration: Duration.millis(SEND_DEADLINE_MS),
+              orElse: () =>
+                Effect.fail(
+                  new TimeoutError({
+                    reason: `The messenger provider did not answer within ${SEND_DEADLINE_MS / 1000} seconds; delivery is uncertain, so NovaClaw did not retry it.`,
+                  }),
+                ),
+            }),
+          )
           yield* sleep(gap)
           return result
         }),

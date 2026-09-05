@@ -208,7 +208,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   recovery.register("session.presence", () => void session.loadPresence())
   // Persisted app manifests. `app.registered` refreshes them while connected; nothing refreshed them
   // after an outage, so an app registered while the stream was down stayed invisible.
-  recovery.register("apps.persisted", () => void loadPersistedApps(serverSDK.server.http))
+  recovery.register("apps.persisted", () =>
+    void loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server)),
+  )
   recovery.sweep()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
   const agentStatusListeners = new Set<() => void>()
@@ -429,7 +431,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     // B14: a home-app manifest was registered (agent tool -> EventV2 bridge, or POST /app ->
     // GlobalBus) — refetch the persisted list regardless of which directory the event rode in on.
     // (The event union in the generated SDK predates app.registered — hence the cast.)
-    if ((event.type as string) === "app.registered") void loadPersistedApps(serverSDK.server.http)
+    if ((event.type as string) === "app.registered")
+      void loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server))
 
     // The instance catalog (providers/models) is seeded a beat AFTER the server starts accepting
     // connections, so the very first `/provider` fetch at cold start can land empty — and with

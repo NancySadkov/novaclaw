@@ -472,13 +472,16 @@ export const makeSessionGroups = <
       )
       .add(
         HttpApiEndpoint.get("session.execution.list", "/api/session/execution", {
+          query: {
+            sessionID: Schema.optional(Session.ID),
+          },
           success: Schema.Struct({ data: Schema.Array(SessionExecution.Info) }),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "v2.session.execution.list",
             summary: "Inspect durable session execution",
             description:
-              "List durable execution and recovery state, including paused failures and their human-readable details.",
+              "List durable execution and recovery state, including paused failures and their human-readable details. Pass sessionID to inspect one session without transferring the whole ledger.",
           }),
         ),
       )

@@ -226,6 +226,9 @@ describe("DiscordDriver", () => {
         }),
       )
       expect(cursors.some((value) => DiscordDriver.readCursor(value)?.sessionID === "sess-9")).toBe(true)
+      // READY is persisted immediately; the three live messages share one bounded flush at scope
+      // close instead of each rewriting the full cursor object.
+      expect(cursors).toHaveLength(2)
       const [guildMsg, echo, dm] = received
       if (guildMsg?.kind === "message") {
         // ⭐ Ruling 7: a guild channel is a `channel` (its SHAPE) and proposes `unknown` (its

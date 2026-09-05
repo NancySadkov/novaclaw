@@ -78,18 +78,18 @@ const ID_CITATION = /\b(?:RF-\d{2}-\d+[a-z]?|UX-\d{2})\b/g
  * A package that reaches 0 keeps its line at 0 — a package with no line at all fails the roster test.
  */
 const LEDGER: Record<string, { paths: number; ids: number }> = {
-  app: { paths: 0, ids: 12 },
-  core: { paths: 60, ids: 24 },
+  app: { paths: 0, ids: 0 },
+  core: { paths: 0, ids: 0 },
   desktop: { paths: 0, ids: 0 },
   dht: { paths: 0, ids: 0 },
   "effect-drizzle-sqlite": { paths: 0, ids: 0 },
   host: { paths: 0, ids: 0 },
-  "http-recorder": { paths: 0, ids: 1 },
-  llm: { paths: 0, ids: 2 },
-  novaclaw: { paths: 14, ids: 13 },
+  "http-recorder": { paths: 0, ids: 0 },
+  llm: { paths: 0, ids: 0 },
+  novaclaw: { paths: 0, ids: 0 },
   plugin: { paths: 0, ids: 0 },
   protocol: { paths: 0, ids: 0 },
-  schema: { paths: 2, ids: 2 },
+  schema: { paths: 0, ids: 0 },
   script: { paths: 0, ids: 0 },
   server: { paths: 0, ids: 0 },
   "session-ui": { paths: 0, ids: 0 },
@@ -114,9 +114,10 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   return acc
 }
 
-function scan(): { counts: Record<string, { paths: number; ids: number }>; sites: string[] } {
+function scan(): { counts: Record<string, { paths: number; ids: number }>; sites: string[]; files: number } {
   const counts: Record<string, { paths: number; ids: number }> = {}
   const sites: string[] = []
+  let files = 0
   for (const pkg of readdirSync(PACKAGES_DIR)) {
     const src = join(PACKAGES_DIR, pkg, "src")
     let isDir = false
@@ -134,6 +135,7 @@ function scan(): { counts: Record<string, { paths: number; ids: number }>; sites
         // ⚠️ The ledger must not count ITSELF. This file quotes both forms to state the rule, and a
         // scanner that matches its own prose reports violations it can never clear.
         if (file === SELF) continue
+        files++
         const text = readFileSync(file, "utf8")
         const paths = (text.match(PATH_CITATION) ?? []).length
         const ids = (text.match(ID_CITATION) ?? []).length
@@ -143,7 +145,7 @@ function scan(): { counts: Record<string, { paths: number; ids: number }>; sites
         sites.push(`${relative(PACKAGES_DIR, file).replaceAll("\\", "/")} (paths ${paths}, ids ${ids})`)
       }
   }
-  return { counts, sites }
+  return { counts, sites, files }
 }
 
 describe("plan-citation ledger", () => {
@@ -176,12 +178,10 @@ describe("plan-citation ledger", () => {
   test("the scan is reading real files (vacuity)", () => {
     // ⚠️ Every count above is a `.match()` on text read from disk. A widened-but-broken root, or a
     // `sourceFiles` that silently returns nothing, makes every number 0 and every assertion agree
-    // with itself forever. The ledger's own non-zero lines are the proof it is still looking.
-    const { counts, sites } = scan()
+    // with itself forever. The file-population floor is the proof it is still looking even after the
+    // citation burndown reaches zero; a nonzero violation is no longer required for a healthy tree.
+    const { counts, files } = scan()
     expect(Object.keys(counts).length).toBeGreaterThan(10)
-    expect(sites.length, "no citation sites found at all — the scan reached nothing").toBeGreaterThan(0)
-    const totalIds = Object.values(counts).reduce((n, c) => n + c.ids, 0)
-    const totalPaths = Object.values(counts).reduce((n, c) => n + c.paths, 0)
-    expect(totalIds + totalPaths, "both forms read zero, which the ledger says is false").toBeGreaterThan(0)
+    expect(files, "no source files found — the scan reached nothing").toBeGreaterThan(100)
   })
 })

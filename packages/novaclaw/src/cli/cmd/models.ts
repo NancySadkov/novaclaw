@@ -54,7 +54,7 @@ export const ModelsCommand = effectCmd({
       // The location graph starts PluginInternal in a scoped fork. Await its initial
       // batch before reading Catalog or a fast CLI process can observe an empty store.
       yield* (yield* PluginV2.Service).ready
-      // RF-14-8: the four-call catalog read is `ProviderCatalogResult.listCatalog`, shared verbatim
+      // : the four-call catalog read is `ProviderCatalogResult.listCatalog`, shared verbatim
       // with `httpapi/handlers/provider.ts`'s `list`. Only the DIRECTORY differs between the two —
       // `process.cwd()` here, `InstanceState.context.directory` there — so only the provision below
       // stays local. `run.ts` drives the in-process HTTP handler instead, which is the other valid

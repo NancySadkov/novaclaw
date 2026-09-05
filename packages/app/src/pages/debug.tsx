@@ -285,12 +285,28 @@ function DebugAppPage() {
     }
   }
 
-  const contextSession = createMemo(() => sessions()[0])
+  // Keep the context fetch keyed by the session identity, not by the derived `sessions()` rows.
+  // That array also reads live status, so rebuilding it for every busy/idle event used to make the
+  // resource below reload the selected session's entire message history on each status transition.
+  // The context panel is a diagnostic sample of the newest session; status changes are already
+  // visible in the `ps` table and must not invalidate its transcript.
+  const contextSessionID = createMemo(() => {
+    const conn = focused()
+    if (!conn) return undefined
+    const info = global.ensureServerCtx(conn).sync.session.data.info
+    return Object.values(info)
+      .filter((row) => row !== undefined)
+      .sort((a, b) => (a!.id < b!.id ? 1 : -1))[0]?.id
+  })
+  const contextSession = createMemo(() => {
+    const id = contextSessionID()
+    return id === undefined ? undefined : sessions().find((row) => row.id === id)
+  })
   const [contextLoad, { refetch: refetchContext }] = createResource(
     () => {
       const conn = focused()
-      const row = contextSession()
-      return conn && row ? { conn, sessionID: row.id } : undefined
+      const sessionID = contextSessionID()
+      return conn && sessionID ? { conn, sessionID } : undefined
     },
     async ({ conn, sessionID }) => {
       await global

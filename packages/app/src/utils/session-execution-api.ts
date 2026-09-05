@@ -21,8 +21,11 @@ export interface SessionExecutionInfo {
   readonly updatedAt: number
 }
 
-export async function sessionExecutions(server: ServerConnection.HttpBase) {
-  const response = await instanceFetch<{ data: SessionExecutionInfo[] }>(server, { route: "api/session/execution" })
+export async function sessionExecutions(server: ServerConnection.HttpBase, sessionID?: string) {
+  const response = await instanceFetch<{ data: SessionExecutionInfo[] }>(server, {
+    route: "api/session/execution",
+    query: { sessionID },
+  })
   return response.data
 }
 

@@ -24,7 +24,7 @@ import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harn
  * system prompt at all**, and the harness's marker-based classifier could not match an empty string —
  * so it landed in the interactive log and **ate the scripted turn**, leaving the real turn an empty
  * stream. The classifier now tests POSITIVELY for the agent system prompt, so any utility pass falls
- * out by construction. See `fixture/runner-harness.ts` and todo/v0.2.0-prep.md → S3.
+ * out by construction. See `fixture/runner-harness.ts` and  → S3.
  */
 
 describe("SessionRunnerLLM — stream projection", () => {

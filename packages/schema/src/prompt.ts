@@ -92,23 +92,6 @@ export const Origin = Schema.Union([
      */
     hops: Schema.Finite.pipe(optional),
     /**
-     * The GROUP EXCHANGE this message belongs to, if it is one.
-     *
-     * 🔴 A conference has no session of its own, and that is the design rather than an omission.
-     * Agents and sessions are the same first-class entity (owner, 2026-08-23), so a session with no
-     * personality would re-introduce the split the merge exists to remove — and giving a participant
-     * a second stream is the very thing *"maintaining the agent's ego and consciousness instead of
-     * splitting it among several streams"* forbids. A group is therefore a FAN-OUT: the same message
-     * lands in each participant's own chat, and this id is what makes those copies one conversation.
-     *
-     * It rides HERE for the reason `hops` does: the transcript is the record, one stream per agent,
-     * and membership kept in a side table can disagree with what actually happened. It also means a
-     * receiver reading its own inbox can answer "who else heard this?" without querying a chat it
-     * does not own — which, under one-stream-per-agent, it cannot do.
-     *
-     * Absent means an ordinary 1:1 hand-off.
-     */
-    /**
      * The agent ids this chain has passed through, in order, each sender appended at its own hop.
      *
      * 🔴 **`hops` is a NUMBER, so `A→B→C→A` is indistinguishable from `A→B→C→D`.** A cycle is caught
@@ -127,6 +110,23 @@ export const Origin = Schema.Union([
      * the hop cap remain the real bound. Saying so is the honest description of what this delivers.
      */
     path: Schema.Array(Schema.String).pipe(optional),
+    /**
+     * The GROUP EXCHANGE this message belongs to, if it is one.
+     *
+     * 🔴 A conference has no session of its own, and that is the design rather than an omission.
+     * Agents and sessions are the same first-class entity (owner, 2026-08-23), so a session with no
+     * personality would re-introduce the split the merge exists to remove — and giving a participant
+     * a second stream is the very thing *"maintaining the agent's ego and consciousness instead of
+     * splitting it among several streams"* forbids. A group is therefore a FAN-OUT: the same message
+     * lands in each participant's own chat, and this id is what makes those copies one conversation.
+     *
+     * It rides HERE for the reason `hops` does: the transcript is the record, one stream per agent,
+     * and membership kept in a side table can disagree with what actually happened. It also means a
+     * receiver reading its own inbox can answer "who else heard this?" without querying a chat it
+     * does not own — which, under one-stream-per-agent, it cannot do.
+     *
+     * Absent means an ordinary 1:1 hand-off.
+     */
     conversation: Schema.String.pipe(optional),
     /**
      * Everyone in the conference, by agent id, INCLUDING the sender.

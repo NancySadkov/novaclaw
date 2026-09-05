@@ -29,7 +29,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import { toolIdentity } from "./lib/tool"
 
 /**
- * `todo/projects.md` → **Typed pre-action policies**, the MANAGEMENT half.
+ * `` → **Typed pre-action policies**, the MANAGEMENT half.
  *
  * The kernel could compose, refuse, patch and record from the day it landed, and a person could
  * neither see which policies were installed nor decide which of them ran. This file covers the
@@ -307,7 +307,7 @@ describe("a folder that declared a policy the user then switched off", () => {
 })
 
 /**
- * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * ``: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
  * write Permissions got."* Before a write surface existed, the property below was enforced by the
  * TYPE and by nothing else — `policies` is an array of ids, so a removal had no spelling. A write
  * surface is exactly what could grow one, so the property is pinned here as behaviour.

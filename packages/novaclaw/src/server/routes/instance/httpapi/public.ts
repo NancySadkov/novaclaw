@@ -55,7 +55,7 @@ type OpenApiResponse = {
 // Query schemas describe decoded Effect values, but the generated SDK needs the
 // public call shape. These keep SDK callers passing numbers/booleans while the
 // server still decodes string query params at runtime.
-// ⚠️ Ten further entries were ablated 2026-09-01 (RF-13-15) — the same measurement
+// ⚠️ Ten further entries were ablated 2026-09-01 () — the same measurement
 // `applyLegacySchemaOverrides` below already applied to itself. Nine named paths absent from the
 // emitted document (`GET /experimental/session` ×5, `GET /session` ×3, `GET /session/{sessionID}/message`),
 // and `GET /api/session start` named a query parameter that operation no longer has (it carries
@@ -72,7 +72,7 @@ type OpenApiResponse = {
  * any transform runs.
  *
  * ⚠️ **Therefore every `NumberFromString` query field MUST have a row here**, or it ships advertised
- * as a string. Completed 2026-09-01 (RF-24-4): seven were missing, and the gap was visible as one
+ * as a string. Completed 2026-09-01 (): seven were missing, and the gap was visible as one
  * decoder advertised two ways — `/api/session?limit=` said `number` while `/history?limit=`, the
  * same `NumberFromString`, said `string`. Worse, `packages/sdk/js/script/emitter.ts` carried a
  * hard-coded special case for `v2.session.history` alone, so the SDK's types CONTRADICTED our own
@@ -402,7 +402,7 @@ function legacyErrorResponse(description: string, name: "BadRequestError" | "Not
  * and copying the correct definition across for each name that came back self-referencing.
  *
  * ⚠️ An earlier attempt to resolve them from a parent union's `anyOf`/`oneOf` sat here until
- * 2026-09-01 (RF-13-15) as a `for` loop whose body, after its `continue` guard, was fourteen lines of
+ * 2026-09-01 () as a `for` loop whose body, after its `continue` guard, was fourteen lines of
  * comment reasoning its own way to "just delete the broken component" — and then doing nothing. It
  * iterated every schema to no effect on every call. `git log -S fixSelfReferencingComponents` has it
  * if the union approach is ever wanted.

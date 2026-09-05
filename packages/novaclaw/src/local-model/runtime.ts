@@ -63,6 +63,12 @@ export interface Status {
   readonly recommendedContext: number
 }
 
+const isAcquisitionStage = (stage: Stage) =>
+  stage === "checking" ||
+  stage === "downloading-runtime" ||
+  stage === "installing-runtime" ||
+  stage === "downloading-model"
+
 /** Private runtime identity, distinct from core's public manager seam so the adapter cannot replace itself. */
 export class RuntimeService extends Context.Service<RuntimeService, LocalModelManager.Interface>()(
   "@novaclaw/LocalModelRuntime",
@@ -170,6 +176,7 @@ export const layer = Layer.effect(
     let acquisition = effective()
     let state: Status = { ...baseStatus(acquisition.profile), stage: "idle" }
     let job: Fiber.Fiber<void, never> | undefined
+    let installActive = false
     let child: Process.Child | undefined
     let shuttingDown = false
     let expectedStop = false
@@ -378,6 +385,16 @@ export const layer = Layer.effect(
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            set({
+              stage: "idle",
+              message: "The local model installation was stopped.",
+              detail: "Verified partial downloads are kept so you can resume later.",
+              completed: undefined,
+              total: undefined,
+            })
+            return
+          }
           const message = errorText(Cause.squash(cause))
           set({
             stage: "error",
@@ -412,13 +429,7 @@ export const layer = Layer.effect(
           })
           return state
         }
-        if (
-          state.stage === "downloading-runtime" ||
-          state.stage === "installing-runtime" ||
-          state.stage === "downloading-model" ||
-          state.stage === "starting" ||
-          state.stage === "checking"
-        )
+        if (isAcquisitionStage(state.stage) || state.stage === "starting" || state.stage === "stopping")
           return state
         acquisition = effective(overrides)
         selectedContext = context ?? recommendedContext(os.totalmem())
@@ -429,7 +440,8 @@ export const layer = Layer.effect(
           output: outputForContext(selectedContext),
           message: "Checking this computer…",
         })
-        job = runtime(
+        installActive = true
+        const currentJob = runtime(
           Effect.gen(function* () {
             if (child) {
               expectedStop = true
@@ -439,6 +451,13 @@ export const layer = Layer.effect(
             yield* install
           }),
         )
+        job = currentJob
+        void Effect.runPromise(Fiber.await(currentJob)).finally(() => {
+          if (job === currentJob) {
+            job = undefined
+            installActive = false
+          }
+        })
         return state
       })
 
@@ -517,7 +536,8 @@ export const layer = Layer.effect(
 
     const stop = () =>
       Effect.promise(async () => {
-        if (!child && !loading) {
+        const currentJob = installActive && isAcquisitionStage(state.stage) ? job : undefined
+        if (!child && !loading && !currentJob) {
           if ((await exists(paths.server)) && (await exists(paths.model)))
             set({
               stage: "installed",
@@ -533,14 +553,28 @@ export const layer = Layer.effect(
         loadAbort?.abort(new Error("The local model was stopped from Instance settings."))
         const current = child
         if (current) await Process.stop(current).catch(() => undefined)
+        if (currentJob) await Effect.runPromise(Fiber.interrupt(currentJob)).catch(() => undefined)
         await loading?.catch(() => undefined)
-        if (!child)
-          set({
-            stage: "installed",
-            message: "The local model is stopped. It will load again when you prompt it.",
-            pid: undefined,
-            ramBytes: undefined,
-          })
+        if (!child && !loading) {
+          if (currentJob) {
+            set({
+              stage: "idle",
+              message: "The local model installation was stopped.",
+              detail: "Verified partial downloads are kept so you can resume later.",
+              completed: undefined,
+              total: undefined,
+              pid: undefined,
+              ramBytes: undefined,
+            })
+          } else {
+            set({
+              stage: "installed",
+              message: "The local model is stopped. It will load again when you prompt it.",
+              pid: undefined,
+              ramBytes: undefined,
+            })
+          }
+        }
         return state
       })
 

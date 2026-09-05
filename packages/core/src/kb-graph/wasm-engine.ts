@@ -1358,7 +1358,7 @@ export class WasmMemory {
     }
     if (input.query && input.query.trim()) {
       const hits = await this.rows(
-        `CALL QUERY_FTS_INDEX('Memory', 'mem_fts', $query) RETURN node.id AS id ORDER BY score DESC`,
+        `CALL QUERY_FTS_INDEX('Memory', 'mem_fts', $query) RETURN node.id AS id ORDER BY score DESC LIMIT ${pool}`,
         { query: input.query },
       )
       fuse(hits.map((h) => String(h.id)))
@@ -1990,18 +1990,19 @@ export class WasmMemory {
    * colleague rate window follows ("one loud colleague never spends another's allowance"), and the
    * reason this returns scopes rather than pruning by prefix in one pass.
    */
-  async stagedScopes(prefix: string): Promise<string[]> {
-    // ⚠️ The one public op that does not go through `serialize` (filed separately), so it is also the
-    // one the latch there does not cover. Without this line it would still issue a statement against
-    // a dead module — the same silence, one method over.
-    if (this.dead) throw new Error(this.dead)
-    const rows = await this.rows(
-      `MATCH (m:Memory)
-       WHERE m.t_invalid IS NULL AND m.relation = 'staged' AND starts_with(m.scope, $prefix)
-       RETURN DISTINCT m.scope AS scope`,
-      { prefix },
-    )
-    return rows.map((row) => String(row.scope ?? "")).filter((scope) => scope !== "")
+  stagedScopes(prefix: string): Promise<string[]> {
+    // The query is part of the same single-threaded graph transaction as every other public op.
+    // Keeping it behind the lock also makes a debounced CHECKPOINT unable to interleave with the
+    // result read, and lets the dead latch reject it before it reaches a failed WASM connection.
+    return this.serialize(async () => {
+      const rows = await this.rows(
+        `MATCH (m:Memory)
+         WHERE m.t_invalid IS NULL AND m.relation = 'staged' AND starts_with(m.scope, $prefix)
+         RETURN DISTINCT m.scope AS scope`,
+        { prefix },
+      )
+      return rows.map((row) => String(row.scope ?? "")).filter((scope) => scope !== "")
+    })
   }
 
   /**
@@ -2066,12 +2067,17 @@ export class WasmMemory {
    *  Newest first (recent memories are the ones most likely to be recalled). */
   pendingEmbeddings(limit = 64): Promise<{ id: string; text: string }[]> {
     return this.serialize(async () => {
-      const rows = await this.rows(
+      // Select only ids through the scan: this engine can return an empty `text` for a table scan
+      // after snapshotting, while the row is still intact. Hydrate the bounded result set by primary
+      // key before handing bodies to the embedder, just like `list` and `search` do.
+      const selected = await this.rows(
         `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.embedding IS NULL
-         RETURN m.id AS id, m.text AS text
+         RETURN m.id AS id
          ORDER BY m.t_created DESC LIMIT ${Math.max(1, Math.min(limit | 0, 512))}`,
       )
-      return rows.map((r) => ({ id: String(r.id), text: String(r.text ?? "") })).filter((r) => r.text.length > 0)
+      return (await this.hydrate(selected.map((row) => String(row.id))))
+        .map((row) => ({ id: row.id, text: row.text }))
+        .filter((row) => row.text.length > 0)
     })
   }
 

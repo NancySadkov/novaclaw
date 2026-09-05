@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { isRecord } from "./record"
 
 /**
- * RF-29-6. Twelve hand-rolled copies of this predicate collapsed onto one export, so the shape
+ * . Twelve hand-rolled copies of this predicate collapsed onto one export, so the shape
  * table they collectively implied is pinned here rather than re-derived by the next reader.
  */
 
@@ -57,7 +57,7 @@ test("the merged predicate answers every shape the twelve sites could be handed"
   }
 })
 
-test("🔴 the `!!value` vs `value !== null` divergence RF-29-6 was filed over does not exist", () => {
+test("🔴 the `!!value` vs `value !== null` divergence  was filed over does not exist", () => {
   // The A/B, run rather than asserted in prose. `app/src/utils/diffs.ts` and the pre-2026-09-01
   // `novaclaw/src/util/record.ts` used the `!!value` form; everything else used `value !== null`.
   // If they could differ, the separating value would be a FALSY object — and `null` is the only

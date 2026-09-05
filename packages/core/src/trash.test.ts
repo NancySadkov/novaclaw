@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { DEFAULT_TTL_MS, isValidId, listTrash, purgeExpired, restore, trashPath } from "./trash"
+import { TrashSettings } from "./trash-settings"
 
 // Every test gets its own temp trash root + temp workspace — no shared state, no Global.Path writes.
 const cleanups: string[] = []
@@ -189,6 +190,27 @@ describe("trash store", () => {
 describe("trash retention placement", () => {
   const EXPIRED = new Date("2026-06-01T12:00:00Z") // well past a 2-day TTL by `LATER`
   const LATER = new Date("2026-07-02T12:00:00Z")
+
+  test("the live retention setting controls mutation-backed expiry", async () => {
+    const root = await tmpdir("trash-root-")
+    const work = await tmpdir("trash-work-")
+    const old = path.join(work, "old.txt")
+    await fs.writeFile(old, "old", "utf8")
+    TrashSettings.apply({ retention_days: 1 })
+    const expired = await trashPath(old, { root, now: () => new Date("2026-06-01T12:00:00Z") })
+
+    const fresh = path.join(work, "fresh.txt")
+    await fs.writeFile(fresh, "fresh", "utf8")
+    await trashPath(fresh, { root, now: () => new Date("2026-07-02T12:00:00Z") })
+    expect(await exists(path.join(root, expired.id))).toBe(false)
+
+    TrashSettings.apply({ retention_days: 30 })
+    const retained = path.join(work, "retained.txt")
+    await fs.writeFile(retained, "retained", "utf8")
+    const retainedEntry = await trashPath(retained, { root, now: () => new Date("2026-07-01T12:00:00Z") })
+    expect(await exists(path.join(root, retainedEntry.id))).toBe(true)
+    TrashSettings.apply(undefined)
+  })
 
   /** One trashed entry dated `when`, plus the path its payload occupies under the root. */
   async function seed(root: string, name: string, when: Date) {

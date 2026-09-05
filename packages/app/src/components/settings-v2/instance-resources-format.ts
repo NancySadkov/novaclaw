@@ -16,9 +16,15 @@
  */
 
 import { Bytes } from "@novaclaw/core/util/bytes"
+import type { InstanceResources, ResourceLevel } from "@/utils/resource-api"
 
 // ⚠️ The body was moved VERBATIM to `@novaclaw/core/util/bytes` and is now shared with the instance's
 // own resource-pressure lines, which had grown a second copy of it. The precision switch at 10 MiB and
 // the bare round on the KiB branch are load-bearing — reconstructing either from memory changes what the
 // user reads. (It was rewritten on the first pass; the tests below are what caught the drift.)
 export const formatResourceBytes = Bytes.binary
+
+/** The memory row must never borrow the aggregate verdict, which can be dominated by a disk. */
+export const memoryPressureLevel = (
+  resources: Pick<InstanceResources, "memoryLevel"> | undefined,
+): ResourceLevel | "…" => resources?.memoryLevel ?? "…"

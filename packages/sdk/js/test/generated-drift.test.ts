@@ -149,7 +149,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 //   `ProjectTune`                                 (`Project.Tune`, the dot collapsed as usual)
 // Updated 2026-08-18, mapping diff reviewed — three additions, each mapping to itself, nothing removed:
 //   `RecipeVerifyCheck` / `RecipeVerifyResult`    (POST /api/recipe/:slug/verify — the deterministic
-//                                                  success artifact for a cook, todo/recipes.md)
+//                                                  success artifact for a cook)
 //   `UnknownReason`                               (`@novaclaw/schema`'s shared "why is this blank"
 //                                                  vocabulary, first reaching the wire through it)
 // Updated 2026-08-18, mapping diff reviewed — ONE addition, mapping to itself, nothing removed:
@@ -301,7 +301,8 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `QualityCommands` (the five slots, which were a TypeScript interface in core and a hand-written
 // Schema.Struct in the tool, held equal by nothing) and `QualityDetection` (those plus the
 // evidence). Nothing left. 505 -> 507 entries, reviewed with a HEAD-versus-working-tree diff.
-const SCHEMA_NAME_FINGERPRINT = "85dd7c8e4cca55df0f875011f84fccd1ba02f30085018b61e103729aca12b80b"
+// 2026-09-04: the current emitter normalizes the five MCP status names to `Mcp...`.
+const SCHEMA_NAME_FINGERPRINT = "f00bd286a503c5c7c57a0838978faead74df56a7927cd6d5f47fdf0f6afeaa92"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

@@ -175,6 +175,23 @@ describe("the maintenance plane withholds by CLASS, and the control is the plane
 // ── the scan ────────────────────────────────────────────────────────────────────────────────────
 
 describe("the reader spans segments, filters, and bounds itself", () => {
+  test("stops inside the newest segment once the requested window is full", () => {
+    const directory = makeDirectory()
+    writeActive(directory, [
+      at("2026-08-08T10:00:00.000Z", "INFO", "event=a.b.c oldest=1"),
+      at("2026-08-08T10:00:01.000Z", "INFO", "event=a.b.c middle=1"),
+      at("2026-08-08T10:00:02.000Z", "INFO", "event=a.b.c newest=1"),
+    ])
+
+    const result = LogRead.scan({ directory, name: "novaclaw", limit: 1 })
+
+    expect(result.lines).toHaveLength(1)
+    expect(result.lines[0]?.raw).toContain("newest=1")
+    // The reader walks newest-first. Once the answer is known, older lines in this segment are
+    // not parsed merely to prove that the segment is exhausted.
+    expect(result.scanned).toBe(1)
+  })
+
   test("rotated .gz history is read, and lines come back oldest first", () => {
     const directory = makeDirectory()
     writeRotated(directory, "20260807T000000000Z", [

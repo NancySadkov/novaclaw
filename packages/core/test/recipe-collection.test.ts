@@ -1,6 +1,6 @@
 // The bundled `examples` collection — and the armed trap for the name collision it was defined against.
 //
-// `todo/recipes.md`: *define the bundled `examples/` registry **without confusing recipes with Spark
+// ``: *define the bundled `examples/` registry **without confusing recipes with Spark
 // runtime profiles***. Ruling 14 rules out *"two things called 'recipe' in one agent's context"*, and both
 // already exist: a NovaClaw recipe (a folder of prose that may not carry configuration or anything that
 // runs) and a `sparkrun` runtime profile — `sparkrun run <recipe.yaml>`, files in `~/recipes/` on the
@@ -108,47 +108,5 @@ describe("collection membership is decided by the BUILD", () => {
 
   test("editing a shipped example keeps it on the Examples shelf — they own the bytes, not the provenance", () => {
     expect(RecipeBuiltin.collectionOf("hello-c")).toBe("examples")
-  })
-})
-
-describe("grouped — the thing a boolean could not do", () => {
-  const record = (slug: string, name: string): Recipe.Recipe => ({
-    slug,
-    name,
-    prompt: "p",
-    assets: [],
-    builtin: false,
-    updatedAt: 0,
-  })
-
-  test("groups in COLLECTIONS order and keeps the caller's order inside a group", () => {
-    const listing = [
-      record("hello-c", "Hello, C"),
-      record("aaa-mine", "Aaa"),
-      record("pi-100-machin", "Pi"),
-      record("zzz-mine", "Zzz"),
-    ]
-    expect(
-      RecipeBuiltin.grouped(listing).map((group) => [group.collection.id, group.recipes.map((r) => r.slug)]),
-    ).toEqual([
-      ["examples", ["hello-c", "pi-100-machin"]],
-      ["mine", ["aaa-mine", "zzz-mine"]],
-    ])
-  })
-
-  test("an empty shelf is dropped rather than shown empty", () => {
-    expect(RecipeBuiltin.grouped([record("only-mine", "Mine")]).map((group) => group.collection.id)).toEqual(["mine"])
-    expect(RecipeBuiltin.grouped([record("hello-c", "Hello")]).map((group) => group.collection.id)).toEqual([
-      "examples",
-    ])
-    expect(RecipeBuiltin.grouped([])).toEqual([])
-  })
-
-  test("the record's own `builtin` flag is NOT what decides — the group is right even when it is false", () => {
-    // `Recipe.list` only sets `builtin` when the caller remembers to pass `builtinSlugs`; a grouping that
-    // trusted the flag would silently file every shipped example under My recipes for those callers.
-    const listing = [record("hello-c", "Hello, C")]
-    expect(listing[0].builtin).toBe(false)
-    expect(RecipeBuiltin.grouped(listing)[0].collection.id).toBe("examples")
   })
 })

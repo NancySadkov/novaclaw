@@ -6,7 +6,7 @@ import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
 import { MessengerWire } from "../wire"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } from "../driver"
-import { ConnectError, SendError } from "../driver"
+import { ConnectError, SendError, withAbortSignal } from "../driver"
 
 // The IRC driver (messenger-plan §2.1) — the contract's DEGRADATION FLOOR: no files, no edits,
 // no message ids from the platform (we DERIVE them — see `messageIDOf`), no chat enumeration (join-by-name; the
@@ -273,7 +273,7 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       // password becomes an IRC command.
       const sendCommand = (command: string, params: readonly string[], trailing?: string) =>
         Effect.tryPromise({
-          try: () => socket.send(formatCommand(command, params, trailing)),
+          try: (signal) => withAbortSignal(signal, () => socket.send(formatCommand(command, params, trailing)), socket.close),
           catch: (error) => new ConnectError({ reason: `IRC write failed: ${String(error)}` }),
         })
 
