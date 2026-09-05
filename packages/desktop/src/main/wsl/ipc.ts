@@ -4,11 +4,12 @@ import type { WslServersController } from "./servers"
 import { requireWslIpcString } from "./policy"
 import type { WslServersState } from "../../preload/types"
 
-export function registerWslIpcHandlers(controller: WslServersController) {
+export function registerWslIpcHandlers(controller?: WslServersController) {
   if (process.platform !== "win32") {
     registerUnavailableWslIpcHandlers()
     return
   }
+  if (!controller) throw new Error("WSL IPC registration requires its Windows-only controller")
 
   const subscriptions = new Map<number, () => void>()
   const unsubscribe = (id: number) => {

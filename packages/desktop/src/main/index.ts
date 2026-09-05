@@ -45,9 +45,8 @@ import {
   setBackgroundColor,
   setDockIcon,
 } from "./windows"
-import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
-import { spawnWslSidecar } from "./wsl/sidecar"
+import type { WslServersController } from "./wsl/servers"
 
 const APP_NAMES: Record<string, string> = {
   dev: "NovaClaw Dev",
@@ -63,6 +62,7 @@ const TEST_ONBOARDING = process.env.NOVACLAW_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
+let wslServers: WslServersController | undefined
 
 /**
  * The boot timeline. Module scope because the marks are taken from four
@@ -259,26 +259,11 @@ const main = Effect.gen(function* () {
   logger = initLogging()
   initCrashReporter()
 
-  const wslServers = createWslServersController(
-    app.getVersion(),
-    async (distro) => {
-      logger.log("spawning wsl sidecar", { distro })
-      return spawnWslSidecar(distro, {
-        onLine: (line) => logger.log("wsl sidecar", { distro, stream: line.stream, text: line.text }),
-      })
-    },
-    {
-      logger: {
-        log: (message, meta) => logger.log(message, meta),
-        error: (message, meta) => logger.error(message, meta),
-      },
-    },
-  )
   const stopSidecars = async () => {
     // NC-REL-001: `stopAll` is awaited now. It used to be fire-and-forget, so the "bounded wait over
     // stopSidecars()" that quit advertises covered the local sidecar and nothing else.
     await killSidecar()
-    await wslServers.stopAll()
+    await wslServers?.stopAll()
   }
   const relaunch = () => {
     void stopSidecars().finally(() => {
@@ -396,6 +381,30 @@ const main = Effect.gen(function* () {
   )
   if (!electronReady) return
   markBoot("electron-ready")
+
+  // WSL is a Windows-only, user-triggered capability. Import its controller and native PTY path
+  // after Electron is ready so macOS/Linux launches never resolve that graph, and Windows startup
+  // can show the shell before the optional controller is initialized.
+  if (process.platform === "win32") {
+    const [{ createWslServersController }, { spawnWslSidecar }] = yield* Effect.promise(() =>
+      Promise.all([import("./wsl/servers"), import("./wsl/sidecar")]),
+    )
+    wslServers = createWslServersController(
+      app.getVersion(),
+      async (distro) => {
+        logger.log("spawning wsl sidecar", { distro })
+        return spawnWslSidecar(distro, {
+          onLine: (line) => logger.log("wsl sidecar", { distro, stream: line.stream, text: line.text }),
+        })
+      },
+      {
+        logger: {
+          log: (message, meta) => logger.log(message, meta),
+          error: (message, meta) => logger.error(message, meta),
+        },
+      },
+    )
+  }
 
   app.setAsDefaultProtocolClient("novaclaw")
   registerRendererProtocol()
@@ -574,7 +583,8 @@ const main = Effect.gen(function* () {
     })
 
     if (process.platform === "win32") {
-      void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
+      if (!wslServers) logger.error("wsl server controller was not initialized")
+      else void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
 
     // ⚠️ `tryPromise` + `catchCause`, and both halves matter. `health.wait` REJECTS when the child

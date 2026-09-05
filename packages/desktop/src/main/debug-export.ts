@@ -3,7 +3,6 @@ import { lstat, open, opendir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
 import { finished } from "node:stream/promises"
-import { TextReader, Uint8ArrayReader, ZipWriter } from "@zip.js/zip.js"
 
 export type DebugExportEntry = {
   readonly name: string
@@ -126,6 +125,9 @@ export async function writeDebugZip(
   entries: readonly DebugExportEntry[],
   options: { readonly signal?: AbortSignal; readonly deadlineAt: number },
 ) {
+  // Debug export is user-triggered. Keep the archive implementation out of the desktop cold-start
+  // graph; the caller already owns the bounded, cancellable export operation below.
+  const { TextReader, Uint8ArrayReader, ZipWriter } = await import("@zip.js/zip.js")
   const destination = createWriteStream(output, { flags: "wx", signal: options.signal })
   const writer = new ZipWriter(Writable.toWeb(destination) as WritableStream)
   try {
