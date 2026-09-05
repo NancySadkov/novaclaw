@@ -3,7 +3,7 @@ import { PtyProtocol } from "@novaclaw/core/pty/protocol"
 import { Ticket } from "@novaclaw/core/ticket"
 import { Location } from "@novaclaw/core/location"
 import { Shell } from "@novaclaw/core/shell"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -13,9 +13,14 @@ import { ForbiddenError, PtyNotFoundError } from "@novaclaw/protocol/errors"
 import { TICKET_QUERY, TICKET_REQUEST_HEADER, TICKET_REQUEST_HEADER_VALUE } from "@novaclaw/schema/ticket"
 import { response } from "../location"
 import { makeByteBoundedOutbox } from "./pty-outbox"
+import { WebSocketTracker } from "../websocket-tracker"
 
 const ptyFrameBytes = (frame: string | Uint8Array | Socket.CloseEvent) =>
-  frame instanceof Socket.CloseEvent ? 0 : typeof frame === "string" ? Buffer.byteLength(frame, "utf8") : frame.byteLength
+  frame instanceof Socket.CloseEvent
+    ? 0
+    : typeof frame === "string"
+      ? Buffer.byteLength(frame, "utf8")
+      : frame.byteLength
 
 const ticketScope = Effect.gen(function* () {
   const location = yield* Location.Service
@@ -215,7 +220,17 @@ export const PtyHandler = handlerLayer(
             // replay, live output, and the close frame keep their order. A socket that cannot keep
             // up is closed and can resume from its last cursor; it must not become a second,
             // lossless PTY history in the server heap.
-            // TODO: Integrate graceful-shutdown socket tracking before clients migrate to this route.
+            const detached = yield* Deferred.make<void>()
+            const registered = yield* WebSocketTracker.register(
+              write(WebSocketTracker.SERVER_CLOSING_EVENT()).pipe(
+                Effect.andThen(Deferred.await(detached)),
+                Effect.catch(() => Effect.void),
+              ),
+            )
+            if (!registered) {
+              yield* closeAccepted(WebSocketTracker.SERVER_CLOSING_EVENT())
+              return HttpServerResponse.empty()
+            }
             const outbox = yield* makeByteBoundedOutbox<string | Uint8Array | Socket.CloseEvent>(ptyFrameBytes)
             const enqueueData = (chunk: string) => {
               for (const frame of PtyProtocol.chunks(chunk)) {
@@ -272,6 +287,7 @@ export const PtyHandler = handlerLayer(
             ).pipe(
               Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
               Effect.ensuring(Effect.sync(() => attachment.detach())),
+              Effect.ensuring(Deferred.succeed(detached, undefined)),
               Effect.orDie,
             )
             return HttpServerResponse.empty()

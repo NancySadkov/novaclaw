@@ -1,13 +1,19 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { readFile } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
-import { Context, Effect, Layer, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Scope } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { Pty } from "@novaclaw/core/pty"
+import { PtyID } from "@novaclaw/core/pty/schema"
+import { Location } from "@novaclaw/core/location"
+import { LocationServiceMap } from "@novaclaw/core/location-service-map"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { ServerLocationServiceMap } from "../../src/location-service-map"
 import { Server } from "../../src/server/server"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { withTimeout } from "../../src/util/timeout"
@@ -21,7 +27,7 @@ const original = {
   envUsername: process.env.NOVACLAW_SERVER_USERNAME,
 }
 const auth = { username: "novaclaw", password: "listen-secret" }
-const testPty = process.platform === "win32" ? test.skip : test
+const testPty = test
 
 // ⏱ The port-fallback test's time budget. See `deadline()` and the mechanical check at the bottom of
 // the describe for why these three numbers are a single arithmetic invariant rather than three taste
@@ -112,15 +118,28 @@ async function createCat(listener: Awaited<ReturnType<typeof startListener>>, di
       "x-novaclaw-directory": dir,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ command: "/bin/cat", title: "listen-smoke" }),
+    body: JSON.stringify({
+      command: process.platform === "win32" ? "powershell.exe" : "/bin/sh",
+      args:
+        process.platform === "win32"
+          ? [
+              "-NoLogo",
+              "-NoProfile",
+              "-Command",
+              "while ($null -ne ($line = [Console]::ReadLine())) { [Console]::WriteLine('reply:' + $line) }",
+            ]
+          : ["-c", 'while IFS= read -r line; do printf "reply:%s\\n" "$line"; done'],
+      title: "listen-smoke",
+    }),
   })
   expect(response.status).toBe(200)
   return ((await response.json()) as { data: { id: string } }).data
 }
 
-async function openSocket(url: URL) {
+async function openSocket(url: URL, onMessage?: (event: MessageEvent) => void) {
   const ws = new WebSocket(url)
   ws.binaryType = "arraybuffer"
+  if (onMessage) ws.addEventListener("message", onMessage)
   await withTimeout(
     new Promise<void>((resolve, reject) => {
       ws.addEventListener("open", () => resolve(), { once: true })
@@ -189,13 +208,15 @@ function deadline(totalMs: number, floorMs: number) {
 
 function waitForMessage(ws: WebSocket, predicate: (message: string) => boolean) {
   const decoder = new TextDecoder()
+  let received = ""
   let onMessage: ((event: MessageEvent) => void) | undefined
   return withTimeout(
     new Promise<string>((resolve) => {
       onMessage = (event: MessageEvent) => {
         const message = typeof event.data === "string" ? event.data : decoder.decode(event.data as ArrayBuffer)
-        if (!predicate(message)) return
-        resolve(message)
+        received += message
+        if (!predicate(received)) return
+        resolve(received)
       }
       ws.addEventListener("message", onMessage)
     }),
@@ -217,6 +238,119 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 }
 
 describe("HttpApi Server.listen", () => {
+  testPty("listener replacement detaches and replays the same live PTY from its last cursor", async () => {
+    await using tmp = await tmpdir({ config: { formatter: false } })
+    const shared = Layer.makeMemoMapUnsafe()
+    const scope = Scope.makeUnsafe()
+    const services = await Effect.runPromise(Layer.buildWithMemoMap(ServerLocationServiceMap.layer, shared, scope))
+    const locations = Context.get(services, LocationServiceMap.Service)
+    const local = await Effect.runPromise(
+      Layer.buildWithMemoMap(
+        locations.get(Location.Ref.make({ directory: AbsolutePath.make(tmp.path) })),
+        shared,
+        scope,
+      ),
+    )
+    const pty = Context.get(local, Pty.Service)
+    const attach = pty.attach
+    let attachments = 0
+    const expectedReplays: string[] = []
+    const tracked = spyOn(pty, "attach").mockImplementation((id, input) =>
+      attach(id, input).pipe(
+        Effect.map((attachment) => {
+          attachments++
+          expectedReplays.push(attachment.replay)
+          let detached = false
+          return {
+            ...attachment,
+            detach: () => {
+              attachment.detach()
+              if (!detached) attachments--
+              detached = true
+            },
+          }
+        }),
+      ),
+    )
+    let listener: Awaited<ReturnType<typeof startListener>> | undefined
+    let ws: WebSocket | undefined
+    try {
+      listener = await startListener({ memoMap: shared })
+      const info = await createCat(listener, tmp.path)
+      let cursor = 0
+      let received = ""
+      let metadataFrames = 0
+      let replayed = ""
+      const replay = Promise.withResolvers<void>()
+      const record = (event: MessageEvent) => {
+        const data = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)
+        if (data.startsWith("\0")) {
+          cursor = JSON.parse(data.slice(1)).cursor
+          if (++metadataFrames === 2) {
+            replayed = received
+            replay.resolve()
+          }
+        } else {
+          received += data
+          cursor += data.length
+        }
+      }
+      const ticket = await connectTicket(listener, info.id, tmp.path)
+      ws = await openSocket(socketURL(listener, info.id, tmp.path, ticket.ticket), record)
+      const first = waitForMessage(ws, (data) => data.includes("reply:before-restart"))
+      ws.send("before-restart\r")
+      await first
+      expect(attachments).toBe(1)
+      await stop(listener, "listener replacement close")
+      listener = undefined
+      expect(attachments).toBe(0)
+      const retainedCursor = cursor
+      // Keep the instance graph alive, as the desktop does when only its listener is replaced.
+      expect((await Effect.runPromise(pty.get(PtyID.make(info.id)))).status).toBe("running")
+      const output = Promise.withResolvers<void>()
+      let absentOutput = ""
+      const observer = await Effect.runPromise(
+        attach(PtyID.make(info.id), {
+          cursor: -1,
+          onData: (data) => {
+            absentOutput += data
+            if (absentOutput.includes("reply:during-restart")) output.resolve()
+          },
+          onEnd: () => {},
+        }),
+      )
+      observer.activate()
+      try {
+        await Effect.runPromise(pty.write(PtyID.make(info.id), "during-restart\r"))
+        await withTimeout(output.promise, 5_000, "PTY output while listener is absent")
+      } finally {
+        observer.detach()
+      }
+      listener = await startListener({ memoMap: shared })
+      const nextTicket = await connectTicket(listener, info.id, tmp.path)
+      const url = socketURL(listener, info.id, tmp.path, nextTicket.ticket)
+      url.searchParams.set("cursor", String(retainedCursor))
+      received = ""
+      ws = await openSocket(url, record)
+      await withTimeout(replay.promise, 5_000, "same PTY cursor replay")
+      expect(replayed).toBe(expectedReplays[1])
+      expect(received).not.toContain("before-restart")
+      expect(received).toContain("during-restart")
+      const fresh = waitForMessage(ws, (data) => data.includes("after-restart"))
+      ws.send("after-restart\r\n")
+      await fresh
+      expect(received.indexOf("during-restart")).toBeLessThan(received.indexOf("after-restart"))
+      await stop(listener, "restarted listener close")
+      listener = undefined
+      expect(attachments).toBe(0)
+    } finally {
+      ws?.close()
+      if (listener) await stop(listener, "replay test cleanup")
+      tracked.mockRestore()
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  })
+
   test("stored token rotates live, reports provenance, and clearing restores the launcher default", async () => {
     const listener = await startListener()
     const rotated = "rotated-listen-secret"
@@ -278,7 +412,7 @@ describe("HttpApi Server.listen", () => {
       const ticket = await connectTicket(listener, info.id, tmp.path)
       expect(ticket.expires_in).toBeGreaterThan(0)
       const ws = await openSocket(socketURL(listener, info.id, tmp.path, ticket.ticket))
-      const closed = new Promise<void>((resolve) => ws.addEventListener("close", () => resolve(), { once: true }))
+      const closed = new Promise<CloseEvent>((resolve) => ws.addEventListener("close", resolve, { once: true }))
 
       const message = waitForMessage(ws, (message) => message.includes("ping-listen"))
       ws.send("ping-listen\n")
@@ -286,7 +420,11 @@ describe("HttpApi Server.listen", () => {
 
       await stop(listener, "timed out waiting for listener.stop(true)")
       stopped = true
-      await withTimeout(closed, 5_000, "timed out waiting for websocket close")
+      const close = await withTimeout(closed, 5_000, "timed out waiting for websocket close")
+      // Bun's NodeWS adapter currently normalizes 1001 to 1000; it retains the reason.
+      // websocket-tracker.test.ts separately pins the requested wire event to 1001.
+      expect(close.code).toBe(process.versions.bun ? 1000 : 1001)
+      expect(close.reason).toBe("server closing")
       expect(ws.readyState).toBe(WebSocket.CLOSED)
 
       const restarted = await startListener()
