@@ -153,7 +153,14 @@ export function createPriorityTaskQueue<T>(concurrency: number) {
 
   const drain = () => {
     while (active < concurrency) {
-      const job = user.pop() ?? background.shift()
+      const foreground = user.pop()
+      // Speculation may use spare capacity, but never ALL of it. Previously the picker launched
+      // three child-directory preloads as soon as a level rendered; a later `+` click could promote
+      // its own queued request, but it still waited behind all three already-running filesystem
+      // calls. Keeping one lane empty gives new user work an immediate start without discarding the
+      // useful prefetch cache.
+      const backgroundLimit = Math.max(1, concurrency - 1)
+      const job = foreground ?? (active < backgroundLimit ? background.shift() : undefined)
       if (!job) return
       active++
       job.run()
@@ -342,14 +349,14 @@ export function createDirectorySearch(args: { sdk: ServerSDK; base: () => string
     const key = trimPickerPath(directory)
     const existing = cache.get(key)
     if (existing) return existing
-    const request = args.sdk.client.file
-      .list({ directory: key, path: "" })
+    const request = args.sdk.client.v2.fs
+      .browse({ directory: key })
       .then((result) => result.data ?? [])
       .catch(() => [])
       .then((nodes) =>
         nodes
           .filter((node) => node.type === "directory")
-          .map((node) => ({ name: node.name, absolute: trimPickerPath(normalizePickerDrive(node.absolute)) })),
+          .map((node) => ({ name: node.name, absolute: joinPickerPath(key, node.name) })),
       )
     cache.set(key, request)
     return request

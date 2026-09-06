@@ -294,10 +294,13 @@ describe("HttpApi SDK", () => {
     Effect.gen(function* () {
       const sdk = yield* client("raw")
       const health = yield* call(() => sdk.global.health())
+      const browsed = yield* call(() => sdk.v2.fs.browse({ directory: import.meta.dir }))
       const log = yield* call(() => sdk.app.log({ service: "httpapi-sdk-test", level: "info", message: "hello" }))
 
       expect(health.response.status).toBe(200)
       expect(health.data).toMatchObject({ healthy: true })
+      expect(browsed.response.status).toBe(200)
+      expect(browsed.data).toContainEqual({ name: "httpapi-sdk.test.ts", type: "file" })
       expect(yield* firstEvent((signal) => sdk.global.event({ signal }))).toMatchObject({
         payload: { type: "server.connected" },
       })

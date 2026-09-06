@@ -216,9 +216,9 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
       existing ??
       loads.schedule(`${generation}:${key}`, eager ? "background" : "user", () => {
         if (!activeTreeNavigation(generation, navigation)) return Promise.resolve(undefined)
-        return sdk.client.file
-          .list({ directory: absolute, path: "" })
-          .then((result) => result.data ?? [])
+        return sdk.client.v2.fs
+          .browse({ directory: absolute })
+          .then((result) => result.data)
           .catch(() => undefined)
       })
     listings.set(key, request)

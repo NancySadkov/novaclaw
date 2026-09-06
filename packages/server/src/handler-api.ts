@@ -4,7 +4,7 @@ import { CommandGroup } from "@novaclaw/protocol/groups/command"
 import { ConfigGroup } from "@novaclaw/protocol/groups/config"
 import { CredentialGroup } from "@novaclaw/protocol/groups/credential"
 import { EventGroup } from "@novaclaw/protocol/groups/event"
-import { FileSystemGroup } from "@novaclaw/protocol/groups/fs"
+import { DirectoryBrowseGroup, FileSystemGroup } from "@novaclaw/protocol/groups/fs"
 import { MemoryGroup } from "@novaclaw/protocol/groups/memory"
 import { HealthGroup } from "@novaclaw/protocol/groups/health"
 import { IntegrationGroup } from "@novaclaw/protocol/groups/integration"
@@ -47,6 +47,7 @@ export const ConfigApi = fragment(ConfigGroup)
 export const CredentialApi = fragment(CredentialGroup.middleware(LocationMiddleware))
 export const EventApi = fragment(EventGroup)
 export const FileSystemApi = fragment(FileSystemGroup.middleware(LocationMiddleware))
+export const DirectoryBrowseApi = fragment(DirectoryBrowseGroup)
 export const HealthApi = fragment(HealthGroup)
 export const MemoryApi = fragment(MemoryGroup)
 export const IntegrationApi = fragment(IntegrationGroup.middleware(LocationMiddleware))

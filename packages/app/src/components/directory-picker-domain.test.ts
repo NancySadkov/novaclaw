@@ -56,6 +56,25 @@ test("includes files in file autocomplete while preserving directory navigation"
   expect(pickerSearchEntries(nodes, "file")).toEqual(nodes)
 })
 
+test("uses the minimal host-directory listing for path autocomplete", async () => {
+  const listed: string[] = []
+  const sdk = {
+    client: {
+      v2: {
+        fs: {
+          browse: (input: { directory: string }) => {
+            listed.push(input.directory)
+            return Promise.resolve({ data: [{ name: "src", type: "directory" as const }] })
+          },
+        },
+      },
+    },
+  } as unknown as Parameters<typeof createDirectorySearch>[0]["sdk"]
+  const search = createDirectorySearch({ sdk, home: () => "/home/luke", base: () => "/repo" })
+  expect(await search("./s")).toEqual(["/repo/src"])
+  expect(listed).toEqual(["/repo"])
+})
+
 test("centralizes file and directory selection policy", () => {
   const file = pickerMode("file", "/repo")
   expect(file.includeFiles).toBeTrue()
@@ -169,10 +188,11 @@ test("advances preloading once for every expanded directory", () => {
   expect(advanceTreePreload(advanced, "repos/")).toBeTrue()
 })
 
-test("limits background tasks and prioritizes newly requested work", async () => {
-  const queue = createPriorityTaskQueue<void>(2)
+test("reserves a request lane for a directory the user expands", async () => {
+  const queue = createPriorityTaskQueue<void>(3)
   const first = Promise.withResolvers<void>()
   const second = Promise.withResolvers<void>()
+  const third = Promise.withResolvers<void>()
   const started: string[] = []
   let active = 0
   let maximum = 0
@@ -187,21 +207,21 @@ test("limits background tasks and prioritizes newly requested work", async () =>
   const running = [
     queue.schedule("first", "background", task("first", first.promise)),
     queue.schedule("second", "background", task("second", second.promise)),
-    queue.schedule("preload", "background", task("preload")),
-    queue.schedule("opened", "user", task("opened")),
+    queue.schedule("third", "background", task("third", third.promise)),
   ]
   await Promise.resolve()
   expect(started).toEqual(["first", "second"])
 
-  first.resolve()
-  await running[0]
+  const opened = queue.schedule("opened", "user", task("opened"))
   await Promise.resolve()
   expect(started).toEqual(["first", "second", "opened"])
 
+  first.resolve()
   second.resolve()
-  await Promise.all(running)
-  expect(started).toEqual(["first", "second", "opened", "preload"])
-  expect(maximum).toBe(2)
+  third.resolve()
+  await Promise.all([...running, opened])
+  expect(started).toEqual(["first", "second", "opened", "third"])
+  expect(maximum).toBe(3)
 })
 
 test("clamps bridged tree wheel scrolling", () => {

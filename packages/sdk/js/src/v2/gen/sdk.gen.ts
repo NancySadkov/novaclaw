@@ -3581,6 +3581,25 @@ class ApiV2Fs extends NovaClawApiClient {
       query,
     })
   }
+
+  /**
+   * Browse a host directory
+   *
+   * List direct file and folder names without booting a project or agent location for the directory.
+   */
+  public browse<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"] }
+    return (options?.client ?? this.client).get<T.V2FsBrowseResponses, T.V2FsBrowseErrors, ThrowOnError>({
+      url: "/api/directory/browse",
+      ...options,
+      query,
+    })
+  }
 }
 
 class ApiV2Command extends NovaClawApiClient {

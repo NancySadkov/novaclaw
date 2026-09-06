@@ -17112,6 +17112,40 @@ export type V2FsFindResponses = {
 
 export type V2FsFindResponse = V2FsFindResponses[keyof V2FsFindResponses]
 
+export type V2FsBrowseData = {
+  body?: never
+  path?: never
+  query: {
+    directory: string
+  }
+  url: "/api/directory/browse"
+}
+
+export type V2FsBrowseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2FsBrowseError = V2FsBrowseErrors[keyof V2FsBrowseErrors]
+
+export type V2FsBrowseResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    name: string
+    type: "file" | "directory"
+  }>
+}
+
+export type V2FsBrowseResponse = V2FsBrowseResponses[keyof V2FsBrowseResponses]
+
 export type V2CommandListData = {
   body?: never
   path?: never

@@ -21245,6 +21245,77 @@
         ]
       }
     },
+    "/api/directory/browse": {
+      "get": {
+        "tags": ["filesystem"],
+        "operationId": "v2.fs.browse",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["file", "directory"]
+                      }
+                    },
+                    "required": ["name", "type"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List direct file and folder names without booting a project or agent location for the directory.",
+        "summary": "Browse a host directory",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.fs.browse({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/command": {
       "get": {
         "tags": ["commands"],
@@ -48624,6 +48695,10 @@
     {
       "name": "filesystem",
       "description": "Experimental location-scoped filesystem routes."
+    },
+    {
+      "name": "filesystem",
+      "description": "Filesystem routes."
     },
     {
       "name": "commands",

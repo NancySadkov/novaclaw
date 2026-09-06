@@ -4,7 +4,7 @@ import { Ticket, TICKET_QUERY } from "@novaclaw/schema/ticket"
 import { PositiveInt, RelativePath } from "@novaclaw/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { ForbiddenError } from "../errors"
+import { ForbiddenError, InvalidRequestError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const FS_READ_PATH_PREFIX = "/api/fs/read/"
@@ -67,6 +67,31 @@ const ReadTokenQuery = Schema.Struct({
   ...LocationQuery.fields,
   path: RelativePath,
 })
+
+export const DirectoryBrowseEntry = Schema.Struct({
+  name: Schema.String,
+  type: Schema.Literals(["file", "directory"]),
+})
+
+/**
+ * Host browsing is deliberately NOT location-scoped. A directory shown in a picker is not an agent
+ * workspace, and listing it must not boot the location kernel merely to obtain direct child names.
+ */
+export const DirectoryBrowseGroup = HttpApiGroup.make("server.directory-browse")
+  .add(
+    HttpApiEndpoint.get("directory.browse", "/api/directory/browse", {
+      query: Schema.Struct({ directory: Schema.String }),
+      success: Schema.Array(DirectoryBrowseEntry),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.fs.browse",
+        summary: "Browse a host directory",
+        description: "List direct file and folder names without booting a project or agent location for the directory.",
+      }),
+    ),
+  )
+  .annotateMerge(OpenApi.annotations({ title: "filesystem", description: "Filesystem routes." }))
 
 export const FileSystemGroup = HttpApiGroup.make("server.fs")
   .add(
