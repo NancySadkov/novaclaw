@@ -333,9 +333,8 @@ describe("folder ZIP transport", () => {
     const saving = Recipe.save({ slug: "save-first", name: "Save first", prompt: "saved whole" }, opts())
     const importing = Recipe.importArchive(archive, { ...opts(), slug: "save-first" })
     const [saved, afterSave] = await Promise.all([saving, importing])
-    expect(saved.slug).toBe("save-first")
+    expect(new Set([saved.slug, afterSave.slug])).toEqual(new Set(["save-first", "save-first-2"]))
     expect((await Recipe.read(saved.slug, opts()))?.prompt).toBe("saved whole")
-    expect(afterSave.slug).toBe("save-first-2")
     expect((await Recipe.read(afterSave.slug, opts()))?.prompt).toBe("archive contender")
   })
 

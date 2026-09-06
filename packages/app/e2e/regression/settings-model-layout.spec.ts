@@ -3,6 +3,7 @@ import { mockNovaClawServer } from "../utils/mock-server"
 
 const longFailure =
   "The configured model id is not advertised by a very long endpoint path, and discovery returned a detailed failure that must remain inside its own row."
+const longModelID = "model-with-an-intentionally-long-id-that-must-remain-readable-at-the-narrow-supported-viewport"
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 720 })
@@ -30,7 +31,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test("VR-002 · a long model row contains every control and its failure text", async ({ page }) => {
-  const fixture = page.locator('[data-fixture="visual-regressions"]')
+  const fixture = page.locator('[data-component="settings-v2-list"]').filter({ hasText: longModelID })
   const row = fixture.locator('[data-component="settings-v2-row"]').first()
   await row.getByRole("button", { name: "Test", exact: true }).click()
   await expect(row).toContainText(longFailure)
@@ -51,7 +52,7 @@ test("VR-002 · a long model row contains every control and its failure text", a
 })
 
 test("VR-003 · Configure keeps usable columns and one scroller under long probe text", async ({ page }) => {
-  const fixture = page.locator('[data-fixture="visual-regressions"]')
+  const fixture = page.locator('[data-component="settings-v2-list"]').filter({ hasText: longModelID })
   await fixture.getByRole("button", { name: "Configure", exact: true }).click()
   const dialog = page.locator(".model-config-dialog")
   await expect(dialog).toBeVisible()

@@ -69,8 +69,8 @@ test("shows the V2 thinking level control while relevant", async ({ page }) => {
   await control.locator('[data-action="prompt-model-variant"]').click()
   const high = page.getByRole("option", { name: "high" })
   await expect(high).toBeVisible()
-  await page.keyboard.press("End")
-  await page.keyboard.press("Enter")
+  await high.press("Enter")
+  await expect(control).toContainText("high")
 
   await idleComposer(page)
   await input.focus()

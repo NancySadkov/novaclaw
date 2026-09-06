@@ -1,6 +1,7 @@
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { expect, test, type Page } from "@playwright/test"
 import { mockNovaClawServer } from "../utils/mock-server"
+import { emitMockEvent } from "../utils/mock-event-server"
 import { expectSessionTitle } from "../utils/waits"
 
 const directory = "C:/NovaClaw/TodoDockNavigation"
@@ -71,13 +72,13 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   const dock = page.locator('[data-component="session-todo-dock"]')
   await expect(dock).toHaveCount(0)
 
-  await emitEvent(statusEvent(sourceID, "busy"))
+  await emitMockEvent(statusEvent(sourceID, "busy"))
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
 
   await page.waitForTimeout(700)
   const opening = sampleDock(page, 1_000)
   todos[sourceID] = activeTodos
-  await emitEvent(todoEvent(sourceID, activeTodos))
+  await emitMockEvent(todoEvent(sourceID, activeTodos))
   await expect(dock).toBeVisible()
   await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
   expect((await opening).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
@@ -96,11 +97,11 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   const completedTodos = activeTodos.map((todo) => ({ ...todo, status: "completed" }))
   const closing = sampleDock(page, 1_000)
   todos[sourceID] = completedTodos
-  await emitEvent(todoEvent(sourceID, completedTodos))
+  await emitMockEvent(todoEvent(sourceID, completedTodos))
   await expect(dock).toHaveCount(0)
   expect((await closing).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
   todos[sourceID] = []
-  await emitEvent(todoEvent(sourceID, []))
+  await emitMockEvent(todoEvent(sourceID, []))
 
   await switchSession(page, otherID, otherTitle)
   const returningEmpty = sampleDock(page, 700)
@@ -124,26 +125,23 @@ function session(id: string, title: string, created: number) {
 function statusEvent(sessionID: string, type: "busy" | "idle"): EventPayload {
   return {
     directory,
-    payload: { id: `evt_status_${sessionID}_${type}`, type: "session.status", properties: { sessionID, status: { type } } },
+    payload: {
+      id: `evt_status_${sessionID}_${type}`,
+      type: "session.status",
+      properties: { sessionID, status: { type } },
+    },
   }
 }
 
 function todoEvent(sessionID: string, next: typeof activeTodos): EventPayload {
   return {
     directory,
-    payload: { id: `evt_todo_${sessionID}_${next.length}`, type: "todo.updated", properties: { sessionID, todos: next } },
+    payload: {
+      id: `evt_todo_${sessionID}_${next.length}`,
+      type: "todo.updated",
+      properties: { sessionID, todos: next },
+    },
   }
-}
-
-async function emitEvent(event: EventPayload) {
-  const host = process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"
-  const port = process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"
-  const response = await fetch(`http://${host}:${port}/__e2e/event`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(event),
-  })
-  if (!response.ok) throw new Error(`Mock event server answered ${response.status}`)
 }
 
 async function configurePage(page: Page) {
