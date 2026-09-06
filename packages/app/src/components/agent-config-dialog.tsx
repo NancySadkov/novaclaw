@@ -1,3 +1,4 @@
+import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { ControlScope } from "@/components/control-scope"
@@ -482,6 +483,11 @@ export function AgentConfigDialog(props: {
       // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
+      const tier = needsTierValue()
+      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> = {
+        ...(modelValue() === "" ? {} : { model: modelValue() }),
+        ...(needsTier() === undefined || !isTier(tier) ? {} : { needsTier: tier }),
+      }
       await sync().updateConfig({
         agents: {
           [id]: {
@@ -499,15 +505,16 @@ export function AgentConfigDialog(props: {
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
             ...(reground() === undefined ? {} : { reground: reground()! }),
             archiveChats: archiveValue(),
-            // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
-            // is simply not sent — `undefined` is how this config says "ask the chain above me".
-            ...(modelValue() === "" ? {} : { model: modelValue() }),
-            // "" clears the floor: `null` is how a PATCH removes a key, and an empty string would
-            // store a value the tier schema rejects on the next read.
-            ...(needsTier() === undefined ? {} : { needsTier: needsTierValue() === "" ? null : needsTierValue() }),
+            ...binding,
           },
         },
       } as never)
+      // Config patches preserve omitted fields and reject null. Returning to inheritance is a
+      // deletion, and only an explicitly changed selector may request it.
+      await sync().removeConfig([
+        ...(model() === "" ? [["agents", id, "model"]] : []),
+        ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
+      ])
       setRenamed(undefined)
       setTitle(undefined)
       setPersonality(undefined)
@@ -699,6 +706,7 @@ export function AgentConfigDialog(props: {
                 same colleague clever in one conversation and poor in the next, for reasons the user
                 could not see. A colleague has one mind. */}
             <select
+              aria-label={language.t("agentConfig.mind")}
               class="mt-2 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
               disabled={governing()}
               onChange={(event) => setModel(event.currentTarget.value)}

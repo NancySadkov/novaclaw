@@ -79,7 +79,12 @@ afterEach(() => {
  * `agents` decides what the roster fetch has produced: a list, or `undefined` for "still in flight"
  * — which is the window D3 lives in. `models` likewise, so the D2 race can be driven from either end.
  */
-function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
+function mount(options: {
+  agents?: unknown[]
+  models?: () => unknown[]
+  write?: (patch: unknown) => void
+  remove?: (paths: string[][]) => void
+}) {
   host = document.createElement("div")
   document.body.appendChild(host)
 
@@ -99,7 +104,8 @@ function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
   const syncStub = () => ({
     data: { path: { directory: "/tmp/p" } },
     session: { data: { info: {} } },
-    updateConfig: async () => ({}),
+    updateConfig: async (patch: unknown) => options.write?.(patch),
+    removeConfig: async (paths: string[][]) => options.remove?.(paths),
   })
   const modelsStub = { list: () => options.models?.() ?? MODELS, connected: () => true }
   // The translator returns the KEY, so an assertion names the key rather than English prose that a
@@ -244,4 +250,32 @@ describe("AgentConfigDialog renders", () => {
     name.dispatchEvent(new Event("input", { bubbles: true }))
     expect(saveButton()!.disabled).toBe(false)
   })
+})
+
+test("returning a colleague to default model and no requirement deletes both overrides", async () => {
+  const writes: unknown[] = []
+  const removals: string[][][] = []
+  mount({
+    agents: [{ ...AGENT, config: { needsTier: "medium" } }],
+    write: (patch) => writes.push(patch),
+    remove: (paths) => removals.push(paths),
+  })
+  await settle()
+  const [model, tier] = selects()
+  expect(model!.getAttribute("aria-label")).toBe("agentConfig.mind")
+  for (const select of [model!, tier!]) {
+    select.value = ""
+    select.dispatchEvent(new Event("change", { bubbles: true }))
+  }
+  saveButton()!.click()
+  await settle()
+  const patch = writes[0] as { agents: { theron: Record<string, unknown> } }
+  expect(patch.agents.theron.model).toBeUndefined()
+  expect(patch.agents.theron.needsTier).toBeUndefined()
+  expect(removals).toEqual([
+    [
+      ["agents", "theron", "model"],
+      ["agents", "theron", "needsTier"],
+    ],
+  ])
 })
