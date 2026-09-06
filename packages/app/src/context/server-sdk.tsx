@@ -11,6 +11,7 @@ import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { reconnectDelayMs } from "@/utils/reconnect-schedule"
+import { runReconnectingStream } from "./reconnect-stream"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -48,12 +49,6 @@ export function createReconnectRecoveryBarrier() {
         )
     },
   }
-}
-
-/** The ordering invariant: recovery settles before the UI may observe `connected`. */
-export async function markConnectedAfterRecovery(recover: () => Promise<void>, connected: () => void) {
-  await recover()
-  connected()
 }
 
 // S7: the V1 `message.part.updated`/`message.part.delta` coalescing retired with the translated
@@ -137,9 +132,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   let run: Promise<void> | undefined
   let started = false
   let generation = 0
-  /** Consecutive failures since this stream last DELIVERED anything — the input to the bounded
-   *  retry schedule. Reset by a received item and by an explicit start(), never by a retry. */
-  let reconnectAttempt = 0
   const HEARTBEAT_TIMEOUT_MS = 15_000
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
@@ -161,26 +153,21 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     started = true
     // An explicit start (mount, or a pageshow resume the user is watching) is a fresh intent, not a
     // retry: probe immediately rather than inheriting the previous outage's backed-off delay.
-    reconnectAttempt = 0
     setReconnectAttemptNumber(0)
     setStreamStatus((s) => (s === "connected" ? s : "connecting"))
     const active = ++generation
     const previous = run
     const current = (async () => {
       if (previous) await previous
-      // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
-      while (!abort.signal.aborted && started && generation === active) {
-        attempt = new AbortController()
-        lastEventAt = Date.now()
-        const onAbort = () => {
-          attempt?.abort()
-        }
-        abort.signal.addEventListener("abort", onAbort)
-        try {
+      const abortListeners = new WeakMap<AbortController, () => void>()
+      let yielded = Date.now()
+      await runReconnectingStream({
+        active: () => !abort.signal.aborted && started && generation === active,
+        open: async (signal) => {
           const events = await eventSdk.global.event({
-            signal: attempt.signal,
+            signal,
             onSseError: (error) => {
-              if (isStreamClosed(error, attempt?.signal)) return
+              if (isStreamClosed(error, signal)) return
               if (streamErrorLogged) return
               streamErrorLogged = true
               console.error("[global-sdk] event stream error", {
@@ -190,52 +177,47 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
               })
             },
           })
-          let yielded = Date.now()
+          yielded = Date.now()
           resetHeartbeat()
-          // P2: "connected" flips on the FIRST RECEIVED ITEM, not on `.event()` resolving — the SDK
-          // returns its stream object lazily WITHOUT having connected, so a dead server still
-          // resolves the call and would flap connected↔reconnecting every retry (measured live:
-          // the flap kept the banner's 2s debounce from ever firing). Receiving data is the only
-          // truthful definition; the server streams sync/keepalive items well inside the 15s
-          // heartbeat, so a healthy connection flips within moments.
-          let receivedAny = false
-          for await (const event of events.stream) {
-            if (!receivedAny) {
-              receivedAny = true
-              try {
-                await markConnectedAfterRecovery(
-                  () => reconnectRecovery.run(),
-                  () => {
-                    if (abort.signal.aborted || !started || generation !== active || attempt?.signal.aborted) return
-                    reconnectAttempt = 0
-                    batch(() => {
-                      setReconnectAttemptNumber(0)
-                      setStreamStatus("connected")
-                    })
-                  },
-                )
-                if (abort.signal.aborted || !started || generation !== active || attempt?.signal.aborted) return
-              } catch (error) {
-                console.error("[global-sdk] reconnect recovery failed", { url: server.http.url, error })
-                attempt?.abort()
-                throw error
-              }
-            }
-            resetHeartbeat()
-            streamErrorLogged = false
-            if (event.payload.type !== "sync") {
-              const directory = event.directory ?? "global"
-              const payload = event.payload as Event
-              queue.push({ directory, payload })
-              schedule()
-            }
-
-            if (Date.now() - yielded < STREAM_YIELD_MS) continue
-            yielded = Date.now()
-            await wait(0)
+          return events.stream
+        },
+        recover: () => reconnectRecovery.run(),
+        accept: async (event) => {
+          resetHeartbeat()
+          streamErrorLogged = false
+          if (event.payload.type !== "sync") {
+            const directory = event.directory ?? "global"
+            const payload = event.payload as Event
+            queue.push({ directory, payload })
+            schedule()
           }
-        } catch (error) {
-          if (!isStreamClosed(error, attempt?.signal) && !streamErrorLogged) {
+
+          if (Date.now() - yielded < STREAM_YIELD_MS) return
+          yielded = Date.now()
+          await wait(0)
+        },
+        state: (status, displayAttempt) => {
+          batch(() => {
+            setReconnectAttemptNumber(displayAttempt)
+            setStreamStatus(status)
+          })
+        },
+        attemptStarted: (controller) => {
+          attempt = controller
+          lastEventAt = Date.now()
+          const onAbort = () => controller.abort()
+          abortListeners.set(controller, onAbort)
+          abort.signal.addEventListener("abort", onAbort)
+        },
+        attemptFinished: (controller) => {
+          const onAbort = abortListeners.get(controller)
+          if (onAbort) abort.signal.removeEventListener("abort", onAbort)
+          abortListeners.delete(controller)
+          if (attempt === controller) attempt = undefined
+          clearHeartbeat()
+        },
+        failed: (error, signal) => {
+          if (!isStreamClosed(error, signal) && !streamErrorLogged) {
             streamErrorLogged = true
             console.error("[global-sdk] event stream failed", {
               url: server.http.url,
@@ -243,23 +225,10 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
               error,
             })
           }
-        } finally {
-          abort.signal.removeEventListener("abort", onAbort)
-          attempt = undefined
-          clearHeartbeat()
-        }
-
-        if (abort.signal.aborted || !started || generation !== active) return
-        // P2: the stream dropped (or never delivered) and retries continue — but on a BOUNDED
-        // schedule. A stream that will never be allowed to connect (rotated token, an auth proxy
-        // answering 401, a server that is down because it is overloaded) used to be re-requested
-        // ~4x/s per configured instance, forever; it now settles at the 30s cap. The status stays
-        // "reconnecting" so the banner still escalates its copy by wall clock, which is the honest
-        // measure of a long outage — the retry cadence never was.
-        setStreamStatus("reconnecting")
-        setReconnectAttemptNumber(reconnectAttempt + 1)
-        await wait(reconnectDelayMs(reconnectAttempt++))
-      }
+        },
+        wait,
+        delay: reconnectDelayMs,
+      })
     })().finally(() => {
       if (run !== current) return
       run = undefined

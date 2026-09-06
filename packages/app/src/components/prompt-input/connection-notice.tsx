@@ -1,3 +1,5 @@
+import { Show, type JSX } from "solid-js"
+
 export function PromptConnectionNotice(props: { readonly attempt: number; readonly text: string }) {
   return (
     <div
@@ -9,5 +11,26 @@ export function PromptConnectionNotice(props: { readonly attempt: number; readon
     >
       {props.text}
     </div>
+  )
+}
+
+export function PromptConnectionBoundary(props: {
+  readonly attempt: number | undefined
+  readonly text: (attempt: number) => string
+  readonly children: JSX.Element
+}) {
+  return (
+    <>
+      <Show when={props.attempt !== undefined ? props.attempt : undefined} keyed>
+        {(attempt) => <PromptConnectionNotice attempt={attempt} text={props.text(attempt)} />}
+      </Show>
+      <div
+        data-slot="prompt-connected-content"
+        classList={{ contents: props.attempt === undefined, hidden: props.attempt !== undefined }}
+        aria-hidden={props.attempt !== undefined}
+      >
+        {props.children}
+      </div>
+    </>
   )
 }

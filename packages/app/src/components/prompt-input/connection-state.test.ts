@@ -20,7 +20,7 @@ describe("the prompt is replaced while its transcript connection is unavailable"
   test("the real composer reads both signals and replaces its form with the numbered status", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "..", "prompt-input.tsx"), "utf8")
     expect(source).toContain("connection.streamStatus(), connection.reconnectAttempt()")
-    expect(source).toContain("<PromptConnectionNotice")
-    expect(source).toContain("hidden: reconnectingAttempt() !== undefined")
+    expect(source).toContain("<PromptConnectionBoundary")
+    expect(source).toContain("attempt={reconnectingAttempt()}")
   })
 })
