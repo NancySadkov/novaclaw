@@ -11,7 +11,6 @@ import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunitySync } from "../src/community/sync"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { CommunityTool } from "@novaclaw/core/tool/community"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -113,7 +112,7 @@ describe("the community tool is really wired", () => {
       // ⚠️ And speaking is declared as having a side effect — a tool the runner believed was pure
       // could be retried or reordered, and a message posted twice is not a message posted once.
       expect(Tool.sideEffect(tool!)).toBeDefined()
-    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
+    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll))),
   )
 })
 
@@ -244,7 +243,7 @@ describe("what a refused permission tells the model", () => {
        */
       const out = yield* invoke({ op: "history", channel: "#NovaClaw" })
       expect(out.structured.message).toBeDefined()
-    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
+    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll))),
   )
 
   it.effect("⚠️ and a read of a channel still frames what STRANGERS wrote", () =>
@@ -267,7 +266,7 @@ describe("what a refused permission tells the model", () => {
       // ⚠️ And the AUTHOR travels with it: AGENTS.md — knowledge is a CLAIM from a signed identity,
       // never anonymous truth, so a receiving agent can weigh the source.
       expect(message).toContain("nid_")
-    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
+    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll))),
   )
 
   it.effect("⚠️ `say` REFUSES before the permission card when the instance has not joined", () =>
@@ -299,6 +298,6 @@ describe("what a refused permission tells the model", () => {
 
       const out = yield* invoke({ op: "say", channel: "#NovaClaw", body: "hello" })
       expect(out.structured.message).toContain("has not joined")
-    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
+    }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll))),
   )
 })

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { CommunitySeal } from "@novaclaw/core/community/seal"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -156,7 +155,7 @@ describe("the published sealing key", () => {
 
       for (const broken of ["", "!!!!", Buffer.alloc(63).toString("base64url")])
         expect(InstanceIdentityStore.verifySealingKey(me, published.publicKey, broken)).toBe(false)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 is STABLE — a second call must not mint a second key", () =>
@@ -182,7 +181,7 @@ describe("the published sealing key", () => {
       expect(
         yield* store.openSealed(CommunitySeal.seal(stranger.publicKey, "not for us", PAIR)!, PAIR_ENDS),
       ).toBeUndefined()
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 })
 

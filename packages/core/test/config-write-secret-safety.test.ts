@@ -19,9 +19,7 @@ import { testEffect } from "./lib/effect"
 //
 //  1. a write that ROLLS BACK must not change what the HTTP authorization path authenticates
 //     against — and specifically must never leave it with nothing, which is an OPEN API;
-//  2. a write must never overwrite a password envelope this instance could not open, because that
-//     ciphertext is the only thing a restored `credential.key` can still recover.
-
+//  2. an unrelated write must preserve a malformed secret instead of storing its random stand-in.
 const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
@@ -40,9 +38,8 @@ const decodeInfo = Schema.decodeUnknownSync(Config.Info)
 
 const COMMITTED = "the-committed-password"
 
-/** The envelope field the cipher writes, and a value shaped like one that opens under no key. */
-const ENVELOPE_FIELD = "$novaclawEncrypted"
-const UNOPENABLE = "nc1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBBBB:CCCCCCCCCCCCCCCCCCCCCCCCCC"
+const INVALID_FIELD = "damaged"
+const INVALID_SECRET = "invalid stored value"
 
 /** The stored `server` row exactly as it sits on disk — no reveal, no stand-in. */
 const storedServer = Effect.fn("storedServer")(function* () {
@@ -51,15 +48,11 @@ const storedServer = Effect.fn("storedServer")(function* () {
   return row?.value as { port?: number; password?: unknown } | undefined
 })
 
-/**
- * Put an unopenable envelope where the password is, the way a partial restore or an AV quarantine
- * of `credential.key` leaves an instance that HAD been running.
- */
-const damageThePasswordEnvelope = Effect.fn("damageThePasswordEnvelope")(function* () {
+const damageThePassword = Effect.fn("damageThePassword")(function* () {
   const { db } = yield* Database.Service
   yield* db
     .update(RuntimeSettingTable)
-    .set({ value: { port: 4096, password: { [ENVELOPE_FIELD]: UNOPENABLE } } })
+    .set({ value: { port: 4096, password: { [INVALID_FIELD]: INVALID_SECRET } } })
     .where(eq(RuntimeSettingTable.key, "server"))
     .run()
 })
@@ -141,25 +134,15 @@ describe("a config write that fails must not change what the API authenticates a
   )
 })
 
-describe("a write must never overwrite a password envelope this instance cannot open", () => {
-  /**
-   * 🔴 The destruction path. The instance is in the damaged state, is TELLING the operator so
-   * through `unreadable()`, and is asking them to restore `credential.key`. They change the port
-   * instead — and every config write reads `all()`, merges the patch onto that snapshot and writes
-   * it back, so the per-boot random stand-in that `all()` returns for the unreadable password went
-   * straight over the ciphertext. Restoring the key afterwards recovered nothing.
-   *
-   * A/B: drop the `preserveSecrets` call from `SettingsConfigStore.set` and the stored password
-   * comes back as the stand-in string instead of the envelope.
-   */
-  it.effect("🔴 a `server` patch applied while DAMAGED leaves the ciphertext byte-identical", () =>
+describe("an unrelated write must never overwrite a malformed password", () => {
+  it.effect("🔴 a `server` patch applied while DAMAGED leaves the malformed value byte-identical", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       yield* store.set("server", { port: 4096, password: "placeholder" })
-      yield* damageThePasswordEnvelope()
+      yield* damageThePassword()
 
-      // Boot the damaged state, and capture the exact bytes this instance hands out in place of the
-      // password — the thing that used to land on top of the envelope.
+      // Read the damaged state and capture the random stand-in handed to the config merge.
+
       const standIn = ((yield* store.all()).server as { password: string }).password
       expect(standIn).not.toBe("placeholder")
       expect(standIn.length).toBeGreaterThanOrEqual(32)
@@ -171,7 +154,7 @@ describe("a write must never overwrite a password envelope this instance cannot 
       // ⚠️ Half a control otherwise: a test that passed because the patch never landed would prove
       // nothing at all. The port really moved, in the same write.
       expect(value?.port).toBe(4097)
-      expect((value?.password as Record<string, string>)[ENVELOPE_FIELD]).toBe(UNOPENABLE)
+      expect((value?.password as Record<string, string>)[INVALID_FIELD]).toBe(INVALID_SECRET)
       expect(JSON.stringify(value)).not.toContain(standIn)
       // Still damaged, still recoverable, still saying so.
       expect(yield* store.unreadable()).toEqual([{ path: "server.password" }])
@@ -179,18 +162,18 @@ describe("a write must never overwrite a password envelope this instance cannot 
   )
 
   /** The second chokepoint: `removeOne`'s nested prune is read → prune → write back, same hole. */
-  it.effect("🔴 a nested `server` REMOVE while damaged leaves the ciphertext byte-identical", () =>
+  it.effect("🔴 a nested `server` REMOVE while damaged leaves the malformed value byte-identical", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       yield* store.set("server", { port: 4096, password: "placeholder" })
-      yield* damageThePasswordEnvelope()
+      yield* damageThePassword()
       const standIn = ((yield* store.all()).server as { password: string }).password
 
       yield* ConfigStoreWrite.remove([["server", "port"]])
 
       const value = yield* storedServer()
       expect(value?.port).toBeUndefined() // the removal really happened
-      expect((value?.password as Record<string, string>)[ENVELOPE_FIELD]).toBe(UNOPENABLE)
+      expect((value?.password as Record<string, string>)[INVALID_FIELD]).toBe(INVALID_SECRET)
       expect(JSON.stringify(value)).not.toContain(standIn)
     }),
   )
@@ -206,7 +189,7 @@ describe("a write must never overwrite a password envelope this instance cannot 
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       yield* store.set("server", { port: 4096, password: "placeholder" })
-      yield* damageThePasswordEnvelope()
+      yield* damageThePassword()
       yield* store.all()
 
       yield* ConfigStoreWrite.apply(decodeInfo({ server: { password: "repaired-by-the-operator" } }))

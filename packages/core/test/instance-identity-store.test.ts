@@ -1,4 +1,3 @@
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -20,9 +19,7 @@ import { testEffect } from "./lib/effect"
  * identity to itself in a fresh world — passing while proving nothing.
  */
 
-const it = testEffect(
-  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CredentialCipher.node])),
-)
+const it = testEffect(LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node])))
 
 describe("InstanceIdentityStore", () => {
   it.effect("mints a keypair on first read, with no seed step", () =>
@@ -147,24 +144,6 @@ describe("InstanceIdentityStore", () => {
     }),
   )
 
-  /**
-   * 🔴 This asserted CIPHERTEXT until 2026-08-28, under the name "a readable key is an
-   * impersonation kit". The claim deserves an answer rather than a silent inversion.
-   *
-   * It is true that a readable identity secret is an impersonation kit. It was equally true with
-   * the encryption in place: the key that opens this column lived in `credential.key` beside the
-   * database, readable by the same account that reads the row. Anything able to steal the row could
-   * take the key in the same breath, so the ciphertext bought a step, not a boundary.
-   *
-   * Decision §5 of `decisions-v0.2.0.md` faces this directly and accepts it out loud — "secrets stay
-   * readable by anything running as the user, permanently, and we say so" — which is what makes the
-   * permission, jail and egress work load-bearing rather than optional.
-   *
-   * ⚠️ One narrow protection IS given up, and it should be named rather than glossed: a backup that
-   * copied the database but not the state directory used to leak ciphertext without its key. That is
-   * the very same mechanism as NC-REL-030 seen from the other side — the copy that could not be read
-   * by an attacker was equally unreadable by its owner, and bricked the instance it was restored to.
-   */
   it.effect("the identity secret is stored in the clear, and the public half still matches", () =>
     Effect.gen(function* () {
       const store = yield* InstanceIdentityStore.Service
@@ -172,52 +151,9 @@ describe("InstanceIdentityStore", () => {
       const { db } = yield* Database.Service
       const row = yield* db.select().from(InstanceIdentityTable).get()
 
-      expect(row?.secret_key).not.toStartWith("nc1:")
-      // A raw Ed25519 seed, base64url, as `backup()` exports it — not an envelope.
       expect(Buffer.from(row?.secret_key ?? "", "base64url")).toHaveLength(32)
       expect(row?.secret_key).toBe((yield* store.backup()).secretKey)
       expect(row?.public_key).toBe(identity.publicKey.toString("base64url"))
-    }),
-  )
-
-  /**
-   * 🔴 The property that makes this safe to change AT ALL, and the reason it landed with the write
-   * change rather than after it.
-   *
-   * These are the one set of secrets a user cannot re-enter. A provider credential can be pasted
-   * again and an OAuth flow rerun; an Ed25519 identity that will not open is a network identity
-   * permanently lost, along with every contact's record of it. So the read accepts BOTH forms: a row
-   * written before this change still opens, and a row written after it reads directly. No row can be
-   * orphaned by which form it happens to be in.
-   *
-   * A/B: make `openSecret` return the value unconditionally and this fails; make it decrypt
-   * unconditionally and the test above fails.
-   */
-  it.effect("🔴 an identity encrypted by an OLDER build still opens", () =>
-    Effect.gen(function* () {
-      const store = yield* InstanceIdentityStore.Service
-      const cipher = yield* CredentialCipher.Service
-      const { db } = yield* Database.Service
-      const identity = yield* store.identity()
-      const plaintextSecret = (yield* store.backup()).secretKey
-      const signedBefore = yield* store.sign(new TextEncoder().encode("a message"))
-
-      // Put the row back into the shape the previous build wrote, using the instance's own cipher —
-      // encrypting under any other key would exercise a failure path and pass for the wrong reason.
-      yield* db
-        .update(InstanceIdentityTable)
-        .set({ secret_key: cipher.encrypt(plaintextSecret, "instance-identity.secret_key") })
-        .run()
-
-      // Still the same identity, and still SIGNING with the same key — which is the property that
-      // actually matters: a store that read the envelope as if it were a seed would produce a
-      // different key and every signature would silently stop verifying.
-      const reopened = yield* store.identity()
-      expect(reopened.publicKey.toString("base64url")).toBe(identity.publicKey.toString("base64url"))
-      expect((yield* store.backup()).secretKey).toBe(plaintextSecret)
-      expect((yield* store.sign(new TextEncoder().encode("a message"))).toString("base64url")).toBe(
-        signedBefore.toString("base64url"),
-      )
     }),
   )
 })

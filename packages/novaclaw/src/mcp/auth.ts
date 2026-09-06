@@ -1,4 +1,3 @@
-import { Log } from "@novaclaw/schema/log"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import path from "path"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
@@ -6,7 +5,6 @@ import { Global } from "@novaclaw/core/global"
 import { Effect, Layer, Context, Option, Schema } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 
 export const Tokens = Schema.Struct({
   accessToken: Schema.mutableKey(Schema.String),
@@ -38,7 +36,6 @@ type AuthData = Record<string, Entry>
 
 const filepath = path.join(Global.Path.data, "mcp-auth.json")
 const lockKey = `mcp-auth:${filepath}`
-const fileAad = "novaclaw:mcp-auth.json"
 
 export interface Interface {
   readonly all: () => Effect.Effect<Record<string, Entry>>
@@ -64,51 +61,20 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const flock = yield* EffectFlock.Service
-    const cipher = yield* CredentialCipher.Service
 
-    // 🔴 Plaintext at 0o600 — the unwind of app-managed encryption; see `auth/index.ts` for the
-    // decision and its dates.
+    // Account-private plaintext is the only stored format.
     const write = (data: AuthData) => fs.writeJson(filepath, data, 0o600).pipe(Effect.orDie)
 
     const read = Effect.fn("McpAuth.read")(function* () {
       const raw = yield* fs.readJson(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (raw === undefined) return { data: {} as AuthData, drain: false }
-      /**
-       * ⚠️ An unopenable file no longer takes the caller down. `all()` and `mutate()` wrap this in
-       * `orDie`, so a document encrypted under a key that is gone was a CRASH on every MCP auth
-       * read — the NC-REL-030 fault in a third place. It degrades to "no stored auth" instead,
-       * which is fail-closed and repairs itself: the next OAuth flow writes a fresh document.
-       *
-       * ⚠️ It must NOT write in this state. Returning `drain: false` is what stops `all()` storing
-       * an empty document over ciphertext that restoring the key would still open.
-       */
-      const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("credential.setting.undecryptable", {
-            "credential.path": "mcp-auth.json",
-            "credential.cause": Log.fault(cause),
-          }).pipe(Effect.as(undefined)),
-        ),
-      )
-      if (opened === undefined) return { data: {} as AuthData, drain: false }
-      return {
-        data: Option.getOrElse(decodeAuthData(opened.value), () => ({}) as AuthData) as AuthData,
-        // The drain: an opened envelope is rewritten as plaintext while the key is still here.
-        drain: opened.encrypted,
-      }
+      return Option.getOrElse(decodeAuthData(raw), () => ({})) as AuthData
     })
 
-    const all = Effect.fn("McpAuth.all")(function* () {
-      return yield* Effect.gen(function* () {
-        const current = yield* read()
-        if (current.drain) yield* write(current.data)
-        return current.data
-      }).pipe(flock.withLock(lockKey), Effect.orDie)
-    })
+    const all = Effect.fn("McpAuth.all")(() => read().pipe(flock.withLock(lockKey), Effect.orDie))
 
     const mutate = Effect.fn("McpAuth.mutate")(function* (update: (data: AuthData) => AuthData | undefined) {
       yield* Effect.gen(function* () {
-        const next = update((yield* read()).data)
+        const next = update(yield* read())
         if (!next) return
         yield* write(next)
       }).pipe(flock.withLock(lockKey), Effect.orDie)
@@ -191,16 +157,12 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(EffectFlock.defaultLayer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(CredentialCipher.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(EffectFlock.defaultLayer), Layer.provide(FSUtil.defaultLayer))
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, EffectFlock.node, CredentialCipher.node],
+  deps: [FSUtil.node, EffectFlock.node],
 })
 
 export * as McpAuth from "./auth"

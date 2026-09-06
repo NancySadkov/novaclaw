@@ -24,7 +24,6 @@ import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { Offline } from "@novaclaw/core/offline"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -116,7 +115,7 @@ describe("two instances", () => {
           expect((yield* channels.history("#NovaClaw")).map((m) => m.body)).toEqual(["hello from alice"])
 
           return { message: posted.message, aliceKey: identity.networkID }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       const seen = await Effect.runPromise(
@@ -135,7 +134,7 @@ describe("two instances", () => {
           expect("stored" in result).toBe(true)
 
           return yield* channels.history("#NovaClaw")
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       expect(seen.map((m) => m.body)).toEqual(["hello from alice"])
@@ -150,7 +149,6 @@ describe("two instances", () => {
         CommunityChannels.Service.pipe(
           Effect.flatMap((channels) => channels.record("#NovaClaw", forged)),
           Effect.provide(bob.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       expect(refused).toEqual({ rejected: "unverified" })
@@ -174,7 +172,7 @@ describe("two instances", () => {
             yield* channels.join("#NovaClaw")
             // Exactly the bytes Bob holds, offered onward — the shape replication sends.
             return yield* channels.record("#NovaClaw", relayed)
-          }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+          }).pipe(Effect.provide(carol.graph)),
         )
         expect("stored" in accepted).toBe(true)
       } finally {
@@ -212,7 +210,7 @@ describe("two instances", () => {
             Effect.gen(function* () {
               const channels = yield* CommunityChannels.Service
               yield* channels.deliver(body.topic, body.message)
-            }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+            }).pipe(Effect.provide(bob.graph)),
           )
           return Response.json({ received: true })
         },
@@ -224,7 +222,7 @@ describe("two instances", () => {
         InstanceIdentityStore.Service.pipe(
           Effect.flatMap((store) => store.identity()),
           Effect.map((identity) => identity.networkID),
-        ).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        ).pipe(Effect.provide(bob.graph)),
       )
 
       const aliceKey = await Effect.runPromise(
@@ -253,13 +251,12 @@ describe("two instances", () => {
           expect(ignored.delivered).toBe(true)
 
           return identity.networkID
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       const ignoredByBob = await Effect.runPromise(
         CommunityChannels.Service.pipe(Effect.flatMap((channels) => channels.history("#NovaClaw"))).pipe(
           Effect.provide(bob.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       expect(ignoredByBob).toEqual([])
@@ -268,21 +265,20 @@ describe("two instances", () => {
       await Effect.runPromise(
         CommunityChannels.Service.pipe(Effect.flatMap((channels) => channels.join("#NovaClaw"))).pipe(
           Effect.provide(bob.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       await Effect.runPromise(
         CommunityPost.Service.pipe(
           Effect.flatMap((posts) => posts.post("#NovaClaw", "over the wire")),
           Effect.tap((posted) => Effect.sync(() => expect(posted.delivered).toBe(true))),
-        ).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        ).pipe(Effect.provide(alice.graph)),
       )
 
       const seen = await Effect.runPromise(
         Effect.gen(function* () {
           const channels = yield* CommunityChannels.Service
           return yield* channels.history("#NovaClaw")
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       // Bob has it, attributed to Alice, whom he has never met — over a socket.
@@ -323,7 +319,7 @@ describe("two instances", () => {
           // Bob's log, built while Alice knows nothing about it.
           for (const body of said) yield* posts.post("#NovaClaw", body)
           return identity.networkID
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       // Bob serves the three catch-up steps, exactly as the instance's peer routes do.
@@ -368,7 +364,7 @@ describe("two instances", () => {
                 return { ids: CommunityReconcile.idsIn(ids, body.buckets ?? []) }
               // Same rule for the message step: an unjoined room yields nothing, not an error.
               return { messages: room === undefined ? [] : yield* channels.byIDs(room, body.ids ?? []) }
-            }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+            }).pipe(Effect.provide(bob.graph)),
           )
           return Response.json(answer)
         },
@@ -389,7 +385,7 @@ describe("two instances", () => {
 
           expect(yield* sync.sync("#NovaClaw")).toEqual({ peers: 1, fetched: said.length })
           return yield* channels.history("#NovaClaw")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       expect(caught.map((message) => message.body).sort()).toEqual([...said].sort())
@@ -410,7 +406,6 @@ describe("two instances", () => {
         CommunitySync.Service.pipe(
           Effect.flatMap((sync) => sync.sync("#NovaClaw")),
           Effect.provide(alice.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       expect(again).toEqual({ peers: 1, fetched: 0 })
@@ -431,7 +426,7 @@ describe("two instances", () => {
           const first = yield* sync.sync("#NovaClaw")
           const second = yield* sync.sync("#NovaClaw")
           return { first, second }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(twice.first).toEqual({ peers: 1, fetched: 0 })
       /**
@@ -460,7 +455,7 @@ describe("two instances", () => {
           yield* sync.sync("#NovaClaw")
           // Same room, different spelling — must be suppressed by the FIRST call's stamp.
           return yield* sync.sync("#novaclaw")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(spelled).toEqual({ peers: 0, fetched: 0 })
       // On the WIRE: the second spelling must not have reached the peer at all.
@@ -475,7 +470,7 @@ describe("two instances", () => {
           const posts = yield* CommunityPost.Service
           yield* channels.join(BLOCKED_ROOM)
           for (const body of alsoSaid) yield* posts.post(BLOCKED_ROOM, body)
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       /**
@@ -510,7 +505,7 @@ describe("two instances", () => {
           yield* channels.join(BLOCKED_ROOM)
           const result = yield* sync.sync(BLOCKED_ROOM)
           return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(notEvenDialled.result).toEqual({ peers: 0, fetched: 0 })
       expect(notEvenDialled.held).toBe(0)
@@ -539,7 +534,7 @@ describe("two instances", () => {
           yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "manual")
           const result = yield* sync.sync(BLOCKED_ROOM)
           return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(dialledAndRefused.result.peers).toBe(0)
       expect(dialledAndRefused.result.fetched).toBe(0)
@@ -558,7 +553,7 @@ describe("two instances", () => {
           yield* contacts.setBlocked(bobKey, false)
           const result = yield* sync.sync(BLOCKED_ROOM)
           return { result, held: (yield* channels.history(BLOCKED_ROOM)).length }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(unblocked.result.fetched).toBe(alsoSaid.length)
       expect(unblocked.held).toBe(alsoSaid.length)
@@ -580,7 +575,7 @@ describe("two instances", () => {
           const posts = yield* CommunityPost.Service
           yield* channels.join(AGENT_ROOM)
           for (const body of agentSaw) yield* posts.post(AGENT_ROOM, body)
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       const registered: Record<string, Tool.AnyTool> = {}
@@ -612,10 +607,7 @@ describe("two instances", () => {
             { sessionID: "ses", agent: "build", assistantMessageID: "msg", toolCallID: "c1" } as never,
           )) as { structured: { message: string } }
           return out.structured.message
-        }).pipe(
-          Effect.provide(alice.graph),
-          Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer)),
-        ),
+        }).pipe(Effect.provide(alice.graph), Effect.provide(Layer.mergeAll(captureTools, allowAll))),
       )
 
       for (const line of agentSaw) expect(answer, "the agent read a room it had nothing in").toContain(line)
@@ -667,7 +659,7 @@ describe("two instances", () => {
           yield* channels.join("#elsewhere")
           const said = yield* posts.post("#elsewhere", "said in another room entirely")
           return said.message
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       const verdict = await Effect.runPromise(
@@ -682,7 +674,7 @@ describe("two instances", () => {
               .length,
             inOrigin: (yield* channels.history("#elsewhere")).length,
           }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(verdict.result).toEqual({ rejected: "wrong-channel" })
       expect(verdict.inTarget, "a message from another room landed in the room we asked about").toBe(0)
@@ -697,7 +689,7 @@ describe("two instances", () => {
           const sync = yield* CommunitySync.Service
           yield* channels.leave("#NovaClaw")
           return yield* sync.sync("#NovaClaw")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(unsubscribed).toEqual({ peers: 0, fetched: 0 })
       // The claim is about the WIRE: not one request, not even the cheap summary.
@@ -708,7 +700,6 @@ describe("two instances", () => {
         CommunityChannels.Service.pipe(
           Effect.flatMap((channels) => channels.join("#NovaClaw")),
           Effect.provide(alice.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
 
@@ -729,7 +720,7 @@ describe("two instances", () => {
             .add({ networkID: bobKey, petname: "bob", routes: [`http://127.0.0.1:${server!.port}`] })
             .pipe(Effect.orDie)
           return yield* sync.channelsNearby()
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(flooded.length).toBeLessThanOrEqual(CommunitySync.MAX_LISTED_PER_ANSWER)
 
@@ -745,7 +736,7 @@ describe("two instances", () => {
           yield* peers.learn(bobKey, [live], "manual")
           yield* sync.sync("#NovaClaw")
           return { routes: (yield* contacts.get(bobKey))?.routes ?? [], live }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(repaired.routes, "the address that answered was never recorded").toContain(repaired.live)
       // ⚠️ FIRST, so the address just proved is the one tried first next time.
@@ -788,7 +779,7 @@ describe("two instances", () => {
           const peers = yield* CommunityPeers.Service
           expect(yield* peers.learn(carol, [carolRoute], "lan")).toBe(true)
           return (yield* InstanceIdentityStore.Service.pipe(Effect.flatMap((store) => store.identity()))).networkID
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       server = Bun.serve({
@@ -802,7 +793,6 @@ describe("two instances", () => {
                   peers: offered.map((peer) => ({ networkID: peer.networkID, routes: peer.routes })),
                 })),
                 Effect.provide(bob.graph),
-                Effect.provide(CredentialCipher.defaultLayer),
               ),
             ),
           ),
@@ -836,7 +826,7 @@ describe("two instances", () => {
           // LAN address and a loopback address is one peer, and saying "2" would invent a stranger.
           expect(yield* transport.state()).toEqual({ kind: "online", peers: 2 })
           return yield* peers.list()
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       expect(seen.map((peer) => ({ id: peer.networkID, routes: [...peer.routes] }))).toEqual([
@@ -869,7 +859,7 @@ describe("two instances", () => {
           const before = (yield* store.identity()).networkID
           const rotated = yield* store.rotate()
           return { before, after: rotated.identity.networkID, statement: rotated.statement }
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
       expect(rotation.after).not.toBe(rotation.before)
 
@@ -884,7 +874,7 @@ describe("two instances", () => {
           expect(yield* contacts.followAll([rotation.statement])).toBe(1)
           expect((yield* contacts.list()).map((entry) => entry.networkID)).toEqual([rotation.after])
           return (yield* store.identity()).networkID
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       // Bob re-serves what he was told. Storing it is what makes him able to.
@@ -897,7 +887,6 @@ describe("two instances", () => {
                 Effect.flatMap((store) => store.known()),
                 Effect.map((statements) => ({ statements })),
                 Effect.provide(bob.graph),
-                Effect.provide(CredentialCipher.defaultLayer),
               ),
             ),
           ),
@@ -916,7 +905,7 @@ describe("two instances", () => {
           const spread = yield* sync.successions()
           expect(spread.learned).toBe(1)
           return (yield* contacts.list()).map((entry) => entry.networkID)
-        }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(carol.graph)),
       )
 
       // 🔴 Carol followed Alice without ever being told: she asked, and the statement proved itself.
@@ -957,7 +946,6 @@ describe("two instances", () => {
                   Effect.flatMap((search) => search.receive(query)),
                   Effect.map((channels) => ({ channels })),
                   Effect.provide(who.graph),
-                  Effect.provide(CredentialCipher.defaultLayer),
                 ),
               ),
             )
@@ -973,7 +961,7 @@ describe("two instances", () => {
           yield* channels.join("#bread-baking")
           expect(yield* channels.setListed("#bread-baking", true)).toBe(true)
           return (yield* store.identity()).networkID
-        }).pipe(Effect.provide(carol.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(carol.graph)),
       )
 
       // Bob knows Carol and does NOT have the channel himself.
@@ -984,7 +972,7 @@ describe("two instances", () => {
           const store = yield* InstanceIdentityStore.Service
           yield* peers.learn(carolKey, [`http://127.0.0.1:${carolServer!.port}`], "lan")
           return (yield* store.identity()).networkID
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(bob.graph)),
       )
 
       const found = await Effect.runPromise(
@@ -994,7 +982,7 @@ describe("two instances", () => {
           // Everything Alice knows: one address, Bob's.
           yield* peers.learn(bobKey, [`http://127.0.0.1:${bobServer!.port}`], "lan")
           return yield* search.search("bread")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       // 🔴 Found through Bob, who does not have it — the hop that makes this a broadcast rather than
@@ -1007,14 +995,12 @@ describe("two instances", () => {
         CommunityChannels.Service.pipe(
           Effect.flatMap((channels) => channels.setListed("#bread-baking", false)),
           Effect.provide(carol.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       const hidden = await Effect.runPromise(
         CommunitySearch.Service.pipe(
           Effect.flatMap((search) => search.search("bread")),
           Effect.provide(alice.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ),
       )
       expect(hidden).toEqual([])
@@ -1046,9 +1032,7 @@ describe("two instances", () => {
        * confined to this line, rather than an `as never` at each call site hiding what each one needs.
        */
       const run = <A, R>(who: { graph: typeof alice.graph }, effect: Effect.Effect<A, never, R>) =>
-        Effect.runPromise(
-          effect.pipe(Effect.provide(who.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<A>,
-        )
+        Effect.runPromise(effect.pipe(Effect.provide(who.graph)) as Effect.Effect<A>)
 
       // Bob publishes a sealing key, signed by his identity — what `/global/health` serves.
       const bobPublished = await run(
@@ -1193,7 +1177,7 @@ describe("two instances", () => {
           yield* channels.join("#NovaClaw")
           yield* peers.learn(bobKey, [`http://127.0.0.1:${server!.port}`], "lan")
           return yield* sync.sync("#NovaClaw")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       expect(result.fetched).toBe(0)
@@ -1261,7 +1245,7 @@ describe("two instances", () => {
             )
           }
           yield* posts.post("#NovaClaw", "to everyone at once?")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       // Every peer is still reached — batching, not dropping.
@@ -1312,7 +1296,7 @@ describe("two instances", () => {
             )
           }
           return yield* search.search("nothing-has-this")
-        }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        }).pipe(Effect.provide(alice.graph)),
       )
 
       expect(found).toEqual([])
@@ -1346,7 +1330,7 @@ describe("two instances", () => {
           const store = yield* InstanceIdentityStore.Service
           const sealing = yield* store.sealingKey()
           return { id: (yield* store.identity()).networkID, ...sealing }
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<{
+        }).pipe(Effect.provide(bob.graph)) as Effect.Effect<{
           id: string
           publicKey: string
           signature: string
@@ -1365,7 +1349,6 @@ describe("two instances", () => {
               }),
             ),
             Effect.provide(alice.graph),
-            Effect.provide(CredentialCipher.defaultLayer),
           ) as Effect.Effect<{ message: CommunityDirect.Proven } | { rejected: string }>,
         )
 
@@ -1374,7 +1357,6 @@ describe("two instances", () => {
           Effect.flatMap((s) => s.identity()),
           Effect.map((i) => i.networkID),
           Effect.provide(alice.graph),
-          Effect.provide(CredentialCipher.defaultLayer),
         ) as Effect.Effect<string>,
       )
 
@@ -1397,9 +1379,7 @@ describe("two instances", () => {
 
           expect(yield* direct.receive(second.message)).toEqual({ rejected: "blocked" })
           return yield* direct.history(aliceKey)
-        }).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)) as Effect.Effect<
-          ReadonlyArray<{ body: string }>
-        >,
+        }).pipe(Effect.provide(bob.graph)) as Effect.Effect<ReadonlyArray<{ body: string }>>,
       )
 
       expect(held.map((m) => m.body)).toEqual(["the control: not blocked"])

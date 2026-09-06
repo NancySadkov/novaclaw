@@ -251,16 +251,15 @@ describe("NovaHealth.fromCapability — the generic edge row", () => {
 
 test("🔴 unreadable stored secrets are a PROBLEM with a named repair", () => {
   /**
-   * NC-REL-030(b). Nothing degrades gracefully when a credential will not open — the affected
-   * integrations do not work at all — and the only repair is restoring a file the user has to be
-   * told the name of. A warning would suggest waiting it out.
+   * An unreadable credential needs an account reconnection or identity backup restore. The board
+   * must give that repair path because waiting does not make the credential readable.
    *
    * A/B: return `status: "warning"` and this fails.
    */
   const signal = NovaHealth.fromCredentials({ unreadable: 2, notice: "2 stored secrets cannot be read." })
   expect(signal.status).toBe("problem")
   expect(signal.detail).toContain("2 stored secrets")
-  expect(signal.action).toContain("credential.key")
+  expect(signal.action).toContain("identity backup")
 })
 
 test("a healthy instance reports the row as ok, with nothing to do", () => {

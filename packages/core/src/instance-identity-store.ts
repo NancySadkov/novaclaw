@@ -3,7 +3,6 @@ export * as InstanceIdentityStore from "./instance-identity-store"
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto"
 import { eq, isNull, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
-import { CredentialCipher } from "./credential-cipher"
 import { CredentialRepair } from "./credential/repair"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
@@ -214,7 +213,7 @@ export interface Interface {
   readonly get: () => Effect.Effect<string>
   /** The full identity, minting the keypair on first read and backfilling an id that predates it. */
   readonly identity: () => Effect.Effect<Identity>
-  /** Sign as this instance. The secret is decrypted per call and never leaves this service. */
+  /** Sign as this instance. The secret is read per call and never leaves this service. */
   readonly sign: (message: Uint8Array) => Effect.Effect<Buffer>
   /**
    * Export the identity INCLUDING its secret, for backup.
@@ -250,7 +249,7 @@ export interface Interface {
   /**
    * Open something sealed to us, or `undefined`.
    *
-   * ⚠️ The secret is decrypted per call and never leaves this service, exactly like `sign`. A caller
+   * ⚠️ The secret is read per call and never leaves this service, exactly like `sign`. A caller
    * that could obtain it could read every DM this instance will ever receive.
    */
   /**
@@ -348,44 +347,18 @@ const provenHandover = (statement: SuccessorStatement): boolean => {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/InstanceIdentityStore") {}
 
-/**
- * The two secret columns and the AAD each was sealed under — one map, at module scope.
- *
- * ⚠️ Each AAD is bound to the COLUMN it protects, so ciphertext lifted from one into the other will
- * not decrypt. Module scope because `repairSource` below needs the same pairs, and a second copy of
- * them there would go stale with the only symptom being every row reported unreadable — which reads
- * as catastrophic damage rather than as a wrong constant.
- */
-const SECRET_AAD = {
-  secret_key: "instance-identity.secret_key",
-  sealing_secret_key: "instance-identity.sealing_secret_key",
-} as const
+const SECRET_COLUMNS = ["secret_key", "sealing_secret_key"] as const
 
-type SecretColumn = keyof typeof SECRET_AAD
+/** Secrets are canonical raw 32-byte keys, stored under the OS account's protection. */
+const readSecret = (value: string): string => {
+  const bytes = Buffer.from(value, "base64url")
+  if (bytes.length !== 32 || bytes.toString("base64url") !== value)
+    throw new Error("Stored instance identity key is invalid. Restore an identity backup in Community settings.")
+  return value
+}
 
-const SECRET_COLUMNS = Object.keys(SECRET_AAD) as ReadonlyArray<SecretColumn>
-
-/** How an identity secret is named in a repair report. Never the value: the id is not the secret. */
-const REPAIR_PREFIX = "instance-identity:"
-
-/**
- * 🔴 **Which identity secrets cannot be opened** — the half the repair surface never had.
- *
- * The scan was handed the credential table and the settings store and nothing else, so the Nova
- * Health "stored secrets" row reported *0 unreadable, no notice* for an instance whose Ed25519
- * identity was an envelope it could no longer open. That is the exact inversion of what the damage is
- * worth: a provider credential can be pasted again and an OAuth flow rerun, while this file says at
- * length that an identity that will not open is a network identity permanently lost, along with every
- * contact's record of it. The one loss the code calls unrecoverable was the one the repair surface
- * could not see.
- *
- * ⚠️ It lives HERE, not in the handlers that call it: this module owns the table, the envelope
- * predicate and both AADs, and a scanner assembled elsewhere would have to duplicate all three.
- */
-export const repairSource = (
-  db: Database.Interface["db"],
-  cipher: CredentialCipher.Interface,
-): CredentialRepair.ScanSource => ({
+export const repairSource = (db: Database.Interface["db"]): CredentialRepair.ScanSource => ({
+  name: "instance-identity",
   rows: () =>
     db
       .select()
@@ -393,114 +366,19 @@ export const repairSource = (
       .pipe(
         Effect.map((rows) =>
           rows.flatMap((row) =>
-            SECRET_COLUMNS.flatMap((column) => {
-              const value = row[column]
-              // An absent secret is not a damaged one: a pre-keypair row and an instance that has
-              // never sealed anything both read as null, and reporting them would send a user to
-              // restore a backup for a secret that was never there.
-              return typeof value === "string" && value.length > 0
-                ? [{ path: `${REPAIR_PREFIX}${column}`, value }]
-                : []
-            }),
+            SECRET_COLUMNS.flatMap((column) =>
+              row[column] == null ? [] : [{ path: `instance-identity:${column}`, value: row[column] }],
+            ),
           ),
         ),
       ),
-  sealed: (value) => typeof value === "string" && cipher.encrypted(value),
-  open: (path, value) => {
-    const aad = SECRET_AAD[path.slice(REPAIR_PREFIX.length) as SecretColumn]
-    return aad === undefined
-      ? Effect.fail(`Not an instance-identity secret path: ${path}`)
-      : cipher.decrypt(value as string, aad)
-  },
+  validate: (_path, value) => Effect.try({ try: () => readSecret(String(value)), catch: (error) => error }),
 })
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const cipher = yield* CredentialCipher.Service
-
-    /**
-     * 🔴 The unwind of app-managed encryption, last consumer.
-     *
-     * Decision §5 of `decisions-v0.2.0.md`, recorded after the cipher landed unexplained, says
-     * secrets stay plaintext under OS account protection: no keyring exists in every run mode
-     * NovaClaw ships, and a key FILE beside the database buys none of the security a keyring would
-     * while stranding `novaclaw serve`, the CLI and backup/restore.
-     *
-     * ⚠️ These are the one set of secrets a user CANNOT re-enter. A provider credential can be
-     * pasted again and an OAuth flow rerun; an Ed25519 identity that will not open is a network
-     * identity permanently lost, and every contact's record of it with it. So the tolerant read
-     * below is the load-bearing piece and it lands with the write change, not after it: while
-     * `openSecret` accepts BOTH forms, no row can ever be orphaned by which form it happens to be
-     * in.
-     *
-     * ⚠️ `encrypted()` is a prefix test on the envelope marker. A base64url secret cannot begin
-     * with `nc1:` — the alphabet has no colon — so the two forms cannot be confused.
-     *
-     * 🔴 **And it DRAINS, which is step (3) of that unwind and was never done for this store.**
-     *
-     * The order the unwind states is: keep decrypt-on-read, stop encrypting, then persist plaintext
-     * when an envelope is opened so the ciphertext leaves while the key still exists, and only then
-     * delete the module. `sealSecret` stopped the writes, so a row created by THIS build is plaintext
-     * — but nothing ever wrote an opened envelope back, and the only path that rewrites `secret_key`
-     * at all is `rotate`, which an ordinary instance never runs. A row written by a pre-unwind build
-     * therefore stayed an envelope forever, and the tolerant read that makes that safe is safe only
-     * for exactly as long as `credential.key` survives. The motivating case of the whole unwind is
-     * that file going missing in a partial restore.
-     *
-     * ⚠️ The COLUMN is the parameter, not the AAD. Naming the column is what lets this write the
-     * plaintext back, so an open that does not drain is no longer expressible — and it also removes
-     * the chance of opening one column under the other's AAD.
-     *
-     * ⚠️ The write is guarded on the envelope still being there, the same discipline as the two
-     * backfills below: a concurrent `rotate` that already replaced the column must not have a stale
-     * plaintext written over the top of it.
-     */
-    const openSecret = (column: SecretColumn, value: string) =>
-      Effect.gen(function* () {
-        if (!cipher.encrypted(value)) return value
-        const plaintext = yield* cipher.decrypt(value, SECRET_AAD[column])
-        yield* db
-          .update(InstanceIdentityTable)
-          .set(column === "secret_key" ? { secret_key: plaintext } : { sealing_secret_key: plaintext })
-          .where(
-            column === "secret_key"
-              ? eq(InstanceIdentityTable.secret_key, value)
-              : eq(InstanceIdentityTable.sealing_secret_key, value),
-          )
-          .run()
-          .pipe(Effect.orDie)
-        return plaintext
-      })
-
-    /**
-     * 🔴 Drain on the first read of the ROW, not on the first signature.
-     *
-     * Every other read path here is reached only when the instance does something — sign, seal,
-     * rotate, back up. An instance that has joined nothing does none of them, so leaving the drain to
-     * those paths would leave the envelope in place for exactly the instance least likely to notice.
-     * `ensure()` runs at boot, which makes the window between upgrading and losing the key as small
-     * as the code can make it.
-     *
-     * ⚠️ Failure here is NOT fatal. If the key is already gone the envelope cannot be drained, and
-     * that is the damage this cannot repair — `repairSource` is what reports it. Dying instead would
-     * turn a degraded instance into one that will not boot.
-     */
-    const drained = (stored: typeof InstanceIdentityTable.$inferSelect) =>
-      Effect.gen(function* () {
-        let opened = false
-        for (const column of SECRET_COLUMNS) {
-          const value = stored[column]
-          if (typeof value !== "string" || !cipher.encrypted(value)) continue
-          const plaintext = yield* openSecret(column, value).pipe(Effect.catch(() => Effect.succeed(undefined)))
-          if (plaintext !== undefined) opened = true
-        }
-        return opened ? ((yield* row()) ?? stored) : stored
-      })
-
-    /** Plaintext from here on; existing envelopes still open through `openSecret`. */
-    const sealSecret = (value: string) => value
 
     const row = () => db.select().from(InstanceIdentityTable).get().pipe(Effect.orDie)
 
@@ -513,15 +391,12 @@ export const layer = Layer.effect(
      */
     const ensure = Effect.fn("InstanceIdentityStore.ensure")(function* () {
       const existing = yield* row()
-      // The drain runs on the way past, so the ciphertext leaves on the first BOOT after an upgrade
-      // rather than on the first signature. Costs one prefix test per read when there is nothing to
-      // drain, which is every instance this build created.
-      if (existing?.public_key && existing.secret_key) return yield* drained(existing)
+      if (existing?.public_key && existing.secret_key) return existing
 
       const { publicKey, privateKey } = generateKeyPairSync("ed25519")
       const publicRaw = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
       const secretRaw = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(PKCS8_PREFIX.length)
-      const secret = sealSecret(secretRaw.toString("base64url"))
+      const secret = secretRaw.toString("base64url")
       const publicEncoded = publicRaw.toString("base64url")
 
       if (existing === undefined) {
@@ -582,7 +457,7 @@ export const layer = Layer.effect(
             .update(InstanceIdentityTable)
             .set({
               sealing_public_key: minted.publicKey,
-              sealing_secret_key: sealSecret(minted.secretKey),
+              sealing_secret_key: minted.secretKey,
             })
             // 🔴 Guarded on absence, like the identity backfill: two concurrent first calls must not
             // let the loser overwrite the winner's key, or a peer that already fetched the first one
@@ -592,7 +467,7 @@ export const layer = Layer.effect(
             .pipe(Effect.orDie)
           publicKey = (yield* row())?.sealing_public_key ?? minted.publicKey
         }
-        const secret = yield* openSecret("secret_key", stored?.secret_key ?? "").pipe(Effect.orDie)
+        const secret = readSecret(stored?.secret_key ?? "")
         const signature = sign(
           null,
           Buffer.from(sealingKeyBytes(publicKey)),
@@ -607,19 +482,19 @@ export const layer = Layer.effect(
       ) {
         const stored = yield* row()
         if (!stored?.sealing_secret_key) return undefined
-        const secret = yield* openSecret("sealing_secret_key", stored.sealing_secret_key).pipe(Effect.orDie)
+        const secret = readSecret(stored.sealing_secret_key)
         return CommunitySeal.unseal(secret, envelope, CommunitySeal.envelopeAAD(pair.from, pair.to))
       }),
 
       sign: Effect.fn("InstanceIdentityStore.sign")(function* (message: Uint8Array) {
         const stored = yield* ensure()
-        const secret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
+        const secret = readSecret(stored.secret_key ?? "")
         return sign(null, Buffer.from(message), privateKeyFromRaw(Buffer.from(secret, "base64url")))
       }),
       rotate: Effect.fn("InstanceIdentityStore.rotate")(function* () {
         const stored = yield* ensure()
         const previousPublic = Buffer.from(stored.public_key ?? "", "base64url")
-        const previousSecret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
+        const previousSecret = readSecret(stored.secret_key ?? "")
 
         const { publicKey, privateKey } = generateKeyPairSync("ed25519")
         const nextPublic = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
@@ -652,7 +527,7 @@ export const layer = Layer.effect(
           .update(InstanceIdentityTable)
           .set({
             public_key: nextPublic.toString("base64url"),
-            secret_key: sealSecret(nextSecret.toString("base64url")),
+            secret_key: nextSecret.toString("base64url"),
           })
           .run()
           .pipe(Effect.orDie)
@@ -668,7 +543,7 @@ export const layer = Layer.effect(
       }),
       backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
         const stored = yield* ensure()
-        const secret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
+        const secret = readSecret(stored.secret_key ?? "")
         const publicKey = Buffer.from(stored.public_key ?? "", "base64url")
         return { version: 1, id: stored.id, networkID: networkID(publicKey), secretKey: secret } satisfies Backup
       }),
@@ -710,18 +585,18 @@ export const layer = Layer.effect(
               "This instance already has an identity. Restoring would orphan every contact that knows it, so it must be confirmed explicitly.",
           })
 
-        const encrypted = sealSecret(secretRaw.toString("base64url"))
+        const secret = secretRaw.toString("base64url")
         const publicEncoded = derived.toString("base64url")
         if (existing === undefined)
           yield* db
             .insert(InstanceIdentityTable)
-            .values({ id: backup.id, public_key: publicEncoded, secret_key: encrypted })
+            .values({ id: backup.id, public_key: publicEncoded, secret_key: secret })
             .run()
             .pipe(Effect.orDie)
         else
           yield* db
             .update(InstanceIdentityTable)
-            .set({ id: backup.id, public_key: publicEncoded, secret_key: encrypted })
+            .set({ id: backup.id, public_key: publicEncoded, secret_key: secret })
             .run()
             .pipe(Effect.orDie)
 
@@ -731,9 +606,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Database.defaultLayer),
-  Layer.provide(CredentialCipher.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, CredentialCipher.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

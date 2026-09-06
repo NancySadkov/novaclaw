@@ -237,7 +237,7 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     expect(mayEgress("session.compaction.prune.planned")).toBe(true)
     expect(mayEgress("skill.registry.init")).toBe(true)
     expect(mayEgress("kb.memory.open.failed")).toBe(false)
-    expect(mayEgress("credential.cipher.load.failed")).toBe(false)
+    expect(mayEgress("credential.setting.unreadable")).toBe(false)
     expect(mayEgress("config.file.load")).toBe(false)
     expect(mayEgress("git.tree.diff.truncated")).toBe(true)
     expect(mayEgress("resource.headroom.measure.failed")).toBe(false)

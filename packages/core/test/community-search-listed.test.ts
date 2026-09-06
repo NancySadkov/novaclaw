@@ -4,7 +4,6 @@ import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunitySearch } from "@novaclaw/core/community/search"
 import { CommunityWork } from "@novaclaw/core/community/work"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -66,6 +65,6 @@ describe("what a stranger's search can see", () => {
       // user who changes their mind is told something false.
       yield* channels.setListed("#published", false)
       expect(yield* search.receive(proven("published"))).toEqual([])
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 })

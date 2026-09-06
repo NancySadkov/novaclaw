@@ -65,7 +65,7 @@ describe("HttpApi error middleware", () => {
         Effect.die({
           _tag: "AuthError",
           message: "Failed to decrypt auth data",
-          cause: { _tag: "CredentialCipher.DecryptError", message: "secret credential marker" },
+          cause: { _tag: "Credential.InvalidValue", message: "secret credential marker" },
         }),
       ).pipe(Layer.provide(errorLayer), HttpRouter.serve, Layer.build)
 
@@ -110,5 +110,4 @@ describe("HttpApi error middleware", () => {
       expect(serialized).toContain("anthropic")
     }),
   )
-
 })

@@ -2,10 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { Context, Effect, Layer, LayerMap } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { Node } from "@novaclaw/core/effect/app-node"
+import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { Database } from "@novaclaw/core/database/database"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { EventV2 } from "@novaclaw/core/event"
 import { Global } from "@novaclaw/core/global"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
@@ -19,7 +18,7 @@ import { tmpdir } from "./fixture/tmpdir"
 
 // WHY THIS FILE EXISTS (2026-07-28).
 //
-// `Database`, `Global`, `CredentialCipher`, the Memory capability and `SessionScheduler` must exist EXACTLY
+// `Database`, `Global`, the Memory capability and `SessionScheduler` must exist EXACTLY
 // ONCE per process.
 // A second `Database` means two SQLite connections to a store whose transaction safety rests on a
 // single-connection semaphore (`packages/effect-drizzle-sqlite`); a second `SessionScheduler` means
@@ -27,8 +26,7 @@ import { tmpdir } from "./fixture/tmpdir"
 //
 // The property is NOT structural — it is produced by three separate behaviours in
 // `location-services.ts` + `effect@4.0.0-beta.83`, any one of which a refactor could remove:
-//   1. the underlying global leaves resolve to shared module-level layer objects (CredentialCipher
-//      additionally depends on Global), so the per-`compile()` cache and memo map see one identity;
+//   1. the underlying global leaves resolve to shared module-level layer objects , so the per-`compile()` cache and memo map see one identity;
 //   2. `LayerMap.make` captures ONE memo map (`Layer.CurrentMemoMap.getOrCreate`) and builds every
 //      key with `Layer.buildWithMemoMap(…, memoMap, …)`, so all locations share it;
 //   3. `Layer.fresh` — which is `self.build(makeMemoMapUnsafe(), scope)`, i.e. a brand-new ROOT memo
@@ -79,21 +77,12 @@ const observedGlobals = () => {
   const probes = {
     database: probe(Database.Service.key),
     global: probe(Global.Service.key),
-    cipher: probe(CredentialCipher.Service.key),
     memory: probe(Memory.node.service.key),
     scheduler: probe(SessionScheduler.Service.key),
   }
   const replacements = [
     [Database.node, observe(Database.Service, Database.node.implementation as never, probes.database)],
     [Global.node, observe(Global.Service, Global.node.implementation as never, probes.global)],
-    [
-      CredentialCipher.node,
-      Node.makeGlobalNode({
-        service: CredentialCipher.Service,
-        layer: observe(CredentialCipher.Service, CredentialCipher.node.implementation as never, probes.cipher),
-        deps: [Global.node],
-      }),
-    ],
     [Memory.node, observe(Memory.node.service, Memory.node.implementation as never, probes.memory)],
     [
       SessionScheduler.node,
@@ -188,7 +177,7 @@ describe("location services global identity", () => {
     }
   })
 
-  test("builds database, global, cipher, memory and scheduler exactly once across three locations", async () => {
+  test("builds database, global, memory and scheduler exactly once across three locations", async () => {
     expect(violations(await measure())).toEqual([])
   }, 20000)
 
@@ -202,15 +191,13 @@ describe("location services global identity", () => {
   // brand-new root memo map, i.e. what a genuinely different layer object or an unshared memo map
   // would produce. One word changes in the mirror above, and all four services go to one instance PER
   // LOCATION: measured 2026-07-28 as 4 real SQLite `Database` connections (the root graph's one plus
-  // one per location); Global/Cipher are now also needed by the root SettingsConfigStore, so they
-  // measure 4 as well, while Memory/Scheduler exist only in the three location halves.
+  // one per location). Global, Memory and Scheduler exist only in the three location halves.
   // A guard that cannot be shown to bite is not a guard.
   test("goes red with the exact per-service message when the global half is built unshared", async () => {
     const measured = await measure((replacements) => mirrorLocationServiceMap(replacements, { freshGlobals: true }))
     expect(violations(measured)).toEqual([
       "@novaclaw/v2/storage/Database: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
-      "@novaclaw/Global: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
-      "@novaclaw/v2/CredentialCipher: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
+      "@novaclaw/Global: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
       "@novaclaw/capability/memory: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
       "@novaclaw/v2/SessionScheduler: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
     ])

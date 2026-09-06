@@ -12,7 +12,6 @@ import { Global } from "@novaclaw/core/global"
 import { DatabasePath } from "@novaclaw/core/database/db-path"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Credential } from "@novaclaw/core/credential"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { CredentialRepair } from "@novaclaw/core/credential/repair"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
@@ -253,32 +252,28 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           // A plain read of the last transition: inspecting must not open the graph.
           const memory = Memory.runtimeStatus()
 
-          /**
-           * 🔴 NC-REL-030(b) — the last piece: the board is where an unreadable secret becomes
-           * visible. Until now a lost `credential.key` was survivable AND silent.
-           *
-           * ⚠️ Wrapped so a scan failure cannot take the whole report down. This board is what a
-           * worried user opens; a health report that fails to render because one of its probes
-           * failed is worse than a report missing one row. Zero unreadable is also what a
-           * degraded-but-unbroken instance reports, which is honest: the scan found nothing it
-           * could prove was damaged.
-           */
+          // A scan failure is an unknown credential state, never a healthy result.
           const credentials = yield* Effect.gen(function* () {
             const { db } = yield* Database.Service
-            const cipher = yield* CredentialCipher.Service
+
             const settings = yield* SettingsConfigStore.Service
             const found = CredentialRepair.dedupe([
               ...(yield* CredentialRepair.scan([
-                Credential.repairSource(db, cipher),
+                Credential.repairSource(db),
                 // See the sibling handler: without this the scan reports 0 damaged for the one
                 // secret a user has no way to re-enter.
-                InstanceIdentityStore.repairSource(db, cipher),
+                InstanceIdentityStore.repairSource(db),
               ])),
-              ...(yield* settings.unreadable().pipe(Effect.catchCause(() => Effect.succeed([])))),
+              ...(yield* settings
+                .unreadable()
+                .pipe(Effect.catchCause(() => Effect.succeed([{ path: "runtime-settings" }])))),
             ])
-            const directory = (yield* Global.Service).state
-            return { unreadable: found.length, notice: CredentialRepair.notice(found, directory) }
-          }).pipe(Effect.catchCause(() => Effect.succeed({ unreadable: 0, notice: undefined })))
+            return { unreadable: found.length, notice: CredentialRepair.notice(found) }
+          }).pipe(
+            Effect.catchCause(() =>
+              Effect.succeed({ unreadable: 1, notice: "Stored credentials could not be checked." }),
+            ),
+          )
 
           // Read at CHECK time, not remembered from the seed: a drop recorded at first boot goes
           // stale the moment the user fixes the file, and it would miss a file that broke afterwards.

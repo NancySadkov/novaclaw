@@ -4,7 +4,6 @@ import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { CommunityOfferTable } from "@novaclaw/core/community/sql"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -58,7 +57,7 @@ describe("CommunityOffer", () => {
 
       yield* offers.withdraw()
       expect(yield* offers.mine()).toBeUndefined()
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 the ENDPOINT cannot be rewritten in flight", () =>
@@ -81,7 +80,7 @@ describe("CommunityOffer", () => {
       expect(CommunityOffer.verify({ ...published, from: `nid_${Buffer.alloc(32, 4).toString("base64url")}` })).toBe(
         false,
       )
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 field boundaries are unambiguous — a shifted character breaks it", () =>
@@ -103,7 +102,7 @@ describe("CommunityOffer", () => {
 
       const shifted = { ...published, endpoint: "https://a.example/xf", price: "ree" }
       expect(CommunityOffer.verify(shifted)).toBe(false)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an offer SURVIVES a rotation, re-signed under the new identity", () =>
@@ -134,7 +133,7 @@ describe("CommunityOffer", () => {
 
       // And it stays put: a second read does not re-sign again, which would churn `at` on every fetch.
       expect(yield* offers.mine()).toEqual(after)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("malformed offers are refused rather than thrown on", () =>
@@ -149,7 +148,7 @@ describe("CommunityOffer", () => {
         { ...published, kind: "something-else" as "model-server" },
       ])
         expect(CommunityOffer.verify(broken)).toBe(false)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 a forged offer cannot be LAUNDERED through an honest instance", () =>
@@ -186,7 +185,7 @@ describe("CommunityOffer", () => {
       expect(yield* offers.known()).toEqual([])
       // Our own offer is still ours, and is not listed among the peers'.
       expect((yield* offers.mine())?.from).toBe(me)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 the PAYMENT ADDRESS is under the signature — the most profitable edit there is", () =>
@@ -214,7 +213,7 @@ describe("CommunityOffer", () => {
       // An offer with no payment address is ordinary, not broken — most will have none.
       const unpaid = yield* offers.publish({ ...terms, payTo: "" })
       expect(CommunityOffer.verify(unpaid)).toBe(true)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an offer is BOUNDED — it is re-verified on every read", () =>
@@ -245,7 +244,7 @@ describe("CommunityOffer", () => {
       // ⚠️ And an ordinary offer still passes — a bound that refused real ones would be worse than none.
       const normal = yield* offers.publish(terms)
       expect(CommunityOffer.verify(normal)).toBe(true)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 the offer STORE is bounded — a row costs a keypair and is re-verified on every read", () =>
@@ -295,7 +294,7 @@ describe("CommunityOffer", () => {
        * room for a flood, is the attack succeeding by a different route.
        */
       expect((yield* offers.known()).map((offer) => offer.endpoint)).toContain("https://friend.example/v1")
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an offer from a BLOCKED peer is not collected", () =>
@@ -329,7 +328,7 @@ describe("CommunityOffer", () => {
        */
       expect(CommunityOffer.verify(theirs)).toBe(true)
       expect(yield* offers.learn(theirs)).toBe(false)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an endpoint must be an http(s) URL — it decides what our own SERVER opens", () =>
@@ -375,7 +374,7 @@ describe("CommunityOffer", () => {
         const published = yield* offers.publish({ ...terms, endpoint })
         expect(CommunityOffer.verify(published)).toBe(true)
       }
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an endpoint that READS as one host and REACHES another is refused", () =>
@@ -422,7 +421,7 @@ describe("CommunityOffer", () => {
         expect(CommunityOffer.isServableEndpoint(endpoint)).toBe(true)
         expect(CommunityOffer.verify(yield* offers.publish({ ...terms, endpoint }))).toBe(true)
       }
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 the PAYMENT ADDRESS is what the user pastes, so it must read as it copies", () =>
@@ -463,7 +462,7 @@ describe("CommunityOffer", () => {
         const published = yield* offers.publish({ ...terms, payTo })
         expect(CommunityOffer.verify(published)).toBe(true)
       }
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 an offer the CURRENT rules refuse is reported, not silently withdrawn", () =>
@@ -504,6 +503,6 @@ describe("CommunityOffer", () => {
       // ⚠️ And peers are correctly served nothing: the owner learning about it must not mean the
       // network being handed an offer that fails its own rules.
       expect(yield* offers.mine()).toBeUndefined()
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 })

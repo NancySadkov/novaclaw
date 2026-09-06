@@ -9,7 +9,6 @@ import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { CredentialTable } from "./credential/sql"
 import { CredentialRepair } from "./credential/repair"
-import { CredentialCipher } from "./credential-cipher"
 
 export const ID = Credential.ID
 export type ID = Credential.ID
@@ -51,99 +50,39 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Credential") {}
 
-/**
- * The additional authenticated data a stored credential is sealed under.
- *
- * ⚠️ Module scope, because a SECOND consumer now needs it: `repairSource` below reports which rows
- * cannot be opened, and a copy of this expression there would be a second source of truth that goes
- * stale silently — the only symptom being every row reported unreadable, which reads as catastrophic
- * damage rather than as a wrong constant.
- */
-const aad = (id: ID) => `novaclaw:credential:${id}`
+/** The reader and health scan use the same plaintext decoder. */
+const decodeStored = (value: unknown) => Schema.decodeUnknownSync(Value)(JSON.parse(String(value)))
 
-/**
- * 🔴 NC-REL-030(b) — which stored credentials cannot be opened.
- *
- * ⚠️ It lives HERE, not in the handler that calls it: this module owns the table, the envelope
- * predicate and the AAD, and a scanner assembled elsewhere would have to duplicate all three.
- */
-export const repairSource = (
-  db: Database.Interface["db"],
-  cipher: CredentialCipher.Interface,
-): CredentialRepair.ScanSource => ({
+export const repairSource = (db: Database.Interface["db"]): CredentialRepair.ScanSource => ({
+  name: "credentials",
   rows: () =>
     db
       .select()
       .from(CredentialTable)
-      // ⚠️ The same `integration_id` filter `stored()` applies. A row without one is ignored by every
-      // read path, so it cannot cause the authentication failure this notice warns about — reporting
-      // it would be a false alarm telling the user to restore a backup for a secret nothing uses.
       .where(isNotNull(CredentialTable.integration_id))
       .pipe(Effect.map((rows) => rows.map((row) => ({ path: `credential:${row.id}`, value: row.value })))),
-  sealed: (value) => cipher.encrypted(value as string),
-  open: (path, value) => cipher.decrypt(value as string, aad(ID.make(path.slice("credential:".length)))),
+  validate: (_path, value) => Effect.try({ try: () => decodeStored(value), catch: (error) => error }),
 })
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const cipher = yield* CredentialCipher.Service
-    const decode = Schema.decodeUnknownSync(Value)
-    /**
-     * 🔴 The unwind of app-managed encryption, continued.
-     *
-     * Storing a credential is storing it. Decision §5 of `decisions-v0.2.0.md`, recorded six days
-     * AFTER the cipher landed with a one-line commit and no rationale, says secrets stay plaintext
-     * under OS account protection: no keyring exists in every run mode NovaClaw ships, and a
-     * partial one strands `novaclaw serve`, the CLI and backup/restore. What shipped was a key FILE
-     * beside this table — none of the security a keyring would have bought, all of the stranding.
-     */
-    const encode = (_id: ID, value: Value) => JSON.stringify(value)
+    const encode = (value: Value) => JSON.stringify(value)
     const stored = Effect.fn("Credential.stored")(function* (row: typeof CredentialTable.$inferSelect) {
       if (!row.integration_id) return
-      const wasEncrypted = cipher.encrypted(row.value)
-      /**
-       * ⚠️ A credential that will not open no longer takes the INSTANCE with it. `all()` is part of
-       * catalog boot and wraps this in `orDie`, so one row encrypted under a key that is gone
-       * aborted startup — the same fault as NC-REL-030 in a second place, and the comment here used
-       * to claim the opposite ("never instance boot"). It is skipped instead, which is also
-       * fail-closed: a credential nothing can read is a credential that authenticates nothing.
-       */
-      const plaintext = wasEncrypted
-        ? yield* cipher.decrypt(row.value, aad(row.id)).pipe(
-            Effect.catchCause((cause) =>
-              Log.event("credential.setting.undecryptable", {
-                "credential.path": `credential:${row.id}`,
-                "credential.cause": Log.fault(cause),
-              }).pipe(Effect.as(undefined)),
-            ),
-          )
-        : row.value
-      if (plaintext === undefined) return
       const value = yield* Effect.try({
-        try: () => decode(JSON.parse(plaintext)),
+        try: () => decodeStored(row.value),
         catch: (cause) => cause,
       }).pipe(
         Effect.catchCause((cause) =>
-          Log.event("credential.setting.undecryptable", {
+          Log.event("credential.setting.unreadable", {
             "credential.path": `credential:${row.id}`,
             "credential.cause": Log.fault(cause),
           }).pipe(Effect.as(undefined)),
         ),
       )
       if (value === undefined) return
-      // ⚠️ The DRAIN, and the direction is the opposite of what it was. This migration used to turn
-      // plaintext into ciphertext on first read; it now writes an opened envelope back as plaintext,
-      // so the ciphertext leaves the table while the key is still present. Stopping the writes
-      // without this would leave every existing row unreadable the moment the key went missing.
-      if (wasEncrypted)
-        yield* db
-          .update(CredentialTable)
-          .set({ value: encode(row.id, value) })
-          .where(eq(CredentialTable.id, row.id))
-          .run()
-          .pipe(Effect.orDie)
       return new Info({
         id: row.id,
         integrationID: row.integration_id,
@@ -202,7 +141,7 @@ export const layer = Layer.effect(
                   id: credential.id,
                   integration_id: credential.integrationID,
                   label: credential.label,
-                  value: encode(credential.id, credential.value),
+                  value: encode(credential.value),
                 })
                 .run()
             }),
@@ -212,7 +151,7 @@ export const layer = Layer.effect(
       }),
       update: Effect.fn("Credential.update")(function* (id, updates) {
         if (!updates.label && !updates.value) return
-        const value = updates.value === undefined ? undefined : encode(id, updates.value)
+        const value = updates.value === undefined ? undefined : encode(updates.value)
         yield* db
           .update(CredentialTable)
           .set({ label: updates.label, value })
@@ -227,9 +166,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Database.defaultLayer),
-  Layer.provide(CredentialCipher.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, CredentialCipher.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { CommunityDirectMessageTable } from "@novaclaw/core/community/dm.sql"
-import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
@@ -104,7 +103,7 @@ describe("CommunityDirect retention", () => {
 
       // ⚠️ And the flood is what actually went: this must not pass by having deleted everything.
       expect(total).toBeGreaterThan(CommunityDirect.MAX_DIRECT_MESSAGES / 2)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 
   it.effect("🔴 the conversation list is ordered by RECENCY, not by whatever the engine returns", () =>
@@ -170,6 +169,6 @@ describe("CommunityDirect retention", () => {
        * order tracked that claim, this list would be upside down.
        */
       expect((yield* direct.conversations())[0]).toBe(oldest)
-    }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
+    }).pipe(),
   )
 })

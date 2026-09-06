@@ -132,13 +132,10 @@ describe("preferAppEnv", () => {
     expect(process.env.XDG_CACHE_HOME).toBe(USER_DATA)
   })
 
-  test("does not split the production credential key from the CLI instance", () => {
+  test("keeps default state and data paths consistent between desktop and CLI", () => {
     preferAppEnv(USER_DATA)
 
-    // auth.json lives under the CLI-compatible default XDG data path. Leaving state absent makes the
-    // sidecar resolve its credential.key through the matching CLI-compatible default too; assigning
-    // USER_DATA here creates two keys for one auth file and makes provider reload fail after either
-    // surface writes credentials.
+    // State and auth files follow the same CLI-compatible XDG defaults.
     expect("XDG_STATE_HOME" in process.env).toBe(false)
 
     clearManaged()

@@ -24,9 +24,7 @@ export const InstanceIdentityTable = sqliteTable("instance_identity", {
    * from that. Ruling 5 of `notes/reports/decisions-v0.2.0.md` settled it: no keyring exists in
    * every run mode NovaClaw ships, and the key FILE that shipped instead bought none of a
    * keyring's security while stranding `novaclaw serve`, the CLI and backup/restore.
-   * `sealSecret` in `instance-identity-store.ts` is consequently the identity function; legacy
-   * `nc1:` envelopes still OPEN through `openSecret`, so old rows are readable, but nothing new is
-   * written encrypted.
+   * Raw base64url key material is the sole stored representation.
    *
    * It still deliberately does NOT live in `runtime_setting`: those rows ARE config keys, reachable
    * through the agent-facing `PATCH /config` surface. Self-healing says operational facts belong in

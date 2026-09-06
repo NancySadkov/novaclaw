@@ -728,15 +728,10 @@ async function run() {
     )
   }
   const authSeed = process.env.NOVACLAW_SMOKE_AUTH_FILE
-  const keySeed = process.env.NOVACLAW_SMOKE_CREDENTIAL_KEY
-  if (!!authSeed !== !!keySeed)
-    throw new Error("NOVACLAW_SMOKE_AUTH_FILE and NOVACLAW_SMOKE_CREDENTIAL_KEY must be provided together")
-  if (authSeed && keySeed) {
+  if (authSeed) {
     await mkdir(path.join(tempHome, "data"), { recursive: true })
-    await mkdir(path.join(tempHome, "state"), { recursive: true })
     await copyFile(authSeed, path.join(tempHome, "data", "auth.json"))
-    await copyFile(keySeed, path.join(tempHome, "state", "credential.key"))
-    console.log("seed     : encrypted auth + credential key (copied into throwaway home)")
+    console.log("seed     : plaintext auth copied into throwaway home")
   }
   const devtoolsPort = await freePort()
   console.log(`home     : ${tempHome}`)
