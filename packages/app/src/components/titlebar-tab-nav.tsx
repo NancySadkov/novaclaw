@@ -20,7 +20,6 @@ export function TabNavItem(props: {
   session: () => Session | undefined
   onTitleChange?: (title: string) => void
   onTitleChangeFailed?: (title: string) => void
-  onClose: () => void
   onNavigate: () => void
   active?: boolean
   activeServer: boolean
@@ -38,11 +37,6 @@ export function TabNavItem(props: {
   let committing = false
   let measureFrame: number | undefined
 
-  const closeTab = (event: MouseEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-    props.onClose()
-  }
   const global = useGlobal()
   const serverCtx = createMemo(() => {
     const conn = global.servers.list().find((item) => ServerConnection.key(item) === props.server)
@@ -205,10 +199,6 @@ export function TabNavItem(props: {
       data-active={props.active}
       data-dragging={props.dragging}
       data-pressed={props.pressed}
-      onMouseDown={(event) => {
-        if (event.button !== 1) return
-        closeTab(event)
-      }}
     >
       <Show when={props.session()}>
         {(session) => {
@@ -280,11 +270,6 @@ export function TabNavItem(props: {
           )
         }}
       </Show>
-
-      {/* No per-tab ✕ (owner, 2026-08-12). It sat INSIDE the target you aim at, so "switch to that
-          task" and "destroy it" were a few pixels apart — less than a fingertip on touch. Closing is
-          now one button in the titlebar, acting on the task you are already looking at, which cannot
-          be hit while reaching for another tab. Middle-click and the close COMMAND still work. */}
     </div>
   )
 }
@@ -295,17 +280,11 @@ export function DraftTabItem(props: {
   title: string
   active?: boolean
   onNavigate: () => void
-  onClose: () => void
   suppressNavigation?: () => boolean
   dragging?: boolean
   pressed?: boolean
   hidden?: boolean
 }) {
-  const closeTab = (event: MouseEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-    props.onClose()
-  }
   return (
     <div
       ref={(el) => forwardTabRef(props.ref, el)}
@@ -316,10 +295,6 @@ export function DraftTabItem(props: {
       data-pressed={props.pressed}
       class="group relative flex h-7 w-full min-w-0 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] bg-[var(--tab-bg)] px-1.5 [container-type:inline-size] whitespace-nowrap [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] has-[>a:focus-visible]:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[dragging='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[pressed='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[editing='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       classList={{ invisible: props.hidden }}
-      onMouseDown={(event) => {
-        if (event.button !== 1) return
-        closeTab(event)
-      }}
     >
       <a
         data-slot="tab-link"
@@ -347,8 +322,6 @@ export function DraftTabItem(props: {
           {props.title}
         </span>
       </a>
-      {/* Draft tabs lose their ✕ for the same reason session tabs did — one close button in the
-          titlebar, out of the way of the thing you are aiming at. */}
     </div>
   )
 }

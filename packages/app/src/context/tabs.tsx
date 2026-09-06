@@ -10,6 +10,7 @@ import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
 import { sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
 import { findAgentTab } from "./tab-agent"
+import { appendRecentTab, retainRecentTabs } from "./tab-retention"
 
 export type SessionTab = {
   type: "session"
@@ -117,16 +118,20 @@ export const {
       for (const key of draftPersistedKeys()) removePersisted(Persist.draft(draftID, key), platform)
     }
 
+    const forgetTab = (tab: Tab) => {
+      memory.remove(tabKey(tab))
+      if (tab.type === "draft") removeDraftPersisted(tab.draftID)
+    }
+
     onCleanup(memory.dispose)
 
     createEffect(() => {
       if (!ready() || !recentReady()) return
       const servers = new Set(server.list.map(ServerConnection.key))
-      const next = store.filter((tab) => servers.has(tab.server))
+      const connected = store.filter((tab) => servers.has(tab.server))
+      const next = retainRecentTabs(connected, recent.keys ?? [], tabKey)
       if (next.length !== store.length) {
-        for (const tab of store) {
-          if (!servers.has(tab.server)) memory.remove(tabKey(tab))
-        }
+        for (const tab of store) if (!next.includes(tab)) forgetTab(tab)
         setStore(() => next)
       }
       if (recent.key && !next.some((tab) => tabKey(tab) === recent.key)) setRecentKey(undefined)
@@ -138,20 +143,13 @@ export const {
       navigate(href)
     }
 
-    /**
-     * The tab the user just closed on purpose, until the route leaves it.
-     *
-     * Read by the route effect that opens a tab for the current URL: that effect exists so a deep
-     * link, Contacts or a restored window all end up with a tab, and it cannot otherwise distinguish
-     * those from a dismissal it is about to undo.
-     */
-    const [dismissedKey, setDismissedKey] = createSignal<string | undefined>(undefined)
+    /** The tab lifecycle just removed, until its route leaves and can no longer resurrect it. */
+    const [removedKey, setRemovedKey] = createSignal<string | undefined>(undefined)
 
     /**
      * @param stay Take the tab out of the strip and go NOWHERE.
      *
-     * 🔴 The navigation below belongs to the CLOSE BUTTON — a user who shut a tab wants to land
-     * somewhere, and Home is the honest answer when nothing is left. It does NOT belong to
+     * Navigation belongs to lifecycle actions that remove an active task. It does NOT belong to
      * reconciliation. `removeSessionTab` reaches here because the route discovered the chat is gone,
      * and that route has a `SessionGoneCard` built for exactly this state — *"a normal lifecycle
      * event in a multi-client OS, never a crash"* — with its own button to Home. Navigating on its
@@ -163,20 +161,17 @@ export const {
       const tab = store[index]
       if (!tab) return
       const key = tabKey(tab)
-      // 🔴 A CLOSE IS AN INTENT, and until this signal existed nothing recorded it — so the route
-      // effect that opens a tab for the URL you are on could not tell "you arrived here" from "you
-      // just shut this".
+      // Record the removal so the route effect cannot put the tab back before navigation settles.
       //
       // Measured 2026-09-03: closing the only tab put it straight back. `titlebar.tsx`'s effect reads
       // the tab store through `matchRoute`, so REMOVING the tab is itself the change that re-runs it;
       // the navigation away is deferred inside the transition below, so the route is still the
-      // session, and it re-adds what was just closed. Intermittent, because it is a race with that
+      // session, and it re-adds what was just removed. Intermittent, because it is a race with that
       // navigation — which is exactly how it was reported.
       //
-      // ⚠️ Only a DISMISSAL sets it. `stay` is reconciliation (the chat is gone and the route wants
-      // to explain that itself), and marking those would suppress a legitimate re-open.
-      if (!stay) setDismissedKey(key)
-      const draftID = tab.type === "draft" ? tab.draftID : undefined
+      // ⚠️ `stay` is reconciliation (the chat is gone and the route wants to explain that itself),
+      // and marking those would suppress a legitimate re-open.
+      if (!stay) setRemovedKey(key)
       const nextTab = store[index + 1] ?? store[index - 1]
       void startTransition(() => {
         setStore(
@@ -189,8 +184,7 @@ export const {
         if (nextTab) navigateTab(nextTab)
         else navigate("/")
       })
-      memory.remove(key)
-      if (draftID) removeDraftPersisted(draftID)
+      forgetTab(tab)
     }
 
     const agentTab = (server: ServerConnection.Key, agent: string | undefined, exceptSession?: string) =>
@@ -255,6 +249,7 @@ export const {
           return held
         }
         void startTransition(() => {
+          let evicted: Tab[] = []
           setStore(
             produce((tabs) => {
               if (tabs.some((item) => tabKey(item) === tabKey(next))) return
@@ -265,9 +260,12 @@ export const {
                 tabs.some((item) => item.type === "session" && item.server === next.server && item.agent === next.agent)
               )
                 return
-              tabs.push(next)
+              const bounded = appendRecentTab(tabs, next, promote(recent.keys, recentKey()), tabKey)
+              evicted = bounded.evicted
+              tabs.splice(0, tabs.length, ...bounded.tabs)
             }),
           )
+          for (const tab of evicted) forgetTab(tab)
         })
         return next
       },
@@ -317,12 +315,17 @@ export const {
       },
       newDraft(draft: Omit<DraftTab, "type" | "draftID">, prompt?: string) {
         const draftID = uuid()
+        const next = { type: "draft" as const, draftID, ...draft }
         void startTransition(() => {
+          let evicted: Tab[] = []
           setStore(
             produce((tabs) => {
-              tabs.push({ type: "draft", draftID, ...draft })
+              const bounded = appendRecentTab(tabs, next, promote(recent.keys, recentKey()), tabKey)
+              evicted = bounded.evicted
+              tabs.splice(0, tabs.length, ...bounded.tabs)
             }),
           )
+          for (const tab of evicted) forgetTab(tab)
           navigate(prompt ? `${draftHref(draftID)}&prompt=${encodeURIComponent(prompt)}` : draftHref(draftID))
         })
       },
@@ -378,11 +381,10 @@ export const {
         memory.remove(`draft:${draftID}`)
         removeDraftPersisted(draftID)
       },
-      removeTab,
-      /** The key of a tab the user just dismissed, or `undefined`. See `dismissedKey`. */
-      dismissedKey,
-      /** The route moved somewhere else, so the dismissal no longer needs suppressing. */
-      clearDismissed: () => setDismissedKey(undefined),
+      /** The key of a tab a lifecycle action just removed, or `undefined`. */
+      removedKey,
+      /** The route moved somewhere else, so removal no longer needs suppressing. */
+      clearRemoved: () => setRemovedKey(undefined),
       /**
        * The chat is GONE — close whatever tab still shows it.
        *
@@ -406,7 +408,7 @@ export const {
       /**
        * The chat behind an OPEN ROUTE turned out not to exist — drop its tab and STAY, so the route
        * can render its own "this chat is gone" card. See `removeTab`'s `stay` parameter: this is a
-       * reconciliation, not a dismissal, and it must not navigate on the user's behalf.
+       * reconciliation, not an ordinary lifecycle transition, and it must not navigate on the user's behalf.
        */
       removeSessionTab(input: Omit<SessionTab, "type">) {
         const index = store.findIndex(
@@ -550,19 +552,6 @@ export const {
           return
         }
         navigate("/")
-      },
-      /**
-       * Tasks ordered by when they were last opened, most recent first, with any never-visited task
-       * appended in store order. Never drops a task: the strip slices this, and a task missing from
-       * BOTH lists would be unreachable rather than merely further along.
-       */
-      recentOrder(): Tab[] {
-        const rank = new Map((recent.keys ?? []).map((key, index) => [key, index] as const))
-        return [...store].sort((a, b) => {
-          const left = rank.get(tabKey(a)) ?? Number.MAX_SAFE_INTEGER
-          const right = rank.get(tabKey(b)) ?? Number.MAX_SAFE_INTEGER
-          return left === right ? store.indexOf(a) - store.indexOf(b) : left - right
-        })
       },
       state<T>(tab: Tab, name: string, init: () => T) {
         return memory.ensure(tabKey(tab), name, init)

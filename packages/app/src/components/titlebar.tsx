@@ -1,11 +1,10 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
-import { MenuV2 } from "@novaclaw/ui/v2/menu-v2"
 
 import { LayoutRoute, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
@@ -25,7 +24,7 @@ import {
 } from "@/components/titlebar-session-events"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
-import { tabHref, tabKey, useTabs, type Tab } from "@/context/tabs"
+import { tabKey, useTabs } from "@/context/tabs"
 
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
@@ -209,15 +208,14 @@ export function Titlebar() {
           if (!tabs.ready()) return
           const tab = currentTab()
           if (tab) {
-            // Landing on any tab means the dismissal is spent — a later navigation back to the
-            // closed chat must open it again, which is the ordinary way to reopen something.
-            tabsStoreActions.clearDismissed()
+            // Landing on any tab means the removal guard is spent.
+            tabsStoreActions.clearRemoved()
             tabs.remember(tab)
             return
           }
           // Home, an app page, anything that is not a session: the user has left, so the suppression
           // has done its job and must not outlive it.
-          if (route.type !== "session") tabsStoreActions.clearDismissed()
+          if (route.type !== "session") tabsStoreActions.clearRemoved()
 
           if (route.type === "session") {
             const s = session()
@@ -239,12 +237,9 @@ export function Titlebar() {
              * back the colleague's existing tab, we have to travel to it, or the strip highlights
              * one chat while the page renders another.
              */
-            // 🔴 Do NOT resurrect a tab the user just closed. This effect reads the tab store (via
-            // `matchRoute`), so removing a tab is itself what re-runs it — and the navigation away
-            // is deferred inside the store's transition, so `route` is still this session. Without
-            // this guard, closing the only tab put it straight back, intermittently, depending on
-            // which won the race.
-            if (tabsStoreActions.dismissedKey() === tabKey({ type: "session", ...next })) return
+            // Removing a tab re-runs this effect before its lifecycle navigation settles. Do not put
+            // that same tab back during the transition.
+            if (tabsStoreActions.removedKey() === tabKey({ type: "session", ...next })) return
             const tab = tabsStoreActions.addSessionTab(next)
             if (tab.type === "session" && tab.sessionId !== sessionId) tabsStoreActions.select(tab)
           }
@@ -263,62 +258,6 @@ export function Titlebar() {
           if (!detail) return
           tabsStoreActions.followAgentChats(detail.rows)
         })
-
-        // The legacy new-tab "+" (draft tabs, mod+t) is RETIRED (owner 2026-07-22): chat
-        // creation lives in the launcher bar and the Chats page's New Session button.
-        /**
-         * How many tasks the strip shows. The rest are one click away in the list — a bar that grows
-         * without limit stops being scannable long before it stops fitting, and the tab you want is
-         * almost always one you touched recently.
-         */
-        /**
-         * A task's label for the list. Read from the sync cache the strip already fills — resolving
-         * every task here would turn opening a menu into N requests, and a menu that fetches is a
-         * menu that stalls. An unresolved task shows its folder, never a blank row.
-         */
-        const tabTitle = (tab: Tab) => {
-          if (tab.type === "draft")
-            return tab.directory.split(/[\/]/).filter(Boolean).at(-1) ?? language.t("command.session.new")
-          const conn = global.servers.list().find((item) => ServerConnection.key(item) === tab.server)
-          const cached = conn ? global.ensureServerCtx(conn).sync.session.peek(tab.sessionId) : undefined
-          return cached?.title?.trim() || language.t("nav.tasks.untitled")
-        }
-
-        const VISIBLE_TABS = 4
-        /**
-         * 🔴 STORE ORDER, never recency. Owner, 2026-09-03: *"picking a new one moves it to the left
-         * — that is incredibly distracting, and gives the feel that our UI is falling apart. Ensure
-         * there is no tab sorting, but the user has the ability to drag tabs to sort them if they
-         * want, like in a browser."*
-         *
-         * The strip used to render `recentOrder()`, so selecting a tab promoted it to index 0 and
-         * every other tab shifted right under the pointer. Tabs are a SPATIAL control: people find
-         * them by where they are, and a control that rearranges itself when you use it cannot be
-         * learned. Drag-to-reorder already exists (`tabs.reorder`), which is the only sorting there
-         * should be — the user's own.
-         *
-         * ⚠️ The current task is still always visible, because a strip that does not contain the
-         * thing on screen is worse than one that shifts. It takes the LAST slot rather than the
-         * first, so the tabs the user has parked on the left never move.
-         */
-        const visibleTabs = createMemo(() => {
-          const shown = tabsStore.slice(0, VISIBLE_TABS)
-          const current = currentTab()
-          if (current && !shown.some((tab) => tabKey(tab) === tabKey(current))) {
-            return [...shown.slice(0, VISIBLE_TABS - 1), current]
-          }
-          return shown
-        })
-        const hiddenTabs = createMemo(() => {
-          const visible = new Set(visibleTabs().map(tabKey))
-          return tabsStore.filter((tab) => !visible.has(tabKey(tab)))
-        })
-        const closeCurrent = () => {
-          const current = currentTab()
-          if (!current) return
-          const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(current))
-          if (index !== -1) tabsStoreActions.removeTab(index)
-        }
 
         // ⚠️ "Am I on the launcher" is the PATHNAME, not `layout.route().type` (owner, 2026-08-13:
         // Home switched to the last task instead of leaving the app). `currentRoute` only classifies
@@ -343,20 +282,6 @@ export function Titlebar() {
           const current = currentTab()
 
           return [
-            current && {
-              id: "tab.close",
-              category: "tab",
-              title: language.t("command.tab.close"),
-              keybind: "mod+w",
-              hidden: true,
-              // ⚠️ `closeCurrent`, not a second search. This used to be
-              // `removeTab(findIndex((tab) => current === tab))` — REFERENCE equality where the two
-              // other close paths compare `tabKey`, and no `-1` guard. A store row whose identity was
-              // replaced (a reorder, a reconcile) therefore matched nothing, `findIndex` answered -1,
-              // and `removeTab(-1)` read `store[-1]`, found nothing and returned: the keybind did
-              // nothing at all, silently.
-              onSelect: closeCurrent,
-            },
             {
               id: `tab.prev`,
               category: "tab",
@@ -407,27 +332,9 @@ export function Titlebar() {
             }}
           >
             <BrandBadge onToggle={toggleHome} />
-            {/* Tasks is hidden on the launcher ("/") — you launch apps from the tiles there — and
-                also INSIDE a task (owner, 2026-08-12): the tab strip beside it already lists your
-                tasks, so the button only competes with them for the same click. It remains on the
-                other app pages (Notes, Files, Settings…), where nothing else leads back. */}
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
-            <Show when={location.pathname !== "/" && layout.route().type !== "session"}>
-              <TooltipV2 placement="bottom" value={language.t("home.app.contacts.name")} class="shrink-0">
-                <IconButtonV2
-                  type="button"
-                  variant="ghost-muted"
-                  size="large"
-                  class="!w-9 shrink-0"
-                  icon={<IconV2 name="tab" />}
-                  onClick={() => navigate("/tasks")}
-                  aria-label={language.t("home.app.contacts.name")}
-                />
-              </TooltipV2>
-            </Show>
-
             <TitlebarTabStrip
-              tabs={visibleTabs()}
+              tabs={tabsStore}
               currentTab={currentTab}
               activeServerKey={server.key}
               forceTruncate={tabsAreOverflowing()}
@@ -436,61 +343,21 @@ export function Titlebar() {
                 tabs.select(tab)
                 el?.scrollIntoView({ behavior: "instant" })
               }}
-              onClose={(tab) => {
-                const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
-                if (index !== -1) tabsStoreActions.removeTab(index)
-              }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
             />
 
-            {/* All tasks, including the ones the strip is not showing. The count is on the button so
-                "there are others" is legible without opening it. */}
-            <Show when={tabsStore.length > 0}>
-              <MenuV2 placement="bottom" gutter={4}>
-                <MenuV2.Trigger
-                  data-component="titlebar-task-list"
-                  aria-label={language.t("nav.tasks.all")}
-                  class="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[12px] text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 focus-visible:outline-none data-[expanded]:bg-v2-background-bg-layer-01"
-                >
-                  <IconV2 name="bullet-list" />
-                  <Show when={hiddenTabs().length > 0}>
-                    <span>{hiddenTabs().length}</span>
-                  </Show>
-                </MenuV2.Trigger>
-                <MenuV2.Portal>
-                  <MenuV2.Content class="max-h-[60vh] w-[280px] overflow-y-auto">
-                    <MenuV2.Group>
-                      <MenuV2.GroupLabel>{language.t("nav.tasks.all")}</MenuV2.GroupLabel>
-                      <For each={tabs.recentOrder()}>
-                        {(tab: Tab) => (
-                          <MenuV2.Item onSelect={() => tabs.select(tab)}>
-                            <span class="min-w-0 flex-1 truncate">{tabTitle(tab)}</span>
-                            <Show when={currentTab() && tabKey(currentTab()!) === tabKey(tab)}>
-                              <IconV2 name="check" class="shrink-0" />
-                            </Show>
-                          </MenuV2.Item>
-                        )}
-                      </For>
-                    </MenuV2.Group>
-                  </MenuV2.Content>
-                </MenuV2.Portal>
-              </MenuV2>
-            </Show>
-
-            {/* ONE close button, for the task you are looking at. A per-tab ✕ sits inside the thing
-                you are aiming at, so "switch" and "destroy" are a few pixels apart — and on touch,
-                less than a fingertip. This cannot be hit while reaching for another tab. */}
-            <Show when={currentTab()}>
-              <TooltipV2 placement="bottom" value={language.t("nav.tasks.close")} class="shrink-0">
+            {/* Contacts owns the complete roster; the titlebar never grows a second task manager. */}
+            <Show when={location.pathname !== "/"}>
+              <TooltipV2 placement="bottom" value={language.t("nav.tasks.all")} class="shrink-0">
                 <IconButtonV2
                   type="button"
                   variant="ghost-muted"
                   size="large"
                   class="!w-9 shrink-0"
-                  data-component="titlebar-task-close"
-                  icon={<IconV2 name="xmark-small" />}
-                  onClick={closeCurrent}
-                  aria-label={language.t("nav.tasks.close")}
+                  data-component="titlebar-task-list"
+                  icon={<IconV2 name="bullet-list" />}
+                  onClick={() => navigate("/tasks")}
+                  aria-label={language.t("nav.tasks.all")}
                 />
               </TooltipV2>
             </Show>

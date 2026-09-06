@@ -6,10 +6,9 @@ import { ServerConnection, ServerContext } from "@/context/server"
 import { TabsProvider, tabKey, useTabs } from "@/context/tabs"
 
 /**
- * CLOSING THE LAST TAB LANDS ON HOME — and a close is never undone by the route.
- *
- * Owner, 2026-09-03: *"pressing X sometimes doesn't really close the tab, but results into opening.
- * Please make it an invariant that closing the last tab should switch to home."*
+ * REMOVING AN ACTIVE TAB follows the remaining tab or lands on Home, and the route never undoes it.
+ * The titlebar no longer exposes manual task closing; this is the lifecycle primitive used when a
+ * chat is cleared, retired, or found missing.
  *
  * 🔴 The reopening was a REACTIVE RACE, not a missing navigation. `removeTab` has always navigated
  * home when nothing is left. But `titlebar.tsx` runs an effect that opens a tab for the session URL
@@ -19,7 +18,7 @@ import { TabsProvider, tabKey, useTabs } from "@/context/tabs"
  * therefore still the session, and the effect puts the tab straight back. Intermittent, because it
  * is a race with that navigation, which is how it was reported.
  *
- * The missing piece was that nothing recorded the INTENT. `dismissedKey` is that record, and this
+ * The missing piece was that nothing recorded the transition. `removedKey` is that record, and this
  * file pins both halves: the navigation, and the mark that stops the route undoing it.
  */
 
@@ -71,7 +70,7 @@ function Probe() {
     <div>
       <span data-testid="count">{tabs.store.length}</span>
       <span data-testid="path">{location.pathname}</span>
-      <span data-testid="dismissed">{tabs.dismissedKey() ?? ""}</span>
+      <span data-testid="removed">{tabs.removedKey() ?? ""}</span>
       <button
         data-testid="add"
         onClick={() => {
@@ -79,9 +78,39 @@ function Probe() {
           tabs.addSessionTab({ server: KEY, sessionId: "ses_two", agent: "xenia" })
         }}
       />
-      <button data-testid="close-last" onClick={() => tabs.removeTab(tabs.store.length - 1)} />
-      <button data-testid="close-first" onClick={() => tabs.removeTab(0)} />
-      <button data-testid="reconcile" onClick={() => tabs.removeTab(0, true)} />
+      <button
+        data-testid="add-third-fourth"
+        onClick={() => {
+          tabs.addSessionTab({ server: KEY, sessionId: "ses_three", agent: "theron" })
+          tabs.addSessionTab({ server: KEY, sessionId: "ses_four", agent: "umbris" })
+        }}
+      />
+      <button data-testid="touch-first" onClick={() => tabs.store[0] && tabs.remember(tabs.store[0])} />
+      <button
+        data-testid="add-fifth"
+        onClick={() => tabs.addSessionTab({ server: KEY, sessionId: "ses_five", agent: "xenia-2" })}
+      />
+      <button
+        data-testid="close-last"
+        onClick={() => {
+          const tab = tabs.store.at(-1)
+          if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
+        }}
+      />
+      <button
+        data-testid="close-first"
+        onClick={() => {
+          const tab = tabs.store[0]
+          if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
+        }}
+      />
+      <button
+        data-testid="reconcile"
+        onClick={() => {
+          const tab = tabs.store[0]
+          if (tab?.type === "session") tabs.removeSessionTab(tab)
+        }}
+      />
       <span data-testid="ids">{tabs.store.map((t) => (t.type === "session" ? t.sessionId : "?")).join(",")}</span>
       <button
         data-testid="readd"
@@ -160,8 +189,8 @@ afterEach(() => {
   document.body.innerHTML = ""
 })
 
-describe("closing tabs", () => {
-  test("🔴 closing the LAST tab lands on home", async () => {
+describe("tab lifecycle removal", () => {
+  test("🔴 removing the LAST tab lands on home", async () => {
     const { container } = mount()
     click(container, "add")
     await settle()
@@ -172,7 +201,7 @@ describe("closing tabs", () => {
     expect(await waitForText(container, "count", "0")).toBe("0")
   })
 
-  test("CONTROL — closing a tab with a neighbour goes to the neighbour, not home", async () => {
+  test("CONTROL — removing a tab with a neighbour goes to the neighbour, not home", async () => {
     // Without this the file would pass on a build that navigated home on EVERY close, which would
     // throw the user out of their remaining work.
     const { container } = mount()
@@ -183,19 +212,19 @@ describe("closing tabs", () => {
     expect(await waitForText(container, "count", "1")).toBe("1")
   })
 
-  test("🔴 a dismissal is RECORDED, so the route effect cannot undo it", async () => {
+  test("🔴 a removal is RECORDED, so the route effect cannot undo it", async () => {
     // The half that fixes the reported bug. `titlebar.tsx` reads this before re-opening a tab for
-    // the URL it is on; without the record it cannot tell "you arrived here" from "you just shut
-    // this", and the deferred navigation means the route still says session either way.
+    // the URL it is on; without the record it cannot tell "you arrived here" from "the lifecycle
+    // just removed this", and the deferred navigation means the route still says session either way.
     const { container } = mount()
     click(container, "add")
     await settle()
     click(container, "close-last")
     await settle()
-    expect(text(container, "dismissed")).toBe(tabKey({ type: "session", server: KEY, sessionId: "ses_two" } as never))
+    expect(text(container, "removed")).toBe(tabKey({ type: "session", server: KEY, sessionId: "ses_two" } as never))
   })
 
-  test("CONTROL — a RECONCILIATION is not a dismissal", async () => {
+  test("CONTROL — a RECONCILIATION is not a lifecycle removal", async () => {
     // `stay` means the chat turned out to be gone and the route wants to explain that itself. Marking
     // those would suppress a legitimate re-open later.
     const { container } = mount()
@@ -203,7 +232,25 @@ describe("closing tabs", () => {
     await settle()
     click(container, "reconcile")
     await settle()
-    expect(text(container, "dismissed")).toBe("")
+    expect(text(container, "removed")).toBe("")
+  })
+})
+
+describe("automatic tab retention", () => {
+  test("opening a fifth colleague removes the least recently used tab", async () => {
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    click(container, "add-third-fourth")
+    await settle()
+    click(container, "touch-first")
+    await settle()
+    click(container, "add-fifth")
+    await settle()
+    expect(await waitForText(container, "ids", "ses_one,ses_three,ses_four,ses_five")).toBe(
+      "ses_one,ses_three,ses_four,ses_five",
+    )
+    expect(text(container, "count")).toBe("4")
   })
 })
 
@@ -220,14 +267,14 @@ describe("closing tabs", () => {
  * The behaviour IS covered live by the two store cases above (the tab count reaches zero) plus this
  * rule; the alone-run of this file also exercises the real router.
  */
-describe("where a close leaves you", () => {
+describe("where lifecycle removal leaves you", () => {
   test("🔴 removeTab navigates to the neighbour, or home when nothing is left", async () => {
     const source = await Bun.file(new URL("../src/context/tabs.tsx", import.meta.url)).text()
     const body = source.slice(source.indexOf("const removeTab ="), source.indexOf("const agentTab ="))
     expect(body).toContain("if (nextTab) navigateTab(nextTab)")
     expect(body).toContain('else navigate("/")')
-    // And the dismissal must be recorded on the same path, or the route effect undoes the close.
-    expect(body).toContain("if (!stay) setDismissedKey(key)")
+    // And the removal must be recorded on the same path, or the route effect undoes it.
+    expect(body).toContain("if (!stay) setRemovedKey(key)")
   })
 })
 
@@ -308,4 +355,3 @@ describe("re-opening a colleague adopts the chat it was given", () => {
     expect(text(container, "ids").split(",").length).toBe(before)
   })
 })
-

@@ -29,8 +29,12 @@ function mount(initial: "reject" | "missing" | "binary" | "empty") {
     sdk: {
       client: {
         path: { get: async () => ({ data: { data: "/tmp/notes-test" } }) },
+        v2: {
+          fs: {
+            browse: async () => ({ data: [{ name: "record.md", type: "file" }] }),
+          },
+        },
         file: {
-          list: async () => ({ data: [{ name: "record.md", path: "record.md", type: "file" }] }),
           read: async () => {
             if (state === "reject") throw new Error("read refused")
             return {

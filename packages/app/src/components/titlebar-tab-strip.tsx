@@ -15,7 +15,7 @@ import { useCommand } from "@/context/command"
 import { useTabs } from "@/context/tabs"
 import { createTabPromptState } from "@/context/prompt"
 import { base64Encode } from "@novaclaw/core/util/encode"
-import { canStartTabDrag, isTabCloseTarget } from "./titlebar-tab-gesture"
+import { canStartTabDrag } from "./titlebar-tab-gesture"
 
 const sortableTransition = { duration: 0 }
 
@@ -28,7 +28,6 @@ function SessionTabSlot(props: {
   forceTruncate: boolean
   serverCtx: () => ServerCtx | undefined
   onNavigate: (element: HTMLDivElement) => void
-  onClose: () => void
 }) {
   const tabs = useTabs()
   const sortable = useSortable({
@@ -122,7 +121,6 @@ function SessionTabSlot(props: {
           if (value && ctx) ctx.sync.session.remember({ ...value, title })
         }}
         onNavigate={() => props.onNavigate(ref)}
-        onClose={props.onClose}
         active={props.active()}
         activeServer={props.tab.server === props.activeServerKey}
         forceTruncate={props.forceTruncate}
@@ -139,7 +137,6 @@ function DraftTabSlot(props: {
   active: () => boolean
   title: string
   onNavigate: (element: HTMLDivElement) => void
-  onClose: () => void
 }) {
   const sortable = useSortable({
     get id() {
@@ -165,7 +162,6 @@ function DraftTabSlot(props: {
         href={tabHref(props.tab)}
         title={props.title}
         onNavigate={() => props.onNavigate(ref)}
-        onClose={props.onClose}
         active={props.active()}
         dragging={sortable.isDragSource()}
       />
@@ -179,7 +175,6 @@ export function TitlebarTabStrip(props: {
   activeServerKey: ServerConnection.Key
   forceTruncate: boolean
   onNavigate: (tab: Tab, el?: HTMLDivElement) => void
-  onClose: (tab: Tab) => void
   onReorder: (keys: string[]) => void
   onOverflowChange: (overflowing: boolean) => void
 }) {
@@ -234,7 +229,6 @@ export function TitlebarTabStrip(props: {
               activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
               preventActivation: (event) =>
                 !canStartTabDrag(event.pointerType) ||
-                isTabCloseTarget(event.target) ||
                 (event.target instanceof Element && !!event.target.closest('[contenteditable="true"]')),
             }),
           ]}
@@ -289,7 +283,6 @@ export function TitlebarTabStrip(props: {
                         ref = element
                         props.onNavigate(tab, element)
                       }}
-                      onClose={() => props.onClose(tab)}
                     />
                   )
                 }
@@ -305,7 +298,6 @@ export function TitlebarTabStrip(props: {
                       ref = element
                       props.onNavigate(tab, element)
                     }}
-                    onClose={() => props.onClose(tab)}
                   />
                 )
               }}
