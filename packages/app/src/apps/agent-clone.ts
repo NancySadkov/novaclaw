@@ -53,6 +53,26 @@ export interface Clone {
 }
 
 /**
+ * Write one clone through the shared mutation seam used by every surface that offers the action.
+ * Planning and persistence belong together here: a second caller must not independently rediscover
+ * which names are taken or shape a different config patch while still calling its button “Clone”.
+ */
+export const cloneAgent = async (input: {
+  readonly source: AgentLike
+  readonly roster: readonly AgentLike[]
+  readonly random: () => number
+  readonly updateConfig: (patch: { readonly agents: Record<string, Record<string, unknown>> }) => Promise<unknown>
+}): Promise<Clone> => {
+  const plan = planClone({
+    source: input.source,
+    taken: input.roster.flatMap((row) => [row.id, row.name ?? ""]),
+    random: input.random,
+  })
+  await input.updateConfig({ agents: { [plan.id]: plan.fragment } })
+  return plan
+}
+
+/**
  * Plan a clone. Pure: the caller does the writing, so the naming rule and the inheritance rule are
  * both testable without a server.
  *

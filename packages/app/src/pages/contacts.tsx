@@ -12,6 +12,7 @@ import { hiddenRoster, roster, searchRoster, type ContactView } from "@/apps/con
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
+import { cloneAgent } from "@/apps/agent-clone"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { describeFailure } from "@/utils/failure-copy"
@@ -104,6 +105,7 @@ export function ContactsPage() {
   const [query, setQuery] = createSignal("")
   const [hiring, setHiring] = createSignal(false)
   const [starting, setStarting] = createSignal<string | undefined>()
+  const [cloning, setCloning] = createSignal<string | undefined>()
   const navigate = useNavigate()
   const sync = useServerSync()
   const dialog = useDialog()
@@ -196,6 +198,27 @@ export function ContactsPage() {
       showToast({ variant: "error", title: language.t("contacts.hireFailed"), description: String(error) })
     } finally {
       setHiring(false)
+    }
+  }
+
+  /** Hire a copy directly from the roster: same brief, new identity and an empty life. */
+  const cloneColleague = async (agentID: string) => {
+    const source = (agents() ?? []).find((row) => row.id === agentID)
+    if (source === undefined) return
+    setCloning(agentID)
+    try {
+      const plan = await cloneAgent({
+        source,
+        roster: agents() ?? [],
+        random: Math.random,
+        updateConfig: (patch) => sync().updateConfig(patch as never),
+      })
+      showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
+      refetchAgents()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) })
+    } finally {
+      setCloning(undefined)
     }
   }
 
@@ -364,7 +387,10 @@ ${copy.detail}`
                   view={view}
                   sessions={liveSessions()}
                   starting={starting() === view.id}
+                  cloning={cloning() === view.id}
+                  cloneDisabled={cloning() !== undefined}
                   onStart={() => void startTheirChat(view.id, view.name)}
+                  onClone={() => void cloneColleague(view.id)}
                   usage={usage()?.[view.id] ?? []}
                   executions={executionBySession()}
                   serverKey={serverKey()}
@@ -395,7 +421,10 @@ ${copy.detail}`
                   view={view}
                   sessions={liveSessions()}
                   starting={starting() === view.id}
+                  cloning={cloning() === view.id}
+                  cloneDisabled={cloning() !== undefined}
                   onStart={() => void startTheirChat(view.id, view.name)}
+                  onClone={() => void cloneColleague(view.id)}
                   usage={usage()?.[view.id] ?? []}
                   executions={executionBySession()}
                   serverKey={serverKey()}
@@ -445,7 +474,10 @@ function ContactRow(props: {
   usage: readonly UsageMinute[]
   executions: ReadonlyMap<string, SessionExecutionInfo>
   starting: boolean
+  cloning: boolean
+  cloneDisabled: boolean
   onStart: () => void
+  onClone: () => void
   serverKey: ServerConnection.Key | undefined
   onOpen: () => void
 }) {
@@ -622,6 +654,17 @@ function ContactRow(props: {
           {compactTokens(live().tokens.generated)}
         </span>
       </Show>
+      <button
+        type="button"
+        data-action="contacts-clone"
+        onClick={props.onClone}
+        disabled={props.cloneDisabled}
+        class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base disabled:opacity-40"
+        title={language.t("contacts.clone", { name: props.view.name })}
+        aria-label={language.t("contacts.clone", { name: props.view.name })}
+      >
+        {props.cloning ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+      </button>
       <button
         type="button"
         onClick={props.onOpen}

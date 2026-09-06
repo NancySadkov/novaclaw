@@ -2912,6 +2912,7 @@ export const dict = {
   "contacts.state.error": "Error",
   "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",
   "contacts.configure": "Configure this colleague",
+  "contacts.clone": "Clone {{name}}",
   "contacts.memory.own": "Remembers its own chats, privately.",
   "contacts.memory.none": "Remembers nothing — a throwaway.",
   "contacts.memory.shared": "Shares this machine, its files and your household facts with every colleague.",

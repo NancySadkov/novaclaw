@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { clonedFields, NOT_CLONED, planClone } from "./agent-clone"
+import { cloneAgent, clonedFields, NOT_CLONED, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
 const source: AgentLike = {
@@ -16,6 +16,20 @@ const source: AgentLike = {
 }
 
 describe("what a clone inherits", () => {
+  test("every surface writes the same planned clone patch", async () => {
+    const writes: unknown[] = []
+    const clone = await cloneAgent({
+      source,
+      roster: [source, { id: "alexios", name: "Alexios", mode: "primary", hidden: false }],
+      random: () => 0,
+      updateConfig: async (patch) => {
+        writes.push(patch)
+      },
+    })
+    expect(writes).toEqual([{ agents: { [clone.id]: clone.fragment } }])
+    expect(clone.id).not.toBe("alexios")
+  })
+
   test("the BRIEF — job, personality, face, memory setting", () => {
     const clone = planClone({ source, taken: [], random: () => 0 })
     expect(clone.fragment).toMatchObject({

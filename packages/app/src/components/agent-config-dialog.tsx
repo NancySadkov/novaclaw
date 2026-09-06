@@ -15,7 +15,7 @@ import { showToast } from "@/utils/toast"
 import { listSessions, startChat } from "@/apps/agent-list"
 import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
-import { planClone } from "@/apps/agent-clone"
+import { cloneAgent } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
@@ -255,15 +255,12 @@ export function AgentConfigDialog(props: {
     if (source === undefined) return
     setBusy("clone")
     try {
-      const roster = agents() ?? []
-      const plan = planClone({
+      const plan = await cloneAgent({
         source,
-        // Ids AND display names, both — a second colleague READING as "Theron" is the collision that
-        // matters, not a key clash.
-        taken: roster.flatMap((row) => [row.id, row.name ?? ""]),
+        roster: agents() ?? [],
         random: Math.random,
+        updateConfig: (patch) => sync().updateConfig(patch as never),
       })
-      await sync().updateConfig({ agents: { [plan.id]: plan.fragment } } as never)
       showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
       // 🔴 A folder change ARCHIVES this colleague's chat and opens a successor in the new folder
       // (`agent/reassignment.ts`) — deliberately, because a cross-project move is refused outright.
