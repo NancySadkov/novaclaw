@@ -149,7 +149,9 @@ describe("packages/app/e2e cannot rot unnoticed", () => {
       throw new Error(`packages/app/e2e no longer exists — delete ${rel(import.meta.path)} with it.`)
     }
     expect(e2eFiles.length).toBeGreaterThanOrEqual(10)
-    expect(selectors.length).toBeGreaterThanOrEqual(30)
+    // Two close-button selectors left with the close-button scenario: tabs are now managed by the
+    // four-entry LRU, so retaining that scenario would assert the removed interaction back into UI.
+    expect(selectors.length).toBeGreaterThanOrEqual(28)
     expect(renderSource.length).toBeGreaterThan(1_000_000)
     // A selector that IS rendered, so a corpus that silently went empty fails here rather than passing.
     expect(isRendered({ attribute: "data-component", value: "session-composer", where: "self-check" })).toBe(true)
