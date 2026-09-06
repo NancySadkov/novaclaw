@@ -240,6 +240,28 @@ describe("recovering a transcript after the stream dropped", () => {
     expect(store.messages("s")!.map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_3"])
   })
 
+  test("reconnect retries a transcript whose first load failed before it created a store row", async () => {
+    let call = 0
+    const client = {
+      v2: {
+        session: {
+          async messages() {
+            call += 1
+            if (call === 1) throw new Error("offline at mount")
+            return { data: { data: [message("msg_recovered", "caught up")] } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+
+    await expect(store.load("s")).rejects.toThrow("offline at mount")
+    expect(store.messages("s")).toBeUndefined()
+    await store.reconcileAll()
+
+    expect(store.messages("s")?.map((item) => item.id)).toEqual(["msg_recovered"])
+  })
+
   test("it re-reads every chat the client is holding, not just one", async () => {
     const { client } = growingClient([[message("msg_x", "seed")]])
     const store = createNativeMessageStore(client)
@@ -253,7 +275,7 @@ describe("recovering a transcript after the stream dropped", () => {
     expect(store.messages("s2")!.some((m) => m.id === "msg_x")).toBe(true)
   })
 
-  test("a chat that cannot be re-read does not abandon the others", async () => {
+  test("a chat that cannot be re-read recovers the others but keeps the barrier closed", async () => {
     let call = 0
     const client = {
       v2: {
@@ -270,9 +292,10 @@ describe("recovering a transcript after the stream dropped", () => {
     store.apply(prompted("s1", "msg_a"))
     store.apply(prompted("s2", "msg_b"))
 
-    await store.reconcileAll()
+    await expect(store.reconcileAll()).rejects.toThrow("transcript reconciliation failed")
 
-    // One of the two threw; the other still reconciled rather than the whole sweep dying with it.
+    // One of the two threw; the other still reconciled, but the caller learns the client is not yet
+    // wholly synchronized and therefore must not expose a stale prompt as connected.
     const recovered = ["s1", "s2"].filter((id) => store.messages(id)!.some((m) => m.id === "msg_ok"))
     expect(recovered.length).toBe(1)
   })

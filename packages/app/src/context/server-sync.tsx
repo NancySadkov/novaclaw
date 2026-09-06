@@ -217,6 +217,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
   )
   recovery.sweep()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
+  // A live transport is not yet a recovered client. Keep the connection unavailable until every
+  // resident transcript has been authoritatively re-read; a failed read makes the stream loop
+  // reconnect and retry instead of exposing a stale prompt.
+  const unregisterMessageRecovery = serverSDK.reconnectRecovery.register(() => nativeMessages.reconcileAll())
   const agentStatusListeners = new Set<() => void>()
 
   const children = createChildStoreManager({
@@ -465,19 +469,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[2] === "providers" })
     }
 
-    // 🔴 The TRANSCRIPT recovers here too, and it used to be the one thing that did not.
-    //
-    // The invalidation above is the data plane's recovery, and it reaches everything held as a
-    // TanStack query. The native message store is a Solid store, so it was never in that set: a
-    // stream that dropped mid-conversation left the open chat frozen at the last event it saw, with
-    // the server holding messages the client would not show until the page was reloaded by hand.
-    // Reproduced against the owner's 121-message session on 2026-09-03 — see `reconcileAll`.
-    //
-    // ⚠️ This is the arm that CAN fire: `server.connected` is delivered on (re)connect by definition,
-    // whereas `native-timeline`'s busy → idle reload needs a transition it can only learn from the
-    // stream that just failed.
-    if ((event.type as string) === "server.connected") void nativeMessages.reconcileAll()
-
     // Agent status is an instance component even though the event carries the session's location.
     // Notify subscribers before directory routing so Contacts updates whether that folder is open.
     if ((event.type as string) === "agent.status.updated") {
@@ -585,6 +576,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
     // this manager is alive and must never retain roots after credential rotation/removal.
     closed = true
     lifetime.abort()
+    unregisterMessageRecovery()
     unsub()
     queue.dispose()
     void queryClient.cancelQueries({ predicate: (query) => query.queryKey[0] === serverSDK.scope })

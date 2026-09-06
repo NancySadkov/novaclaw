@@ -25,6 +25,9 @@ import { fetchNativeMessages } from "./message-v2-fetch"
  */
 export function createNativeMessageStore(client: NovaclawClient) {
   const [data, setData] = createStore({ messages: {} as Record<string, SessionMessage[]> })
+  // Requested transcripts, including a first load that failed before it could create a store row.
+  // Reconnect recovery must retry those too or a chat opened during an outage stays blank forever.
+  const heldSessions = new Set<string>()
   // Full (no-cursor) loads are authoritative snapshots. A mount load and the busy→idle
   // recovery load can overlap, so only the newest snapshot for a session may commit. Cursor
   // loads deliberately do not share this fence: they add an older page and must retain their
@@ -62,6 +65,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
   }
 
   const load = async (sessionID: string, options?: { limit?: number; order?: "asc" | "desc"; cursor?: string }) => {
+    heldSessions.add(sessionID)
     const authoritative = options?.cursor === undefined
     const rev = authoritative ? (authoritativeLoadRev.get(sessionID) ?? 0) + 1 : undefined
     if (rev !== undefined) authoritativeLoadRev.set(sessionID, rev)
@@ -134,6 +138,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
     )
 
   const evict = (sessionID: string) => {
+    heldSessions.delete(sessionID)
     authoritativeLoadRev.set(sessionID, (authoritativeLoadRev.get(sessionID) ?? 0) + 1)
     setData(
       "messages",
@@ -171,13 +176,16 @@ export function createNativeMessageStore(client: NovaclawClient) {
    * `load` is already idempotent and authoritative, so calling it twice is harmless.
    */
   const reconcileAll = async () => {
-    await Promise.all(
-      Object.keys(data.messages).map((sessionID) =>
-        load(sessionID).catch(() => {
-          // A chat that cannot be re-read stays as it is; one failure must not abandon the others.
-        }),
-      ),
-    )
+    const sessions = new Set([...heldSessions, ...Object.keys(data.messages)])
+    const results = await Promise.allSettled([...sessions].map((sessionID) => load(sessionID)))
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    // Finish every independent read before rejecting: one broken chat must not abandon the others,
+    // but it also means the renderer is not synchronized. The reconnect barrier retries the sweep.
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((failure) => failure.reason),
+        "transcript reconciliation failed",
+      )
   }
 
   return {

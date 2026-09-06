@@ -58,6 +58,9 @@ import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placehold
 import { composerMounts } from "./prompt-input/mount-registry"
 import { createPromptInputTransientState } from "./prompt-input/transient-state"
 import { showToast } from "@/utils/toast"
+import { useServerSDK } from "@/context/server-sdk"
+import { reconnectingPromptAttempt } from "./prompt-input/connection-state"
+import { PromptConnectionNotice } from "./prompt-input/connection-notice"
 
 export type PromptInputState = ReturnType<typeof usePrompt>
 
@@ -152,6 +155,7 @@ export interface PromptInputProps {
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
 
   const sync = useSync()
   const serverSync = useServerSync()
@@ -803,6 +807,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onSelect: () => {},
     }
   })
+  const reconnectingAttempt = createMemo(() => {
+    const connection = serverSDK()
+    return reconnectingPromptAttempt(connection.streamStatus(), connection.reconnectAttempt())
+  })
   const attachmentsTrayState = createMemo<ComposerAttachmentsTrayState>(() => ({
     dragging: store.draggingType,
     contextItems: contextItems(),
@@ -820,10 +828,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   return (
     <div class="relative size-full flex flex-col gap-0">
+      <Show when={reconnectingAttempt()} keyed>
+        {(attempt) => (
+          <PromptConnectionNotice
+            attempt={attempt}
+            text={language.t("app.connection.promptReconnecting", { attempt })}
+          />
+        )}
+      </Show>
       {/* The bare read is the Suspense enrolment — see the resource above. It stays a statement so
           the notice below is free to be a `Show`, which is a different (memoised) read. */}
       {(promptReady(), null)}
-      <Show when={promptReady() === false}>
+      <Show when={promptReady() === false && reconnectingAttempt() === undefined}>
         <div
           data-slot="prompt-draft-unavailable"
           role="status"
@@ -832,24 +848,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           {language.t("prompt.draft.unavailable")}
         </div>
       </Show>
-      <PromptPopover
-        popover={store.popover}
-        setSlashPopoverRef={(el) => (slashPopoverRef = el)}
-        atFlat={atFlat()}
-        atError={atError()}
-        onAtRetry={() => void retryAt()}
-        atActive={atActive() ?? undefined}
-        atKey={atOptionKey}
-        setAtActive={setAtActive}
-        onAtSelect={handleAtSelect}
-        slashFlat={slashFlat()}
-        slashActive={slashActive() ?? undefined}
-        setSlashActive={setSlashActive}
-        onSlashSelect={handleSlashSelect}
-        commandKeybindParts={command.keybindParts}
-        t={language.t}
-      />
-      <div class="flex flex-col gap-3">
+      <Show when={reconnectingAttempt() === undefined}>
+        <PromptPopover
+          popover={store.popover}
+          setSlashPopoverRef={(el) => (slashPopoverRef = el)}
+          atFlat={atFlat()}
+          atError={atError()}
+          onAtRetry={() => void retryAt()}
+          atActive={atActive() ?? undefined}
+          atKey={atOptionKey}
+          setAtActive={setAtActive}
+          onAtSelect={handleAtSelect}
+          slashFlat={slashFlat()}
+          slashActive={slashActive() ?? undefined}
+          setSlashActive={setSlashActive}
+          onSlashSelect={handleSlashSelect}
+          commandKeybindParts={command.keybindParts}
+          t={language.t}
+        />
+      </Show>
+      <div
+        class="flex flex-col gap-3"
+        classList={{ hidden: reconnectingAttempt() !== undefined }}
+        aria-hidden={reconnectingAttempt() !== undefined}
+      >
         <DockShellForm
           data-component={newSession() ? "session-new-composer" : "session-composer"}
           onSubmit={handleSubmit}

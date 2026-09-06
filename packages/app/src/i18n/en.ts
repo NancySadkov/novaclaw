@@ -600,6 +600,7 @@ export const dict = {
   "app.server.rejectedHint":
     "The instance is running, but it refused the saved username or password. Update the credentials for this instance, or pick another one below.",
   "app.connection.reconnecting": "Connection lost — reconnecting…",
+  "app.connection.promptReconnecting": "Connection Lost. Reconnecting Attempt {{attempt}}",
   "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
   "app.connection.restored": "Reconnected",
   // The BOUNDED end of the restart ladder. Says the three things the old "still trying" line could

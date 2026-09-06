@@ -18,11 +18,43 @@ const isAbortError = (error: unknown) =>
 const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
 type QueuedServerEvent = { directory: string; payload: Event }
 
-/** Dependability P2: the per-server SSE stream status the calm reconnect banner reads. There is
- *  deliberately no "offline" tier here — the SSE client retries internally and the outer loop only
- *  re-enters on the 15s heartbeat, so failure COUNTS don't measure outage duration; the banner
- *  escalates its own copy by wall-clock instead. */
+/** Dependability P2: the per-server SSE stream status the calm reconnect surfaces read. There is
+ *  deliberately no "offline" tier here — the SSE client retries until it succeeds. The numbered
+ *  attempt is exposed separately, while the banner still escalates long-outage copy by wall-clock. */
 export type ServerStreamStatus = "idle" | "connecting" | "connected" | "reconnecting"
+
+type ReconnectRecovery = () => Promise<void>
+
+/**
+ * The connection is not usable until every registered projection has caught up with its source.
+ * Registration is synchronous: server-sync is constructed before the stream starts, so the first
+ * `server.connected` cannot race past a late recovery subscriber.
+ */
+export function createReconnectRecoveryBarrier() {
+  const recoveries = new Set<ReconnectRecovery>()
+  return {
+    register(recovery: ReconnectRecovery) {
+      recoveries.add(recovery)
+      return () => recoveries.delete(recovery)
+    },
+    async run() {
+      // Enter every recovery even if an implementation throws before returning its promise.
+      const results = await Promise.allSettled([...recoveries].map((recovery) => Promise.resolve().then(recovery)))
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      if (failures.length)
+        throw new AggregateError(
+          failures.map((failure) => failure.reason),
+          "reconnect recovery failed",
+        )
+    },
+  }
+}
+
+/** The ordering invariant: recovery settles before the UI may observe `connected`. */
+export async function markConnectedAfterRecovery(recover: () => Promise<void>, connected: () => void) {
+  await recover()
+  connected()
+}
 
 // S7: the V1 `message.part.updated`/`message.part.delta` coalescing retired with the translated
 // vocabulary — the stream carries raw `session.next.*` events now, batched per frame by the
@@ -96,6 +128,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   // never started/stopped, "connecting" = started but never yet received, "connected" = the SSE
   // stream is delivering, "reconnecting" = it dropped and retries are running (they never stop).
   const [streamStatus, setStreamStatus] = createSignal<ServerStreamStatus>("idle")
+  const [reconnectAttemptNumber, setReconnectAttemptNumber] = createSignal(0)
+  const reconnectRecovery = createReconnectRecoveryBarrier()
 
   let streamErrorLogged = false
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -128,6 +162,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     // An explicit start (mount, or a pageshow resume the user is watching) is a fresh intent, not a
     // retry: probe immediately rather than inheriting the previous outage's backed-off delay.
     reconnectAttempt = 0
+    setReconnectAttemptNumber(0)
     setStreamStatus((s) => (s === "connected" ? s : "connecting"))
     const active = ++generation
     const previous = run
@@ -167,8 +202,24 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           for await (const event of events.stream) {
             if (!receivedAny) {
               receivedAny = true
-              reconnectAttempt = 0
-              setStreamStatus("connected")
+              try {
+                await markConnectedAfterRecovery(
+                  () => reconnectRecovery.run(),
+                  () => {
+                    if (abort.signal.aborted || !started || generation !== active || attempt?.signal.aborted) return
+                    reconnectAttempt = 0
+                    batch(() => {
+                      setReconnectAttemptNumber(0)
+                      setStreamStatus("connected")
+                    })
+                  },
+                )
+                if (abort.signal.aborted || !started || generation !== active || attempt?.signal.aborted) return
+              } catch (error) {
+                console.error("[global-sdk] reconnect recovery failed", { url: server.http.url, error })
+                attempt?.abort()
+                throw error
+              }
             }
             resetHeartbeat()
             streamErrorLogged = false
@@ -206,6 +257,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         // "reconnecting" so the banner still escalates its copy by wall clock, which is the honest
         // measure of a long outage — the retry cadence never was.
         setStreamStatus("reconnecting")
+        setReconnectAttemptNumber(reconnectAttempt + 1)
         await wait(reconnectDelayMs(reconnectAttempt++))
       }
     })().finally(() => {
@@ -223,6 +275,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     attempt?.abort()
     clearHeartbeat()
     setStreamStatus("idle") // an intentionally stopped stream (pagehide/cleanup) is not an outage
+    setReconnectAttemptNumber(0)
   }
 
   onMount(() => {
@@ -254,6 +307,10 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     url: server.http.url,
     client: sdk,
     streamStatus,
+    reconnectAttempt: reconnectAttemptNumber,
+    reconnectRecovery: {
+      register: reconnectRecovery.register,
+    },
     event: {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),
