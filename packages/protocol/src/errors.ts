@@ -77,15 +77,6 @@ export class InvalidCursorError extends Schema.TaggedErrorClass<InvalidCursorErr
   { httpApiStatus: 400 },
 ) {}
 
-export class QuestionNotFoundError extends Schema.TaggedErrorClass<QuestionNotFoundError>()(
-  "QuestionNotFoundError",
-  {
-    requestID: Schema.String,
-    message: Schema.String,
-  },
-  { httpApiStatus: 404 },
-) {}
-
 export class ForbiddenError extends Schema.TaggedErrorClass<ForbiddenError>()(
   "ForbiddenError",
   { message: Schema.String },

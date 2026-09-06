@@ -24,8 +24,7 @@
     "test:e2e:local": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report e2e/playwright-report",
-    "dev:full": "bun run scripts/dev-with-backend.ts",
-    "generate:agent-portraits": "bun run script/generate-agent-portraits.ts"
+    "dev:full": "bun run scripts/dev-with-backend.ts"
   },
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {

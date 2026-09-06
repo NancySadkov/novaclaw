@@ -85,26 +85,21 @@ describe("IRC is a line protocol, and the serializer owns the line", () => {
     )
   })
 
-  it.live("a CR in relayed text becomes another PRIVMSG, never another COMMAND", () =>
+  it.live("a direct multiline send is refused before it can create another command", () =>
     Effect.gen(function* () {
       const { factory, written } = makeFakeSocket()
-      yield* Effect.scoped(
+      const error = yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connectIrc(factory)
-          // A lone CR is the whole attack: the old split was on "\n" alone, while the wire
-          // terminator is CRLF, so the tail rode to the server as a command from our nick.
-          yield* connection.send("#support", { text: "quoting them:\rJOIN #evil\r\nQUIT :bye" })
+          // Splitting belongs to the paced gateway. The raw driver must never send several
+          // platform messages for one permit, and it must never pass a framing character through.
+          return yield* connection
+            .send("#support", { text: "quoting them:\rJOIN #evil\r\nQUIT :bye" })
+            .pipe(Effect.flip)
         }),
       )
-      const sent = written.slice(2) // past NICK + USER
-      expect(sent.length).toBeGreaterThan(0)
-      for (const line of sent) {
-        expect(line.startsWith("PRIVMSG #support :")).toBe(true)
-        expect(MessengerWire.breaksLine(line)).toBe(false)
-      }
-      // The injected commands survive as TEXT, in the trailing, where they are inert.
-      expect(sent.join("\n")).toContain("JOIN #evil")
-      expect(sent.some((line) => line.startsWith("JOIN") || line.startsWith("QUIT"))).toBe(false)
+      expect(error._tag).toBe("MessengerDriver.SendError")
+      expect(written.slice(2)).toEqual([])
     }),
   )
 

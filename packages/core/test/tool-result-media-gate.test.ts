@@ -507,8 +507,11 @@ describe("per-request image budget", () => {
     expect(imagesIn([attached, ...sweep(3)])).toBe(4)
   })
 
-  test("a zero budget elides everything and still never deletes a part", () => {
-    const lowered = JSON.stringify(toLLMMessages(sweep(2), model, VISION, 0))
+  test("a zero budget elides historical images and still never deletes a part", () => {
+    // Close the image-reading turn. Current unanswered input is protected and refused by admission
+    // when it exceeds the cap; history compaction must not silently remove that input.
+    const history = [...sweep(2), completed([{ type: "text", text: "Finished" }])]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 0))
     expect(lowered.split('"type":"file"').length - 1).toBe(0)
     expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png", undefined, 0))
     expect(lowered).toContain(budgetedImageNotice("icon_2.png", "icon_2.png", undefined, 0))

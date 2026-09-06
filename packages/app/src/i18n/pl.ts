@@ -500,7 +500,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Tworzenie repozytorium Git...",
   "session.review.noVcs.createGit.action": "Utwórz repozytorium Git",
   "session.todo.progress": "Ukończono {{done}} z {{total}} zadań",
-  "session.question.progress": "{{current}} z {{total}} pytań",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Eksplorator plików",
   "session.header.open.fileManager": "Menedżer plików",

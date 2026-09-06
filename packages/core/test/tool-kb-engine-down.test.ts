@@ -58,10 +58,63 @@ const graph = (client: MemoryClient.Interface) =>
 // `MemoryClient.disabled(reason)` whenever the lazy capability failed to acquire, so every op fails
 // with a named MemoryError. Not a hand-rolled throw — the thing that actually ships.
 const DOWN_REASON = "wasm engine failed to start"
-const itDown = graph(MemoryClient.disabled(DOWN_REASON))
+const down = MemoryClient.disabled(DOWN_REASON)
+const itDown = graph(down)
+
+// The id-based probes need a valid model reference before the operation can reach the failing
+// engine. This seam lets `search` mint one while every subsequent graph operation still fails with
+// the production disabled-client error.
+const itDownWithReference = graph({
+  ...down,
+  search: () =>
+    Effect.succeed([
+      {
+        id: "mem_seed",
+        kind: "entity" as const,
+        text: "seed memory",
+        name: null,
+        scope: "global",
+        source: null,
+        confidence: null,
+        relation: "staged" as const,
+        status: "active" as const,
+        subject: null,
+        predicate: null,
+        conflictKey: null,
+        supersededBy: null,
+        evidence: null,
+        evidenceKind: null,
+        score: 1,
+      },
+    ]),
+})
 
 // The control: a healthy in-memory store, the same one the rest of the kb-tool suite uses.
 const itUp = graph(MemoryClient.stub())
+const itUpWithReference = graph({
+  ...MemoryClient.stub(),
+  search: () =>
+    Effect.succeed([
+      {
+        id: "mem_missing",
+        kind: "entity" as const,
+        text: "missing search seed",
+        name: null,
+        scope: "global",
+        source: null,
+        confidence: null,
+        relation: "staged" as const,
+        status: "active" as const,
+        subject: null,
+        predicate: null,
+        conflictKey: null,
+        supersededBy: null,
+        evidence: null,
+        evidenceKind: null,
+        score: 1,
+      },
+    ]),
+})
 
 // A store that accepts most writes and refuses one — the partial ingest, which is neither "it
 // worked" nor "it's down" and must not be rendered as either.
@@ -170,31 +223,37 @@ describe("KbTool — an engine fault is never rendered as an empty result", () =
     }),
   )
 
-  itDown.effect("neighbors: a down engine is not 'nothing is linked to it yet'", () =>
+  itDownWithReference.effect("neighbors: a down engine is not 'nothing is linked to it yet'", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const message = text(yield* executeTool(registry, call({ op: "neighbors", id: "mem_whatever" })))
+      const seeded = text(yield* executeTool(registry, call({ op: "search", query: "seed" })))
+      const reference = seeded.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const message = text(yield* executeTool(registry, call({ op: "neighbors", id: reference })))
       expect(message).not.toContain("No memories linked")
       expect(message).toContain("long-term memory isn't answering")
     }),
   )
 
-  itDown.effect("history: a down engine is not 'no memory you can see'", () =>
+  itDownWithReference.effect("history: a down engine is not 'no memory you can see'", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const message = text(yield* executeTool(registry, call({ op: "history", id: "clm_whatever" })))
+      const seeded = text(yield* executeTool(registry, call({ op: "search", query: "seed" })))
+      const reference = seeded.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const message = text(yield* executeTool(registry, call({ op: "history", id: reference })))
       expect(message).not.toContain("you can see")
       expect(message).toContain("long-term memory isn't answering")
     }),
   )
 
-  itUp.effect("NEGATIVE CONTROL — a healthy engine still reports a genuine miss for neighbors/history", () =>
+  itUpWithReference.effect("NEGATIVE CONTROL — a healthy engine still reports a genuine miss for neighbors/history", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: "mem_nope" })))
+      const seeded = text(yield* executeTool(registry, call({ op: "search", query: "missing" })))
+      const reference = seeded.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: reference })))
       expect(nb).toContain("No memories linked")
       expect(nb).not.toContain("long-term memory isn't answering")
-      const hist = text(yield* executeTool(registry, call({ op: "history", id: "clm_nope" })))
+      const hist = text(yield* executeTool(registry, call({ op: "history", id: reference })))
       expect(hist).toContain("you can see")
       expect(hist).not.toContain("long-term memory isn't answering")
     }),

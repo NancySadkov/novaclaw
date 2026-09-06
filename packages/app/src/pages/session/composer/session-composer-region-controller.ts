@@ -29,7 +29,6 @@ export function createSessionComposerRegionController(input: {
   }
   revert: Accessor<SessionComposerRevertDock | undefined>
   providerRecovery: Accessor<{ sessionID: string; recovery: SessionProviderRecovery; onResume: () => void } | undefined>
-  onResponseSubmit: () => void
   openParent: () => void
   setPromptRef: (el: HTMLDivElement) => void
   setDockRef: (el: HTMLDivElement) => void
@@ -121,13 +120,11 @@ export function createSessionComposerRegionController(input: {
     todo: input.todo,
     revert: input.revert,
     providerRecovery: input.providerRecovery,
-    onResponseSubmit: input.onResponseSubmit,
     openParent: input.openParent,
     setPromptRef: input.setPromptRef,
     setDockRef: input.setDockRef,
     parentID,
     child: () => !!parentID(),
-    showComposer: () => !input.state.blocked() || !!parentID(),
     handoffPrompt: () => getSessionHandoff(input.sessionKey())?.prompt,
     promptReady: () => input.prompt.ready() || promptReady(),
     dock: () => (store.ready && input.state.dock()) || value() > 0.001,

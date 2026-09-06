@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
@@ -14,19 +14,6 @@ const rootSession = (input: { id: string; parentID?: string; archived?: number }
       archived: input.archived,
     },
   }) as unknown as Session
-
-const questionRequest = (id: string, sessionID: string, title = id) =>
-  ({
-    id,
-    sessionID,
-    questions: [
-      {
-        question: title,
-        header: title,
-        options: [{ label: title, description: title }],
-      },
-    ],
-  }) as QuestionV2Request
 
 const baseState = (input: Partial<State> = {}) =>
   ({
@@ -43,7 +30,6 @@ const baseState = (input: Partial<State> = {}) =>
     session_status: {},
     session_diff: {},
     todo: {},
-    question: {},
     mcp: {},
     vcs: undefined,
     limit: 10,
@@ -175,7 +161,6 @@ describe("applyDirectoryEvent", () => {
         sessionTotal: 2,
         session_diff: { ses_1: [] },
         todo: { ses_1: [] },
-        question: { ses_1: [] },
         session_status: { ses_1: { type: "busy" } },
       }),
     )
@@ -192,7 +177,6 @@ describe("applyDirectoryEvent", () => {
     expect(store.sessionTotal).toBe(1)
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.todo.ses_1).toBeUndefined()
-    expect(store.question.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
   })
 
@@ -213,7 +197,6 @@ describe("applyDirectoryEvent", () => {
           sessionTotal: 2,
           session_diff: { [item.info.id]: [] },
           todo: { [item.info.id]: [] },
-          question: { [item.info.id]: [] },
           session_status: { [item.info.id]: { type: "busy" } },
         }),
       )
@@ -230,7 +213,6 @@ describe("applyDirectoryEvent", () => {
       expect(store.sessionTotal).toBe(item.expectedTotal)
       expect(store.session_diff[item.info.id]).toBeUndefined()
       expect(store.todo[item.info.id]).toBeUndefined()
-      expect(store.question[item.info.id]).toBeUndefined()
       expect(store.session_status[item.info.id]).toBeUndefined()
     }
   })
@@ -245,7 +227,6 @@ describe("applyDirectoryEvent", () => {
         session: [dropped],
         session_diff: { [dropped.id]: [] },
         todo: { [dropped.id]: [] },
-        question: { [dropped.id]: [] },
         session_status: { [dropped.id]: { type: "busy" } },
       }),
     )
@@ -265,45 +246,8 @@ describe("applyDirectoryEvent", () => {
     expect(store.session.map((x) => x.id)).toEqual([kept.id])
     expect(store.session_diff[dropped.id]).toBeUndefined()
     expect(store.todo[dropped.id]).toBeUndefined()
-    expect(store.question[dropped.id]).toBeUndefined()
     expect(store.session_status[dropped.id]).toBeUndefined()
     expect(todos).toEqual([dropped.id])
-  })
-
-  test("tracks question request lifecycles", () => {
-    const sessionID = "ses_1"
-    const [store, setStore] = createStore(
-      baseState({
-        question: { [sessionID]: [questionRequest("q_1", sessionID), questionRequest("q_3", sessionID)] },
-      }),
-    )
-
-    applyDirectoryEvent({
-      event: { type: "question.v2.asked", properties: questionRequest("q_2", sessionID) },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.question[sessionID]?.map((x) => x.id)).toEqual(["q_1", "q_2", "q_3"])
-
-    applyDirectoryEvent({
-      event: { type: "question.v2.asked", properties: questionRequest("q_2", sessionID, "updated") },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.question[sessionID]?.find((x) => x.id === "q_2")?.questions[0]?.header).toBe("updated")
-
-    applyDirectoryEvent({
-      event: { type: "question.v2.rejected", properties: { sessionID, requestID: "q_2" } },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.question[sessionID]?.map((x) => x.id)).toEqual(["q_1", "q_3"])
   })
 
   test("updates vcs branch in store and cache", () => {

@@ -265,16 +265,29 @@ export const layer = Layer.effectDiscard(
             .run()
             .pipe(Effect.orDie)
         }
+        if (event.data.openingPrompt !== undefined) {
+          if (event.durable === undefined)
+            return yield* Effect.die("Durable Session event is missing aggregate sequence")
+          yield* SessionInput.projectAdmitted(db, {
+            admittedSeq: event.durable.seq,
+            id: event.data.openingPrompt.messageID,
+            sessionID: event.data.sessionID,
+            prompt: event.data.openingPrompt.prompt,
+            delivery: event.data.openingPrompt.delivery,
+            timeCreated: event.data.openingPrompt.timestamp,
+          })
+        }
       }),
     )
-    yield* events.project(SessionRecordEvent.Updated, (event) =>
-      db
+    yield* events.project(SessionRecordEvent.Updated, (event) => {
+      const row = sessionRow(event.data.info)
+      return db
         .update(SessionTable)
-        .set(sessionRow(event.data.info))
+        .set(event.data.clearArchived ? { ...row, time_archived: null } : row)
         .where(eq(SessionTable.id, event.data.sessionID))
         .run()
-        .pipe(Effect.orDie),
-    )
+        .pipe(Effect.orDie)
+    })
     yield* events.project(SessionEvent.Completed, (event) =>
       db
         .update(SessionTable)

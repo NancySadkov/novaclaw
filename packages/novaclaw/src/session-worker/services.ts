@@ -3,13 +3,13 @@ export * as SessionWorkerServices from "./services"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
 import { Log } from "@novaclaw/schema/log"
@@ -28,10 +28,7 @@ const unavailable = (operation: string) => new Error(`${operation} is host-only 
 // 2026-09-03 (the manifest's `ServerDefinitions` note), so the set is the manifest's alone.
 const hostEvents = new Set<string>(EventManifest.ServerDefinitions.map((definition) => definition.type))
 
-const LIVE_DELTA_TYPES = new Set([
-  "session.next.text.delta",
-  "session.next.reasoning.delta",
-])
+const LIVE_DELTA_TYPES = new Set(["session.next.text.delta", "session.next.reasoning.delta"])
 const LIVE_DELTA_FLUSH_MS = 16
 
 type QueuedLiveDelta = {
@@ -49,12 +46,12 @@ const liveDeltaKey = (type: string, data: Record<string, unknown>) =>
 export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly events: EventV2.Interface
   readonly permission: PermissionV2.Interface
-  readonly question: QuestionV2.Interface
   readonly scheduler: SessionScheduler.Interface
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
   readonly memory: MemoryClient.Interface
+  readonly worldMemory: MemoryClient.Interface
   readonly localModel: LocalModelManager.Interface
   readonly driveState: SessionDriveState.Interface
 } {
@@ -207,20 +204,6 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
         ? Effect.succeed({ id: input.id ?? PermissionV2.ID.create(), effect: "allow" as const })
         : Effect.die(unavailable("permission request inspection")),
     assert: assertPermission,
-  }
-
-  const question: QuestionV2.Interface = {
-    ask: (request) =>
-      Effect.promise(() => capabilities.askQuestion(request)).pipe(
-        Effect.flatMap((result) =>
-          result.outcome === "answered"
-            ? Effect.succeed(result.answers ?? [])
-            : Effect.fail(new QuestionV2.RejectedError()),
-        ),
-      ),
-    reply: () => Effect.die(unavailable("question reply")),
-    reject: () => Effect.die(unavailable("question rejection")),
-    list: () => Effect.die(unavailable("question listing")),
   }
 
   const scheduler: SessionScheduler.Interface = {
@@ -405,11 +388,12 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    * path that was already going to open a WASM engine.
    */
   const memoryOp = <A>(
+    store: "kb" | "world",
     op: SessionWorkerProtocol.MemoryOp,
     args: ReadonlyArray<unknown>,
   ): Effect.Effect<A, MemoryClient.MemoryError> =>
     Effect.tryPromise({
-      try: () => capabilities.memory(op, args),
+      try: () => (store === "kb" ? capabilities.memory(op, args) : capabilities.worldMemory(op, args)),
       catch: (cause) => new MemoryClient.MemoryError({ reason: String(cause).slice(0, 300) }),
     }).pipe(
       Effect.flatMap((reply) =>
@@ -423,31 +407,37 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ),
     )
 
-  const memory: MemoryClient.Interface = {
+  const makeMemory = (store: "kb" | "world"): MemoryClient.Interface => ({
     // `health` never fails by contract, so an unreachable host reads as "memory is not available"
     // rather than taking a turn down — the same stance the lazy client takes when the engine is off.
-    health: () => memoryOp<boolean>("health", []).pipe(Effect.orElseSucceed(() => false)),
-    addMemory: (input) => memoryOp<void>("addMemory", [input]),
-    addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>("addEdge", [input, access]),
-    search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>("search", [input]),
-    neighbors: (id, access, opts) => memoryOp<ReadonlyArray<MemoryClient.Neighbor>>("neighbors", [id, access, opts]),
-    path: (from, to, access, maxHops) => memoryOp<MemoryClient.PathResult | null>("path", [from, to, access, maxHops]),
-    invalidate: (id, access, at) => memoryOp<void>("invalidate", [id, access, at]),
-    purge: (id, access) => memoryOp<void>("purge", [id, access]),
-    addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>("addClaim", [input, access]),
-    claimHistory: (id, access) => memoryOp<MemoryClient.ClaimHistory | null>("claimHistory", [id, access]),
-    reviewEvidence: (locator, access) => memoryOp<number>("reviewEvidence", [locator, access]),
-    setClaimStatus: (id, status, access) => memoryOp<boolean>("setClaimStatus", [id, status, access]),
-    moveScope: (from, to) => memoryOp<void>("moveScope", [from, to]),
-    clearScope: (scope) => memoryOp<void>("clearScope", [scope]),
-    eraseAll: () => memoryOp<number>("eraseAll", []),
-    discardLegacyGlobalExtracts: () => memoryOp<number>("discardLegacyGlobalExtracts", []),
-    stats: () => memoryOp<MemoryClient.Stats>("stats", []),
-    list: (input) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("list", [input]),
-    candidates: (input) => memoryOp<ReadonlyArray<MemoryClient.CandidateRow>>("candidates", [input]),
-    byIds: (ids) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("byIds", [ids]),
-    graph: (input) => memoryOp<MemoryClient.MemoryGraph>("graph", [input]),
-  }
+    health: () => memoryOp<boolean>(store, "health", []).pipe(Effect.orElseSucceed(() => false)),
+    addMemory: (input) => memoryOp<void>(store, "addMemory", [input]),
+    addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>(store, "addEdge", [input, access]),
+    search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>(store, "search", [input]),
+    neighbors: (id, access, opts) =>
+      memoryOp<ReadonlyArray<MemoryClient.Neighbor>>(store, "neighbors", [id, access, opts]),
+    get: (id, access) => memoryOp<MemoryClient.MemoryRow | null>(store, "get", [id, access]),
+    path: (from, to, access, maxHops) =>
+      memoryOp<MemoryClient.PathResult | null>(store, "path", [from, to, access, maxHops]),
+    invalidate: (id, access, at) => memoryOp<void>(store, "invalidate", [id, access, at]),
+    purge: (id, access) => memoryOp<void>(store, "purge", [id, access]),
+    addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>(store, "addClaim", [input, access]),
+    claimHistory: (id, access) => memoryOp<MemoryClient.ClaimHistory | null>(store, "claimHistory", [id, access]),
+    reviewEvidence: (locator, access) => memoryOp<number>(store, "reviewEvidence", [locator, access]),
+    setClaimStatus: (id, status, access) => memoryOp<boolean>(store, "setClaimStatus", [id, status, access]),
+    moveScope: (from, to) => memoryOp<void>(store, "moveScope", [from, to]),
+    clearScope: (scope) => memoryOp<void>(store, "clearScope", [scope]),
+    eraseAll: () => memoryOp<number>(store, "eraseAll", []),
+    discardLegacyGlobalExtracts: () => memoryOp<number>(store, "discardLegacyGlobalExtracts", []),
+    stats: () => memoryOp<MemoryClient.Stats>(store, "stats", []),
+    list: (input) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>(store, "list", [input]),
+    candidates: (input) => memoryOp<ReadonlyArray<MemoryClient.CandidateRow>>(store, "candidates", [input]),
+    byIds: (ids) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>(store, "byIds", [ids]),
+    graph: (input) => memoryOp<MemoryClient.MemoryGraph>(store, "graph", [input]),
+  })
+
+  const memory = makeMemory("kb")
+  const worldMemory = makeMemory("world")
 
   /**
    * 🔴 **THE MANAGED LOCAL MODEL HAS ONE RUNTIME, AND FROM HERE IT IS THE HOST'S.**
@@ -548,7 +538,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     unpin: () => Effect.void,
   }
 
-  return { events, permission, question, scheduler, spawner, join, colleague, memory, localModel, driveState }
+  return { events, permission, scheduler, spawner, join, colleague, memory, worldMemory, localModel, driveState }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -563,14 +553,6 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
       makeLocationNode({
         service: PermissionV2.Service,
         layer: Layer.succeed(PermissionV2.Service, services.permission),
-        deps: [],
-      }),
-    ],
-    [
-      QuestionV2.node,
-      makeLocationNode({
-        service: QuestionV2.Service,
-        layer: Layer.succeed(QuestionV2.Service, services.question),
         deps: [],
       }),
     ],
@@ -625,6 +607,22 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
           service: MemoryClient.Service,
           timeout: "30 seconds",
           repair: ["runtime_flags.NOVACLAW_KB_MEMORY"],
+        },
+      ),
+    ],
+    [
+      WorldMemory.node,
+      LayerNode.capability(
+        makeGlobalNode({
+          service: WorldMemory.Service,
+          layer: Layer.succeed(WorldMemory.Service, services.worldMemory),
+          deps: [],
+        }),
+        {
+          name: "world-memory",
+          service: WorldMemory.Service,
+          timeout: "30 seconds",
+          repair: ["runtime_flags.NOVACLAW_WORLD_MEMORY"],
         },
       ),
     ],

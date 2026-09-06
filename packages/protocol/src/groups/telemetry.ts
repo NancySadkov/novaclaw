@@ -17,6 +17,7 @@ const Envelope = Schema.Struct({
 export const TelemetryStatus = Schema.Struct({
   gate: Schema.Struct({ consent: Schema.Boolean, airgap: Schema.Boolean }),
   endpointConfigured: Schema.Boolean,
+  ready: Schema.Boolean,
   refusals: Schema.Array(Refusal),
   payloadPreview: Schema.optional(Envelope),
   disclosure: Schema.Array(

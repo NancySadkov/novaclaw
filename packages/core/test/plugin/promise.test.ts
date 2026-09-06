@@ -1,5 +1,8 @@
 import { describe, expect } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
 import { Effect } from "effect"
+import { AppRegistry } from "@novaclaw/core/app-registry"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { PluginV2 } from "@novaclaw/core/plugin"
 import { PluginHost } from "@novaclaw/core/plugin/host"
@@ -11,6 +14,41 @@ import { PluginTestLayer } from "./fixture"
 const it = testEffect(PluginTestLayer)
 
 describe("fromPromise", () => {
+  it.effect("bridges declarative app registration into the persisted instance launcher", () =>
+    Effect.gen(function* () {
+      const plugin = yield* PluginV2.Service
+      const root = yield* Effect.promise(() => mkdtemp(`${os.tmpdir()}\\novaclaw-plugin-app-`))
+      try {
+        const host = yield* PluginHost.make(plugin, { app: { root } })
+        const promisePlugin = define({
+          id: "promise-app",
+          setup: async (ctx) => {
+            await ctx.app.declare([
+              {
+                id: "daily-brief",
+                title: "Daily brief",
+                open: { type: "prompt", value: "Prepare my daily brief." },
+              },
+            ])
+          },
+        })
+
+        yield* PluginPromise.fromPromise(promisePlugin).effect(host)
+
+        const manifests = yield* Effect.promise(() => AppRegistry.listApps({ root }))
+        expect(manifests).toHaveLength(1)
+        expect(manifests[0]).toMatchObject({
+          id: "daily-brief",
+          title: "Daily brief",
+          source: "plugin",
+          open: { type: "prompt", value: "Prepare my daily brief." },
+        })
+      } finally {
+        yield* Effect.promise(() => rm(root, { recursive: true, force: true }))
+      }
+    }),
+  )
+
   it.effect("loads a promise plugin and registers a transform hook", () =>
     Effect.gen(function* () {
       const agents = yield* AgentV2.Service

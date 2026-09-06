@@ -3,6 +3,9 @@ import * as Http from "node:http"
 import { Deferred, Effect, Layer, Context, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { SYSTEM as STATUS_SYSTEM } from "@novaclaw/core/agent-status/label"
+import { SYSTEM as COMMAND_SYSTEM } from "@novaclaw/core/agent-status/command-label"
+import { SYSTEM as TITLE_SYSTEM } from "@novaclaw/core/session/title"
 
 export type Usage = { input: number; output: number }
 
@@ -604,9 +607,18 @@ function hit(url: string, body: unknown) {
   } satisfies Hit
 }
 
-function isTitleRequest(body: unknown): boolean {
+export function isMetadataRequest(body: unknown): boolean {
   if (!body || typeof body !== "object") return false
-  return JSON.stringify(body).includes("Generate a title for this conversation")
+  const input = body as { messages?: Array<{ role?: string; content?: unknown }>; instructions?: unknown }
+  const system = [
+    input.instructions,
+    ...(input.messages ?? []).filter((item) => item.role === "system").map((item) => item.content),
+  ]
+  return system.some(
+    (text) =>
+      typeof text === "string" &&
+      [STATUS_SYSTEM, COMMAND_SYSTEM, TITLE_SYSTEM].some((prompt) => text.startsWith(prompt)),
+  )
 }
 
 namespace TestLLMServer {
@@ -673,7 +685,8 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         const req = yield* HttpServerRequest.HttpServerRequest
         const body = yield* req.json.pipe(Effect.orElseSucceed(() => ({})))
         const current = hit(req.originalUrl, body)
-        if (isTitleRequest(body)) {
+        // Background metadata must never consume a queued interactive response.
+        if (isMetadataRequest(body)) {
           hits = [...hits, current]
           yield* notify()
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("E2E Title"), finishLine("stop")] }

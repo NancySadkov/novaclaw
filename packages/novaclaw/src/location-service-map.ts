@@ -21,7 +21,7 @@ import { McpCapabilityServiceWorker } from "@/mcp/capability-service-worker"
 // and the MCP-backed ExternalCommandSource so MCP prompts list + dispatch as slash commands.
 //
 // ⚠️ There must be exactly ONE map instance per server: per-location service STATE lives inside
-// the map's location graphs — PermissionV2's/QuestionV2's pending-ask maps above all. A second
+// the map's location graphs — location-scoped permission policy above all. A second
 // map instance boots a parallel location for the same directory, so a runner-origin ask in one
 // map can never be settled by an HTTP reply resolved through the other (the CLI deny path hung
 // on exactly that). Every server-side consumer (the HTTP middlewares, the V2 runner/execution,

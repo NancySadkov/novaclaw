@@ -400,3 +400,30 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
         "Governed claims and what the graph does with them: file a claim and see what it retired, read the noise views over how memories are actually used, vouch for one, and export or erase.",
     }),
   )
+  .add(
+    HttpApiEndpoint.post("world-memory.erase", "/api/world-memory/erase", {
+      success: Schema.Finite,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.erase",
+        summary: "Erase agent memory",
+        description:
+          "Delete the automatic session and agent world model. This does not erase the explicit/source KB.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.export", "/api/world-memory/export", {
+      payload: Schema.Struct({ includeInvalid: Schema.optional(Schema.Boolean) }),
+      success: Schema.Array(MemoryRow),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.export",
+        summary: "Export agent memory",
+        description:
+          "Return a complete backup of the automatic session and agent world model, without explicit/source KB rows.",
+      }),
+    ),
+  )

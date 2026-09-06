@@ -1,5 +1,7 @@
-import { createMemo, createSignal, Show } from "solid-js"
-import { agentPortraitPlaceholder } from "@/apps/agent-portrait"
+import { createSignal, Show } from "solid-js"
+import { isAgentPortraitURL } from "@/apps/agent-portrait"
+import { useServer } from "@/context/server"
+import { instanceUrl } from "@/utils/instance-fetch"
 
 export function AgentPortrait(props: {
   id: string
@@ -8,23 +10,19 @@ export function AgentPortrait(props: {
   background?: string | undefined
   class?: string | undefined
 }) {
+  const server = useServer()
   const [failed, setFailed] = createSignal<string>()
-  const source = createMemo(() => agentPortraitPlaceholder(props.id, props.avatar))
-  /**
-   * The colleague's OWN `avatar` wins; the shipped portrait is the placeholder for one that has none.
-   *
-   * ⚠️ It was the other way round until 2026-09-03: the pool portrait was looked up first and
-   * `avatar` rendered only in its fallback — and since every officer Nova hires is named from that
-   * pool, the entity-owned avatar was unreachable for the whole roster. A colleague whose config
-   * said 🦊 wore the shipped face on every surface, and the instance never learned the client was
-   * overriding it. The seed no longer writes glyphs for the officers whose portraits ship, so a
-   * fresh instance still shows the faces; an existing row that kept its seeded glyph shows the
-   * glyph, which is what its config says.
-   */
-  const visible = createMemo(() => {
-    const value = source()
-    return value !== undefined && failed() !== value ? value : undefined
-  })
+  const visible = () => {
+    const value = props.avatar
+    if (!isAgentPortraitURL(value)) return undefined
+    const current = server.current
+    const url = current === undefined ? value : instanceUrl(current.http, value).toString()
+    return failed() !== url ? url : undefined
+  }
+  const fallback = () => {
+    if (isAgentPortraitURL(props.avatar)) return props.name.charAt(0) || "?"
+    return props.avatar || props.name.charAt(0) || "?"
+  }
 
   return (
     <span
@@ -32,7 +30,7 @@ export function AgentPortrait(props: {
       style={props.background ? { "background-color": props.background } : undefined}
       aria-hidden="true"
     >
-      <Show when={visible()} fallback={props.avatar ?? props.name.charAt(0)}>
+      <Show when={visible()} fallback={fallback()}>
         {(src) => (
           <img
             src={src()}

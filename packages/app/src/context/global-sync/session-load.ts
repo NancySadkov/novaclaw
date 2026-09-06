@@ -6,6 +6,7 @@ export async function loadRootSessionsWithFallback(input: RootLoadArgs) {
     withRequestDeadline({
       label: "Loading sessions",
       timeoutMs: input.timeoutMs,
+      signal: input.signal,
       run: (signal) => input.list(query, { signal }),
     })
   try {
@@ -16,6 +17,7 @@ export async function loadRootSessionsWithFallback(input: RootLoadArgs) {
       limited: true,
     } as const
   } catch (error) {
+    if (input.signal?.aborted) throw error
     if (error instanceof Error && error.name === "TimeoutError") throw error
     const result = await list({ directory: input.directory, roots: true })
     return {

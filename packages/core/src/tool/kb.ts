@@ -12,6 +12,7 @@ import * as MemoryAccess from "../kb-graph/memory-access"
 import { MemoryClient } from "../kb-graph/memory-client"
 import { MemoryRanking } from "../kb-graph/ranking"
 import { Memory } from "../kb-graph/memory"
+import * as MemoryReference from "../kb-graph/reference"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { stanceOf } from "../session/config-resolve"
@@ -43,6 +44,23 @@ const SearchOp = Schema.Struct({
     description:
       "session = this chat only · agent = your own memory, across your chats · global = shared facts every agent knows · all (default)",
   }),
+})
+
+const ResolveOp = Schema.Struct({
+  op: Schema.Literal("resolve"),
+  label: Schema.String.annotate({ description: "A remembered subject or label to resolve to one or more references" }),
+  k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max candidates (default 8)" }),
+})
+
+const GetOp = Schema.Struct({
+  op: Schema.Literal("get"),
+  id: Schema.String.annotate({ description: "A reference returned by search, resolve or remember" }),
+})
+
+const PredicatesOp = Schema.Struct({
+  op: Schema.Literal("predicates"),
+  id: Schema.String.pipe(Schema.optional).annotate({ description: "A reference whose relationship types to inspect" }),
+  k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max linked memories to inspect (default 64)" }),
 })
 
 const RememberOp = Schema.Struct({
@@ -77,13 +95,13 @@ const RememberOp = Schema.Struct({
 const HistoryOp = Schema.Struct({
   op: Schema.Literal("history"),
   id: Schema.String.annotate({
-    description: "A memory id (clm_… or mem_…) whose history to show — what it replaced, and why",
+    description: "A reference returned by search or remember whose history to show — what it replaced, and why",
   }),
 })
 
 const ForgetOp = Schema.Struct({
   op: Schema.Literal("forget"),
-  id: Schema.String.annotate({ description: "A memory id from search results (mem_…)" }),
+  id: Schema.String.annotate({ description: "A reference returned by search or remember" }),
   secret: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "true = hard-delete with no history (for secrets/credentials); default keeps it in history",
   }),
@@ -91,17 +109,24 @@ const ForgetOp = Schema.Struct({
 
 const NeighborsOp = Schema.Struct({
   op: Schema.Literal("neighbors"),
-  id: Schema.String.annotate({ description: "A memory id (mem_…) whose directly-linked memories to list" }),
+  id: Schema.String.annotate({ description: "A reference returned by search or remember whose links to list" }),
   k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max results (default 10)" }),
 })
 
 const RelateOp = Schema.Struct({
   op: Schema.Literal("relate"),
-  from: Schema.String.annotate({ description: "The subject memory id (mem_… from a remember/search result)" }),
-  to: Schema.String.annotate({ description: "The object memory id (mem_… from a remember/search result)" }),
-  type: Schema.String.annotate({
-    description: "The relationship as a short verb phrase, e.g. works_at, wrote, located_in, part_of, depends_on",
+  from: Schema.String.annotate({ description: "The subject reference returned by remember or search" }),
+  to: Schema.String.annotate({ description: "The object reference returned by remember or search" }),
+  type: Schema.Literals(KbClaim.RELATION_TYPE_NAMES).annotate({
+    description: "The relationship, chosen from the engine's closed vocabulary",
   }),
+})
+
+const PathOp = Schema.Struct({
+  op: Schema.Literal("path"),
+  from: Schema.String.annotate({ description: "The starting reference returned by search or remember" }),
+  to: Schema.String.annotate({ description: "The destination reference returned by search or remember" }),
+  maxHops: Schema.Finite.pipe(Schema.optional).annotate({ description: "Maximum graph hops (default 5, max 8)" }),
 })
 
 const IngestOp = Schema.Struct({
@@ -119,7 +144,19 @@ const IngestOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp, IngestOp, HistoryOp])
+export const Input = Schema.Union([
+  SearchOp,
+  ResolveOp,
+  GetOp,
+  PredicatesOp,
+  RememberOp,
+  ForgetOp,
+  NeighborsOp,
+  RelateOp,
+  PathOp,
+  IngestOp,
+  HistoryOp,
+])
 
 /** Refuse pathological inputs rather than melting the index on a 500MB blob. */
 export const MAX_INGEST_BYTES = 4_000_000
@@ -136,11 +173,16 @@ type Output = typeof Output.Type
 
 const oneLine = (text: string) => text.replaceAll(/\s+/g, " ").trim()
 
-// Normalize a relationship label to a clean predicate token ("works at" → "works_at") so links read
-// consistently and traverse predictably. Empty/garbage → a neutral default.
+// Normalize a relationship label for internal callers and rendering tests. The model-facing schema
+// uses KbClaim.RELATION_TYPE_NAMES, so arbitrary model-authored predicates never reach the engine.
 export const relType = (type: string): string => oneLine(type).toLowerCase().replaceAll(/\s+/g, "_") || "related_to"
 
-export const formatHits = (hits: ReadonlyArray<MemoryClient.SearchHit>): string =>
+export type ReferenceRenderer = (storageID: string) => string
+
+export const formatHits = (
+  hits: ReadonlyArray<MemoryClient.SearchHit>,
+  renderID: ReferenceRenderer = (storageID) => storageID,
+): string =>
   hits
     .map((hit) => {
       const provenance = [hit.relation, hit.source].filter(Boolean).join("/")
@@ -149,14 +191,17 @@ export const formatHits = (hits: ReadonlyArray<MemoryClient.SearchHit>): string 
       // best answer available, and the model can only caveat it if it can see the caveat — a status
       // the retrieval layer knows and the rendering drops is a status nobody acts on.
       const flag = hit.status === "needs_review" ? " · NEEDS CHECKING (its source moved)" : ""
-      return `${hit.id} · ${label}${oneLine(hit.text)}${provenance ? ` · ${provenance}` : ""}${flag}`
+      return `${renderID(hit.id)} · ${label}${oneLine(hit.text)}${provenance ? ` · ${provenance}` : ""}${flag}`
     })
     .join("\n")
 
 /** Render a claim's timeline: what it says now, what it replaced, and what each rested on. This IS
  *  the "explains the old assertion" half of the lifecycle — a correction nobody can read the reason
  *  for is indistinguishable from a memory that went missing. */
-export const formatHistory = (history: MemoryClient.ClaimHistory): string => {
+export const formatHistory = (
+  history: MemoryClient.ClaimHistory,
+  renderID: ReferenceRenderer = (storageID) => storageID,
+): string => {
   const cite = (claimID: string) => {
     const rows = history.evidence.filter((row) => row.claimID === claimID)
     return rows.length === 0 ? "" : ` — ${rows.map((row) => oneLine(row.label)).join("; ")}`
@@ -164,15 +209,22 @@ export const formatHistory = (history: MemoryClient.ClaimHistory): string => {
   const lines = history.timeline.map((entry, index) => {
     const mark = index === 0 ? "" : "replaced: "
     const state = entry.status === "active" ? "current" : entry.status.replaceAll("_", " ")
-    return `${entry.id} · ${mark}${oneLine(entry.text)} · ${state}${cite(entry.id)}`
+    return `${renderID(entry.id)} · ${mark}${oneLine(entry.text)} · ${state}${cite(entry.id)}`
   })
   if (history.current !== null)
-    lines.push(`The current answer is now ${history.current.id}: ${oneLine(history.current.text)}`)
+    lines.push(`The current answer is now ${renderID(history.current.id)}: ${oneLine(history.current.text)}`)
   return lines.join("\n")
 }
 
-export const formatNeighbors = (rows: ReadonlyArray<MemoryClient.Neighbor>): string =>
-  rows.map((row) => `${row.id} · [${row.type}] ${oneLine(row.text)}`).join("\n")
+export const formatNeighbors = (
+  rows: ReadonlyArray<MemoryClient.Neighbor>,
+  renderID: ReferenceRenderer = (storageID) => storageID,
+): string => rows.map((row) => `${renderID(row.id)} · [${row.type}] ${oneLine(row.text)}`).join("\n")
+
+export const formatPath = (
+  path: MemoryClient.PathResult,
+  renderID: ReferenceRenderer = (storageID) => storageID,
+): string => (path === null ? "" : `Path (${path.hops} hops): ${path.ids.map(renderID).join(" → ")}`)
 
 export const searchRepair = (query: string): string =>
   `No memories match "${query}". Try different or fewer words, or {"op":"remember","text":"…"} to save it.`
@@ -193,7 +245,7 @@ export const searchRepair = (query: string): string =>
  * `configure`'s `retry` op and by nothing else the model can reach.
  */
 export const engineDown = (what: string, reason: string): string =>
-  `Couldn't ${what} — long-term memory isn't answering (${reason}). This is NOT "nothing found": ` +
+  `Couldn't ${what.replaceAll(/\b(?:mem|clm)_[A-Za-z0-9_]+\b/g, "<storage-id>")} — long-term memory isn't answering (${reason.replaceAll(/\b(?:mem|clm)_[A-Za-z0-9_]+\b/g, "<storage-id>")}). This is NOT "nothing found": ` +
   `nothing was read or written. Retry the capability with the configure tool — ` +
   `{"op":"retry","capability":"memory"} — then try this again.`
 
@@ -215,19 +267,21 @@ const OVERFETCH = 3
 const OVERFETCH_CAP = 40
 
 export const metadata = {
-description:
-              "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
-              "by keyword) · remember (save a fact; returns its id — default durably across all chats; give " +
-              "`name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · " +
-              "history (what a memory replaced, and what it rested on) · relate " +
-              "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
-              "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
-              "linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable " +
-              "passages — the file never enters your context, so ingest a big manual then search it). " +
-              "Chain them: remember the entities, then relate what connects them. " +
-              'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"mem_…","to":"mem_…","type":"wrote"}.',
-input: Input,
-output: Output
+  description:
+    "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
+    "by keyword) · resolve (turn a subject label into bounded references) · get (read one " +
+    "reference) · predicates (inspect the closed relationship vocabulary) · " +
+    "remember (save a fact; returns a reference — default durably across all chats; give " +
+    "`name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · " +
+    "history (what a memory replaced, and what it rested on) · relate " +
+    "(link two remembered references with a closed relationship type, so you can later trace multi-step " +
+    "connections neighbors/search alone can't) · forget (drop a memory by reference) · neighbors (memories " +
+    "linked to one you found) · path (let the engine answer a bounded multi-hop question) · ingest (read a text DOCUMENT at a path into memory as searchable " +
+    "passages — the file never enters your context, so ingest a big manual then search it). " +
+    "Chain them: remember the entities, then relate what connects them. " +
+    'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"ref_…","to":"ref_…","type":"wrote"}.',
+  input: Input,
+  output: Output,
 } as const
 
 export const layer = Layer.effectDiscard(
@@ -237,6 +291,7 @@ export const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const permission = yield* PermissionV2.Service
     const effective = yield* SessionEffectiveConfig.Service
+    const references = MemoryReference.make()
 
     yield* tools
       .register({
@@ -278,6 +333,12 @@ export const layer = Layer.effectDiscard(
                  * cabinet, and the household's shared facts. Never another officer's.
                  */
                 const access = MemoryAccess.of(MemoryAccess.scopesForSearch(sessionScope, agentID, "all"))
+                const renderID = (storageID: string) => references.issue(context.sessionID, storageID)
+                const resolveID = (reference: string) => references.resolve(context.sessionID, reference)
+                const displayReference = (reference: string) =>
+                  MemoryReference.isHandle(reference) ? reference : "<invalid-reference>"
+                const unknownReference = (reference: string) =>
+                  `That memory reference is unknown or expired ("${displayReference(reference)}"). Search or remember it again, then use the new reference.`
                 switch (input.op) {
                   case "search": {
                     // The VECTOR leg: embedding the query makes the engine fuse vector KNN with FTS
@@ -308,7 +369,87 @@ export const layer = Layer.effectDiscard(
                     // P8: recency × authority re-rank (bounded — see ranking.ts). A no-op when the hits
                     // share provenance and age.
                     const hits = MemoryRanking.rankHits(candidates, Date.now()).slice(0, k)
-                    return { ok: true, message: formatHits(hits) } satisfies Output
+                    return { ok: true, message: formatHits(hits, renderID) } satisfies Output
+                  }
+                  case "resolve": {
+                    const label = input.label.trim()
+                    if (label === "") return { ok: false, message: "Give a subject label to resolve." } satisfies Output
+                    const k = Math.max(1, Math.min(Math.trunc(input.k ?? 8), 16))
+                    const found = yield* probe(
+                      memory.search({
+                        query: label,
+                        k: Math.min(k * OVERFETCH, OVERFETCH_CAP),
+                        scopes: access.scopes,
+                        surface: "kb-tool",
+                      }),
+                    )
+                    if (found.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`resolve "${label}"`, found.fault),
+                      } satisfies Output
+                    const candidates = (found.value ?? [])
+                      .filter((hit) => hit.name?.trim().toLocaleLowerCase() === label.toLocaleLowerCase())
+                      .slice(0, k)
+                    if (candidates.length === 0)
+                      return {
+                        ok: false,
+                        message: `No remembered subject is labelled "${label}". Search by description instead.`,
+                      } satisfies Output
+                    const rendered = formatHits(candidates, renderID)
+                    return {
+                      ok: true,
+                      message:
+                        candidates.length === 1
+                          ? `Resolved "${label}":\n${rendered}`
+                          : `"${label}" is ambiguous; choose one of these engine-resolved references:\n${rendered}`,
+                    } satisfies Output
+                  }
+                  case "get": {
+                    const storageID = resolveID(input.id)
+                    if (storageID === undefined)
+                      return { ok: false, message: unknownReference(input.id) } satisfies Output
+                    const found = yield* probe(memory.get(storageID, access))
+                    if (found.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`read "${displayReference(input.id)}"`, found.fault),
+                      } satisfies Output
+                    if (found.value === undefined || found.value === null)
+                      return {
+                        ok: false,
+                        message: `No current memory is visible behind "${displayReference(input.id)}". Search or resolve it again.`,
+                      } satisfies Output
+                    const row = found.value
+                    return { ok: true, message: formatHits([{ ...row, score: 1 }], renderID) } satisfies Output
+                  }
+                  case "predicates": {
+                    if (input.id === undefined)
+                      return {
+                        ok: true,
+                        message: `Allowed relationship types: ${KbClaim.RELATION_TYPE_NAMES.join(", ")}. Choose one; do not invent a predicate.`,
+                      } satisfies Output
+                    const storageID = resolveID(input.id)
+                    if (storageID === undefined)
+                      return { ok: false, message: unknownReference(input.id) } satisfies Output
+                    const linked = yield* probe(
+                      memory.neighbors(storageID, access, { k: Math.min(Math.max(1, Math.trunc(input.k ?? 64)), 256) }),
+                    )
+                    if (linked.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`inspect relationships for "${displayReference(input.id)}"`, linked.fault),
+                      } satisfies Output
+                    const types = [
+                      ...new Set((linked.value ?? []).map((row) => row.type).filter(KbClaim.isRelationType)),
+                    ]
+                    return {
+                      ok: true,
+                      message:
+                        types.length === 0
+                          ? `No relationships are attached to "${displayReference(input.id)}" yet. Allowed types: ${KbClaim.RELATION_TYPE_NAMES.join(", ")}.`
+                          : `Relationships attached to "${displayReference(input.id)}": ${types.join(", ")}`,
+                    } satisfies Output
                   }
                   case "remember": {
                     const scope = MemoryAccess.scopeForWrite(sessionScope, agentID, input.scope)
@@ -363,16 +504,16 @@ export const layer = Layer.effectDiscard(
                             if (result.deduped)
                               return {
                                 ok: true,
-                                message: `Already remembered (${result.id})${chatOnly}.`,
+                                message: `Already remembered (${renderID(result.id)})${chatOnly}.`,
                               } satisfies Output
                             const corrected =
                               result.superseded.length === 0
                                 ? ""
-                                : ` This replaces ${result.superseded.join(", ")}, kept in history — ` +
-                                  `{"op":"history","id":"${result.id}"} shows what changed.`
+                                : ` This replaces ${result.superseded.map(renderID).join(", ")}, kept in history — ` +
+                                  `{"op":"history","id":"${renderID(result.id)}"} shows what changed.`
                             return {
                               ok: true,
-                              message: `Remembered (${result.id})${chatOnly}.${corrected}`,
+                              message: `Remembered (${renderID(result.id)})${chatOnly}.${corrected}`,
                             } satisfies Output
                           }),
                           Effect.catch((error) =>
@@ -396,7 +537,7 @@ export const layer = Layer.effectDiscard(
                       .pipe(
                         Effect.as({
                           ok: true,
-                          message: `Remembered (${id})${chatOnly}.`,
+                          message: `Remembered (${renderID(id)})${chatOnly}.`,
                         } satisfies Output),
                         Effect.catch((error) =>
                           Effect.succeed({
@@ -410,56 +551,79 @@ export const layer = Layer.effectDiscard(
                     // ⚠️ The SAME `access` as every other id-based op. History is the widest read the
                     // lifecycle adds — one id walks a whole chain — so it is the last place to reach
                     // for a wider reach "because it is only reading".
-                    const probed = yield* probe(memory.claimHistory(input.id, access))
+                    const storageID = resolveID(input.id)
+                    if (storageID === undefined)
+                      return { ok: false, message: unknownReference(input.id) } satisfies Output
+                    const probed = yield* probe(memory.claimHistory(storageID, access))
                     if (probed.fault !== undefined)
                       return {
                         ok: false,
-                        message: engineDown(`look up the history of "${input.id}"`, probed.fault),
+                        message: engineDown(`look up the history of "${displayReference(input.id)}"`, probed.fault),
                       } satisfies Output
                     const history = probed.value ?? null
                     if (history === null)
                       return {
                         ok: false,
-                        message:
-                          `No memory "${input.id}" you can see. Ids come from search or remember results ` +
-                          `(clm_… or mem_…).`,
+                        message: `No memory behind "${displayReference(input.id)}" that you can see. Search or remember it again to get a current reference.`,
                       } satisfies Output
-                    return { ok: true, message: formatHistory(history) } satisfies Output
+                    return { ok: true, message: formatHistory(history, renderID) } satisfies Output
                   }
                   case "forget": {
+                    const storageID = resolveID(input.id)
+                    if (storageID === undefined)
+                      return { ok: false, message: unknownReference(input.id) } satisfies Output
                     return yield* (
-                      input.secret ? memory.purge(input.id, access) : memory.invalidate(input.id, access)
+                      input.secret ? memory.purge(storageID, access) : memory.invalidate(storageID, access)
                     ).pipe(
                       Effect.as({
                         ok: true,
                         message: input.secret
-                          ? `Purged "${input.id}" — no history kept.`
-                          : `Forgot "${input.id}" (kept in history; it won't surface in search).`,
+                          ? `Purged "${displayReference(input.id)}" — no history kept.`
+                          : `Forgot "${displayReference(input.id)}" (kept in history; it won't surface in search).`,
                       } satisfies Output),
                       Effect.catch((error) =>
                         Effect.succeed({
                           ok: false,
-                          message: `Couldn't forget "${input.id}" (${error.reason}).`,
+                          message: `Couldn't forget "${displayReference(input.id)}" (${error.reason}).`,
                         } satisfies Output),
                       ),
                     )
                   }
                   case "neighbors": {
-                    const linked = yield* probe(memory.neighbors(input.id, access, { k: input.k ?? 10 }))
+                    const storageID = resolveID(input.id)
+                    if (storageID === undefined)
+                      return { ok: false, message: unknownReference(input.id) } satisfies Output
+                    const linked = yield* probe(memory.neighbors(storageID, access, { k: input.k ?? 10 }))
                     // "Nothing is linked to it yet" invites the model to build the link. An engine
                     // that never answered would have it building links into a store it can't reach.
                     if (linked.fault !== undefined)
                       return {
                         ok: false,
-                        message: engineDown(`list what's linked to "${input.id}"`, linked.fault),
+                        message: engineDown(`list what's linked to "${displayReference(input.id)}"`, linked.fault),
                       } satisfies Output
                     const rows = linked.value ?? []
                     if (rows.length === 0)
                       return {
                         ok: false,
-                        message: `No memories linked to "${input.id}" yet. Create links with {"op":"relate","from":"…","to":"…","type":"…"}; ids come from remember/search results (mem_… or clm_…).`,
+                        message: `No memories linked to "${displayReference(input.id)}" yet. Create links with {"op":"relate","from":"ref_…","to":"ref_…","type":"…"}; references come from remember/search results.`,
                       } satisfies Output
-                    return { ok: true, message: formatNeighbors(rows) } satisfies Output
+                    return { ok: true, message: formatNeighbors(rows, renderID) } satisfies Output
+                  }
+                  case "path": {
+                    const from = resolveID(input.from)
+                    const to = resolveID(input.to)
+                    if (from === undefined) return { ok: false, message: unknownReference(input.from) } satisfies Output
+                    if (to === undefined) return { ok: false, message: unknownReference(input.to) } satisfies Output
+                    const maxHops = Math.max(1, Math.min(Math.trunc(input.maxHops ?? 5), 8))
+                    const found = yield* probe(memory.path(from, to, access, maxHops))
+                    if (found.fault !== undefined)
+                      return { ok: false, message: engineDown("find that path", found.fault) } satisfies Output
+                    if (found.value === undefined || found.value === null)
+                      return {
+                        ok: false,
+                        message: `No path connects "${displayReference(input.from)}" to "${displayReference(input.to)}" within ${maxHops} hops.`,
+                      } satisfies Output
+                    return { ok: true, message: formatPath(found.value, renderID) } satisfies Output
                   }
                   case "ingest": {
                     // Path/permission faults settle as readable text like every other op here —
@@ -615,7 +779,11 @@ export const layer = Layer.effectDiscard(
                     )
                   }
                   case "relate": {
-                    const type = relType(input.type)
+                    const from = resolveID(input.from)
+                    const to = resolveID(input.to)
+                    if (from === undefined) return { ok: false, message: unknownReference(input.from) } satisfies Output
+                    if (to === undefined) return { ok: false, message: unknownReference(input.to) } satisfies Output
+                    const type = input.type
                     /**
                      * 🔴 `scope: "global"` here WAS the bridge NC-SEC-016 crossed — every relation was
                      * written shared, so joining a public memory to a private one made the private one
@@ -626,34 +794,32 @@ export const layer = Layer.effectDiscard(
                      * the refusal is REPORTED: a relation that quietly did not happen teaches a model
                      * to believe a graph that is not there.
                      */
-                    return yield* memory
-                      .addEdge({ from: input.from, to: input.to, type, scope: "global" }, access)
-                      .pipe(
-                        Effect.map((result) =>
-                          result.ok
-                            ? ({
-                                ok: true,
-                                message: `Linked ${input.from} —[${type}]→ ${input.to}${
-                                  result.scope === undefined || result.scope === "global"
-                                    ? ""
-                                    : ` (kept to ${result.scope}, the narrower of the two)`
-                                }.`,
-                              } satisfies Output)
-                            : ({
-                                ok: false,
-                                message:
-                                  `Couldn't link those. Either an id doesn't exist, or the two memories are ` +
-                                  `private to different places — a link between them would make one of them ` +
-                                  `visible where it isn't. Both ids come from remember/search results (mem_… or clm_…).`,
-                              } satisfies Output),
-                        ),
-                        Effect.catch((error) =>
-                          Effect.succeed({
-                            ok: false,
-                            message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_… or clm_…).`,
-                          } satisfies Output),
-                        ),
-                      )
+                    return yield* memory.addEdge({ from, to, type, scope: "global" }, access).pipe(
+                      Effect.map((result) =>
+                        result.ok
+                          ? ({
+                              ok: true,
+                              message: `Linked ${displayReference(input.from)} —[${type}]→ ${displayReference(input.to)}${
+                                result.scope === undefined || result.scope === "global"
+                                  ? ""
+                                  : ` (kept to ${result.scope}, the narrower of the two)`
+                              }.`,
+                            } satisfies Output)
+                          : ({
+                              ok: false,
+                              message:
+                                `Couldn't link those. Either an id doesn't exist, or the two memories are ` +
+                                `private to different places — a link between them would make one of them ` +
+                                `visible where it isn't. Both references must come from remember/search results.`,
+                            } satisfies Output),
+                      ),
+                      Effect.catch((error) =>
+                        Effect.succeed({
+                          ok: false,
+                          message: `Couldn't link those (${error.reason}). Both references must come from remember/search results.`,
+                        } satisfies Output),
+                      ),
+                    )
                   }
                 }
               }),

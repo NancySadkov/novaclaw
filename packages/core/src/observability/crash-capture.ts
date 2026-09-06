@@ -1,7 +1,11 @@
+import { mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { join } from "node:path"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { readRowsSync } from "../database/read-rows-sync"
 import { DatabasePath } from "../database/db-path"
+import { readRowsSync } from "../database/read-rows-sync"
+import { Global } from "../global"
 import { currentPolicy, serviceBuilds } from "../offline-state"
 import { Telemetry } from "./telemetry"
 
@@ -51,23 +55,19 @@ import { Telemetry } from "./telemetry"
  *
  * ── exit safety: what happens when the endpoint is slow, dead, or the process is already dying ───
  *
- * **Nothing waits.** `capture` is synchronous end to end: two cheap reads, one pure `refusals()`
- * call, and a `runFork` that is never awaited. There is no `await`, no timer, no `process.exit`, no
- * `exitCode` write, and no `beforeExit`/`exit` hook anywhere in this file, so there is no mechanism
- * by which it could delay or prevent termination.
+ * **Nothing waits for the network.** `capture` performs two cheap reads, one pure `refusals()`
+ * call, and a bounded atomic spool write before it forks the POST. There is no `await`, no timer,
+ * no `process.exit`, no `exitCode` write, and no `beforeExit`/`exit` hook anywhere in this file, so
+ * there is no mechanism by which it could delay or prevent termination.
  *
  * · **Endpoint unreachable or slow** — the POST rides `CalloutPolicy.telemetryLogs`
  *   (async · 3 s · fail_open) inside `Telemetry.send`, which already ends in `Effect.catchCause`.
  *   A failure is a no-op; a slow endpoint is simply outlived by the process.
- * · **The process is already dying** — which is the normal case here — the forked fiber is torn down
- *   with it. ⚠️ **Stated plainly rather than implied, and MEASURED rather than assumed:** against a
- *   loopback intake on 2026-08-07 a real fatal `TypeError` reported `{state:"reported"}`, printed
- *   its stack, exited 1 — and **nothing arrived on the wire**. The same capture on a process that
- *   was not dying delivered in full. So the fatal path fires the sender and loses the packet.
- *   Closing that needs a durable spool (write on crash, flush on next boot), which is deliberately
- *   NOT built here: there is no intake VPS to flush to yet (`endpointFromEnv()` is `undefined` on
- *   every machine today, so the honest outcome is `refused: no_endpoint`), and an unattended spool
- *   with no drain is a directory that only grows. It is the next item, not this one.
+ * · **The process is already dying** — which is the normal case here — the forked fiber may be torn
+ *   down with it. The envelope is written to the bounded, content-free spool BEFORE that fork, so a
+ *   later healthy boot can retry it. A failed POST remains queued; a 2xx response removes exactly
+ *   the acknowledged file. The immediate send is still best-effort, and the spool itself is also
+ *   fail-open: an unwritable data directory never becomes the crash.
  *
  * ── what a crash payload may and may not contain ─────────────────────────
  *
@@ -99,7 +99,7 @@ import { Telemetry } from "./telemetry"
  * ARRAY so that when both hold, both are named.
  *
  * ⚠️ **Airgap FAILS CLOSED, and this is the one place where the seam is stricter than the sender.**
- * `currentPolicy()` answers `disabledPolicy` for two different facts — *the user is not
+ * `Offline.currentPolicy()` answers `disabledPolicy` for two different facts — *the user is not
  * airgapped* and *no policy source has been installed in this process, so nothing is guarding yet*.
  * On the boot path the second is reachable: a crash before the Offline layer builds would otherwise
  * read as "not airgapped" and permit an upload from an airgapped machine. AGENTS.md's promise is
@@ -161,6 +161,98 @@ export interface TransmitInput {
   readonly host: Telemetry.Host
 }
 
+export interface SpoolEntry {
+  readonly file: string
+  readonly envelope: Telemetry.Envelope
+}
+
+/**
+ * A bounded, process-independent retry queue for crash envelopes. The queue stores only the already
+ * built egress-safe envelope, never the thrown error or its stack. A directory of atomic JSON files
+ * is intentional: a crash can leave one file half-written without making the rest unreadable, and a
+ * successful POST can acknowledge one file without rewriting a shared journal.
+ */
+export interface DurableSpool {
+  readonly append: (envelope: Telemetry.Envelope) => void
+  readonly entries: () => ReadonlyArray<SpoolEntry>
+  readonly remove: (file: string) => void
+}
+
+const SPOOL_FILE = /^crash-\d+-[0-9a-f-]+\.json$/
+const MAX_SPOOL_ENTRIES = 64
+const MAX_SPOOL_FILE_BYTES = 64 * 1024
+
+const isEnvelope = (value: unknown): value is Telemetry.Envelope => {
+  if (typeof value !== "object" || value === null) return false
+  const envelope = value as { signature?: unknown; attributes?: unknown }
+  if (typeof envelope.signature !== "object" || envelope.signature === null) return false
+  if (typeof envelope.attributes !== "object" || envelope.attributes === null) return false
+  const signature = envelope.signature as Record<string, unknown>
+  if (Object.keys(signature).some((field) => !Telemetry.fields().includes(field as Telemetry.CrashField))) return false
+  if (Object.values(signature).some((item) => !["string", "number", "boolean"].includes(typeof item))) return false
+  return Object.values(envelope.attributes as Record<string, unknown>).every((item) =>
+    ["string", "number", "boolean"].includes(typeof item),
+  )
+}
+
+/** Build the production spool under the instance data directory, never the project or CWD. */
+export function durableSpool(directory = join(Global.Path.data, "telemetry", "crash-spool")): DurableSpool {
+  try {
+    mkdirSync(directory, { recursive: true })
+  } catch {
+    // The crash path remains usable without a spool; the immediate send is still attempted.
+  }
+  const files = () => {
+    try {
+      return readdirSync(directory)
+        .filter((file) => SPOOL_FILE.test(file))
+        .sort()
+    } catch {
+      return []
+    }
+  }
+  return {
+    append: (envelope) => {
+      try {
+        const current = files()
+        for (const file of current.slice(0, Math.max(0, current.length - MAX_SPOOL_ENTRIES + 1)))
+          try {
+            unlinkSync(join(directory, file))
+          } catch {
+            /* a competing drain may already have acknowledged it */
+          }
+        const file = join(directory, `crash-${Date.now()}-${randomUUID()}.json`)
+        const temporary = `${file}.tmp`
+        const body = JSON.stringify(envelope)
+        if (Buffer.byteLength(body, "utf8") > MAX_SPOOL_FILE_BYTES) return
+        writeFileSync(temporary, body, { encoding: "utf8", flag: "wx" })
+        renameSync(temporary, file)
+      } catch {
+        // A crash reporter must never become the crash. The immediate POST still runs below.
+      }
+    },
+    entries: () =>
+      files().flatMap((file) => {
+        try {
+          const body = readFileSync(join(directory, file), "utf8")
+          if (Buffer.byteLength(body, "utf8") > MAX_SPOOL_FILE_BYTES) return []
+          const parsed: unknown = JSON.parse(body)
+          return isEnvelope(parsed) ? [{ file, envelope: parsed }] : []
+        } catch {
+          return []
+        }
+      }),
+    remove: (file) => {
+      if (!SPOOL_FILE.test(file)) return
+      try {
+        unlinkSync(join(directory, file))
+      } catch {
+        /* already removed or unreadable */
+      }
+    },
+  }
+}
+
 /**
  * Everything the crash path reads, injected — so the gates are assertable without a network, a
  * database, an offline layer or a running instance.
@@ -176,6 +268,8 @@ export interface Sources {
   readonly plane: "server" | "ui"
   /** Fire the report. MUST NOT block; MUST NOT throw (it is called inside the wrapper anyway). */
   readonly transmit: (input: TransmitInput) => void
+  /** Durable retry queue. Production sources provide it; injected test sources may omit it. */
+  readonly spool?: DurableSpool
 }
 
 /**
@@ -230,14 +324,33 @@ export function readConsent(dbFile: string | undefined, now = Date.now()): unkno
  * defects (measured against the pinned effect source in the startup classification), and a layer
  * build is exactly where one would come from.
  */
-function defaultTransmit(input: TransmitInput): void {
+function flushSpool(input: TransmitInput, spool: DurableSpool): void {
+  const entries = spool.entries()
   Effect.runFork(
-    Telemetry.report(input).pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.catchCause(() => Effect.void),
-      Effect.asVoid,
-    ),
+    Effect.forEach(
+      entries,
+      (entry) =>
+        Telemetry.send(input.endpoint!, entry.envelope).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.tap((sent) => (sent ? Effect.sync(() => spool.remove(entry.file)) : Effect.void)),
+          Effect.catchCause(() => Effect.void),
+        ),
+      { discard: true, concurrency: 1 },
+    ).pipe(Effect.catchCause(() => Effect.void)),
   )
+}
+
+function defaultTransmit(input: TransmitInput, spool: DurableSpool): void {
+  try {
+    const built = Telemetry.build(input)
+    if (!built.ok || input.endpoint === undefined) return
+    // Write-before-send is the fatal-path guarantee. The current envelope is in the queue before
+    // the asynchronous request is started, so a process dying during fetch leaves a retryable file.
+    spool.append(built.envelope)
+    flushSpool(input, spool)
+  } catch {
+    // capture() already has the totality boundary; this is the second one around filesystem/Effect.
+  }
 }
 
 /** The live wiring. The db path is resolved here — at install — and never on the crash path. */
@@ -250,14 +363,40 @@ export function liveSources(plane: "server" | "ui" = "server"): Sources {
     // and the endpoint gate still refuses. Never fatal: this runs on the boot path.
     dbFile = undefined
   }
-  return {
+  const spool = durableSpool()
+  const sources: Sources = {
     config: () => readConsent(dbFile),
     airgap: () => airgapFrom({ builds: serviceBuilds(), enabled: currentPolicy().enabled }),
-    endpoint: () => Telemetry.endpointFromEnv(),
+    endpoint: () => Telemetry.endpointFromConfig(readConsent(dbFile)),
     host: () => Telemetry.host(),
     plane,
-    transmit: defaultTransmit,
+    transmit: (input) => defaultTransmit(input, spool),
+    spool,
   }
+  // Retry reports left by the previous process even if this process never crashes again. The same
+  // gates are applied before any queued envelope is sent; airgap and consent therefore stop old and
+  // new reports alike. Readiness is separate: a configured endpoint is not called ready until its
+  // fixed probe is accepted end to end.
+  queueMicrotask(() => {
+    try {
+      if (process.env["NODE_ENV"] === "test") return
+      const config = sources.config()
+      const gate = Telemetry.resolveGate({ config, policy: { enabled: sources.airgap() } })
+      const endpoint = sources.endpoint()
+      if (Telemetry.refusals(gate, endpoint).length === 0 && endpoint !== undefined) {
+        Effect.runFork(
+          Telemetry.probe(endpoint).pipe(
+            Effect.provide(FetchHttpClient.layer),
+            Effect.catchCause(() => Effect.succeed(false)),
+          ),
+        )
+        flushSpool({ gate, endpoint, host: sources.host(), report: { plane, kind: "CrashSpoolDrain" } }, spool)
+      }
+    } catch {
+      /* boot must not depend on telemetry */
+    }
+  })
+  return sources
 }
 
 // ── the capture ─────────────────────────────────────────────────────────────────────────────────

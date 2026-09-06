@@ -13,7 +13,7 @@ name: "tool/kb",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "kb",
-  "description": "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, by keyword) · remember (save a fact; returns its id — default durably across all chats; give `name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · history (what a memory replaced, and what it rested on) · relate (link two remembered ids with a relationship like works_at, so you can later trace multi-step connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable passages — the file never enters your context, so ingest a big manual then search it). Chain them: remember the entities, then relate what connects them. Example: {\"op\":\"remember\",\"text\":\"Ada Lovelace\",\"name\":\"Ada\"} → {\"op\":\"relate\",\"from\":\"mem_…\",\"to\":\"mem_…\",\"type\":\"wrote\"}.",
+  "description": "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, by keyword) · resolve (turn a subject label into bounded references) · get (read one reference) · predicates (inspect the closed relationship vocabulary) · remember (save a fact; returns a reference — default durably across all chats; give `name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · history (what a memory replaced, and what it rested on) · relate (link two remembered references with a closed relationship type, so you can later trace multi-step connections neighbors/search alone can't) · forget (drop a memory by reference) · neighbors (memories linked to one you found) · path (let the engine answer a bounded multi-hop question) · ingest (read a text DOCUMENT at a path into memory as searchable passages — the file never enters your context, so ingest a big manual then search it). Chain them: remember the entities, then relate what connects them. Example: {\"op\":\"remember\",\"text\":\"Ada Lovelace\",\"name\":\"Ada\"} → {\"op\":\"relate\",\"from\":\"ref_…\",\"to\":\"ref_…\",\"type\":\"wrote\"}.",
   "inputSchema": {
     "anyOf": [
       {
@@ -61,6 +61,94 @@ definition: new ToolDefinition({
         "required": [
           "op",
           "query"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "resolve"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "A remembered subject or label to resolve to one or more references"
+          },
+          "k": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Max candidates (default 8)"
+          }
+        },
+        "required": [
+          "op",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "get"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "A reference returned by search, resolve or remember"
+          }
+        },
+        "required": [
+          "op",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "predicates"
+            ]
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reference whose relationship types to inspect"
+          },
+          "k": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Max linked memories to inspect (default 64)"
+          }
+        },
+        "required": [
+          "op"
         ],
         "additionalProperties": false
       },
@@ -155,7 +243,7 @@ definition: new ToolDefinition({
           },
           "id": {
             "type": "string",
-            "description": "A memory id from search results (mem_…)"
+            "description": "A reference returned by search or remember"
           },
           "secret": {
             "anyOf": [
@@ -186,7 +274,7 @@ definition: new ToolDefinition({
           },
           "id": {
             "type": "string",
-            "description": "A memory id (mem_…) whose directly-linked memories to list"
+            "description": "A reference returned by search or remember whose links to list"
           },
           "k": {
             "anyOf": [
@@ -217,15 +305,30 @@ definition: new ToolDefinition({
           },
           "from": {
             "type": "string",
-            "description": "The subject memory id (mem_… from a remember/search result)"
+            "description": "The subject reference returned by remember or search"
           },
           "to": {
             "type": "string",
-            "description": "The object memory id (mem_… from a remember/search result)"
+            "description": "The object reference returned by remember or search"
           },
           "type": {
             "type": "string",
-            "description": "The relationship as a short verb phrase, e.g. works_at, wrote, located_in, part_of, depends_on"
+            "enum": [
+              "about",
+              "depends_on",
+              "dislikes",
+              "knows",
+              "likes",
+              "located_in",
+              "part_of",
+              "related_to",
+              "uses",
+              "works_at",
+              "works_on",
+              "wrote",
+              "wrote_about"
+            ],
+            "description": "The relationship, chosen from the engine's closed vocabulary"
           }
         },
         "required": [
@@ -233,6 +336,42 @@ definition: new ToolDefinition({
           "from",
           "to",
           "type"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "path"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "The starting reference returned by search or remember"
+          },
+          "to": {
+            "type": "string",
+            "description": "The destination reference returned by search or remember"
+          },
+          "maxHops": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum graph hops (default 5, max 8)"
+          }
+        },
+        "required": [
+          "op",
+          "from",
+          "to"
         ],
         "additionalProperties": false
       },
@@ -294,7 +433,7 @@ definition: new ToolDefinition({
           },
           "id": {
             "type": "string",
-            "description": "A memory id (clm_… or mem_…) whose history to show — what it replaced, and why"
+            "description": "A reference returned by search or remember whose history to show — what it replaced, and why"
           }
         },
         "required": [

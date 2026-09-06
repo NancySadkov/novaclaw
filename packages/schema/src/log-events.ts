@@ -1104,6 +1104,15 @@ export const EVENTS = {
     content: "none",
     file: "packages/server/src/handlers/memory.ts",
   },
+  "kb.world.erased": {
+    level: "warn",
+    message: "erased every hot world-model memory",
+    attributes: {
+      "memory.rows": "count",
+    },
+    content: "none",
+    file: "packages/server/src/handlers/memory.ts",
+  },
   "kb.memory.forget.done": {
     level: "info",
     message: "forgot the least valuable staged memories in a scope",

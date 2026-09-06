@@ -6,7 +6,6 @@ import { SessionSchema } from "../schema"
 import type { SessionExecutionAttempt } from "../execution-attempt"
 import { EventV2 } from "../../event"
 import { Permission } from "@novaclaw/schema/permission"
-import { Question } from "@novaclaw/schema/question"
 import { Event } from "@novaclaw/schema/event"
 import { Model } from "@novaclaw/schema/model"
 import { SessionMessage } from "@novaclaw/schema/session-message"
@@ -179,6 +178,8 @@ export const SpawnResultMessage = Schema.Struct({
 export const MemoryResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("memory-result"),
+  /** Which host-owned graph answered; the worker has two memory capabilities. */
+  store: Schema.Literals(["kb", "world"]),
   requestID: Schema.String,
   outcome: Schema.Literals(["ok", "failed", "rejected"]),
   /** The op's return value, already JSON. Absent for `void` returns and for every non-ok outcome. */
@@ -208,14 +209,6 @@ export const DriveStateResult = Schema.Struct({
   reason: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.DriveStateResult" })
 
-export const QuestionResult = Schema.Struct({
-  ...Identity,
-  type: Schema.Literal("question-result"),
-  requestID: Schema.String,
-  outcome: Schema.Literals(["answered", "rejected"]),
-  answers: Schema.Array(Question.Answer).pipe(Schema.optional),
-}).annotate({ identifier: "SessionWorker.QuestionResult" })
-
 const ProviderRecoveryWire = Schema.Struct({
   attemptID: Event.ID,
   assistantMessageID: SessionMessage.ID,
@@ -244,7 +237,6 @@ export const HostMessage = Schema.Union([
   DeviceMaintenanceReleased,
   DeviceRejected,
   PermissionResult,
-  QuestionResult,
   MemoryResult,
   LocalModelResult,
   DriveStateResult,
@@ -475,6 +467,7 @@ export const MEMORY_OPS = [
   "addEdge",
   "search",
   "neighbors",
+  "get",
   "path",
   "invalidate",
   "purge",
@@ -497,6 +490,8 @@ export type MemoryOp = (typeof MEMORY_OPS)[number]
 export const MemoryRequest = Schema.Struct({
   ...Identity,
   type: Schema.Literal("memory-request"),
+  /** Explicit/source KB versus automatic session/agent world model. */
+  store: Schema.Literals(["kb", "world"]),
   requestID: Schema.String,
   op: Schema.Literals(MEMORY_OPS),
   /** The op's arguments, positionally, exactly as `MemoryClient.Interface` declares them. */
@@ -555,17 +550,6 @@ export const PermissionAssert = Schema.Struct({
     targets: Schema.Array(Schema.Struct({ resource: Schema.String, canonical: Schema.String })).pipe(Schema.optional),
   }),
 }).annotate({ identifier: "SessionWorker.PermissionAssert" })
-
-export const QuestionAsk = Schema.Struct({
-  ...Identity,
-  type: Schema.Literal("question-ask"),
-  requestID: Schema.String,
-  input: Schema.Struct({
-    sessionID: SessionSchema.ID,
-    questions: Schema.Array(Question.Info),
-    tool: Question.Tool.pipe(Schema.optional),
-  }),
-}).annotate({ identifier: "SessionWorker.QuestionAsk" })
 
 const ExecutionRequestBase = { ...Identity, requestID: Schema.String }
 export const ExecutionAdvance = Schema.Struct({
@@ -652,7 +636,6 @@ export const WorkerMessage = Schema.Union([
   SpawnChild,
   ColleagueRequest,
   AwaitChild,
-  QuestionAsk,
   ExecutionAdvance,
   ExecutionToolDispatched,
   ExecutionToolSettled,

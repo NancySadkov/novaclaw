@@ -1,6 +1,6 @@
 // The global "take me to the chat that needs me" affordance (uix-improvement slice 3): one command +
 // keybind that works from ANYWHERE in the shell. Target priority: the most recently updated chat
-// WAITING on the user (pending question) → the most recent chat with unseen output → the
+// with unseen output → the
 // latest chat the client knows → the Chats list. Registered from NewLayout so it is always live.
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
@@ -8,10 +8,10 @@ import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { useServerSync } from "@/context/server-sync"
-import { useChatsAttentionSets } from "./chats-attention"
+import { useChatsAttention } from "./chats-attention"
 
 export function useJumpToAttention(): () => void {
-  const sets = useChatsAttentionSets()
+  const unseen = useChatsAttention()
   const serverSync = useServerSync()
   const notification = useNotification()
   const navigate = useNavigate()
@@ -25,7 +25,7 @@ export function useJumpToAttention(): () => void {
     const newest = (ids: readonly string[]) =>
       ids.length ? [...ids].sort((a, b) => updatedAt(b) - updatedAt(a))[0] : undefined
 
-    let id = newest(sets().waiting) ?? newest(sets().unseen)
+    let id = newest(unseen())
     // A session's directory usually comes from its resolved record; an unseen chat the store
     // hasn't resolved yet can still be routed via its notification's directory.
     let directory = id

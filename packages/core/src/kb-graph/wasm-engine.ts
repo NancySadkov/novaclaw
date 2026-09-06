@@ -1476,6 +1476,19 @@ export class WasmMemory {
     })
   }
 
+  /** Hydrate one current row behind an engine-owned reference, enforcing scope before the body leaves. */
+  get(id: string, opts: { scopes?: readonly string[] } = {}): Promise<MemoryRow | null> {
+    return this.serialize(async () => {
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const rows = await this.rows(
+        `MATCH (m:Memory {id: $id}) WHERE m.t_invalid IS NULL ${scopeFilter} RETURN m.id AS id`,
+        { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
+      )
+      if (rows.length === 0) return null
+      return (await this.hydrate([id]))[0] ?? null
+    })
+  }
+
   /**
    * ⚠️ EVERY HOP is checked, not the endpoints. A path that merely *passes through* a private memory
    * still discloses that it exists and how it connects, which is most of what the id was protecting.

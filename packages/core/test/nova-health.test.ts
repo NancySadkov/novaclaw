@@ -218,6 +218,22 @@ describe("NovaHealth.fromMemory", () => {
   })
 })
 
+describe("NovaHealth.fromWorldMemory", () => {
+  test("keeps the automatic world model distinct from the explicit KB", () => {
+    const signal = NovaHealth.fromWorldMemory({ stage: "error", detail: "world path is unreadable" })
+    expect(signal.id).toBe("world-memory")
+    expect(signal.label).toBe("Agent memory")
+    expect(signal.status).toBe("problem")
+    expect(signal.detail).toContain("Automatic recall")
+    expect(signal.detail).toContain("world path is unreadable")
+  })
+
+  test("a disabled world model is deliberate, while an unopened one is unknown", () => {
+    expect(NovaHealth.fromWorldMemory({ stage: "disabled" }).status).toBe("ok")
+    expect(NovaHealth.fromWorldMemory({ stage: "not-loaded" }).status).toBe("unknown")
+  })
+})
+
 describe("NovaHealth.fromCapability — the generic edge row", () => {
   /**
    * 🔴 Five capability edges are registered and until 2026-08-12 only TWO could reach this board.

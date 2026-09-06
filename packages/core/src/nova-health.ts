@@ -313,6 +313,33 @@ export const fromMemory = (input: {
   }
 }
 
+/** The automatic session/agent world model has a separate engine and failure domain. */
+export const fromWorldMemory = (input: {
+  readonly stage: "disabled" | "not-loaded" | "loading" | "ready" | "error" | undefined
+  readonly detail?: string
+}): Signal => {
+  const detail = input.detail?.trim()
+  if (input.stage === undefined)
+    return { id: "world-memory", label: "Agent memory", status: "unknown", detail: "Could not read agent memory." }
+  if (input.stage === "error")
+    return {
+      id: "world-memory",
+      label: "Agent memory",
+      status: "problem",
+      detail: `Automatic recall and learning are unavailable.${detail ? ` ${detail}` : ""}`,
+      action: "Open a chat and choose Retry for Agent memory, or check the error log in Debug.",
+    }
+  if (input.stage === "disabled")
+    return { id: "world-memory", label: "Agent memory", status: "ok", detail: "Off, by the runtime setting." }
+  if (input.stage === "ready") return { id: "world-memory", label: "Agent memory", status: "ok" }
+  return {
+    id: "world-memory",
+    label: "Agent memory",
+    status: "unknown",
+    detail: input.stage === "loading" ? "Still opening." : "Not opened yet — it opens when automatic memory is used.",
+  }
+}
+
 /**
  * Any OTHER optional capability that is down — the generic row.
  *

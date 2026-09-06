@@ -80,6 +80,7 @@ describe("MemoryClient.fromEngine", () => {
         },
       ],
       neighbors: async () => [],
+      get: async () => null,
       path: async () => null,
       invalidate: async () => {},
       purge: async () => {

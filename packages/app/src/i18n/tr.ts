@@ -559,7 +559,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Git deposu oluşturuluyor...",
   "session.review.noVcs.createGit.action": "Git deposu oluştur",
   "session.todo.progress": "{{total}} görevin {{done}} tanesi tamamlandı",
-  "session.question.progress": "{{total}} sorunun {{current}} tanesi",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Dosya Gezgini",
   "session.header.open.fileManager": "Dosya Yöneticisi",

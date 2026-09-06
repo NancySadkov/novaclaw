@@ -2,7 +2,6 @@ import { focusTerminalById, shouldFocusTerminalOnKeyDown } from "./helpers"
 
 type Input = {
   composer: () => HTMLDivElement | undefined
-  composerBlocked: () => boolean
   childSession: () => boolean
   dialogActive: () => boolean
   terminalOpen: () => boolean
@@ -52,7 +51,7 @@ export function createSessionKeyboardController(input: Input) {
     }
 
     if (event.key.length !== 1 || event.key === "Unidentified" || event.ctrlKey || event.metaKey) return
-    if (input.composerBlocked() || input.childSession()) return
+    if (input.childSession()) return
     composer?.focus()
   }
 }

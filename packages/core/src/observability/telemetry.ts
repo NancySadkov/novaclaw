@@ -333,15 +333,27 @@ export function refusals(gate: Gate, endpoint: string | undefined): ReadonlyArra
 /**
  * The configured intake endpoint, or `undefined`.
  *
- * There is **no compiled default**, and that is the honest state of the world: the intake VPS does
- * not exist yet, so on every machine today `refusals()` names `no_endpoint` and nothing is built,
- * let alone sent. Read from the environment the same way `Logging.minimumLogLevel` does, so this
- * module stays inside the observability subsystem and adds no config surface for a destination
- * nobody can reach yet.
+ * The environment is the emergency override. Normal builds use the compiled maintenance-plane
+ * intake from `endpointFromConfig`; the runtime `telemetry.endpoint` setting can point a staged or
+ * self-hosted build elsewhere without replacing the application.
  */
 export function endpointFromEnv(env: Record<string, string | undefined> = process.env): string | undefined {
   const value = env["NOVACLAW_TELEMETRY_ENDPOINT"]
   return value === undefined || value.trim() === "" ? undefined : value.trim()
+}
+
+/** The maintenance-plane intake shipped with the application. A deployment may override it at runtime. */
+export const DEFAULT_ENDPOINT = "https://telemetry.novaclaw.app/v1/crashes"
+
+/** Resolve the endpoint in the same order in every producer: environment, runtime settings, default. */
+export function endpointFromConfig(
+  config: unknown,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = endpointFromEnv(env)
+  if (explicit !== undefined) return explicit
+  const configured = (config as { telemetry?: { endpoint?: unknown } } | undefined)?.telemetry?.endpoint
+  return typeof configured === "string" && configured.trim() !== "" ? configured.trim() : DEFAULT_ENDPOINT
 }
 
 // ── normalisation ───────────────────────────────────────────────────────────────────────────────
@@ -614,11 +626,52 @@ export function build(input: {
  */
 export const preview = build
 
+// Readiness is intentionally process-local. A configured URL is not evidence that this instance's
+// collector accepts reports; only the end-to-end probe below can promote that exact destination.
+let readyEndpoint: string | undefined
+
+export function intakeReady(endpoint: string | undefined): boolean {
+  return endpoint !== undefined && endpoint === readyEndpoint
+}
+
+/** Tests only: clear the last successful intake probe. */
+export function resetIntakeProbe(): void {
+  readyEndpoint = undefined
+}
+
+/**
+ * Exercise the collector's probe contract without creating a crash record. The collector must
+ * return 2xx to the same intake URL; the body is a fixed code-derived marker and contains no
+ * envelope, error, or user data.
+ */
+export const probe = (endpoint: string): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    return yield* HttpClientRequest.post(endpoint).pipe(
+      HttpClientRequest.setHeader("accept", "application/json"),
+      HttpClientRequest.setHeader("x-novaclaw-intake-probe", "1"),
+      HttpClientRequest.bodyJsonUnsafe({ probe: "novaclaw-crash-intake" }),
+      client.execute,
+      Effect.timeout(CalloutPolicy.telemetryLogs.timeoutMs),
+      Effect.map((response) => response.status >= 200 && response.status < 300),
+      Effect.tap((accepted) =>
+        accepted
+          ? Effect.sync(() => {
+              readyEndpoint = endpoint
+            })
+          : Effect.void,
+      ),
+      Effect.catchCause(() => Effect.succeed(false)),
+    )
+  })
+
 export interface Status {
   /** The two independent live policy facts. */
   readonly gate: Gate
   /** Whether a real collector is configured. The URL itself is operational data and stays local. */
   readonly endpointConfigured: boolean
+  /** True only after the configured collector accepted the fixed end-to-end intake probe. */
+  readonly ready: boolean
   /** Every live reason an actual report would be refused, in enforcement order. */
   readonly refusals: ReadonlyArray<Refusal>
   /** A synthetic crash lowered by `preview` — the exact envelope shape, with no real crash context. */
@@ -642,6 +695,7 @@ export function status(input: {
   readonly host: Host
 }): Status {
   const gate = resolveGate({ config: input.config, policy: input.policy })
+  const endpoint = endpointFromConfig(input.config, { NOVACLAW_TELEMETRY_ENDPOINT: input.endpoint })
   const built = preview({
     report: {
       plane: "server",
@@ -655,8 +709,9 @@ export function status(input: {
   })
   return {
     gate,
-    endpointConfigured: endpointFromEnv({ NOVACLAW_TELEMETRY_ENDPOINT: input.endpoint }) !== undefined,
-    refusals: refusals(gate, input.endpoint),
+    endpointConfigured: endpoint !== undefined,
+    ready: intakeReady(endpoint),
+    refusals: refusals(gate, endpoint),
     ...(built.ok ? { payloadPreview: built.envelope } : {}),
     disclosure: disclosure(),
   }
@@ -687,17 +742,17 @@ export function disclosure(): ReadonlyArray<{
  * through `build`. That is the whole point of the signature: the gates are not a step a caller can
  * skip, they are the only door that produces the argument this function needs.
  */
-export const send = (endpoint: string, envelope: Envelope): Effect.Effect<void, never, HttpClient.HttpClient> =>
+export const send = (endpoint: string, envelope: Envelope): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
-    yield* HttpClientRequest.post(endpoint).pipe(
+    return yield* HttpClientRequest.post(endpoint).pipe(
       HttpClientRequest.setHeader("content-type", "application/json"),
       HttpClientRequest.bodyJsonUnsafe(envelope),
       client.execute,
       Effect.timeout(CalloutPolicy.telemetryLogs.timeoutMs),
-      Effect.asVoid,
+      Effect.map((response) => response.status >= 200 && response.status < 300),
       // fail_open, and total: a crash report that fails must never become a second crash.
-      Effect.catchCause(() => Effect.void),
+      Effect.catchCause(() => Effect.succeed(false)),
     )
   })
 

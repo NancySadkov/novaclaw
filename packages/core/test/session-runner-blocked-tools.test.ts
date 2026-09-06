@@ -4,7 +4,6 @@ import { LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
@@ -22,9 +21,7 @@ import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } fr
  * error, because nobody is going to collect its result. Same state, opposite correct answers, decided
  * by what ended the turn.
  *
- * There are THREE ways into that state and the file now covers all of them: the provider dies, someone
- * calls `interrupt`, or **the user dismisses a question the tool was asking**. The third is the only one
- * the user drives directly, and it is the one where getting it wrong is worst — see that claim.
+ * Both provider failure and explicit interruption are exercised below.
  */
 
 const providerUnavailable = () =>
@@ -277,87 +274,6 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
             type: "tool",
             id: "call-await-interrupt",
             state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
-          },
-        ],
-      },
-    ])
-  })
-
-  test("interrupts runner continuation when a question is dismissed", async () => {
-    // The THIRD route into this file's state, and the only one the USER drives. The tool is not blocked
-    // on a latch or a dying provider — it is blocked asking the user something, and the user declines
-    // to answer. Dismissing the question must stop the run.
-    //
-    // ⭐ Dismissal is not an answer, and the distinction is the claim. A runner that treated a rejected
-    // question as an empty result would carry on with the tool "succeeding" — so the agent proceeds on
-    // an assumption the user specifically refused to supply, which is worse than any error: the user
-    // said no and watched it continue anyway. Here the run ends INTERRUPTED (not failed — nothing broke)
-    // and the tool settles as an error, matching the interrupt claim above.
-    const harness = makeRunnerHarness({
-      turns: [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-question", name: "question", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-      ],
-    })
-
-    const context = await drive(
-      harness,
-      Effect.gen(function* () {
-        const session = yield* SessionV2.Service
-        const registry = yield* ToolRegistry.Service
-        const questions = yield* QuestionV2.Service
-        yield* registry.register({
-          question: Tool.make({
-            description: "Ask the user",
-            input: Schema.Struct({}),
-            output: Schema.Struct({}),
-            execute: (_, context) =>
-              questions.ask({ sessionID: context.sessionID, questions: [] }).pipe(Effect.as({}), Effect.orDie),
-          }),
-        })
-        yield* session.prompt({
-          sessionID: HARNESS_SESSION,
-          prompt: Prompt.make({ text: "Ask then stop" }),
-          resume: false,
-        })
-
-        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.exit, Effect.forkChild)
-        let pending = yield* questions.list()
-        while (pending.length === 0) {
-          yield* Effect.yieldNow
-          pending = yield* questions.list()
-        }
-        yield* questions.reject(pending[0]!.id)
-
-        const exit = yield* Fiber.join(run)
-        expect(Exit.isFailure(exit), "a dismissed question ends the run").toBe(true)
-        if (Exit.isFailure(exit))
-          expect(
-            Cause.hasInterruptsOnly(exit.cause),
-            "INTERRUPTED, not failed — the user declining is not a malfunction",
-          ).toBe(true)
-        return yield* session.context(HARNESS_SESSION)
-      }),
-      "claim — dismissing a question interrupts the run",
-    )
-
-    expect(harness.requests, "no continuation turn is sent after the dismissal").toHaveLength(1)
-    expect(context).toMatchObject([
-      { type: "user", text: "Ask then stop" },
-      {
-        type: "assistant",
-        content: [
-          {
-            type: "tool",
-            id: "call-question",
-            state: {
-              status: "error",
-              error: { type: "unknown", message: QuestionV2.DISMISSED_MESSAGE, _tag: "Interrupted" },
-            },
           },
         ],
       },

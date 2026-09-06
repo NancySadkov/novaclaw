@@ -12,7 +12,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Snapshot } from "@novaclaw/core/snapshot"
@@ -30,6 +29,7 @@ import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { ModelV2 } from "@novaclaw/core/model"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
@@ -752,7 +752,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     LayerNode.group([
       Database.node,
       EventV2.node,
-      QuestionV2.node,
       SessionProjector.node,
       SessionStore.node,
       ApplicationTools.node,
@@ -776,6 +775,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // to be tidied. Same node object, so the graph builds one store either way (`LayerNode` memoizes
       // on identity).
       Memory.node,
+      // The runner's automatic recall/extraction is a separate graph from the explicit KB. Expose it
+      // to the seed so the shared test home cannot leak compacted chats or extracted facts between
+      // harnesses either.
+      WorldMemory.node,
       // Exposed for the same reason as `Memory.node` above and with the same effect: the runner
       // already pulls it in transitively, and `LayerNode` memoizes on identity, so listing it builds
       // one scheduler either way. A claim about WHEN the device slot is charged and released has to
@@ -851,11 +854,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     // leak this whole comment describes therefore still happened, silently, for four days. A list of
     // scopes kept by hand beside a value that decides them is the same defect twice; ask the store.
     const memory = Memory.client(yield* Memory.node.service)
-    const resident = yield* memory.list({ limit: 500 }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
+    const resident = yield* memory
+      .list({ limit: 500 })
+      .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
+    const world = WorldMemory.client(yield* WorldMemory.node.service)
+    const worldResident = yield* world
+      .list({ limit: 500 })
+      .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
     const searched = (scope: string) =>
       scope === "global" || scope === `session:${HARNESS_SESSION}` || scope.startsWith("agent:")
     for (const scope of new Set(resident.map((m) => m.scope).filter(searched)))
       yield* memory.clearScope(scope).pipe(Effect.ignore)
+    for (const scope of new Set(worldResident.map((m) => m.scope).filter(searched)))
+      yield* world.clearScope(scope).pipe(Effect.ignore)
   })
 
   /**
@@ -904,11 +915,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // compacted session rather than merely differ: `session_compaction` has a unique
       // (session_id, seq) index, so replaying the Compaction event re-inserts and the query throws.
       // Found 2026-08-05 by the first ported claim that compacts and then replays.
-      yield* db
-        .delete(SessionCompactionTable)
-        .where(eq(SessionCompactionTable.session_id, id))
-        .run()
-        .pipe(Effect.orDie)
+      yield* db.delete(SessionCompactionTable).where(eq(SessionCompactionTable.session_id, id)).run().pipe(Effect.orDie)
       yield* events.replayAll(
         recorded.map((event) => ({
           id: event.id,
@@ -993,7 +1000,9 @@ export const messageRoles = (request: LLMRequest) => conversation(request).map((
 /** The user's OWN texts: what the conversation contributed, never what the harness appended. */
 export const userTexts = (request: LLMRequest) =>
   conversation(request).flatMap((message) =>
-    message.role === "user" ? message.content.flatMap((content) => (content.type === "text" ? [content.text] : [])) : [],
+    message.role === "user"
+      ? message.content.flatMap((content) => (content.type === "text" ? [content.text] : []))
+      : [],
   )
 
 export const systemTexts = (request: LLMRequest) => messageTexts(request, "system")

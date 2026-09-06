@@ -565,7 +565,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Creando repositorio Git...",
   "session.review.noVcs.createGit.action": "Crear repositorio Git",
   "session.todo.progress": "{{done}} de {{total}} tareas completadas",
-  "session.question.progress": "{{current}} de {{total}} preguntas",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Explorador de archivos",
   "session.header.open.fileManager": "Gestor de archivos",

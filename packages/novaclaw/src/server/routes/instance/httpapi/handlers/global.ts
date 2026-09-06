@@ -227,7 +227,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handle("discovery", discovery)
-      .handle("pressure", pressure)
+      .handle("instance.pressure.get", pressure)
       .handle("resources", resources)
       .handle("identityBackup", identityBackup)
       .handle("identityRestore", identityRestore)

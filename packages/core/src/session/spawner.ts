@@ -1,7 +1,7 @@
 export * as SessionSpawner from "./spawner"
 
 import { and, count, eq, gt, isNull } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
 import { KeyedMutex } from "../effect/keyed-mutex"
@@ -17,7 +17,6 @@ import { SpawnAdmission } from "./spawn-admission"
 import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionStore } from "./store"
 import { SessionTable } from "./sql"
-import { SessionInput } from "./input"
 import { SessionSchema } from "./schema"
 import { SessionMessage } from "./message"
 import { FileAttachment, Prompt } from "./prompt"
@@ -159,6 +158,16 @@ export const layer = Layer.effect(
             // Fork-bomb guards (K1): recursion depth + ACTIVE direct fan-out + durable spawn rate.
             // Depth is a cycle-guarded parentID walk, like resolveSessionConfig.
             // All three key on a parent; a rootless spawn has none — see `SpawnInput.parentID`.
+            const openingPrompt = {
+              messageID: SessionMessage.ID.create(),
+              prompt: Prompt.fromUserMessage({
+                text: input.text,
+                ...(input.files === undefined ? {} : { files: input.files }),
+                ...(input.origin === undefined ? {} : { origin: input.origin }),
+              }),
+              delivery: "queue" as const,
+              timestamp: yield* DateTime.now,
+            }
             if (parentID === undefined)
               return yield* createSessionRecord(
                 { db, events, projects, store },
@@ -172,6 +181,7 @@ export const layer = Layer.effect(
                   permissionMode: input.permissionMode,
                   title: input.title,
                   metadata: input.metadata,
+                  openingPrompt,
                   location,
                 },
               )
@@ -225,6 +235,7 @@ export const layer = Layer.effect(
                 permissionMode: input.permissionMode,
                 title: input.title,
                 metadata: input.metadata,
+                openingPrompt,
                 location, // the parent's location = this seam's location
               },
             )
@@ -242,19 +253,8 @@ export const layer = Layer.effect(
               }).pipe(Effect.as(0)),
             ),
           )
-        yield* SessionInput.admit(db, events, {
-          id: SessionMessage.ID.create(),
-          sessionID: child.id,
-          prompt: Prompt.fromUserMessage({
-            text: input.text,
-            ...(input.files === undefined ? {} : { files: input.files }),
-            ...(input.origin === undefined ? {} : { origin: input.origin }),
-          }),
-          delivery: "queue",
-        })
-        // B1: RUN the child. Strictly after the admit — the executor's drain reads the queued row
-        // from the database, so waking first is a race that ends in an empty turn. `wake` coalesces
-        // and never fails, so this cannot turn a completed spawn into a reported failure.
+        // B1: RUN the child. Creation and admission are one durable projection, so waking here
+        // cannot observe a session whose opening prompt was stranded between two events.
         const started = yield* wake.wake(child.id)
         return { id: child.id, started }
       }),

@@ -28,3 +28,15 @@ export async function listDebugSessions(client: NovaclawClient): Promise<Session
     cursor = next
   }
 }
+
+/** Read the instance-owned live execution set for the status column. The session event cache is
+ * useful for reactive chat views, but Debug is an OS diagnostic and must join its roster with the
+ * server's current active set when it renders a process as running. */
+export async function listDebugActiveSessions(
+  client: NovaclawClient,
+): Promise<Record<string, { readonly type: "running" }>> {
+  const response = await client.v2.session.active()
+  const data = response.data?.data
+  if (data === undefined || data === null || typeof data !== "object") return {}
+  return Object.fromEntries(Object.keys(data).map((id) => [id, { type: "running" as const }]))
+}

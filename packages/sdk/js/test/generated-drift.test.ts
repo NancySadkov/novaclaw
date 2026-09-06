@@ -302,7 +302,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // Schema.Struct in the tool, held equal by nothing) and `QualityDetection` (those plus the
 // evidence). Nothing left. 505 -> 507 entries, reviewed with a HEAD-versus-working-tree diff.
 // 2026-09-04: the current emitter normalizes the five MCP status names to `Mcp...`.
-const SCHEMA_NAME_FINGERPRINT = "f00bd286a503c5c7c57a0838978faead74df56a7927cd6d5f47fdf0f6afeaa92"
+// 2026-09-05: retired the remaining 13 QuestionV2/QuestionNotFound/EventQuestionV2 names.
+// The existing MCP idle-state change also adds MCPStatusIdle; no other names changed.
+const SCHEMA_NAME_FINGERPRINT = "ab51415d96cabc16f5879142bad1dc7e1733b5f907961080107402581710682b"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

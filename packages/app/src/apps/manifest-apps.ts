@@ -82,7 +82,7 @@ export function useManifestApps(): () => HomeApp[] {
           // keeps the gradient tile — its customization stays visible.
           ...(icon || manifest.accent ? {} : { tile: "/assets/skin/tiles/generic_app.png" }),
           ...(subtitle ? { subtitle } : {}),
-          source: "agent",
+          source: manifest.source ?? "agent",
           open: () => open(manifest),
         }
       },

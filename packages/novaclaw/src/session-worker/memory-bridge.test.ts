@@ -38,7 +38,7 @@ const base = {
   generation: lease.generation,
 }
 const request = (op: string, args: readonly unknown[], overrides: Record<string, unknown> = {}) =>
-  ({ ...base, type: "memory-request", requestID: "rpc_mem_1", op, args, ...overrides }) as never
+  ({ ...base, type: "memory-request", store: "kb", requestID: "rpc_mem_1", op, args, ...overrides }) as never
 
 const run = (memory: MemoryClient.Interface, message: ReturnType<typeof request>) =>
   Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }))
@@ -73,7 +73,14 @@ test("a worker memory op becomes one RPC, and the host's refusal comes back as a
   const services = SessionWorkerServices.make({
     memory: async (op: string, args: readonly unknown[]) => {
       asked.push({ op, args })
-      return { ...base, type: "memory-result", requestID: "rpc_mem_1", outcome: "failed", reason: "engine is closed" }
+      return {
+        ...base,
+        type: "memory-result",
+        store: "kb",
+        requestID: "rpc_mem_1",
+        outcome: "failed",
+        reason: "engine is closed",
+      }
     },
   } as unknown as SessionWorkerCapabilities.Capabilities)
 

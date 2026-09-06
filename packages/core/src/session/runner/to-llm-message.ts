@@ -663,6 +663,32 @@ export const toLLMMessages = (
     maxImages,
   )
 
+/** Count images in the un-answered tail of a lowered request. Current input is never silently
+ * rewritten to fit a learned cap; the runner uses this count to return an actionable pre-turn
+ * error instead. */
+export const freshImageCount = (messages: readonly Message[]): number => {
+  let lastAssistant = -1
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistant = index
+      break
+    }
+  }
+  let count = 0
+  for (let index = lastAssistant + 1; index < messages.length; index++) {
+    const message = messages[index]!
+    if (!Array.isArray(message.content)) continue
+    for (const part of message.content as readonly ContentPart[]) {
+      if (isImagePart(part)) count++
+      else if (part.type === "tool-result") {
+        const value = contentEntries((part as ToolResultPart).result)
+        if (value) count += value.filter(isImageContent).length
+      }
+    }
+  }
+  return count
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE PER-REQUEST IMAGE BUDGET — the dead-end a working vision path walks into.
 //
@@ -887,7 +913,7 @@ const replayImageBudget = (
   readonly victims: ReadonlySet<number>
   readonly described: ReadonlyMap<number, string>
 } => {
-  type CandidateState = "silent" | "described" | "victim"
+  type CandidateState = "silent" | "described" | "victim" | "protected"
 
   const victims = new Set<number>()
   const described = new Map<number, string>()
@@ -917,12 +943,21 @@ const replayImageBudget = (
     return true
   }
 
-  const appendImage = () => {
-    states[imageIndex] = "silent"
-    silentCandidates.push(imageIndex++)
+  let lastAssistant = -1
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistant = index
+      break
+    }
   }
 
-  for (const message of messages) {
+  const appendImage = (messageIndex: number) => {
+    states[imageIndex] = messageIndex > lastAssistant ? "protected" : "silent"
+    if (states[imageIndex] === "silent") silentCandidates.push(imageIndex)
+    imageIndex++
+  }
+
+  for (const [messageIndex, message] of messages.entries()) {
     const parts: readonly ContentPart[] = Array.isArray(message.content)
       ? (message.content as readonly ContentPart[])
       : []
@@ -952,10 +987,10 @@ const replayImageBudget = (
       }
     }
     for (const part of parts) {
-      if (isImagePart(part)) appendImage()
+      if (isImagePart(part)) appendImage(messageIndex)
       else if (part.type === "tool-result") {
         const value = contentEntries((part as ToolResultPart).result)
-        if (value) for (const item of value) if (isImageContent(item)) appendImage()
+        if (value) for (const item of value) if (isImageContent(item)) appendImage(messageIndex)
       }
     }
 

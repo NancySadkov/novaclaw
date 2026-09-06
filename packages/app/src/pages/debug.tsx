@@ -24,7 +24,7 @@ import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { instanceGlobalDirectory } from "@/utils/routing-directory"
-import { listDebugSessions } from "./debug-process"
+import { listDebugActiveSessions, listDebugSessions } from "./debug-process"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
@@ -93,6 +93,13 @@ function DebugAppPage() {
     },
     ({ conn }) => listDebugSessions(global.ensureServerCtx(conn).sdk.client),
   )
+  const [activeRoster] = createSettledResource(
+    () => {
+      const conn = focused()
+      return conn ? { conn, refresh: processRosterRefresh() } : undefined
+    },
+    ({ conn }) => listDebugActiveSessions(global.ensureServerCtx(conn).sdk.client),
+  )
 
   const sessions = createMemo(() => {
     const conn = focused()
@@ -100,6 +107,7 @@ function DebugAppPage() {
     const ctx = global.ensureServerCtx(conn)
     const key = ServerConnection.key(conn)
     const status = ctx.sync.session.data.session_status
+    const active = activeRoster() ?? {}
     const rows = (processRoster() ?? [])
       .filter((s) => s.time.archived === undefined)
       .map((s) => ({
@@ -109,11 +117,11 @@ function DebugAppPage() {
         model: s.model,
         tokens: s.tokens,
         parentID: s.parentID,
-        status: status[s.id]?.type ?? "idle",
+        status: active[s.id] !== undefined ? "busy" : status[s.id]?.type ?? "idle",
         // The presence column's busy half. Read from the session-status signal through its ONE
         // owner — never from the `status` column above, which shows the durable EXECUTION state
         // when there is one and would report an exited worker as busy.
-        busy: debugPresenceBusy(status[s.id]),
+        busy: active[s.id] !== undefined || debugPresenceBusy(status[s.id]),
         href: sessionHref(key, s.id),
       }))
     // working first, then newest ids first (ids are time-sortable)

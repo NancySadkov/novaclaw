@@ -78,8 +78,14 @@ describe("the memory ceiling", () => {
     // A reader ANDing `memoryEnabled()` back in is not wrong — it is a second copy of a rule that
     // now has one home, and the next one added will be the one that forgets.
     // Its own definition, its own caller, and the engine's capability gate — which asks a different
-    // question (does the store open at all) and has no session to clamp.
-    const allowed = new Set(["kb-graph/memory-setting.ts", "kb-graph/memory.ts", "session/effective-config.ts"])
+    // question (may a global engine work at all) and has no session to clamp. Both the explicit
+    // KB and the separate world-model engine enforce that privacy switch on their maintenance loops.
+    const allowed = new Set([
+      "kb-graph/memory-setting.ts",
+      "kb-graph/memory.ts",
+      "kb-graph/world-memory.ts",
+      "session/effective-config.ts",
+    ])
     const offenders = SOURCES.filter(
       (item) => !allowed.has(item.rel) && /MemorySetting\.memoryEnabled\(/.test(item.code),
     ).map((item) => item.rel)

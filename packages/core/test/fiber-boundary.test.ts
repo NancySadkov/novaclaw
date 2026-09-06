@@ -28,18 +28,7 @@ const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
  * ⚠️ The line number is still REPORTED, because a failure has to be navigable — it is just not part
  * of the identity being compared.
  */
-const KNOWN: ReadonlyArray<string> = [
-  // A shutdown finalizer interrupting a background fiber. Harmless in practice — `Fiber.interrupt`
-  // logs nothing, so no reference it drops is observable — but it IS the shape, and a ledger that
-  // omits the harmless instances teaches the next reader that the shape is sometimes fine.
-  //
-  // ⚠️ This entry replaced `:478`, which my GREP had nominated and the AST rejected: line 478 is not
-  // inside an async boundary at all. The scanner also found this line, which the grep missed, and
-  // exonerated `kb-graph/memory.ts:85` for the same reason. **Two of three grep-derived beliefs about
-  // this class were wrong** — which is the argument for the parser over a pattern, and the reason
-  // this list is populated from the instrument rather than from what I expected it to say.
-  "packages/novaclaw/src/local-model/runtime.ts Effect.runPromise | if (job) await Effect.runPromise(Fiber.interrupt(job)).catch(() => undefined)",
-]
+const KNOWN: ReadonlyArray<string> = []
 
 /** `file call | the offending source line`. Position-free on purpose — see the note above. */
 const identity = (c: { file: string; line: number; call: string }): string => {

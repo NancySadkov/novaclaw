@@ -263,6 +263,43 @@ describe("createChildStoreManager", () => {
       dispose()
     }
   })
+
+  test("force-disposes every child during parent teardown, including pinned children", () => {
+    const disposed: string[] = []
+    let manager: ReturnType<typeof createChildStoreManager> | undefined
+
+    const dispose = createOwner((owner) => {
+      manager = createChildStoreManager({
+        owner,
+        scope: ServerScope.local,
+        persist,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onMcp() {},
+        onDispose(directory) {
+          disposed.push(directory)
+        },
+        translate: (key) => key,
+        queryOptions: queryOptionsApi,
+      })
+    })
+
+    try {
+      if (!manager) throw new Error("manager required")
+      manager.child("/project", { bootstrap: false })
+      manager.pin("/project")
+
+      expect(manager.disposeDirectory(directoryKey("/project"))).toBe(false)
+      manager.disposeAll()
+      manager.disposeAll()
+
+      expect(manager.children["/project"]).toBeUndefined()
+      expect(disposed).toEqual(["/project"])
+    } finally {
+      dispose()
+    }
+  })
 })
 
 /**

@@ -6,7 +6,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { AgentAttachment, FileAttachment } from "@novaclaw/core/session/prompt"
-import { toLLMMessages } from "@novaclaw/core/session/runner/to-llm-message"
+import { budgetImages, freshImageCount, toLLMMessages } from "@novaclaw/core/session/runner/to-llm-message"
 import { SessionV2 } from "@novaclaw/core/session"
 import { DateTime } from "effect"
 
@@ -15,6 +15,21 @@ const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
 const model = Model.make({ id: "model", provider: "provider", route: OpenAIChat.route })
 
 describe("toLLMMessages", () => {
+  test("never elides the unanswered current image batch", () => {
+    const image = (name: string) => ({
+      type: "media" as const,
+      mediaType: "image/png",
+      data: `data:image/png;base64,${name}`,
+      filename: `${name}.png`,
+    })
+    const current = Message.make({ role: "user", content: [image("one"), image("two")] })
+
+    // The provider-facing pre-turn gate reports this batch as actionable overflow. Lowering must
+    // not turn either new image into an "opened earlier" notice before that gate can speak.
+    expect(freshImageCount([current])).toBe(2)
+    expect(budgetImages([current], 1)).toEqual([current])
+  })
+
   test("omits empty assistant turns", () => {
     const assistant = (value: string, content: SessionMessage.Assistant["content"]) =>
       SessionMessage.Assistant.make({

@@ -239,6 +239,43 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("moves an archived aggregate without rewriting user content", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const officer = AgentV2.ID.make("rekey-officer")
+      const old = yield* session.create({ location, agent: officer })
+      const text = `keep this mention of ${old.id} exactly as written`
+      yield* session.prompt({ sessionID: old.id, prompt: Prompt.make({ text }), resume: false })
+      yield* session.setArchived({ sessionID: old.id, time: 12345 })
+
+      const successor = yield* session.create({ location, agent: officer })
+      const history = (yield* session.list()).find((item) => item.id !== successor.id && item.agent === officer)
+      expect(history?.time.archived).toBeDefined()
+
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, history!.id))
+        .orderBy(asc(EventTable.seq))
+        .all()
+        .pipe(Effect.orDie)
+      const created = rows.find((row) => row.type === EventV2.versionedType(SessionRecordEvent.Created.type, 2))
+      const admitted = rows.find((row) => row.type === EventV2.versionedType(SessionEvent.PromptAdmitted.type, 1))
+
+      expect(created?.data).toMatchObject({ sessionID: history!.id, info: { id: history!.id } })
+      expect(admitted?.data).toMatchObject({ sessionID: history!.id, prompt: { text } })
+      const successorEvents = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, old.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(successorEvents).toHaveLength(1)
+      expect(successorEvents[0]?.data).toMatchObject({ sessionID: old.id, info: { id: old.id } })
+    }),
+  )
+
   it.effect("omits legacy creation rows from the V2 Session event stream", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -619,6 +656,41 @@ describe("SessionV2 setters", () => {
       const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get().pipe(Effect.orDie)
       expect(row!.time_archived).toBe(12345)
       expect(row!.time_updated).toBe(before!.time_updated)
+    }),
+  )
+
+  it.effect("restores only an officer's archived canonical root", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const officer = AgentV2.ID.make("restore-officer")
+      const created = yield* session.create({ location, agent: officer })
+      yield* session.setArchived({ sessionID: created.id, time: 12345 })
+
+      yield* session.restore({ sessionID: created.id, agent: officer })
+
+      const restored = yield* session.get(created.id)
+      expect(restored?.time.archived).toBeUndefined()
+    }),
+  )
+
+  it.effect("refuses to restore a history row or a different officer", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const officer = AgentV2.ID.make("history-officer")
+      const created = yield* session.create({ location, agent: officer })
+      yield* session.setArchived({ sessionID: created.id, time: 12345 })
+      yield* session.create({ location, agent: officer })
+
+      const archived = yield* session.list()
+      const history = archived.find((row) => row.agent === officer && row.time.archived !== undefined)
+      expect(history).toBeDefined()
+
+      const error = yield* session
+        .restore({ sessionID: history!.id, agent: officer })
+        .pipe(Effect.flip)
+      expect(error._tag).toBe("Session.RestoreUnavailableError")
+      expect((yield* session.get(history!.id))?.time.archived).toBeDefined()
+      expect((yield* session.get(SessionV2.ID.make("ses_history-officer")))?.time.archived).toBeUndefined()
     }),
   )
 

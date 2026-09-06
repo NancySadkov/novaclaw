@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 /**
- * ⚠️ `InvalidRequestError` and `QuestionNotFoundError` are RE-EXPORTS, not copies.
+ * ⚠️ `InvalidRequestError` is a re-export of the canonical error.
  *
  * This file used to declare its own versions with the same `_tag`, the same fields and the same
  * `httpApiStatus`. Both sides feed ONE OpenAPI document and Effect keys components on the
@@ -13,7 +13,7 @@ import { Schema } from "effect"
  * The classes below are the ones `@novaclaw/protocol` does NOT declare. They live here until their
  * routes move.
  */
-export { InvalidRequestError, QuestionNotFoundError } from "@novaclaw/protocol/errors"
+export { InvalidRequestError } from "@novaclaw/protocol/errors"
 
 export class McpServerNotFoundError extends Schema.TaggedErrorClass<McpServerNotFoundError>()(
   "McpServerNotFoundError",

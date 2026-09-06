@@ -19,7 +19,7 @@ import path from "node:path"
  *  · the failure is a SILENTLY abandoned turn, not an error anywhere.
  *
  * ⚠️ **The four capabilities that were already there are safe BY ACCIDENT** — `AgentV2`,
- * `PermissionV2`, `QuestionV2` and `SessionSpawner` all happen to be services the location graph
+ * `PermissionV2` and `SessionSpawner` all happen to be services the location graph
  * constructs anyway.
  * Nothing made that true and nothing kept it true, which is exactly the shape ruling 1 exists for.
  *
@@ -43,7 +43,6 @@ const LOCATION_SERVICES_SOURCE = path.join(ROOT, "packages/core/src/location-ser
 const ALREADY_IN_THE_GRAPH = new Set([
   "AgentV2", // the authoritative colleague roster, explicitly listed in `locationServices`
   "PermissionV2", // the permission service every turn asserts through
-  "QuestionV2", // the question service the ask tool uses
   "SessionSpawner", // the spawn tool's own seam, built for the session that owns the tool
 ])
 

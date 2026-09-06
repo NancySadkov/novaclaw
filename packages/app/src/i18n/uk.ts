@@ -375,7 +375,6 @@ export const dict = {
   "session.todo.collapse": "Згорнути",
   "session.todo.expand": "Розгорнути",
   "session.todo.progress": "Виконано {{done}} з {{total}} завдань",
-  "session.question.progress": "{{current}} з {{total}} запитань",
   "session.revertDock.summary.one": "{{count}} скасоване повідомлення",
   "session.revertDock.summary.other": "{{count}} скасованих повідомлень",
   "session.revertDock.collapse": "Згорнути скасовані повідомлення",

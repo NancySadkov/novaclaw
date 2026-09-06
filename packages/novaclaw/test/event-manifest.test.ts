@@ -16,8 +16,9 @@ describe("public event manifest", () => {
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("todo.updated")).toBe(SessionTodo.Event.Updated)
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
-    expect(EventManifest.Latest.has("server.connected")).toBe(true)
-    expect(EventManifest.Latest.has("global.disposed")).toBe(true)
+    // Transport envelopes belong to their streams, not to the published bus inventory.
+    expect(EventManifest.Latest.has("server.connected")).toBe(false)
+    expect(EventManifest.Latest.has("global.disposed")).toBe(false)
   })
 
   test("contains only the current step settlement versions", () => {

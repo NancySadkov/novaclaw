@@ -2,6 +2,7 @@ export * as SelfTool from "./self"
 
 import { Effect, Layer, Schema } from "effect"
 import { AgentV2 } from "../agent"
+import { Avatar } from "../agent/avatar"
 import { PermissionV2 } from "../permission"
 import { AgentWorkspace } from "../agent/workspace"
 import { makeLocationNode } from "../effect/app-node"
@@ -25,10 +26,29 @@ import { Tools } from "./tools"
 
 export const name = "self"
 
-export const description = `Look up your own configuration on this NovaClaw's roster — the model you think with, whether you keep memories, your step budget, your job title and personality, and whether you may hand work to colleagues. Call this when a question is about YOU rather than about the work: why you did or did not remember something, whether you can take on a longer task, or what you are set up to do. Your name and working folder are already in your prompt and are not repeated here.`
+export const description = `Look up your own configuration on this NovaClaw's roster — the model you think with, whether you keep memories, your step budget, your job title and personality, your portrait, and whether you may hand work to colleagues. Call this when a question is about YOU rather than about the work: why you did or did not remember something, whether you can take on a longer task, what you look like, or what you are set up to do. Your name and working folder are already in your prompt and are not repeated here.`
 
 /** No arguments: a colleague's own profile is small, and there is nothing to filter on. */
 export const Input = Schema.Struct({})
+
+const PortraitImage = Schema.Struct({
+  mime: Schema.String,
+  data: Schema.String,
+  hash: Schema.String,
+})
+
+const ModelOutput = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  personality: Schema.optional(Schema.String),
+  portrait: Schema.optional(PortraitImage),
+  portraitGlyph: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  memory: Schema.optional(Schema.String),
+  archiveChats: Schema.optional(Schema.Boolean),
+  steps: Schema.optional(Schema.Number),
+  canAddressColleagues: Schema.Boolean,
+  workingInOwnScratch: Schema.Boolean,
+})
 
 export const Output = Schema.Struct({
   title: Schema.optional(Schema.String),
@@ -41,6 +61,7 @@ export const Output = Schema.Struct({
   workingInOwnScratch: Schema.Boolean,
 })
 export type Output = typeof Output.Type
+type ModelOutput = typeof ModelOutput.Type
 
 /**
  * The lines a model reads. Prose rather than JSON: this answers a question about the agent ITSELF,
@@ -52,6 +73,9 @@ export const toModelOutput = (output: Output): string => {
   const lines: string[] = []
   if (output.title) lines.push(`Your job here: ${output.title}.`)
   if (output.personality) lines.push(`How you are meant to come across: ${output.personality}`)
+  const modelPortrait = (output as Output & { readonly portraitGlyph?: string; readonly portrait?: unknown })
+  if (modelPortrait.portraitGlyph) lines.push(`Your portrait is the glyph ${modelPortrait.portraitGlyph}.`)
+  else if (modelPortrait.portrait) lines.push("Your instance-owned portrait is attached below.")
   lines.push(
     output.model
       ? `You think with ${output.model} — the user chose it for you, and it is the same in every chat you have.`
@@ -75,6 +99,16 @@ export const toModelOutput = (output: Output): string => {
     lines.push(`You are working in your own scratch folder — the user has not pointed you at a project.`)
   return lines.join("\n")
 }
+
+export const toModelContent = (output: ModelOutput) => [
+  {
+    type: "text" as const,
+    text: toModelOutput(output),
+  },
+  ...(output.portrait === undefined
+    ? []
+    : [{ type: "file" as const, data: output.portrait.data, mime: output.portrait.mime, name: "your-portrait" }]),
+]
 
 /**
  * May this colleague address ANY of its colleagues right now?
@@ -127,8 +161,13 @@ export const layer = Layer.effectDiscard(
       [name]: Tool.make({
         description,
         input: Input,
-        output: Output,
-        toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+        output: ModelOutput,
+        structured: Output,
+        toStructuredOutput: ({ output }) => {
+          const { portrait: _portrait, portraitGlyph: _portraitGlyph, ...structured } = output
+          return structured
+        },
+        toModelOutput: ({ output }) => toModelContent(output),
         // Read through to the LIVE roster on every call (ruling 3): a colleague reconfigured mid-chat
         // must answer with what it is now, not with a snapshot taken when the tool was registered.
         // That is the whole point — the user edits the dialog and the agent is not otherwise told.
@@ -145,6 +184,7 @@ export const layer = Layer.effectDiscard(
             const record = own as unknown as Record<string, unknown>
             const model = own.model ? `${own.model.providerID}/${own.model.id}` : undefined
             const text = (key: string) => (typeof record[key] === "string" ? (record[key] as string) : undefined)
+            const portrait = yield* Effect.promise(() => Avatar.portrait(id, text("avatar"), text("name")))
             return {
               ...(text("title") === undefined ? {} : { title: text("title")! }),
               ...(text("personality") === undefined ? {} : { personality: text("personality")! }),
@@ -152,6 +192,17 @@ export const layer = Layer.effectDiscard(
               ...(text("memory") === undefined ? {} : { memory: text("memory")! }),
               ...(typeof record["archiveChats"] === "boolean" ? { archiveChats: record["archiveChats"] } : {}),
               ...(typeof record["steps"] === "number" ? { steps: record["steps"] } : {}),
+              ...(portrait.kind === "glyph"
+                ? { portraitGlyph: portrait.text }
+                : portrait.kind === "placeholder"
+                  ? { portraitGlyph: `server-owned placeholder portrait marked ${Avatar.placeholderLabel(id, text("name"))}` }
+                  : {
+                      portrait: {
+                        mime: portrait.mime,
+                        data: Buffer.from(portrait.bytes).toString("base64"),
+                        hash: portrait.hash,
+                      },
+                    }),
               // Read from the RULESET rather than from the agent's id: "may this colleague delegate"
               // is a permission question, and answering it from a name would go stale the moment the
               // floor changes (it did, twice, on 2026-08-21).

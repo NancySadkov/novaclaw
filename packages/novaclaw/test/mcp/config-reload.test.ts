@@ -144,7 +144,9 @@ describe("B7 tier-3 — a config write reconciles MCP instead of rebuilding it",
     () =>
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
-        // Boot the state: `keep` connects.
+        // Boot the state without materializing optional integrations; a tool request connects it.
+        expect(statusOf(yield* mcp.status(), "keep")).toBe("idle")
+        yield* mcp.tools()
         expect(statusOf(yield* mcp.status(), "keep")).toBe("connected")
         const keepClient = (yield* mcp.clients())["keep"]
         expect(keepClient).toBeDefined()
@@ -157,7 +159,7 @@ describe("B7 tier-3 — a config write reconciles MCP instead of rebuilding it",
         expect(MCP.reconcileStats().run).toBe(runs + 1)
 
         const statuses = yield* mcp.status()
-        expect(statusOf(statuses, "added")).toBe("connected")
+        expect(statusOf(statuses, "added")).toBe("idle")
         expect(statusOf(statuses, "keep")).toBe("connected")
 
         // 🔴 THE INVARIANT: identity, not just status. A rebuild would answer "connected" too —
@@ -165,11 +167,13 @@ describe("B7 tier-3 — a config write reconciles MCP instead of rebuilding it",
         expect((yield* mcp.clients())["keep"]).toBe(keepClient)
         expect(clientClosed).toEqual([])
         expect(transportClosed).toEqual([])
-        // Exactly ONE new client: the added server. A rebuild would have re-created `keep` as well.
-        expect(clientCreateCount).toBe(createdAtBoot + 1)
+        // No client is created by the config write itself; the added server is materialized on
+        // first use below. A rebuild would have re-created `keep` during the write.
+        expect(clientCreateCount).toBe(createdAtBoot)
 
-        // The added server's tools are live without a restart.
+        // The added server is materialized on first tool use, without a restart.
         expect(Object.keys(yield* mcp.tools())).toContain("added_added-tool")
+        expect(clientCreateCount).toBe(createdAtBoot + 1)
       }),
     { config: { mcp: { servers: { keep: server("keep") } } } },
   )
@@ -179,6 +183,8 @@ describe("B7 tier-3 — a config write reconciles MCP instead of rebuilding it",
     () =>
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
+        expect(statusOf(yield* mcp.status(), "edit")).toBe("idle")
+        yield* mcp.tools()
         expect(statusOf(yield* mcp.status(), "edit")).toBe("connected")
         const first = (yield* mcp.clients())["edit"]
 
@@ -202,6 +208,8 @@ describe("B7 tier-3 — a config write reconciles MCP instead of rebuilding it",
     () =>
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
+        expect(statusOf(yield* mcp.status(), "gone")).toBe("idle")
+        yield* mcp.tools()
         expect(statusOf(yield* mcp.status(), "gone")).toBe("connected")
 
         // A PATCH is a merge and cannot delete a key, so the removal is staged in the store the way a

@@ -27,7 +27,6 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
-import { Question } from "@novaclaw/schema/question"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
@@ -463,11 +462,11 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
   return (
     <Switch>
       <Match when={props.message.type === "user" && props.message}>
-         {(m) => (
-           <Show
-             when={!isSteerText(m().text)}
-             fallback={<SteerMessage text={stripSteerProvenance(m().text)} cacheKey={`${m().id}:steer`} />}
-           >
+        {(m) => (
+          <Show
+            when={!isSteerText(m().text)}
+            fallback={<SteerMessage text={stripSteerProvenance(m().text)} cacheKey={`${m().id}:steer`} />}
+          >
             <UserMessage message={m()} />
           </Show>
         )}
@@ -476,22 +475,22 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
         {(m) => <AssistantMessage message={m()} developer={props.developer} liveTiming={props.liveTiming} />}
       </Match>
       <Match when={props.message.type === "shell" && props.message}>{(m) => <ShellMessage message={m()} />}</Match>
-       <Match when={props.message.type === "system" && props.message}>
-         {(m) => <NoticeMessage kind="system" text={m().text} messageID={m().id} />}
+      <Match when={props.message.type === "system" && props.message}>
+        {(m) => <NoticeMessage kind="system" text={m().text} messageID={m().id} />}
       </Match>
       <Match when={props.message.type === "synthetic" && props.message}>
         {(m) => {
           const message = m() as SessionMessageSynthetic
-           if (isSteerText(message.text))
-             return <SteerMessage text={stripSteerProvenance(message.text)} cacheKey={`${message.id}:steer`} />
-           return (
-             <NoticeMessage
-               kind="synthetic"
-               text={message.text}
-               messageID={message.id}
-               sessionID={message.sessionID}
-               repair={message.repair}
-             />
+          if (isSteerText(message.text))
+            return <SteerMessage text={stripSteerProvenance(message.text)} cacheKey={`${message.id}:steer`} />
+          return (
+            <NoticeMessage
+              kind="synthetic"
+              text={message.text}
+              messageID={message.id}
+              sessionID={message.sessionID}
+              repair={message.repair}
+            />
           )
         }}
       </Match>
@@ -557,7 +556,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
           )}
         </Show>
         <Show when={props.message.text.trim()}>
-           <Markdown text={props.message.text} cacheKey={props.message.id} />
+          <Markdown text={props.message.text} cacheKey={props.message.id} />
         </Show>
         <Show when={props.message.files?.length || props.message.agents?.length}>
           <div data-slot="native-user-attachments">
@@ -715,7 +714,7 @@ function AssistantMessage(props: {
                     p().text.trim() && !(props.liveTiming && !props.message.time.completed) && !receiptHoldsReasoning()
                   }
                 >
-                 <ReasoningPart part={p()} tokens={reasoningTokens()} cacheKey={`${props.message.id}:${p().id}`} />
+                  <ReasoningPart part={p()} tokens={reasoningTokens()} cacheKey={`${props.message.id}:${p().id}`} />
                 </Show>
               )}
             </Match>
@@ -724,8 +723,8 @@ function AssistantMessage(props: {
         )}
       </For>
       <Show when={showReceipt() && ((working() && !props.liveTiming) || props.message.timing)}>
-         <TurnReceipt
-           messageID={props.message.id}
+        <TurnReceipt
+          messageID={props.message.id}
           timing={props.message.timing}
           live={working() && !props.liveTiming}
           developer={props.developer}
@@ -916,20 +915,20 @@ function TurnReceipt(props: {
             <Show when={props.reasoning}>
               {(text) => (
                 <div data-slot="native-turn-reasoning">
-                   <Markdown text={text()} cacheKey={props.messageID ? `${props.messageID}:reasoning` : undefined} />
+                  <Markdown text={text()} cacheKey={props.messageID ? `${props.messageID}:reasoning` : undefined} />
                 </div>
               )}
             </Show>
             <Show when={props.reasoningParts?.length}>
               <div data-slot="native-turn-reasoning-parts">
                 <For each={props.reasoningParts}>
-                   {(part) => (
-                     <ReasoningPart
-                       part={part}
-                       tokens={props.reasoningTokens}
-                       cacheKey={props.messageID ? `${props.messageID}:reasoning:${part.id}` : undefined}
-                     />
-                   )}
+                  {(part) => (
+                    <ReasoningPart
+                      part={part}
+                      tokens={props.reasoningTokens}
+                      cacheKey={props.messageID ? `${props.messageID}:reasoning:${part.id}` : undefined}
+                    />
+                  )}
                 </For>
               </div>
             </Show>
@@ -1054,11 +1053,7 @@ function FaultCard(props: {
  * even with the fold closed (a frozen counter = stalled), and opening it mid-stream shows the
  * text arriving — so a user can check the model isn't looping without waiting for the answer.
  */
-function ReasoningPart(props: {
-  part: SessionMessageAssistantReasoning
-  tokens?: number
-  cacheKey?: string
-}) {
+function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?: number; cacheKey?: string }) {
   const i18n = useI18n()
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
@@ -1119,9 +1114,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
       <Match when={props.part.name === "todowrite"}>
         <TodoTool part={props.part} />
       </Match>
-      <Match when={props.part.name === "question"}>
-        <QuestionV2Tool part={props.part} />
-      </Match>
+
       <Match when={props.part.name !== "bash" && props.part.state.status === "error" && props.part.state}>
         {(state) => (
           <ToolErrorCardV2
@@ -1223,64 +1216,6 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
   )
 }
 
-/**
- * `question` → the ask-card. The interactive ask lives in a dialog (S6), so the
- * transcript only shows the resolved outcome: the answered Q&A, or a subtle
- * "dismissed" notice on rejection — pending/running asks are hidden (V1 parity).
- */
-function QuestionV2Tool(props: { part: SessionMessageAssistantTool }) {
-  const i18n = useI18n()
-  const state = () => props.part.state
-  const questions = () => {
-    const raw = toolInput(state()).questions
-    return Array.isArray(raw) ? (raw as Array<{ question?: string }>) : []
-  }
-  const answers = () => {
-    const s = state()
-    if (s.status !== "completed") return []
-    const raw = (s.structured as { answers?: unknown }).answers
-    return Array.isArray(raw) ? (raw as string[][]) : []
-  }
-  const answered = () => answers().length > 0
-  // Decided on the ONE definition of the sentence core writes into the row, not on a local regex
-  // that had to guess it from two packages away. `includes`, not `===`: the runner may wrap a tool's
-  // failure in its own prefix, and the sentence is the part that means "dismissed".
-  const dismissed = () =>
-    state().status === "error" && (toolErrorMessage(state()) ?? "").includes(Question.DISMISSED_MESSAGE)
-
-  return (
-    <Switch>
-      <Match when={dismissed()}>
-        <div data-slot="native-question-dismissed">{i18n.t("ui.transcript.questions.dismissed")}</div>
-      </Match>
-      <Match when={state().status !== "pending" && state().status !== "running"}>
-        <BasicToolV2
-          data-slot="native-tool"
-          status={state().status}
-          defaultOpen={answered()}
-          trigger={{
-            title: i18n.t("ui.transcript.questions"),
-            subtitle: questionSubtitle(i18n, questions().length, answered()),
-          }}
-        >
-          <div data-slot="native-question-answers">
-            <For each={questions()}>
-              {(q, i) => (
-                <div data-slot="native-question-item">
-                  <div data-slot="native-question-text">{q.question}</div>
-                  <div data-slot="native-answer-text">
-                    {(answers()[i()] ?? []).join(", ") || i18n.t("ui.transcript.questions.noAnswer")}
-                  </div>
-                </div>
-              )}
-            </For>
-          </div>
-        </BasicToolV2>
-      </Match>
-    </Switch>
-  )
-}
-
 /** Tool-card body: a real unified diff for file edits, else input args + textual output. */
 function ToolBody(props: { part: SessionMessageAssistantTool }) {
   const output = () => {
@@ -1371,7 +1306,7 @@ function NoticeMessage(props: {
           "font-size": "0.85rem",
         }}
       >
-         <Markdown text={props.text} cacheKey={props.messageID} />
+        <Markdown text={props.text} cacheKey={props.messageID} />
         <Show when={props.repair?.type === "unpin-device" && actions().onUnpinDevice}>
           <button
             type="button"
@@ -1401,7 +1336,7 @@ function NoticeMessage(props: {
     <details data-slot="native-notice" data-kind="system">
       <summary>{i18n.t("ui.transcript.context")}</summary>
       <div data-slot="native-notice-body">
-         <Markdown text={props.text} cacheKey={props.messageID} />
+        <Markdown text={props.text} cacheKey={props.messageID} />
       </div>
     </details>
   )
@@ -1453,7 +1388,7 @@ function CompactionMessage(props: { message: SessionMessageCompaction }) {
       <details data-slot="native-notice">
         <summary>{i18n.t("ui.transcript.summary")}</summary>
         <div data-slot="native-notice-body">
-         <Markdown text={props.message.summary} cacheKey={`${props.message.id}:summary`} />
+          <Markdown text={props.message.summary} cacheKey={`${props.message.id}:summary`} />
         </div>
       </details>
     </div>
@@ -1514,8 +1449,6 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
         subtitle: files ? i18n.plural("ui.transcript.tool.patch.files", files) : undefined,
       }
     }
-    case "question":
-      return { title: i18n.t("ui.transcript.tool.question") }
     // The agent turning aside to talk to ANOTHER agent — see `colleague-row.ts`, which holds the
     // rule and the test that runs it (this file cannot be imported by `bun test`).
     case "colleague":
@@ -1529,22 +1462,6 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
 
 function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, unknown> {
   return state.status === "pending" ? {} : ((state.input ?? {}) as Record<string, unknown>)
-}
-
-/**
- * The RAW message, for semantic predicates only (today: "was this question dismissed?"). Display
- * text comes from `sessionErrorDisplay` + `useFaultText` — matching on a headline would break the
- * moment that headline is translated, which is exactly the trap `isInterrupted` used to sit in,
- * and as of 2026-07-30 the headline IS translated, so the warning is now load-bearing.
- */
-function toolErrorMessage(state: SessionMessageAssistantTool["state"]): string | undefined {
-  return state.status === "error" ? state.error.message : undefined
-}
-
-function questionSubtitle(i18n: UiI18n, count: number, answered: boolean): string | undefined {
-  if (count === 0) return undefined
-  if (answered) return i18n.t("ui.transcript.questions.answered")
-  return i18n.plural("ui.transcript.questions.count", count)
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */

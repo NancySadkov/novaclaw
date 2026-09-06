@@ -495,7 +495,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "جاري إنشاء مستودع Git...",
   "session.review.noVcs.createGit.action": "إنشاء مستودع Git",
   "session.todo.progress": "تم إكمال {{done}} من {{total}} مهام",
-  "session.question.progress": "{{current}} من {{total}} أسئلة",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "مستكشف الملفات",
   "session.header.open.fileManager": "مدير الملفات",

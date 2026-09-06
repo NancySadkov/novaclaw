@@ -28,6 +28,12 @@ describe("McpHealthContext.lines", () => {
     expect(McpHealthContext.lines([{ name: "searxng", status: { status: "disabled" } }])).toEqual([])
   })
 
+  test("an enabled but not-yet-materialized server is not a fault", () => {
+    // Optional MCP integrations are passive at boot. `idle` means the configured capability is
+    // waiting for a tool request or explicit connect action, not that it failed.
+    expect(McpHealthContext.lines([{ name: "searxng", status: { status: "idle" } }])).toEqual([])
+  })
+
   test("a failed server names ITSELF and its fault, and points at the repair", () => {
     const lines = McpHealthContext.lines([{ name: "searxng", status: { status: "failed", error: "spawn npx ENOENT" } }])
     expect(lines).toEqual([

@@ -18,6 +18,9 @@ export function host(overrides: Overrides = {}): PluginContext {
       transform: () => Effect.die("unused agent.transform"),
       reload: () => Effect.die("unused agent.reload"),
     },
+    app: overrides.app ?? {
+      declare: () => Effect.succeed({ dispose: Effect.void }),
+    },
     catalog: overrides.catalog ?? {
       declare: () => Effect.die("unused catalog.declare"),
       transform: () => Effect.die("unused catalog.transform"),

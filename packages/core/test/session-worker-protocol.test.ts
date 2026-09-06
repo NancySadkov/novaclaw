@@ -121,7 +121,7 @@ describe("SessionWorkerProtocol", () => {
     ).toEqual({ ok: true, message: maintenanceRelease })
   })
 
-  test("round-trips host-owned permission and question waits", () => {
+  test("round-trips permission assertions and rejects the retired question sideband", () => {
     const permission = {
       ...identity,
       type: "permission-assert" as const,
@@ -149,13 +149,10 @@ describe("SessionWorkerProtocol", () => {
       requestID: "rpc_question",
       input: {
         sessionID: identity.sessionID,
-        questions: [{ header: "Proceed", question: "Continue?", options: [{ label: "Yes", description: "Continue" }] }],
+        questions: [{ header: "Proceed", options: [{ label: "Yes", description: "Continue" }] }],
       },
     }
-    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(question).trimEnd())).toEqual({
-      ok: true,
-      message: question,
-    })
+    expect(SessionWorkerProtocol.decodeWorkerLine(JSON.stringify(question))).toMatchObject({ ok: false })
     const answered = {
       ...identity,
       type: "question-result" as const,
@@ -163,10 +160,7 @@ describe("SessionWorkerProtocol", () => {
       outcome: "answered" as const,
       answers: [["Yes"]],
     }
-    expect(SessionWorkerProtocol.decodeHostLine(SessionWorkerProtocol.encodeLine(answered).trimEnd())).toEqual({
-      ok: true,
-      message: answered,
-    })
+    expect(SessionWorkerProtocol.decodeHostLine(JSON.stringify(answered))).toMatchObject({ ok: false })
   })
 
   test("round-trips a spawned child's control binding", () => {

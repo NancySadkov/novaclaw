@@ -11,7 +11,9 @@ import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionTable, TodoTable } from "@novaclaw/core/session/sql"
+import { moveArchivedToHistory } from "@novaclaw/core/session/rekey"
+import { EventSequenceTable, EventTable } from "@novaclaw/core/event/sql"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -94,6 +96,68 @@ const rootsFor = (db: Database.Interface["db"], agent: string) =>
     )
 
 describe("one chat per colleague", () => {
+  it.effect("archived identity moves preserve references and arbitrary user content without creating a row", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      const oldID = SessionSchema.ID.make("ses_archive_move")
+      const historyID = SessionSchema.ID.make("ses_archive_history")
+      yield* seedChat(d.db, { id: oldID, agent: "archive_move", archived: 5 })
+      yield* seedChat(d.db, { id: "ses_archive_child", parent: oldID })
+      yield* d.db
+        .insert(TodoTable)
+        .values({
+          session_id: oldID,
+          content: "Keep this task",
+          status: "pending",
+          priority: "medium",
+          position: 0,
+          time_created: 1,
+          time_updated: 1,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const content = { sessionID: oldID, info: { id: oldID }, text: `Keep ${oldID} verbatim` }
+      yield* d.db.insert(EventSequenceTable).values({ aggregate_id: oldID, seq: 1 }).run().pipe(Effect.orDie)
+      yield* d.db
+        .insert(EventTable)
+        .values({
+          id: EventV2.ID.create(),
+          aggregate_id: oldID,
+          seq: 1,
+          type: "session.created.2",
+          data: { sessionID: oldID, info: { id: oldID, metadata: content }, openingPrompt: content },
+        })
+        .run()
+        .pipe(Effect.orDie)
+      expect(yield* moveArchivedToHistory(d.db, oldID, historyID)).toBe(true)
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      expect(rows).toHaveLength(2)
+      expect(rows.find((row) => row.id === oldID)).toBeUndefined()
+      expect(rows.find((row) => row.id === "ses_archive_child")?.parent_id).toBe(historyID)
+      const todo = yield* d.db.select().from(TodoTable).get().pipe(Effect.orDie)
+      expect(todo?.session_id).toBe(historyID)
+      expect(todo?.content).toBe("Keep this task")
+      const event = yield* d.db.select().from(EventTable).get().pipe(Effect.orDie)
+      expect(event?.aggregate_id).toBe(historyID)
+      expect(event?.data).toEqual({
+        sessionID: historyID,
+        info: { id: historyID, metadata: content },
+        openingPrompt: content,
+      })
+    }),
+  )
+
+  it.effect("a live session cannot be moved through the archived-history seam", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      const liveID = SessionSchema.ID.make("ses_live_move")
+      yield* seedChat(d.db, { id: liveID, agent: "live_move" })
+      expect(yield* moveArchivedToHistory(d.db, liveID, SessionSchema.ID.make("ses_live_history"))).toBe(false)
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      expect(rows.map((row) => row.id)).toEqual([liveID])
+    }),
+  )
+
   it.effect("a second create for the same colleague returns the chat it already has", () =>
     Effect.gen(function* () {
       const d = yield* deps
@@ -158,10 +222,19 @@ describe("one chat per colleague", () => {
 
       const created = yield* createSessionRecord(d, { agent: "wraith", location: { directory: here() } } as never)
 
-      expect(String(created.id)).not.toBe("ses_wraith")
+      // The archived transcript is moved aside; the live component gets the agent's canonical id
+      // back. A random successor would leave the ECS identity split and make roster routing depend
+      // on a compatibility scan.
+      expect(String(created.id)).toBe("ses_wraith")
       expect(created.time.archived).toBeUndefined()
       const roots = yield* rootsFor(d.db, "wraith")
       expect(roots.length).toBe(1)
+      const history = yield* d.db
+        .select({ id: SessionTable.id, archived: SessionTable.time_archived })
+        .from(SessionTable)
+        .all()
+        .pipe(Effect.orDie)
+      expect(history.some((row) => row.id !== "ses_wraith" && row.archived === 5)).toBe(true)
     }),
   )
 

@@ -12,6 +12,7 @@ import type { Reload } from "./registration.js"
 import type { Declarative } from "./declaration.js"
 import type { CommandV2Info } from "./command.js"
 import type { AgentV2Info } from "@novaclaw/sdk/v2/types"
+import type { AppHooks } from "./app.js"
 
 /**
  * 🔴 **What an EXTERNAL plugin is handed. The five CONTRIBUTABLE facets are declarative only.**
@@ -38,6 +39,7 @@ import type { AgentV2Info } from "@novaclaw/sdk/v2/types"
 export interface PluginContext {
   readonly options: PluginOptions
   readonly agent: Declarative<AgentV2Info> & Reload
+  readonly app: AppHooks
   readonly catalog: Pick<CatalogHooks, "declare"> & Reload
   readonly command: Declarative<CommandV2Info> & Reload
   readonly event: EventHooks

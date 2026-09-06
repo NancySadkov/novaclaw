@@ -2,7 +2,6 @@ export * as SessionWorkerInteractionBridge from "./interaction-bridge"
 
 import { Cause, Effect, Exit, Schema } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
@@ -11,17 +10,12 @@ import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-a
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-request" }
+  { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
   {
-    readonly type:
-      | "permission-result"
-      | "question-result"
-      | "spawn-result"
-      | "await-child-result"
-      | "colleague-result"
+    readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result"
   }
 >
 
@@ -33,11 +27,9 @@ const identity = (message: Request) => ({
   requestID: message.requestID,
 })
 
-/** Permission and question pending maps remain location-owned in the host. The worker blocks only
- * on this RPC response; user replies continue to reach the one authoritative host service. */
+/** Permission decisions and child operations execute in the authoritative host services. */
 export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(function* (input: {
   readonly permission: PermissionV2.Interface
-  readonly question: QuestionV2.Interface
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
@@ -48,12 +40,10 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
     input.message.type === "colleague-request"
       ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
       : input.message.type === "await-child"
-      ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
-      : input.message.type === "spawn-child"
-        ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
-        : input.message.type === "permission-assert"
-          ? ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
-          : ({ ...identity(input.message), type: "question-result" as const, outcome: "rejected" as const } as Reply)
+        ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
+        : input.message.type === "spawn-child"
+          ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
+          : ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
   if (!SessionWorkerProtocol.owns(input.lease, input.message)) return reject()
 
   /**
@@ -212,24 +202,6 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   // lease. `spawn-child` and `colleague-ask` deliberately have no such field — that is why they are
   // handled above.
   if (input.message.input.sessionID !== input.lease.sessionID) return reject()
-
-  if (input.message.type === "question-ask") {
-    const asked = yield* input.question
-      .ask({
-        sessionID: input.lease.sessionID,
-        questions: input.message.input.questions,
-        ...(input.message.input.tool === undefined ? {} : { tool: input.message.input.tool }),
-      })
-      .pipe(Effect.exit)
-    return Exit.isSuccess(asked)
-      ? {
-          ...identity(input.message),
-          type: "question-result" as const,
-          outcome: "answered" as const,
-          answers: asked.value,
-        }
-      : { ...identity(input.message), type: "question-result" as const, outcome: "rejected" as const }
-  }
 
   let asserted: PermissionV2.AssertInput
   try {

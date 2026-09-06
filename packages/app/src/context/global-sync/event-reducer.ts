@@ -1,26 +1,13 @@
 import { Binary } from "@novaclaw/core/util/binary"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
-import type {
-  QuestionV2Request,
-  SessionV2Info as Session,
-  SessionStatus,
-  SessionChangeDiff,
-  Todo,
-} from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session, SessionStatus, SessionChangeDiff, Todo } from "@novaclaw/sdk/v2/client"
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list } from "@/utils/diffs"
 import { normalizeSessionTimes } from "@/utils/session-time"
 
-const SESSION_CONTENT_EVENTS = new Set([
-  "session.diff",
-  "todo.updated",
-  "session.status",
-  "question.v2.asked",
-  "question.v2.replied",
-  "question.v2.rejected",
-])
+const SESSION_CONTENT_EVENTS = new Set(["session.diff", "todo.updated", "session.status"])
 
 export function applyGlobalEvent(input: { event: { type: string; properties?: unknown }; refresh: () => void }) {
   if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
@@ -52,7 +39,6 @@ export function cleanupDroppedSessionCaches(
   const stale = [
     ...Object.keys(store.session_diff),
     ...Object.keys(store.todo),
-    ...Object.keys(store.question),
     ...Object.keys(store.session_status),
   ].filter((sessionID, index, list) => !keep.has(sessionID) && list.indexOf(sessionID) === index)
   if (stale.length === 0) return
@@ -199,43 +185,6 @@ export function applyDirectoryEvent(input: {
       const next = { ...input.store.vcs, branch: props.branch }
       input.setStore("vcs", next)
       if (input.vcsCache) input.vcsCache.setStore("value", next)
-      break
-    }
-    case "question.v2.asked": {
-      const question = event.properties as QuestionV2Request
-      const questions = input.store.question[question.sessionID]
-      if (!questions) {
-        input.setStore("question", question.sessionID, [question])
-        break
-      }
-      const result = Binary.search(questions, question.id, (q) => q.id)
-      if (result.found) {
-        input.setStore("question", question.sessionID, result.index, reconcile(question))
-        break
-      }
-      input.setStore(
-        "question",
-        question.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 0, question)
-        }),
-      )
-      break
-    }
-    case "question.v2.replied":
-    case "question.v2.rejected": {
-      const props = event.properties as { sessionID: string; requestID: string }
-      const questions = input.store.question[props.sessionID]
-      if (!questions) break
-      const result = Binary.search(questions, props.requestID, (q) => q.id)
-      if (!result.found) break
-      input.setStore(
-        "question",
-        props.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 1)
-        }),
-      )
       break
     }
   }

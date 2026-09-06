@@ -106,6 +106,20 @@ export class ModelInputUnsupportedError extends Schema.TaggedErrorClass<ModelInp
   }
 }
 
+export class ImageBatchTooLargeError extends Schema.TaggedErrorClass<ImageBatchTooLargeError>()(
+  "SessionRunnerModel.ImageBatchTooLargeError",
+  {
+    providerID: ProviderV2.ID,
+    modelID: ModelV2.ID,
+    count: Schema.Int,
+    limit: Schema.Int,
+  },
+) {
+  override get message() {
+    return `\`${this.providerID}/${this.modelID}\` accepts at most ${this.limit} images in one request, but this message has ${this.count}. Send a smaller batch; earlier images remain available in the chat.`
+  }
+}
+
 export class UnsupportedApiError extends Schema.TaggedErrorClass<UnsupportedApiError>()(
   "SessionRunnerModel.UnsupportedApiError",
   {
@@ -141,6 +155,7 @@ export type Error =
   | VariantUnavailableError
   | UnsupportedApiError
   | ModelInputUnsupportedError
+  | ImageBatchTooLargeError
   | DevicePinError
   | LocalModelManager.UnavailableError
   | Integration.AuthorizationError

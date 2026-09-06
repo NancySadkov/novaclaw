@@ -18,12 +18,15 @@ import {
   type Gate,
   type Host,
   ID_SHAPE,
+  intakeReady,
   normalizeFrames,
   preview,
   status,
   refusals,
   releaseLine,
   report,
+  probe,
+  resetIntakeProbe,
   resetRepeats,
   resolveGate,
   send,
@@ -85,7 +88,10 @@ const STACK = [
   `    at processTicksAndRejections (node:internal/process/task_queues:95:5)`,
 ].join("\n")
 
-beforeEach(() => resetRepeats())
+beforeEach(() => {
+  resetRepeats()
+  resetIntakeProbe()
+})
 
 // ── 0. the sweep reached something ──────────────────────────────────────────────────────────────
 
@@ -794,8 +800,9 @@ describe("the disclosure is built by the send path", () => {
       host: HOST,
     })
     expect(got.gate).toEqual({ consent: false, airgap: true })
-    expect(got.endpointConfigured).toBe(false)
-    expect(got.refusals).toEqual(["consent_off", "airgap", "no_endpoint"])
+    expect(got.endpointConfigured).toBe(true)
+    expect(got.ready).toBe(false)
+    expect(got.refusals).toEqual(["consent_off", "airgap"])
     expect(got.payloadPreview?.signature).toMatchObject({
       plane: "server",
       kind: "TelemetryPreview",
@@ -807,6 +814,31 @@ describe("the disclosure is built by the send path", () => {
       true,
     )
     expect(got.disclosure).toEqual(disclosure())
+  })
+})
+
+describe("collector readiness", () => {
+  test("promotes only the endpoint that accepts the end-to-end probe", async () => {
+    const sink: { body?: string } = {}
+    const client = (status: number) =>
+      Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) => {
+          const body = request.body as { readonly _tag: string; readonly body?: unknown }
+          sink.body = body._tag === "Uint8Array" ? new TextDecoder().decode(body.body as Uint8Array) : JSON.stringify(body.body)
+          return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status })))
+        }),
+      )
+
+    expect(intakeReady(ENDPOINT)).toBe(false)
+    expect(await Effect.runPromise(probe(ENDPOINT).pipe(Effect.provide(client(204))))).toBe(true)
+    expect(intakeReady(ENDPOINT)).toBe(true)
+    expect(sink.body).toBe(JSON.stringify({ probe: "novaclaw-crash-intake" }))
+
+    const other = "https://telemetry.other.invalid/crash"
+    expect(await Effect.runPromise(probe(other).pipe(Effect.provide(client(503))))).toBe(false)
+    expect(intakeReady(other)).toBe(false)
+    expect(intakeReady(ENDPOINT)).toBe(true)
   })
 })
 

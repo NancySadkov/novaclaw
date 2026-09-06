@@ -558,7 +558,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Oppretter Git-depot...",
   "session.review.noVcs.createGit.action": "Opprett Git-depot",
   "session.todo.progress": "{{done}} av {{total}} oppgaver fullført",
-  "session.question.progress": "{{current}} av {{total}} spørsmål",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Filutforsker",
   "session.header.open.fileManager": "Filbehandler",

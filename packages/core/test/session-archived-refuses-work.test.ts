@@ -53,19 +53,23 @@ describe("a prompt aimed at an archived session", () => {
       const sessions = yield* SessionV2.Service
       const filed = yield* sessions.create({ location, agent: colleague, title: "before the move" })
       yield* sessions.setArchived({ sessionID: filed.id, time: Date.now() })
-      // Reassignment's successor: the canonical seat is held by the predecessor, so this takes a
-      // generated id — which is exactly why the refusal has to NAME it.
+      // The returning colleague reclaims its canonical id; the archived transcript gets a history id.
       const successor = yield* sessions.create({ location, agent: colleague, title: "after the move" })
+      const history = (yield* sessions.list({ directory: location.directory })).find(
+        (session) => session.title === "before the move",
+      )
+      expect(history?.time.archived).toBeDefined()
+      expect(history?.id).not.toBe(successor.id)
 
       const outcome = yield* sessions
-        .prompt({ sessionID: filed.id, prompt: { text: "write hello.c here" } })
+        .prompt({ sessionID: history!.id, prompt: { text: "write hello.c here" } })
         .pipe(Effect.exit)
 
       expect(Exit.isFailure(outcome)).toBe(true)
       const error = Exit.isFailure(outcome) ? Option.getOrUndefined(Cause.findErrorOption(outcome.cause)) : undefined
       expect((error as { _tag?: string })?._tag).toBe("Session.ArchivedError")
       const archived = error as SessionV2.SessionArchivedError
-      expect(archived.sessionID).toBe(filed.id)
+      expect(archived.sessionID).toBe(history!.id)
       // The remedy, not just the refusal: every caller that can retry can retry there.
       expect(archived.successorID).toBe(successor.id)
     }),

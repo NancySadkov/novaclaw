@@ -1,13 +1,14 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `counts` = tests Bun reported completed per run unit; `failing` = failures PINNED as known, by name. All three are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Counts seeded from the 2026-09-04 fast tier after the worker framing and dependency-ledger fixes.",
   "reasons": {
-    "core": "11 as of 2026-09-04, RAISED from 9 — the two reifying `npm` tests (`Npm.add`, `Npm.install`) are `describe.skip` by owner ruling: \"just disable this test completely, since we are local for now\". They complete a REAL package install, so on a machine that cannot reach a registry they hang to their budget and take the whole unit red; it had been red on most runs for a week and was being narrated around rather than read. ⚠️ A RAISED skip count is the direction this ratchet exists to catch, so it is owed more than a number: what is now uncovered is `Npm.add`'s cache-directory-exists reify branch and `Npm.install`'s `.npmrc` omit handling, the capability is LIVE (`Npm.which` resolves prettier/oxfmt/biome on the formatter path), and re-enabling them means making `reify` complete offline for a `file:` spec rather than raising a timeout — the budget note in that file already tried that and its number was an order of magnitude short. Filed as SW-07.",
+    "core": "9 as of 2026-09-05: eight Windows PTY cases and one symlink watcher case. Commit 323345771 re-enabled the two offline file-fixture npm cases, but left the old eleven-skip pin. Core count measured 7474 in two shards, plus two verified archived-identity tests; five question tests removed, with additions from the concurrent avatar, memory, telemetry and session work.",
     "llm": "28 as of 2026-09-01, lowered from 29. The refactor sweep deleted the unused provider surface and its tests (`test/exports.test.ts`, `test/provider/cloudflare.test.ts`, `test/provider/openrouter.test.ts` and others); one of those files carried a skipped test, so the skip left with the file it lived in. A skip count that drops because tests were REMOVED is a ratchet working, not a regression — but it is lowered deliberately and in the same commit, never left to drift.",
-    "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true."
+    "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true.",
+    "novaclaw test/*": "Full release tier measured 780 on 2026-09-06, plus the metadata queue regression. Separate CLI/MCP leaves are excluded from this aggregate by the runner and counted under their own unit names."
   },
   "units": {
     "llm": 28,
-    "core": 11,
+    "core": 9,
     "novaclaw:server": 7,
     "novaclaw:v2": 3,
     "schema": 0,
@@ -35,20 +36,24 @@
     "llm": 496,
     "host": 11,
     "sdk-js": 46,
-    "session-ui": 187,
+    "session-ui": 190,
     "ui": 66,
-    "core": 7439,
-    "app:unit": 2002,
+    "core": 7488,
+    "app:unit": 2015,
     "app:browser": 258,
     "desktop": 218,
     "server": 115,
     "novaclaw:server": 474,
     "novaclaw:v2": 7,
-    "novaclaw:config": 126,
+    "novaclaw:config": 127,
     "novaclaw:tool": 43,
     "novaclaw:control-plane": 21,
     "novaclaw:fixture": 32,
-    "novaclaw:cli-contract": 2
+    "novaclaw:cli-contract": 2,
+    "novaclaw test/*": 781,
+    "novaclaw test/cli/lazy-command.test.ts": 3,
+    "novaclaw test/cli/run/run-process.test.ts": 15,
+    "novaclaw test/mcp/config-reload.test.ts": 4
   },
   "failing": {
     "novaclaw:server": []

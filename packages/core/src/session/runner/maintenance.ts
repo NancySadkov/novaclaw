@@ -8,7 +8,7 @@ import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import * as MemoryAccess from "../../kb-graph/memory-access"
 import { KbEmbedder } from "../../kb-graph/embedder"
-import { Memory } from "../../kb-graph/memory"
+import { WorldMemory } from "../../kb-graph/world-memory"
 import { MemoryClient } from "../../kb-graph/memory-client"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
@@ -137,7 +137,8 @@ export const layer = Layer.effect(
     const scheduler = yield* SessionScheduler.Service
     const llm = yield* LLMClient.Service
     const snapshots = yield* Snapshot.Service
-    const memory = Memory.client(yield* Memory.node.service)
+    // Automatic extraction belongs to the hot world model, not the user-curated/source KB.
+    const memory = WorldMemory.client(yield* WorldMemory.node.service)
 
     const maintenanceInput = (
       ownerID: SessionSchema.ID,
@@ -653,7 +654,7 @@ export const node = makeLocationNode({
     SessionRunnerModel.node,
     SessionScheduler.node,
     Snapshot.node,
-    Memory.node,
+    WorldMemory.node,
     llmClient,
   ],
 })

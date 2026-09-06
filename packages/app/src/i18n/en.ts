@@ -95,8 +95,8 @@ export const dict = {
   "notes.namePlaceholder": "note name…",
   "notes.placeholder": "Write anything — phone numbers, sites, birthdays…",
   "notes.loading": "Loading…",
-  "notes.readFailed": "Could not read this note. Try again to continue editing.",
   "notes.empty": "No notes yet",
+  "notes.readFailed": "Could not read this note. Try again to continue editing.",
   "notes.loadFailed": "Could not read your notes. This is not an empty folder — the list did not arrive.",
   "notes.saving": "Saving…",
   "notes.saved": "Saved",
@@ -565,6 +565,7 @@ export const dict = {
   // to the key itself (`i18n/resolve.ts` measures the library and states what actually happens). The
   // app's translator is key-typed now, so a sixth status cannot ship without its label.
   "mcp.status.connected": "connected",
+  "mcp.status.idle": "not connected",
   "mcp.status.failed": "failed",
   "mcp.status.needs_auth": "needs auth",
   "mcp.status.needs_client_registration": "needs a client ID",
@@ -993,7 +994,6 @@ export const dict = {
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
   "session.todo.progress": "{{done}} of {{total}} todos completed",
-  "session.question.progress": "{{current}} of {{total}} questions",
   "session.revertDock.summary.one": "{{count}} rolled back message",
   "session.revertDock.summary.other": "{{count}} rolled back messages",
   "session.revertDock.collapse": "Collapse rolled back messages",
@@ -1524,6 +1524,8 @@ export const dict = {
   "settings.general.row.telemetry.statusConsentOff": "Crash reporting is turned off on this instance.",
   "settings.general.row.telemetry.statusNoEndpoint":
     "Crash reports stay on this device because no collector is configured.",
+  "settings.general.row.telemetry.statusNotReady":
+    "Crash reporting is configured but the collector has not passed its intake check yet.",
   "settings.general.row.telemetry.statusReady":
     "Crash reporting is ready. You can inspect the exact payload before anything leaves this device.",
   "settings.general.row.telemetry.inspect": "See exactly what's shared",
@@ -2806,6 +2808,10 @@ export const dict = {
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
   "agentConfig.personality": "Personality and standing instructions",
   "agentConfig.personalityPlaceholder": "How it should speak, what it should always do, what it must never do.",
+  "agentConfig.portrait": "Portrait",
+  "agentConfig.portraitHint":
+    "Stored on this NovaClaw and shown to the model when it looks at its colleagues. PNG, JPEG, GIF or WebP, up to 5 MB.",
+  "agentConfig.portraitRemove": "Remove uploaded portrait",
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "Model it thinks with",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────

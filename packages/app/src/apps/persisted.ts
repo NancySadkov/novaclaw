@@ -16,6 +16,7 @@ export interface AppManifest {
   readonly accent?: string
   readonly subtitle?: string
   readonly open: { readonly type: "route" | "url" | "prompt"; readonly value: string }
+  readonly source?: "agent" | "plugin"
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -40,6 +41,7 @@ function isManifest(value: unknown): value is AppManifest {
   if (typeof row.title !== "string" || row.title.trim() === "") return false
   if (typeof row.createdAt !== "number" || !Number.isFinite(row.createdAt)) return false
   if (typeof row.updatedAt !== "number" || !Number.isFinite(row.updatedAt)) return false
+  if (row.source !== undefined && row.source !== "agent" && row.source !== "plugin") return false
   for (const key of ["icon", "accent", "subtitle"] as const) {
     if (row[key] !== undefined && typeof row[key] !== "string") return false
   }

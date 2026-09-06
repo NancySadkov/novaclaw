@@ -21,6 +21,56 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
       ),
   )
   .add(
+    /**
+     * The portrait bytes owned by the instance. This is a raw endpoint because an image must remain
+     * bytes all the way to the browser; putting it in the roster JSON would make every refresh carry
+     * the same base64 payload and would make the model/UI identity split again.
+     */
+    HttpApiEndpoint.get("agent.avatar.get", "/api/agent/:agentID/avatar", {
+      params: { agentID: Agent.ID },
+      success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+    })
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.agent.avatar.get",
+          summary: "Read an agent portrait",
+          description:
+            "Read the instance-owned portrait bytes for one agent. An agent without an uploaded portrait " +
+            "receives the deterministic server-owned placeholder.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.put("agent.avatar.upload", "/api/agent/:agentID/avatar", {
+      params: { agentID: Agent.ID },
+      /** The raw handler validates the media type and byte cap from the request headers/body. */
+      payload: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+      success: Schema.Struct({ hash: Schema.String, mime: Schema.String }),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.agent.avatar.upload",
+        summary: "Upload an agent portrait",
+        description:
+          "Replace one agent's instance-owned portrait with bounded PNG, JPEG, GIF or WebP bytes. " +
+          "The request must be authenticated and the bytes are stored under the instance data directory.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete("agent.avatar.delete", "/api/agent/:agentID/avatar", {
+      params: { agentID: Agent.ID },
+      success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.agent.avatar.delete",
+        summary: "Delete an agent portrait",
+        description: "Delete one agent's uploaded portrait and restore its server-owned placeholder or glyph.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("agent.usageMany", "/api/agent/usage", {
       payload: Schema.Struct({ agentIDs: Schema.Array(Agent.ID) }),
       query: LocationQuery,

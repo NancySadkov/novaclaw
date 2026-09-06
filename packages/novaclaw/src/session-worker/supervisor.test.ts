@@ -9,7 +9,6 @@ import { Effect } from "effect"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionWorkerDeviceBridge } from "./device-bridge"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
@@ -29,7 +28,13 @@ const spawnerStub: SessionSpawner.Interface = {
 test("worker line framing decodes split UTF-8 once per complete line", async () => {
   const lines: string[] = []
   await readLines(
-    Readable.from([Buffer.from("first\r"), Buffer.from("\nsecond "), Buffer.from([0xc3]), Buffer.from([0xa9, 0x0a]), Buffer.from("tail")]),
+    Readable.from([
+      Buffer.from("first\r"),
+      Buffer.from("\nsecond "),
+      Buffer.from([0xc3]),
+      Buffer.from([0xa9, 0x0a]),
+      Buffer.from("tail"),
+    ]),
     (line) => lines.push(line),
   )
   expect(lines).toEqual(["first", "second é", "tail"])
@@ -179,12 +184,7 @@ test("a waiting maintenance admission cannot block the generation release it nee
   })
 
   expect(await worker.result).toEqual({ type: "settled" })
-  expect(handled).toEqual([
-    "device-admit",
-    "device-maintenance-admit",
-    "device-release",
-    "device-maintenance-release",
-  ])
+  expect(handled).toEqual(["device-admit", "device-maintenance-admit", "device-release", "device-maintenance-release"])
   expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({
     inFlightBatch: [],
     inFlightMaintenance: [],
@@ -332,18 +332,12 @@ test("production worker handlers thread the supervisor lifetime signal into ever
   expect(source.match(/\{ signal \}/g)?.length).toBeGreaterThanOrEqual(6)
 })
 
-test("permission and question waits execute in host-owned services", async () => {
+test("permission assertions execute in host-owned services", async () => {
   const handled: string[] = []
   const permission = {
     ask: () => Effect.die("unused"),
     assert: () => Effect.void,
   } as PermissionV2.Interface
-  const question = {
-    ask: () => Effect.succeed([["Yes"]]),
-    reply: () => Effect.die("unused"),
-    reject: () => Effect.die("unused"),
-    list: () => Effect.succeed([]),
-  } as QuestionV2.Interface
   const worker = spawn({
     command: [process.execPath, fixture, "interaction"],
     lease,
@@ -356,7 +350,6 @@ test("permission and question waits execute in host-owned services", async () =>
       return Effect.runPromise(
         SessionWorkerInteractionBridge.handle({
           permission,
-          question,
           spawner: spawnerStub,
           join: joinStub,
           // Host-side hand-off is not what this case exercises — it must never run here.
@@ -373,7 +366,7 @@ test("permission and question waits execute in host-owned services", async () =>
     },
   })
   expect(await worker.result).toEqual({ type: "settled" })
-  expect(handled).toEqual(["permission-assert", "question-ask"])
+  expect(handled).toEqual(["permission-assert"])
 })
 
 test("parallel child joins begin independently instead of serializing behind the first wait", async () => {

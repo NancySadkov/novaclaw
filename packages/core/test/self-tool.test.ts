@@ -73,4 +73,25 @@ describe("the lines a colleague reads about itself", () => {
     const without = SelfTool.toModelOutput({ memory: "own", canAddressColleagues: false, workingInOwnScratch: false })
     expect(without).not.toContain("steps")
   })
+
+  test("appearance is part of the model-facing self description", () => {
+    expect(
+      SelfTool.toModelOutput({
+        portraitGlyph: "🦊",
+        memory: "own",
+        canAddressColleagues: false,
+        workingInOwnScratch: false,
+      } as never),
+    ).toContain("portrait is the glyph 🦊")
+  })
+
+  test("an uploaded portrait is a file part, while structured output can stay content-free", () => {
+    const content = SelfTool.toModelContent({
+      portrait: { mime: "image/png", data: "aW1hZ2U=", hash: "a".repeat(64) },
+      memory: "own",
+      canAddressColleagues: false,
+      workingInOwnScratch: false,
+    } as never)
+    expect(content[1]).toEqual({ type: "file", data: "aW1hZ2U=", mime: "image/png", name: "your-portrait" })
+  })
 })

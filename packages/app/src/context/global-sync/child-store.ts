@@ -114,10 +114,22 @@ export function createChildStoreManager(input: {
       return false
     }
 
+    disposeRecord(key)
+    return true
+  }
+
+  /**
+   * Parent teardown is a different operation from live eviction. Pins and in-flight work protect
+   * a directory from being discarded while this manager is alive; they cannot keep a child root
+   * alive after its server context has been replaced. The parent owns every root in this map, so a
+   * closed manager must retire all of them regardless of those live-operation guards.
+   */
+  function disposeRecord(key: DirectoryKey) {
     vcsCache.delete(key)
     metaCache.delete(key)
     iconCache.delete(key)
     lifecycle.delete(key)
+    pins.delete(key)
     mcpDirectories.delete(key)
     mcpToggles.delete(key)
     const dispose = disposers.get(key)
@@ -127,7 +139,16 @@ export function createChildStoreManager(input: {
     }
     delete children[key]
     input.onDispose(key)
-    return true
+  }
+
+  function disposeAll() {
+    const directories = new Set<DirectoryKey>()
+    Object.keys(children).forEach((directory) => directories.add(directory as DirectoryKey))
+    vcsCache.forEach((_value, directory) => directories.add(directory as DirectoryKey))
+    metaCache.forEach((_value, directory) => directories.add(directory as DirectoryKey))
+    iconCache.forEach((_value, directory) => directories.add(directory as DirectoryKey))
+    disposers.forEach((_value, directory) => directories.add(directory as DirectoryKey))
+    for (const directory of directories) disposeRecord(directory)
   }
 
   function runEviction(skip?: string) {
@@ -239,7 +260,6 @@ export function createChildStoreManager(input: {
             },
             session_diff: {},
             todo: {},
-            question: {},
             get mcp_ready() {
               return !mcpQuery.isLoading
             },
@@ -364,6 +384,7 @@ export function createChildStoreManager(input: {
     mcp: (directory: string) => mcpDirectories.has(directoryKey(directory)),
     disableMcp,
     disposeDirectory,
+    disposeAll,
     runEviction,
     vcsCache,
     metaCache,

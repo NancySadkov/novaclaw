@@ -48,31 +48,17 @@ const booleanSdkQueryParams: Array<{ method: Method; path: string; name: string 
 
 const queryParamPatterns: Array<{ method: Method; path: string; name: string; pattern: string }> = []
 
-// The V1 `POST /permission/:requestID/reply` row was RE-POINTED, not dropped, when the V1
-// permission routes went (v0.2.0-prep Wave 4 §5): the native route carried the same `^per`
-// id-prefix guard on `requestID` (`@novaclaw/schema/permission`'s branded `ID`), plus `^ses` on
-// `sessionID`, so the invariant survived the deletion instead of leaving with it.
-//
-// RE-POINTED A SECOND TIME 2026-09-01, for the same reason. The refactor sweep's  deleted the
-// consent-card island WHOLE — kernel, table, protocol group, handler and UI dock — so there is no
-// permission reply route left to carry the guard, and both `^per` rows resolved to `undefined`. The
-// surviving sibling on the same shape is the session-scoped QUESTION reply
-// (`protocol/src/groups/question.ts:52`), whose `requestID` is `Question.ID` (`^que`,
-// `schema/src/question.ts`) and whose `sessionID` is still `^ses`. (The legacy `/question/:requestID/reply`
-// row left with that surface on 2026-09-03.)
-// 🔴 What is pinned here is the INVARIANT — a session-scoped reply route brands both path params —
-// not the permission route specifically. Move it again when this route moves; deleting the rows
-// retires the invariant silently, which is what this comment has now twice existed to prevent.
+// Session message reads brand both path parameters; keep this invariant on a live route.
 const pathParamPatterns = [
   {
-    method: "post",
-    path: "/api/session/:sessionID/question/:requestID/reply",
-    name: "requestID",
-    pattern: "^que",
+    method: "get",
+    path: "/api/session/:sessionID/message/:messageID",
+    name: "messageID",
+    pattern: "^msg_",
   },
   {
-    method: "post",
-    path: "/api/session/:sessionID/question/:requestID/reply",
+    method: "get",
+    path: "/api/session/:sessionID/message/:messageID",
     name: "sessionID",
     pattern: "^ses",
   },

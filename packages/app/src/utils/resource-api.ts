@@ -41,7 +41,7 @@ export interface InstancePressure {
 }
 
 export function instancePressure(server: ServerConnection.HttpBase, signal?: AbortSignal) {
-  return instanceFetch<InstancePressure>(server, { route: "global/pressure", signal, timeoutMs: 20_000 })
+  return instanceFetch<InstancePressure>(server, { route: "api/instance/pressure", signal, timeoutMs: 20_000 })
 }
 
 export function instanceResources(server: ServerConnection.HttpBase, signal?: AbortSignal) {

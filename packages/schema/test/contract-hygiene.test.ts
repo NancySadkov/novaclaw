@@ -5,7 +5,6 @@ import { Agent } from "../src/agent"
 import { FileSystem } from "../src/filesystem"
 import { Model } from "../src/model"
 import { Pty } from "../src/pty"
-import { Question } from "../src/question"
 import { Session } from "../src/session"
 import { SessionEvent } from "../src/session-event"
 import { SessionTodo } from "../src/session-todo"
@@ -29,7 +28,6 @@ describe("contract hygiene", () => {
   })
 
   test("current ID constructors expose create", () => {
-    expect(Question.ID.create()).toStartWith("que_")
     expect(Pty.ID.create()).toStartWith("pty_")
   })
 

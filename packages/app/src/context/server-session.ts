@@ -1,7 +1,6 @@
 import { retry } from "@novaclaw/core/util/retry"
 import type {
   NovaclawClient,
-  QuestionV2Request,
   SessionV2Info as Session,
   SessionStatus,
   SessionPresenceSnapshot,
@@ -69,7 +68,6 @@ export function createServerSession(
     session_status: {} as Record<string, SessionStatus>,
     session_diff: {} as Record<string, SessionChangeDiff[]>,
     todo: {} as Record<string, Todo[]>,
-    question: {} as Record<string, QuestionV2Request[]>,
     // The tags component (notes/reports/entities-review-2026-07-06.md T0): sessionID → tags, fed by `session.tags.updated`
     // events + the /api/tag bootstrap. Organization over chats — replaces project grouping.
     tag: {} as Record<string, string[]>,
@@ -124,9 +122,6 @@ export function createServerSession(
         ...inflight.keys(),
         ...inflightDiff.keys(),
         ...inflightTodo.keys(),
-        ...Object.entries(data.question)
-          .filter(([, items]) => items.length > 0)
-          .map(([sessionID]) => sessionID),
         ...Object.entries(data.session_status)
           .filter(([, status]) => status.type !== "idle")
           .map(([sessionID]) => sessionID),
@@ -231,9 +226,6 @@ export function createServerSession(
       ...inflight.keys(),
       ...inflightDiff.keys(),
       ...inflightTodo.keys(),
-      ...Object.entries(data.question)
-        .filter(([, items]) => items.length > 0)
-        .map(([sessionID]) => sessionID),
       ...Object.entries(data.session_status)
         .filter(([, status]) => status.type !== "idle")
         .map(([sessionID]) => sessionID),
@@ -369,36 +361,6 @@ export function createServerSession(
         // The run settled — drop its live-rate tracker so the ps badge clears with the spinner.
         if (props.status.type === "idle" || props.status.type === "exited") clearLive(props.sessionID)
         return
-      }
-      case "question.v2.asked": {
-        const question = event.properties as QuestionV2Request
-        const questions = data.question[question.sessionID]
-        if (!questions) {
-          setData("question", question.sessionID, [question])
-          return
-        }
-        const result = Binary.search(questions, question.id, (item) => item.id)
-        if (result.found) setData("question", question.sessionID, result.index, reconcile(question))
-        if (!result.found)
-          setData(
-            "question",
-            question.sessionID,
-            produce((draft) => void draft.splice(result.index, 0, question)),
-          )
-        return
-      }
-      case "question.v2.replied":
-      case "question.v2.rejected": {
-        const props = event.properties as { sessionID: string; requestID: string }
-        setData(
-          "question",
-          props.sessionID,
-          produce((draft) => {
-            if (!draft) return
-            const result = Binary.search(draft, props.requestID, (item) => item.id)
-            if (result.found) draft.splice(result.index, 1)
-          }),
-        )
       }
     }
   }

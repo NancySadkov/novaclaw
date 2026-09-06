@@ -10,6 +10,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Log } from "@novaclaw/schema/log"
 import { EffectBridge } from "@/effect/bridge"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
@@ -48,6 +49,7 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
 export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
+    const scheduler = yield* SessionScheduler.Service
 
     const bridge = yield* EffectBridge.make()
     const memory = Memory.client(yield* Memory.node.service)
@@ -247,16 +249,28 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
                       orElse: () => Effect.die("resolveDefault timed out"),
                     }),
                   )
-                  const outcome = yield* KbAbsorb.absorb({
-                    llm,
-                    model,
-                    memory,
-                    scope,
-                    passages: passages
-                      .slice(0, absorbing)
-                      .map((text) => ({ id: KbChunk.passageID(label, text), text })),
-                    limit: absorbing,
-                  })
+                  const outcome = yield* SessionScheduler.runMaintenance(
+                    scheduler,
+                    {
+                      ownerID: `memory-absorb:${scope}:${ascending()}`,
+                      task: "kb-absorb",
+                      // A document has no session placement. The model's stable provider/id pair is
+                      // the safe fallback key: it prevents detached batches for the same backend from
+                      // bypassing the scheduler, while never falsely sharing unrelated endpoints.
+                      deviceKey: `${model.provider}/${model.id}`,
+                      concurrency: 1,
+                    },
+                    KbAbsorb.absorb({
+                      llm,
+                      model,
+                      memory,
+                      scope,
+                      passages: passages
+                        .slice(0, absorbing)
+                        .map((text) => ({ id: KbChunk.passageID(label, text), text })),
+                      limit: absorbing,
+                    }),
+                  )
                   // Detached work MUST report that it finished. Without this, "ran and found nothing"
                   // and "never started" look identical from outside.
                   return yield* Log.event("kb.absorb.run.done", {

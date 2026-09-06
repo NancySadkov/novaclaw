@@ -15,6 +15,7 @@ const identity = (message: Request) => ({
   attemptID: message.attemptID,
   generation: message.generation,
   requestID: message.requestID,
+  store: message.store,
 })
 
 const ok = (message: Request, value: unknown): Reply => ({
@@ -141,6 +142,10 @@ export const handle = Effect.fn("SessionWorkerMemoryBridge.handle")(function* (i
       return a === undefined
         ? malformedAccess()
         : yield* run(memory.neighbors(String(args[0]), a, args[2] as { k?: number } | undefined))
+    }
+    case "get": {
+      const a = access(1)
+      return a === undefined ? malformedAccess() : yield* run(memory.get(String(args[0]), a))
     }
     case "path": {
       const a = access(2)

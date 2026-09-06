@@ -7,7 +7,6 @@ const setup = () => {
   document.body.append(composer)
   const handle = createSessionKeyboardController({
     composer: () => composer,
-    composerBlocked: () => false,
     childSession: () => false,
     dialogActive: () => false,
     terminalOpen: () => false,

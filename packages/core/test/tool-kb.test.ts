@@ -79,9 +79,8 @@ describe("KbTool (memory)", () => {
       const saved = text(
         yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })),
       )
-      // ⚠️ `clm_`, not `mem_`: a NAMED remember is a governed claim now, filed against its subject.
-      // The prefix is the visible difference, and the test says so rather than matching both.
-      expect(saved).toContain("Remembered (clm_")
+      expect(saved).toMatch(/^Remembered \(ref_[A-Za-z0-9_-]+\)/)
+      expect(saved).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
 
       const found = text(yield* executeTool(registry, call({ op: "search", query: "strict" })))
       expect(found).toContain("prefs")
@@ -115,9 +114,10 @@ describe("KbTool (memory)", () => {
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const saved = text(yield* executeTool(registry, call({ op: "remember", text: "transient fact about zorblatt" })))
-      const id = saved.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
-      expect(id).not.toBe("")
-      yield* executeTool(registry, call({ op: "forget", id }))
+      const reference = saved.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      expect(reference).not.toBe("")
+      expect(saved).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
+      yield* executeTool(registry, call({ op: "forget", id: reference }))
       expect(text(yield* executeTool(registry, call({ op: "search", query: "zorblatt" })))).toContain(
         "No memories match",
       )
@@ -127,15 +127,15 @@ describe("KbTool (memory)", () => {
   it.effect("relate links two remembered memories; neighbors then traverses the link", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
-      const a = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace", name: "Ada" }))))
-      const b = idOf(
+      const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const a = referenceOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace", name: "Ada" }))))
+      const b = referenceOf(
         text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine notes", name: "Note" }))),
       )
       expect(a).not.toBe("")
       expect(b).not.toBe("")
-      // The relationship label is normalized to a clean predicate token.
-      const linked = text(yield* executeTool(registry, call({ op: "relate", from: a, to: b, type: "wrote about" })))
+      // The model-facing relationship is a closed engine-owned choice.
+      const linked = text(yield* executeTool(registry, call({ op: "relate", from: a, to: b, type: "wrote_about" })))
       expect(linked).toContain("Linked")
       expect(linked).toContain("wrote_about")
       const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: a })))
@@ -144,11 +144,53 @@ describe("KbTool (memory)", () => {
     }),
   )
 
+  it.effect("resolve disambiguates duplicate labels and get reads an opaque reference", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const first = referenceOf(
+        text(yield* executeTool(registry, call({ op: "remember", text: "label twin one", name: "Twin label" }))),
+      )
+      const second = referenceOf(
+        text(yield* executeTool(registry, call({ op: "remember", text: "label twin two", name: "Twin label" }))),
+      )
+      const resolved = text(yield* executeTool(registry, call({ op: "resolve", label: "Twin label" })))
+      expect(resolved).toContain("ambiguous")
+      expect(resolved).toContain(first)
+      expect(resolved).toContain(second)
+      expect(resolved).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
+      const one = text(yield* executeTool(registry, call({ op: "get", id: first })))
+      expect(one).toContain("label twin one")
+      expect(one).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
+    }),
+  )
+
+  it.effect("predicates exposes the closed relation vocabulary and path owns multi-hop traversal", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const a = referenceOf(text(yield* executeTool(registry, call({ op: "remember", text: "path node A" }))))
+      const b = referenceOf(text(yield* executeTool(registry, call({ op: "remember", text: "path node B" }))))
+      const c = referenceOf(text(yield* executeTool(registry, call({ op: "remember", text: "path node C" }))))
+      yield* executeTool(registry, call({ op: "relate", from: a, to: b, type: "related_to" }))
+      yield* executeTool(registry, call({ op: "relate", from: b, to: c, type: "related_to" }))
+      const path = text(yield* executeTool(registry, call({ op: "path", from: a, to: c })))
+      expect(path).toContain("Path (2 hops)")
+      expect(path).toContain(a)
+      expect(path).toContain(b)
+      expect(path).toContain(c)
+      expect(path).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
+      const predicates = text(yield* executeTool(registry, call({ op: "predicates", id: a })))
+      expect(predicates).toContain("related_to")
+      expect(predicates).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
+    }),
+  )
+
   it.effect("🔴 a correction through the TOOL leaves one answer, and `history` explains it", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
-      const old = idOf(
+      const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+      const old = referenceOf(
         text(
           yield* executeTool(
             registry,
@@ -165,6 +207,9 @@ describe("KbTool (memory)", () => {
       expect(old).not.toBe("")
       expect(corrected).toContain("This replaces")
       expect(corrected).toContain(old)
+      const correctedReference = referenceOf(corrected)
+      expect(correctedReference).not.toBe("")
+      expect(corrected).not.toMatch(/(?:mem|clm)_[A-Za-z0-9_]+/)
 
       // ONE answer comes back, and it is the new one.
       const found = text(yield* executeTool(registry, call({ op: "search", query: "Priya works" })))
@@ -172,7 +217,7 @@ describe("KbTool (memory)", () => {
       expect(found).not.toContain("Initech")
 
       // …and the old assertion is still explainable, which is the other half of the gate.
-      const story = text(yield* executeTool(registry, call({ op: "history", id: idOf(corrected) })))
+      const story = text(yield* executeTool(registry, call({ op: "history", id: correctedReference })))
       expect(story).toContain("Initech")
       expect(story).toContain("superseded")
     }),
@@ -181,9 +226,9 @@ describe("KbTool (memory)", () => {
   it.effect("🔴 another chat cannot read a private claim's history by knowing its id", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
+      const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
       // Saved into THIS chat only, so it lives in `session:ses_kb_tool_test`.
-      const mine = idOf(
+      const mine = referenceOf(
         text(
           yield* executeTool(
             registry,
@@ -213,7 +258,7 @@ describe("KbTool (memory)", () => {
       }
       const refused = text(yield* executeTool(registry, stranger))
       expect(refused).not.toContain("Utrecht")
-      expect(refused).toContain("No memory")
+      expect(refused).toContain("unknown or expired")
     }),
   )
 
@@ -242,7 +287,7 @@ describe("KbTool (memory)", () => {
       const registry = yield* ToolRegistry.Service
       const lonely =
         text(yield* executeTool(registry, call({ op: "remember", text: "an unconnected note about narwhals" }))).match(
-          /mem_[A-Za-z0-9]+/,
+          /ref_[A-Za-z0-9_-]+/,
         )?.[0] ?? ""
       const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: lonely })))
       expect(nb).toContain("relate")

@@ -369,6 +369,4022 @@ class ApiGlobal extends NovaClawApiClient {
   }
 }
 
+class ApiV2InstancePressure extends NovaClawApiClient {
+  /**
+   * Get instance pressure
+   *
+   * Report cheap host memory pressure without recursive storage accounting.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2InstancePressureGetResponses,
+      T.V2InstancePressureGetErrors,
+      ThrowOnError
+    >({
+      url: "/api/instance/pressure",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Instance extends NovaClawApiClient {
+  private _pressure?: ApiV2InstancePressure
+  get pressure(): ApiV2InstancePressure {
+    return (this._pressure ??= new ApiV2InstancePressure({ client: this.client }))
+  }
+}
+
+class ApiV2Health extends NovaClawApiClient {
+  /**
+   * Check server health
+   *
+   * Check whether the API server is ready to accept requests.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2HealthGetResponses, T.V2HealthGetErrors, ThrowOnError>({
+      url: "/api/health",
+      ...options,
+    })
+  }
+}
+
+class ApiV2MemoryClaim extends NovaClawApiClient {
+  /**
+   * Archive, restore or flag a claim
+   *
+   * Move one claim between the statuses a person controls: `archived` (kept, never recalled), `active` (restored), `needs_review` (flagged). `superseded` is the lifecycle's own and cannot be set here. Answers whether the status actually changed.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      status: "active" | "archived" | "needs_review"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], status: parameters?.["status"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryClaimStatusResponses,
+      T.V2MemoryClaimStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/claim/status",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Record a claim
+   *
+   * Write a governed claim: file it against its subject and its evidence, and retire the claim it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names both replaces the current answer to that question and the reply lists what it retired.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      statement: string
+      scope?: string
+      subject?: string
+      predicate?:
+        | "about"
+        | "birthday"
+        | "dislikes"
+        | "email"
+        | "employer"
+        | "knows"
+        | "language"
+        | "likes"
+        | "location"
+        | "name"
+        | "owner"
+        | "path"
+        | "phone"
+        | "preference"
+        | "role"
+        | "status"
+        | "timezone"
+        | "uses"
+        | "version"
+        | "works_on"
+      confidence?: number
+      source?: string
+      agent?: string
+      validFrom?: string
+      evidence?: Array<{
+        kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+        locator: string
+        label?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      statement: parameters?.["statement"],
+      scope: parameters?.["scope"],
+      subject: parameters?.["subject"],
+      predicate: parameters?.["predicate"],
+      confidence: parameters?.["confidence"],
+      source: parameters?.["source"],
+      agent: parameters?.["agent"],
+      validFrom: parameters?.["validFrom"],
+      evidence: parameters?.["evidence"],
+    }
+    return (options?.client ?? this.client).post<T.V2MemoryClaimAddResponses, T.V2MemoryClaimAddErrors, ThrowOnError>({
+      url: "/api/memory/claim",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2MemoryUsage extends NovaClawApiClient {
+  /**
+   * Never recalled
+   *
+   * Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.
+   */
+  public neverUsed<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number
+      scan?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"], scan: parameters?.["scan"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageNeverUsedResponses,
+      T.V2MemoryUsageNeverUsedErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/never-used",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Vouched for
+   *
+   * Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.
+   */
+  public useful<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageUsefulResponses,
+      T.V2MemoryUsageUsefulErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/useful",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Keeps being corrected
+   *
+   * Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.
+   */
+  public corrections<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number
+      minCorrected?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      scopes: parameters?.["scopes"],
+      limit: parameters?.["limit"],
+      minCorrected: parameters?.["minCorrected"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageCorrectionsResponses,
+      T.V2MemoryUsageCorrectionsErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/corrections",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Why is this here
+   *
+   * Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageDetailResponses,
+      T.V2MemoryUsageDetailErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/detail",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Memory extends NovaClawApiClient {
+  /**
+   * Erase all memory
+   *
+   * Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.
+   */
+  public erase<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<T.V2MemoryEraseResponses, T.V2MemoryEraseErrors, ThrowOnError>({
+      url: "/api/memory/erase",
+      ...options,
+    })
+  }
+
+  /**
+   * Export every memory
+   *
+   * Return a complete backup view of current memory, optionally including invalidated history. The server exhausts its bounded store pages and fails the request if any page cannot be read.
+   */
+  public export<ThrowOnError extends boolean = false>(
+    parameters?: {
+      includeInvalid?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { includeInvalid: parameters?.["includeInvalid"] }
+    return (options?.client ?? this.client).post<T.V2MemoryExportResponses, T.V2MemoryExportErrors, ThrowOnError>({
+      url: "/api/memory/export",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Read memory protection
+   *
+   * Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.
+   */
+  public protection<ThrowOnError extends boolean = false>(
+    parameters: {
+      ids: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { ids: parameters?.["ids"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryProtectionResponses,
+      T.V2MemoryProtectionErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/protection",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Mark useful
+   *
+   * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.
+   */
+  public feedback<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      useful: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
+    return (options?.client ?? this.client).post<T.V2MemoryFeedbackResponses, T.V2MemoryFeedbackErrors, ThrowOnError>({
+      url: "/api/memory/feedback",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  private _claim?: ApiV2MemoryClaim
+  get claim(): ApiV2MemoryClaim {
+    return (this._claim ??= new ApiV2MemoryClaim({ client: this.client }))
+  }
+
+  private _usage?: ApiV2MemoryUsage
+  get usage(): ApiV2MemoryUsage {
+    return (this._usage ??= new ApiV2MemoryUsage({ client: this.client }))
+  }
+}
+
+class ApiV2WorldMemory extends NovaClawApiClient {
+  /**
+   * Erase agent memory
+   *
+   * Delete the automatic session and agent world model. This does not erase the explicit/source KB.
+   */
+  public erase<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryEraseResponses,
+      T.V2WorldMemoryEraseErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/erase",
+      ...options,
+    })
+  }
+
+  /**
+   * Export agent memory
+   *
+   * Return a complete backup of the automatic session and agent world model, without explicit/source KB rows.
+   */
+  public export<ThrowOnError extends boolean = false>(
+    parameters?: {
+      includeInvalid?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { includeInvalid: parameters?.["includeInvalid"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryExportResponses,
+      T.V2WorldMemoryExportErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/export",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Location extends NovaClawApiClient {
+  /**
+   * Get location
+   *
+   * Resolve the requested location or the server default location.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2LocationGetResponses, T.V2LocationGetErrors, ThrowOnError>({
+      url: "/api/location",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2AgentAvatar extends NovaClawApiClient {
+  /**
+   * Read an agent portrait
+   *
+   * Read the instance-owned portrait bytes for one agent. An agent without an uploaded portrait receives the deterministic server-owned placeholder.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    return (options?.client ?? this.client).get<T.V2AgentAvatarGetResponses, T.V2AgentAvatarGetErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/avatar",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Upload an agent portrait
+   *
+   * Replace one agent's instance-owned portrait with bounded PNG, JPEG, GIF or WebP bytes. The request must be authenticated and the bytes are stored under the instance data directory.
+   */
+  public upload<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      body: Blob | File
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).put<
+      T.V2AgentAvatarUploadResponses,
+      T.V2AgentAvatarUploadErrors,
+      ThrowOnError
+    >({
+      url: "/api/agent/{agentID}/avatar",
+      ...options,
+      path,
+      body,
+      bodySerializer: null,
+      headers: { "Content-Type": "application/octet-stream", ...options?.headers },
+    })
+  }
+
+  /**
+   * Delete an agent portrait
+   *
+   * Delete one agent's uploaded portrait and restore its server-owned placeholder or glyph.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2AgentAvatarDeleteResponses,
+      T.V2AgentAvatarDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/api/agent/{agentID}/avatar",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2Agent extends NovaClawApiClient {
+  /**
+   * List agents
+   *
+   * Retrieve currently registered agents.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2AgentListResponses, T.V2AgentListErrors, ThrowOnError>({
+      url: "/api/agent",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Agents' per-minute output
+   *
+   * Tokens generated by the requested agents, bucketed by minute for the last 24 hours. One response carries every requested agent; missing usage is an empty series.
+   */
+  public usageMany<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      agentIDs: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    const body = { agentIDs: parameters?.["agentIDs"] }
+    return (options?.client ?? this.client).post<T.V2AgentUsageManyResponses, T.V2AgentUsageManyErrors, ThrowOnError>({
+      url: "/api/agent/usage",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * An agent's per-minute output
+   *
+   * Tokens this agent GENERATED (output + reasoning), bucketed by minute, newest first, for the last 24 hours. Sparse on purpose: a minute in which the agent produced nothing has no row at all, so an absent minute means nothing happened rather than 'measured, and it was zero'. A sub-agent's output is attributed to the agent that owns it.
+   */
+  public usage<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2AgentUsageResponses, T.V2AgentUsageErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/usage",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Remove agent
+   *
+   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<T.V2AgentRemoveResponses, T.V2AgentRemoveErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  private _avatar?: ApiV2AgentAvatar
+  get avatar(): ApiV2AgentAvatar {
+    return (this._avatar ??= new ApiV2AgentAvatar({ client: this.client }))
+  }
+}
+
+class ApiV2SessionTags extends NovaClawApiClient {
+  /**
+   * Set session tags
+   *
+   * Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.
+   */
+  public set<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      tags: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { tags: parameters?.["tags"] }
+    return (options?.client ?? this.client).put<T.V2SessionTagsSetResponses, T.V2SessionTagsSetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/tags",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List all session tags
+   *
+   * The instance-wide tag map: session id → tags. The client store's bootstrap source.
+   */
+  public all<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2SessionTagsAllResponses, T.V2SessionTagsAllErrors, ThrowOnError>({
+      url: "/api/tag",
+      ...options,
+    })
+  }
+}
+
+class ApiV2SessionPresence extends NovaClawApiClient {
+  /**
+   * Report presence on a session
+   *
+   * Attach a viewer, say 'still here', take over control, or detach. Returns the session's whole presence snapshot; every attached surface also receives it as `session.presence.updated`.
+   */
+  public report<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      viewerID: string
+      kind: "human" | "agent" | "peer"
+      label: string
+      writing?: boolean
+      action: "report" | "claim" | "detach"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      viewerID: parameters?.["viewerID"],
+      kind: parameters?.["kind"],
+      label: parameters?.["label"],
+      writing: parameters?.["writing"],
+      action: parameters?.["action"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2SessionPresenceReportResponses,
+      T.V2SessionPresenceReportErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/presence",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List session presence
+   *
+   * Sessions with someone attached right now: session id → presence. The client store's bootstrap source; sessions absent from the result are unattended. This instance answers only for its OWN sessions — it is not a directory of who is online.
+   */
+  public all<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2SessionPresenceAllResponses,
+      T.V2SessionPresenceAllErrors,
+      ThrowOnError
+    >({
+      url: "/api/presence",
+      ...options,
+    })
+  }
+}
+
+class ApiV2SessionExecution extends NovaClawApiClient {
+  /**
+   * Inspect durable session execution
+   *
+   * List durable execution and recovery state, including paused failures and their human-readable details. Pass sessionID to inspect one session without transferring the whole ledger.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<
+      T.V2SessionExecutionListResponses,
+      T.V2SessionExecutionListErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/execution",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Retry paused session execution
+   *
+   * Record explicit operator authority, reset the recovery circuit breaker, and resume queued work without requiring a model response.
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionExecutionRetryResponses,
+      T.V2SessionExecutionRetryErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/execution/retry",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2SessionRevert extends NovaClawApiClient {
+  /**
+   * Stage session revert
+   *
+   * Stage or move a reversible session boundary and optionally apply its file changes.
+   */
+  public stage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      files?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { messageID: parameters?.["messageID"], files: parameters?.["files"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionRevertStageResponses,
+      T.V2SessionRevertStageErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/revert/stage",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Clear staged revert
+   */
+  public clear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionRevertClearResponses,
+      T.V2SessionRevertClearErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/revert/clear",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Commit staged revert
+   */
+  public commit<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionRevertCommitResponses,
+      T.V2SessionRevertCommitErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/revert/commit",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2SessionPermission extends NovaClawApiClient {
+  /**
+   * Evaluate permission
+   *
+   * Evaluate the effective permission rules for a session action.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      id?: string
+      action: string
+      resources: Array<string>
+      save?: Array<string>
+      metadata?: {
+        [key: string]: unknown
+      }
+      source?: T.PermissionV2Source
+      agent?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      id: parameters?.["id"],
+      action: parameters?.["action"],
+      resources: parameters?.["resources"],
+      save: parameters?.["save"],
+      metadata: parameters?.["metadata"],
+      source: parameters?.["source"],
+      agent: parameters?.["agent"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2SessionPermissionCreateResponses,
+      T.V2SessionPermissionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/permission",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Session extends NovaClawApiClient {
+  /**
+   * List sessions
+   *
+   * Retrieve sessions in the requested order. Items keep that order across pages; use cursor.next or cursor.previous to move through the ordered list.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      workspace?: string
+      roots?: boolean | "true" | "false"
+      limit?: number
+      order?: "asc" | "desc"
+      search?: string
+      directory?: string
+      under?: string
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      workspace: parameters?.["workspace"],
+      roots: parameters?.["roots"],
+      limit: parameters?.["limit"],
+      order: parameters?.["order"],
+      search: parameters?.["search"],
+      directory: parameters?.["directory"],
+      under: parameters?.["under"],
+      cursor: parameters?.["cursor"],
+    }
+    return (options?.client ?? this.client).get<T.V2SessionListResponses, T.V2SessionListErrors, ThrowOnError>({
+      url: "/api/session",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Create session
+   *
+   * Create a session at the requested location.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      id?: string
+      parentID?: string
+      agent?: string
+      model?: T.ModelRef
+      device?: string
+      controlBinding?: string
+      systemPromptOverride?: string
+      type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+      priority?: number
+      permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+      responder?: "nova" | "operator"
+      location?: T.LocationRef
+      title?: string
+      strict?: T.SessionStrictOverride
+      introspection?: boolean
+      quality?: boolean
+      affective?: boolean
+      thinkingBudget?: boolean
+      surgicalEdits?: boolean
+      askBeforeChanges?: boolean
+      safeMode?: boolean
+      contextBudget?: boolean
+      memory?: boolean
+      shortChat?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      id: parameters?.["id"],
+      parentID: parameters?.["parentID"],
+      agent: parameters?.["agent"],
+      model: parameters?.["model"],
+      device: parameters?.["device"],
+      controlBinding: parameters?.["controlBinding"],
+      systemPromptOverride: parameters?.["systemPromptOverride"],
+      type: parameters?.["type"],
+      priority: parameters?.["priority"],
+      permissionMode: parameters?.["permissionMode"],
+      responder: parameters?.["responder"],
+      location: parameters?.["location"],
+      title: parameters?.["title"],
+      strict: parameters?.["strict"],
+      introspection: parameters?.["introspection"],
+      quality: parameters?.["quality"],
+      affective: parameters?.["affective"],
+      thinkingBudget: parameters?.["thinkingBudget"],
+      surgicalEdits: parameters?.["surgicalEdits"],
+      askBeforeChanges: parameters?.["askBeforeChanges"],
+      safeMode: parameters?.["safeMode"],
+      contextBudget: parameters?.["contextBudget"],
+      memory: parameters?.["memory"],
+      shortChat: parameters?.["shortChat"],
+    }
+    return (options?.client ?? this.client).post<T.V2SessionCreateResponses, T.V2SessionCreateErrors, ThrowOnError>({
+      url: "/api/session",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List active sessions
+   *
+   * Retrieve foreground Session drains currently owned by this NovaClaw process. Sessions absent from the result are inactive.
+   */
+  public active<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2SessionActiveResponses, T.V2SessionActiveErrors, ThrowOnError>({
+      url: "/api/session/active",
+      ...options,
+    })
+  }
+
+  /**
+   * Task receipt
+   *
+   * What this session's current attempt declared and what it checked: the frozen plan, each quality check that ran with its command and exit code, and any spawned children.
+   */
+  public receipt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionReceiptResponses, T.V2SessionReceiptErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/receipt",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Get session
+   *
+   * Retrieve a session by ID.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionGetResponses, T.V2SessionGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Update session
+   *
+   * Rename a session, replace its metadata, archive it, or set/remove its Device pin; returns the updated record.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      title?: string
+      metadata?: {
+        [key: string]: unknown
+      }
+      device?: string | null
+      archived?: number | null
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      title: parameters?.["title"],
+      metadata: parameters?.["metadata"],
+      device: parameters?.["device"],
+      archived: parameters?.["archived"],
+    }
+    return (options?.client ?? this.client).patch<T.V2SessionUpdateResponses, T.V2SessionUpdateErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Delete session
+   *
+   * Permanently delete a session and its descendants (messages, todos, tags cascade).
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).delete<T.V2SessionRemoveResponses, T.V2SessionRemoveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * List child sessions
+   *
+   * Retrieve the sessions forked or spawned from the given parent session.
+   */
+  public children<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionChildrenResponses, T.V2SessionChildrenErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/children",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Resolve session config
+   *
+   * Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.
+   */
+  public config<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionConfigResponses, T.V2SessionConfigErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/config",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Fork session
+   *
+   * Clone a session's transcript into a fresh session, optionally truncated at (and excluding) a message.
+   */
+  public fork<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const query = { messageID: parameters?.["messageID"] }
+    return (options?.client ?? this.client).post<T.V2SessionForkResponses, T.V2SessionForkErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/fork",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Queued prompts not yet read by the agent
+   *
+   * Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.
+   */
+  public pending<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionPendingResponses, T.V2SessionPendingErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/pending",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Get session todos
+   *
+   * Retrieve the todo list the session's agent maintains.
+   */
+  public todo<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionTodoResponses, T.V2SessionTodoErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/todo",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Switch session agent
+   *
+   * Switch the agent used by subsequent provider turns. Refuses with 409 when that colleague already has a chat — a colleague has exactly one.
+   */
+  public switchAgent<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      agent: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { agent: parameters?.["agent"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchAgentResponses,
+      T.V2SessionSwitchAgentErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/agent",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Switch session model
+   *
+   * Switch the model used by subsequent provider turns.
+   */
+  public switchModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      model: T.ModelRef
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { model: parameters?.["model"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchModelResponses,
+      T.V2SessionSwitchModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/model",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Switch session responder (B10 handoff)
+   *
+   * Take control (operator) so Nova stops auto-responding, or hand back (nova) so it resumes and drains queued input.
+   */
+  public switchResponder<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      responder: "nova" | "operator"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { responder: parameters?.["responder"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchResponderResponses,
+      T.V2SessionSwitchResponderErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/responder",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Where a session is working, and what it lost
+   *
+   * The session's current working folder, plus the folder it was created in when that one has gone missing and the session was degraded into a scratch folder. `missing` is what lets a client offer to repoint: without it the substitution is only visible as a one-off notice in the transcript, which a reader who returns later has already scrolled past.
+   */
+  public folder<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionFolderResponses, T.V2SessionFolderErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/folder",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Point a session at a different working folder
+   *
+   * Move this session's working folder. Written through the `working_folder` session component, so it re-derives project identity, publishes the same Moved event an agent's own move would, and clears any recorded missing-folder recovery. Exists because a folder that moved is something the USER knows and the agent does not: when a working folder disappears the session degrades into a scratch folder and keeps running, and only a person can say where the real one went.
+   */
+  public repointFolder<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { directory: parameters?.["directory"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionRepointFolderResponses,
+      T.V2SessionRepointFolderErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/folder",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Switch session permission mode (1K)
+   *
+   * Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.
+   */
+  public switchMode<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { permissionMode: parameters?.["permissionMode"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchModeResponses,
+      T.V2SessionSwitchModeErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mode",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Set the session's Strict-harness override (jh.md)
+   *
+   * Enable/disable Strict mode for this session and set its racing attempts + time budget; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.
+   */
+  public switchStrict<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      strict: T.SessionStrictOverride | null
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { strict: parameters?.["strict"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchStrictResponses,
+      T.V2SessionSwitchStrictErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/strict",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)
+   *
+   * Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.
+   */
+  public switchFeature<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      feature:
+        | "introspection"
+        | "quality"
+        | "affective"
+        | "thinkingBudget"
+        | "surgicalEdits"
+        | "askBeforeChanges"
+        | "safeMode"
+        | "contextBudget"
+        | "memory"
+        | "shortChat"
+      enabled: boolean | null
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { feature: parameters?.["feature"], enabled: parameters?.["enabled"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchFeatureResponses,
+      T.V2SessionSwitchFeatureErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/feature",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Set the session's kernel thread type (Mode)
+   *
+   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.
+   */
+  public switchType<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      type: "interactive" | "auto-prompting" | "goal-oriented"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { type: parameters?.["type"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchTypeResponses,
+      T.V2SessionSwitchTypeErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/type",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Set the session's system-prompt override layer
+   *
+   * Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.
+   */
+  public switchPromptOverride<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      override: string | null
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { override: parameters?.["override"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionSwitchPromptOverrideResponses,
+      T.V2SessionSwitchPromptOverrideErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/prompt-override",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Run a shell command
+   *
+   * Run one shell command to completion against the session's location; the transcript renders from the durable shell events (no model turn).
+   */
+  public shell<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { command: parameters?.["command"] }
+    return (options?.client ?? this.client).post<T.V2SessionShellResponses, T.V2SessionShellErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/shell",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Run a slash command
+   *
+   * Expand and dispatch a slash command: a prompt-kind command runs a turn on this session; a subtask command spawns a child session (surfaced via session events).
+   */
+  public command<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command: string
+      arguments: string
+      agent?: string
+      model?: string
+      variant?: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      command: parameters?.["command"],
+      arguments: parameters?.["arguments"],
+      agent: parameters?.["agent"],
+      model: parameters?.["model"],
+      variant: parameters?.["variant"],
+      messageID: parameters?.["messageID"],
+    }
+    return (options?.client ?? this.client).post<T.V2SessionCommandResponses, T.V2SessionCommandErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/command",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Send message
+   *
+   * Durably admit one session input and schedule agent-loop execution unless resume is false.
+   */
+  public prompt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      id?: string
+      prompt: T.PromptInput
+      delivery?: "steer" | "queue"
+      resume?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      id: parameters?.["id"],
+      prompt: parameters?.["prompt"],
+      delivery: parameters?.["delivery"],
+      resume: parameters?.["resume"],
+    }
+    return (options?.client ?? this.client).post<T.V2SessionPromptResponses, T.V2SessionPromptErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/prompt",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Compact session
+   *
+   * Compact a session conversation.
+   */
+  public compact<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).post<T.V2SessionCompactResponses, T.V2SessionCompactErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/compact",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Wait for session
+   *
+   * Block until the session completes via exit() (its result is recorded). Times out after ~10 minutes with 503 — re-call to continue waiting.
+   */
+  public wait<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).post<T.V2SessionWaitResponses, T.V2SessionWaitErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/wait",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Get session context
+   *
+   * Retrieve the active context messages for a session (all messages after the last compaction).
+   */
+  public context<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionContextResponses, T.V2SessionContextErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/context",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Get session history
+   *
+   * Read one finite page of public durable Session events after an exclusive aggregate sequence. Newly committed events may appear on later pages.
+   */
+  public history<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      limit?: number
+      after?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const query = { limit: parameters?.["limit"], after: parameters?.["after"] }
+    return (options?.client ?? this.client).get<T.V2SessionHistoryResponses, T.V2SessionHistoryErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/history",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Subscribe to session events
+   *
+   * Replay durable events after an aggregate sequence, then continue with new durable events.
+   */
+  public events<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      after?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const query = { after: parameters?.["after"] }
+    return (options?.client ?? this.client).sse.get<T.V2SessionEventsResponses, T.V2SessionEventsErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/event",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Interrupt session execution
+   *
+   * Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.
+   */
+  public interrupt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      reason?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { reason: parameters?.["reason"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionInterruptResponses,
+      T.V2SessionInterruptErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/interrupt",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Get session message
+   *
+   * Retrieve one projected message owned by the Session.
+   */
+  public message<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"], messageID: parameters?.["messageID"] }
+    return (options?.client ?? this.client).get<T.V2SessionMessageResponses, T.V2SessionMessageErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/message/{messageID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Export a session as Markdown
+   *
+   * Render the whole session to a Markdown file inside the session's own project folder. The destination is relative to that folder and never replaces an existing file — a name collision is written alongside it, and the response says where the bytes actually landed. A session that is still running exports what exists so far and is marked as captured mid-turn.
+   */
+  public exportMarkdown<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      filename?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = { directory: parameters?.["directory"], filename: parameters?.["filename"] }
+    return (options?.client ?? this.client).post<
+      T.V2SessionExportMarkdownResponses,
+      T.V2SessionExportMarkdownErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/export-markdown",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Get session messages
+   *
+   * Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.
+   */
+  public messages<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      limit?: number
+      order?: "asc" | "desc"
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const query = { limit: parameters?.["limit"], order: parameters?.["order"], cursor: parameters?.["cursor"] }
+    return (options?.client ?? this.client).get<T.V2SessionMessagesResponses, T.V2SessionMessagesErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/message",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  private _tags?: ApiV2SessionTags
+  get tags(): ApiV2SessionTags {
+    return (this._tags ??= new ApiV2SessionTags({ client: this.client }))
+  }
+
+  private _presence?: ApiV2SessionPresence
+  get presence(): ApiV2SessionPresence {
+    return (this._presence ??= new ApiV2SessionPresence({ client: this.client }))
+  }
+
+  private _execution?: ApiV2SessionExecution
+  get execution(): ApiV2SessionExecution {
+    return (this._execution ??= new ApiV2SessionExecution({ client: this.client }))
+  }
+
+  private _revert?: ApiV2SessionRevert
+  get revert(): ApiV2SessionRevert {
+    return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
+  }
+
+  private _permission?: ApiV2SessionPermission
+  get permission(): ApiV2SessionPermission {
+    return (this._permission ??= new ApiV2SessionPermission({ client: this.client }))
+  }
+}
+
+class ApiV2Model extends NovaClawApiClient {
+  /**
+   * List models
+   *
+   * Retrieve available models ordered by release date.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2ModelListResponses, T.V2ModelListErrors, ThrowOnError>({
+      url: "/api/model",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2Provider extends NovaClawApiClient {
+  /**
+   * List providers
+   *
+   * Retrieve active AI providers so clients can show provider availability and configuration.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2ProviderListResponses, T.V2ProviderListErrors, ThrowOnError>({
+      url: "/api/provider",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * List managed local models
+   *
+   * List tested laptop-friendly models, live resource preflight, verified-download progress and managed llama.cpp status.
+   */
+  public localModels<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<
+      T.V2ProviderLocalModelsResponses,
+      T.V2ProviderLocalModelsErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Install a managed local model
+   *
+   * Start a resumable verified background installation. The instance-owned llama.cpp server remains stopped until this model receives a prompt.
+   */
+  public installLocalModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      profileID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      context?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { profileID: parameters?.["profileID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { context: parameters?.["context"] }
+    return (options?.client ?? this.client).post<
+      T.V2ProviderInstallLocalModelResponses,
+      T.V2ProviderInstallLocalModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models/{profileID}/install",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Stop managed local inference
+   *
+   * Stop an active managed-model install or unload the instance-owned llama.cpp model.
+   */
+  public stopLocalModel<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).post<
+      T.V2ProviderStopLocalModelResponses,
+      T.V2ProviderStopLocalModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/local-models/stop",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get provider
+   *
+   * Retrieve a single AI provider so clients can inspect its availability and endpoint settings.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { providerID: parameters?.["providerID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2ProviderGetResponses, T.V2ProviderGetErrors, ThrowOnError>({
+      url: "/api/provider/{providerID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Remove provider
+   *
+   * Delete a config-defined provider from the instance catalog store (T10iv: a true key delete, not a disable-list hide). Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { providerID: parameters?.["providerID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<T.V2ProviderRemoveResponses, T.V2ProviderRemoveErrors, ThrowOnError>(
+      {
+        url: "/api/provider/{providerID}",
+        ...options,
+        path,
+        query,
+      },
+    )
+  }
+
+  /**
+   * Remove one model
+   *
+   * Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable. A model that is in no layer is a 404, never a cheerful 204.
+   */
+  public removeModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      modelID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { providerID: parameters?.["providerID"] }
+    const query = { location: parameters?.["location"], modelID: parameters?.["modelID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2ProviderRemoveModelResponses,
+      T.V2ProviderRemoveModelErrors,
+      ThrowOnError
+    >({
+      url: "/api/provider/{providerID}/model",
+      ...options,
+      path,
+      query,
+    })
+  }
+}
+
+class ApiV2IntegrationConnect extends NovaClawApiClient {
+  /**
+   * Connect with key
+   *
+   * Run a key authentication method and store the resulting credential.
+   */
+  public key<ThrowOnError extends boolean = false>(
+    parameters: {
+      integrationID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      key: string
+      label?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { integrationID: parameters?.["integrationID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { key: parameters?.["key"], label: parameters?.["label"] }
+    return (options?.client ?? this.client).post<
+      T.V2IntegrationConnectKeyResponses,
+      T.V2IntegrationConnectKeyErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/{integrationID}/connect/key",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Begin OAuth connection
+   *
+   * Start an OAuth attempt and return the authorization details.
+   */
+  public oauth<ThrowOnError extends boolean = false>(
+    parameters: {
+      integrationID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      methodID: string
+      inputs: {
+        [key: string]: string
+      }
+      label?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { integrationID: parameters?.["integrationID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { methodID: parameters?.["methodID"], inputs: parameters?.["inputs"], label: parameters?.["label"] }
+    return (options?.client ?? this.client).post<
+      T.V2IntegrationConnectOauthResponses,
+      T.V2IntegrationConnectOauthErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/{integrationID}/connect/oauth",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2IntegrationAttempt extends NovaClawApiClient {
+  /**
+   * Get OAuth attempt status
+   *
+   * Poll the current status of an OAuth attempt.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<
+      T.V2IntegrationAttemptStatusResponses,
+      T.V2IntegrationAttemptStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/attempt/{attemptID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Cancel OAuth connection
+   *
+   * Cancel an OAuth attempt and release its resources.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<
+      T.V2IntegrationAttemptCancelResponses,
+      T.V2IntegrationAttemptCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/attempt/{attemptID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Complete OAuth connection
+   *
+   * Complete a code-based OAuth attempt and store the resulting credential.
+   */
+  public complete<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      code?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { code: parameters?.["code"] }
+    return (options?.client ?? this.client).post<
+      T.V2IntegrationAttemptCompleteResponses,
+      T.V2IntegrationAttemptCompleteErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/attempt/{attemptID}/complete",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Integration extends NovaClawApiClient {
+  /**
+   * List integrations
+   *
+   * Retrieve available integrations and their authentication methods.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2IntegrationListResponses, T.V2IntegrationListErrors, ThrowOnError>({
+      url: "/api/integration",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get integration
+   *
+   * Retrieve one integration and its authentication methods.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      integrationID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { integrationID: parameters?.["integrationID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2IntegrationGetResponses, T.V2IntegrationGetErrors, ThrowOnError>({
+      url: "/api/integration/{integrationID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  private _connect?: ApiV2IntegrationConnect
+  get connect(): ApiV2IntegrationConnect {
+    return (this._connect ??= new ApiV2IntegrationConnect({ client: this.client }))
+  }
+
+  private _attempt?: ApiV2IntegrationAttempt
+  get attempt(): ApiV2IntegrationAttempt {
+    return (this._attempt ??= new ApiV2IntegrationAttempt({ client: this.client }))
+  }
+}
+
+class ApiV2CredentialRepair extends NovaClawApiClient {
+  /**
+   * Check stored-secret readability
+   *
+   * Report malformed stored secrets and supported account or identity repair actions.
+   */
+  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2CredentialRepairStatusResponses,
+      T.V2CredentialRepairStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/credential/repair",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Credential extends NovaClawApiClient {
+  /**
+   * Update credential
+   *
+   * Update a stored credential label.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      credentialID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      label: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { credentialID: parameters?.["credentialID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { label: parameters?.["label"] }
+    return (options?.client ?? this.client).patch<
+      T.V2CredentialUpdateResponses,
+      T.V2CredentialUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/credential/{credentialID}",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove credential
+   *
+   * Remove a stored integration credential.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      credentialID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { credentialID: parameters?.["credentialID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<
+      T.V2CredentialRemoveResponses,
+      T.V2CredentialRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/credential/{credentialID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  private _repair?: ApiV2CredentialRepair
+  get repair(): ApiV2CredentialRepair {
+    return (this._repair ??= new ApiV2CredentialRepair({ client: this.client }))
+  }
+}
+
+class ApiV2MessengerDriver extends NovaClawApiClient {
+  /**
+   * List messenger drivers
+   *
+   * Retrieve the installed messenger platform drivers and their capabilities.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2MessengerDriverListResponses,
+      T.V2MessengerDriverListErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/driver",
+      ...options,
+    })
+  }
+}
+
+class ApiV2MessengerAccount extends NovaClawApiClient {
+  /**
+   * List messenger accounts
+   *
+   * Retrieve every configured messenger account with its live connection status.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2MessengerAccountListResponses,
+      T.V2MessengerAccountListErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account",
+      ...options,
+    })
+  }
+
+  /**
+   * Create messenger account
+   *
+   * Configure a messenger account for an installed driver. The optional secret (bot token, API key) is stored in the credential store and never returned.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      driverID: string
+      label: string
+      enabled: boolean
+      settings: {
+        [key: string]: string
+      }
+      secret?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      driverID: parameters?.["driverID"],
+      label: parameters?.["label"],
+      enabled: parameters?.["enabled"],
+      settings: parameters?.["settings"],
+      secret: parameters?.["secret"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2MessengerAccountCreateResponses,
+      T.V2MessengerAccountCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Update messenger account
+   *
+   * Update a messenger account's label, enabled state, settings, or stored secret.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      label?: string
+      enabled?: boolean
+      settings?: {
+        [key: string]: string
+      }
+      secret?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"] }
+    const body = {
+      label: parameters?.["label"],
+      enabled: parameters?.["enabled"],
+      settings: parameters?.["settings"],
+      secret: parameters?.["secret"],
+    }
+    return (options?.client ?? this.client).patch<
+      T.V2MessengerAccountUpdateResponses,
+      T.V2MessengerAccountUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove messenger account
+   *
+   * Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2MessengerAccountRemoveResponses,
+      T.V2MessengerAccountRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Mint pairing code
+   *
+   * Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.
+   */
+  public pair<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      trust: "operator" | "client"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"] }
+    const body = { trust: parameters?.["trust"] }
+    return (options?.client ?? this.client).post<
+      T.V2MessengerAccountPairResponses,
+      T.V2MessengerAccountPairErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/pair",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List an account's chats
+   *
+   * The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).
+   */
+  public chats<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"] }
+    return (options?.client ?? this.client).get<
+      T.V2MessengerAccountChatsResponses,
+      T.V2MessengerAccountChatsErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/chats",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2MessengerBinding extends NovaClawApiClient {
+  /**
+   * List chat bindings
+   *
+   * Every live session↔chat binding on this instance, with the chat's human title from the seen-cache where known.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2MessengerBindingListResponses,
+      T.V2MessengerBindingListErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/binding",
+      ...options,
+    })
+  }
+
+  /**
+   * Bind a session to a chat
+   *
+   * Link a session to a remote chat at an explicit trust tier (operator | client | audience — always user-chosen, never inferred). One session per chat: if the chat is already bound the call fails naming the holding session; pass steal:true to rebind deliberately.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      chatID: string
+      sessionID: string
+      trust: T.MessengerTrust
+      steal?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      accountID: parameters?.["accountID"],
+      chatID: parameters?.["chatID"],
+      sessionID: parameters?.["sessionID"],
+      trust: parameters?.["trust"],
+      steal: parameters?.["steal"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2MessengerBindingCreateResponses,
+      T.V2MessengerBindingCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/binding",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Unbind a chat
+   *
+   * Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      bindingID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { bindingID: parameters?.["bindingID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2MessengerBindingRemoveResponses,
+      T.V2MessengerBindingRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/binding/{bindingID}",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2MessengerLogin extends NovaClawApiClient {
+  /**
+   * Begin messenger login
+   *
+   * Start a login-auth attempt for an account whose driver signs into the user's own messenger account (inputs answer the driver's loginPrompts — e.g. phone and optional 2FA password). The provider sends a confirmation code; complete the attempt with it.
+   */
+  public begin<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      inputs: {
+        [key: string]: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"] }
+    const body = { inputs: parameters?.["inputs"] }
+    return (options?.client ?? this.client).post<
+      T.V2MessengerLoginBeginResponses,
+      T.V2MessengerLoginBeginErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/login",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Messenger login attempt status
+   *
+   * Retrieve the state of a pending or recently finished messenger login attempt, including the step's CURRENT instructions and scannable image — poll this while an attempt is pending, because providers may rotate what the user must act on (WhatsApp mints a fresh linked-device QR every ~20s).
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    return (options?.client ?? this.client).get<
+      T.V2MessengerLoginStatusResponses,
+      T.V2MessengerLoginStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Cancel messenger login
+   *
+   * Abandon a pending messenger login attempt and release its resources.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2MessengerLoginCancelResponses,
+      T.V2MessengerLoginCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Complete messenger login
+   *
+   * Finish a login attempt with the confirmation code the provider sent. On success the session credential is stored and the account reconnects; a mistyped code keeps the attempt pending (error kind messenger_login_retry).
+   */
+  public complete<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+      code: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { attemptID: parameters?.["attemptID"] }
+    const body = { code: parameters?.["code"] }
+    return (options?.client ?? this.client).post<
+      T.V2MessengerLoginCompleteResponses,
+      T.V2MessengerLoginCompleteErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}/complete",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Messenger extends NovaClawApiClient {
+  private _driver?: ApiV2MessengerDriver
+  get driver(): ApiV2MessengerDriver {
+    return (this._driver ??= new ApiV2MessengerDriver({ client: this.client }))
+  }
+
+  private _account?: ApiV2MessengerAccount
+  get account(): ApiV2MessengerAccount {
+    return (this._account ??= new ApiV2MessengerAccount({ client: this.client }))
+  }
+
+  private _binding?: ApiV2MessengerBinding
+  get binding(): ApiV2MessengerBinding {
+    return (this._binding ??= new ApiV2MessengerBinding({ client: this.client }))
+  }
+
+  private _login?: ApiV2MessengerLogin
+  get login(): ApiV2MessengerLogin {
+    return (this._login ??= new ApiV2MessengerLogin({ client: this.client }))
+  }
+}
+
+class ApiV2CalendarSchedule extends NovaClawApiClient {
+  /**
+   * List calendar schedules
+   *
+   * Retrieve every scheduled agent-launch task with its next-fire time.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2CalendarScheduleListResponses,
+      T.V2CalendarScheduleListErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule",
+      ...options,
+    })
+  }
+
+  /**
+   * Create a calendar schedule
+   *
+   * Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      calendarCreateInput: T.CalendarCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["calendarCreateInput"]
+    return (options?.client ?? this.client).post<
+      T.V2CalendarScheduleCreateResponses,
+      T.V2CalendarScheduleCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Update a calendar schedule
+   *
+   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      calendarUpdateInput: T.CalendarUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { id: parameters?.["id"] }
+    const body = parameters?.["calendarUpdateInput"]
+    return (options?.client ?? this.client).patch<
+      T.V2CalendarScheduleUpdateResponses,
+      T.V2CalendarScheduleUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule/{id}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove a calendar schedule
+   *
+   * Delete a scheduled agent-launch task by id.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).delete<
+      T.V2CalendarScheduleRemoveResponses,
+      T.V2CalendarScheduleRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule/{id}",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2CalendarFires extends NovaClawApiClient {
+  /**
+   * List recent schedule fires
+   *
+   * Recent scheduled-launch fires across all schedules, newest first (the run history).
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2CalendarFiresListResponses,
+      T.V2CalendarFiresListErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/fires",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Calendar extends NovaClawApiClient {
+  private _schedule?: ApiV2CalendarSchedule
+  get schedule(): ApiV2CalendarSchedule {
+    return (this._schedule ??= new ApiV2CalendarSchedule({ client: this.client }))
+  }
+
+  private _fires?: ApiV2CalendarFires
+  get fires(): ApiV2CalendarFires {
+    return (this._fires ??= new ApiV2CalendarFires({ client: this.client }))
+  }
+}
+
+class ApiV2Recipe extends NovaClawApiClient {
+  /**
+   * List recipes
+   *
+   * Every recipe on this install, name-sorted. `builtin` marks the ones NovaClaw shipped.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2RecipeListResponses, T.V2RecipeListErrors, ThrowOnError>({
+      url: "/api/recipe",
+      ...options,
+    })
+  }
+
+  /**
+   * Create or update a recipe
+   *
+   * Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.
+   */
+  public save<ThrowOnError extends boolean = false>(
+    parameters: {
+      recipeSaveInput: T.RecipeSaveInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["recipeSaveInput"]
+    return (options?.client ?? this.client).post<T.V2RecipeSaveResponses, T.V2RecipeSaveErrors, ThrowOnError>({
+      url: "/api/recipe",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Read one recipe
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeGetResponses, T.V2RecipeGetErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Change some of a recipe's fields and nothing else
+   *
+   * Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      recipeUpdateInput: T.RecipeUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = parameters?.["recipeUpdateInput"]
+    return (options?.client ?? this.client).patch<T.V2RecipeUpdateResponses, T.V2RecipeUpdateErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Delete a recipe and its assets
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).delete<T.V2RecipeRemoveResponses, T.V2RecipeRemoveErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Read a recipe's file, and what it needs and produces
+   *
+   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
+   */
+  public source<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeSourceResponses, T.V2RecipeSourceErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/source",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Store pasted recipe markdown without assets
+   *
+   * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.
+   */
+  public import<ThrowOnError extends boolean = false>(
+    parameters: {
+      recipeImportInput: T.RecipeImportInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["recipeImportInput"]
+    return (options?.client ?? this.client).post<T.V2RecipeImportResponses, T.V2RecipeImportErrors, ThrowOnError>({
+      url: "/api/recipe/import",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Export a complete recipe folder
+   *
+   * Returns a standard ZIP containing recipe.md and every nested binary or text asset.
+   */
+  public archive<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeArchiveResponses, T.V2RecipeArchiveErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/archive",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Import a complete recipe folder
+   *
+   * Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.
+   */
+  public archiveImport<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug?: string
+      body: Blob | File
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { slug: parameters?.["slug"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<
+      T.V2RecipeArchiveImportResponses,
+      T.V2RecipeArchiveImportErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/archive",
+      ...options,
+      query,
+      body,
+      bodySerializer: null,
+      headers: { "Content-Type": "application/zip", ...options?.headers },
+    })
+  }
+
+  /**
+   * Copy a recipe
+   *
+   * Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.
+   */
+  public duplicate<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      body: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<T.V2RecipeDuplicateResponses, T.V2RecipeDuplicateErrors, ThrowOnError>(
+      {
+        url: "/api/recipe/{slug}/duplicate",
+        ...options,
+        path,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+
+  /**
+   * Cook a recipe
+   *
+   * Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.
+   */
+  public run<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      directory?: string
+      model?: string
+      agent?: string
+      strict?: T.SessionStrictOverride
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = {
+      directory: parameters?.["directory"],
+      model: parameters?.["model"],
+      agent: parameters?.["agent"],
+      strict: parameters?.["strict"],
+    }
+    return (options?.client ?? this.client).post<T.V2RecipeRunResponses, T.V2RecipeRunErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/run",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Check what a cook actually produced
+   *
+   * Reads the work directory and reports, per artifact the recipe declares, whether it is there and whether it is the shape its name implies. Deterministic and read-only: the harness looks at the filesystem, so the verdict does not depend on what the model said about its own work. Runs nothing and writes nothing, and may be called as often as you like.
+   */
+  public verify<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      directory: string
+      model?: string
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = {
+      directory: parameters?.["directory"],
+      model: parameters?.["model"],
+      sessionID: parameters?.["sessionID"],
+    }
+    return (options?.client ?? this.client).post<T.V2RecipeVerifyResponses, T.V2RecipeVerifyErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/verify",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2App extends NovaClawApiClient {
+  /**
+   * Remove a home app
+   *
+   * Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; deleting an id that does not exist succeeds, so the call is idempotent.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).delete<T.V2AppRemoveResponses, T.V2AppRemoveErrors, ThrowOnError>({
+      url: "/api/app/{id}",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2PermissionSaved extends NovaClawApiClient {
+  /**
+   * List saved permissions
+   *
+   * Retrieve saved permissions, optionally filtered by project.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      origin?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { origin: parameters?.["origin"] }
+    return (options?.client ?? this.client).get<
+      T.V2PermissionSavedListResponses,
+      T.V2PermissionSavedListErrors,
+      ThrowOnError
+    >({
+      url: "/api/permission/saved",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Remove saved permission
+   *
+   * Remove a saved permission by ID.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).delete<
+      T.V2PermissionSavedRemoveResponses,
+      T.V2PermissionSavedRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/permission/saved/{id}",
+      ...options,
+      path,
+    })
+  }
+}
+
+class ApiV2Permission extends NovaClawApiClient {
+  private _saved?: ApiV2PermissionSaved
+  get saved(): ApiV2PermissionSaved {
+    return (this._saved ??= new ApiV2PermissionSaved({ client: this.client }))
+  }
+}
+
+class ApiV2Fs extends NovaClawApiClient {
+  /**
+   * Read file
+   *
+   * Serve one file relative to the requested location. A browser download presents a `ticket` from `fs.readToken` in place of the `Authorization` header it cannot set.
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      ticket?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], ticket: parameters?.["ticket"] }
+    return (options?.client ?? this.client).get<T.V2FsReadResponses, T.V2FsReadErrors, ThrowOnError>({
+      url: "/api/fs/read/*",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Create file read ticket
+   *
+   * Create a short-lived single-use ticket authorizing one browser download of one file.
+   */
+  public readToken<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], path: parameters?.["path"] }
+    return (options?.client ?? this.client).post<T.V2FsReadTokenResponses, T.V2FsReadTokenErrors, ThrowOnError>({
+      url: "/api/fs/read-token",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Read snapshot file
+   *
+   * Read one file exactly as it existed in a captured session revision.
+   */
+  public snapshotRead<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      snapshot: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], snapshot: parameters?.["snapshot"], path: parameters?.["path"] }
+    return (options?.client ?? this.client).get<T.V2FsSnapshotReadResponses, T.V2FsSnapshotReadErrors, ThrowOnError>({
+      url: "/api/fs/snapshot/read",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * List directory
+   *
+   * List direct children of one directory relative to the requested location.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      path?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], path: parameters?.["path"] }
+    return (options?.client ?? this.client).get<T.V2FsListResponses, T.V2FsListErrors, ThrowOnError>({
+      url: "/api/fs/list",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Find files
+   *
+   * Find recursively ranked filesystem entries relative to the requested location.
+   */
+  public find<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      query: string
+      type?: "file" | "directory"
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      location: parameters?.["location"],
+      query: parameters?.["query"],
+      type: parameters?.["type"],
+      limit: parameters?.["limit"],
+    }
+    return (options?.client ?? this.client).get<T.V2FsFindResponses, T.V2FsFindErrors, ThrowOnError>({
+      url: "/api/fs/find",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2Command extends NovaClawApiClient {
+  /**
+   * List commands
+   *
+   * Retrieve currently registered commands.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2CommandListResponses, T.V2CommandListErrors, ThrowOnError>({
+      url: "/api/command",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Remove command
+   *
+   * Delete a config-defined command from the instance command store. Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<T.V2CommandRemoveResponses, T.V2CommandRemoveErrors, ThrowOnError>({
+      url: "/api/command/{name}",
+      ...options,
+      path,
+      query,
+    })
+  }
+}
+
+class ApiV2Vcs extends NovaClawApiClient {
+  /**
+   * Get VCS info
+   *
+   * Retrieve version control information for a location, such as its branch and default branch.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsGetResponses, T.V2VcsGetErrors, ThrowOnError>({
+      url: "/api/vcs",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get VCS status
+   *
+   * Retrieve the changed files in the working tree, with counts and no patches.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsStatusResponses, T.V2VcsStatusErrors, ThrowOnError>({
+      url: "/api/vcs/status",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get VCS diff
+   *
+   * Retrieve the diff for the working tree (mode=git) or against the default branch (mode=branch).
+   */
+  public diff<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      mode: "git" | "branch"
+      context?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], mode: parameters?.["mode"], context: parameters?.["context"] }
+    return (options?.client ?? this.client).get<T.V2VcsDiffResponses, T.V2VcsDiffErrors, ThrowOnError>({
+      url: "/api/vcs/diff",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get raw VCS diff
+   *
+   * Retrieve a raw patch of the uncommitted changes, as text a patch tool can apply directly.
+   */
+  public diffRaw<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2VcsDiffRawResponses, T.V2VcsDiffRawErrors, ThrowOnError>({
+      url: "/api/vcs/diff/raw",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Apply VCS patch
+   *
+   * Apply a raw patch to the working tree. Fails with kind 'non-git' outside a repository and 'not-clean' when the tree has changes.
+   */
+  public apply<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      patch: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    const body = { patch: parameters?.["patch"] }
+    return (options?.client ?? this.client).post<T.V2VcsApplyResponses, T.V2VcsApplyErrors, ThrowOnError>({
+      url: "/api/vcs/apply",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Quality extends NovaClawApiClient {
+  /**
+   * Detect quality commands
+   *
+   * Scan the location's own manifests and propose check, typecheck, test and lint commands, with the evidence for each. Proposes only: nothing is run and nothing is saved.
+   */
+  public detect<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2QualityDetectResponses, T.V2QualityDetectErrors, ThrowOnError>({
+      url: "/api/quality/detect",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2Skill extends NovaClawApiClient {
+  /**
+   * List skills
+   *
+   * Retrieve currently registered skills.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2SkillListResponses, T.V2SkillListErrors, ThrowOnError>({
+      url: "/api/skill",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2Event extends NovaClawApiClient {
+  /**
+   * Subscribe to events
+   *
+   * Subscribe to native event payloads for the server.
+   */
+  public subscribe<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).sse.get<
+      T.V2EventSubscribeResponses,
+      T.V2EventSubscribeErrors,
+      ThrowOnError
+    >({
+      url: "/api/event",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Pty extends NovaClawApiClient {
+  /**
+   * List available shells
+   *
+   * List shells available for human terminal sessions on this NovaClaw instance.
+   */
+  public shells<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2PtyShellsResponses, T.V2PtyShellsErrors, ThrowOnError>({
+      url: "/api/pty/shells",
+      ...options,
+    })
+  }
+
+  /**
+   * List PTY sessions
+   *
+   * List PTY sessions for a location, including exited sessions retained until removal.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2PtyListResponses, T.V2PtyListErrors, ThrowOnError>({
+      url: "/api/pty",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Create PTY session
+   *
+   * Create a pseudo-terminal session for a location.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      command?: string
+      args?: Array<string>
+      cwd?: string
+      title?: string
+      env?: {
+        [key: string]: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    const body = {
+      command: parameters?.["command"],
+      args: parameters?.["args"],
+      cwd: parameters?.["cwd"],
+      title: parameters?.["title"],
+      env: parameters?.["env"],
+    }
+    return (options?.client ?? this.client).post<T.V2PtyCreateResponses, T.V2PtyCreateErrors, ThrowOnError>({
+      url: "/api/pty",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Stop all PTY sessions
+   *
+   * Terminate and remove every PTY session for a location.
+   */
+  public removeAll<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<T.V2PtyRemoveAllResponses, T.V2PtyRemoveAllErrors, ThrowOnError>({
+      url: "/api/pty",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Get PTY session
+   *
+   * Get one PTY session, including its exit code once exited.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2PtyGetResponses, T.V2PtyGetErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Update PTY session
+   *
+   * Update the title or viewport size of one PTY session.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      title?: string
+      size?: {
+        rows: number
+        cols: number
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = { location: parameters?.["location"] }
+    const body = { title: parameters?.["title"], size: parameters?.["size"] }
+    return (options?.client ?? this.client).put<T.V2PtyUpdateResponses, T.V2PtyUpdateErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove PTY session
+   *
+   * Terminate and remove one PTY session.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<T.V2PtyRemoveResponses, T.V2PtyRemoveErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Inspect PTY process activity
+   *
+   * Report whether a running terminal shell has descendant processes before a destructive close.
+   */
+  public activity<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2PtyActivityResponses, T.V2PtyActivityErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}/activity",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Create PTY WebSocket token
+   *
+   * Create a short-lived single-use ticket for opening a PTY WebSocket connection.
+   */
+  public connectToken<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).post<T.V2PtyConnectTokenResponses, T.V2PtyConnectTokenErrors, ThrowOnError>(
+      {
+        url: "/api/pty/{ptyID}/connect-token",
+        ...options,
+        path,
+        query,
+      },
+    )
+  }
+
+  /**
+   * Connect to PTY session
+   *
+   * Establish a WebSocket connection streaming PTY output and accepting terminal input.
+   */
+  public connect<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      "location[directory]"?: string
+      "location[workspace]"?: string
+      cursor?: string
+      ticket?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { ptyID: parameters?.["ptyID"] }
+    const query = {
+      "location[directory]": parameters?.["location[directory]"],
+      "location[workspace]": parameters?.["location[workspace]"],
+      cursor: parameters?.["cursor"],
+      ticket: parameters?.["ticket"],
+    }
+    return (options?.client ?? this.client).get<T.V2PtyConnectResponses, T.V2PtyConnectErrors, ThrowOnError>({
+      url: "/api/pty/{ptyID}/connect",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * List instance PTYs
+   *
+   * List PTY sessions across every active location owned by one instance directory.
+   */
+  public instanceList<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2PtyInstanceListResponses, T.V2PtyInstanceListErrors, ThrowOnError>({
+      url: "/api/instance/pty",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Stop all instance PTYs
+   *
+   * Terminate every PTY session across active locations owned by one instance directory.
+   */
+  public instanceRemoveAll<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<
+      T.V2PtyInstanceRemoveAllResponses,
+      T.V2PtyInstanceRemoveAllErrors,
+      ThrowOnError
+    >({
+      url: "/api/instance/pty",
+      ...options,
+      query,
+    })
+  }
+}
+
+class ApiV2Reference extends NovaClawApiClient {
+  /**
+   * List references
+   *
+   * List references available in the requested location.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2ReferenceListResponses, T.V2ReferenceListErrors, ThrowOnError>({
+      url: "/api/reference",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Remove reference
+   *
+   * Delete a config-defined reference alias from the instance reference store. Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { name: parameters?.["name"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).delete<
+      T.V2ReferenceRemoveResponses,
+      T.V2ReferenceRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/reference/{name}",
+      ...options,
+      path,
+      query,
+    })
+  }
+}
+
+class ApiV2Config extends NovaClawApiClient {
+  /**
+   * Remove config values
+   *
+   * Delete one or more values from the instance configuration by path. `PATCH /config` merges and can never remove a key; this is the deletion verb. Instance-wide, applied in one transaction, and live without a restart. A path that names nothing is a 400 and NOTHING is removed.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      configRemoveRequest: T.ConfigRemoveRequest
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["configRemoveRequest"]
+    return (options?.client ?? this.client).post<T.V2ConfigRemoveResponses, T.V2ConfigRemoveErrors, ThrowOnError>({
+      url: "/api/config/remove",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2Log extends NovaClawApiClient {
+  /**
+   * Read this instance's own log
+   *
+   * Read `novaclaw.log` — the instance's keyed, rotated activity log — filtered and rendered server-side. The instance's own log directory is the only source; there is no path parameter. The response carries the rendered text and nothing structured, so there is exactly one renderer of a log line in the product.
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters: {
+      logReadRequest: T.LogReadRequest
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["logReadRequest"]
+    return (options?.client ?? this.client).post<T.V2LogReadResponses, T.V2LogReadErrors, ThrowOnError>({
+      url: "/api/log/read",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Stream bounded diagnostics from this instance
+   *
+   * Streams this instance's own recent activity log through the maintenance-plane projection. The source is fixed server-side; the request accepts no filesystem path.
+   */
+  public export<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<T.V2LogExportResponses, T.V2LogExportErrors, ThrowOnError>({
+      url: "/api/log/export",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Telemetry extends NovaClawApiClient {
+  /**
+   * Crash-reporting status
+   *
+   * Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.
+   */
+  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2TelemetryStatusResponses, T.V2TelemetryStatusErrors, ThrowOnError>({
+      url: "/api/telemetry/status",
+      ...options,
+    })
+  }
+}
+
+class ApiV2 extends NovaClawApiClient {
+  private _instance?: ApiV2Instance
+  get instance(): ApiV2Instance {
+    return (this._instance ??= new ApiV2Instance({ client: this.client }))
+  }
+
+  private _health?: ApiV2Health
+  get health(): ApiV2Health {
+    return (this._health ??= new ApiV2Health({ client: this.client }))
+  }
+
+  private _memory?: ApiV2Memory
+  get memory(): ApiV2Memory {
+    return (this._memory ??= new ApiV2Memory({ client: this.client }))
+  }
+
+  private _worldMemory?: ApiV2WorldMemory
+  get "world-memory"(): ApiV2WorldMemory {
+    return (this._worldMemory ??= new ApiV2WorldMemory({ client: this.client }))
+  }
+
+  private _location?: ApiV2Location
+  get location(): ApiV2Location {
+    return (this._location ??= new ApiV2Location({ client: this.client }))
+  }
+
+  private _agent?: ApiV2Agent
+  get agent(): ApiV2Agent {
+    return (this._agent ??= new ApiV2Agent({ client: this.client }))
+  }
+
+  private _session?: ApiV2Session
+  get session(): ApiV2Session {
+    return (this._session ??= new ApiV2Session({ client: this.client }))
+  }
+
+  private _model?: ApiV2Model
+  get model(): ApiV2Model {
+    return (this._model ??= new ApiV2Model({ client: this.client }))
+  }
+
+  private _provider?: ApiV2Provider
+  get provider(): ApiV2Provider {
+    return (this._provider ??= new ApiV2Provider({ client: this.client }))
+  }
+
+  private _integration?: ApiV2Integration
+  get integration(): ApiV2Integration {
+    return (this._integration ??= new ApiV2Integration({ client: this.client }))
+  }
+
+  private _credential?: ApiV2Credential
+  get credential(): ApiV2Credential {
+    return (this._credential ??= new ApiV2Credential({ client: this.client }))
+  }
+
+  private _messenger?: ApiV2Messenger
+  get messenger(): ApiV2Messenger {
+    return (this._messenger ??= new ApiV2Messenger({ client: this.client }))
+  }
+
+  private _calendar?: ApiV2Calendar
+  get calendar(): ApiV2Calendar {
+    return (this._calendar ??= new ApiV2Calendar({ client: this.client }))
+  }
+
+  private _recipe?: ApiV2Recipe
+  get recipe(): ApiV2Recipe {
+    return (this._recipe ??= new ApiV2Recipe({ client: this.client }))
+  }
+
+  private _app?: ApiV2App
+  get app(): ApiV2App {
+    return (this._app ??= new ApiV2App({ client: this.client }))
+  }
+
+  private _permission?: ApiV2Permission
+  get permission(): ApiV2Permission {
+    return (this._permission ??= new ApiV2Permission({ client: this.client }))
+  }
+
+  private _fs?: ApiV2Fs
+  get fs(): ApiV2Fs {
+    return (this._fs ??= new ApiV2Fs({ client: this.client }))
+  }
+
+  private _command?: ApiV2Command
+  get command(): ApiV2Command {
+    return (this._command ??= new ApiV2Command({ client: this.client }))
+  }
+
+  private _vcs?: ApiV2Vcs
+  get vcs(): ApiV2Vcs {
+    return (this._vcs ??= new ApiV2Vcs({ client: this.client }))
+  }
+
+  private _quality?: ApiV2Quality
+  get quality(): ApiV2Quality {
+    return (this._quality ??= new ApiV2Quality({ client: this.client }))
+  }
+
+  private _skill?: ApiV2Skill
+  get skill(): ApiV2Skill {
+    return (this._skill ??= new ApiV2Skill({ client: this.client }))
+  }
+
+  private _event?: ApiV2Event
+  get event(): ApiV2Event {
+    return (this._event ??= new ApiV2Event({ client: this.client }))
+  }
+
+  private _pty?: ApiV2Pty
+  get pty(): ApiV2Pty {
+    return (this._pty ??= new ApiV2Pty({ client: this.client }))
+  }
+
+  private _reference?: ApiV2Reference
+  get reference(): ApiV2Reference {
+    return (this._reference ??= new ApiV2Reference({ client: this.client }))
+  }
+
+  private _config?: ApiV2Config
+  get config(): ApiV2Config {
+    return (this._config ??= new ApiV2Config({ client: this.client }))
+  }
+
+  private _log?: ApiV2Log
+  get log(): ApiV2Log {
+    return (this._log ??= new ApiV2Log({ client: this.client }))
+  }
+
+  private _telemetry?: ApiV2Telemetry
+  get telemetry(): ApiV2Telemetry {
+    return (this._telemetry ??= new ApiV2Telemetry({ client: this.client }))
+  }
+}
+
 class ApiAdhoc extends NovaClawApiClient {
   /**
    * List session recipes (4E)
@@ -2970,3990 +6986,6 @@ class ApiSync extends NovaClawApiClient {
   }
 }
 
-class ApiV2Health extends NovaClawApiClient {
-  /**
-   * Check server health
-   *
-   * Check whether the API server is ready to accept requests.
-   */
-  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2HealthGetResponses, T.V2HealthGetErrors, ThrowOnError>({
-      url: "/api/health",
-      ...options,
-    })
-  }
-}
-
-class ApiV2MemoryClaim extends NovaClawApiClient {
-  /**
-   * Archive, restore or flag a claim
-   *
-   * Move one claim between the statuses a person controls: `archived` (kept, never recalled), `active` (restored), `needs_review` (flagged). `superseded` is the lifecycle's own and cannot be set here. Answers whether the status actually changed.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-      status: "active" | "archived" | "needs_review"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { id: parameters?.["id"], status: parameters?.["status"] }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryClaimStatusResponses,
-      T.V2MemoryClaimStatusErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/claim/status",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Record a claim
-   *
-   * Write a governed claim: file it against its subject and its evidence, and retire the claim it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names both replaces the current answer to that question and the reply lists what it retired.
-   */
-  public add<ThrowOnError extends boolean = false>(
-    parameters: {
-      statement: string
-      scope?: string
-      subject?: string
-      predicate?:
-        | "about"
-        | "birthday"
-        | "dislikes"
-        | "email"
-        | "employer"
-        | "knows"
-        | "language"
-        | "likes"
-        | "location"
-        | "name"
-        | "owner"
-        | "path"
-        | "phone"
-        | "preference"
-        | "role"
-        | "status"
-        | "timezone"
-        | "uses"
-        | "version"
-        | "works_on"
-      confidence?: number
-      source?: string
-      agent?: string
-      validFrom?: string
-      evidence?: Array<{
-        kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
-        locator: string
-        label?: string
-      }>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = {
-      statement: parameters?.["statement"],
-      scope: parameters?.["scope"],
-      subject: parameters?.["subject"],
-      predicate: parameters?.["predicate"],
-      confidence: parameters?.["confidence"],
-      source: parameters?.["source"],
-      agent: parameters?.["agent"],
-      validFrom: parameters?.["validFrom"],
-      evidence: parameters?.["evidence"],
-    }
-    return (options?.client ?? this.client).post<T.V2MemoryClaimAddResponses, T.V2MemoryClaimAddErrors, ThrowOnError>({
-      url: "/api/memory/claim",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2MemoryUsage extends NovaClawApiClient {
-  /**
-   * Never recalled
-   *
-   * Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.
-   */
-  public neverUsed<ThrowOnError extends boolean = false>(
-    parameters?: {
-      scopes?: Array<string>
-      limit?: number
-      scan?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"], scan: parameters?.["scan"] }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryUsageNeverUsedResponses,
-      T.V2MemoryUsageNeverUsedErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/usage/never-used",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Vouched for
-   *
-   * Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.
-   */
-  public useful<ThrowOnError extends boolean = false>(
-    parameters?: {
-      scopes?: Array<string>
-      limit?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"] }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryUsageUsefulResponses,
-      T.V2MemoryUsageUsefulErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/usage/useful",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Keeps being corrected
-   *
-   * Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.
-   */
-  public corrections<ThrowOnError extends boolean = false>(
-    parameters?: {
-      scopes?: Array<string>
-      limit?: number
-      minCorrected?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = {
-      scopes: parameters?.["scopes"],
-      limit: parameters?.["limit"],
-      minCorrected: parameters?.["minCorrected"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryUsageCorrectionsResponses,
-      T.V2MemoryUsageCorrectionsErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/usage/corrections",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Why is this here
-   *
-   * Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.
-   */
-  public detail<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryUsageDetailResponses,
-      T.V2MemoryUsageDetailErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/usage/detail",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2Memory extends NovaClawApiClient {
-  /**
-   * Erase all memory
-   *
-   * Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.
-   */
-  public erase<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).post<T.V2MemoryEraseResponses, T.V2MemoryEraseErrors, ThrowOnError>({
-      url: "/api/memory/erase",
-      ...options,
-    })
-  }
-
-  /**
-   * Export every memory
-   *
-   * Return a complete backup view of current memory, optionally including invalidated history. The server exhausts its bounded store pages and fails the request if any page cannot be read.
-   */
-  public export<ThrowOnError extends boolean = false>(
-    parameters?: {
-      includeInvalid?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { includeInvalid: parameters?.["includeInvalid"] }
-    return (options?.client ?? this.client).post<T.V2MemoryExportResponses, T.V2MemoryExportErrors, ThrowOnError>({
-      url: "/api/memory/export",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Read memory protection
-   *
-   * Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.
-   */
-  public protection<ThrowOnError extends boolean = false>(
-    parameters: {
-      ids: Array<string>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { ids: parameters?.["ids"] }
-    return (options?.client ?? this.client).post<
-      T.V2MemoryProtectionResponses,
-      T.V2MemoryProtectionErrors,
-      ThrowOnError
-    >({
-      url: "/api/memory/protection",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Mark useful
-   *
-   * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.
-   */
-  public feedback<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-      useful: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
-    return (options?.client ?? this.client).post<T.V2MemoryFeedbackResponses, T.V2MemoryFeedbackErrors, ThrowOnError>({
-      url: "/api/memory/feedback",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  private _claim?: ApiV2MemoryClaim
-  get claim(): ApiV2MemoryClaim {
-    return (this._claim ??= new ApiV2MemoryClaim({ client: this.client }))
-  }
-
-  private _usage?: ApiV2MemoryUsage
-  get usage(): ApiV2MemoryUsage {
-    return (this._usage ??= new ApiV2MemoryUsage({ client: this.client }))
-  }
-}
-
-class ApiV2Location extends NovaClawApiClient {
-  /**
-   * Get location
-   *
-   * Resolve the requested location or the server default location.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2LocationGetResponses, T.V2LocationGetErrors, ThrowOnError>({
-      url: "/api/location",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Agent extends NovaClawApiClient {
-  /**
-   * List agents
-   *
-   * Retrieve currently registered agents.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2AgentListResponses, T.V2AgentListErrors, ThrowOnError>({
-      url: "/api/agent",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Agents' per-minute output
-   *
-   * Tokens generated by the requested agents, bucketed by minute for the last 24 hours. One response carries every requested agent; missing usage is an empty series.
-   */
-  public usageMany<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      agentIDs: Array<string>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    const body = { agentIDs: parameters?.["agentIDs"] }
-    return (options?.client ?? this.client).post<T.V2AgentUsageManyResponses, T.V2AgentUsageManyErrors, ThrowOnError>({
-      url: "/api/agent/usage",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * An agent's per-minute output
-   *
-   * Tokens this agent GENERATED (output + reasoning), bucketed by minute, newest first, for the last 24 hours. Sparse on purpose: a minute in which the agent produced nothing has no row at all, so an absent minute means nothing happened rather than 'measured, and it was zero'. A sub-agent's output is attributed to the agent that owns it.
-   */
-  public usage<ThrowOnError extends boolean = false>(
-    parameters: {
-      agentID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { agentID: parameters?.["agentID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2AgentUsageResponses, T.V2AgentUsageErrors, ThrowOnError>({
-      url: "/api/agent/{agentID}/usage",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Remove agent
-   *
-   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      agentID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { agentID: parameters?.["agentID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<T.V2AgentRemoveResponses, T.V2AgentRemoveErrors, ThrowOnError>({
-      url: "/api/agent/{agentID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-}
-
-class ApiV2SessionTags extends NovaClawApiClient {
-  /**
-   * Set session tags
-   *
-   * Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.
-   */
-  public set<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      tags: Array<string>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { tags: parameters?.["tags"] }
-    return (options?.client ?? this.client).put<T.V2SessionTagsSetResponses, T.V2SessionTagsSetErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/tags",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * List all session tags
-   *
-   * The instance-wide tag map: session id → tags. The client store's bootstrap source.
-   */
-  public all<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2SessionTagsAllResponses, T.V2SessionTagsAllErrors, ThrowOnError>({
-      url: "/api/tag",
-      ...options,
-    })
-  }
-}
-
-class ApiV2SessionPresence extends NovaClawApiClient {
-  /**
-   * Report presence on a session
-   *
-   * Attach a viewer, say 'still here', take over control, or detach. Returns the session's whole presence snapshot; every attached surface also receives it as `session.presence.updated`.
-   */
-  public report<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      viewerID: string
-      kind: "human" | "agent" | "peer"
-      label: string
-      writing?: boolean
-      action: "report" | "claim" | "detach"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      viewerID: parameters?.["viewerID"],
-      kind: parameters?.["kind"],
-      label: parameters?.["label"],
-      writing: parameters?.["writing"],
-      action: parameters?.["action"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2SessionPresenceReportResponses,
-      T.V2SessionPresenceReportErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/presence",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * List session presence
-   *
-   * Sessions with someone attached right now: session id → presence. The client store's bootstrap source; sessions absent from the result are unattended. This instance answers only for its OWN sessions — it is not a directory of who is online.
-   */
-  public all<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2SessionPresenceAllResponses,
-      T.V2SessionPresenceAllErrors,
-      ThrowOnError
-    >({
-      url: "/api/presence",
-      ...options,
-    })
-  }
-}
-
-class ApiV2SessionExecution extends NovaClawApiClient {
-  /**
-   * Inspect durable session execution
-   *
-   * List durable execution and recovery state, including paused failures and their human-readable details. Pass sessionID to inspect one session without transferring the whole ledger.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      sessionID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<
-      T.V2SessionExecutionListResponses,
-      T.V2SessionExecutionListErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/execution",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Retry paused session execution
-   *
-   * Record explicit operator authority, reset the recovery circuit breaker, and resume queued work without requiring a model response.
-   */
-  public retry<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionExecutionRetryResponses,
-      T.V2SessionExecutionRetryErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/execution/retry",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2SessionRevert extends NovaClawApiClient {
-  /**
-   * Stage session revert
-   *
-   * Stage or move a reversible session boundary and optionally apply its file changes.
-   */
-  public stage<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      messageID: string
-      files?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { messageID: parameters?.["messageID"], files: parameters?.["files"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionRevertStageResponses,
-      T.V2SessionRevertStageErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/revert/stage",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Clear staged revert
-   */
-  public clear<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionRevertClearResponses,
-      T.V2SessionRevertClearErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/revert/clear",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Commit staged revert
-   */
-  public commit<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionRevertCommitResponses,
-      T.V2SessionRevertCommitErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/revert/commit",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2SessionPermission extends NovaClawApiClient {
-  /**
-   * Evaluate permission
-   *
-   * Evaluate the effective permission rules for a session action.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      id?: string
-      action: string
-      resources: Array<string>
-      save?: Array<string>
-      metadata?: {
-        [key: string]: unknown
-      }
-      source?: T.PermissionV2Source
-      agent?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      id: parameters?.["id"],
-      action: parameters?.["action"],
-      resources: parameters?.["resources"],
-      save: parameters?.["save"],
-      metadata: parameters?.["metadata"],
-      source: parameters?.["source"],
-      agent: parameters?.["agent"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2SessionPermissionCreateResponses,
-      T.V2SessionPermissionCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/permission",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2SessionQuestion extends NovaClawApiClient {
-  /**
-   * List session question requests
-   *
-   * Retrieve pending question requests owned by a session.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<
-      T.V2SessionQuestionListResponses,
-      T.V2SessionQuestionListErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/question",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Reply to pending question request
-   *
-   * Answer a pending question request owned by a session.
-   */
-  public reply<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      requestID: string
-      questionV2Reply: T.QuestionV2Reply
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], requestID: parameters?.["requestID"] }
-    const body = parameters?.["questionV2Reply"]
-    return (options?.client ?? this.client).post<
-      T.V2SessionQuestionReplyResponses,
-      T.V2SessionQuestionReplyErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/question/{requestID}/reply",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Reject pending question request
-   *
-   * Reject a pending question request owned by a session.
-   */
-  public reject<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      requestID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], requestID: parameters?.["requestID"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionQuestionRejectResponses,
-      T.V2SessionQuestionRejectErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/question/{requestID}/reject",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2Session extends NovaClawApiClient {
-  /**
-   * List sessions
-   *
-   * Retrieve sessions in the requested order. Items keep that order across pages; use cursor.next or cursor.previous to move through the ordered list.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      workspace?: string
-      roots?: boolean | "true" | "false"
-      limit?: number
-      order?: "asc" | "desc"
-      search?: string
-      directory?: string
-      under?: string
-      cursor?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      workspace: parameters?.["workspace"],
-      roots: parameters?.["roots"],
-      limit: parameters?.["limit"],
-      order: parameters?.["order"],
-      search: parameters?.["search"],
-      directory: parameters?.["directory"],
-      under: parameters?.["under"],
-      cursor: parameters?.["cursor"],
-    }
-    return (options?.client ?? this.client).get<T.V2SessionListResponses, T.V2SessionListErrors, ThrowOnError>({
-      url: "/api/session",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Create session
-   *
-   * Create a session at the requested location.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      id?: string
-      parentID?: string
-      agent?: string
-      model?: T.ModelRef
-      device?: string
-      controlBinding?: string
-      systemPromptOverride?: string
-      type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
-      priority?: number
-      permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-      responder?: "nova" | "operator"
-      location?: T.LocationRef
-      title?: string
-      strict?: T.SessionStrictOverride
-      introspection?: boolean
-      quality?: boolean
-      affective?: boolean
-      thinkingBudget?: boolean
-      surgicalEdits?: boolean
-      askBeforeChanges?: boolean
-      safeMode?: boolean
-      contextBudget?: boolean
-      memory?: boolean
-      shortChat?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = {
-      id: parameters?.["id"],
-      parentID: parameters?.["parentID"],
-      agent: parameters?.["agent"],
-      model: parameters?.["model"],
-      device: parameters?.["device"],
-      controlBinding: parameters?.["controlBinding"],
-      systemPromptOverride: parameters?.["systemPromptOverride"],
-      type: parameters?.["type"],
-      priority: parameters?.["priority"],
-      permissionMode: parameters?.["permissionMode"],
-      responder: parameters?.["responder"],
-      location: parameters?.["location"],
-      title: parameters?.["title"],
-      strict: parameters?.["strict"],
-      introspection: parameters?.["introspection"],
-      quality: parameters?.["quality"],
-      affective: parameters?.["affective"],
-      thinkingBudget: parameters?.["thinkingBudget"],
-      surgicalEdits: parameters?.["surgicalEdits"],
-      askBeforeChanges: parameters?.["askBeforeChanges"],
-      safeMode: parameters?.["safeMode"],
-      contextBudget: parameters?.["contextBudget"],
-      memory: parameters?.["memory"],
-      shortChat: parameters?.["shortChat"],
-    }
-    return (options?.client ?? this.client).post<T.V2SessionCreateResponses, T.V2SessionCreateErrors, ThrowOnError>({
-      url: "/api/session",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * List active sessions
-   *
-   * Retrieve foreground Session drains currently owned by this NovaClaw process. Sessions absent from the result are inactive.
-   */
-  public active<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2SessionActiveResponses, T.V2SessionActiveErrors, ThrowOnError>({
-      url: "/api/session/active",
-      ...options,
-    })
-  }
-
-  /**
-   * Task receipt
-   *
-   * What this session's current attempt declared and what it checked: the frozen plan, each quality check that ran with its command and exit code, and any spawned children.
-   */
-  public receipt<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionReceiptResponses, T.V2SessionReceiptErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/receipt",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Get session
-   *
-   * Retrieve a session by ID.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionGetResponses, T.V2SessionGetErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Update session
-   *
-   * Rename a session, replace its metadata, archive it, or set/remove its Device pin; returns the updated record.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      title?: string
-      metadata?: {
-        [key: string]: unknown
-      }
-      device?: string | null
-      archived?: number | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      title: parameters?.["title"],
-      metadata: parameters?.["metadata"],
-      device: parameters?.["device"],
-      archived: parameters?.["archived"],
-    }
-    return (options?.client ?? this.client).patch<T.V2SessionUpdateResponses, T.V2SessionUpdateErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Delete session
-   *
-   * Permanently delete a session and its descendants (messages, todos, tags cascade).
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).delete<T.V2SessionRemoveResponses, T.V2SessionRemoveErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * List child sessions
-   *
-   * Retrieve the sessions forked or spawned from the given parent session.
-   */
-  public children<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionChildrenResponses, T.V2SessionChildrenErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/children",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Resolve session config
-   *
-   * Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.
-   */
-  public config<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionConfigResponses, T.V2SessionConfigErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/config",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Fork session
-   *
-   * Clone a session's transcript into a fresh session, optionally truncated at (and excluding) a message.
-   */
-  public fork<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      messageID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const query = { messageID: parameters?.["messageID"] }
-    return (options?.client ?? this.client).post<T.V2SessionForkResponses, T.V2SessionForkErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/fork",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Queued prompts not yet read by the agent
-   *
-   * Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.
-   */
-  public pending<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionPendingResponses, T.V2SessionPendingErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/pending",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Get session todos
-   *
-   * Retrieve the todo list the session's agent maintains.
-   */
-  public todo<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionTodoResponses, T.V2SessionTodoErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/todo",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Switch session agent
-   *
-   * Switch the agent used by subsequent provider turns. Refuses with 409 when that colleague already has a chat — a colleague has exactly one.
-   */
-  public switchAgent<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      agent: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { agent: parameters?.["agent"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchAgentResponses,
-      T.V2SessionSwitchAgentErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/agent",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Switch session model
-   *
-   * Switch the model used by subsequent provider turns.
-   */
-  public switchModel<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      model: T.ModelRef
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { model: parameters?.["model"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchModelResponses,
-      T.V2SessionSwitchModelErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/model",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Switch session responder (B10 handoff)
-   *
-   * Take control (operator) so Nova stops auto-responding, or hand back (nova) so it resumes and drains queued input.
-   */
-  public switchResponder<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      responder: "nova" | "operator"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { responder: parameters?.["responder"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchResponderResponses,
-      T.V2SessionSwitchResponderErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/responder",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Where a session is working, and what it lost
-   *
-   * The session's current working folder, plus the folder it was created in when that one has gone missing and the session was degraded into a scratch folder. `missing` is what lets a client offer to repoint: without it the substitution is only visible as a one-off notice in the transcript, which a reader who returns later has already scrolled past.
-   */
-  public folder<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionFolderResponses, T.V2SessionFolderErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/folder",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Point a session at a different working folder
-   *
-   * Move this session's working folder. Written through the `working_folder` session component, so it re-derives project identity, publishes the same Moved event an agent's own move would, and clears any recorded missing-folder recovery. Exists because a folder that moved is something the USER knows and the agent does not: when a working folder disappears the session degrades into a scratch folder and keeps running, and only a person can say where the real one went.
-   */
-  public repointFolder<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { directory: parameters?.["directory"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionRepointFolderResponses,
-      T.V2SessionRepointFolderErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/folder",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Switch session permission mode (1K)
-   *
-   * Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.
-   */
-  public switchMode<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { permissionMode: parameters?.["permissionMode"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchModeResponses,
-      T.V2SessionSwitchModeErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/mode",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Set the session's Strict-harness override (jh.md)
-   *
-   * Enable/disable Strict mode for this session and set its racing attempts + time budget; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.
-   */
-  public switchStrict<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      strict: T.SessionStrictOverride | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { strict: parameters?.["strict"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchStrictResponses,
-      T.V2SessionSwitchStrictErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/strict",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)
-   *
-   * Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.
-   */
-  public switchFeature<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      feature:
-        | "introspection"
-        | "quality"
-        | "affective"
-        | "thinkingBudget"
-        | "surgicalEdits"
-        | "askBeforeChanges"
-        | "safeMode"
-        | "contextBudget"
-        | "memory"
-        | "shortChat"
-      enabled: boolean | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { feature: parameters?.["feature"], enabled: parameters?.["enabled"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchFeatureResponses,
-      T.V2SessionSwitchFeatureErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/feature",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Set the session's kernel thread type (Mode)
-   *
-   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.
-   */
-  public switchType<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      type: "interactive" | "auto-prompting" | "goal-oriented"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { type: parameters?.["type"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchTypeResponses,
-      T.V2SessionSwitchTypeErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/type",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Set the session's system-prompt override layer
-   *
-   * Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.
-   */
-  public switchPromptOverride<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      override: string | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { override: parameters?.["override"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchPromptOverrideResponses,
-      T.V2SessionSwitchPromptOverrideErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/prompt-override",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Run a shell command
-   *
-   * Run one shell command to completion against the session's location; the transcript renders from the durable shell events (no model turn).
-   */
-  public shell<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      command: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { command: parameters?.["command"] }
-    return (options?.client ?? this.client).post<T.V2SessionShellResponses, T.V2SessionShellErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/shell",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Run a slash command
-   *
-   * Expand and dispatch a slash command: a prompt-kind command runs a turn on this session; a subtask command spawns a child session (surfaced via session events).
-   */
-  public command<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      command: string
-      arguments: string
-      agent?: string
-      model?: string
-      variant?: string
-      messageID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      command: parameters?.["command"],
-      arguments: parameters?.["arguments"],
-      agent: parameters?.["agent"],
-      model: parameters?.["model"],
-      variant: parameters?.["variant"],
-      messageID: parameters?.["messageID"],
-    }
-    return (options?.client ?? this.client).post<T.V2SessionCommandResponses, T.V2SessionCommandErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/command",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Send message
-   *
-   * Durably admit one session input and schedule agent-loop execution unless resume is false.
-   */
-  public prompt<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      id?: string
-      prompt: T.PromptInput
-      delivery?: "steer" | "queue"
-      resume?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      id: parameters?.["id"],
-      prompt: parameters?.["prompt"],
-      delivery: parameters?.["delivery"],
-      resume: parameters?.["resume"],
-    }
-    return (options?.client ?? this.client).post<T.V2SessionPromptResponses, T.V2SessionPromptErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/prompt",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Compact session
-   *
-   * Compact a session conversation.
-   */
-  public compact<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).post<T.V2SessionCompactResponses, T.V2SessionCompactErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/compact",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Wait for session
-   *
-   * Block until the session completes via exit() (its result is recorded). Times out after ~10 minutes with 503 — re-call to continue waiting.
-   */
-  public wait<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).post<T.V2SessionWaitResponses, T.V2SessionWaitErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/wait",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Get session context
-   *
-   * Retrieve the active context messages for a session (all messages after the last compaction).
-   */
-  public context<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<T.V2SessionContextResponses, T.V2SessionContextErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/context",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Get session history
-   *
-   * Read one finite page of public durable Session events after an exclusive aggregate sequence. Newly committed events may appear on later pages.
-   */
-  public history<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      limit?: number
-      after?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const query = { limit: parameters?.["limit"], after: parameters?.["after"] }
-    return (options?.client ?? this.client).get<T.V2SessionHistoryResponses, T.V2SessionHistoryErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/history",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Subscribe to session events
-   *
-   * Replay durable events after an aggregate sequence, then continue with new durable events.
-   */
-  public events<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      after?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const query = { after: parameters?.["after"] }
-    return (options?.client ?? this.client).sse.get<T.V2SessionEventsResponses, T.V2SessionEventsErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/event",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Interrupt session execution
-   *
-   * Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.
-   */
-  public interrupt<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      reason?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { reason: parameters?.["reason"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionInterruptResponses,
-      T.V2SessionInterruptErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/interrupt",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Get session message
-   *
-   * Retrieve one projected message owned by the Session.
-   */
-  public message<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      messageID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], messageID: parameters?.["messageID"] }
-    return (options?.client ?? this.client).get<T.V2SessionMessageResponses, T.V2SessionMessageErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/message/{messageID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Export a session as Markdown
-   *
-   * Render the whole session to a Markdown file inside the session's own project folder. The destination is relative to that folder and never replaces an existing file — a name collision is written alongside it, and the response says where the bytes actually landed. A session that is still running exports what exists so far and is marked as captured mid-turn.
-   */
-  public exportMarkdown<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      filename?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { directory: parameters?.["directory"], filename: parameters?.["filename"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionExportMarkdownResponses,
-      T.V2SessionExportMarkdownErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/export-markdown",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Get session messages
-   *
-   * Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.
-   */
-  public messages<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      limit?: number
-      order?: "asc" | "desc"
-      cursor?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const query = { limit: parameters?.["limit"], order: parameters?.["order"], cursor: parameters?.["cursor"] }
-    return (options?.client ?? this.client).get<T.V2SessionMessagesResponses, T.V2SessionMessagesErrors, ThrowOnError>({
-      url: "/api/session/{sessionID}/message",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  private _tags?: ApiV2SessionTags
-  get tags(): ApiV2SessionTags {
-    return (this._tags ??= new ApiV2SessionTags({ client: this.client }))
-  }
-
-  private _presence?: ApiV2SessionPresence
-  get presence(): ApiV2SessionPresence {
-    return (this._presence ??= new ApiV2SessionPresence({ client: this.client }))
-  }
-
-  private _execution?: ApiV2SessionExecution
-  get execution(): ApiV2SessionExecution {
-    return (this._execution ??= new ApiV2SessionExecution({ client: this.client }))
-  }
-
-  private _revert?: ApiV2SessionRevert
-  get revert(): ApiV2SessionRevert {
-    return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
-  }
-
-  private _permission?: ApiV2SessionPermission
-  get permission(): ApiV2SessionPermission {
-    return (this._permission ??= new ApiV2SessionPermission({ client: this.client }))
-  }
-
-  private _question?: ApiV2SessionQuestion
-  get question(): ApiV2SessionQuestion {
-    return (this._question ??= new ApiV2SessionQuestion({ client: this.client }))
-  }
-}
-
-class ApiV2Model extends NovaClawApiClient {
-  /**
-   * List models
-   *
-   * Retrieve available models ordered by release date.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2ModelListResponses, T.V2ModelListErrors, ThrowOnError>({
-      url: "/api/model",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Provider extends NovaClawApiClient {
-  /**
-   * List providers
-   *
-   * Retrieve active AI providers so clients can show provider availability and configuration.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2ProviderListResponses, T.V2ProviderListErrors, ThrowOnError>({
-      url: "/api/provider",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * List managed local models
-   *
-   * List tested laptop-friendly models, live resource preflight, verified-download progress and managed llama.cpp status.
-   */
-  public localModels<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<
-      T.V2ProviderLocalModelsResponses,
-      T.V2ProviderLocalModelsErrors,
-      ThrowOnError
-    >({
-      url: "/api/provider/local-models",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Install a managed local model
-   *
-   * Start a resumable verified background installation. The instance-owned llama.cpp server remains stopped until this model receives a prompt.
-   */
-  public installLocalModel<ThrowOnError extends boolean = false>(
-    parameters: {
-      profileID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      context?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { profileID: parameters?.["profileID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { context: parameters?.["context"] }
-    return (options?.client ?? this.client).post<
-      T.V2ProviderInstallLocalModelResponses,
-      T.V2ProviderInstallLocalModelErrors,
-      ThrowOnError
-    >({
-      url: "/api/provider/local-models/{profileID}/install",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Stop managed local inference
-   *
-   * Stop an active managed-model install or unload the instance-owned llama.cpp model.
-   */
-  public stopLocalModel<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).post<
-      T.V2ProviderStopLocalModelResponses,
-      T.V2ProviderStopLocalModelErrors,
-      ThrowOnError
-    >({
-      url: "/api/provider/local-models/stop",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get provider
-   *
-   * Retrieve a single AI provider so clients can inspect its availability and endpoint settings.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      providerID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { providerID: parameters?.["providerID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2ProviderGetResponses, T.V2ProviderGetErrors, ThrowOnError>({
-      url: "/api/provider/{providerID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Remove provider
-   *
-   * Delete a config-defined provider from the instance catalog store (T10iv: a true key delete, not a disable-list hide). Takes effect fully on the next serve boot.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      providerID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { providerID: parameters?.["providerID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<T.V2ProviderRemoveResponses, T.V2ProviderRemoveErrors, ThrowOnError>(
-      {
-        url: "/api/provider/{providerID}",
-        ...options,
-        path,
-        query,
-      },
-    )
-  }
-
-  /**
-   * Remove one model
-   *
-   * Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable. A model that is in no layer is a 404, never a cheerful 204.
-   */
-  public removeModel<ThrowOnError extends boolean = false>(
-    parameters: {
-      providerID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      modelID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { providerID: parameters?.["providerID"] }
-    const query = { location: parameters?.["location"], modelID: parameters?.["modelID"] }
-    return (options?.client ?? this.client).delete<
-      T.V2ProviderRemoveModelResponses,
-      T.V2ProviderRemoveModelErrors,
-      ThrowOnError
-    >({
-      url: "/api/provider/{providerID}/model",
-      ...options,
-      path,
-      query,
-    })
-  }
-}
-
-class ApiV2IntegrationConnect extends NovaClawApiClient {
-  /**
-   * Connect with key
-   *
-   * Run a key authentication method and store the resulting credential.
-   */
-  public key<ThrowOnError extends boolean = false>(
-    parameters: {
-      integrationID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      key: string
-      label?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { integrationID: parameters?.["integrationID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { key: parameters?.["key"], label: parameters?.["label"] }
-    return (options?.client ?? this.client).post<
-      T.V2IntegrationConnectKeyResponses,
-      T.V2IntegrationConnectKeyErrors,
-      ThrowOnError
-    >({
-      url: "/api/integration/{integrationID}/connect/key",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Begin OAuth connection
-   *
-   * Start an OAuth attempt and return the authorization details.
-   */
-  public oauth<ThrowOnError extends boolean = false>(
-    parameters: {
-      integrationID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      methodID: string
-      inputs: {
-        [key: string]: string
-      }
-      label?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { integrationID: parameters?.["integrationID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { methodID: parameters?.["methodID"], inputs: parameters?.["inputs"], label: parameters?.["label"] }
-    return (options?.client ?? this.client).post<
-      T.V2IntegrationConnectOauthResponses,
-      T.V2IntegrationConnectOauthErrors,
-      ThrowOnError
-    >({
-      url: "/api/integration/{integrationID}/connect/oauth",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2IntegrationAttempt extends NovaClawApiClient {
-  /**
-   * Get OAuth attempt status
-   *
-   * Poll the current status of an OAuth attempt.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<
-      T.V2IntegrationAttemptStatusResponses,
-      T.V2IntegrationAttemptStatusErrors,
-      ThrowOnError
-    >({
-      url: "/api/integration/attempt/{attemptID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Cancel OAuth connection
-   *
-   * Cancel an OAuth attempt and release its resources.
-   */
-  public cancel<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<
-      T.V2IntegrationAttemptCancelResponses,
-      T.V2IntegrationAttemptCancelErrors,
-      ThrowOnError
-    >({
-      url: "/api/integration/attempt/{attemptID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Complete OAuth connection
-   *
-   * Complete a code-based OAuth attempt and store the resulting credential.
-   */
-  public complete<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      code?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { code: parameters?.["code"] }
-    return (options?.client ?? this.client).post<
-      T.V2IntegrationAttemptCompleteResponses,
-      T.V2IntegrationAttemptCompleteErrors,
-      ThrowOnError
-    >({
-      url: "/api/integration/attempt/{attemptID}/complete",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2Integration extends NovaClawApiClient {
-  /**
-   * List integrations
-   *
-   * Retrieve available integrations and their authentication methods.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2IntegrationListResponses, T.V2IntegrationListErrors, ThrowOnError>({
-      url: "/api/integration",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get integration
-   *
-   * Retrieve one integration and its authentication methods.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      integrationID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { integrationID: parameters?.["integrationID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2IntegrationGetResponses, T.V2IntegrationGetErrors, ThrowOnError>({
-      url: "/api/integration/{integrationID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  private _connect?: ApiV2IntegrationConnect
-  get connect(): ApiV2IntegrationConnect {
-    return (this._connect ??= new ApiV2IntegrationConnect({ client: this.client }))
-  }
-
-  private _attempt?: ApiV2IntegrationAttempt
-  get attempt(): ApiV2IntegrationAttempt {
-    return (this._attempt ??= new ApiV2IntegrationAttempt({ client: this.client }))
-  }
-}
-
-class ApiV2CredentialRepair extends NovaClawApiClient {
-  /**
-   * Check stored-secret readability
-   *
-   * Report stored secrets that cannot be decrypted, with a message naming the key file to restore.
-   */
-  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2CredentialRepairStatusResponses,
-      T.V2CredentialRepairStatusErrors,
-      ThrowOnError
-    >({
-      url: "/api/credential/repair",
-      ...options,
-    })
-  }
-}
-
-class ApiV2Credential extends NovaClawApiClient {
-  /**
-   * Update credential
-   *
-   * Update a stored credential label.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      credentialID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      label: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { credentialID: parameters?.["credentialID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { label: parameters?.["label"] }
-    return (options?.client ?? this.client).patch<
-      T.V2CredentialUpdateResponses,
-      T.V2CredentialUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/api/credential/{credentialID}",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove credential
-   *
-   * Remove a stored integration credential.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      credentialID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { credentialID: parameters?.["credentialID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<
-      T.V2CredentialRemoveResponses,
-      T.V2CredentialRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/credential/{credentialID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  private _repair?: ApiV2CredentialRepair
-  get repair(): ApiV2CredentialRepair {
-    return (this._repair ??= new ApiV2CredentialRepair({ client: this.client }))
-  }
-}
-
-class ApiV2MessengerDriver extends NovaClawApiClient {
-  /**
-   * List messenger drivers
-   *
-   * Retrieve the installed messenger platform drivers and their capabilities.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2MessengerDriverListResponses,
-      T.V2MessengerDriverListErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/driver",
-      ...options,
-    })
-  }
-}
-
-class ApiV2MessengerAccount extends NovaClawApiClient {
-  /**
-   * List messenger accounts
-   *
-   * Retrieve every configured messenger account with its live connection status.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2MessengerAccountListResponses,
-      T.V2MessengerAccountListErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account",
-      ...options,
-    })
-  }
-
-  /**
-   * Create messenger account
-   *
-   * Configure a messenger account for an installed driver. The optional secret (bot token, API key) is stored in the credential store and never returned.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      driverID: string
-      label: string
-      enabled: boolean
-      settings: {
-        [key: string]: string
-      }
-      secret?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = {
-      driverID: parameters?.["driverID"],
-      label: parameters?.["label"],
-      enabled: parameters?.["enabled"],
-      settings: parameters?.["settings"],
-      secret: parameters?.["secret"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2MessengerAccountCreateResponses,
-      T.V2MessengerAccountCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Update messenger account
-   *
-   * Update a messenger account's label, enabled state, settings, or stored secret.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-      label?: string
-      enabled?: boolean
-      settings?: {
-        [key: string]: string
-      }
-      secret?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { accountID: parameters?.["accountID"] }
-    const body = {
-      label: parameters?.["label"],
-      enabled: parameters?.["enabled"],
-      settings: parameters?.["settings"],
-      secret: parameters?.["secret"],
-    }
-    return (options?.client ?? this.client).patch<
-      T.V2MessengerAccountUpdateResponses,
-      T.V2MessengerAccountUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account/{accountID}",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove messenger account
-   *
-   * Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { accountID: parameters?.["accountID"] }
-    return (options?.client ?? this.client).delete<
-      T.V2MessengerAccountRemoveResponses,
-      T.V2MessengerAccountRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account/{accountID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Mint pairing code
-   *
-   * Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.
-   */
-  public pair<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-      trust: "operator" | "client"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { accountID: parameters?.["accountID"] }
-    const body = { trust: parameters?.["trust"] }
-    return (options?.client ?? this.client).post<
-      T.V2MessengerAccountPairResponses,
-      T.V2MessengerAccountPairErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account/{accountID}/pair",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * List an account's chats
-   *
-   * The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).
-   */
-  public chats<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { accountID: parameters?.["accountID"] }
-    return (options?.client ?? this.client).get<
-      T.V2MessengerAccountChatsResponses,
-      T.V2MessengerAccountChatsErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account/{accountID}/chats",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2MessengerBinding extends NovaClawApiClient {
-  /**
-   * List chat bindings
-   *
-   * Every live session↔chat binding on this instance, with the chat's human title from the seen-cache where known.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2MessengerBindingListResponses,
-      T.V2MessengerBindingListErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/binding",
-      ...options,
-    })
-  }
-
-  /**
-   * Bind a session to a chat
-   *
-   * Link a session to a remote chat at an explicit trust tier (operator | client | audience — always user-chosen, never inferred). One session per chat: if the chat is already bound the call fails naming the holding session; pass steal:true to rebind deliberately.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-      chatID: string
-      sessionID: string
-      trust: T.MessengerTrust
-      steal?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = {
-      accountID: parameters?.["accountID"],
-      chatID: parameters?.["chatID"],
-      sessionID: parameters?.["sessionID"],
-      trust: parameters?.["trust"],
-      steal: parameters?.["steal"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2MessengerBindingCreateResponses,
-      T.V2MessengerBindingCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/binding",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Unbind a chat
-   *
-   * Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      bindingID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { bindingID: parameters?.["bindingID"] }
-    return (options?.client ?? this.client).delete<
-      T.V2MessengerBindingRemoveResponses,
-      T.V2MessengerBindingRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/binding/{bindingID}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2MessengerLogin extends NovaClawApiClient {
-  /**
-   * Begin messenger login
-   *
-   * Start a login-auth attempt for an account whose driver signs into the user's own messenger account (inputs answer the driver's loginPrompts — e.g. phone and optional 2FA password). The provider sends a confirmation code; complete the attempt with it.
-   */
-  public begin<ThrowOnError extends boolean = false>(
-    parameters: {
-      accountID: string
-      inputs: {
-        [key: string]: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { accountID: parameters?.["accountID"] }
-    const body = { inputs: parameters?.["inputs"] }
-    return (options?.client ?? this.client).post<
-      T.V2MessengerLoginBeginResponses,
-      T.V2MessengerLoginBeginErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/account/{accountID}/login",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Messenger login attempt status
-   *
-   * Retrieve the state of a pending or recently finished messenger login attempt, including the step's CURRENT instructions and scannable image — poll this while an attempt is pending, because providers may rotate what the user must act on (WhatsApp mints a fresh linked-device QR every ~20s).
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    return (options?.client ?? this.client).get<
-      T.V2MessengerLoginStatusResponses,
-      T.V2MessengerLoginStatusErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/login/{attemptID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Cancel messenger login
-   *
-   * Abandon a pending messenger login attempt and release its resources.
-   */
-  public cancel<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    return (options?.client ?? this.client).delete<
-      T.V2MessengerLoginCancelResponses,
-      T.V2MessengerLoginCancelErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/login/{attemptID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Complete messenger login
-   *
-   * Finish a login attempt with the confirmation code the provider sent. On success the session credential is stored and the account reconnects; a mistyped code keeps the attempt pending (error kind messenger_login_retry).
-   */
-  public complete<ThrowOnError extends boolean = false>(
-    parameters: {
-      attemptID: string
-      code: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { attemptID: parameters?.["attemptID"] }
-    const body = { code: parameters?.["code"] }
-    return (options?.client ?? this.client).post<
-      T.V2MessengerLoginCompleteResponses,
-      T.V2MessengerLoginCompleteErrors,
-      ThrowOnError
-    >({
-      url: "/api/messenger/login/{attemptID}/complete",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2Messenger extends NovaClawApiClient {
-  private _driver?: ApiV2MessengerDriver
-  get driver(): ApiV2MessengerDriver {
-    return (this._driver ??= new ApiV2MessengerDriver({ client: this.client }))
-  }
-
-  private _account?: ApiV2MessengerAccount
-  get account(): ApiV2MessengerAccount {
-    return (this._account ??= new ApiV2MessengerAccount({ client: this.client }))
-  }
-
-  private _binding?: ApiV2MessengerBinding
-  get binding(): ApiV2MessengerBinding {
-    return (this._binding ??= new ApiV2MessengerBinding({ client: this.client }))
-  }
-
-  private _login?: ApiV2MessengerLogin
-  get login(): ApiV2MessengerLogin {
-    return (this._login ??= new ApiV2MessengerLogin({ client: this.client }))
-  }
-}
-
-class ApiV2CalendarSchedule extends NovaClawApiClient {
-  /**
-   * List calendar schedules
-   *
-   * Retrieve every scheduled agent-launch task with its next-fire time.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2CalendarScheduleListResponses,
-      T.V2CalendarScheduleListErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule",
-      ...options,
-    })
-  }
-
-  /**
-   * Create a calendar schedule
-   *
-   * Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      calendarCreateInput: T.CalendarCreateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["calendarCreateInput"]
-    return (options?.client ?? this.client).post<
-      T.V2CalendarScheduleCreateResponses,
-      T.V2CalendarScheduleCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Update a calendar schedule
-   *
-   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-      calendarUpdateInput: T.CalendarUpdateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    const body = parameters?.["calendarUpdateInput"]
-    return (options?.client ?? this.client).patch<
-      T.V2CalendarScheduleUpdateResponses,
-      T.V2CalendarScheduleUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule/{id}",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove a calendar schedule
-   *
-   * Delete a scheduled agent-launch task by id.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).delete<
-      T.V2CalendarScheduleRemoveResponses,
-      T.V2CalendarScheduleRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule/{id}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2CalendarFires extends NovaClawApiClient {
-  /**
-   * List recent schedule fires
-   *
-   * Recent scheduled-launch fires across all schedules, newest first (the run history).
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2CalendarFiresListResponses,
-      T.V2CalendarFiresListErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/fires",
-      ...options,
-    })
-  }
-}
-
-class ApiV2Calendar extends NovaClawApiClient {
-  private _schedule?: ApiV2CalendarSchedule
-  get schedule(): ApiV2CalendarSchedule {
-    return (this._schedule ??= new ApiV2CalendarSchedule({ client: this.client }))
-  }
-
-  private _fires?: ApiV2CalendarFires
-  get fires(): ApiV2CalendarFires {
-    return (this._fires ??= new ApiV2CalendarFires({ client: this.client }))
-  }
-}
-
-class ApiV2Recipe extends NovaClawApiClient {
-  /**
-   * List recipes
-   *
-   * Every recipe on this install, name-sorted. `builtin` marks the ones NovaClaw shipped.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2RecipeListResponses, T.V2RecipeListErrors, ThrowOnError>({
-      url: "/api/recipe",
-      ...options,
-    })
-  }
-
-  /**
-   * Create or update a recipe
-   *
-   * Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.
-   */
-  public save<ThrowOnError extends boolean = false>(
-    parameters: {
-      recipeSaveInput: T.RecipeSaveInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["recipeSaveInput"]
-    return (options?.client ?? this.client).post<T.V2RecipeSaveResponses, T.V2RecipeSaveErrors, ThrowOnError>({
-      url: "/api/recipe",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Read one recipe
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    return (options?.client ?? this.client).get<T.V2RecipeGetResponses, T.V2RecipeGetErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Change some of a recipe's fields and nothing else
-   *
-   * Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-      recipeUpdateInput: T.RecipeUpdateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    const body = parameters?.["recipeUpdateInput"]
-    return (options?.client ?? this.client).patch<T.V2RecipeUpdateResponses, T.V2RecipeUpdateErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Delete a recipe and its assets
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    return (options?.client ?? this.client).delete<T.V2RecipeRemoveResponses, T.V2RecipeRemoveErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Read a recipe's file, and what it needs and produces
-   *
-   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
-   */
-  public source<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    return (options?.client ?? this.client).get<T.V2RecipeSourceResponses, T.V2RecipeSourceErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/source",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Store pasted recipe markdown without assets
-   *
-   * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.
-   */
-  public import<ThrowOnError extends boolean = false>(
-    parameters: {
-      recipeImportInput: T.RecipeImportInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["recipeImportInput"]
-    return (options?.client ?? this.client).post<T.V2RecipeImportResponses, T.V2RecipeImportErrors, ThrowOnError>({
-      url: "/api/recipe/import",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Export a complete recipe folder
-   *
-   * Returns a standard ZIP containing recipe.md and every nested binary or text asset.
-   */
-  public archive<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    return (options?.client ?? this.client).get<T.V2RecipeArchiveResponses, T.V2RecipeArchiveErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/archive",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Import a complete recipe folder
-   *
-   * Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.
-   */
-  public archiveImport<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug?: string
-      body: Blob | File
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { slug: parameters?.["slug"] }
-    const body = parameters?.["body"]
-    return (options?.client ?? this.client).post<
-      T.V2RecipeArchiveImportResponses,
-      T.V2RecipeArchiveImportErrors,
-      ThrowOnError
-    >({
-      url: "/api/recipe/archive",
-      ...options,
-      query,
-      body,
-      bodySerializer: null,
-      headers: { "Content-Type": "application/zip", ...options?.headers },
-    })
-  }
-
-  /**
-   * Copy a recipe
-   *
-   * Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.
-   */
-  public duplicate<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-      body: {
-        [key: string]: unknown
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    const body = parameters?.["body"]
-    return (options?.client ?? this.client).post<T.V2RecipeDuplicateResponses, T.V2RecipeDuplicateErrors, ThrowOnError>(
-      {
-        url: "/api/recipe/{slug}/duplicate",
-        ...options,
-        path,
-        body,
-        headers: { "Content-Type": "application/json", ...options?.headers },
-      },
-    )
-  }
-
-  /**
-   * Cook a recipe
-   *
-   * Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.
-   */
-  public run<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-      directory?: string
-      model?: string
-      agent?: string
-      strict?: T.SessionStrictOverride
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    const body = {
-      directory: parameters?.["directory"],
-      model: parameters?.["model"],
-      agent: parameters?.["agent"],
-      strict: parameters?.["strict"],
-    }
-    return (options?.client ?? this.client).post<T.V2RecipeRunResponses, T.V2RecipeRunErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/run",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Check what a cook actually produced
-   *
-   * Reads the work directory and reports, per artifact the recipe declares, whether it is there and whether it is the shape its name implies. Deterministic and read-only: the harness looks at the filesystem, so the verdict does not depend on what the model said about its own work. Runs nothing and writes nothing, and may be called as often as you like.
-   */
-  public verify<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-      directory: string
-      model?: string
-      sessionID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    const body = {
-      directory: parameters?.["directory"],
-      model: parameters?.["model"],
-      sessionID: parameters?.["sessionID"],
-    }
-    return (options?.client ?? this.client).post<T.V2RecipeVerifyResponses, T.V2RecipeVerifyErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/verify",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2App extends NovaClawApiClient {
-  /**
-   * Remove a home app
-   *
-   * Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; deleting an id that does not exist succeeds, so the call is idempotent.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).delete<T.V2AppRemoveResponses, T.V2AppRemoveErrors, ThrowOnError>({
-      url: "/api/app/{id}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2PermissionSaved extends NovaClawApiClient {
-  /**
-   * List saved permissions
-   *
-   * Retrieve saved permissions, optionally filtered by project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      origin?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { origin: parameters?.["origin"] }
-    return (options?.client ?? this.client).get<
-      T.V2PermissionSavedListResponses,
-      T.V2PermissionSavedListErrors,
-      ThrowOnError
-    >({
-      url: "/api/permission/saved",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Remove saved permission
-   *
-   * Remove a saved permission by ID.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).delete<
-      T.V2PermissionSavedRemoveResponses,
-      T.V2PermissionSavedRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/permission/saved/{id}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2Permission extends NovaClawApiClient {
-  private _saved?: ApiV2PermissionSaved
-  get saved(): ApiV2PermissionSaved {
-    return (this._saved ??= new ApiV2PermissionSaved({ client: this.client }))
-  }
-}
-
-class ApiV2Fs extends NovaClawApiClient {
-  /**
-   * Read file
-   *
-   * Serve one file relative to the requested location. A browser download presents a `ticket` from `fs.readToken` in place of the `Authorization` header it cannot set.
-   */
-  public read<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      ticket?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"], ticket: parameters?.["ticket"] }
-    return (options?.client ?? this.client).get<T.V2FsReadResponses, T.V2FsReadErrors, ThrowOnError>({
-      url: "/api/fs/read/*",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Create file read ticket
-   *
-   * Create a short-lived single-use ticket authorizing one browser download of one file.
-   */
-  public readToken<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      path: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"], path: parameters?.["path"] }
-    return (options?.client ?? this.client).post<T.V2FsReadTokenResponses, T.V2FsReadTokenErrors, ThrowOnError>({
-      url: "/api/fs/read-token",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Read snapshot file
-   *
-   * Read one file exactly as it existed in a captured session revision.
-   */
-  public snapshotRead<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      snapshot: string
-      path: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"], snapshot: parameters?.["snapshot"], path: parameters?.["path"] }
-    return (options?.client ?? this.client).get<T.V2FsSnapshotReadResponses, T.V2FsSnapshotReadErrors, ThrowOnError>({
-      url: "/api/fs/snapshot/read",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * List directory
-   *
-   * List direct children of one directory relative to the requested location.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      path?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"], path: parameters?.["path"] }
-    return (options?.client ?? this.client).get<T.V2FsListResponses, T.V2FsListErrors, ThrowOnError>({
-      url: "/api/fs/list",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Find files
-   *
-   * Find recursively ranked filesystem entries relative to the requested location.
-   */
-  public find<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      query: string
-      type?: "file" | "directory"
-      limit?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      location: parameters?.["location"],
-      query: parameters?.["query"],
-      type: parameters?.["type"],
-      limit: parameters?.["limit"],
-    }
-    return (options?.client ?? this.client).get<T.V2FsFindResponses, T.V2FsFindErrors, ThrowOnError>({
-      url: "/api/fs/find",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Command extends NovaClawApiClient {
-  /**
-   * List commands
-   *
-   * Retrieve currently registered commands.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2CommandListResponses, T.V2CommandListErrors, ThrowOnError>({
-      url: "/api/command",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Remove command
-   *
-   * Delete a config-defined command from the instance command store. Takes effect fully on the next serve boot.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      name: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { name: parameters?.["name"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<T.V2CommandRemoveResponses, T.V2CommandRemoveErrors, ThrowOnError>({
-      url: "/api/command/{name}",
-      ...options,
-      path,
-      query,
-    })
-  }
-}
-
-class ApiV2Vcs extends NovaClawApiClient {
-  /**
-   * Get VCS info
-   *
-   * Retrieve version control information for a location, such as its branch and default branch.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2VcsGetResponses, T.V2VcsGetErrors, ThrowOnError>({
-      url: "/api/vcs",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get VCS status
-   *
-   * Retrieve the changed files in the working tree, with counts and no patches.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2VcsStatusResponses, T.V2VcsStatusErrors, ThrowOnError>({
-      url: "/api/vcs/status",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get VCS diff
-   *
-   * Retrieve the diff for the working tree (mode=git) or against the default branch (mode=branch).
-   */
-  public diff<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      mode: "git" | "branch"
-      context?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"], mode: parameters?.["mode"], context: parameters?.["context"] }
-    return (options?.client ?? this.client).get<T.V2VcsDiffResponses, T.V2VcsDiffErrors, ThrowOnError>({
-      url: "/api/vcs/diff",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get raw VCS diff
-   *
-   * Retrieve a raw patch of the uncommitted changes, as text a patch tool can apply directly.
-   */
-  public diffRaw<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2VcsDiffRawResponses, T.V2VcsDiffRawErrors, ThrowOnError>({
-      url: "/api/vcs/diff/raw",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Apply VCS patch
-   *
-   * Apply a raw patch to the working tree. Fails with kind 'non-git' outside a repository and 'not-clean' when the tree has changes.
-   */
-  public apply<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      patch: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    const body = { patch: parameters?.["patch"] }
-    return (options?.client ?? this.client).post<T.V2VcsApplyResponses, T.V2VcsApplyErrors, ThrowOnError>({
-      url: "/api/vcs/apply",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2Quality extends NovaClawApiClient {
-  /**
-   * Detect quality commands
-   *
-   * Scan the location's own manifests and propose check, typecheck, test and lint commands, with the evidence for each. Proposes only: nothing is run and nothing is saved.
-   */
-  public detect<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2QualityDetectResponses, T.V2QualityDetectErrors, ThrowOnError>({
-      url: "/api/quality/detect",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Skill extends NovaClawApiClient {
-  /**
-   * List skills
-   *
-   * Retrieve currently registered skills.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2SkillListResponses, T.V2SkillListErrors, ThrowOnError>({
-      url: "/api/skill",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Event extends NovaClawApiClient {
-  /**
-   * Subscribe to events
-   *
-   * Subscribe to native event payloads for the server.
-   */
-  public subscribe<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).sse.get<
-      T.V2EventSubscribeResponses,
-      T.V2EventSubscribeErrors,
-      ThrowOnError
-    >({
-      url: "/api/event",
-      ...options,
-    })
-  }
-}
-
-class ApiV2Pty extends NovaClawApiClient {
-  /**
-   * List available shells
-   *
-   * List shells available for human terminal sessions on this NovaClaw instance.
-   */
-  public shells<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2PtyShellsResponses, T.V2PtyShellsErrors, ThrowOnError>({
-      url: "/api/pty/shells",
-      ...options,
-    })
-  }
-
-  /**
-   * List PTY sessions
-   *
-   * List PTY sessions for a location, including exited sessions retained until removal.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2PtyListResponses, T.V2PtyListErrors, ThrowOnError>({
-      url: "/api/pty",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Create PTY session
-   *
-   * Create a pseudo-terminal session for a location.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      command?: string
-      args?: Array<string>
-      cwd?: string
-      title?: string
-      env?: {
-        [key: string]: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    const body = {
-      command: parameters?.["command"],
-      args: parameters?.["args"],
-      cwd: parameters?.["cwd"],
-      title: parameters?.["title"],
-      env: parameters?.["env"],
-    }
-    return (options?.client ?? this.client).post<T.V2PtyCreateResponses, T.V2PtyCreateErrors, ThrowOnError>({
-      url: "/api/pty",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Stop all PTY sessions
-   *
-   * Terminate and remove every PTY session for a location.
-   */
-  public removeAll<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<T.V2PtyRemoveAllResponses, T.V2PtyRemoveAllErrors, ThrowOnError>({
-      url: "/api/pty",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Get PTY session
-   *
-   * Get one PTY session, including its exit code once exited.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2PtyGetResponses, T.V2PtyGetErrors, ThrowOnError>({
-      url: "/api/pty/{ptyID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Update PTY session
-   *
-   * Update the title or viewport size of one PTY session.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      title?: string
-      size?: {
-        rows: number
-        cols: number
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = { location: parameters?.["location"] }
-    const body = { title: parameters?.["title"], size: parameters?.["size"] }
-    return (options?.client ?? this.client).put<T.V2PtyUpdateResponses, T.V2PtyUpdateErrors, ThrowOnError>({
-      url: "/api/pty/{ptyID}",
-      ...options,
-      path,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove PTY session
-   *
-   * Terminate and remove one PTY session.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<T.V2PtyRemoveResponses, T.V2PtyRemoveErrors, ThrowOnError>({
-      url: "/api/pty/{ptyID}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Inspect PTY process activity
-   *
-   * Report whether a running terminal shell has descendant processes before a destructive close.
-   */
-  public activity<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2PtyActivityResponses, T.V2PtyActivityErrors, ThrowOnError>({
-      url: "/api/pty/{ptyID}/activity",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Create PTY WebSocket token
-   *
-   * Create a short-lived single-use ticket for opening a PTY WebSocket connection.
-   */
-  public connectToken<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).post<T.V2PtyConnectTokenResponses, T.V2PtyConnectTokenErrors, ThrowOnError>(
-      {
-        url: "/api/pty/{ptyID}/connect-token",
-        ...options,
-        path,
-        query,
-      },
-    )
-  }
-
-  /**
-   * Connect to PTY session
-   *
-   * Establish a WebSocket connection streaming PTY output and accepting terminal input.
-   */
-  public connect<ThrowOnError extends boolean = false>(
-    parameters: {
-      ptyID: string
-      "location[directory]"?: string
-      "location[workspace]"?: string
-      cursor?: string
-      ticket?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { ptyID: parameters?.["ptyID"] }
-    const query = {
-      "location[directory]": parameters?.["location[directory]"],
-      "location[workspace]": parameters?.["location[workspace]"],
-      cursor: parameters?.["cursor"],
-      ticket: parameters?.["ticket"],
-    }
-    return (options?.client ?? this.client).get<T.V2PtyConnectResponses, T.V2PtyConnectErrors, ThrowOnError>({
-      url: "/api/pty/{ptyID}/connect",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * List instance PTYs
-   *
-   * List PTY sessions across every active location owned by one instance directory.
-   */
-  public instanceList<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2PtyInstanceListResponses, T.V2PtyInstanceListErrors, ThrowOnError>({
-      url: "/api/instance/pty",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Stop all instance PTYs
-   *
-   * Terminate every PTY session across active locations owned by one instance directory.
-   */
-  public instanceRemoveAll<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<
-      T.V2PtyInstanceRemoveAllResponses,
-      T.V2PtyInstanceRemoveAllErrors,
-      ThrowOnError
-    >({
-      url: "/api/instance/pty",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2QuestionRequest extends NovaClawApiClient {
-  /**
-   * List pending question requests
-   *
-   * Retrieve pending question requests for a location.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<
-      T.V2QuestionRequestListResponses,
-      T.V2QuestionRequestListErrors,
-      ThrowOnError
-    >({
-      url: "/api/question/request",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiV2Question extends NovaClawApiClient {
-  private _request?: ApiV2QuestionRequest
-  get request(): ApiV2QuestionRequest {
-    return (this._request ??= new ApiV2QuestionRequest({ client: this.client }))
-  }
-}
-
-class ApiV2Reference extends NovaClawApiClient {
-  /**
-   * List references
-   *
-   * List references available in the requested location.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2ReferenceListResponses, T.V2ReferenceListErrors, ThrowOnError>({
-      url: "/api/reference",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Remove reference
-   *
-   * Delete a config-defined reference alias from the instance reference store. Takes effect fully on the next serve boot.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      name: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { name: parameters?.["name"] }
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).delete<
-      T.V2ReferenceRemoveResponses,
-      T.V2ReferenceRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/reference/{name}",
-      ...options,
-      path,
-      query,
-    })
-  }
-}
-
-class ApiV2Config extends NovaClawApiClient {
-  /**
-   * Remove config values
-   *
-   * Delete one or more values from the instance configuration by path. `PATCH /config` merges and can never remove a key; this is the deletion verb. Instance-wide, applied in one transaction, and live without a restart. A path that names nothing is a 400 and NOTHING is removed.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      configRemoveRequest: T.ConfigRemoveRequest
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["configRemoveRequest"]
-    return (options?.client ?? this.client).post<T.V2ConfigRemoveResponses, T.V2ConfigRemoveErrors, ThrowOnError>({
-      url: "/api/config/remove",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
-class ApiV2Log extends NovaClawApiClient {
-  /**
-   * Read this instance's own log
-   *
-   * Read `novaclaw.log` — the instance's keyed, rotated activity log — filtered and rendered server-side. The instance's own log directory is the only source; there is no path parameter. The response carries the rendered text and nothing structured, so there is exactly one renderer of a log line in the product.
-   */
-  public read<ThrowOnError extends boolean = false>(
-    parameters: {
-      logReadRequest: T.LogReadRequest
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["logReadRequest"]
-    return (options?.client ?? this.client).post<T.V2LogReadResponses, T.V2LogReadErrors, ThrowOnError>({
-      url: "/api/log/read",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Stream bounded diagnostics from this instance
-   *
-   * Streams this instance's own recent activity log through the maintenance-plane projection. The source is fixed server-side; the request accepts no filesystem path.
-   */
-  public export<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).post<T.V2LogExportResponses, T.V2LogExportErrors, ThrowOnError>({
-      url: "/api/log/export",
-      ...options,
-    })
-  }
-}
-
-class ApiV2Telemetry extends NovaClawApiClient {
-  /**
-   * Crash-reporting status
-   *
-   * Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.
-   */
-  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2TelemetryStatusResponses, T.V2TelemetryStatusErrors, ThrowOnError>({
-      url: "/api/telemetry/status",
-      ...options,
-    })
-  }
-}
-
-class ApiV2 extends NovaClawApiClient {
-  private _health?: ApiV2Health
-  get health(): ApiV2Health {
-    return (this._health ??= new ApiV2Health({ client: this.client }))
-  }
-
-  private _memory?: ApiV2Memory
-  get memory(): ApiV2Memory {
-    return (this._memory ??= new ApiV2Memory({ client: this.client }))
-  }
-
-  private _location?: ApiV2Location
-  get location(): ApiV2Location {
-    return (this._location ??= new ApiV2Location({ client: this.client }))
-  }
-
-  private _agent?: ApiV2Agent
-  get agent(): ApiV2Agent {
-    return (this._agent ??= new ApiV2Agent({ client: this.client }))
-  }
-
-  private _session?: ApiV2Session
-  get session(): ApiV2Session {
-    return (this._session ??= new ApiV2Session({ client: this.client }))
-  }
-
-  private _model?: ApiV2Model
-  get model(): ApiV2Model {
-    return (this._model ??= new ApiV2Model({ client: this.client }))
-  }
-
-  private _provider?: ApiV2Provider
-  get provider(): ApiV2Provider {
-    return (this._provider ??= new ApiV2Provider({ client: this.client }))
-  }
-
-  private _integration?: ApiV2Integration
-  get integration(): ApiV2Integration {
-    return (this._integration ??= new ApiV2Integration({ client: this.client }))
-  }
-
-  private _credential?: ApiV2Credential
-  get credential(): ApiV2Credential {
-    return (this._credential ??= new ApiV2Credential({ client: this.client }))
-  }
-
-  private _messenger?: ApiV2Messenger
-  get messenger(): ApiV2Messenger {
-    return (this._messenger ??= new ApiV2Messenger({ client: this.client }))
-  }
-
-  private _calendar?: ApiV2Calendar
-  get calendar(): ApiV2Calendar {
-    return (this._calendar ??= new ApiV2Calendar({ client: this.client }))
-  }
-
-  private _recipe?: ApiV2Recipe
-  get recipe(): ApiV2Recipe {
-    return (this._recipe ??= new ApiV2Recipe({ client: this.client }))
-  }
-
-  private _app?: ApiV2App
-  get app(): ApiV2App {
-    return (this._app ??= new ApiV2App({ client: this.client }))
-  }
-
-  private _permission?: ApiV2Permission
-  get permission(): ApiV2Permission {
-    return (this._permission ??= new ApiV2Permission({ client: this.client }))
-  }
-
-  private _fs?: ApiV2Fs
-  get fs(): ApiV2Fs {
-    return (this._fs ??= new ApiV2Fs({ client: this.client }))
-  }
-
-  private _command?: ApiV2Command
-  get command(): ApiV2Command {
-    return (this._command ??= new ApiV2Command({ client: this.client }))
-  }
-
-  private _vcs?: ApiV2Vcs
-  get vcs(): ApiV2Vcs {
-    return (this._vcs ??= new ApiV2Vcs({ client: this.client }))
-  }
-
-  private _quality?: ApiV2Quality
-  get quality(): ApiV2Quality {
-    return (this._quality ??= new ApiV2Quality({ client: this.client }))
-  }
-
-  private _skill?: ApiV2Skill
-  get skill(): ApiV2Skill {
-    return (this._skill ??= new ApiV2Skill({ client: this.client }))
-  }
-
-  private _event?: ApiV2Event
-  get event(): ApiV2Event {
-    return (this._event ??= new ApiV2Event({ client: this.client }))
-  }
-
-  private _pty?: ApiV2Pty
-  get pty(): ApiV2Pty {
-    return (this._pty ??= new ApiV2Pty({ client: this.client }))
-  }
-
-  private _question?: ApiV2Question
-  get question(): ApiV2Question {
-    return (this._question ??= new ApiV2Question({ client: this.client }))
-  }
-
-  private _reference?: ApiV2Reference
-  get reference(): ApiV2Reference {
-    return (this._reference ??= new ApiV2Reference({ client: this.client }))
-  }
-
-  private _config?: ApiV2Config
-  get config(): ApiV2Config {
-    return (this._config ??= new ApiV2Config({ client: this.client }))
-  }
-
-  private _log?: ApiV2Log
-  get log(): ApiV2Log {
-    return (this._log ??= new ApiV2Log({ client: this.client }))
-  }
-
-  private _telemetry?: ApiV2Telemetry
-  get telemetry(): ApiV2Telemetry {
-    return (this._telemetry ??= new ApiV2Telemetry({ client: this.client }))
-  }
-}
-
 export class NovaclawClient extends NovaClawApiClient {
   private _auth?: ApiAuth
   get auth(): ApiAuth {
@@ -6970,6 +7002,10 @@ export class NovaclawClient extends NovaClawApiClient {
   private _global?: ApiGlobal
   get global(): ApiGlobal {
     return (this._global ??= new ApiGlobal({ client: this.client }))
+  }
+  private _v2?: ApiV2
+  get v2(): ApiV2 {
+    return (this._v2 ??= new ApiV2({ client: this.client }))
   }
   private _adhoc?: ApiAdhoc
   get adhoc(): ApiAdhoc {
@@ -7050,9 +7086,5 @@ export class NovaclawClient extends NovaClawApiClient {
   private _sync?: ApiSync
   get sync(): ApiSync {
     return (this._sync ??= new ApiSync({ client: this.client }))
-  }
-  private _v2?: ApiV2
-  get v2(): ApiV2 {
-    return (this._v2 ??= new ApiV2({ client: this.client }))
   }
 }

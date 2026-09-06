@@ -1,23 +1,9 @@
-import { describe, expect, test } from "bun:test"
-import type { QuestionV2Request } from "@novaclaw/sdk/v2/client"
+import { expect, test } from "bun:test"
 import { attentionSessionIds } from "./attention-ids"
 
-const question = (sessionID: string) => ({ id: `q_${sessionID}`, sessionID }) as QuestionV2Request
-
-describe("attentionSessionIds", () => {
-  test("unions question and unseen sources deduped", () => {
-    const ids = attentionSessionIds({
-      question: { a: [question("a")], c: [question("c")] },
-      unseen: ["c", "d"],
-    })
-    expect(ids.sort()).toEqual(["a", "c", "d"])
-  })
-
-  test("empty question lists do not count", () => {
-    const ids = attentionSessionIds({
-      question: { c: [] },
-      unseen: [],
-    })
-    expect(ids).toEqual([])
-  })
+test("attention deduplicates unseen chats", () => {
+  expect(attentionSessionIds({ unseen: ["a", "b", "a"] })).toEqual(["a", "b"])
+})
+test("no unseen output needs no attention", () => {
+  expect(attentionSessionIds({ unseen: [] })).toEqual([])
 })

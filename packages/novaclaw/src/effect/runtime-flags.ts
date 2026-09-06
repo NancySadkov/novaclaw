@@ -43,7 +43,6 @@ const fields = {
     legacy: bool("NOVACLAW_EXPERIMENTAL_PARALLEL"),
   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
   enableExperimentalModels: bool("NOVACLAW_ENABLE_EXPERIMENTAL_MODELS"),
-  enableQuestionTool: bool("NOVACLAW_ENABLE_QUESTION_TOOL"),
   experimentalReferences: enabledByExperimental("NOVACLAW_EXPERIMENTAL_REFERENCES"),
   experimentalBackgroundSubagents: enabledByExperimental("NOVACLAW_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
   experimentalOxfmt: enabledByExperimental("NOVACLAW_EXPERIMENTAL_OXFMT"),

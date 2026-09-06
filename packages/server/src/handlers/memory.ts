@@ -6,6 +6,7 @@ import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Log } from "@novaclaw/schema/log"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { MemoryApi, handlerLayer } from "../handler-api"
 
@@ -117,6 +118,22 @@ export const MemoryHandler = handlerLayer(
             Effect.fn(function* (ctx) {
               const memory = Memory.client(yield* Memory.node.service)
               return yield* exportAllMemory(memory, ctx.payload.includeInvalid)
+            }),
+          )
+          .handle(
+            "world-memory.erase",
+            Effect.fn(function* () {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              const erased = yield* eraseAllMemory(worldMemory)
+              yield* Log.event("kb.world.erased", { "memory.rows": erased })
+              return erased
+            }),
+          )
+          .handle(
+            "world-memory.export",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              return yield* exportAllMemory(worldMemory, ctx.payload.includeInvalid)
             }),
           )
           /**

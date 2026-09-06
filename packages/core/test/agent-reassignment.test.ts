@@ -103,8 +103,9 @@ describe("a moved colleague is told, in its own chat", () => {
       expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(true)
 
       const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
-      const archived = rows.filter((r) => r.id === "ses_theron")
+      const archived = rows.filter((r) => r.id !== "ses_theron" && r.agent === "theron")
       const live = rows.filter((r) => r.agent === "theron" && r.time_archived === null)
+      expect(archived).toHaveLength(1)
       expect(archived[0]?.time_archived).not.toBe(null)
       // Exactly ONE live chat afterwards — the invariant survives a reassignment, and the successor
       // is rooted where the colleague now works.
@@ -134,11 +135,10 @@ describe("a moved colleague is told, in its own chat", () => {
         .from(SessionTable)
         .where(eq(SessionTable.agent, "theron"))
         .all()
-      const successor = live.find((row) => row.id !== "ses_theron")!
       const notices = yield* d.db
         .select({ type: SessionMessageTable.type, data: SessionMessageTable.data })
         .from(SessionMessageTable)
-        .where(eq(SessionMessageTable.session_id, successor.id))
+        .where(eq(SessionMessageTable.session_id, SessionSchema.ID.make("ses_theron")))
         .all()
       expect(notices).toHaveLength(1)
       expect(notices[0]).toMatchObject({ type: "synthetic", data: { text: expect.stringContaining("Your assignment changed") } })

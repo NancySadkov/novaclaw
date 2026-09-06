@@ -17,7 +17,6 @@ import { makePermissionGroup } from "@novaclaw/protocol/groups/permission"
 import { ProviderGroup } from "@novaclaw/protocol/groups/provider"
 import { PtyGroup } from "@novaclaw/protocol/groups/pty"
 import { PtyInstanceGroup } from "@novaclaw/protocol/groups/pty-instance"
-import { makeQuestionGroup } from "@novaclaw/protocol/groups/question"
 import { RecipeGroup } from "@novaclaw/protocol/groups/recipe"
 import { AppGroup } from "@novaclaw/protocol/groups/app"
 import { ReferenceGroup } from "@novaclaw/protocol/groups/reference"
@@ -64,9 +63,6 @@ export const PermissionApi = fragment(
 export const ProviderApi = fragment(ProviderGroup.middleware(LocationMiddleware))
 export const PtyApi = fragment(PtyGroup.middleware(LocationMiddleware))
 export const PtyInstanceApi = fragment(PtyInstanceGroup)
-export const QuestionApi = fragment(
-  makeQuestionGroup(LocationMiddleware, SessionLocationMiddleware).middleware(WorkspaceRoutingMiddleware),
-)
 export const RecipeApi = fragment(RecipeGroup)
 export const AppApi = fragment(AppGroup)
 export const ReferenceApi = fragment(ReferenceGroup.middleware(LocationMiddleware))

@@ -112,6 +112,33 @@ export const CLAIM_PREDICATE_NAMES: readonly ClaimPredicate[] = (
   Object.keys(CLAIM_PREDICATES) as ClaimPredicate[]
 ).sort()
 
+/**
+ * The relationship vocabulary exposed by the kb tool. The graph engine accepts arbitrary edge types
+ * for internal ingestion and extraction, but a model-authored join must be a deliberate, reviewable
+ * choice. Keep this list small and stable; adding a relation is an engine/API decision, not a prompt
+ * convention.
+ */
+export const RELATION_TYPES = [
+  "about",
+  "depends_on",
+  "dislikes",
+  "knows",
+  "likes",
+  "located_in",
+  "part_of",
+  "related_to",
+  "uses",
+  "works_at",
+  "works_on",
+  "wrote",
+  "wrote_about",
+] as const
+
+export type RelationType = (typeof RELATION_TYPES)[number]
+export const RELATION_TYPE_NAMES: readonly RelationType[] = RELATION_TYPES
+export const isRelationType = (value: unknown): value is RelationType =>
+  typeof value === "string" && (RELATION_TYPES as readonly string[]).includes(value)
+
 /** The predicate a named `remember` gets when nobody chose one. `multi`, so a default never corrects. */
 export const DEFAULT_PREDICATE: ClaimPredicate = "about"
 

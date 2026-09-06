@@ -4,6 +4,10 @@ import { Schema } from "effect"
 import { define, inventory } from "./event"
 import { Session } from "./session"
 import { SessionID } from "./session-id"
+import { Delivery } from "./session-delivery"
+import { DateTimeUtcFromMillis } from "./schema"
+import { Prompt } from "./prompt"
+import { SessionMessage } from "./session-message"
 
 // V1-nuke slice D: the session RECORD lifecycle events, native vocabulary. The type strings are
 // the ones the tree has always used ("session.created/updated/deleted" — every consumer matches
@@ -20,12 +24,22 @@ const options = {
   },
 } as const
 
+/** The opening input belongs to creation, so its durable projection cannot be stranded between two events. */
+export const OpeningPrompt = Schema.Struct({
+  messageID: SessionMessage.ID,
+  prompt: Prompt,
+  delivery: Delivery,
+  timestamp: DateTimeUtcFromMillis,
+})
+export type OpeningPrompt = typeof OpeningPrompt.Type
+
 export const Created = define({
   type: "session.created",
   ...options,
   schema: {
     sessionID: SessionID,
     info: Session.Info,
+    openingPrompt: Schema.optional(OpeningPrompt),
   },
 })
 
@@ -35,6 +49,8 @@ export const Updated = define({
   schema: {
     sessionID: SessionID,
     info: Session.Info,
+    /** A typed restore must clear the nullable archive column during projection. */
+    clearArchived: Schema.optional(Schema.Boolean),
   },
 })
 

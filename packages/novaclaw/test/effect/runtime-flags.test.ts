@@ -20,7 +20,6 @@ describe("RuntimeFlags", () => {
             NOVACLAW_ENABLE_EXA: "true",
             NOVACLAW_ENABLE_PARALLEL: "true",
             NOVACLAW_ENABLE_EXPERIMENTAL_MODELS: "true",
-            NOVACLAW_ENABLE_QUESTION_TOOL: "true",
             NOVACLAW_CLIENT: "desktop",
           }),
         ),
@@ -32,7 +31,6 @@ describe("RuntimeFlags", () => {
       expect(flags.enableExa).toBe(true)
       expect(flags.enableParallel).toBe(true)
       expect(flags.enableExperimentalModels).toBe(true)
-      expect(flags.enableQuestionTool).toBe(true)
       expect(flags.experimentalReferences).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
       expect(flags.experimentalOxfmt).toBe(true)

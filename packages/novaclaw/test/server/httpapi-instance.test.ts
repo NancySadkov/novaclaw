@@ -150,7 +150,7 @@ describe("instance HttpApi", () => {
 
   it.live("serves the launcher pressure summary without the recursive usage payload", () =>
     Effect.gen(function* () {
-      const response = yield* HttpClient.get("/global/pressure")
+      const response = yield* HttpClient.get("/api/instance/pressure")
       expect(response.status).toBe(200)
       const body = (yield* response.json) as Record<string, unknown>
       expect(body).toEqual(
@@ -494,8 +494,8 @@ describe("instance HttpApi", () => {
         disclosure: Array<{ field: string; meaning: string; condition: string }>
       }
       expect(body.gate).toEqual({ consent: true, airgap: false })
-      expect(body.endpointConfigured).toBe(false)
-      expect(body.refusals).toEqual(["no_endpoint"])
+      expect(body.endpointConfigured).toBe(true)
+      expect(body.refusals).toEqual([])
       expect(body.payloadPreview?.signature).toMatchObject({
         plane: "server",
         kind: "TelemetryPreview",
@@ -504,6 +504,17 @@ describe("instance HttpApi", () => {
       expect(body.payloadPreview?.attributes).toEqual({})
       expect(body.disclosure.length).toBeGreaterThanOrEqual(10)
       expect(body.disclosure.every((row) => row.meaning.length > 0 && row.condition.length > 0)).toBe(true)
+      const disabled = yield* HttpClientRequest.patch("/config").pipe(
+        HttpClientRequest.bodyJson({ telemetry: { enabled: false } }),
+        Effect.flatMap(HttpClient.execute),
+      )
+      expect(disabled.status).toBe(200)
+      const status = yield* HttpClient.get(TelemetryPaths.status)
+      expect(yield* status.json).toMatchObject({
+        gate: { consent: false, airgap: false },
+        endpointConfigured: true,
+        refusals: ["consent_off"],
+      })
     }),
   )
 

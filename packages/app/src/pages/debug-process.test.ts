@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { NovaclawClient, SessionV2Info } from "@novaclaw/sdk/v2/client"
-import { listDebugSessions } from "./debug-process"
+import { listDebugActiveSessions, listDebugSessions } from "./debug-process"
 
 const session = (id: string): SessionV2Info =>
   ({
@@ -25,6 +25,7 @@ const fakeClient = (pages: Array<{ data: SessionV2Info[]; next?: string }>) => {
           if (!page) throw new Error("unexpected page")
           return { data: { data: page.data, cursor: page.next === undefined ? {} : { next: page.next } } }
         },
+        active: async () => ({ data: { data: { one: { type: "running" as const } } } }),
       },
     },
   } as unknown as NovaclawClient
@@ -54,5 +55,10 @@ describe("the Debug process roster", () => {
     ])
 
     await expect(listDebugSessions(client)).rejects.toThrow("repeated session-list cursor")
+  })
+
+  test("reads the server-owned active set for live process status", async () => {
+    const { client } = fakeClient([{ data: [] }])
+    await expect(listDebugActiveSessions(client)).resolves.toEqual({ one: { type: "running" } })
   })
 })

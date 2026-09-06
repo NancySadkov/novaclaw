@@ -66,9 +66,13 @@ describe("server-sync registers its instance-scoped loaders", () => {
     // Derived from source rather than asserted as a list, because the failure this guards is a
     // loader that goes back to being called once at ctx creation — which no runtime assertion in
     // this file could see.
+    const registered = (source: string) =>
+      [...source.matchAll(/\brecovery\.register\(\s*"([^"]+)"/g)].map((match) => match[1])
     for (const name of ["session.tags", "session.presence", "apps.persisted"]) {
-      expect(SYNC, `${name} is not registered for reconnect recovery`).toContain(`recovery.register("${name}"`)
+      expect(registered(SYNC), `${name} is not registered for reconnect recovery`).toContain(name)
     }
+    expect(registered('recovery.register(\n "apps.persisted", load)')).toEqual(["apps.persisted"])
+    expect(registered("loadPersistedApps()")).toEqual([])
     // A bare call at context scope is the regression: it runs once per ctx and never on reconnect.
     expect(SYNC).not.toContain("\n  void session.loadTags()")
     expect(SYNC).not.toContain("\n  void session.loadPresence()")

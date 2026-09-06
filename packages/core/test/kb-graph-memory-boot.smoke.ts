@@ -14,6 +14,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { enforce } from "../../../script/lib/heavy-guard"
 
 // Opening the real WASM graph engine consumes roughly 2 GiB on Windows. This smoke is deliberately
@@ -92,6 +93,49 @@ describe("graph memory boots as part of the instance (in-process WASM)", () => {
     })
     await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped) as Effect.Effect<void>)
   }, 30_000)
+
+  test("the explicit KB and hot world model are separate on-disk graphs", async () => {
+    const explicitDir = join(dir, "separation-graph")
+    const worldDir = join(dir, "separation-world")
+
+    // Open only one WASM engine at a time: the real graph is intentionally a heavy resource on
+    // this host. The two passes still exercise independent layers and independent directories,
+    // which is the boundary the runner relies on.
+    const explicit = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: explicitDir })
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const mem = yield* MemoryClient.Service
+        expect(yield* waitHealthy(mem)).toBe(true)
+        yield* mem.addMemory({
+          id: "explicit-only",
+          kind: "entity",
+          text: "The explicit KB owns this source fact",
+          scope: "global",
+          source: "ingest",
+        })
+        expect(yield* mem.search({ query: "source fact" })).toHaveLength(1)
+        expect(yield* mem.search({ query: "hot world" })).toHaveLength(0)
+      }).pipe(Effect.provide(explicit), Effect.scoped) as Effect.Effect<void>,
+    )
+
+    const world = WorldMemory.layerFromConfig({ enabled: true, dim: 8, dbDir: worldDir })
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const mem = yield* WorldMemory.Service
+        expect(yield* waitHealthy(mem)).toBe(true)
+        // If the world accidentally opened the explicit graph, this query would see its marker.
+        expect(yield* mem.search({ query: "source fact" })).toHaveLength(0)
+        yield* mem.addMemory({
+          id: "world-only",
+          kind: "episode",
+          text: "The hot world keeps this transient conversation fact",
+          scope: "session:demo",
+          source: "auto-extract",
+        })
+        expect(yield* mem.search({ query: "transient conversation" })).toHaveLength(1)
+      }).pipe(Effect.provide(world), Effect.scoped) as Effect.Effect<void>,
+    )
+  }, 40_000)
 
   test("a disabled instance still boots — memory degrades, not a hard dependency", async () => {
     const layer = Memory.layerFromConfig({ enabled: false })

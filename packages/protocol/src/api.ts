@@ -17,7 +17,6 @@ import { HealthGroup } from "./groups/health"
 import { MemoryGroup } from "./groups/memory"
 import { PtyGroup } from "./groups/pty"
 import { PtyInstanceGroup } from "./groups/pty-instance"
-import { makeQuestionGroup } from "./groups/question"
 import { ReferenceGroup } from "./groups/reference"
 import { Authorization } from "./middleware/authorization"
 import { LocationGroup } from "./groups/location"
@@ -85,7 +84,6 @@ const makeApiFromGroup = <
     // Instance-wide aggregation enumerates already-active location graphs; applying location
     // middleware here would build one merely by observing the instance.
     .add(PtyInstanceGroup)
-    .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
     // Instance-wide, so no location middleware: the config stores are global nodes.
     .add(ConfigGroup)
@@ -163,10 +161,6 @@ type ApiFromGroup<
       | Group
       | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>
       | typeof PtyInstanceGroup
-      | HttpApiGroup.AddMiddleware<
-          ReturnType<typeof makeQuestionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>>,
-          WorkspaceRoutingId
-        >
       | HttpApiGroup.AddMiddleware<typeof ReferenceGroup, LocationId>
       | typeof ConfigGroup
       | typeof LogGroup

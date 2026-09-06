@@ -60,7 +60,7 @@ type GlobalStore = {
 export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: NovaclawClient) =>
   queryOptions({
     queryKey: [scope, directory, "mcp"] as const,
-    queryFn: () => sdk.mcp.status().then((r) => r.data ?? {}),
+    queryFn: ({ signal }) => sdk.mcp.status(undefined, { signal }).then((r) => r.data ?? {}),
   })
 
 function makeQueryOptionsApi(
@@ -96,6 +96,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const language = useLanguage()
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
+  const lifetime = new AbortController()
+  let closed = false
 
   const sdkCache = new Map<string, NovaclawClient>()
   const booting = new Map<string, Promise<void>>()
@@ -209,8 +211,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   recovery.register("session.presence", () => void session.loadPresence())
   // Persisted app manifests. `app.registered` refreshes them while connected; nothing refreshed them
   // after an outage, so an app registered while the stream was down stayed invisible.
-  recovery.register("apps.persisted", () =>
-    void loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server)),
+  recovery.register(
+    "apps.persisted",
+    () => void loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server)),
   )
   recovery.sweep()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
@@ -226,6 +229,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       void bootstrapInstance(directory)
     },
     onMcp: (directory, setStore) => {
+      if (closed) return
       void retry(() =>
         sdkFor(directory)
           .command.list()
@@ -250,10 +254,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   async function loadSessions(directory: string, options?: { limit?: number }) {
+    if (closed) return
     const key = directoryKey(directory)
     const pending = sessionLoads.get(key)
     if (pending) {
       await pending
+      if (closed) return
       return loadSessions(directory, options)
     }
 
@@ -274,16 +280,18 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const promise = queryClient
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
-        queryFn: () =>
+        queryFn: ({ signal }) =>
           loadRootSessionsWithFallback({
             directory,
             limit,
+            signal,
             list: (query, options) =>
               serverSDK.client.v2.session
                 .list(query, options)
                 .then((r) => ({ data: r.data?.data ? [...r.data.data] : undefined })),
           })
             .then((x) => {
+              if (closed || lifetime.signal.aborted) return
               const nonArchived = (x.data ?? [])
                 .filter((s) => !!s?.id)
                 .filter((s) => !s.time?.archived)
@@ -332,15 +340,18 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   // fill from live spawn events. Best-effort: children are progressive enhancement over the roots
   // list; `loadSessions`' reconcile preserves child rows already in the store.
   async function loadChildSessions(directory: string, options?: { limit?: number }) {
+    if (closed) return
     const key = directoryKey(directory)
     children.pin(key)
     try {
       const [, setStore] = children.child(directory, { bootstrap: false })
       const response = await withRequestDeadline({
         label: "Loading child sessions",
+        signal: lifetime.signal,
         run: (signal) => serverSDK.client.v2.session.list({ directory, limit: options?.limit ?? 200 }, { signal }),
       })
       const result = { data: response.data?.data ? [...response.data.data] : undefined }
+      if (closed || lifetime.signal.aborted) return
       const nonRoot = (result.data ?? []).filter((s) => !!s?.id && !!s.parentID && !s.time?.archived)
       if (nonRoot.length) {
         batch(() => {
@@ -356,6 +367,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 
   async function bootstrapInstance(directory: string) {
+    if (closed) return
     const key = directoryKey(directory)
     if (!key) return
     const pending = booting.get(key)
@@ -363,6 +375,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
     children.pin(key)
     const promise = Promise.resolve().then(async () => {
+      if (closed || lifetime.signal.aborted) return
       const child = children.ensureChild(directory)
       const cache = children.vcsCache.get(key)
       if (!cache) return
@@ -384,6 +397,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         translate: language.t,
         queryClient,
         session,
+        signal: lifetime.signal,
       })
     })
 
@@ -396,6 +410,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 
   const unsub = serverSDK.event.listen((e) => {
+    if (closed) return
     const directory = e.name
     const key = directoryKey(directory)
     const event = e.details
@@ -561,14 +576,16 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     })
   })
 
-  onCleanup(unsub)
   onCleanup(() => {
+    // This is terminal context destruction, not live eviction: pins protect active work only while
+    // this manager is alive and must never retain roots after credential rotation/removal.
+    closed = true
+    lifetime.abort()
+    unsub()
     queue.dispose()
-  })
-  onCleanup(() => {
-    for (const directory of Object.keys(children.children)) {
-      children.disposeDirectory(directoryKey(directory))
-    }
+    void queryClient.cancelQueries({ predicate: (query) => query.queryKey[0] === serverSDK.scope })
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] === serverSDK.scope })
+    children.disposeAll()
   })
 
   onMount(() => {

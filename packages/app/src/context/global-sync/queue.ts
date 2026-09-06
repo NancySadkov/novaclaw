@@ -8,6 +8,7 @@ export function createRefreshQueue(input: QueueInput) {
   const queued = new Map<string, string>()
   let running = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let closed = false
 
   const key = input.key ?? ((directory: string) => directory)
 
@@ -25,7 +26,7 @@ export function createRefreshQueue(input: QueueInput) {
   }
 
   const schedule = () => {
-    if (timer) return
+    if (closed || timer) return
     timer = setTimeout(() => {
       timer = undefined
       void drain()
@@ -33,18 +34,18 @@ export function createRefreshQueue(input: QueueInput) {
   }
 
   const push = (directory: string) => {
-    if (!directory) return
+    if (closed || !directory) return
     queued.set(key(directory), directory)
     if (input.paused()) return
     schedule()
   }
 
   async function drain() {
-    if (running) return
+    if (closed || running) return
     running = true
     try {
       while (true) {
-        if (input.paused()) return
+        if (closed || input.paused()) return
         const dirs = take(2)
         if (dirs.length === 0) return
         await Promise.all(dirs.map((dir) => input.bootstrapInstance(dir)))
@@ -53,7 +54,7 @@ export function createRefreshQueue(input: QueueInput) {
     } finally {
       running = false
       // oxlint-disable-next-line no-unsafe-finally -- intentional: early return skips schedule() when paused
-      if (input.paused()) return
+      if (closed || input.paused()) return
       if (queued.size) schedule()
     }
   }
@@ -64,8 +65,10 @@ export function createRefreshQueue(input: QueueInput) {
       queued.delete(key(directory))
     },
     dispose() {
-      if (!timer) return
-      clearTimeout(timer)
+      if (closed) return
+      closed = true
+      queued.clear()
+      if (timer) clearTimeout(timer)
       timer = undefined
     },
   }

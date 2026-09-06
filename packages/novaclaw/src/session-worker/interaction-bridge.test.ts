@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import type { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
@@ -32,12 +31,6 @@ const unusedPermission = {
   ask: () => Effect.die("unused"),
   assert: () => Effect.void,
 } as PermissionV2.Interface
-const unusedQuestion = {
-  ask: () => Effect.succeed([["Yes"]]),
-  reply: () => Effect.die("unused"),
-  reject: () => Effect.die("unused"),
-  list: () => Effect.succeed([]),
-} as QuestionV2.Interface
 
 /** Colleague hand-off is host-side; these cases exercise the OTHER requests, so it must never run. */
 const colleagueStub = {
@@ -47,7 +40,7 @@ const colleagueStub = {
   retire: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface
 
-test("permission assertion and question answers stay in host services", async () => {
+test("permission assertions stay in host services", async () => {
   const permission = {
     ...unusedPermission,
     assert: (value: PermissionV2.AssertInput) =>
@@ -56,8 +49,9 @@ test("permission assertion and question answers stay in host services", async ()
   const allowed = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission,
-      question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
+      spawner: spawnerStub,
+      join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -68,27 +62,6 @@ test("permission assertion and question answers stay in host services", async ()
     }),
   )
   expect(allowed).toMatchObject({ type: "permission-result", outcome: "allowed" })
-
-  const answered = await Effect.runPromise(
-    SessionWorkerInteractionBridge.handle({
-      permission,
-      question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
-      lease,
-      message: {
-        ...base,
-        type: "question-ask",
-        requestID: "rpc_question",
-        input: {
-          sessionID: lease.sessionID,
-          questions: [
-            { header: "Proceed", question: "Continue?", options: [{ label: "Yes", description: "Continue" }] },
-          ],
-        },
-      },
-    }),
-  )
-  expect(answered).toMatchObject({ type: "question-result", outcome: "answered", answers: [["Yes"]] })
 })
 
 test("permission denial details survive while stale and cross-session requests fail closed", async () => {
@@ -105,8 +78,9 @@ test("permission denial details survive while stale and cross-session requests f
   const denied = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
-      question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
+      spawner: spawnerStub,
+      join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -125,19 +99,20 @@ test("permission denial details survive while stale and cross-session requests f
   const stale = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
-      question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
+      spawner: spawnerStub,
+      join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: {
         ...base,
         generation: lease.generation - 1,
-        type: "question-ask",
+        type: "permission-assert",
         requestID: "rpc_stale",
-        input: { sessionID: lease.sessionID, questions: [] },
+        input: { sessionID: lease.sessionID, action: "read", resources: ["README.md"] },
       },
     }),
   )
-  expect(stale).toMatchObject({ type: "question-result", outcome: "rejected" })
+  expect(stale).toMatchObject({ type: "permission-result", outcome: "rejected" })
 })
 
 // 🔴 THE regression guard for the 2026-08-04 → 2026-08-06 outage: `spawn` was dead on the live runner
@@ -168,7 +143,6 @@ test("🔴 the host spawns with the LEASE's session as parent — the payload ca
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner,
       join: joinStub,
       colleague: colleagueStub,
@@ -193,7 +167,6 @@ test("a stale lease is refused before the spawner is reached", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner,
       join: joinStub,
       colleague: colleagueStub,
@@ -215,7 +188,6 @@ test("🔴 a quota refusal arrives as `limit`, not as a transport rejection", as
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner,
       join: joinStub,
       colleague: colleagueStub,
@@ -237,7 +209,6 @@ test("the optional fields ride through, and absent ones stay absent", async () =
   await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner,
       join: joinStub,
       colleague: colleagueStub,
@@ -274,7 +245,6 @@ test("a completed child returns its result", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner: spawnerStub,
       join,
       colleague: colleagueStub,
@@ -292,7 +262,6 @@ test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner: spawnerStub,
       join,
       colleague: colleagueStub,
@@ -315,7 +284,6 @@ test("a stale lease is refused before the join is attempted", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner: spawnerStub,
       join,
       colleague: colleagueStub,
@@ -333,7 +301,6 @@ test("a completed child with no result still reports completion", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
-      question: unusedQuestion,
       spawner: spawnerStub,
       join,
       colleague: colleagueStub,

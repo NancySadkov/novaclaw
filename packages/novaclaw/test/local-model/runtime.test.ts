@@ -77,7 +77,9 @@ describe("managed local-model lifecycle", () => {
 
   test("Stop interrupts acquisition and leaves verified partials resumable", () => {
     const source = fs.readFileSync(new URL("../../src/local-model/runtime.ts", import.meta.url), "utf8")
-    expect(source).toContain("const currentJob = installActive ? job : undefined")
+    expect(source).toContain("const currentJob = installActive && isAcquisitionStage(state.stage) ? job : undefined")
+    expect(source).toContain("loadAbort?.abort(")
+    expect(source).toContain("await loading?.catch(")
     expect(source).toContain("Fiber.interrupt(currentJob)")
     expect(source).toContain("preservePartialOnInterrupt: true")
     expect(source).toContain('message: "The local model installation was stopped."')

@@ -60,6 +60,9 @@ export function fromPromise(plugin: Plugin): EffectPlugin {
             declare: declare(host.agent),
             reload: () => run(host.agent.reload()),
           },
+          app: {
+            declare: (items) => register(host.app.declare(items)),
+          },
           catalog: {
             declare: declare(host.catalog),
             reload: () => run(host.catalog.reload()),

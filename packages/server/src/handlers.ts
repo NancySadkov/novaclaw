@@ -13,7 +13,6 @@ import { HealthHandler } from "./handlers/health"
 import { MemoryHandler } from "./handlers/memory"
 import { PtyHandler } from "./handlers/pty"
 import { PtyInstanceHandler } from "./handlers/pty-instance"
-import { QuestionHandler } from "./handlers/question"
 import { ReferenceHandler } from "./handlers/reference"
 import { LocationHandler } from "./handlers/location"
 import { IntegrationHandler } from "./handlers/integration"
@@ -49,7 +48,6 @@ type HandlerLayers =
   | typeof EventHandler
   | typeof PtyHandler
   | typeof PtyInstanceHandler
-  | typeof QuestionHandler
   | typeof ReferenceHandler
   | typeof ConfigHandler
   | typeof LogHandler
@@ -82,7 +80,6 @@ export const handlers: Layer.Layer<
   EventHandler,
   PtyHandler,
   PtyInstanceHandler,
-  QuestionHandler,
   ReferenceHandler,
   ConfigHandler,
   LogHandler,

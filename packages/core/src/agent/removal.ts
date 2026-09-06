@@ -13,6 +13,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { Memory } from "../kb-graph/memory"
+import { WorldMemory } from "../kb-graph/world-memory"
 import { AgentRetire } from "./retire"
 
 // RETIRING A COLLEAGUE THAT WAS REMOVED THROUGH THE CONFIG DOOR.
@@ -91,6 +92,7 @@ export const node = makeGlobalNode({
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
       const memory = Memory.client(yield* Memory.node.service)
+      const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
       // 🔴 The subsystems that key rows on an agent id, registered where their stores are reachable.
       // Declared in `AgentRetire.CLEANERS`, so one that is never wired is REPORTED rather than
       // silently skipped — which is the failure mode this whole list exists to answer.
@@ -141,9 +143,17 @@ export const node = makeGlobalNode({
         status.remove(agentID),
       )
       yield* register((agentID) =>
-        AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
+        AgentRetire.everything({ db, events, memory, worldMemory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
     }),
   ),
-  deps: [AgentConfigStore.node, AgentStatus.node, AppNodePlatform.filesystem, Database.node, EventV2.node, Memory.node],
+  deps: [
+    AgentConfigStore.node,
+    AgentStatus.node,
+    AppNodePlatform.filesystem,
+    Database.node,
+    EventV2.node,
+    Memory.node,
+    WorldMemory.node,
+  ],
 })

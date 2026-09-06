@@ -151,7 +151,9 @@ describe.skipIf(process.platform !== "win32")("the tsgo guard bounds itself", ()
     // The heartbeat moves while it runs — this is what tells a live guard from a leftover record.
     const first = parseGuardRecord(readFileSync(guard.pidFile, "utf8"))
     expect(first?.pid).toBeGreaterThan(0)
-    expect(await until(() => (parseGuardRecord(readFileSync(guard.pidFile, "utf8"))?.beatMs ?? 0) > first!.beatMs, 5_000)).toBe(true)
+    expect(
+      await until(() => (parseGuardRecord(readFileSync(guard.pidFile, "utf8"))?.beatMs ?? 0) > first!.beatMs, 5_000),
+    ).toBe(true)
 
     // THE BOUND. The subject finishes; the guard has nothing left to guard.
     subject.child.kill()
@@ -172,7 +174,18 @@ describe.skipIf(process.platform !== "win32")("the tsgo guard bounds itself", ()
     // Someone else took the post — a fresh guard, or a human reaping this one by hand. The subject is
     // still alive, so idleness cannot be what ends it: only ownership can.
     const successor = `999999 ${Date.now()}`
-    writeFileSync(guard.pidFile, successor)
+    // A heartbeat holds a short exclusive write handle. Taking ownership retries that lock,
+    // then must remain effective even when it lands during the old guard's process enumeration.
+    expect(
+      await until(() => {
+        try {
+          writeFileSync(guard.pidFile, successor)
+          return true
+        } catch {
+          return false
+        }
+      }, 5_000),
+    ).toBe(true)
 
     const gone = await exitedEventually(guard.exited)
     expect(gone.ok, `the guard was still running ${gone.ms} ms after losing the pid file`).toBe(true)

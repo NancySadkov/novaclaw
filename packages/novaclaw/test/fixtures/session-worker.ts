@@ -215,16 +215,6 @@ input.on("line", (line) => {
     if (generationReleased) emit({ ...identity, type: "settled" })
   }
   if (message.type === "permission-result" && message.outcome === "allowed") {
-    emit({
-      ...identity,
-      type: "question-ask",
-      requestID: "rpc_question",
-      input: {
-        sessionID: identity.sessionID,
-        questions: [{ header: "Proceed", question: "Continue?", options: [{ label: "Yes", description: "Continue" }] }],
-      },
-    })
-  } else if (message.type === "question-result" && message.outcome === "answered") {
     emit({ ...identity, type: "settled" })
   }
   if (message.type === "await-child-result") {

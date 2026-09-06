@@ -9,6 +9,7 @@ import type { ReferenceHooks } from "./reference.js"
 import type { SkillHooks } from "./skill.js"
 import type { ToolHooks } from "./tool.js"
 import type { Reload } from "./registration.js"
+import type { AppHooks } from "./app.js"
 
 /**
  * The promise-shaped external contract. Mirrors the effect SDK's `PluginContext` exactly: the five
@@ -24,6 +25,7 @@ import type { Reload } from "./registration.js"
 export interface PluginContext {
   readonly options: PluginOptions
   readonly agent: Pick<AgentHooks, "declare"> & Reload
+  readonly app: AppHooks
   readonly catalog: Pick<CatalogHooks, "declare"> & Reload
   readonly command: Pick<CommandHooks, "declare"> & Reload
   readonly event: EventHooks

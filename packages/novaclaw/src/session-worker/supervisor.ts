@@ -70,23 +70,22 @@ export interface Input {
   readonly onInteractionRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-request" }
+      { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" }
     >,
     signal: AbortSignal,
   ) => Promise<
     Extract<
       SessionWorkerProtocol.HostMessage,
       {
-        readonly type:
-          | "permission-result"
-          | "question-result"
-          | "spawn-result"
-          | "await-child-result"
-          | "colleague-result"
+        readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result"
       }
     >
   >
   readonly onMemoryRequest?: (
+    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
+    signal: AbortSignal,
+  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "memory-result" }>>
+  readonly onWorldMemoryRequest?: (
     message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
     signal: AbortSignal,
   ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "memory-result" }>>
@@ -180,8 +179,7 @@ type RPCMessage = Extract<SessionWorkerProtocol.WorkerMessage, { readonly reques
  *    event sequence and `execution-*` checkpoints the fenced attempt row; two of those overtaking one
  *    another is a transcript that reads out of order. These are local database writes — none of them
  *    can block on anything but disk.
- *  · **It can block on something OUTSIDE the worker.** `permission-assert` and `question-ask` wait as
- *    long as a human takes to answer. `await-child` waits out its whole timeout (`tool/wait.ts` passes
+ *  · **It can block on something OUTSIDE the worker.** `await-child` waits out its whole timeout (`tool/wait.ts` passes
  *    ten minutes). `spawn-child` and `colleague-request` reach another session. A device admission may
  *    wait for a lease this same worker is concurrently trying to release. A memory op is an
  *    independent store call. **None of these writes the ordered record.**
@@ -195,8 +193,7 @@ type RPCMessage = Extract<SessionWorkerProtocol.WorkerMessage, { readonly reques
  *
  * Ordering is safe to drop for everything else because the worker correlates replies by `requestID`
  * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next — so
- * per-caller ordering is preserved by the caller, and the scheduler, permission gate, question
- * registry and memory store each own their own serialization.
+ * per-caller ordering is preserved by the caller, and the scheduler, permission gate and memory store each own their own serialization.
  *
  * ⚠️ **`satisfies` is the door.** The table is exhaustive over `RPCMessage["type"]`, so a new worker
  * RPC does not compile until somebody answers "does this write the ordered record?" — the previous
@@ -215,7 +212,6 @@ const ORDERED_RPC = {
   "execution-served-by": true,
   "execution-context-updated": true,
   "permission-assert": false,
-  "question-ask": false,
   "spawn-child": false,
   "colleague-request": false,
   "await-child": false,
@@ -291,10 +287,7 @@ export function spawn(input: Input): Handle {
     // The normal terminal path can await: keep the parent-map walk and Windows taskkill off the
     // server event loop, while still holding result settlement behind the tree teardown so callers
     // never observe a finished worker whose descendants are still alive.
-    const cleanup = Promise.all([
-      killTree(childPID),
-      Promise.resolve().then(() => input.onExit?.(outcome)),
-    ])
+    const cleanup = Promise.all([killTree(childPID), Promise.resolve().then(() => input.onExit?.(outcome))])
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<void>((resolve) => {
       deadlineTimer = setTimeout(resolve, input.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS)
@@ -431,7 +424,6 @@ export function spawn(input: Input): Handle {
         return
       }
       case "permission-assert":
-      case "question-ask":
       // Spawn rides the INTERACTION channel because it needs the same thing those two do:
       // the host's LOCATION services. `SessionSpawner` is a location node, and this is the
       // only worker->host path already resolved inside `runLocated`.
@@ -466,25 +458,15 @@ export function spawn(input: Input): Handle {
                     requestID: message.requestID,
                     outcome: "rejected",
                   }
-                : message.type === "permission-assert"
-                  ? {
-                      version: SessionWorkerProtocol.VERSION,
-                      type: "permission-result",
-                      sessionID: input.lease.sessionID,
-                      attemptID: input.lease.attemptID,
-                      generation: input.lease.generation,
-                      requestID: message.requestID,
-                      outcome: "rejected",
-                    }
-                  : {
-                      version: SessionWorkerProtocol.VERSION,
-                      type: "question-result",
-                      sessionID: input.lease.sessionID,
-                      attemptID: input.lease.attemptID,
-                      generation: input.lease.generation,
-                      requestID: message.requestID,
-                      outcome: "rejected",
-                    },
+                : {
+                    version: SessionWorkerProtocol.VERSION,
+                    type: "permission-result",
+                    sessionID: input.lease.sessionID,
+                    attemptID: input.lease.attemptID,
+                    generation: input.lease.generation,
+                    requestID: message.requestID,
+                    outcome: "rejected",
+                  },
           )
           return
         }
@@ -517,13 +499,14 @@ export function spawn(input: Input): Handle {
           finish({ type: "protocol-error", detail: "memory request arrived before ready" })
           return
         }
-        const request = input.onMemoryRequest
+        const request = message.store === "world" ? input.onWorldMemoryRequest : input.onMemoryRequest
         if (!request) {
           // A host with no memory bridge answers "rejected", which the worker turns into an ordinary
           // `MemoryError` — the same degradation a disabled engine produces. It must never be silence.
           send({
             version: SessionWorkerProtocol.VERSION,
             type: "memory-result",
+            store: message.store,
             sessionID: input.lease.sessionID,
             attemptID: input.lease.attemptID,
             generation: input.lease.generation,

@@ -5,13 +5,17 @@ import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSyncContextInner } from "./server-sync"
 import type { State } from "./global-sync/types"
 
-const sessionFields = new Set(["session_status", "session_working", "session_diff", "todo", "permission", "question"])
+const sessionFields = new Set(["session_status", "session_working", "session_diff", "todo", "permission"])
 
 export const createDirSyncContext = (
   directory: string,
   serverSync: ReturnType<typeof createServerSyncContextInner>,
 ) => {
-  const current = createMemo(() => serverSync.child(directory, { mcp: true }))
+  // MCP is an optional capability, not part of opening a directory. The status surface reads the
+  // passive configured/connected projection; the runner and explicit MCP controls materialize a
+  // client on demand. Keeping this false is the boundary that prevents Home/Chats from starting
+  // every enabled local process and remote socket before the user has asked for one.
+  const current = createMemo(() => serverSync.child(directory, { mcp: false }))
   const data = new Proxy({} as State, {
     get(_, property: keyof State) {
       if (property === "session_working") return serverSync.session.data.session_working.bind(serverSync.session.data)

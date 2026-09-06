@@ -77,11 +77,38 @@ const SessionCatalogHandler = handlerLayer(
                       Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
                     )
                   : ctx.query
-              const sessions = yield* session.list({
+              const listed = yield* session.list({
                 ...query,
                 workspaceID: query.workspace,
                 limit: ctx.query.limit ?? DefaultSessionsLimit,
               })
+              // The debug roster is an OS diagnostic, so raw sparse rows are not enough: a child
+              // with an inherited officer/model would appear ownerless even while it is running
+              // under that effective identity. Resolve the same parent-chain config the runner uses
+              // and overlay only the two displayed identity fields; everything else remains the
+              // authoritative session row.
+              const sessions = yield* Effect.forEach(
+                listed,
+                (item) =>
+                  effective.resolve(item.id).pipe(
+                  Effect.map((config) => ({
+                      ...item,
+                      ...(config.agent === undefined ? {} : { agent: AgentV2.ID.make(config.agent) }),
+                      ...(config.model === undefined
+                        ? {}
+                        : {
+                            model: ModelV2.Ref.make({
+                              providerID: ProviderV2.ID.make(config.model.providerID),
+                              id: ModelV2.ID.make(config.model.id),
+                              ...(config.model.variant === undefined
+                                ? {}
+                                : { variant: ModelV2.VariantID.make(config.model.variant) }),
+                            }),
+                          }),
+                  })),
+                  ),
+                { concurrency: 4 },
+              )
               const first = sessions[0]
               const last = sessions.at(-1)
               return {
@@ -332,10 +359,12 @@ const SessionCatalogHandler = handlerLayer(
             "session.update",
             Effect.fn(function* (ctx) {
               const notFound = (error: { sessionID: string }) =>
-                new SessionNotFoundError({
-                  sessionID: error.sessionID,
-                  message: `Session not found: ${error.sessionID}`,
-                })
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                )
               // Component writers validate their own values, not entity existence. Preserve the
               // update route's 404 contract before touching the sparse Device component.
               if (ctx.payload.device !== undefined)
@@ -351,13 +380,37 @@ const SessionCatalogHandler = handlerLayer(
                   .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
                   .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
               if (ctx.payload.archived !== undefined)
-                yield* session
-                  .setArchived({
-                    sessionID: ctx.params.sessionID,
-                    // null on the wire = unarchive (the core op takes undefined for restore)
-                    ...(ctx.payload.archived === null ? {} : { time: ctx.payload.archived }),
-                  })
-                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+                if (ctx.payload.archived === null) {
+                  const current = yield* session.get(ctx.params.sessionID).pipe(
+                    Effect.catchTag("Session.NotFoundError", notFound),
+                  )
+                  const agent = current.agent
+                  if (agent === undefined || AgentV2.POSTURE_IDS.has(agent))
+                    return yield* new InvalidRequestError({
+                      message: "Only an officer's canonical chat can be restored.",
+                      kind: "session_restore_unavailable",
+                    })
+                  const officer = yield* AgentV2.Service.use((service) => service.get(agent))
+                  if (officer === undefined)
+                    return yield* new InvalidRequestError({
+                      message: `Cannot restore ${ctx.params.sessionID}: officer ${agent} is retired.`,
+                      kind: "session_restore_unavailable",
+                    })
+                  yield* session.restore({ sessionID: ctx.params.sessionID, agent }).pipe(
+                    Effect.catchTag("Session.NotFoundError", notFound),
+                    Effect.catchTag("Session.RestoreUnavailableError", (error) =>
+                      Effect.fail(
+                        new InvalidRequestError({
+                          message: error.reason,
+                          kind: "session_restore_unavailable",
+                        }),
+                      ),
+                    ),
+                  )
+                } else
+                  yield* session
+                    .setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.archived })
+                    .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
               if (ctx.payload.device === null)
                 yield* components.remove({ sessionID: ctx.params.sessionID, kind: "device" }).pipe(
                   Effect.mapError(

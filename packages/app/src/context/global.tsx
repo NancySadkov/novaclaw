@@ -106,6 +106,14 @@ function createServerCtx(
   const sdk = createServerSdkContext(conn, scope)
   const sync = createServerSyncContext(sdk)
 
+  // This client is private to the cached server context. Retire its work and cache with the
+  // context; otherwise credential rotation/removal leaves a detached client reachable only from
+  // the old root's closure.
+  onCleanup(() => {
+    void queryClient.cancelQueries()
+    queryClient.clear()
+  })
+
   /**
    * THE roster for this instance — one fetch, shared by every surface that asks who works here.
    *

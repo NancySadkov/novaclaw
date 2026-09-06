@@ -15,6 +15,7 @@ import { Slug } from "./util/slug"
 // node:fs/promises (trash.ts style) — the tool + HTTP handlers call these directly.
 
 export type OpenType = "route" | "url" | "prompt"
+export type Source = "agent" | "plugin"
 
 export type ManifestOpen =
   | { readonly type: "route"; readonly value: ManifestRouteId }
@@ -28,6 +29,8 @@ export interface Manifest {
   readonly accent?: string
   readonly subtitle?: string
   readonly open: ManifestOpen
+  /** Who contributed the persistent launcher. Missing legacy values are treated as agent apps. */
+  readonly source: Source
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -39,6 +42,7 @@ export interface SaveInput {
   readonly accent?: string
   readonly subtitle?: string
   readonly open: { readonly type: OpenType; readonly value: string }
+  readonly source?: Source
 }
 
 /** Injectable seams for tests (temp root, fake clock). */
@@ -173,6 +177,7 @@ export function normalize(input: SaveInput, options?: Options): Manifest {
     ...(input.accent?.trim() ? { accent: input.accent.trim() } : {}),
     ...(input.subtitle?.trim() ? { subtitle: input.subtitle.trim() } : {}),
     open,
+    source: input.source ?? "agent",
     createdAt: now,
     updatedAt: now,
   }
@@ -212,7 +217,8 @@ export async function listApps(options?: Options): Promise<Manifest[]> {
       const parsed = JSON.parse(raw) as Manifest
       if (!isValidId(parsed.id) || !parsed.title || !parsed.open?.value) continue
       const open = normalizeOpen(parsed.open)
-      manifests.push({ ...parsed, open })
+      if (parsed.source !== undefined && parsed.source !== "agent" && parsed.source !== "plugin") continue
+      manifests.push({ ...parsed, source: parsed.source ?? "agent", open })
     } catch {
       // A torn write or a manifest from an older/free-form contract cannot cost the whole launcher.
     }

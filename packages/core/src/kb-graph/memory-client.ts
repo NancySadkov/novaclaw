@@ -269,6 +269,8 @@ export interface Interface {
     access: MemoryAccess,
     opts?: { k?: number },
   ) => Effect.Effect<ReadonlyArray<Neighbor>, MemoryError>
+  /** Read one current row by storage key, with the same mandatory scope guard as traversal. */
+  readonly get: (id: string, access: MemoryAccess) => Effect.Effect<MemoryRow | null, MemoryError>
   readonly path: (
     from: string,
     to: string,
@@ -335,6 +337,7 @@ export interface Engine {
   addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<EdgeResult>
   search(input: SearchInput): Promise<ReadonlyArray<SearchHit>>
   neighbors(id: string, opts?: { scopes?: readonly string[]; k?: number }): Promise<ReadonlyArray<Neighbor>>
+  get(id: string, opts?: { scopes?: readonly string[] }): Promise<MemoryRow | null>
   path(from: string, to: string, maxHops?: number, opts?: { scopes?: readonly string[] }): Promise<PathResult | null>
   invalidate(id: string, at?: string, opts?: { scopes?: readonly string[] }): Promise<void>
   purge(id: string, opts?: { scopes?: readonly string[] }): Promise<void>
@@ -374,6 +377,7 @@ export const fromEngine = (engine: Engine): Interface => {
     // that says so out loud.
     neighbors: (id, access, opts) =>
       wrap(() => engine.neighbors(id, { ...(access.scopes ? { scopes: access.scopes } : {}), ...opts })),
+    get: (id, access) => wrap(() => engine.get(id, access.scopes ? { scopes: access.scopes } : {})),
     path: (from, to, access, maxHops) =>
       wrap(() => engine.path(from, to, maxHops, access.scopes ? { scopes: access.scopes } : {})),
     invalidate: (id, access, at) =>
@@ -413,6 +417,7 @@ export const disabled = (reason = "memory is not available"): Interface => {
     addEdge: fail,
     search: fail,
     neighbors: fail,
+    get: fail,
     path: fail,
     invalidate: fail,
     purge: fail,
@@ -513,16 +518,35 @@ export const stub = (): Interface => {
         edges
           .filter((e) => e.from === id && visible(e.to))
           .slice(0, opts?.k ?? 25)
-          .map((e) => ({ id: e.to, type: e.type, text: mems.get(e.to)?.text ?? "" })),
+        .map((e) => ({ id: e.to, type: e.type, text: mems.get(e.to)?.text ?? "" })),
       )
     },
-    path: (from, to, access) => {
+    get: (id, access) =>
+      Effect.sync(() => {
+        const row = mems.get(id)
+        if (!row || !row.valid || (access.scopes !== undefined && !access.scopes.includes(row.scope))) return null
+        return stripValid(row)
+      }),
+    path: (from, to, access, maxHops = 5) => {
       const visible = (memoryID: string) => {
         const row = mems.get(memoryID)
         return row !== undefined && (access.scopes === undefined || access.scopes.includes(row.scope))
       }
       if (!visible(from) || !visible(to)) return ok(null)
-      return ok(edges.some((e) => e.from === from && e.to === to) ? { ids: [from, to], hops: 1 } : null)
+      const queue: string[][] = [[from]]
+      const seen = new Set([from])
+      while (queue.length > 0) {
+        const path = queue.shift()!
+        if (path.length - 1 >= maxHops) continue
+        for (const edge of edges.filter((e) => e.from === path[path.length - 1] && visible(e.to))) {
+          if (seen.has(edge.to)) continue
+          const next = [...path, edge.to]
+          if (edge.to === to) return ok({ ids: next, hops: next.length - 1 })
+          seen.add(edge.to)
+          queue.push(next)
+        }
+      }
+      return ok(null)
     },
     invalidate: (id, access) =>
       Effect.sync(() => {

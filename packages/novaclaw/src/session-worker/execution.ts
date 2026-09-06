@@ -12,9 +12,9 @@ import { SessionPatch } from "@novaclaw/core/session/patch"
 import { Location } from "@novaclaw/core/location"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionContextEpoch } from "@novaclaw/core/session/context-epoch"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionEvent } from "@novaclaw/core/session/event"
@@ -159,6 +159,7 @@ export const layer = Layer.effect(
     // layer build like everything else here — `Memory.client` wraps a CAPABILITY that acquires per
     // call, so holding it costs nothing when memory is disabled and never blocks the handler.
     const memory = Memory.client(yield* Memory.node.service)
+    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
     // The ONE managed local-model runtime. A worker's `LocalModelManager.node` is replaced by an RPC
     // client that lands here, so `ensure` in a turn starts (or finds) the host's llama.cpp child
     // instead of a second one on the same port. Resolved at layer build like memory, and for the
@@ -293,7 +294,6 @@ export const layer = Layer.effect(
                       const roster = yield* AgentV2.Service
                       return yield* SessionWorkerInteractionBridge.handle({
                         permission: yield* PermissionV2.Service,
-                        question: yield* QuestionV2.Service,
                         // Location-scoped, exactly like the two above — which is why spawn rides this
                         // channel rather than getting one of its own.
                         spawner: yield* SessionSpawner.Service,
@@ -334,6 +334,7 @@ export const layer = Layer.effect(
                               db: database.db,
                               events,
                               memory,
+                              worldMemory,
                               agent: colleague,
                               at: Date.now(),
                             }),
@@ -355,6 +356,10 @@ export const layer = Layer.effect(
                  */
                 onMemoryRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
+                onWorldMemoryRequest: (message, signal) =>
+                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory: worldMemory, lease, message }), {
+                    signal,
+                  }),
                 onLocalModelRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerLocalModelBridge.handle({ manager: localModels, lease, message }), {
                     signal,
@@ -516,6 +521,7 @@ export const node = makeGlobalNode({
     Database.node,
     AgentConfigStore.node,
     Memory.node,
+    WorldMemory.node,
     // The manager the server graph builds, named here so this layer resolves the runtime client and
     // never core's inert default (whose `ensure` is a no-op that would leave every worker modelless).
     LocalModelRuntime.managerNode,

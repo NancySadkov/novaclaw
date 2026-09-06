@@ -46,14 +46,13 @@ describe("bootstrapDirectory", () => {
       },
       session_diff: {},
       todo: {},
-      question: {},
       mcp_ready: true,
       mcp: {},
       vcs: undefined,
       limit: 5,
     })
 
-    await bootstrapDirectory({
+    const pending = bootstrapDirectory({
       directory: "/project",
       scope: ServerScope.local,
       mcp: false,
@@ -82,7 +81,6 @@ describe("bootstrapDirectory", () => {
         },
         v2: {
           session: { active: async () => ({ data: { data: {} } }) },
-          question: { request: { list: async () => ({ data: { data: [] } }) } },
           // `/api/vcs` since 2026-09-03, so the envelope is nested twice: the client's own `data`,
           // then the contract's.
           vcs: { get: async () => ({ data: { data: undefined } }) },
@@ -105,7 +103,7 @@ describe("bootstrapDirectory", () => {
 
     expect(store.status).toBe("partial")
 
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await pending
 
     expect(store.status).toBe("complete")
     expect(mcpReads).toEqual([])
@@ -135,7 +133,6 @@ describe("bootstrapDirectory", () => {
       },
       session_diff: {},
       todo: {},
-      question: {},
       mcp_ready: true,
       mcp: {},
       vcs: undefined,
@@ -224,7 +221,6 @@ describe("bootstrapDirectory path seeding", () => {
       },
       session_diff: {},
       todo: {},
-      question: {},
       mcp_ready: true,
       mcp: {},
       vcs: undefined,
@@ -253,7 +249,6 @@ describe("bootstrapDirectory path seeding", () => {
           command: { list: async () => ({ data: [] }) },
           v2: {
             session: { active: async () => ({ data: { data: {} } }) },
-            question: { request: { list: async () => ({ data: { data: [] } }) } },
             vcs: { get: async () => ({ data: { data: undefined } }) },
           },
           mcp: { status: async () => ({ data: {} }) },
@@ -310,7 +305,6 @@ describe("bootstrapDirectory path seeding", () => {
       },
       session_diff: {},
       todo: {},
-      question: {},
       mcp_ready: true,
       mcp: {},
       vcs: undefined,
@@ -333,7 +327,6 @@ describe("bootstrapDirectory path seeding", () => {
         command: { list: async () => ({ data: [] }) },
         v2: {
           session: { active: async () => ({ data: { data: {} } }) },
-          question: { request: { list: async () => ({ data: { data: [] } }) } },
           // `/api/vcs` since 2026-09-03, so the envelope is nested twice: the client's own `data`,
           // then the contract's.
           vcs: { get: async () => ({ data: { data: undefined } }) },

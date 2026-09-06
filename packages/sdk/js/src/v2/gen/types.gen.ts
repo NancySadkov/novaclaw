@@ -81,9 +81,6 @@ export type Event =
   | EventPtyUpdated
   | EventPtyExited
   | EventPtyDeleted
-  | EventQuestionV2Asked
-  | EventQuestionV2Replied
-  | EventQuestionV2Rejected
   | EventMessengerAccountStatus
   | EventMessengerChatSeen
   | EventMessengerBindingUpdated
@@ -297,6 +294,12 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           info: SessionV2Info
+          openingPrompt?: {
+            messageID: string
+            prompt: Prompt
+            delivery: "steer" | "queue"
+            timestamp: number
+          }
         }
       }
     | {
@@ -305,6 +308,7 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           info: SessionV2Info
+          clearArchived?: boolean
         }
       }
     | {
@@ -1095,36 +1099,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "question.v2.asked"
-        properties: {
-          id: string
-          sessionID: string
-          /**
-           * Questions to ask
-           */
-          questions: Array<QuestionV2Info>
-          tool?: QuestionV2Tool
-        }
-      }
-    | {
-        id: string
-        type: "question.v2.replied"
-        properties: {
-          sessionID: string
-          requestID: string
-          answers: Array<QuestionV2Answer>
-        }
-      }
-    | {
-        id: string
-        type: "question.v2.rejected"
-        properties: {
-          sessionID: string
-          requestID: string
-        }
-      }
-    | {
-        id: string
         type: "messenger.account.status"
         properties: {
           accountID: string
@@ -1560,6 +1534,10 @@ export type McpStatusConnected = {
   status: "connected"
 }
 
+export type McpStatusIdle = {
+  status: "idle"
+}
+
 export type McpStatusDisabled = {
   status: "disabled"
 }
@@ -1580,6 +1558,7 @@ export type McpStatusNeedsClientRegistration = {
 
 export type McpStatus =
   | McpStatusConnected
+  | McpStatusIdle
   | McpStatusDisabled
   | McpStatusFailed
   | McpStatusNeedsAuth
@@ -1956,9 +1935,6 @@ export type V2Event =
   | PtyUpdated
   | PtyExited
   | PtyDeleted
-  | QuestionV2Asked
-  | QuestionV2Replied
-  | QuestionV2Rejected
   | MessengerAccountStatus
   | MessengerChatSeen
   | MessengerBindingUpdated
@@ -1988,12 +1964,6 @@ export type PtyNotFoundError = {
 export type PtyActivity = {
   state: "idle" | "foreground" | "unknown"
   descendants?: number
-}
-
-export type QuestionNotFoundError = {
-  _tag: "QuestionNotFoundError"
-  requestID: string
-  message: string
 }
 
 export type ConfigPath = Array<string>
@@ -2601,41 +2571,6 @@ export type SessionMessage =
   | SessionMessageAssistant
   | SessionMessageCompaction
 
-export type QuestionV2Option = {
-  /**
-   * Display text (1-5 words, concise)
-   */
-  label: string
-  /**
-   * Explanation of choice
-   */
-  description: string
-}
-
-export type QuestionV2Info = {
-  /**
-   * Complete question
-   */
-  question: string
-  /**
-   * Very short label (max 30 chars)
-   */
-  header: string
-  /**
-   * Available choices
-   */
-  options: Array<QuestionV2Option>
-  multiple?: boolean
-  custom?: boolean
-}
-
-export type QuestionV2Tool = {
-  messageID: string
-  callID: string
-}
-
-export type QuestionV2Answer = Array<string>
-
 export type MessengerAccountStatus2 =
   | {
       state: "disabled"
@@ -2674,6 +2609,12 @@ export type SyncEventSessionCreated = {
     data: {
       sessionID: string
       info: SessionV2Info
+      openingPrompt?: {
+        messageID: string
+        prompt: Prompt
+        delivery: "steer" | "queue"
+        timestamp: number
+      }
     }
   }
 }
@@ -2689,6 +2630,7 @@ export type SyncEventSessionUpdated = {
     data: {
       sessionID: string
       info: SessionV2Info
+      clearArchived?: boolean
     }
   }
 }
@@ -4214,6 +4156,7 @@ export type ConfigInfo = {
     }
   }
   telemetry?: {
+    endpoint?: string
     enabled?: boolean
   }
   memory?: {
@@ -6104,6 +6047,12 @@ export type SessionCreated = {
   data: {
     sessionID: string
     info: SessionV2Info
+    openingPrompt?: {
+      messageID: string
+      prompt: Prompt
+      delivery: "steer" | "queue"
+      timestamp: number
+    }
   }
 }
 
@@ -6122,6 +6071,7 @@ export type SessionUpdated = {
   data: {
     sessionID: string
     info: SessionV2Info
+    clearArchived?: boolean
   }
 }
 
@@ -6600,66 +6550,6 @@ export type PtyDeleted = {
   }
 }
 
-export type QuestionV2Asked = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "question.v2.asked"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    id: string
-    sessionID: string
-    /**
-     * Questions to ask
-     */
-    questions: Array<QuestionV2Info>
-    tool?: QuestionV2Tool
-  }
-}
-
-export type QuestionV2Replied = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "question.v2.replied"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    requestID: string
-    answers: Array<QuestionV2Answer>
-  }
-}
-
-export type QuestionV2Rejected = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "question.v2.rejected"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    requestID: string
-  }
-}
-
 export type MessengerChatSeen = {
   id: string
   metadata?: {
@@ -6923,23 +6813,6 @@ export type V2EventServerConnected = {
   }
 }
 
-export type QuestionV2Request = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionV2Info>
-  tool?: QuestionV2Tool
-}
-
-export type QuestionV2Reply = {
-  /**
-   * User answers in order of questions (each answer is an array of selected labels)
-   */
-  answers: Array<QuestionV2Answer>
-}
-
 export type ReferenceLocalSource = {
   type: "local"
   path: string
@@ -7003,6 +6876,12 @@ export type EventSessionCreated = {
   properties: {
     sessionID: string
     info: SessionV2Info
+    openingPrompt?: {
+      messageID: string
+      prompt: Prompt
+      delivery: "steer" | "queue"
+      timestamp: number
+    }
   }
 }
 
@@ -7012,6 +6891,7 @@ export type EventSessionUpdated = {
   properties: {
     sessionID: string
     info: SessionV2Info
+    clearArchived?: boolean
   }
 }
 
@@ -7871,39 +7751,6 @@ export type EventPtyDeleted = {
   }
 }
 
-export type EventQuestionV2Asked = {
-  id: string
-  type: "question.v2.asked"
-  properties: {
-    id: string
-    sessionID: string
-    /**
-     * Questions to ask
-     */
-    questions: Array<QuestionV2Info>
-    tool?: QuestionV2Tool
-  }
-}
-
-export type EventQuestionV2Replied = {
-  id: string
-  type: "question.v2.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    answers: Array<QuestionV2Answer>
-  }
-}
-
-export type EventQuestionV2Rejected = {
-  id: string
-  type: "question.v2.rejected"
-  properties: {
-    sessionID: string
-    requestID: string
-  }
-}
-
 export type EventMessengerAccountStatus = {
   id: string
   type: "messenger.account.status"
@@ -8381,6 +8228,51 @@ export type GlobalDiscoveryResponses = {
 }
 
 export type GlobalDiscoveryResponse = GlobalDiscoveryResponses[keyof GlobalDiscoveryResponses]
+
+export type V2InstancePressureGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/instance/pressure"
+}
+
+export type V2InstancePressureGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type V2InstancePressureGetError = V2InstancePressureGetErrors[keyof V2InstancePressureGetErrors]
+
+export type V2InstancePressureGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    measuredAt: number
+    memory:
+      | {
+          known: true
+          source: string
+          crosscheck: string
+          usedBytes: number
+          limitBytes: number
+        }
+      | {
+          known: false
+          reason: string
+        }
+    level: string
+    memoryLevel: string
+  }
+}
+
+export type V2InstancePressureGetResponse = V2InstancePressureGetResponses[keyof V2InstancePressureGetResponses]
 
 export type GlobalIdentityBackupData = {
   body?: never
@@ -12968,6 +12860,82 @@ export type V2MemoryFeedbackResponses = {
 
 export type V2MemoryFeedbackResponse = V2MemoryFeedbackResponses[keyof V2MemoryFeedbackResponses]
 
+export type V2WorldMemoryEraseData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/world-memory/erase"
+}
+
+export type V2WorldMemoryEraseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryEraseError = V2WorldMemoryEraseErrors[keyof V2WorldMemoryEraseErrors]
+
+export type V2WorldMemoryEraseResponses = {
+  /**
+   * Success
+   */
+  200: number
+}
+
+export type V2WorldMemoryEraseResponse = V2WorldMemoryEraseResponses[keyof V2WorldMemoryEraseResponses]
+
+export type V2WorldMemoryExportData = {
+  body: {
+    includeInvalid?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/export"
+}
+
+export type V2WorldMemoryExportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryExportError = V2WorldMemoryExportErrors[keyof V2WorldMemoryExportErrors]
+
+export type V2WorldMemoryExportResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    kind: string
+    text: string
+    name: string | null
+    scope: string
+    source: string | null
+    confidence: number | null
+    relation: string
+    status: string
+    subject: string | null
+    predicate: string | null
+    conflictKey: string | null
+    supersededBy: string | null
+    evidence: string | null
+    evidenceKind: string | null
+  }>
+}
+
+export type V2WorldMemoryExportResponse = V2WorldMemoryExportResponses[keyof V2WorldMemoryExportResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never
@@ -13038,6 +13006,102 @@ export type V2AgentListResponses = {
 }
 
 export type V2AgentListResponse = V2AgentListResponses[keyof V2AgentListResponses]
+
+export type V2AgentAvatarGetData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: never
+  url: "/api/agent/{agentID}/avatar"
+}
+
+export type V2AgentAvatarGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentAvatarGetError = V2AgentAvatarGetErrors[keyof V2AgentAvatarGetErrors]
+
+export type V2AgentAvatarGetResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type V2AgentAvatarGetResponse = V2AgentAvatarGetResponses[keyof V2AgentAvatarGetResponses]
+
+export type V2AgentAvatarUploadData = {
+  body: Blob | File
+  path: {
+    agentID: string
+  }
+  query?: never
+  url: "/api/agent/{agentID}/avatar"
+}
+
+export type V2AgentAvatarUploadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentAvatarUploadError = V2AgentAvatarUploadErrors[keyof V2AgentAvatarUploadErrors]
+
+export type V2AgentAvatarUploadResponses = {
+  /**
+   * Success
+   */
+  200: {
+    hash: string
+    mime: string
+  }
+}
+
+export type V2AgentAvatarUploadResponse = V2AgentAvatarUploadResponses[keyof V2AgentAvatarUploadResponses]
+
+export type V2AgentAvatarDeleteData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: never
+  url: "/api/agent/{agentID}/avatar"
+}
+
+export type V2AgentAvatarDeleteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentAvatarDeleteError = V2AgentAvatarDeleteErrors[keyof V2AgentAvatarDeleteErrors]
+
+export type V2AgentAvatarDeleteResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2AgentAvatarDeleteResponse = V2AgentAvatarDeleteResponses[keyof V2AgentAvatarDeleteResponses]
 
 export type V2AgentUsageManyData = {
   body: {
@@ -17901,152 +17965,6 @@ export type V2PtyInstanceRemoveAllResponses = {
 
 export type V2PtyInstanceRemoveAllResponse = V2PtyInstanceRemoveAllResponses[keyof V2PtyInstanceRemoveAllResponses]
 
-export type V2QuestionRequestListData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/question/request"
-}
-
-export type V2QuestionRequestListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2QuestionRequestListError = V2QuestionRequestListErrors[keyof V2QuestionRequestListErrors]
-
-export type V2QuestionRequestListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: Array<QuestionV2Request>
-  }
-}
-
-export type V2QuestionRequestListResponse = V2QuestionRequestListResponses[keyof V2QuestionRequestListResponses]
-
-export type V2SessionQuestionListData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/question"
-}
-
-export type V2SessionQuestionListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError
-   */
-  404: SessionNotFoundError
-}
-
-export type V2SessionQuestionListError = V2SessionQuestionListErrors[keyof V2SessionQuestionListErrors]
-
-export type V2SessionQuestionListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    data: Array<QuestionV2Request>
-  }
-}
-
-export type V2SessionQuestionListResponse = V2SessionQuestionListResponses[keyof V2SessionQuestionListResponses]
-
-export type V2SessionQuestionReplyData = {
-  body: QuestionV2Reply
-  path: {
-    sessionID: string
-    requestID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/question/{requestID}/reply"
-}
-
-export type V2SessionQuestionReplyErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError | QuestionNotFoundError
-   */
-  404: QuestionNotFoundError | SessionNotFoundError
-}
-
-export type V2SessionQuestionReplyError = V2SessionQuestionReplyErrors[keyof V2SessionQuestionReplyErrors]
-
-export type V2SessionQuestionReplyResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2SessionQuestionReplyResponse = V2SessionQuestionReplyResponses[keyof V2SessionQuestionReplyResponses]
-
-export type V2SessionQuestionRejectData = {
-  body?: never
-  path: {
-    sessionID: string
-    requestID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/question/{requestID}/reject"
-}
-
-export type V2SessionQuestionRejectErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError | QuestionNotFoundError
-   */
-  404: QuestionNotFoundError | SessionNotFoundError
-}
-
-export type V2SessionQuestionRejectError = V2SessionQuestionRejectErrors[keyof V2SessionQuestionRejectErrors]
-
-export type V2SessionQuestionRejectResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2SessionQuestionRejectResponse = V2SessionQuestionRejectResponses[keyof V2SessionQuestionRejectResponses]
-
 export type V2ReferenceListData = {
   body?: never
   path?: never
@@ -18237,6 +18155,7 @@ export type V2TelemetryStatusResponses = {
       airgap: boolean
     }
     endpointConfigured: boolean
+    ready: boolean
     refusals: Array<
       "consent_off" | "airgap" | "no_endpoint" | "content_bearing_event" | "unknown_event" | "empty_signature"
     >

@@ -6,6 +6,7 @@ import { build, type Envelope, type Host, resetRepeats } from "./telemetry"
 import {
   airgapFrom,
   capture,
+  durableSpool,
   errorKind,
   errorStack,
   type HandlerTarget,
@@ -122,6 +123,34 @@ beforeEach(() => {
   transmitted = []
   resetForTest()
   resetRepeats()
+})
+
+// ── 0. the durable retry queue ─────────────────────────────────────────────────────────────────
+
+describe("the crash spool survives restart without becoming a second leak", () => {
+  const envelope: Envelope = {
+    signature: { plane: "server", signature: "0123456789abcdef", kind: "TypeError", frames: 1 },
+    attributes: {},
+  }
+
+  test("writes atomically, reloads valid entries, ignores corrupt entries, and removes an ack", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-crash-spool-"))
+    try {
+      const first = durableSpool(directory)
+      first.append(envelope)
+      fs.writeFileSync(path.join(directory, "crash-corrupt.json"), "{not-json", "utf8")
+
+      const afterRestart = durableSpool(directory)
+      expect(afterRestart.entries()).toHaveLength(1)
+      expect(afterRestart.entries()[0]?.envelope).toEqual(envelope)
+      const file = afterRestart.entries()[0]?.file
+      expect(file).toBeDefined()
+      afterRestart.remove(file!)
+      expect(durableSpool(directory).entries()).toEqual([])
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })
 
 // ── 1. the handlers: what they register, and what they do to the process ────────────────────────
@@ -319,7 +348,7 @@ describe("airgap fails CLOSED when it cannot be known", () => {
       process.env["NOVACLAW_TELEMETRY_ENDPOINT"] = "https://intake.example.invalid/x"
       expect(sources.endpoint()).toBe("https://intake.example.invalid/x")
       delete process.env["NOVACLAW_TELEMETRY_ENDPOINT"]
-      expect(sources.endpoint()).toBeUndefined()
+      expect(sources.endpoint()).toBe("https://telemetry.novaclaw.app/v1/crashes")
     } finally {
       if (previous === undefined) delete process.env["NOVACLAW_TELEMETRY_ENDPOINT"]
       else process.env["NOVACLAW_TELEMETRY_ENDPOINT"] = previous

@@ -1,45 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
-import { sessionQuestionRequest } from "./session-request-tree"
-
-const session = (input: { id: string; parentID?: string }) =>
-  ({
-    id: input.id,
-    parentID: input.parentID,
-  }) as Session
-
-const question = (id: string, sessionID: string) =>
-  ({
-    id,
-    sessionID,
-    questions: [],
-  }) as QuestionV2Request
-
-describe("sessionQuestionRequest", () => {
-  test("prefers the current session question", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const questions = {
-      root: [question("q-root", "root")],
-      child: [question("q-child", "child")],
-    }
-
-    expect(sessionQuestionRequest(sessions, questions, "root")?.id).toBe("q-root")
-  })
-
-  test("returns a nested child question", () => {
-    const sessions = [
-      session({ id: "root" }),
-      session({ id: "child", parentID: "root" }),
-      session({ id: "grand", parentID: "child" }),
-    ]
-    const questions = {
-      grand: [question("q-grand", "grand")],
-    }
-
-    expect(sessionQuestionRequest(sessions, questions, "root")?.id).toBe("q-grand")
-  })
-})
 
 describe("todoState", () => {
   test("hides when there are no todos", () => {

@@ -183,6 +183,9 @@ export const shutdownTransport = (transport: { close: () => Promise<void> }) =>
 const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
   identifier: "MCPStatusConnected",
 })
+const StatusIdle = Schema.Struct({ status: Schema.Literal("idle") }).annotate({
+  identifier: "MCPStatusIdle",
+})
 const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).annotate({
   identifier: "MCPStatusDisabled",
 })
@@ -199,6 +202,7 @@ const StatusNeedsClientRegistration = Schema.Struct({
 
 export const Status = Schema.Union([
   StatusConnected,
+  StatusIdle,
   StatusDisabled,
   StatusFailed,
   StatusNeedsAuth,
@@ -704,6 +708,10 @@ export const layer = Layer.effect(
           instructions: {},
         }
 
+        // Opening an instance must not connect optional MCP integrations. The old initializer made
+        // the directory UI's status read the first `InstanceState.get`, which spawned every local
+        // server and opened every remote socket. Keep the configured entries as passive `idle` facts;
+        // `tools()` and explicit connect/auth operations own materialization.
         yield* Effect.forEach(
           Object.entries(config),
           ([key, mcp]) =>
@@ -725,17 +733,9 @@ export const layer = Layer.effect(
                 s.status[key] = { status: "disabled" }
                 return
               }
-
-              const result = yield* create(key, mcp)
-              s.status[key] = result.status
-              if (result.mcpClient) {
-                s.clients[key] = result.mcpClient
-                s.defs[key] = result.defs!
-                if (result.instructions) s.instructions[key] = result.instructions
-                watch(s, key, result.mcpClient, bridge, result.requestTimeout)
-              }
+              s.status[key] = { status: "idle" }
             }),
-          { concurrency: "unbounded" },
+          { concurrency: 1 },
         )
 
         yield* Effect.addFinalizer(() =>
@@ -794,11 +794,11 @@ export const layer = Layer.effect(
 
       for (const [key, mcp] of Object.entries(config)) {
         if (!isMcpConfigured(mcp)) continue
-        result[key] = s.status[key] ?? { status: "disabled" }
+        result[key] = s.status[key] ?? { status: "idle" }
       }
 
       for (const key of Object.keys(s.config)) {
-        result[key] = s.status[key] ?? { status: "disabled" }
+        result[key] = s.status[key] ?? { status: "idle" }
       }
 
       return result
@@ -896,6 +896,13 @@ export const layer = Layer.effect(
           s.status[name] = { status: "disabled" }
           continue
         }
+        // A new or previously passive entry becomes available without making a config reload
+        // perform network/process work. Existing live entries are reconnected so an actual edit
+        // still takes effect immediately; all other materialization belongs to tools() or connect().
+        if (!s.clients[name]) {
+          s.status[name] = { status: "idle" }
+          continue
+        }
         yield* Log.event("mcp.config.server.connecting", { server: name })
         // Replaces a superseded client through `storeClient`, which shuts the old one down AFTER the
         // new one is up — the same build-before-release ordering the reconnect path already used.
@@ -991,6 +998,34 @@ export const layer = Layer.effect(
       return s.config[name]?.timeout?.request ?? staticTimeout ?? fallback
     }
 
+    // A runner turn may genuinely need MCP. Materialize only the configured, enabled entries then,
+    // and keep the refresh bounded so a large catalog cannot recreate the startup storm at first use.
+    const toolRefreshGate = Semaphore.makeUnsafe(1)
+    const ensureToolClients = Effect.fn("MCP.ensureToolClients")(function* (s: State) {
+      const cfg = yield* cfgSvc.get()
+      const entries = Object.entries(cfg.mcp?.servers ?? {}).filter(
+        ([, entry]) => isMcpConfigured(entry) && entry.disabled !== true,
+      )
+      yield* toolRefreshGate.withPermit(
+        Effect.forEach(
+          entries,
+          ([name, entry]) =>
+            Effect.gen(function* () {
+              if (s.status[name]?.status === "connected" && s.clients[name]) return
+              const result = yield* create(name, entry)
+              s.config[name] = entry
+              s.status[name] = result.status
+              if (!result.mcpClient) {
+                yield* closeClient(s, name)
+                return
+              }
+              yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, result.requestTimeout)
+            }),
+          { concurrency: 2 },
+        ),
+      )
+    })
+
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, McpExternal.AiSdkTool> = {}
       const s = yield* InstanceState.get(state)
@@ -998,6 +1033,8 @@ export const layer = Layer.effect(
       const cfg = yield* cfgSvc.get()
       const config = cfg.mcp?.servers ?? {}
       const defaultTimeout = cfg.mcp?.timeout?.request
+
+      yield* ensureToolClients(s)
 
       for (const [clientName, client] of Object.entries(s.clients)) {
         if (s.status[clientName]?.status !== "connected") continue

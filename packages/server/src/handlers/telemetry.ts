@@ -22,7 +22,7 @@ export const TelemetryHandler = handlerLayer(
                 enabled: Offline.currentPolicy().enabled,
               }),
             },
-            endpoint: Telemetry.endpointFromEnv(),
+            endpoint: Telemetry.endpointFromConfig(config),
             host: Telemetry.host(),
           })
         }),

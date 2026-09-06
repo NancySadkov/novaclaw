@@ -11,6 +11,7 @@ import { Database } from "../database/database"
 import { Identifier } from "../id/id"
 import { EventV2 } from "../event"
 import { Memory } from "../kb-graph/memory"
+import { WorldMemory } from "../kb-graph/world-memory"
 import { makeLocationNode } from "../effect/app-node"
 import { ColleagueNote } from "./colleague-note"
 import { RosterChat } from "./roster-chat"
@@ -727,6 +728,7 @@ export const layer = Layer.effect(
     const store = yield* AgentConfigStore.Service
     const agents = yield* AgentV2.Service
     const memory = Memory.client(yield* Memory.node.service)
+    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
     return Service.of(
       fromParts({
         db,
@@ -735,7 +737,8 @@ export const layer = Layer.effect(
         wake: (id) => wake.wake(id),
         store,
         refresh: agents.reload(),
-        forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
+        forget: (colleague) =>
+          AgentRetire.everything({ db, events, memory, worldMemory, agent: colleague, at: Date.now() }),
         // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,
         // read where it already lives.
         paused: (colleague) =>
@@ -757,5 +760,6 @@ export const node = makeLocationNode({
     AgentConfigStore.node,
     AgentV2.node,
     Memory.node,
+    WorldMemory.node,
   ],
 })

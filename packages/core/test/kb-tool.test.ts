@@ -43,6 +43,21 @@ describe("KbTool rendering", () => {
     expect(KbTool.formatNeighbors(rows)).toBe("mem_9 · [works_at] Acme Corp")
   })
 
+  test("model-facing renderers can replace every storage id with an opaque reference", () => {
+    const render = () => "ref_test"
+    expect(KbTool.formatHits([hit({ id: "mem_secret" })], render)).toContain("ref_test ·")
+    expect(KbTool.formatHits([hit({ id: "mem_secret" })], render)).not.toContain("mem_secret")
+    expect(KbTool.formatNeighbors([{ id: "mem_secret", type: "about", text: "fact" }], render)).toBe(
+      "ref_test · [about] fact",
+    )
+  })
+
+  test("formatPath renders only bounded references", () => {
+    expect(KbTool.formatPath({ ids: ["mem_a", "mem_b"], hops: 1 }, () => "ref_test")).toBe(
+      "Path (1 hops): ref_test → ref_test",
+    )
+  })
+
   test("searchRepair is actionable and quotes the query", () => {
     const msg = KbTool.searchRepair("quarterly revenue")
     expect(msg).toContain('"quarterly revenue"')

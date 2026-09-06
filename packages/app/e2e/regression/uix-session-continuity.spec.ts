@@ -62,22 +62,3 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
   )
   await expect.poll(gap).toBeLessThanOrEqual(2)
 })
-
-test("browser-decodes Nova's PNG and an SVG colleague portrait", async ({ page }) => {
-  await page.goto("/")
-  await page.setContent(`
-    <img id="nova" src="/assets/agents/portraits/nova.png">
-    <img id="officer" src="/assets/agents/portraits/hecate.svg">
-  `)
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        ["nova", "officer"].every((id) => {
-          const image = document.getElementById(id) as HTMLImageElement
-          return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
-        }),
-      ),
-    )
-    .toBe(true)
-  await expect.poll(() => page.locator("#nova").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(512)
-})

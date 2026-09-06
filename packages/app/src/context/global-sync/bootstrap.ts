@@ -1,4 +1,4 @@
-import type { Config, NovaclawClient, Path, QuestionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { retry } from "@novaclaw/core/util/retry"
@@ -53,6 +53,10 @@ function errors(list: PromiseSettledResult<unknown>[]) {
     .filter((reason) => !isCancelledError(reason))
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError"
+}
+
 const providerRev = new Map<string, number>()
 
 export function clearProviderRev(scope: ServerScope, directory: string) {
@@ -82,7 +86,7 @@ function showErrors(input: {
 export const loadGlobalConfigQuery = (scope: ServerScope, sdk: NovaclawClient) =>
   queryOptions({
     queryKey: [scope, "config"],
-    queryFn: () => retry(() => sdk.global.config.get().then((x) => x.data!)),
+    queryFn: ({ signal }) => retry(() => sdk.global.config.get({ signal }).then((x) => x.data!)),
   })
 
 /**
@@ -183,13 +187,14 @@ function warmSessions(input: {
   store: Store<State>
   setStore: SetStoreFunction<State>
   sdk: NovaclawClient
+  signal?: AbortSignal
 }) {
   const known = new Set(input.store.session.map((item) => item.id))
   const ids = [...new Set(input.ids)].filter((id) => !!id && !known.has(id))
   if (ids.length === 0) return Promise.resolve()
   return Promise.all(
     ids.map((sessionID) =>
-      retry(() => input.sdk.v2.session.get({ sessionID })).then((x) => {
+      retry(() => input.sdk.v2.session.get({ sessionID }, { signal: input.signal })).then((x) => {
         const session = x.data?.data
         if (!session?.id) return
         mergeSession(input.setStore, session)
@@ -201,19 +206,20 @@ function warmSessions(input: {
 export const loadProvidersQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
   queryOptions({
     queryKey: [scope, directory, "providers"],
-    queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
+    queryFn: ({ signal }) =>
+      retry(() => sdk.provider.list(undefined, { signal }).then((x) => normalizeProviderList(x.data!))),
   })
 
 export const loadAgentsQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
-    queryFn: () => retry(() => sdk.app.agents().then((x) => normalizeAgentList(x.data))),
+    queryFn: ({ signal }) => retry(() => sdk.app.agents(undefined, { signal }).then((x) => normalizeAgentList(x.data))),
   })
 
 export const loadPathQuery = (scope: ServerScope, directory: string | null, sdk: NovaclawClient) =>
   queryOptions<Path>({
     queryKey: [scope, directory, "path"],
-    queryFn: () => retry(() => sdk.path.get().then((x) => x.data!)),
+    queryFn: ({ signal }) => retry(() => sdk.path.get(undefined, { signal }).then((x) => x.data!)),
   })
 
 export async function bootstrapDirectory(input: {
@@ -234,7 +240,9 @@ export async function bootstrapDirectory(input: {
   queryClient: QueryClient
   session?: ServerSession
   onDirectoryMissing?: (directory: string) => void
+  signal?: AbortSignal
 }) {
+  if (input.signal?.aborted) return
   const wasMissing = input.store.status === "missing"
   const loading = input.store.status !== "complete"
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
@@ -256,15 +264,16 @@ export async function bootstrapDirectory(input: {
   const revKey = ScopedKey.from(input.scope, input.directory)
   const rev = (providerRev.get(revKey) ?? 0) + 1
   providerRev.set(revKey, rev)
-  void (async () => {
+  return (async () => {
     if (!seededPath) {
       try {
-        const response = await input.sdk.path.get()
+        const response = await input.sdk.path.get(undefined, { signal: input.signal })
         const path = response.data
+        if (input.signal?.aborted) return
         if (path) input.queryClient.setQueryData(loadPathQuery(input.scope, input.directory, input.sdk).queryKey, path)
         if (wasMissing) input.setStore("status", "partial")
       } catch (error) {
-        if (isCancelledError(error)) return
+        if (isCancelledError(error) || isAbortError(error) || input.signal?.aborted) return
         if (isMissingDirectoryError(error)) {
           input.setStore("status", "missing")
           if (!wasMissing) {
@@ -296,10 +305,15 @@ export async function bootstrapDirectory(input: {
           .ensureQueryData(loadAgentsQuery(input.scope, input.directory, input.sdk))
           .then((data) => input.setStore("agent", data)),
       () =>
-        retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
+        retry(() =>
+          input.sdk.config.get(undefined, { signal: input.signal }).then((x) => {
+            if (!input.signal?.aborted) input.setStore("config", reconcile(x.data!, { merge: false }))
+          }),
+        ),
       () =>
         retry(() =>
-          input.sdk.v2.session.active().then(async (x) => {
+          input.sdk.v2.session.active({ signal: input.signal }).then(async (x) => {
+            if (input.signal?.aborted) return
             // Native /active reports {type:"running"}; the store vocabulary is "busy".
             const statuses: Record<string, { type: "busy" }> = Object.fromEntries(
               Object.keys(x.data?.data ?? {}).map((sessionID) => [sessionID, { type: "busy" as const }]),
@@ -328,51 +342,27 @@ export async function bootstrapDirectory(input: {
         retry(() =>
           // `/api/vcs` — the branch badge's source, wrapped `{ location, data }` like every other
           // contract route since the family moved there on 2026-09-03.
-          input.sdk.v2.vcs.get().then((x) => {
+          input.sdk.v2.vcs.get(undefined, { signal: input.signal }).then((x) => {
+            if (input.signal?.aborted) return
             const next = x.data?.data ?? input.store.vcs
             input.setStore("vcs", next)
             if (next) input.vcsCache.setStore("value", next)
           }),
         ),
-      input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
-      () =>
-        retry(() =>
-          // `/api/question/request` — every pending ask across sessions, wrapped `{ location, data }`.
-          input.sdk.v2.question.request.list().then((x) => {
-            const ids = (x.data?.data ?? []).map((question) => question?.sessionID).filter((id): id is string => !!id)
-            const grouped = groupBySession(
-              (x.data?.data ?? []).filter((q): q is QuestionV2Request => !!q?.id && !!q.sessionID),
-            )
-            const warm = input.session
-              ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)
-              : warmSessions({ ids, store: input.store, setStore: input.setStore, sdk: input.sdk })
-            return warm.then(() =>
-              batch(() => {
-                const current = input.session?.data.question ?? input.store.question
-                for (const sessionID of Object.keys(current)) {
-                  if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
-                  if (input.session) input.session.set("question", sessionID, [])
-                  if (!input.session) input.setStore("question", sessionID, [])
-                }
-                for (const [sessionID, questions] of Object.entries(grouped)) {
-                  const value = reconcile(
-                    questions.filter((q) => !!q?.id).sort((a, b) => cmp(a.id, b.id)),
-                    { key: "id" },
-                  )
-                  if (input.session) input.session.set("question", sessionID, value)
-                  if (!input.session) input.setStore("question", sessionID, value)
-                }
-              }),
-            )
-          }),
-        ),
+      input.mcp &&
+        (() =>
+          retry(() =>
+            input.sdk.command.list(undefined, { signal: input.signal }).then((x) => {
+              if (!input.signal?.aborted) input.setStore("command", x.data ?? [])
+            }),
+          )),
       input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
       () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)),
     ].filter(Boolean) as (() => Promise<any>)[]
 
     await waitForPaint()
-    const slowErrs = errors(await runAll(slow))
+    const slowErrs = errors(await runAll(slow)).filter((error) => !isAbortError(error))
+    if (input.signal?.aborted) return
     if (slowErrs.length > 0) {
       console.error("Failed to finish bootstrap instance", slowErrs[0])
       const project = getFilename(input.directory)

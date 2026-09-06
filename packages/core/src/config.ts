@@ -363,6 +363,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     }),
 
   telemetry: Schema.Struct({
+    endpoint: Schema.String.pipe(Schema.optional).annotate({
+      description: "Crash-intake URL override; leave empty to use the NovaClaw maintenance endpoint",
+    }),
     enabled: ConfigAnnotation.depends(
       Schema.Boolean.pipe(Schema.optional).annotate({
         description: "Allow crash telemetry uploads (default: true; offline/airgap mode forces off independently)",
@@ -382,7 +385,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .pipe(Schema.optional)
     .annotate({
       description:
-        "Telemetry consent — gates crash reporting (crash signatures only, never user content); no collector is configured yet, so nothing is sent",
+        "Telemetry consent and maintenance intake — gates crash signatures only, never user content; the endpoint is replaceable at runtime",
     }),
   memory: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({

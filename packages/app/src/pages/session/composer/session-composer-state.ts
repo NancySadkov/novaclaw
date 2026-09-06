@@ -1,28 +1,15 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { QuestionV2Request, Todo } from "@novaclaw/sdk/v2"
+import type { Todo } from "@novaclaw/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
-import { sessionQuestionRequest } from "./session-request-tree"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
-
-const idle = { type: "idle" as const }
 
 export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
   const params = useParams()
   const sync = useSync()
   const serverSync = useServerSync()
-
-  const questionRequest = createMemo((): QuestionV2Request | undefined => {
-    return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
-  })
-
-  const blocked = createMemo(() => {
-    const id = params.id
-    if (!id) return false
-    return !!questionRequest()
-  })
 
   const todos = createMemo((): Todo[] => {
     const id = params.id
@@ -34,7 +21,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
 
-  const live = createMemo(() => sync().data.session_working(params.id ?? "") || blocked())
+  const live = createMemo(() => sync().data.session_working(params.id ?? ""))
 
   const [store, setStore] = createStore({
     sessionID: params.id,
@@ -137,8 +124,6 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   })
 
   return {
-    blocked,
-    questionRequest,
     todos,
     dock: () =>
       store.sessionID === params.id

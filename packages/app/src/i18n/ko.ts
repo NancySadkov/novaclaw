@@ -496,7 +496,6 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Git 저장소 생성 중...",
   "session.review.noVcs.createGit.action": "Git 저장소 생성",
   "session.todo.progress": "{{total}}개의 할 일 중 {{done}}개 완료",
-  "session.question.progress": "{{total}}개의 질문 중 {{current}}개",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "파일 탐색기",
   "session.header.open.fileManager": "파일 관리자",

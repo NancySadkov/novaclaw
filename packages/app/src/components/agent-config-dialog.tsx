@@ -22,6 +22,8 @@ import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-ow
 import { memoryList } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
+import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
+import { isAgentPortraitURL } from "@/apps/agent-portrait"
 import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { tabHref, useTabs } from "@/context/tabs"
@@ -115,6 +117,8 @@ export function AgentConfigDialog(props: {
   const [renamed, setRenamed] = createSignal<string | undefined>()
   const [title, setTitle] = createSignal<string | undefined>()
   const [personality, setPersonality] = createSignal<string | undefined>()
+  const [avatarFile, setAvatarFile] = createSignal<File | undefined>()
+  const [avatarRemoved, setAvatarRemoved] = createSignal(false)
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
@@ -237,7 +241,9 @@ export function AgentConfigDialog(props: {
     strict() !== undefined ||
     archive() !== undefined ||
     needsTier() !== undefined ||
-    model() !== undefined
+    model() !== undefined ||
+    avatarFile() !== undefined ||
+    avatarRemoved()
 
   const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | "pause" | undefined>()
 
@@ -515,9 +521,15 @@ export function AgentConfigDialog(props: {
         ...(model() === "" ? [["agents", id, "model"]] : []),
         ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
       ])
+      const current = conn()
+      if (current === undefined) throw new Error("No instance is connected")
+      if (avatarFile() !== undefined) await uploadAgentAvatar(current.http, id, avatarFile()!)
+      else if (avatarRemoved()) await removeAgentAvatar(current.http, id)
       setRenamed(undefined)
       setTitle(undefined)
       setPersonality(undefined)
+      setAvatarFile(undefined)
+      setAvatarRemoved(false)
       setMemory(undefined)
       setDirectory(undefined)
       setPosture(undefined)
@@ -639,6 +651,33 @@ export function AgentConfigDialog(props: {
               </label>
               {/* Why this is a profile field and not something you type into the chat. */}
             </Show>
+            <label class="mt-3 block text-xs text-v2-text-text-muted">
+              {language.t("agentConfig.portrait")}
+              <span class="mt-1 block text-[11px] text-v2-text-text-faint">
+                {language.t("agentConfig.portraitHint")}
+              </span>
+              <input
+                class="mt-2 block w-full text-xs"
+                type="file"
+                accept={[...AGENT_AVATAR_TYPES].join(",")}
+                onChange={(event) => {
+                  setAvatarFile(event.currentTarget.files?.[0])
+                  setAvatarRemoved(false)
+                }}
+              />
+              <Show when={isAgentPortraitURL(agent()?.avatar) || avatarFile() !== undefined}>
+                <button
+                  type="button"
+                  class="mt-2 text-xs text-v2-text-text-accent hover:underline"
+                  onClick={() => {
+                    setAvatarFile(undefined)
+                    setAvatarRemoved(true)
+                  }}
+                >
+                  {language.t("agentConfig.portraitRemove")}
+                </button>
+              </Show>
+            </label>
           </section>
 
           <section class="mt-5">

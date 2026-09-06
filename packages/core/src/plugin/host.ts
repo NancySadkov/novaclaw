@@ -18,6 +18,8 @@ import { Reference } from "../reference"
 import type { DeepMutable } from "../schema"
 import { SkillV2 } from "../skill"
 import { PluginTools } from "../tool/plugin-tools"
+import { AppRegistry } from "../app-registry"
+import { AppEvent } from "@novaclaw/schema/app-event"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
 
@@ -141,7 +143,10 @@ const subscribeEvents = Effect.fn("PluginHost.event.subscribe")(function* (
   return { dispose: stop }
 })
 
-export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Interface) {
+export const make = Effect.fn("PluginHost.make")(function* (
+  plugin: PluginV2.Interface,
+  options: { readonly app?: AppRegistry.Options } = {},
+) {
   const agents = yield* AgentV2.Service
   const catalog = yield* Catalog.Service
   const commands = yield* CommandV2.Service
@@ -154,6 +159,30 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
 
   const host: Interface = {
     options: {},
+    app: {
+      declare: (items) =>
+        Effect.gen(function* () {
+          const saved = yield* Effect.forEach(items, (item) =>
+            Effect.tryPromise(() =>
+              AppRegistry.saveApp({
+                id: item.id,
+                title: item.title,
+                icon: item.icon,
+                accent: item.accent,
+                subtitle: item.subtitle,
+                open: item.open,
+                source: "plugin",
+              }, options.app),
+            ),
+          )
+          for (const manifest of saved)
+            yield* events.publish(AppEvent.Registered, { id: manifest.id, title: manifest.title }).pipe(Effect.ignore)
+          // App declarations are durable instance contributions. Unloading a plugin must not
+          // delete a tile an agent or the user later adopted, so the registration is intentionally
+          // a no-op rather than a second, owner-blind removal path.
+          return { dispose: Effect.void }
+        }).pipe(Effect.orDie),
+    },
     agent: {
       reload: agents.reload,
       /**

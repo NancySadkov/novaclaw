@@ -69,7 +69,7 @@ describe("kb tool over the real WASM engine", () => {
               call({ op: "remember", text: "The user's name is Nadia and she prefers dark mode", name: "Nadia" }),
             ),
           ),
-        ).toContain("Remembered (mem_")
+        ).toMatch(/^Remembered \(ref_[A-Za-z0-9_-]+\)/)
         const found = text(yield* executeTool(registry, call({ op: "search", query: "dark mode" })))
         expect(found).toContain("Nadia")
       }).pipe(Effect.provide(graph()), Effect.scoped) as Effect.Effect<void>,
@@ -92,20 +92,20 @@ describe("kb tool over the real WASM engine", () => {
       Effect.gen(function* () {
         const registry = yield* ToolRegistry.Service
         yield* waitReady
-        const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
-        const ada = idOf(
+        const referenceOf = (out: string) => out.match(/ref_[A-Za-z0-9_-]+/)?.[0] ?? ""
+        const ada = referenceOf(
           text(
             yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace, a mathematician", name: "Ada" })),
           ),
         )
-        const engine = idOf(
+        const engine = referenceOf(
           text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine", name: "Engine" }))),
         )
         expect(ada).not.toBe("")
         expect(engine).not.toBe("")
         // relate → the tool's addEdge → the REAL WasmMemory edge table.
         const linked = text(
-          yield* executeTool(registry, call({ op: "relate", from: ada, to: engine, type: "wrote about" })),
+          yield* executeTool(registry, call({ op: "relate", from: ada, to: engine, type: "wrote_about" })),
         )
         expect(linked).toContain("Linked")
         expect(linked).toContain("wrote_about")

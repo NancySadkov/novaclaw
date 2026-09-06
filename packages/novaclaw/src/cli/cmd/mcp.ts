@@ -147,6 +147,9 @@ export const McpListCommand = effectCmd({
         if (hasOAuth && hasStoredTokens) {
           hint = " (OAuth)"
         }
+      } else if (status.status === "idle") {
+        statusIcon = "○"
+        statusText = "not connected"
       } else if (status.status === "disabled") {
         statusIcon = "○"
         statusText = "disabled"

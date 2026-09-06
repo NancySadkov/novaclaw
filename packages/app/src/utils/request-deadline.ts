@@ -22,9 +22,14 @@ export async function withRequestDeadline<T>(input: {
   readonly label: string
   readonly run: (signal: AbortSignal) => Promise<T>
   readonly timeoutMs?: number
+  /** Cancel the request when its owning server context is replaced. */
+  readonly signal?: AbortSignal
 }): Promise<T> {
   const timeoutMs = input.timeoutMs ?? SESSION_REQUEST_TIMEOUT_MS
   const controller = new AbortController()
+  const abort = () => controller.abort(input.signal?.reason)
+  if (input.signal?.aborted) abort()
+  else input.signal?.addEventListener("abort", abort, { once: true })
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -37,5 +42,6 @@ export async function withRequestDeadline<T>(input: {
     return await Promise.race([input.run(controller.signal), timeout])
   } finally {
     if (timer) clearTimeout(timer)
+    input.signal?.removeEventListener("abort", abort)
   }
 }

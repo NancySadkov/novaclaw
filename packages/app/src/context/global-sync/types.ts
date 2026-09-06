@@ -4,7 +4,6 @@ import type {
   Config,
   McpStatus,
   Path,
-  QuestionV2Request,
   SessionV2Info as Session,
   SessionStatus,
   SessionChangeDiff,
@@ -47,9 +46,6 @@ export type State = {
   }
   todo: {
     [sessionID: string]: Todo[]
-  }
-  question: {
-    [sessionID: string]: QuestionV2Request[]
   }
   mcp_ready: boolean
   mcp: {
@@ -107,6 +103,7 @@ export type RootLoadArgs = {
   directory: string
   limit: number
   timeoutMs?: number
+  signal?: AbortSignal
   list: (
     query: { directory: string; roots: true; limit?: number },
     options: { signal: AbortSignal },

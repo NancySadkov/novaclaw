@@ -71,7 +71,7 @@ export interface Interface {
  * Measured 2026-08-06, and it cost a revert. `session-worker/execution.ts` resolves services inside
  * `onInteractionRequest`'s `runLocated(...)`; adding `yield* SessionJoin.Service` there abandoned
  * EVERY tool-call turn — the tool part landed, the drain stopped, the assistant message never
- * settled. The services already resolved there (`PermissionV2`, `QuestionV2`, `SessionSpawner`) are
+ * settled. The services already resolved there (`PermissionV2`, `SessionSpawner`) are
  * all ALREADY in the location graph, so resolving them constructs nothing new; `SessionJoin` was new,
  * and forcing its layer to build inside that per-request scope is what broke the drain.
  *

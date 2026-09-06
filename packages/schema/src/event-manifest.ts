@@ -16,7 +16,6 @@ import { Messenger } from "./messenger"
 import { ModelsDev } from "./models-dev"
 import { Plugin } from "./plugin"
 import { Pty } from "./pty"
-import { Question } from "./question"
 import { Reference } from "./reference"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
@@ -57,7 +56,7 @@ const featureDefinitions = Event.inventory(
   ...Plugin.Event.Definitions,
   ...FileSystemWatcher.Event.Definitions,
   ...Pty.Event.Definitions,
-  ...Question.Event.Definitions,
+
   ...Messenger.Event.Definitions,
 )
 

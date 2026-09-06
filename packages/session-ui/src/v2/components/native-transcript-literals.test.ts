@@ -96,8 +96,13 @@ describe("the native transcript carries no raw English literal", () => {
 
   test("assignment nudges use the folded automated-nudge renderer", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "native-transcript.tsx"), "utf8")
-    expect(source).toContain(
-      'if (isSteerText(message.text)) return <SteerMessage text={stripSteerProvenance(message.text)} />',
-    )
+    // Pin the branch and text conversion; formatting and unrelated JSX props are not behavior.
+    const folded =
+      /if\s*\(isSteerText\(message\.text\)\)\s*return\s+<SteerMessage\s+text=\{stripSteerProvenance\(message\.text\)\}/
+    expect(source).toMatch(folded)
+    expect(
+      "if (isSteerText(message.text)) return <NoticeMessage text={stripSteerProvenance(message.text)} />",
+    ).not.toMatch(folded)
+    expect("if (isSteerText(message.text)) return <SteerMessage text={message.text} />").not.toMatch(folded)
   })
 })

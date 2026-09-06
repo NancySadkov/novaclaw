@@ -1,5 +1,6 @@
 import { AgentStatus } from "@novaclaw/core/agent-status"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { Avatar } from "@novaclaw/core/agent/avatar"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Scratch } from "@novaclaw/core/scratch"
@@ -9,6 +10,7 @@ import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Effect } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { EventV2 } from "@novaclaw/core/event"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { AgentApi, handlerLayer } from "../handler-api"
@@ -36,16 +38,90 @@ export const AgentHandler = handlerLayer(
           const lines = yield* AgentStatus.Service.use((status) => status.all())
           const byAgent = new Map(lines.map((line) => [line.agent, { task: line.task, observed: line.observed }]))
           return yield* response(
-            Effect.succeed(
-              roster.map((item) => ({
-                ...item,
-                workspace: Scratch.forAgent(String(item.id)),
-                // Absent, not empty, when the colleague has no line yet — see `Agent.Info.status`.
-                ...(byAgent.has(String(item.id)) ? { status: byAgent.get(String(item.id)) } : {}),
-              })),
+            Effect.forEach(roster, (item) =>
+              Effect.promise(() => Avatar.portrait(String(item.id), item.avatar, item.name)).pipe(
+                Effect.map((portrait) => ({
+                  ...item,
+                  // The returned string is either a user glyph or the authenticated instance route.
+                  // No client bundle is allowed to turn an id into a second face.
+                  avatar:
+                    portrait.kind === "glyph"
+                      ? portrait.text
+                      : `/api/agent/${encodeURIComponent(String(item.id))}/avatar${
+                          portrait.kind === "image" ? `?v=${portrait.hash}` : ""
+                        }`,
+                  workspace: Scratch.forAgent(String(item.id)),
+                  // Absent, not empty, when the colleague has no line yet — see `Agent.Info.status`.
+                  ...(byAgent.has(String(item.id)) ? { status: byAgent.get(String(item.id)) } : {}),
+                })),
+              ),
             ),
           )
         }),
+      )
+      .handleRaw("agent.avatar.get", (ctx) =>
+        Effect.gen(function* () {
+          const portrait = yield* Effect.promise(() => Avatar.portrait(String(ctx.params.agentID), undefined, String(ctx.params.agentID)))
+          if (portrait.kind === "glyph") {
+            const bytes = Avatar.placeholder(String(ctx.params.agentID), portrait.text)
+            return HttpServerResponse.raw(bytes, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } })
+          }
+          return HttpServerResponse.raw(portrait.bytes, {
+            headers: {
+              "content-type": portrait.mime,
+              "cache-control": portrait.kind === "image" ? "public, max-age=31536000, immutable" : "no-store",
+            },
+          })
+        }),
+      )
+      .handleRaw("agent.avatar.upload", (ctx) =>
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const contentType = request.headers["content-type"]
+          const format = Avatar.mime(contentType)
+          if (format === undefined)
+            return yield* new InvalidRequestError({
+              message: "Avatar must be uploaded as PNG, JPEG, GIF or WebP",
+              field: "content-type",
+            })
+          const bytes = new Uint8Array(
+            yield* request.arrayBuffer.pipe(
+              Effect.mapError(
+                (error) =>
+                  new InvalidRequestError({
+                    message: error instanceof Error ? error.message : String(error),
+                    field: "body",
+                  }),
+              ),
+            ),
+          )
+          if (bytes.byteLength === 0 || bytes.byteLength > Avatar.MAX_BYTES)
+            return yield* new InvalidRequestError({
+              message: `Avatar must be between 1 byte and ${Avatar.MAX_BYTES} bytes`,
+              field: "body",
+            })
+          const stored = yield* Effect.tryPromise(() => Avatar.write(String(ctx.params.agentID), bytes, format)).pipe(
+            Effect.mapError((error) =>
+              new InvalidRequestError({
+                message: error instanceof Error ? error.message : String(error),
+                field: "body",
+              }),
+            ),
+          )
+          return HttpServerResponse.jsonUnsafe({ hash: stored.hash, mime: stored.mime }, { status: 201 })
+        }),
+      )
+      .handle("agent.avatar.delete", (ctx) =>
+        Effect.tryPromise(() => Avatar.remove(String(ctx.params.agentID))).pipe(
+          Effect.mapError(
+            (error) =>
+              new InvalidRequestError({
+                message: error instanceof Error ? error.message : String(error),
+                field: "agentID",
+              }),
+          ),
+          Effect.asVoid,
+        ),
       )
       .handle("agent.usage", (ctx) =>
         // The roster's work column. `Database.Service` rather than a per-location store: spend

@@ -17,6 +17,7 @@ import { Prompt } from "./session/prompt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { EventV2 } from "./event"
 import { Memory } from "./kb-graph/memory"
+import { WorldMemory } from "./kb-graph/world-memory"
 import { SessionMemoryCleanup } from "./session/memory-cleanup"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
@@ -61,6 +62,7 @@ import { ExternalCommandSource } from "./command/external-command-source"
 import { SkillCommand } from "./command/skill-command"
 import { SkillV2 } from "./skill"
 import { SessionRead } from "./session/read"
+import { moveArchivedToHistory } from "./session/rekey"
 import { SessionSpawner } from "./session/spawner"
 import { SessionTodo } from "./session/todo"
 import { AppProcess } from "./process"
@@ -183,6 +185,8 @@ type CreateInput = {
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
   metadata?: Record<string, unknown>
+  /** When supplied, creation and the child's first queued input project in one event transaction. */
+  openingPrompt?: SessionRecordEvent.OpeningPrompt
 }
 
 /**
@@ -232,6 +236,19 @@ type CommandResult =
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Session.NotFoundError", {
   sessionID: SessionSchema.ID,
 }) {}
+
+/**
+ * Restoring a filed colleague is a typed transition, not a generic timestamp edit. The caller must
+ * name the officer whose canonical chat is being restored; history rows and retired predecessors
+ * therefore cannot be resurrected through the setter seam.
+ */
+export class RestoreUnavailableError extends Schema.TaggedErrorClass<RestoreUnavailableError>()(
+  "Session.RestoreUnavailableError",
+  {
+    sessionID: SessionSchema.ID,
+    reason: Schema.String,
+  },
+) {}
 
 /**
  * A root session was created without naming its agent (NC-SEC-020).
@@ -406,6 +423,10 @@ export interface Interface {
     metadata: Record<string, unknown>
   }) => Effect.Effect<void, NotFoundError>
   readonly setArchived: (input: { sessionID: SessionSchema.ID; time?: number }) => Effect.Effect<void, NotFoundError>
+  readonly restore: (input: {
+    sessionID: SessionSchema.ID
+    agent: AgentV2.ID
+  }) => Effect.Effect<void, NotFoundError | RestoreUnavailableError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info[], NotFoundError>
   /** The agent-maintained todo list (native twin of the retired bare-/session read — V1-nuke A0). */
   readonly todos: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
@@ -611,26 +632,18 @@ export const createSessionRecord = (
       return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
     const colleagueRoot =
       input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
-    const canonical = colleagueRoot && input.id === undefined ? SessionSchema.ID.make(`ses_${input.agent}`) : undefined
+    // A colleague root has one identity regardless of which caller supplied the request. An
+    // explicit arbitrary id is ignored rather than creating a second spelling of the same agent.
+    const canonical = colleagueRoot ? SessionSchema.ID.make(`ses_${input.agent}`) : undefined
     const claimed = canonical === undefined ? undefined : yield* store.get(canonical)
     // A LIVE chat at the canonical id IS this colleague's chat: the idempotent answer, reached
     // without a scan, because the id already said whose it is.
     if (claimed !== undefined && claimed.time.archived === undefined) return claimed
-    /**
-     * ⚠️ **An ARCHIVED predecessor keeps the name but yields the seat.** Retiring a colleague and
-     * reassigning one both archive the chat ON PURPOSE — retirement sets the private cabinet aside
-     * rather than deleting it, and keeping the transcript is the same promise about the same history
-     * (*"a retirement is not a purge of the record"*, `agent/retire.ts`). Handing the canonical id
-     * back would resurrect it: hire someone on a returned name and they would open into months of
-     * another colleague's conversation, which is the exact defect `AgentRetire.everything` exists to
-     * prevent.
-     *
-     * So a successor takes a generated id and the guard below keeps it to one chat. The id is the
-     * rule made VISIBLE, not a second rule — both answer the same question, and the guard answers it
-     * in every case, including this one.
-     */
-    const sessionID =
-      input.id ?? (canonical !== undefined && claimed === undefined ? canonical : SessionSchema.ID.create())
+    // Preserve the old transcript, but free the canonical seat. The move is one transaction and
+    // leaves the successor with the only live `ses_<agent>` row.
+    if (canonical !== undefined && claimed?.time.archived !== undefined)
+      yield* moveArchivedToHistory(db, claimed.id, SessionSchema.ID.create())
+    const sessionID = colleagueRoot ? canonical! : (input.id ?? SessionSchema.ID.create())
     const recorded = yield* store.get(sessionID)
     if (recorded) return recorded
     // 🔴 ONE CHAT PER COLLEAGUE, enforced HERE because this is the one seam every creator reaches
@@ -720,7 +733,15 @@ export const createSessionRecord = (
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
     })
     const projected = yield* events
-      .publish(SessionRecordEvent.Created, { sessionID, info }, { location: input.location })
+      .publish(
+        SessionRecordEvent.Created,
+        {
+          sessionID,
+          info,
+          ...(input.openingPrompt === undefined ? {} : { openingPrompt: input.openingPrompt }),
+        },
+        { location: input.location },
+      )
       .pipe(
         Effect.as({ type: "created" } as const),
         Effect.catchDefect((defect) => {
@@ -832,6 +853,7 @@ export const layer = Layer.effect(
     const compactionRequests = yield* SessionCompactionRequest.Service
     // The same seam `session/runner/maintenance.ts` uses to reach memory from the session side.
     const memory = Memory.client(yield* Memory.node.service)
+    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
     // B1 — publish this instance's wake to the cycle-free producers of session work. `spawn` runs
     // inside a LOCATION graph and cannot reach `SessionExecution` (unbound + it depends on
     // `LocationServiceMap`, which builds that very graph — see run-coordinator.ts's wake-seam
@@ -903,7 +925,7 @@ export const layer = Layer.effect(
      * still exists is RETRACTED, never applied), and leaves a row it could not clear for next time —
      * so running it here can only move the outstanding set toward zero.
      */
-    yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore))
+    yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory, worldMemory).pipe(Effect.ignore))
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -951,7 +973,7 @@ export const layer = Layer.effect(
          * store nor makes memory a hard dependency of deleting a chat. With memory disabled the sweep
          * defers every row forever, which is correct: there is no store holding anything to clear.
          */
-        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore)),
+        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory, worldMemory).pipe(Effect.ignore)),
       )
 
     const result = Service.of({
@@ -1377,6 +1399,49 @@ export const layer = Layer.effect(
           }),
         ),
       ),
+      restore: Effect.fn("V2Session.restore")(function* (input) {
+        const info = yield* result.get(input.sessionID)
+        if (info.time.archived === undefined) return
+        const agent = info.agent
+        const canonical = agent === undefined ? undefined : SessionSchema.ID.make(`ses_${agent}`)
+        if (
+          info.parentID !== undefined ||
+          agent === undefined ||
+          AgentV2.POSTURE_IDS.has(agent) ||
+          String(input.agent) !== String(agent) ||
+          canonical === undefined ||
+          info.id !== canonical
+        )
+          return yield* new RestoreUnavailableError({
+            sessionID: input.sessionID,
+            reason: "Only an archived officer's canonical root chat can be restored.",
+          })
+
+        const live = yield* liveRootFor(db, String(agent))
+        if (live !== undefined && live.id !== info.id)
+          return yield* new RestoreUnavailableError({
+            sessionID: input.sessionID,
+            reason: `Officer ${agent} already has a live chat (${live.id}).`,
+          })
+
+        yield* events.publish(
+          SessionRecordEvent.Updated,
+          {
+            sessionID: input.sessionID,
+            info: SessionSchema.Info.make({
+              ...info,
+              time: { ...info.time, archived: undefined },
+            }),
+            clearArchived: true,
+          },
+          {
+            location: Location.Ref.make({
+              directory: info.location.directory,
+              workspaceID: info.location.workspaceID,
+            }),
+          },
+        )
+      }),
       children: Effect.fn("V2Session.children")(function* (sessionID) {
         yield* result.get(sessionID)
         const rows = yield* db
@@ -1769,6 +1834,7 @@ export const node = makeGlobalNode({
     SessionProjector.node,
     SessionCompactionRequest.node,
     Memory.node,
+    WorldMemory.node,
     // For the boot-recovery resume switch — an INSTANCE setting, so the global store rather than the
     // location-scoped `Config`. See the note at `recoverySettings`.
     SettingsConfigStore.node,

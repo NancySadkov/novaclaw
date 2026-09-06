@@ -19,6 +19,7 @@ import { Scratch } from "@novaclaw/core/scratch"
 import { OsPlaces } from "@/server/os-places"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
 import { CatalogSeed } from "@novaclaw/core/catalog-seed"
@@ -251,6 +252,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           // so it reads `ready` against a provably broken store. Measured 2026-08-12.
           // A plain read of the last transition: inspecting must not open the graph.
           const memory = Memory.runtimeStatus()
+          const worldMemory = WorldMemory.runtimeStatus()
 
           // A scan failure is an unknown credential state, never a healthy result.
           const credentials = yield* Effect.gen(function* () {
@@ -278,9 +280,9 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           // Read at CHECK time, not remembered from the seed: a drop recorded at first boot goes
           // stale the moment the user fixes the file, and it would miss a file that broke afterwards.
           // Best-effort — a health board must never be the thing that fails.
-          const unreadableConfig = yield* CatalogSeed.unreadableDocuments(
-            (yield* Global.Service).config,
-          ).pipe(Effect.orElseSucceed(() => [] as readonly { readonly path: string; readonly notice: string }[]))
+          const unreadableConfig = yield* CatalogSeed.unreadableDocuments((yield* Global.Service).config).pipe(
+            Effect.orElseSucceed(() => [] as readonly { readonly path: string; readonly notice: string }[]),
+          )
 
           const signals = [
             NovaHealth.fromCredentials(
@@ -293,6 +295,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             NovaHealth.fromMemory({
               stage: memory.stage,
               ...(memory.detail === undefined ? {} : { detail: memory.detail }),
+            }),
+            NovaHealth.fromWorldMemory({
+              stage: worldMemory.stage,
+              ...(worldMemory.detail === undefined ? {} : { detail: worldMemory.detail }),
             }),
             NovaHealth.fromScheduler(schedulerState),
             // ⚠️ `undefined`, not `false`. UPDATER_ENABLED lives in the desktop main process and a

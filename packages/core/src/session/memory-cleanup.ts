@@ -66,6 +66,7 @@ export interface SweepResult {
 export const sweep = (
   db: Database.Interface["db"],
   memory: MemoryClient.Interface,
+  worldMemory?: MemoryClient.Interface,
 ): Effect.Effect<SweepResult> =>
   Effect.gen(function* () {
     const rows = yield* pending(db)
@@ -88,10 +89,18 @@ export const sweep = (
       // ⚠️ `clearScope` is addressed BY SCOPE, so it carries no `MemoryAccess` — the scope string is
       // the authority. That is the one id-based op NC-SEC-016 did not touch, and it is why: there is
       // no id here to be wrong about.
-      const done = yield* memory.clearScope(`session:${row.session_id}`).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      )
+      // A deleted chat may have automatic memories in the world graph and explicit session memories
+      // in the KB graph. Discharge both tombstone targets before removing the durable request; one
+      // unavailable graph must not make the other graph's cleanup silently disappear.
+      const stores = worldMemory === undefined ? [memory] : [memory, worldMemory]
+      let done = true
+      for (const store of stores) {
+        const cleared = yield* store.clearScope(`session:${row.session_id}`).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        )
+        done = done && cleared
+      }
       if (!done) {
         deferred += 1
         continue

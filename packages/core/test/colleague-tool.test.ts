@@ -84,6 +84,21 @@ describe("what the roster looks like to a model routing work", () => {
   })
 })
 
+describe("what a model sees when it inspects a colleague", () => {
+  test("identity keeps the portrait as media instead of JSON text", () => {
+    expect(
+      ColleagueTool.toModelOutput({
+        ok: true,
+        message: "Edda's portrait is attached.",
+        portrait: { mime: "image/png", data: "aW1hZ2U=", hash: "b".repeat(64) },
+      } as never),
+    ).toEqual([
+      { type: "text", text: "Edda's portrait is attached." },
+      { type: "file", data: "aW1hZ2U=", mime: "image/png", name: "colleague-portrait" },
+    ])
+  })
+})
+
 describe("who may staff the organization", () => {
   test("only the CEO hires and retires", () => {
     // Not a permission dial — the org chart itself. An officer that could hire would be a second

@@ -172,7 +172,9 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const global = yield* Global.Service
     const paths = localPaths(global)
-    const runtime = Effect.runForkWith(yield* Effect.context<Global.Service | FSUtil.Service | HttpClient.HttpClient>())
+    const captured = yield* Effect.context<Global.Service | FSUtil.Service | HttpClient.HttpClient>()
+    const runtime = Effect.runForkWith(captured)
+    const runPromise = Effect.runPromiseWith(captured)
     let acquisition = effective()
     let state: Status = { ...baseStatus(acquisition.profile), stage: "idle" }
     let job: Fiber.Fiber<void, never> | undefined
@@ -452,7 +454,7 @@ export const layer = Layer.effect(
           }),
         )
         job = currentJob
-        void Effect.runPromise(Fiber.await(currentJob)).finally(() => {
+        void runPromise(Fiber.await(currentJob)).finally(() => {
           if (job === currentJob) {
             job = undefined
             installActive = false
@@ -505,7 +507,7 @@ export const layer = Layer.effect(
           if (!loading) {
             loadAbort = new AbortController()
             const controller = loadAbort
-            loading = Effect.runPromise(loadModel(controller.signal))
+            loading = runPromise(loadModel(controller.signal))
               .catch((cause) => {
                 const detail = errorText(cause)
                 if (!controller.signal.aborted)
@@ -553,7 +555,7 @@ export const layer = Layer.effect(
         loadAbort?.abort(new Error("The local model was stopped from Instance settings."))
         const current = child
         if (current) await Process.stop(current).catch(() => undefined)
-        if (currentJob) await Effect.runPromise(Fiber.interrupt(currentJob)).catch(() => undefined)
+        if (currentJob) await runPromise(Fiber.interrupt(currentJob)).catch(() => undefined)
         await loading?.catch(() => undefined)
         if (!child && !loading) {
           if (currentJob) {
@@ -601,7 +603,7 @@ export const layer = Layer.effect(
         shuttingDown = true
         loadAbort?.abort()
         if (pressureTimer) clearInterval(pressureTimer)
-        if (job) await Effect.runPromise(Fiber.interrupt(job)).catch(() => undefined)
+        if (job) await runPromise(Fiber.interrupt(job)).catch(() => undefined)
         if (child) await Process.stop(child).catch(() => undefined)
       }),
     )

@@ -98,6 +98,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  */
 export type ServerStatus =
   | { readonly status: "connected" }
+  | { readonly status: "idle" }
   | { readonly status: "disabled" }
   | { readonly status: "needs_auth" }
   | { readonly status: "failed"; readonly error: string }
@@ -149,6 +150,8 @@ export const UNREADABLE = ["MCP server health could not be read for this session
  *
  * Which statuses count as a fault:
  *  · `connected` — nothing to say.
+ *  · `idle` — configured, but deliberately not materialized until a tool request or explicit
+ *    connect action; this is normal optional-capability state, not a fault.
  *  · `disabled` — nothing to say. The user switched this server OFF; naming a deliberate preference
  *    every turn is noise, and ruling 2's own carve-out is that disabled-with-reason stays legitimate.
  *  · `failed` / `needs_client_registration` — a fault, and one that carries its own text.
@@ -162,7 +165,7 @@ export const UNREADABLE = ["MCP server health could not be read for this session
 export const lines = (servers: ReadonlyArray<ServerHealth>): ReadonlyArray<string> => {
   const result: string[] = []
   for (const { name, status } of [...servers].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    if (status.status === "connected" || status.status === "disabled") continue
+    if (status.status === "connected" || status.status === "idle" || status.status === "disabled") continue
     if (status.status === "needs_auth") {
       result.push(`MCP server "${name}" is configured but not signed in, so its tools are unavailable this session.`)
       continue

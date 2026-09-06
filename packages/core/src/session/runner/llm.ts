@@ -28,7 +28,6 @@ import { Location } from "../../location"
 import { ProviderCapability } from "../../provider-capability"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
-import { QuestionV2 } from "../../question"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
@@ -72,7 +71,7 @@ import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
 import { MemoryCorrection } from "./memory-correction"
-import { Memory } from "../../kb-graph/memory"
+import { WorldMemory } from "../../kb-graph/world-memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
 import { MemoryAccessLedger } from "../../kb-graph/access-ledger"
 import { MemoryClient } from "../../kb-graph/memory-client"
@@ -83,7 +82,7 @@ import { HarnessConfig } from "./harness-config"
 import { StrictDrain } from "./strict-drain"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { SessionExecutionAttempt } from "../execution-attempt"
-import { attachmentModality, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
+import { attachmentModality, freshImageCount, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
@@ -355,7 +354,9 @@ export const layer = Layer.effect(
     const offline = yield* Offline.Service
     const scheduler = yield* SessionScheduler.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
-    const memory = Memory.client(yield* Memory.node.service)
+    // Recall, stale-read correction, and compaction archives use the hot world model. The explicit
+    // `kb` tool is the separate durable/source KB and reaches `Memory.node` directly.
+    const memory = WorldMemory.client(yield* WorldMemory.node.service)
     const maintenance = yield* SessionMaintenance.Service
     const components = yield* SessionComponentRegistry.Service
     const db = (yield* Database.Service).db
@@ -776,10 +777,6 @@ export const layer = Layer.effect(
 
     const awaitToolFibers = (fibers: FiberSet.FiberSet<void, ToolOutputStore.Error>) =>
       Effect.raceFirst(FiberSet.join(fibers), FiberSet.awaitEmpty(fibers))
-
-    // Match V1: dismissing a question halts the loop instead of becoming model-facing tool output.
-    const isQuestionRejected = (cause: Cause.Cause<unknown>) =>
-      cause.reasons.some((reason) => Cause.isDieReason(reason) && reason.defect instanceof QuestionV2.RejectedError)
 
     /**
      * What an endpoint told us about its per-request IMAGE CAP, keyed `providerID/modelID`.
@@ -1206,6 +1203,7 @@ export const layer = Layer.effect(
             // below would describe the fault falsely (ruling 2). The model is not unavailable; it
             // is present, reachable, and simply cannot read what was attached.
             error instanceof SessionRunnerModel.ModelInputUnsupportedError ||
+            error instanceof SessionRunnerModel.ImageBatchTooLargeError ||
             error instanceof SessionRunnerModel.DevicePinError
               ? undefined
               : error !== null && typeof error === "object" && "providerID" in error && "modelID" in error
@@ -1231,14 +1229,6 @@ export const layer = Layer.effect(
       if (prepared === undefined) return yield* Effect.interrupt
       const { session, config, agent, system, modelSession, model, ran, scheduledDevice, entries } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
-      /**
-       * Calls whose fiber died because the user dismissed the question it was asking. The dismissal
-       * arm below writes {@link QuestionV2.DISMISSED_MESSAGE} on exactly these rows and the plain
-       * "interrupted" on the siblings the dismissal took down with them — the transcript decides its
-       * quiet "dismissed" line on that sentence, and a sibling that merely got cancelled must not
-       * claim to have been the question.
-       */
-      const dismissedCalls = new Set<string>()
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
       let policyHalted = false
@@ -1852,6 +1842,17 @@ export const layer = Layer.effect(
       })
       const systemParts = SystemCompose.composeSystemParts(promptParts).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
+      const freshImages = freshImageCount(providerMessages)
+      if (modelImageLimit !== undefined && freshImages > modelImageLimit) {
+        const refusal = new SessionRunnerModel.ImageBatchTooLargeError({
+          providerID: ProviderV2.ID.make(String(model.provider)),
+          modelID: ModelV2.ID.make(String(model.id)),
+          count: freshImages,
+          limit: modelImageLimit,
+        })
+        yield* surfacePreTurnFailure(refusal)
+        return yield* refusal
+      }
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
       const groundingEnabled = folderHorizon === "cadence"
       const groundingDecision = ProjectGrounding.decide(
@@ -2423,15 +2424,7 @@ export const layer = Layer.effect(
               // ⚠️ On EVERY exit, including a failed or interrupted settlement. A reservation that is
               // never dropped is a budget slot lost for the rest of the turn — conservative, but it
               // would make a dead fiber quietly withhold the next call's images.
-              .pipe(
-                Effect.tapCause((cause) =>
-                  Effect.sync(() => {
-                    if (isQuestionRejected(cause)) dismissedCalls.add(event.id)
-                  }),
-                ),
-                Effect.ensuring(Effect.sync(imageBudget.release)),
-                FiberSet.run(toolFibers),
-              )
+              .pipe(Effect.ensuring(Effect.sync(imageBudget.release)), FiberSet.run(toolFibers))
           }),
       ).pipe(Effect.ensuring(withPublication(publisher.flush())))
 
@@ -2793,28 +2786,6 @@ export const layer = Layer.effect(
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)
-          if (settled._tag === "Failure" && isQuestionRejected(settled.cause)) {
-            yield* FiberSet.clear(toolFibers)
-            // The call that asked gets the sentence the transcript decides on; anything else still
-            // open was cancelled BY the dismissal and says only that it was interrupted.
-            for (const callID of dismissedCalls)
-              yield* withPublication(
-                publisher.failTool(callID, {
-                  message: QuestionV2.DISMISSED_MESSAGE,
-                  _tag: "Interrupted",
-                  retryable: false,
-                }),
-              )
-            dismissedCalls.clear()
-            yield* withPublication(
-              publisher.failUnsettledTools({
-                message: "Tool execution interrupted",
-                _tag: "Interrupted",
-                retryable: false,
-              }),
-            )
-            return yield* Effect.interrupt
-          }
           if (
             (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) ||
             (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
@@ -4200,7 +4171,7 @@ export const node = makeLocationNode({
     SessionCompactionRequest.node,
     Database.node,
     AppProcess.node,
-    Memory.node,
+    WorldMemory.node,
     SessionDriveState.node,
     // Strict's host-execution context (ruling 6): the messenger trust of the chain + the shared
     // OFF-C policy. Both are global nodes, so this adds no per-location state.

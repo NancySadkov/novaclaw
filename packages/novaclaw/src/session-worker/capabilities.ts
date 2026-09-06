@@ -1,7 +1,6 @@
 export * as SessionWorkerCapabilities from "./capabilities"
 
 import type { PermissionV2 } from "@novaclaw/core/permission"
-import type { QuestionV2 } from "@novaclaw/core/question"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import type { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
@@ -25,7 +24,6 @@ export interface Capabilities {
   readonly assertPermission: (
     input: PermissionV2.AssertInput,
   ) => Promise<Extract<Reply, { readonly type: "permission-result" }>>
-  readonly askQuestion: (input: QuestionV2.AskInput) => Promise<Extract<Reply, { readonly type: "question-result" }>>
   /**
    * Spawn a child of THIS session.
    *
@@ -54,6 +52,11 @@ export interface Capabilities {
    * transit would silently widen the caller's reach.
    */
   readonly memory: (
+    op: SessionWorkerProtocol.MemoryOp,
+    args: ReadonlyArray<unknown>,
+  ) => Promise<Extract<Reply, { readonly type: "memory-result" }>>
+  /** The same RPC surface, routed to the host's separate automatic world-model graph. */
+  readonly worldMemory: (
     op: SessionWorkerProtocol.MemoryOp,
     args: ReadonlyArray<unknown>,
   ) => Promise<Extract<Reply, { readonly type: "memory-result" }>>
@@ -225,11 +228,24 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       const reply = await input.client.request({
         ...identity,
         type: "memory-request",
+        store: "kb",
         requestID: requestID(),
         op,
         args,
       })
       if (reply.type !== "memory-result") throw new Error(`unexpected ${reply.type} reply to memory-request`)
+      return reply
+    },
+    worldMemory: async (op, args) => {
+      const reply = await input.client.request({
+        ...identity,
+        type: "memory-request",
+        store: "world",
+        requestID: requestID(),
+        op,
+        args,
+      })
+      if (reply.type !== "memory-result") throw new Error(`unexpected ${reply.type} reply to world-memory-request`)
       return reply
     },
     localModel: async (op, args) => {
@@ -260,16 +276,6 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         { ...identity, type: "colleague-request", requestID: requestID(), input: request },
       )
       if (reply.type !== "colleague-result") throw new Error(`unexpected ${reply.type} reply to colleague-request`)
-      return reply
-    },
-    askQuestion: async (request) => {
-      const reply = await input.client.request({
-        ...identity,
-        type: "question-ask",
-        requestID: requestID(),
-        input: { ...request, sessionID: input.lease.sessionID },
-      })
-      if (reply.type !== "question-result") throw new Error(`unexpected ${reply.type} reply to question request`)
       return reply
     },
     execution: {

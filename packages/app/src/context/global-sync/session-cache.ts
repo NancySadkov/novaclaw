@@ -1,4 +1,4 @@
-import type { QuestionV2Request, SessionStatus, SessionChangeDiff, Todo } from "@novaclaw/sdk/v2/client"
+import type { SessionStatus, SessionChangeDiff, Todo } from "@novaclaw/sdk/v2/client"
 
 export const SESSION_CACHE_LIMIT = 40
 
@@ -6,7 +6,6 @@ type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_diff: Record<string, SessionChangeDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
-  question: Record<string, QuestionV2Request[] | undefined>
   /** Only on the server-session store (the tags component map); absent on the directory stores. */
   tag?: Record<string, string[] | undefined>
 }
@@ -19,7 +18,6 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
     delete store.todo[sessionID]
     delete store.session_diff[sessionID]
     delete store.session_status[sessionID]
-    delete store.question[sessionID]
     if (store.tag) delete store.tag[sessionID]
   }
 }

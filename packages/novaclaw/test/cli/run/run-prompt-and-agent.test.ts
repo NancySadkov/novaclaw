@@ -16,6 +16,7 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
 import { testProviderConfig } from "../../lib/test-provider"
+import { isMetadataRequest } from "../../lib/llm-server"
 
 /**
  * Every user-authored text the provider actually received.
@@ -26,7 +27,7 @@ import { testProviderConfig } from "../../lib/test-provider"
 function userTexts(bodies: ReadonlyArray<Record<string, unknown>>): string[] {
   const out: string[] = []
   for (const body of bodies) {
-    if (JSON.stringify(body).includes("Generate a title for this conversation")) continue
+    if (isMetadataRequest(body)) continue
     const messages = (body as { messages?: unknown }).messages
     if (!Array.isArray(messages)) continue
     for (const entry of messages as Array<Record<string, unknown>>) {

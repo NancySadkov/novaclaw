@@ -32,6 +32,7 @@ const message = {
   attemptID: lease.attemptID,
   generation: lease.generation,
   type: "memory-request",
+  store: "kb",
   requestID: "rpc_mem_bound",
   op: "list",
   args: [{ limit: 1 }],

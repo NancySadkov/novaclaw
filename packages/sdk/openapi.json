@@ -577,6 +577,101 @@
         ]
       }
     },
+    "/api/instance/pressure": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "v2.instance.pressure.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "measuredAt": {
+                      "type": "number"
+                    },
+                    "memory": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "known": {
+                              "type": "boolean",
+                              "enum": [true]
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "crosscheck": {
+                              "type": "string"
+                            },
+                            "usedBytes": {
+                              "type": "number"
+                            },
+                            "limitBytes": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["known", "source", "crosscheck", "usedBytes", "limitBytes"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "known": {
+                              "type": "boolean",
+                              "enum": [false]
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["known", "reason"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "level": {
+                      "type": "string"
+                    },
+                    "memoryLevel": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["measuredAt", "memory", "level", "memoryLevel"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Report cheap host memory pressure without recursive storage accounting.",
+        "summary": "Get instance pressure",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.instance.pressure.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/identity/backup": {
       "post": {
         "tags": ["global"],
@@ -11873,6 +11968,249 @@
         ]
       }
     },
+    "/api/world-memory/erase": {
+      "post": {
+        "tags": ["memory lifecycle"],
+        "operationId": "v2.world-memory.erase",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete the automatic session and agent world model. This does not erase the explicit/source KB.",
+        "summary": "Erase agent memory",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.world-memory.erase({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/world-memory/export": {
+      "post": {
+        "tags": ["memory lifecycle"],
+        "operationId": "v2.world-memory.export",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "confidence": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "relation": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "predicate": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "conflictKey": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "supersededBy": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidence": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidenceKind": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "text",
+                      "name",
+                      "scope",
+                      "source",
+                      "confidence",
+                      "relation",
+                      "status",
+                      "subject",
+                      "predicate",
+                      "conflictKey",
+                      "supersededBy",
+                      "evidence",
+                      "evidenceKind"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return a complete backup of the automatic session and agent world model, without explicit/source KB rows.",
+        "summary": "Export agent memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "includeInvalid": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.world-memory.export({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/location": {
       "get": {
         "tags": ["location"],
@@ -12018,6 +12356,188 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/agent/{agentID}/avatar": {
+      "get": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.avatar.get",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read the instance-owned portrait bytes for one agent. An agent without an uploaded portrait receives the deterministic server-owned placeholder.",
+        "summary": "Read an agent portrait",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.avatar.get({\n  ...\n})"
+          }
+        ]
+      },
+      "put": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.avatar.upload",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hash": {
+                      "type": "string"
+                    },
+                    "mime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["hash", "mime"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Replace one agent's instance-owned portrait with bounded PNG, JPEG, GIF or WebP bytes. The request must be authenticated and the bytes are stored under the instance data directory.",
+        "summary": "Upload an agent portrait",
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.avatar.upload({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.avatar.delete",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete one agent's uploaded portrait and restore its server-owned placeholder or glyph.",
+        "summary": "Delete an agent portrait",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.avatar.delete({\n  ...\n})"
           }
         ]
       }
@@ -18023,7 +18543,7 @@
             }
           }
         },
-        "description": "Report stored secrets that cannot be decrypted, with a message naming the key file to restore.",
+        "description": "Report malformed stored secrets and supported account or identity repair actions.",
         "summary": "Check stored-secret readability",
         "x-codeSamples": [
           {
@@ -22600,329 +23120,6 @@
         ]
       }
     },
-    "/api/question/request": {
-      "get": {
-        "tags": ["session questions"],
-        "operationId": "v2.question.request.list",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "location": {
-                      "$ref": "#/components/schemas/LocationInfo"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/QuestionV2Request"
-                      }
-                    }
-                  },
-                  "required": ["location", "data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve pending question requests for a location.",
-        "summary": "List pending question requests",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.question.request.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/question": {
-      "get": {
-        "tags": ["session questions"],
-        "operationId": "v2.session.question.list",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/QuestionV2Request"
-                      }
-                    }
-                  },
-                  "required": ["data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve pending question requests owned by a session.",
-        "summary": "List session question requests",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.question.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/question/{requestID}/reply": {
-      "post": {
-        "tags": ["session questions"],
-        "operationId": "v2.session.question.reply",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          },
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^que"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "204": {
-            "description": "<No Content>"
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError | QuestionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/QuestionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Answer a pending question request owned by a session.",
-        "summary": "Reply to pending question request",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QuestionV2Reply"
-              }
-            }
-          },
-          "required": true
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.question.reply({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/question/{requestID}/reject": {
-      "post": {
-        "tags": ["session questions"],
-        "operationId": "v2.session.question.reject",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          },
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^que"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "204": {
-            "description": "<No Content>"
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError | QuestionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/QuestionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Reject a pending question request owned by a session.",
-        "summary": "Reject pending question request",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.question.reject({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/reference": {
       "get": {
         "tags": ["reference"],
@@ -23271,6 +23468,9 @@
                     "endpointConfigured": {
                       "type": "boolean"
                     },
+                    "ready": {
+                      "type": "boolean"
+                    },
                     "refusals": {
                       "type": "array",
                       "items": {
@@ -23347,7 +23547,7 @@
                       }
                     }
                   },
-                  "required": ["gate", "endpointConfigured", "refusals", "disclosure"],
+                  "required": ["gate", "endpointConfigured", "ready", "refusals", "disclosure"],
                   "additionalProperties": false
                 }
               }
@@ -23616,15 +23816,6 @@
           },
           {
             "$ref": "#/components/schemas/EventPtyDeleted"
-          },
-          {
-            "$ref": "#/components/schemas/EventQuestionV2Asked"
-          },
-          {
-            "$ref": "#/components/schemas/EventQuestionV2Replied"
-          },
-          {
-            "$ref": "#/components/schemas/EventQuestionV2Rejected"
           },
           {
             "$ref": "#/components/schemas/EventMessengerAccountStatus"
@@ -24246,6 +24437,27 @@
                       },
                       "info": {
                         "$ref": "#/components/schemas/SessionV2Info"
+                      },
+                      "openingPrompt": {
+                        "type": "object",
+                        "properties": {
+                          "messageID": {
+                            "type": "string",
+                            "pattern": "^msg_"
+                          },
+                          "prompt": {
+                            "$ref": "#/components/schemas/Prompt"
+                          },
+                          "delivery": {
+                            "type": "string",
+                            "enum": ["steer", "queue"]
+                          },
+                          "timestamp": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["messageID", "prompt", "delivery", "timestamp"],
+                        "additionalProperties": false
                       }
                     },
                     "required": ["sessionID", "info"],
@@ -24275,6 +24487,9 @@
                       },
                       "info": {
                         "$ref": "#/components/schemas/SessionV2Info"
+                      },
+                      "clearArchived": {
+                        "type": "boolean"
                       }
                     },
                     "required": ["sessionID", "info"],
@@ -27119,112 +27334,6 @@
                   },
                   "type": {
                     "type": "string",
-                    "enum": ["question.v2.asked"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "pattern": "^que"
-                      },
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "questions": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/QuestionV2Info"
-                        },
-                        "description": "Questions to ask"
-                      },
-                      "tool": {
-                        "$ref": "#/components/schemas/QuestionV2Tool"
-                      }
-                    },
-                    "required": ["id", "sessionID", "questions"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["question.v2.replied"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "requestID": {
-                        "type": "string",
-                        "pattern": "^que"
-                      },
-                      "answers": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/QuestionV2Answer"
-                        }
-                      }
-                    },
-                    "required": ["sessionID", "requestID", "answers"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["question.v2.rejected"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "requestID": {
-                        "type": "string",
-                        "pattern": "^que"
-                      }
-                    },
-                    "required": ["sessionID", "requestID"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
                     "enum": ["messenger.account.status"]
                   },
                   "properties": {
@@ -28705,6 +28814,17 @@
         "required": ["status"],
         "additionalProperties": false
       },
+      "MCPStatusIdle": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["idle"]
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
       "MCPStatusDisabled": {
         "type": "object",
         "properties": {
@@ -28759,6 +28879,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/MCPStatusConnected"
+          },
+          {
+            "$ref": "#/components/schemas/MCPStatusIdle"
           },
           {
             "$ref": "#/components/schemas/MCPStatusDisabled"
@@ -29883,15 +30006,6 @@
             "$ref": "#/components/schemas/PtyDeleted"
           },
           {
-            "$ref": "#/components/schemas/QuestionV2Asked"
-          },
-          {
-            "$ref": "#/components/schemas/QuestionV2Replied"
-          },
-          {
-            "$ref": "#/components/schemas/QuestionV2Rejected"
-          },
-          {
             "$ref": "#/components/schemas/messenger.account.status"
           },
           {
@@ -29981,23 +30095,6 @@
           }
         },
         "required": ["state"],
-        "additionalProperties": false
-      },
-      "QuestionNotFoundError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["QuestionNotFoundError"]
-          },
-          "requestID": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
       },
       "ConfigPath": {
@@ -31756,68 +31853,6 @@
           }
         ]
       },
-      "QuestionV2Option": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string",
-            "description": "Display text (1-5 words, concise)"
-          },
-          "description": {
-            "type": "string",
-            "description": "Explanation of choice"
-          }
-        },
-        "required": ["label", "description"],
-        "additionalProperties": false
-      },
-      "QuestionV2Info": {
-        "type": "object",
-        "properties": {
-          "question": {
-            "type": "string",
-            "description": "Complete question"
-          },
-          "header": {
-            "type": "string",
-            "description": "Very short label (max 30 chars)"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuestionV2Option"
-            },
-            "description": "Available choices"
-          },
-          "multiple": {
-            "type": "boolean"
-          },
-          "custom": {
-            "type": "boolean"
-          }
-        },
-        "required": ["question", "header", "options"],
-        "additionalProperties": false
-      },
-      "QuestionV2Tool": {
-        "type": "object",
-        "properties": {
-          "messageID": {
-            "type": "string"
-          },
-          "callID": {
-            "type": "string"
-          }
-        },
-        "required": ["messageID", "callID"],
-        "additionalProperties": false
-      },
-      "QuestionV2Answer": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
       "MessengerAccountStatus": {
         "anyOf": [
           {
@@ -31948,6 +31983,27 @@
                   },
                   "info": {
                     "$ref": "#/components/schemas/SessionV2Info"
+                  },
+                  "openingPrompt": {
+                    "type": "object",
+                    "properties": {
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "prompt": {
+                        "$ref": "#/components/schemas/Prompt"
+                      },
+                      "delivery": {
+                        "type": "string",
+                        "enum": ["steer", "queue"]
+                      },
+                      "timestamp": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["messageID", "prompt", "delivery", "timestamp"],
+                    "additionalProperties": false
                   }
                 },
                 "required": ["sessionID", "info"],
@@ -31998,6 +32054,9 @@
                   },
                   "info": {
                     "$ref": "#/components/schemas/SessionV2Info"
+                  },
+                  "clearArchived": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["sessionID", "info"],
@@ -36860,6 +36919,9 @@
           "telemetry": {
             "type": "object",
             "properties": {
+              "endpoint": {
+                "type": "string"
+              },
               "enabled": {
                 "type": "boolean"
               }
@@ -42641,6 +42703,27 @@
               },
               "info": {
                 "$ref": "#/components/schemas/SessionV2Info"
+              },
+              "openingPrompt": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "prompt": {
+                    "$ref": "#/components/schemas/Prompt"
+                  },
+                  "delivery": {
+                    "type": "string",
+                    "enum": ["steer", "queue"]
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  }
+                },
+                "required": ["messageID", "prompt", "delivery", "timestamp"],
+                "additionalProperties": false
               }
             },
             "required": ["sessionID", "info"],
@@ -42692,6 +42775,9 @@
               },
               "info": {
                 "$ref": "#/components/schemas/SessionV2Info"
+              },
+              "clearArchived": {
+                "type": "boolean"
               }
             },
             "required": ["sessionID", "info"],
@@ -44049,178 +44135,6 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
-      "QuestionV2Asked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.asked"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "questions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionV2Info"
-                },
-                "description": "Questions to ask"
-              },
-              "tool": {
-                "$ref": "#/components/schemas/QuestionV2Tool"
-              }
-            },
-            "required": ["id", "sessionID", "questions"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "QuestionV2Replied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.replied"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "answers": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionV2Answer"
-                }
-              }
-            },
-            "required": ["sessionID", "requestID", "answers"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "QuestionV2Rejected": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.rejected"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              }
-            },
-            "required": ["sessionID", "requestID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
       "MessengerChatSeen": {
         "type": "object",
         "properties": {
@@ -44958,45 +44872,6 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
-      "QuestionV2Request": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^que"
-          },
-          "sessionID": {
-            "type": "string",
-            "pattern": "^ses"
-          },
-          "questions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuestionV2Info"
-            },
-            "description": "Questions to ask"
-          },
-          "tool": {
-            "$ref": "#/components/schemas/QuestionV2Tool"
-          }
-        },
-        "required": ["id", "sessionID", "questions"],
-        "additionalProperties": false
-      },
-      "QuestionV2Reply": {
-        "type": "object",
-        "properties": {
-          "answers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuestionV2Answer"
-            },
-            "description": "User answers in order of questions (each answer is an array of selected labels)"
-          }
-        },
-        "required": ["answers"],
-        "additionalProperties": false
-      },
       "ReferenceLocalSource": {
         "type": "object",
         "properties": {
@@ -45174,6 +45049,27 @@
               },
               "info": {
                 "$ref": "#/components/schemas/SessionV2Info"
+              },
+              "openingPrompt": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "prompt": {
+                    "$ref": "#/components/schemas/Prompt"
+                  },
+                  "delivery": {
+                    "type": "string",
+                    "enum": ["steer", "queue"]
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  }
+                },
+                "required": ["messageID", "prompt", "delivery", "timestamp"],
+                "additionalProperties": false
               }
             },
             "required": ["sessionID", "info"],
@@ -45203,6 +45099,9 @@
               },
               "info": {
                 "$ref": "#/components/schemas/SessionV2Info"
+              },
+              "clearArchived": {
+                "type": "boolean"
               }
             },
             "required": ["sessionID", "info"],
@@ -48012,112 +47911,6 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
-      "EventQuestionV2Asked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.asked"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "questions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionV2Info"
-                },
-                "description": "Questions to ask"
-              },
-              "tool": {
-                "$ref": "#/components/schemas/QuestionV2Tool"
-              }
-            },
-            "required": ["id", "sessionID", "questions"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventQuestionV2Replied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.replied"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "answers": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionV2Answer"
-                }
-              }
-            },
-            "required": ["sessionID", "requestID", "answers"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventQuestionV2Rejected": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.v2.rejected"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              }
-            },
-            "required": ["sessionID", "requestID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventMessengerAccountStatus": {
         "type": "object",
         "properties": {
@@ -48859,10 +48652,6 @@
     {
       "name": "pty-instance",
       "description": "Instance-wide PTY reconciliation."
-    },
-    {
-      "name": "session questions",
-      "description": "Experimental session question routes."
     },
     {
       "name": "reference",

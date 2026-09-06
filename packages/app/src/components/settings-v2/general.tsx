@@ -175,6 +175,7 @@ export const SettingsGeneralV2: Component<{
     if (status.gate.airgap) return language.t("settings.general.row.telemetry.statusAirgap")
     if (!status.gate.consent) return language.t("settings.general.row.telemetry.statusConsentOff")
     if (!status.endpointConfigured) return language.t("settings.general.row.telemetry.statusNoEndpoint")
+    if (!status.ready) return language.t("settings.general.row.telemetry.statusNotReady")
     return language.t("settings.general.row.telemetry.statusReady")
   })
   const offlineLabel = createMemo(() => {

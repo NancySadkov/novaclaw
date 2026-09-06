@@ -80,10 +80,26 @@ function Write-GuardLog([string]$message) {
 # the wrapper's first version and meant the guard was never started, silently.
 $pidFile = Join-Path (Split-Path -Parent $LogPath) "tsgo-guard.pid"
 
-function Write-Heartbeat {
+function Write-Heartbeat([switch]$Initial) {
   # `<pid> <unix ms>`. The pid alone cannot be trusted once this process exits routinely; see header.
   $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  Set-Content -Path $pidFile -Value ("{0} {1}" -f $PID, $stamp)
+  if ($Initial) {
+    Set-Content -Path $pidFile -Value ("{0} {1}" -f $PID, $stamp)
+    return
+  }
+  # Hold one handle across the ownership read and heartbeat write. An earlier tick's ownership
+  # check cannot authorize a later write: process enumeration may take long enough for a successor
+  # to take over. FileShare.Read excludes writers and deletion during this short update.
+  $record = [System.IO.File]::Open($pidFile, 'Open', 'ReadWrite', 'Read')
+  try {
+    $reader = [System.IO.StreamReader]::new($record, [System.Text.Encoding]::UTF8, $true, 1024, $true)
+    try { $held = ($reader.ReadToEnd() -split '\s+')[0] } finally { $reader.Dispose() }
+    if ($held -ne "$PID") { return }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(("{0} {1}" -f $PID, $stamp))
+    $record.Position = 0
+    $record.Write($bytes, 0, $bytes.Length)
+    $record.SetLength($bytes.Length)
+  } finally { $record.Dispose() }
 }
 
 # Only ever remove a pid file that still names US. A successor's record is not ours to delete.
@@ -96,7 +112,7 @@ function Remove-OwnPidFile {
   } catch {}
 }
 
-Write-Heartbeat
+Write-Heartbeat -Initial
 Register-EngineEvent PowerShell.Exiting -Action { Remove-OwnPidFile } | Out-Null
 
 Write-GuardLog "guard started (pid $PID): watching $($ProcessNames -join ', '), ceiling ${CeilingMB} MB, polling every ${IntervalSeconds}s, idle exit ${IdleExitSeconds}s"

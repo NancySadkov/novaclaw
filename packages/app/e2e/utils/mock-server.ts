@@ -25,7 +25,6 @@ export interface MockServerConfig {
   events?: () => unknown[]
   eventRetry?: number
   todos?: (sessionID: string) => unknown[]
-  questions?: unknown[] | (() => unknown[])
 }
 
 export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
@@ -57,11 +56,6 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
     const path = url.pathname
     if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)
     if (path === "/global/health") return json(route, { healthy: true })
-    if (path === "/api/question/request")
-      return json(route, {
-        location: { directory: config.directory, root: config.directory, origin: "local" },
-        data: typeof config.questions === "function" ? config.questions() : (config.questions ?? []),
-      })
     if (path === "/api/vcs") return json(route, located(config.directory, { branch: "main", default_branch: "main" }))
     if (path === "/api/vcs/status") return json(route, located(config.directory, []))
     if (path === "/api/vcs/diff") return json(route, located(config.directory, config.vcsDiff ?? []))
