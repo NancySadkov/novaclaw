@@ -74,7 +74,7 @@ test("stages a submitted line comment in the prompt context", async ({ page }) =
   await review.locator('[data-slot="line-comment-action"][data-variant="primary"]').click()
 
   await expect(review.getByText("Use the existing value instead", { exact: true })).toBeVisible()
-  await page.getByRole("tab", { name: "Session" }).click()
+  await page.getByRole("dialog", { name: "Review and files" }).getByRole("button", { name: "Close" }).click()
   const context = page.getByText("Use the existing value instead", { exact: true }).last()
   await expect(context).toBeVisible()
   await expect(context.locator("..")).toContainText("review.ts:2")
@@ -82,7 +82,7 @@ test("stages a submitted line comment in the prompt context", async ({ page }) =
 })
 
 async function openReview(page: Page) {
-  await page.setViewportSize({ width: 700, height: 900 })
+  await page.setViewportSize({ width: 1200, height: 900 })
   await mockNovaClawServer(page, {
     directory,
     project: {
@@ -144,8 +144,8 @@ async function openReview(page: Page) {
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await expectSessionTitle(page, title)
   const diffResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/vcs/diff")
-  await page.getByRole("tab", { name: "Changes" }).click()
-  expect(await (await diffResponse).json()).toHaveLength(1)
+  await page.getByRole("tab", { name: "Review" }).click()
+  expect((await (await diffResponse).json()).data).toHaveLength(1)
 
   const review = page.locator('[data-component="session-review"]')
   await expectAppVisible(review)

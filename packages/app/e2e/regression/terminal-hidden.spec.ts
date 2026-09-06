@@ -57,6 +57,7 @@ test("unmounts the terminal renderer while the pane is hidden", async ({ page })
 
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await expectSessionTitle(page, title)
+  await page.getByRole("dialog", { name: "Review and files" }).getByRole("button", { name: "Close" }).click()
 
   await page.keyboard.press("Control+Backquote")
   const panel = page.locator("#terminal-panel")

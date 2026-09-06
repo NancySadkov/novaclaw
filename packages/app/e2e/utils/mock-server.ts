@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command"])
+const emptyList = new Set(["/skill", "/command", "/app"])
 
 /**
  * The `{ location, data }` envelope every `/api` route answers in. The VCS family joined them on
@@ -27,11 +27,62 @@ export interface MockServerConfig {
   todos?: (sessionID: string) => unknown[]
 }
 
+function sessionForWire(session: Record<string, unknown>, directory: string) {
+  return {
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...session,
+    location: session.location ?? { directory: (session.directory as string | undefined) ?? directory },
+  }
+}
+
+function providerCatalogForWire(input: unknown) {
+  if (!input || typeof input !== "object") return { providers: [], models: [], connected: [], default: {} }
+  const legacy = input as {
+    all?: Array<Record<string, unknown>>
+    connected?: string[]
+    default?: Record<string, string>
+  }
+  if (!Array.isArray(legacy.all)) return input
+  const models = legacy.all.flatMap((provider) => {
+    const entries = Object.entries((provider.models as Record<string, Record<string, unknown>> | undefined) ?? {})
+    return entries.map(([id, model]) => ({
+      id,
+      providerID: provider.id,
+      name: model.name ?? id,
+      api: { id, type: "native", settings: {} },
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      request: { headers: {}, body: {} },
+      variants: Object.keys((model.variants as Record<string, unknown> | undefined) ?? {}).map((variant) => ({
+        id: variant,
+        headers: {},
+        body: {},
+      })),
+      time: { released: 0 },
+      cost: [],
+      status: "active",
+      enabled: true,
+      limit: { context: (model.limit as { context?: number } | undefined)?.context ?? 200_000, output: 8_192 },
+    }))
+  })
+  return {
+    providers: legacy.all.map(({ models: _, ...provider }) => ({
+      ...provider,
+      api: { type: "native", settings: {} },
+      request: { headers: {}, body: {} },
+    })),
+    models,
+    connected: legacy.connected ?? [],
+    default: legacy.default ?? {},
+  }
+}
+
 export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
   const cursors = new Map<string, string>()
   let nextCursor = 0
+  const sessions = config.sessions.map((session) => sessionForWire(session, config.directory))
   const staticRoutes: Record<string, unknown> = {
-    "/provider": config.provider,
+    "/provider": providerCatalogForWire(config.provider),
     "/path": {
       state: config.directory,
       config: config.directory,
@@ -42,30 +93,45 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
     "/project": [config.project],
     "/project/current": config.project,
     "/agent": [{ name: "build", mode: "primary" }],
-    "/session": config.sessions,
+    "/session": sessions,
   }
 
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
-    const targetPort = process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"
+    const targetPort = process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"
     const appPort = new URL(
       process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3000"}`,
     ).port
     if (url.port !== targetPort && url.port !== appPort) return route.fallback()
 
     const path = url.pathname
-    if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)
+    if (path === "/global/event" || path === "/event") {
+      if (!config.events && config.eventRetry === undefined) return route.fallback()
+      return sse(route, config.events?.(), config.eventRetry)
+    }
     if (path === "/global/health") return json(route, { healthy: true })
     if (path === "/api/vcs") return json(route, located(config.directory, { branch: "main", default_branch: "main" }))
     if (path === "/api/vcs/status") return json(route, located(config.directory, []))
     if (path === "/api/vcs/diff") return json(route, located(config.directory, config.vcsDiff ?? []))
+    if (path === "/api/session") return json(route, { data: sessions, cursor: {} })
+    if (path === "/api/session/active") return json(route, { data: {} })
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])
     if (path in staticRoutes) return json(route, staticRoutes[path])
 
+    const v2SessionMatch = path.match(/^\/api\/session\/([^/]+)$/)
+    if (v2SessionMatch) {
+      const session = sessions.find((s) => s.id === v2SessionMatch[1])
+      return json(route, { data: session ?? null })
+    }
+
+    const v2TodoMatch = path.match(/^\/api\/session\/([^/]+)\/todo$/)
+    if (v2TodoMatch) return json(route, { data: config.todos?.(v2TodoMatch[1]!) ?? [] })
+    if (/^\/api\/session\/[^/]+\/(children|diff)$/.test(path)) return json(route, { data: [] })
+
     const sessionMatch = path.match(/^\/session\/([^/]+)$/)
     if (sessionMatch) {
-      const session = config.sessions.find((s) => s.id === sessionMatch[1])
+      const session = sessions.find((s) => s.id === sessionMatch[1])
       return json(route, session ?? {})
     }
 
@@ -87,6 +153,20 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
       const cursor = `cursor_${++nextCursor}`
       cursors.set(cursor, pageData.cursor)
       return json(route, pageData.items, { "x-next-cursor": cursor })
+    }
+
+    const v2MessagesMatch = path.match(/^\/api\/session\/([^/]+)\/message$/)
+    if (v2MessagesMatch) {
+      const before = url.searchParams.get("cursor") ?? undefined
+      config.onMessages?.({ sessionID: v2MessagesMatch[1], before, phase: "start" })
+      if (config.messageDelay) await new Promise((resolve) => setTimeout(resolve, config.messageDelay))
+      const limit = Number(url.searchParams.get("limit") ?? 80)
+      const pageData = config.pageMessages(v2MessagesMatch[1], limit, before)
+      config.onMessages?.({ sessionID: v2MessagesMatch[1], before, phase: "end" })
+      return json(route, {
+        data: pageData.items,
+        cursor: pageData.cursor ? { next: pageData.cursor } : {},
+      })
     }
 
     if (url.port === targetPort && targetPort !== appPort) return json(route, {})

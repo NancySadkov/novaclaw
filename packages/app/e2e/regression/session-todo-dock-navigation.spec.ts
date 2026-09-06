@@ -30,7 +30,6 @@ test.use({ viewport: { width: 1440, height: 900 } })
 
 test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
   test.setTimeout(90_000)
-  const events: EventPayload[] = []
   const todos: Record<string, typeof activeTodos> = { [sourceID]: [], [otherID]: [] }
 
   await mockNovaClawServer(page, {
@@ -62,24 +61,23 @@ test("animates todo lifecycle without replaying it across session tabs", async (
     },
     sessions: [session(sourceID, sourceTitle, 1700000000000), session(otherID, otherTitle, 1700000001000)],
     pageMessages: () => ({ items: [] }),
-    events: () => events.splice(0, 1),
-    eventRetry: 16,
     todos: (sessionID) => todos[sessionID] ?? [],
   })
   await configurePage(page)
 
   await page.goto(sessionHref(sourceID))
   await expectSessionTitle(page, sourceTitle)
+  await page.getByRole("dialog", { name: "Review and files" }).getByRole("button", { name: "Close" }).click()
   const dock = page.locator('[data-component="session-todo-dock"]')
   await expect(dock).toHaveCount(0)
 
-  events.push(statusEvent(sourceID, "busy"))
+  await emitEvent(statusEvent(sourceID, "busy"))
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
 
   await page.waitForTimeout(700)
   const opening = sampleDock(page, 1_000)
   todos[sourceID] = activeTodos
-  events.push(todoEvent(sourceID, activeTodos))
+  await emitEvent(todoEvent(sourceID, activeTodos))
   await expect(dock).toBeVisible()
   await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
   expect((await opening).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
@@ -98,11 +96,11 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   const completedTodos = activeTodos.map((todo) => ({ ...todo, status: "completed" }))
   const closing = sampleDock(page, 1_000)
   todos[sourceID] = completedTodos
-  events.push(todoEvent(sourceID, completedTodos))
+  await emitEvent(todoEvent(sourceID, completedTodos))
   await expect(dock).toHaveCount(0)
   expect((await closing).some((sample) => sample.opacity > 0.05 && sample.opacity < 0.95)).toBe(true)
   todos[sourceID] = []
-  events.push(todoEvent(sourceID, []))
+  await emitEvent(todoEvent(sourceID, []))
 
   await switchSession(page, otherID, otherTitle)
   const returningEmpty = sampleDock(page, 700)
@@ -126,19 +124,30 @@ function session(id: string, title: string, created: number) {
 function statusEvent(sessionID: string, type: "busy" | "idle"): EventPayload {
   return {
     directory,
-    payload: { type: "session.status", properties: { sessionID, status: { type } } },
+    payload: { id: `evt_status_${sessionID}_${type}`, type: "session.status", properties: { sessionID, status: { type } } },
   }
 }
 
 function todoEvent(sessionID: string, next: typeof activeTodos): EventPayload {
   return {
     directory,
-    payload: { type: "todo.updated", properties: { sessionID, todos: next } },
+    payload: { id: `evt_todo_${sessionID}_${next.length}`, type: "todo.updated", properties: { sessionID, todos: next } },
   }
 }
 
+async function emitEvent(event: EventPayload) {
+  const host = process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"
+  const port = process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"
+  const response = await fetch(`http://${host}:${port}/__e2e/event`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(event),
+  })
+  if (!response.ok) throw new Error(`Mock event server answered ${response.status}`)
+}
+
 async function configurePage(page: Page) {
-  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
+  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"}`
   await page.addInitScript(
     ({ directory, dirBase64, server, sessionIDs }) => {
       localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
@@ -159,7 +168,7 @@ async function configurePage(page: Page) {
 }
 
 function sessionHref(sessionID: string) {
-  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
+  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"}`
   return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 

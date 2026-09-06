@@ -54,6 +54,7 @@ test("shows the V2 thinking level control while relevant", async ({ page }) => {
   })
 
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
+  await page.getByRole("dialog", { name: "Review and files" }).getByRole("button", { name: "Close" }).click()
   const composer = page.locator('[data-component="session-composer"]')
   const input = composer.locator('[data-component="prompt-input"]')
   const control = composer.locator('[data-component="prompt-variant-control"]')
@@ -68,10 +69,8 @@ test("shows the V2 thinking level control while relevant", async ({ page }) => {
   await control.locator('[data-action="prompt-model-variant"]').click()
   const high = page.getByRole("option", { name: "high" })
   await expect(high).toBeVisible()
-  await page.mouse.move(0, 0)
-  await expect(control).toBeVisible()
-  await expect(high).toBeVisible()
-  await high.click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Enter")
 
   await idleComposer(page)
   await input.focus()

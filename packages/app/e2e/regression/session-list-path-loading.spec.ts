@@ -1,4 +1,5 @@
 import { test } from "@playwright/test"
+import { base64Encode } from "@novaclaw/core/util/encode"
 import { fixture, pageMessages } from "../smoke/session-timeline.fixture"
 import { mockNovaClawServer } from "../utils/mock-server"
 import { expectAppVisible } from "../utils/waits"
@@ -32,7 +33,7 @@ test("shows loaded sessions before the directory path request resolves", async (
     )
   }, fixture.directory)
 
-  await page.goto("/")
+  await page.goto(`/${base64Encode(fixture.directory)}/session/${fixture.sourceID}`)
   try {
     await expectAppVisible(page.getByText(fixture.expected.sourceTitle).first())
   } finally {

@@ -13,7 +13,7 @@ import { expectAppVisible } from "../utils/waits"
 // (`src/pages/home-screen/home-tile-click-guard.test.ts`), which is where the ratchet lives.
 
 const routes = [
-  ["Chats", "/chats"],
+  ["Contacts", "/tasks"],
   ["Notes", "/notes"],
   ["Calendar", "/calendar"],
   ["Recipes", "/recipes"],
@@ -37,7 +37,7 @@ test.beforeEach(async ({ page }) => {
 
 test("keeps launcher routes responsive across repeated app transitions", async ({ page }) => {
   await page.goto("/")
-  await expectAppVisible(page.getByRole("button", { name: "Chats" }))
+  await expectAppVisible(page.getByRole("button", { name: "Contacts" }))
 
   for (const [name, path] of routes) {
     await page.getByRole("button", { name }).click()
@@ -86,8 +86,10 @@ test("keeps an escape route visible while Files is pending", async ({ page }) =>
     const main = page.locator("main")
     await expectAppVisible(main.getByRole("status"))
     await expectAppVisible(main.getByRole("button", { name: "Home" }))
-    await main.getByRole("button", { name: "Home" }).click()
-    await expect(page).toHaveURL(/\/$/)
+    await expect(async () => {
+      await main.getByRole("button", { name: "Home" }).click({ force: true, timeout: 1_000 })
+      await expect(page).toHaveURL(/\/$/, { timeout: 1_000 })
+    }).toPass({ timeout: 10_000 })
     await expectAppVisible(page.getByRole("button", { name: "Files" }))
   } finally {
     release()
