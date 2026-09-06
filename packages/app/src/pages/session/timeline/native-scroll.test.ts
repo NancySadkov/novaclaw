@@ -6,15 +6,20 @@ test("isAtBottom is true at the exact bottom", () => {
 })
 
 test("isAtBottom is true within the threshold", () => {
-  expect(isAtBottom({ scrollHeight: 1000, scrollTop: 340, clientHeight: 600 })).toBe(true) // 60px from bottom
+  expect(isAtBottom({ scrollHeight: 1000, scrollTop: 340, clientHeight: 600 }, 80)).toBe(true) // 60px from bottom
 })
 
 test("isAtBottom is false past the threshold", () => {
-  expect(isAtBottom({ scrollHeight: 1000, scrollTop: 200, clientHeight: 600 })).toBe(false) // 200px from bottom
+  expect(isAtBottom({ scrollHeight: 1000, scrollTop: 200, clientHeight: 600 }, 80)).toBe(false) // 200px from bottom
 })
 
 test("nextPinned pins when scrolled to the bottom", () => {
   expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 400, clientHeight: 600 })).toBe(true)
+})
+
+test("a near-bottom move toward history cannot undo explicit user unpinning", () => {
+  expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 360, clientHeight: 600 }, true)).toBe(false)
+  expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 360, clientHeight: 600 })).toBe(false)
 })
 
 test("an upward viewport move revokes the pin as soon as it leaves the exact bottom", () => {

@@ -61,10 +61,12 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
     .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
     .toBe(true)
 
-  // Explicit user navigation is the only boundary, and explicit return restores the pin.
+  // A single ordinary wheel tick must release follow mode even though it remains inside the
+  // near-bottom re-pin threshold. The old controller unpinned on `wheel`, then immediately re-pinned
+  // on this `scroll` event because its 20px gap was less than 80px.
   await page.locator("#timeline").hover()
-  await page.mouse.wheel(0, -700)
-  await expect.poll(gap).toBeGreaterThan(100)
+  await page.mouse.wheel(0, -20)
+  await expect.poll(gap).toBeGreaterThan(10)
   await expect
     .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
     .toBe(false)

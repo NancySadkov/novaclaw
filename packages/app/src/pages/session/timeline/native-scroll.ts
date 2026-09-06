@@ -11,9 +11,9 @@ export interface ScrollMetrics {
   readonly clientHeight: number
 }
 
-/** Whether the viewport is scrolled to within `threshold`px of the bottom. */
-export function isAtBottom(m: ScrollMetrics, threshold = 80): boolean {
-  return m.scrollHeight - m.scrollTop - m.clientHeight <= threshold
+/** Whether the viewport is scrolled to within `tolerance`px of the bottom. */
+export function isAtBottom(m: ScrollMetrics, tolerance = 1): boolean {
+  return m.scrollHeight - m.scrollTop - m.clientHeight <= tolerance
 }
 
 /**
@@ -22,12 +22,13 @@ export function isAtBottom(m: ScrollMetrics, threshold = 80): boolean {
  * as a wheel. Layout movement at the bottom remains at the exact bottom, while native scrollbar
  * chrome exposes no dependable pointer event to the DOM and is observable only as an upward
  * `scrollTop` transition. That transition revokes the pin as soon as it leaves the exact bottom.
- * An unpinned reader re-pins on returning near the bottom.
+ * Once user intent has unpinned the view, proximity may not overwrite it: the reader re-pins only
+ * on actually reaching the bottom (with one pixel of tolerance for fractional layout geometry).
  */
-export function nextPinned(current: boolean, m: ScrollMetrics, movedTowardHistory = false, threshold = 80): boolean {
+export function nextPinned(current: boolean, m: ScrollMetrics, movedTowardHistory = false): boolean {
   if (m.clientHeight === 0) return current
-  if (current) return !movedTowardHistory || isAtBottom(m, 1)
-  return isAtBottom(m, threshold)
+  if (current) return !movedTowardHistory || isAtBottom(m)
+  return isAtBottom(m)
 }
 
 const HISTORY_KEYS = new Set(["ArrowUp", "PageUp", "Home"])
