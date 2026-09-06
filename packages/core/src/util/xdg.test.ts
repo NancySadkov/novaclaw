@@ -130,13 +130,38 @@ describe("Xdg.baseDirs", () => {
     for (const key of ["data", "cache", "config", "state"] as const) expect(a[key]).not.toBe(b[key])
   })
 
-  test("without an override the XDG layout is byte-identical to before, so existing installs keep their files", () => {
+  test("🔴 without an override every writable root is inside the one existing instance home", () => {
     const d = Xdg.baseDirs([], {}, "C:\\Users\\n", "novaclaw")!
-    expect(d.data).toBe(path.join("C:\\Users\\n", ".local", "share", "novaclaw"))
-    expect(d.config).toBe(path.join("C:\\Users\\n", ".config", "novaclaw"))
-    expect(d.state).toBe(path.join("C:\\Users\\n", ".local", "state", "novaclaw"))
-    expect(d.cache).toBe(path.join("C:\\Users\\n", ".cache", "novaclaw"))
+    const root = path.join("C:\\Users\\n", ".local", "share", "novaclaw")
+    expect(d.data).toBe(root)
+    expect(d.config).toBe(path.join(root, "config"))
+    expect(d.state).toBe(path.join(root, "state"))
+    expect(d.cache).toBe(path.join(root, "cache"))
+    for (const key of ["data", "config", "state", "cache"] as const) {
+      expect(path.relative(root, d[key]).startsWith("..")).toBe(false)
+    }
     expect(d.explicitHome).toBeUndefined()
+  })
+
+  test("legacy XDG config/cache/state overrides cannot split one instance across the machine", () => {
+    const d = Xdg.baseDirs(
+      [],
+      {
+        XDG_DATA_HOME: "D:\\instances",
+        XDG_CONFIG_HOME: "E:\\legacy-config",
+        XDG_CACHE_HOME: "F:\\legacy-cache",
+        XDG_STATE_HOME: "G:\\legacy-state",
+      },
+      "C:\\Users\\n",
+      "novaclaw",
+    )!
+    const root = path.join("D:\\instances", "novaclaw")
+    expect(d).toMatchObject({
+      data: root,
+      config: path.join(root, "config"),
+      cache: path.join(root, "cache"),
+      state: path.join(root, "state"),
+    })
   })
 
   test("returns undefined when nothing resolves — the caller falls back and warns", () => {

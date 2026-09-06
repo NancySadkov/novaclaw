@@ -96,9 +96,14 @@ export const homeOverride = (argv: readonly string[], env: Env): string | undefi
 /**
  * Every base directory for an instance, resolved together.
  *
- * With an explicit home, the four live side by side underneath it — predictable, and the whole instance
- * is one folder. Without one, the XDG layout is reproduced EXACTLY as it was before, so existing
- * installs keep reading and writing the files they already have.
+ * The instance always has ONE home. Without an override that home is the existing data directory
+ * (`$XDG_DATA_HOME/novaclaw`, normally `~/.local/share/novaclaw`); config, cache and state are
+ * children of it. With an explicit home, the same four children live below the chosen folder.
+ *
+ * The old split-XDG layout made `config` a second writable root at `~/.config/novaclaw` even after
+ * runtime config moved into SQLite under the data directory. Merely booting therefore recreated a
+ * legacy folder whose only remaining content was housekeeping such as `.gitignore`. An instance is
+ * the home the CLI selects, not four independently overridable XDG locations.
  */
 export interface Dirs {
   readonly data: string
@@ -127,15 +132,15 @@ export const baseDirs = (
       explicitHome: root,
     }
   }
-  const data = baseDir(env, osHomedir, "XDG_DATA_HOME", ".local", "share")
-  const cache = baseDir(env, osHomedir, "XDG_CACHE_HOME", ".cache")
-  const config = baseDir(env, osHomedir, "XDG_CONFIG_HOME", ".config")
-  const state = baseDir(env, osHomedir, "XDG_STATE_HOME", ".local", "state")
-  if (data === undefined || cache === undefined || config === undefined || state === undefined) return undefined
+  const dataRoot = baseDir(env, osHomedir, "XDG_DATA_HOME", ".local", "share")
+  if (dataRoot === undefined) return undefined
+  const root = path.join(dataRoot, app)
   return {
-    data: path.join(data, app),
-    cache: path.join(cache, app),
-    config: path.join(config, app),
-    state: path.join(state, app),
+    // Keep the database and every existing data component exactly where they already are. The
+    // other roots move UNDER this directory; there is no data/data nesting and no second home.
+    data: root,
+    cache: path.join(root, "cache"),
+    config: path.join(root, "config"),
+    state: path.join(root, "state"),
   }
 }

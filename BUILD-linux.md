@@ -212,18 +212,18 @@ One harmless line you will see in the log: a bun dependency-tree note.
 
 ## 6. Where NovaClaw keeps its files
 
-By default, the XDG layout:
+By default, one instance home:
 
 ```
-~/.local/share/novaclaw     data
-~/.config/novaclaw          config
-~/.local/state/novaclaw     state
-~/.cache/novaclaw           cache
+~/.local/share/novaclaw          data and SQLite stores
+~/.local/share/novaclaw/config   first-boot import and instance plugins
+~/.local/share/novaclaw/state    state
+~/.local/share/novaclaw/cache    cache
 ```
 
-`--home <dir>` (or `NOVACLAW_HOME`) overrides all four and puts `data/`, `config/`, `state/` and
-`cache/` side by side inside one folder — so an instance is a single directory you can copy, move
-or delete, and several instances can share a machine. The desktop app accepts the same flag.
+`--home <dir>` (or `NOVACLAW_HOME`) selects a different home and puts `data/`, `config/`, `state/`
+and `cache/` side by side inside it — so an instance is a single directory you can copy, move or
+delete, and several instances can share a machine. The desktop app accepts the same flag.
 
 ## 7. Point it at a model
 

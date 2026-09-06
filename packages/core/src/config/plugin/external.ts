@@ -46,7 +46,7 @@ export const PLUGIN_GLOB = ConfigPluginGlob.PATTERN
 
 // The ONE remaining door in-process third-party code comes through, and it is deliberately the
 // narrowest door in the tree: `{plugin,plugins}/*.{ts,js}` under the INSTANCE CONFIG DIRECTORY —
-// `Global.Service.config`, i.e. `$XDG_CONFIG_HOME/novaclaw` or whatever `NOVACLAW_CONFIG_DIR` names.
+// `Global.Service.config`, i.e. `<instance-home>/config` or whatever `NOVACLAW_CONFIG_DIR` names.
 // One directory, per instance, on the user's own machine.
 //
 // ⚠️ **It reads `Global.Service`, NOT `Config.entries()`, and that is the whole security property.**

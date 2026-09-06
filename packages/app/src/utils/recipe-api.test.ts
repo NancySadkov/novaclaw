@@ -182,6 +182,8 @@ function callSites(): string[] {
 
 /** Every file that reads a response itself, and why an absent body cannot become an artifact there. */
 const CUSTOM_READERS: Record<string, string> = {
+  "apps/agent-portrait.ts":
+    "Reads an authenticated image Blob. An empty or non-image body THROWS before an object URL is made.",
   "apps/persisted.ts":
     "DELETE answers `true` from `res.ok` and reads no body at all — a 204 (or a proxy's 200) is the " +
     "success, and nothing is written anywhere.",

@@ -14,7 +14,7 @@ bun --cwd packages/app run dev:full   # Vite + a backend on :4096
 
 ⚠️ `dev:full` starts a backend **on the default home** and tree-kills it on exit, including one you
 started yourself. When the store matters — a seeded fixture, an isolated home, fault injection — run
-`dev` and start the backend yourself with `NOVACLAW_DB`, `XDG_DATA_HOME` and `XDG_CONFIG_HOME` all
+`dev` and start the backend yourself with `NOVACLAW_HOME` (and `NOVACLAW_DB` when needed)
 set. `bun run build` emits the static `dist/` the desktop packager embeds.
 
 ## Tests

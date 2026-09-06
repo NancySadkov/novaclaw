@@ -3,7 +3,7 @@ export * as ConfigPluginGlob from "./glob"
 /**
  * The ONE pattern, and the one directory, an external plugin may be loaded from: `{plugin,plugins}/`
  * directly under the INSTANCE CONFIG DIR (`Global.Service.config` / `Global.make().config`, i.e.
- * `$XDG_CONFIG_HOME/novaclaw` or `NOVACLAW_CONFIG_DIR`). The loader is `./external.ts`; the reasoning
+ * `<instance-home>/config` or `NOVACLAW_CONFIG_DIR`). The loader is `./external.ts`; the reasoning
  * for why it is that directory and nothing else lives in that file's header and must be read before
  * anything here is widened.
  *

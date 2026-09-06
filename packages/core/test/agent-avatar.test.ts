@@ -36,6 +36,17 @@ describe("instance-owned agent portraits", () => {
     if (first.kind === "placeholder") expect(new TextDecoder().decode(first.bytes)).toContain(">T</text>")
   })
 
+  test("🔴 the initial colleagues' drawn faces come from the server-owned portrait resolver", async () => {
+    const data = await root()
+    for (const id of ["nova", "xenia", "daedalus", "myron", "xenia-2"]) {
+      const portrait = await Avatar.portraitIn(data, id, undefined, id)
+      expect(portrait.kind, id).toBe("image")
+      if (portrait.kind !== "image") throw new Error(`${id} did not resolve to its shipped portrait`)
+      expect(portrait.mime, id).toBe("image/webp")
+      expect([...portrait.bytes.slice(0, 4)], id).toEqual([0x52, 0x49, 0x46, 0x46])
+    }
+  })
+
   test("a configured glyph remains the one source when no image was uploaded", async () => {
     const data = await root()
     expect(await Avatar.portraitIn(data, "wren", "🦊", "Wren")).toEqual({ kind: "glyph", text: "🦊" })

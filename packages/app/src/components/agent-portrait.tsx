@@ -1,7 +1,6 @@
-import { createSignal, Show } from "solid-js"
-import { isAgentPortraitURL } from "@/apps/agent-portrait"
+import { createEffect, createSignal, onCleanup, Show } from "solid-js"
+import { fetchAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
 import { useServer } from "@/context/server"
-import { instanceUrl } from "@/utils/instance-fetch"
 
 export function AgentPortrait(props: {
   id: string
@@ -12,12 +11,38 @@ export function AgentPortrait(props: {
 }) {
   const server = useServer()
   const [failed, setFailed] = createSignal<string>()
+  const [loaded, setLoaded] = createSignal<{ route: string; source: string }>()
+
+  createEffect(() => {
+    const route = props.avatar
+    const current = server.current
+    setLoaded(undefined)
+    if (!isAgentPortraitURL(route) || current === undefined) return
+
+    let disposed = false
+    let source: string | undefined
+    void fetchAgentPortrait(current.http, route).then(
+      (blob) => {
+        if (disposed) return
+        source = URL.createObjectURL(blob)
+        setFailed(undefined)
+        setLoaded({ route, source })
+      },
+      () => {
+        if (!disposed) setFailed(route)
+      },
+    )
+    onCleanup(() => {
+      disposed = true
+      if (source !== undefined) URL.revokeObjectURL(source)
+    })
+  })
+
   const visible = () => {
     const value = props.avatar
     if (!isAgentPortraitURL(value)) return undefined
-    const current = server.current
-    const url = current === undefined ? value : instanceUrl(current.http, value).toString()
-    return failed() !== url ? url : undefined
+    const image = loaded()
+    return failed() !== value && image?.route === value ? image.source : undefined
   }
   const fallback = () => {
     if (isAgentPortraitURL(props.avatar)) return props.name.charAt(0) || "?"

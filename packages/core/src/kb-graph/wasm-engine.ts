@@ -351,7 +351,7 @@ const SCRATCH_ALIAS_WIN32 = "/novaclaw-kbmem"
 /**
  * Where the scratch bytes REALLY live: under the instance home, like every other file we write.
  *
- * ⚠️ On POSIX this is used as-is — a real path under `$XDG_CACHE_HOME/novaclaw` already IS a
+ * ⚠️ On POSIX this is used as-is — a real path under `<instance-home>/cache` already IS a
  * root-anchored path with no drive letter, which is all the engine needs. 🔴 **Never hand this engine
  * a bare root-level name on POSIX: `/novaclaw-kbmem` is the FILESYSTEM ROOT there and fails with
  * EACCES for any non-root user.** It shipped that way once and went unnoticed, because development

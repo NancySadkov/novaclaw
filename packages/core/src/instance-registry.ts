@@ -17,8 +17,9 @@ export * as InstanceRegistry from "./instance-registry"
  * instances is the HOME — the four roots (`data`, `config`, `state`, `cache`) pinned together — which
  * is what `NOVACLAW_HOME` already sets and what an isolation-conscious run already relies on.
  *
- * ⚠️ **The registry has to live OUTSIDE any instance home**, or finding instances would require
- * already being in one. It sits in the user's config directory, beside no instance in particular.
+ * ⚠️ **The registry has to stay independent of the SELECTED instance home**, or finding instances
+ * would require already being in one. It sits under the machine's default NovaClaw home even while
+ * the running instance is pinned elsewhere.
  *
  * ⚠️ **Unknown fields are PRESERVED on rewrite.** A newer NovaClaw may pin things this build has no
  * word for, and a registry that silently dropped them would make "open it in the old build once"
@@ -154,8 +155,9 @@ export const remove = (registry: Registry, home: string): Registry => {
 export const EntryWire = Schema.Struct({ name: Schema.String, home: Schema.String })
 
 /**
- * Where the registry file lives: the MACHINE's config directory, resolved as if no `--home` and no
- * `NOVACLAW_HOME` were set.
+ * Where the registry file lives: the MACHINE's default NovaClaw home/config directory, resolved as
+ * if no `--home` and no `NOVACLAW_HOME` were set. This keeps discovery independent of the selected
+ * instance without creating the obsolete second `~/.config/novaclaw` root.
  *
  * ⚠️ It cannot use `Global.Path.config`, and that is the whole subtlety. `--home`/`NOVACLAW_HOME`
  * pins all four roots INSIDE the chosen folder (`xdg.ts` → `explicitHome`), so the registry would

@@ -4,6 +4,14 @@ import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Global } from "../global"
+// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
+import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
+// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
+import xeniaPortraitFile from "../../../app/public/assets/agents/portraits/xenia.webp" with { type: "file" }
+// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
+import daedalusPortraitFile from "../../../app/public/assets/agents/portraits/daedalus.webp" with { type: "file" }
+// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
+import myronPortraitFile from "../../../app/public/assets/agents/portraits/myron.webp" with { type: "file" }
 
 /** The avatar is a small identity component, not an arbitrary file upload. */
 export const MAX_BYTES = 5 * 1024 * 1024
@@ -29,6 +37,36 @@ export type Portrait =
   | { readonly kind: "placeholder"; readonly bytes: Uint8Array; readonly mime: "image/svg+xml"; readonly hash: string }
 
 const extensions = Object.values(TYPES)
+
+/**
+ * The four faces that ship with the initial company. They enter through the SERVER-owned portrait
+ * resolver, just like an uploaded image, so the UI and a visual model receive the same bytes.
+ *
+ * These files remain part of the embedded web assets too, but the renderer never derives this path
+ * from an agent name. The import makes the files reachable from both the standalone binary and the
+ * desktop's bundled Node sidecar; a source-tree-relative `readFile` would work in development and
+ * disappear in the packaged product.
+ */
+const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
+  nova: novaPortraitFile,
+  xenia: xeniaPortraitFile,
+  daedalus: daedalusPortraitFile,
+  myron: myronPortraitFile,
+}
+
+const baseAgentID = (agentID: string) => agentID.trim().toLowerCase().replace(/-\d+$/, "")
+
+export const builtin = async (agentID: string): Promise<Stored | undefined> => {
+  const file = BUILTIN_PORTRAITS[baseAgentID(agentID)]
+  if (file === undefined) return undefined
+  try {
+    const bytes = new Uint8Array(await fs.readFile(file))
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) return undefined
+    return { bytes, mime: "image/webp", hash: digest(bytes) }
+  } catch {
+    return undefined
+  }
+}
 
 export const mime = (value: string | undefined): Mime | undefined => {
   const normalized = value?.split(";", 1)[0]?.trim().toLowerCase()
@@ -150,6 +188,8 @@ export const portraitIn = async (
   const stored = await readIn(dataDirectory, agentID)
   if (stored !== undefined) return { kind: "image", ...stored }
   if (storedGlyph?.trim()) return { kind: "glyph", text: storedGlyph.trim() }
+  const shipped = await builtin(agentID)
+  if (shipped !== undefined) return { kind: "image", ...shipped }
   const bytes = placeholder(agentID, name)
   return { kind: "placeholder", bytes, mime: "image/svg+xml", hash: digest(bytes) }
 }
