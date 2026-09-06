@@ -19,11 +19,14 @@ export function isAtBottom(m: ScrollMetrics, threshold = 80): boolean {
 /**
  * The next `pinned` state after a scroll event. A pin is USER INTENT, not geometry: browser scroll
  * anchoring, a fold collapsing, or a route remount can all move `scrollTop` and emit the same event
- * as a wheel. Therefore geometry may re-pin an unpinned view at the bottom, but may never revoke an
- * existing pin. Explicit wheel/touch/scrollbar/keyboard handlers revoke it before their scroll.
+ * as a wheel. Layout movement at the bottom remains at the exact bottom, while native scrollbar
+ * chrome exposes no dependable pointer event to the DOM and is observable only as an upward
+ * `scrollTop` transition. That transition revokes the pin as soon as it leaves the exact bottom.
+ * An unpinned reader re-pins on returning near the bottom.
  */
-export function nextPinned(current: boolean, m: ScrollMetrics, threshold = 80): boolean {
-  if (current || m.clientHeight === 0) return current
+export function nextPinned(current: boolean, m: ScrollMetrics, movedTowardHistory = false, threshold = 80): boolean {
+  if (m.clientHeight === 0) return current
+  if (current) return !movedTowardHistory || isAtBottom(m, 1)
   return isAtBottom(m, threshold)
 }
 
@@ -46,15 +49,22 @@ export function createBottomPinController(input: {
   setPinned: (value: boolean) => void
 }) {
   let touchY: number | undefined
+  let lastScrollTop = input.scroller.scrollTop
   const stick = () => {
-    if (input.pinned()) input.scroller.scrollTop = input.scroller.scrollHeight
+    if (!input.pinned()) return
+    input.scroller.scrollTop = input.scroller.scrollHeight
+    // A controller-owned write emits `scroll` later. Advance the baseline now so that event cannot
+    // be mistaken for a scrollbar gesture.
+    lastScrollTop = input.scroller.scrollTop
   }
   const scrollToBottom = () => {
     input.setPinned(true)
     stick()
   }
   const onScroll = () => {
-    const next = nextPinned(input.pinned(), input.scroller)
+    const top = input.scroller.scrollTop
+    const next = nextPinned(input.pinned(), input.scroller, top < lastScrollTop - 1)
+    lastScrollTop = top
     input.setPinned(next)
     if (next) stick()
   }
@@ -72,10 +82,6 @@ export function createBottomPinController(input: {
   const onTouchEnd = () => {
     touchY = undefined
   }
-  const onPointerDown = (event: PointerEvent) => {
-    const rect = input.scroller.getBoundingClientRect()
-    if (rect.right - event.clientX <= 20) input.setPinned(false)
-  }
   const onKeyDown = (event: KeyboardEvent) => {
     if (keyboardUnpins(event.key)) input.setPinned(false)
   }
@@ -85,7 +91,6 @@ export function createBottomPinController(input: {
   input.scroller.addEventListener("touchstart", onTouchStart)
   input.scroller.addEventListener("touchmove", onTouchMove)
   input.scroller.addEventListener("touchend", onTouchEnd)
-  input.scroller.addEventListener("pointerdown", onPointerDown)
   input.scroller.addEventListener("keydown", onKeyDown)
   const observer = new ResizeObserver(stick)
   observer.observe(input.content)
@@ -102,7 +107,6 @@ export function createBottomPinController(input: {
       input.scroller.removeEventListener("touchstart", onTouchStart)
       input.scroller.removeEventListener("touchmove", onTouchMove)
       input.scroller.removeEventListener("touchend", onTouchEnd)
-      input.scroller.removeEventListener("pointerdown", onPointerDown)
       input.scroller.removeEventListener("keydown", onKeyDown)
     },
   }

@@ -43,12 +43,23 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
   await page.locator("#working").evaluate((details: HTMLDetailsElement) => (details.open = false))
   await expect.poll(gap).toBeLessThanOrEqual(2)
 
-  // A browser-generated layout scroll event may move geometry, but may not revoke the pin.
+  // Native scrollbar chrome does not reliably send pointer events through the DOM element. Its
+  // observable contract is an upward scrollTop change followed by `scroll`: that movement must win
+  // even when it is smaller than the near-bottom re-pin threshold.
   await page.locator("#timeline").evaluate((timeline) => {
-    timeline.scrollTop = 0
-    timeline.dispatchEvent(new Event("scroll"))
+    timeline.scrollTop -= 20
   })
+  await expect.poll(gap).toBeGreaterThan(10)
+  await expect
+    .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
+    .toBe(false)
+
+  // Returning to the bottom through the scrollbar geometry restores follow mode.
+  await page.locator("#timeline").evaluate((timeline) => (timeline.scrollTop = timeline.scrollHeight))
   await expect.poll(gap).toBeLessThanOrEqual(2)
+  await expect
+    .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
+    .toBe(true)
 
   // Explicit user navigation is the only boundary, and explicit return restores the pin.
   await page.locator("#timeline").hover()

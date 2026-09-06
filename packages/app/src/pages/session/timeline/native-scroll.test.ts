@@ -17,14 +17,19 @@ test("nextPinned pins when scrolled to the bottom", () => {
   expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 400, clientHeight: 600 })).toBe(true)
 })
 
-test("nextPinned never mistakes a layout scroll for user intent", () => {
+test("an upward viewport move revokes the pin as soon as it leaves the exact bottom", () => {
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 399, clientHeight: 600 }, true)).toBe(true)
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 398, clientHeight: 600 }, true)).toBe(false)
+})
+
+test("layout movement does not revoke the pin", () => {
   expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 0, clientHeight: 600 })).toBe(true)
 })
 
 test("nextPinned keeps the current pin on a zero-height (headless) layout", () => {
   // scrollHeight huge, clientHeight 0 → isAtBottom would say false, but we must not unpin.
-  expect(nextPinned(true, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(true)
-  expect(nextPinned(false, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(false)
+  expect(nextPinned(true, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 }, true)).toBe(true)
+  expect(nextPinned(false, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 }, true)).toBe(false)
 })
 
 test("only history-directed keys explicitly unpin", () => {
