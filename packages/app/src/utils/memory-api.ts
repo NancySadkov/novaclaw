@@ -380,7 +380,7 @@ export function memoryIngest(
   })
 }
 
-export function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
+function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
   return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
 }
 

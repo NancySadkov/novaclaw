@@ -1195,7 +1195,7 @@ export function MemoryGraphPage() {
             {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
             <MemoryRemembered
-              scopes={owner()?.scopes}
+              owner={owner()}
               filter={filter()}
               revision={listRevision()}
               onCounts={setListCounts}

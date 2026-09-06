@@ -7,7 +7,7 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
-  memoryClearScope,
+  memoryClearScopeVerified,
   memoryInvalidate,
   memoryList,
   memoryCorrectionProne,
@@ -21,6 +21,7 @@ import { instanceDiagnosis } from "@/utils/resource-api"
 import { memoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
 import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from "@/utils/memory-lens"
+import type { MemoryOwner } from "@/apps/memory-owner"
 
 /** One shared empty set, so a lens with nothing to mark does not mint a new one per read. */
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>()
@@ -62,7 +63,7 @@ export const MemoryRemembered: Component<{
    * holds, which is what the in-session panel wants; the Memory app passes one colleague's cabinet
    * or the household's shared facts, because "what do you know about me" now has a subject.
    */
-  scopes?: readonly string[]
+  owner?: Pick<MemoryOwner, "scopes" | "label">
   /**
    * The SHARED filter (`utils/memory-filter.ts`). Absent = show everything this list fetched, which is
    * what the in-session panel wants; the Memory app passes the one its header owns, so a query typed
@@ -123,7 +124,7 @@ export const MemoryRemembered: Component<{
         ? {
             cn,
             dir: directory(),
-            scopes: props.scopes,
+            scopes: props.owner?.scopes,
             // The lens is IN the key: changing it asks the server a different question, rather
             // than being a different way of hiding the same answer.
             statuses: lens().statuses,
@@ -311,31 +312,38 @@ export const MemoryRemembered: Component<{
     return language.t("settings.memory.scope.global")
   }
 
-  /**
-   * Forget EVERY memory in one scope — the batch half the owner found missing (2026-08-20: *"no way
-   * to remove memories, either specific or in batches"*).
-   *
-   * ⚠️ It lives beside the list rather than only in Settings because that is where a person is when
-   * they decide the answer is "all of it": they are looking at the rows. The Settings tab keeps its
-   * own copy until the whole tab migrates here, and both call the same `memory/clearScope`.
-   */
-  const forgetScope = async (scope: string, confirmTitle: string) => {
+  // Reads and batch writes derive their scope from the same owner. A label and an unrelated
+  // hard-coded scope let a colleague's Clear control erase the household's shared memories.
+  const clearTargets = createMemo(() =>
+    props.owner
+      ? props.owner.scopes.map((scope) => ({ scope, label: props.owner!.label }))
+      : [
+          { scope: "global", label: language.t("memory.clearScope.shared") },
+          ...(sessionScope()
+            ? [{ scope: sessionScope()!, label: language.t("settings.memory.scope.chat") }]
+            : []),
+        ],
+  )
+  const forgetScope = async (target: { scope: string; label: string }) => {
     const cn = conn()
     if (!cn) return
     const proceed = await confirm({
-      title: confirmTitle,
-      description: language.t("settings.memory.clearAll.confirm.description"),
+      title: language.t("memory.clearScope.title", { owner: target.label }),
+      description: language.t("memory.clearScope.description", { owner: target.label }),
       confirmLabel: language.t("memory.forgetAll.confirm.action"),
       destructive: true,
     })
     if (!proceed) return
-    await memoryClearScope(cn.http, { directory: directory(), scope }).catch((error: unknown) =>
+    try {
+      await memoryClearScopeVerified(cn.http, { directory: directory(), scope: target.scope })
+    } catch (error) {
       showToast({
         variant: "error",
         title: language.t("settings.memory.toast.failed"),
         description: error instanceof Error ? error.message : String(error),
-      }),
-    )
+      })
+      return
+    }
     setLocalTick((value) => value + 1)
     void refetch()
   }
@@ -408,24 +416,17 @@ export const MemoryRemembered: Component<{
             not offer a destructive action against an empty set. */}
         <Show when={count() > 0}>
           <div class="flex shrink-0 gap-1.5" data-slot="memory-batch">
-            <Show when={sessionScope()}>
-              {(scope) => (
+            <For each={clearTargets()}>
+              {(target) => (
                 <ButtonV2
                   size="small"
                   variant="ghost-muted"
-                  onClick={() => void forgetScope(scope(), language.t("memory.forgetChat.confirm.title"))}
+                  onClick={() => void forgetScope(target)}
                 >
-                  {language.t("settings.memory.clearChat.action")}
+                  {language.t("memory.clearScope.action", { owner: target.label })}
                 </ButtonV2>
               )}
-            </Show>
-            <ButtonV2
-              size="small"
-              variant="ghost-muted"
-              onClick={() => void forgetScope("global", language.t("memory.forgetAll.confirm.title"))}
-            >
-              {language.t("settings.memory.clearAll.action")}
-            </ButtonV2>
+            </For>
           </div>
         </Show>
       </div>
