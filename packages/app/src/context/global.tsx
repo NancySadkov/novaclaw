@@ -104,7 +104,7 @@ function createServerCtx(
     },
   })
   const sdk = createServerSdkContext(conn, scope)
-  const sync = createServerSyncContext(sdk)
+  const sync = createServerSyncContext(sdk, projects)
 
   // This client is private to the cached server context. Retire its work and cache with the
   // context; otherwise credential rotation/removal leaves a detached client reachable only from

@@ -39,7 +39,7 @@ export function prepareProcessEnvironment(logger: Logger) {
 }
 
 /** Login-shell probes run only from the local owner's start, after a window has opened. */
-export function prepareLocalEnvironment(userData: string, logger: Logger) {
-  preferAppEnv(userData)
+export function prepareLocalEnvironment(logger: Logger) {
+  preferAppEnv()
   refreshProxyEnvironment(logger)
 }

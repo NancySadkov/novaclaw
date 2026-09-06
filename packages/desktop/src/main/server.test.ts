@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 /**
  * `preferAppEnv` is the packaging seam that shipped v0.1.0 unusable (AGENTS.md → Known pitfalls #0).
  * `Object.assign(process.env, { KEY: undefined })` does NOT skip the key — Node coerces env values to
- * strings, so outside dev-isolated mode XDG_DATA_HOME, XDG_CONFIG_HOME and XDG_CACHE_HOME each became
+ * strings, so XDG_DATA_HOME, XDG_CONFIG_HOME and XDG_CACHE_HOME each became
  * the literal text "undefined". The value was non-empty, so every `??`/`||` fallback downstream
  * accepted it, the server resolved its data directory to `undefined\novaclaw`, and every session
  * create answered 500.
@@ -59,8 +59,6 @@ void mock.module("./shell-env", () => ({
 
 const { preferAppEnv } = await import("./server")
 
-// Nothing in this file touches the filesystem — userDataPath is only ever compared as a string.
-const USER_DATA = "/novaclaw-test/userData"
 const XDG_HOMES = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const
 const MANAGED_KEYS = [
   "NOVACLAW_DEV_ISOLATED",
@@ -94,7 +92,7 @@ describe("preferAppEnv", () => {
   })
 
   test("leaves the XDG homes unset outside dev-isolated mode (the v0.1.0 regression)", () => {
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
     // Names the historical bug: in v0.1.0 all three held the literal text "undefined".
     expect(XDG_HOMES.filter((key) => process.env[key] === "undefined")).toEqual([])
@@ -103,49 +101,47 @@ describe("preferAppEnv", () => {
     expect(XDG_HOMES.filter((key) => key in process.env)).toEqual([])
   })
 
-  test("redirects every XDG home to userDataPath in dev-isolated mode", () => {
+  test("dev isolation does not manufacture four alternate instance roots", () => {
     process.env.NOVACLAW_DEV_ISOLATED = "1"
 
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
-    expect(XDG_HOMES.filter((key) => key in process.env)).toEqual([...XDG_HOMES])
-    expect(XDG_HOMES.map((key) => process.env[key])).toEqual([USER_DATA, USER_DATA, USER_DATA, USER_DATA])
+    expect(XDG_HOMES.filter((key) => key in process.env)).toEqual([])
   })
 
   test("never overwrites an XDG home the environment already provides", () => {
     process.env.XDG_CONFIG_HOME = "/existing/config"
 
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
     expect(process.env.XDG_CONFIG_HOME).toBe("/existing/config")
     expect(["XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"].filter((key) => key in process.env)).toEqual([])
   })
 
-  test("an existing XDG home outranks the dev-isolated default", () => {
+  test("dev isolation leaves an inherited XDG value untouched without filling its siblings", () => {
     process.env.NOVACLAW_DEV_ISOLATED = "1"
     process.env.XDG_DATA_HOME = "/existing/data"
 
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
     expect(process.env.XDG_DATA_HOME).toBe("/existing/data")
-    expect(process.env.XDG_CONFIG_HOME).toBe(USER_DATA)
-    expect(process.env.XDG_CACHE_HOME).toBe(USER_DATA)
+    expect(["XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"].filter((key) => key in process.env)).toEqual([])
   })
 
   test("keeps default state and data paths consistent between desktop and CLI", () => {
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
     // State and auth files follow the same CLI-compatible XDG defaults.
     expect("XDG_STATE_HOME" in process.env).toBe(false)
 
     clearManaged()
     process.env.XDG_STATE_HOME = "/existing/state"
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
     expect(process.env.XDG_STATE_HOME).toBe("/existing/state")
   })
 
   test("stamps the desktop client marker and the experimental flags", () => {
-    preferAppEnv(USER_DATA)
+    preferAppEnv()
 
     expect({
       client: process.env.NOVACLAW_CLIENT,

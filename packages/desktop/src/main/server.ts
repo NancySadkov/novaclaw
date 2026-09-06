@@ -78,16 +78,12 @@ export function setDefaultServerUrl(url: string | null) {
   getStore().delete(DEFAULT_SERVER_URL_KEY)
 }
 
-export function preferAppEnv(userDataPath: string) {
+export function preferAppEnv() {
   const shell = process.platform === "win32" ? null : getUserShell()
-  // jh fork: isolate dev builds from production novaclaw installs.
-  // When NOVACLAW_DEV_ISOLATED is set, all XDG paths redirect to userDataPath
-  // so the dev app never touches %APPDATA%/novaclaw/ (shared with CLI).
-  const defaultData = process.env.NOVACLAW_DEV_ISOLATED ? userDataPath : undefined
 
   // ⚠️ THIS IS WHERE v0.1.0's FIRST-RUN FAILURE CAME FROM. `Object.assign(process.env, {K: undefined})`
   // does NOT skip the key — Node coerces env values to strings, so it writes the literal text
-  // "undefined". Outside dev-isolated mode `defaultData` IS undefined, so XDG_DATA_HOME,
+  // "undefined". XDG_DATA_HOME,
   // XDG_CONFIG_HOME and XDG_CACHE_HOME each became the string "undefined". The server then read them
   // as real values (they are non-empty, so every `??`/`||` fallback was skipped) and resolved its data
   // directory to "undefined\novaclaw" and its scratch dir to "undefined\novaclaw\scratch". Clicking the
@@ -96,22 +92,14 @@ export function preferAppEnv(userDataPath: string) {
   // XDG_STATE_HOME used to be the odd one out: production desktop forced it to Electron's private
   // userData directory while leaving XDG_DATA_HOME on the shared, documented home-directory layout.
   // That split the credential key (state) from auth.json (data), so desktop and CLI encrypted the SAME
-  // auth file with DIFFERENT keys. Keep all four homes under one rule: an unset variable stays unset in
-  // production, while an isolated dev build redirects the complete instance together.
+  // auth file with DIFFERENT keys. Keep all four homes under one rule: an unset variable stays unset.
+  // Dev isolation is now a real NOVACLAW_HOME selected before startup, never four redirected roots.
   const env: Record<string, string> = {
     ...(shell ? loadShellEnv(shell, getLogger()) : null),
     NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY: "true",
     NOVACLAW_EXPERIMENTAL_FILEWATCHER: "true",
     NOVACLAW_CLIENT: "desktop",
   }
-  for (const [key, value] of [
-    ["XDG_DATA_HOME", process.env.XDG_DATA_HOME ?? defaultData],
-    ["XDG_CONFIG_HOME", process.env.XDG_CONFIG_HOME ?? defaultData],
-    ["XDG_CACHE_HOME", process.env.XDG_CACHE_HOME ?? defaultData],
-    ["XDG_STATE_HOME", process.env.XDG_STATE_HOME ?? defaultData],
-  ] as const)
-    if (value !== undefined) env[key] = value
-
   Object.assign(process.env, env)
 }
 

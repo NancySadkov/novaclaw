@@ -38,7 +38,7 @@ import { createConfigRemover } from "@/utils/config-remove"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
-import { ServerConnection, useServer } from "./server"
+import { type createServerProjects, ServerConnection, useServer } from "./server"
 import { retry } from "@novaclaw/core/util/retry"
 import type { ServerScope } from "@/utils/server-scope"
 import { persisted } from "@/utils/persist"
@@ -92,7 +92,7 @@ export function settleConfigUpdate(options: ConfigUpdateOptions, refetch: () => 
   if (options.refetch !== false) refetch()
 }
 
-export function createServerSyncContextInner(serverSDK: ServerSDK) {
+export function createServerSyncContextInner(serverSDK: ServerSDK, projects: ReturnType<typeof createServerProjects>) {
   const language = useLanguage()
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
@@ -397,6 +397,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         translate: language.t,
         queryClient,
         session,
+        // An open-project row is client navigation state, not chat data. Once the instance confirms
+        // its folder is gone, retire that row so every cold start does not retry it and emit another
+        // warning. Restoring/reopening the folder adds it again; the chats themselves are untouched.
+        onDirectoryMissing: (missing) => projects.close(missing),
         signal: lifetime.signal,
       })
     })
@@ -686,8 +690,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 }
 
-export function createServerSyncContext(serverSDK: ServerSDK) {
-  const inner = createServerSyncContextInner(serverSDK)
+export function createServerSyncContext(serverSDK: ServerSDK, projects: ReturnType<typeof createServerProjects>) {
+  const inner = createServerSyncContextInner(serverSDK, projects)
   return Object.assign(inner, {
     ensureDirSyncContext: createRefCountMap(
       (dir) => createDirSyncContext(dir, inner),

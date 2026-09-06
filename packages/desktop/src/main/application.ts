@@ -38,7 +38,7 @@ export async function runDesktop() {
   const local = createLocalInstance({
     prepare: () => {
       mark("sidecar-start")
-      prepareLocalEnvironment(home.userDataPath, logger)
+      prepareLocalEnvironment(logger)
     },
     pinnedPort: process.env.NOVACLAW_PORT,
     log: (message, metadata) => logger.log(message, metadata),

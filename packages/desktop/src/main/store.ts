@@ -41,7 +41,7 @@ export function isStoreName(name: unknown): name is string {
 // We cannot instantiate the electron-store at module load time because
 // module import hoisting causes this to run before app.setPath("userData", ...)
 // in index.ts has executed, which would result in files being written to the default directory
-// (e.g. bad: %APPDATA%\@novaclaw\desktop\novaclaw.settings vs good: %APPDATA%\app.novaclaw.desktop.dev\novaclaw.settings).
+// instead of `<instance-home>/desktop`.
 export function getStore(name = SETTINGS_STORE) {
   // Before the cache, and before electron is touched at all: a refused name must never mint a Store,
   // and must never be answered from one a previous call left behind.
