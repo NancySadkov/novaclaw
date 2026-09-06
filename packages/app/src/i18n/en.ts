@@ -2129,9 +2129,6 @@ export const dict = {
   "settings.models.config.retryAttempts.name": "Connection attempts",
   "settings.models.config.retryAttempts.desc":
     "How patiently NovaClaw reconnects when this model sends no reply or an incomplete reply. Persistent keeps trying for about three minutes.",
-  "settings.models.config.reasoning.name": "Thinking",
-  "settings.models.config.reasoning.desc": "Let the model think privately before answering.",
-  "settings.models.config.reasoning.desc.more": "Turn on only if the model supports reasoning.",
   "settings.models.config.tool_call.name": "Tool use",
   "settings.models.config.tool_call.desc": "Let the model use NovaClaw's tools.",
   "settings.models.config.tool_call.desc.more":

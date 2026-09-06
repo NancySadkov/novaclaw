@@ -47,7 +47,6 @@ const SPLIT_DESC = [
   "settings.models.config.providerName",
   "settings.models.config.prePrompt",
   "settings.models.config.tool_call",
-  "settings.models.config.reasoning",
   "settings.models.config.thinkingBudget",
 ]
 

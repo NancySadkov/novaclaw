@@ -95,10 +95,10 @@ describe("Model Configure — recovery", () => {
 // line, and 12(b)'s "every list-shaped setting offers its list" with no list offered.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("Model Configure — thinking effort", () => {
-  test("offers the effort list, and only for a model that declares reasoning", () => {
+  test("offers the effort list without an inert capability switch", () => {
     expect(source).toContain('const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]')
     expect(source).toContain('options={["", ...THINKING_EFFORTS]}')
-    expect(source).toContain("<Show when={form.reasoning}>")
+    expect(source).not.toContain("form.reasoning")
     expect(source).toContain('data-action="settings-model-thinking-effort"')
   })
 

@@ -12,6 +12,7 @@ import {
   For,
   createSignal,
 } from "solid-js"
+import { DialogPortalContext } from "./dialog-portal"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { createDialogScope, createDialogStack, nextDialogID } from "./dialog-stack"
 
@@ -33,6 +34,7 @@ function init() {
       const node = runWithOwner(owner, () =>
         createRoot((d: () => void) => {
           dispose = d
+          const [portal, setPortal] = createSignal<HTMLElement>()
           const [closing, setClosingSignal] = createSignal(false)
           setClosing = setClosingSignal
           return (
@@ -51,6 +53,7 @@ function init() {
                   onClick={() => stack.close(id)}
                 />
                 <div
+                  ref={setPortal}
                   data-dialog-layer={layer}
                   style={{
                     position: "fixed",
@@ -62,7 +65,7 @@ function init() {
                     "pointer-events": "none",
                   }}
                 >
-                  {element()}
+                  <DialogPortalContext.Provider value={portal}>{element()}</DialogPortalContext.Provider>
                 </div>
               </Kobalte.Portal>
             </Kobalte>

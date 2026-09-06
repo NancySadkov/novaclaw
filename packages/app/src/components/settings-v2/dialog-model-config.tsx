@@ -1,3 +1,8 @@
+import type {
+  ConfigV2Model as ModelConfig,
+  ConfigV2Provider as ProviderConfig,
+  ProviderApi,
+} from "@novaclaw/sdk/v2/client"
 import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
@@ -23,49 +28,13 @@ import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-valu
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 
-// The per-model config the dialog reads from / writes back to provider.<id>.models.<id> in
-// novaclaw.jsonc. Sampling knobs live under `options`; limits, capability flags, and modalities
-// describe the model. We're "far from Plug&Play for LLMs" (owner), so every knob is exposed — but
-// with a NAMED-PRESET droplist beside each raw field, so a user needn't know that e.g.
-// repetition_penalty 1.02 is already a meaningful nudge (expert knowledge → taxonomic labels).
-type ModelConfig = {
-  name?: string
-  api?: { id?: string; [k: string]: unknown }
-  reasoning?: boolean
-  tool_call?: boolean
-  limit?: { context?: number; output?: number; images?: number }
-  retry?: { attempts?: number }
-  modalities?: { input?: string[]; output?: string[] }
-  options?: Record<string, unknown>
-  // Optional per-model PRE-PROMPT (owner 2026-07-29): a user-authored correction for THIS model's
-  // known behaviour, prepended to the system context. Persisted to providers.<id>.models.<id> like
-  // every other field here; the runtime treats an empty string as inert (system-compose.ts).
-  prePrompt?: string
-  [k: string]: unknown
-}
-
-type ProviderApi = {
-  readonly type: "aisdk" | "native"
-  readonly url?: string
-  readonly package?: string
-  readonly settings?: Readonly<Record<string, unknown>>
-}
-
-type ProviderConfig = {
-  name?: string
-  api?: ProviderApi
-  models?: Record<string, ModelConfig>
-  [k: string]: unknown
-}
-
+// Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
 // NOT under `options`/`limit` — see reasoning-budget.ts. Read/written directly by this dialog.
-type WithRequestBody = {
-  request?: { headers?: Record<string, string>; body?: Record<string, unknown>; variant?: string }
-}
+type WithRequestBody = Pick<ModelConfig, "request">
 const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.thinkingBudget
 
 /**
@@ -116,8 +85,7 @@ export const DialogModelConfig: Component<{
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const providerCfg = (): ProviderConfig =>
-    (serverSync().data.config?.providers as Record<string, ProviderConfig> | undefined)?.[props.providerID] ?? {}
+  const providerCfg = (): ProviderConfig => serverSync().data.config?.providers?.[props.providerID] ?? {}
   const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}
 
   /**
@@ -173,9 +141,9 @@ export const DialogModelConfig: Component<{
 
   const d = props.defaults ?? {}
   const nstr = (v: unknown) => (typeof v === "number" ? String(v) : "")
-  const optNum = (k: string) => nstr((init.options as Record<string, unknown> | undefined)?.[k])
-  const inMod = init.modalities?.input ?? d.modalities?.input ?? ["text"]
-  const outMod = init.modalities?.output ?? d.modalities?.output ?? ["text"]
+  const optNum = (k: string) => nstr(init.request?.body?.[k])
+  const inMod = init.capabilities?.input ?? d.capabilities?.input ?? ["text"]
+  const outMod = init.capabilities?.output ?? d.capabilities?.output ?? ["text"]
   const defaultProviderName = () =>
     providerCfg().name === "local" ? "local" : (providerCfg().api?.url ?? props.providerApi.url ?? props.providerID)
   const customProviderName = () => {
@@ -218,8 +186,7 @@ export const DialogModelConfig: Component<{
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
     retryAttempts: nstr(init.retry?.attempts ?? d.retry?.attempts ?? 3),
-    reasoning: init.reasoning ?? d.reasoning ?? false,
-    tool_call: init.tool_call ?? d.tool_call ?? true,
+    tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
     prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
     inImage: inMod.includes("image"),
@@ -230,11 +197,6 @@ export const DialogModelConfig: Component<{
   })
 
   const save = async () => {
-    const options: Record<string, number> = {}
-    for (const k of SAMPLING) {
-      const v = num(form[k])
-      if (v !== undefined) options[k] = v
-    }
     const limit: { context?: number; output?: number; images?: number } = {}
     if (num(form.context) !== undefined) limit.context = num(form.context)
     if (num(form.maxTokens) !== undefined) limit.output = num(form.maxTokens)
@@ -246,8 +208,13 @@ export const DialogModelConfig: Component<{
 
     // Thinking budget rides request.body (the runtime carrier), preserving any other body params.
     const saved = savedModel()
-    const savedRequest = (saved as WithRequestBody).request
+    const savedRequest = saved.request
     const body: Record<string, unknown> = { ...(savedRequest?.body ?? {}) }
+    for (const key of SAMPLING) {
+      const value = num(form[key])
+      if (value !== undefined) body[key] = value
+      else delete body[key]
+    }
     const tb = num(form.thinkingBudget)
     if (tb !== undefined) body.thinkingBudget = tb
     else delete body.thinkingBudget
@@ -260,11 +227,8 @@ export const DialogModelConfig: Component<{
       ...saved,
       name: form.modelName.trim() || props.modelName,
       api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID },
-      reasoning: form.reasoning,
-      tool_call: form.tool_call,
       limit,
-      modalities: { input, output },
-      options,
+      capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
       retry: { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts) ?? 3))) },
     }
@@ -309,7 +273,18 @@ export const DialogModelConfig: Component<{
       },
     }
     try {
-      await serverSync().updateConfig(patch as never)
+      await serverSync().updateConfig(patch)
+      // PATCH merges objects: omission alone keeps the old override. Remove only fields this form
+      // owns, after the new values have been accepted; a failed deletion keeps the dialog open.
+      const base = ["providers", props.providerID, "models", props.modelID]
+      await serverSync().removeConfig([
+        ...[...SAMPLING, "thinkingBudget", "reasoning_effort"]
+          .filter((key) => body[key] === undefined)
+          .map((key) => [...base, "request", "body", key]),
+        ...(["context", "output", "images"] as const)
+          .filter((key) => limit[key] === undefined)
+          .map((key) => [...base, "limit", key]),
+      ])
       showToast({ variant: "success", icon: "circle-check", title: language.t("settings.models.config.toast.saved") })
       dialog.close()
     } catch (error) {
@@ -533,38 +508,34 @@ export const DialogModelConfig: Component<{
                 {language.t("settings.models.config.thinkingBudget.desc.more")}
               </SettingsExplainV2>,
             )}
-            {/* Only for a model that declares reasoning — an effort dial on a model that does not
-                think is a row the reader has to read and then dismiss (same rule as the image cap
-                above). The capability switch is in this same dialog, so turning it on reveals it. */}
-            <Show when={form.reasoning}>
-              <SettingsRowV2
-                title={language.t("settings.models.config.thinkingEffort.name")}
-                description={
-                  <>
-                    {language.t("settings.models.config.thinkingEffort.desc")}{" "}
-                    <SettingsExplainV2 label={language.t("settings.models.config.thinkingEffort.name")}>
-                      {language.t("settings.models.config.thinkingEffort.desc.more")}
-                    </SettingsExplainV2>
-                  </>
+            {/* Endpoint support varies; the row explains the server-owned effort parameter. */}
+            <SettingsRowV2
+              title={language.t("settings.models.config.thinkingEffort.name")}
+              description={
+                <>
+                  {language.t("settings.models.config.thinkingEffort.desc")}{" "}
+                  <SettingsExplainV2 label={language.t("settings.models.config.thinkingEffort.name")}>
+                    {language.t("settings.models.config.thinkingEffort.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
+            >
+              <SelectV2
+                appearance="inline"
+                data-action="settings-model-thinking-effort"
+                options={["", ...THINKING_EFFORTS]}
+                current={form.thinkingEffort}
+                placement="bottom-end"
+                gutter={6}
+                value={(option) => option}
+                label={(option) =>
+                  option === ""
+                    ? language.t("settings.models.config.thinkingEffort.unset")
+                    : language.t(`settings.models.config.thinkingEffort.value.${option}` as never)
                 }
-              >
-                <SelectV2
-                  appearance="inline"
-                  data-action="settings-model-thinking-effort"
-                  options={["", ...THINKING_EFFORTS]}
-                  current={form.thinkingEffort}
-                  placement="bottom-end"
-                  gutter={6}
-                  value={(option) => option}
-                  label={(option) =>
-                    option === ""
-                      ? language.t("settings.models.config.thinkingEffort.unset")
-                      : language.t(`settings.models.config.thinkingEffort.value.${option}` as never)
-                  }
-                  onSelect={(option) => setForm("thinkingEffort", option ?? "")}
-                />
-              </SettingsRowV2>
-            </Show>
+                onSelect={(option) => setForm("thinkingEffort", option ?? "")}
+              />
+            </SettingsRowV2>
           </SettingsListV2>
 
           {section("reliability")}
@@ -572,19 +543,6 @@ export const DialogModelConfig: Component<{
 
           {section("capabilities")}
           <SettingsListV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.reasoning.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.reasoning.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.reasoning.name")}>
-                    {language.t("settings.models.config.reasoning.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <Switch checked={form.reasoning} onChange={(v) => setForm("reasoning", v)} />
-            </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.tool_call.name")}
               description={

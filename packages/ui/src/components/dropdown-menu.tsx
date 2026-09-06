@@ -1,3 +1,4 @@
+import { useDialogPortal } from "../context/dialog-portal"
 import { DropdownMenu as Kobalte } from "@kobalte/core/dropdown-menu"
 import { splitProps } from "solid-js"
 import type { ComponentProps, ParentProps } from "solid-js"
@@ -59,7 +60,8 @@ function DropdownMenuIcon(props: ParentProps<DropdownMenuIconProps>) {
 }
 
 function DropdownMenuPortal(props: DropdownMenuPortalProps) {
-  return <Kobalte.Portal {...props} />
+  const portal = useDialogPortal()
+  return <Kobalte.Portal mount={portal?.()} {...props} />
 }
 
 function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {

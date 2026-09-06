@@ -1,3 +1,4 @@
+import { useDialogPortal } from "../../context/dialog-portal"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
 import type { ComponentProps } from "solid-js"
@@ -35,6 +36,7 @@ export function TooltipKeybindV2(props: TooltipKeybindV2Props) {
 
 export function TooltipV2(props: TooltipV2Props) {
   let ref: HTMLDivElement | undefined
+  const portal = useDialogPortal()
   const [state, setState] = createStore({
     open: false,
     block: false,
@@ -138,7 +140,7 @@ export function TooltipV2(props: TooltipV2Props) {
           >
             {local.children}
           </KobalteTooltip.Trigger>
-          <KobalteTooltip.Portal>
+          <KobalteTooltip.Portal mount={portal?.()}>
             <KobalteTooltip.Content
               data-kb-top-layer=""
               ref={(el) => {

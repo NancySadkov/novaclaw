@@ -14,6 +14,17 @@ export function mount() {
         onClick={() =>
           dialog.show(() => (
             <Dialog>
+              <button
+                onClick={() =>
+                  dialog.push(() => (
+                    <Dialog>
+                      <SelectV2 aria-label="Stacked choice" options={["One", "Two"]} current="One" />
+                    </Dialog>
+                  ))
+                }
+              >
+                Open stacked dialog
+              </button>
               <Popover title="Nested controls" triggerAs="button" trigger="Open nested popover">
                 <SelectV2 aria-label="Nested choice" options={["One", "Two"]} current="One" />
               </Popover>

@@ -1,3 +1,4 @@
+import { useDialogPortal } from "../context/dialog-portal"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { ComponentProps, JSXElement, ParentProps, Show, splitProps, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -20,6 +21,7 @@ export interface PopoverProps<T extends ValidComponent = "div">
 }
 
 export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>) {
+  const portal = useDialogPortal()
   const i18n = useI18n()
   const [local, rest] = splitProps(props, [
     "trigger",
@@ -98,7 +100,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
         {local.trigger}
       </Kobalte.Trigger>
       <Show when={local.portal ?? true} fallback={content()}>
-        <Kobalte.Portal>{content()}</Kobalte.Portal>
+        <Kobalte.Portal mount={portal?.()}>{content()}</Kobalte.Portal>
       </Show>
     </Kobalte>
   )
