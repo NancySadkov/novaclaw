@@ -36,11 +36,10 @@ describe("instance-owned agent portraits", () => {
     expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([1, 2, 3])
 
     await expect(
-      fetchAgentPortrait(
-        { url: "https://remote.example:4096" },
-        "/api/agent/theron/avatar",
-        (() => Promise.resolve(new Response(undefined, { headers: { "content-type": "image/png" } }))) as typeof fetch,
-      ),
+      fetchAgentPortrait({ url: "https://remote.example:4096" }, "/api/agent/theron/avatar", (() =>
+        Promise.resolve(
+          new Response(undefined, { headers: { "content-type": "image/png" } }),
+        )) as unknown as typeof fetch),
     ).rejects.toThrow("Agent portrait response was empty")
   })
 })
