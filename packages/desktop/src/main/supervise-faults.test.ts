@@ -49,7 +49,7 @@ void mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: ()
 const { superviseLocalServer } = await import("./server")
 
 /** What the sidecar does when the parent says `start`. One knob, set per scenario. */
-type Behaviour = "ready" | "ready-then-die" | "die-before-ready-once"
+type Behaviour = "ready" | "ready-then-die" | "die-before-ready-once" | "silent"
 
 class FakeChild extends EventEmitter {
   readonly stdout = null
@@ -62,6 +62,7 @@ class FakeChild extends EventEmitter {
   postMessage(message: { type: string }) {
     if (message.type === "start")
       queueMicrotask(() => {
+        if (this.behaviour === "silent") return
         // A child that dies WITHOUT ever announcing readiness — the pre-ready failure that used to
         // escape supervision entirely (NC-REL-012). `once` so the retry can succeed and the test
         // proves healing rather than an infinite loop.
@@ -116,7 +117,8 @@ function harness(behaviour: Behaviour) {
         return child
       }
     },
-    start: () => superviseLocalServer("127.0.0.1", PORT, "", { onState: (state) => states.push(state) }),
+    start: (signal?: AbortSignal) =>
+      superviseLocalServer("127.0.0.1", PORT, "", { signal, onState: (state) => states.push(state) }),
     /** Poll rather than sleep a fixed span: the ladder's own delays are the thing under test. */
     until: async (predicate: () => boolean, timeoutMs: number) => {
       const deadline = Date.now() + timeoutMs
@@ -223,3 +225,41 @@ describe("sidecar supervisor fault classification", () => {
 })
 
 process.on("beforeExit", () => void health.stop(true))
+
+test("cancelling the first pending spawn kills its child and never enters the retry ladder", async () => {
+  const h = harness("silent")
+  const abort = new AbortController()
+  const start = h.start(abort.signal)
+  void start.catch(() => undefined)
+  expect(h.forks).toHaveLength(1)
+  const child = h.forks[0]!
+  child.kill = () => {
+    child.killed = true
+  }
+  let settled = false
+  void start.catch(() => {
+    settled = true
+  })
+  const reason = new Error("quit during startup")
+  abort.abort(reason)
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(child.killed).toBe(true)
+  expect(settled).toBe(false)
+  child.emit("exit", 1)
+  await expect(start).rejects.toBe(reason)
+  expect(h.forks[0]!.killed).toBe(true)
+  expect(h.states.some((state) => state.phase === "restarting")).toBe(false)
+})
+
+test("cancelling during pre-ready retry backoff does not spawn a replacement", async () => {
+  FakeChild.firstBootFailed = false
+  const h = harness("die-before-ready-once")
+  const abort = new AbortController()
+  const start = h.start(abort.signal)
+  void start.catch(() => undefined)
+  expect(await h.until(() => h.states.some((state) => state.phase === "restarting"), 500)).toBe(true)
+  abort.abort(new Error("quit during backoff"))
+  await expect(start).rejects.toBeInstanceOf(Error)
+  expect(h.forks).toHaveLength(1)
+})

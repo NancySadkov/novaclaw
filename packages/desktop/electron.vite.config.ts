@@ -56,6 +56,8 @@ export default defineConfig({
       //     eager main-process graph (it's guarded off under Node anyway).
       externalizeDeps: {
         include: [nodePtyPkg, "audio-decode", "jimp", "link-preview-js", "sharp", "@mtcute/bun"],
+        // Workspace source exports are TypeScript; Electron cannot load them from node_modules.
+        exclude: ["@novaclaw/core"],
       },
     },
     plugins: [
@@ -69,7 +71,9 @@ export default defineConfig({
       {
         name: "novaclaw:copy-server-assets",
         async writeBundle() {
-          const output = "./out/main/chunks"
+          // This producer owns only its runtime directory. Electron's dynamic modules have a
+          // separate chunks directory, which must survive copying a new sidecar generation.
+          const output = "./out/main/server-runtime"
           // The sidecar build rotates content hashes. Replace this destination before copying so a
           // prior desktop build cannot leave an unreachable generation inside the packaged app.
           await rm(output, { recursive: true, force: true })
@@ -81,8 +85,7 @@ export default defineConfig({
             // clean, because nothing here knew the shape had changed. An allow-list that names files
             // has to be revisited whenever the producer's output shape does.
             const isChunk = /^chunk-[^/]+\.js$/.test(name)
-            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm") && !isChunk)
-              continue
+            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm") && !isChunk) continue
             // The server is already a complete Bun bundle. Treat it like the WASM payload: copy it
             // verbatim instead of making Rollup parse and re-emit 23 MB of generated JavaScript.
             // Parsing that bundle was the desktop build's dominant avoidable RAM spike.

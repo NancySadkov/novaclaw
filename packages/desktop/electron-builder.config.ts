@@ -6,6 +6,7 @@ import type { Configuration } from "electron-builder"
 import { resolveChannel } from "@novaclaw/script/channel"
 import { verifyStagedDht } from "./scripts/dht-packaging"
 import { sanitizeBuildOutput } from "./scripts/sanitize-build-output"
+import { verifyArchiveLayout } from "./scripts/archive-layout"
 import { packagedResourcesDirectory, verifyStagedResources, type StagedResource } from "./scripts/staged-resources"
 
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -165,6 +166,15 @@ const getBase = (appId: string): Configuration => ({
   // diagnostics even though the product has no integration with them; the sanitizer deliberately
   // preserves signed PE payloads so upstream Authenticode remains valid.
   afterPack: (context) => {
+    verifyArchiveLayout(
+      path.join(
+        packagedResourcesDirectory(
+          context.appOutDir,
+          (context.electronPlatformName ?? process.platform) as NodeJS.Platform,
+        ),
+        "app.asar",
+      ),
+    )
     verifyAfterPack(context.appOutDir, context.electronPlatformName)
     return sanitizeBuildOutput(context.appOutDir)
   },

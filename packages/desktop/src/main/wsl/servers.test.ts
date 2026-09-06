@@ -221,6 +221,54 @@ async function waitFor(check: () => boolean) {
   throw new Error("Timed out waiting for condition")
 }
 
+test("shutdown owns pending WSL spawns, awaits their disposal and refuses later starts", async () => {
+  const spawned = Promise.withResolvers<Awaited<ReturnType<Parameters<typeof createWslServersController>[1]>>>()
+  const disposed = Promise.withResolvers<void>()
+  let starts = 0,
+    stops = 0,
+    settled = false
+  const controller = createWslServersController(
+    "1.16.2",
+    () => {
+      starts++
+      return spawned.promise
+    },
+    {
+      readServers: () => [{ id: "wsl:Debian", distro: "Debian" }],
+      writeServers: () => {},
+      resolveNovaclaw: async () => null,
+      readCommandVersion: async () => "1.16.2",
+    },
+  )
+  await controller.initialize()
+  await waitFor(() => starts === 1)
+  const stopping = controller.stopAll()
+  expect(controller.stopAll()).toBe(stopping)
+  void stopping.then(() => {
+    settled = true
+  })
+  spawned.resolve({
+    listener: {
+      stop: () => {
+        stops++
+        return disposed.promise
+      },
+      onExit: () => {},
+    },
+    url: "http://127.0.0.1:4096",
+    username: "novaclaw",
+    password: "fixture",
+  })
+  await waitFor(() => stops === 1)
+  expect(settled).toBe(false)
+  expect(controller.getState().servers.some((server) => server.runtime.kind === "ready")).toBe(false)
+  disposed.resolve()
+  await stopping
+  await controller.initialize()
+  await expect(controller.addServer("Ubuntu")).rejects.toThrow("shutting down")
+  expect(starts).toBe(1)
+})
+
 function testControllerOptions() {
   return {
     readServers: () => persistedServers,

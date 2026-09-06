@@ -28,7 +28,7 @@ export type WslSidecar = {
 
 export async function spawnWslSidecar(
   distro: string,
-  opts: { onLine?: (line: WslCommandLine) => void; healthTimeoutMs?: number } = {},
+  opts: { onLine?: (line: WslCommandLine) => void; healthTimeoutMs?: number; spawn?: typeof spawn } = {},
 ): Promise<WslSidecar> {
   const novaclaw = await resolveWslNovaclaw(distro)
   if (!novaclaw) throw new Error(`NovaClaw is not installed in ${distro}`)
@@ -49,10 +49,28 @@ export async function spawnWslSidecar(
     'export XDG_STATE_HOME="$HOME/.local/state"',
     `exec ${shellEscape(novaclaw)} --print-logs --log-level ${app.isPackaged ? "WARN" : "INFO"} serve --hostname 0.0.0.0 --port ${port}`,
   ].join("\n")
-  const child = spawn("wsl", wslArgs(["bash", "-se"], distro), {
+  const child = (opts.spawn ?? spawn)("wsl", wslArgs(["bash", "-se"], distro), {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   })
+  // Own cleanup from acquisition, including startup failure. `close` also arrives after a spawn
+  // error, and observes closed stdio as well as process exit.
+  let closed = false
+  const exited = new Promise<void>((resolve) =>
+    child.once("close", () => {
+      closed = true
+      resolve()
+    }),
+  )
+  let stopping: Promise<void> | undefined
+  const stop = () => {
+    if (stopping) return stopping
+    if (closed) return Promise.resolve()
+    const forced = setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS)
+    stopping = exited.finally(() => clearTimeout(forced))
+    child.kill()
+    return stopping
+  }
   child.stdin.end(script)
 
   const recentOutput: string[] = []
@@ -83,8 +101,8 @@ export async function spawnWslSidecar(
   )
 
   await Promise.race([health, exit, timedOut])
-    .catch((error) => {
-      child.kill()
+    .catch(async (error) => {
+      await stop()
       throw error
     })
     .finally(() => {
@@ -93,23 +111,7 @@ export async function spawnWslSidecar(
     })
   return {
     listener: {
-      stop: async () => {
-        if (child.exitCode !== null || child.signalCode !== null) return
-        const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
-        child.kill()
-        /**
-         * ⚠️ Bounded, and then FORCED. An unbounded await here would spend the whole quit budget on
-         * one wedged distro — the outer wait would expire and the app would exit anyway, with the
-         * child in exactly the state this was meant to avoid. A second, harder signal is the only
-         * thing left to try, and it is still better than walking away silently.
-         */
-        const forced = setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS)
-        try {
-          await exited
-        } finally {
-          clearTimeout(forced)
-        }
-      },
+      stop,
       onExit: (cb) => child.once("exit", cb),
     },
     url,

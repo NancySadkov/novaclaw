@@ -46,6 +46,7 @@ import { canonicalVersion, type Channel } from "./utils"
 import { verifyPackagedDht } from "./dht-packaging"
 import { checkRendererI18n, readPackagedRenderer } from "./renderer-artifact"
 import { channelConfigured, resolveChannel } from "@novaclaw/script/channel"
+import { verifyArchiveLayout } from "./archive-layout"
 
 /** How long the app gets to boot, open a window and answer /global/health. */
 const READY_TIMEOUT_MS = 90_000
@@ -515,6 +516,9 @@ function childEnv(home: string): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value
   for (const key of [
+    // Build/runtime switches are not part of the installed app's environment.
+    "NODE_OPTIONS",
+    "ELECTRON_RUN_AS_NODE",
     "NOVACLAW_PORT",
     "NOVACLAW_DB",
     "NOVACLAW_CONFIG_DIR",
@@ -569,6 +573,7 @@ process.on("exit", () => {
 
 async function run() {
   const sourceExe = resolveExe(process.argv[2])
+  verifyArchiveLayout(path.join(path.dirname(sourceExe), "resources", "app.asar"))
   const channel = expectedChannel(sourceExe)
   const version = await canonicalVersion()
   console.log(`artifact : ${sourceExe}`)
@@ -581,7 +586,10 @@ async function run() {
   try {
     const bundle = readPackagedRenderer(exe)
     const appEnglish = readFileSync(path.join(APP_ROOT, "packages", "app", "src", "i18n", "en.ts"), "utf8")
-    const desktopEnglish = readFileSync(path.join(APP_ROOT, "packages", "desktop", "src", "renderer", "i18n", "en.ts"), "utf8")
+    const desktopEnglish = readFileSync(
+      path.join(APP_ROOT, "packages", "desktop", "src", "renderer", "i18n", "en.ts"),
+      "utf8",
+    )
     const result = checkRendererI18n([appEnglish, desktopEnglish], bundle)
     check(result.controlPresent, "renderer-i18n-control", `the packaged renderer does not contain ${result.controlKey}`)
     check(

@@ -91,7 +91,9 @@ async function start(command: StartCommand) {
     // Never fatal — see compile-cache.ts.
     const cache = enableCompileCache()
     if (!cache.enabled) console.warn(`[novaclaw] compile cache off (${cache.reason}) — startup will be slower`)
-    const serverURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js")).href
+    const serverURL = pathToFileURL(
+      join(dirname(fileURLToPath(import.meta.url)), "server-runtime", "novaclaw-server.js"),
+    ).href
     const beforeImport = performance.now()
     const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
 

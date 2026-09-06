@@ -1,8 +1,8 @@
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { readRowsSync } from "#sqlite"
+import { readRowsSync } from "../database/read-rows-sync"
 import { DatabasePath } from "../database/db-path"
-import { Offline } from "../offline"
+import { currentPolicy, serviceBuilds } from "../offline-state"
 import { Telemetry } from "./telemetry"
 
 /**
@@ -94,12 +94,12 @@ import { Telemetry } from "./telemetry"
  * `Telemetry.resolveGate` reads consent and airgap from two sources with no shared derivation, and a
  * crash path is exactly where someone would collapse them into one boolean "because we are in a
  * hurry". Here: **consent** is a sync read of the `runtime_setting` row `telemetry` (the shape
- * `memory-setting.ts` and `server-token.ts` already use), **airgap** is {@link Offline}'s live
+ * `memory-setting.ts` and `server-token.ts` already use), **airgap** is the live
  * policy, and they meet only as the two arguments of `resolveGate`. `refusals()` is consulted as an
  * ARRAY so that when both hold, both are named.
  *
  * ⚠️ **Airgap FAILS CLOSED, and this is the one place where the seam is stricter than the sender.**
- * `Offline.currentPolicy()` answers `disabledPolicy` for two different facts — *the user is not
+ * `currentPolicy()` answers `disabledPolicy` for two different facts — *the user is not
  * airgapped* and *no policy source has been installed in this process, so nothing is guarding yet*.
  * On the boot path the second is reachable: a crash before the Offline layer builds would otherwise
  * read as "not airgapped" and permit an upload from an airgapped machine. AGENTS.md's promise is
@@ -252,7 +252,7 @@ export function liveSources(plane: "server" | "ui" = "server"): Sources {
   }
   return {
     config: () => readConsent(dbFile),
-    airgap: () => airgapFrom({ builds: Offline.serviceBuilds(), enabled: Offline.currentPolicy().enabled }),
+    airgap: () => airgapFrom({ builds: serviceBuilds(), enabled: currentPolicy().enabled }),
     endpoint: () => Telemetry.endpointFromEnv(),
     host: () => Telemetry.host(),
     plane,

@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { setTimeout as pause } from "node:timers/promises"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { pollUntilHealthy } from "./health-poll"
@@ -28,7 +29,8 @@ export type SidecarListener = { stop: () => Promise<void> }
 
 const SIDECAR_SERVICE_NAME = "novaclaw server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
-const SIDECAR_STOP_TIMEOUT = 6_000
+// Escalate before the lifecycle's shared five-second deadline, leaving time to observe exit.
+const SIDECAR_STOP_TIMEOUT = 2_000
 const SIDECAR_LIVENESS_INTERVAL = 2_000
 const SIDECAR_HEALTH_INTERVAL = 100
 /**
@@ -43,6 +45,7 @@ const SIDECAR_HEALTH_INTERVAL = 100
 const SIDECAR_HEALTH_TIMEOUT = 60_000
 
 type SpawnLocalServerOptions = {
+  signal?: AbortSignal
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -118,6 +121,7 @@ export async function spawnLocalServer(
   password: string,
   options: SpawnLocalServerOptions,
 ) {
+  options.signal?.throwIfAborted()
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
@@ -198,14 +202,18 @@ export async function spawnLocalServer(
     const onExit = (code: number) => {
       fail(new Error(`Sidecar exited before ready with code ${code}`))
     }
+    const onAbort = () => fail(options.signal?.reason ?? new Error("Sidecar startup cancelled"))
     const cleanup = () => {
       clearTimeout(timeout)
       child.off("message", onMessage)
       child.off("exit", onExit)
+      options.signal?.removeEventListener("abort", onAbort)
     }
 
     child.on("message", onMessage)
     child.on("exit", onExit)
+    options.signal?.addEventListener("abort", onAbort, { once: true })
+    if (options.signal?.aborted) return onAbort()
     refreshTimeout()
     child.postMessage({
       type: "start",
@@ -213,8 +221,9 @@ export async function spawnLocalServer(
       port,
       password,
     })
-  }).catch((error) => {
+  }).catch(async (error) => {
     if (!exited) child.kill()
+    await exit.promise
     throw error
   })
 
@@ -258,13 +267,11 @@ export async function spawnLocalServer(
         abandonPoll()
         if (stopping) return stopping
         if (exited) return Promise.resolve()
+        const timer = setTimeout(() => {
+          if (!exited) child.kill()
+        }, SIDECAR_STOP_TIMEOUT)
+        stopping = exit.promise.then(() => undefined).finally(() => clearTimeout(timer))
         child.postMessage({ type: "stop" })
-        stopping = Promise.race([
-          exit.promise.then(() => undefined),
-          delay(SIDECAR_STOP_TIMEOUT).then(() => {
-            if (!exited) child.kill()
-          }),
-        ])
         return stopping
       },
       // Fault recovery, not a user shutdown: do not send an IPC stop request to a child whose event
@@ -298,6 +305,7 @@ export async function superviseLocalServer(
   let current: Awaited<ReturnType<typeof spawnLocalServer>> | undefined
   let respawnTimer: NodeJS.Timeout | undefined
   let monitorTimer: NodeJS.Timeout | undefined
+  let respawning: Promise<void> | undefined
   let monitorEpoch = 0
   let livenessFailures = 0
   let unresponsive = false
@@ -388,7 +396,9 @@ export async function superviseLocalServer(
     note(`sidecar exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`)
     report({ phase: "restarting", reason, attempt: attempts, nextAttemptInMs: decision.delayMs })
     state = decision.next
-    respawnTimer = setTimeout(() => void respawn(), decision.delayMs)
+    respawnTimer = setTimeout(() => {
+      respawning = respawn()
+    }, decision.delayMs)
   }
 
   const respawn = async () => {
@@ -456,25 +466,39 @@ export async function superviseLocalServer(
         note(`sidecar failed before ready — retrying in ${decision.delayMs / 1000}s`)
         report({ phase: "restarting", reason, attempt: attempts, nextAttemptInMs: decision.delayMs })
         state = decision.next
-        await new Promise((resolve) => setTimeout(resolve, decision.delayMs))
+        await pause(decision.delayMs, undefined, { signal: options.signal })
         if (stopping) throw error
       }
     }
   }
-  current = await firstSpawn()
+  const stop = () => {
+    stopping = true
+    stopMonitor()
+    if (respawnTimer) clearTimeout(respawnTimer)
+    options.signal?.removeEventListener("abort", onAbort)
+    report({ phase: "stopped" })
+    return Promise.allSettled([current?.listener.stop(), respawning]).then(() => undefined)
+  }
+  const onAbort = () => {
+    void stop().catch((error) => note(`sidecar stop failed: ${String(error)}`))
+  }
+  options.signal?.addEventListener("abort", onAbort, { once: true })
+  try {
+    options.signal?.throwIfAborted()
+    current = await firstSpawn()
+    if (stopping || options.signal?.aborted) {
+      await current.listener.stop()
+      throw options.signal?.reason ?? new Error("Sidecar startup cancelled")
+    }
+  } catch (error) {
+    options.signal?.removeEventListener("abort", onAbort)
+    throw error
+  }
   startMonitor(current)
   report({ phase: "running" })
   return {
     listener: {
-      stop: () => {
-        // The intent latch, and the ONLY place it is set. Everything downstream reads it rather
-        // than guessing from an exit code.
-        stopping = true
-        stopMonitor()
-        if (respawnTimer) clearTimeout(respawnTimer)
-        report({ phase: "stopped" })
-        return current ? current.listener.stop() : Promise.resolve()
-      },
+      stop,
     },
     health: current.health,
   }
@@ -522,10 +546,6 @@ function createSidecarEnv(): Record<string, string> {
     env.NOVACLAW_IMAGEMAGICK_PATH = join(process.resourcesPath, "third-party", "imagemagick")
   }
   return env
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
 function serializeError(error: unknown) {

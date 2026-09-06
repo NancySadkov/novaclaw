@@ -123,6 +123,7 @@
       "dependencies": {
         "@ladybugdb/wasm-core": "0.18.2",
         "@lydell/node-pty": "catalog:",
+        "@novaclaw/core": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
         "effect": "catalog:",
         "electron-context-menu": "4.1.2",

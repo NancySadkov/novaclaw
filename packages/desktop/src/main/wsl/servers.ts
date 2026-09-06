@@ -70,6 +70,9 @@ export function createWslServersController(
   const listeners = new Set<(event: WslServersEvent) => void>()
   const sidecars = new Map<string, RunningSidecar>()
   const startAttempts = new Map<string, number>()
+  const pendingStarts = new Set<Promise<void>>()
+  let closed = false
+  let stopping: Promise<void> | undefined
   let jobAbort: AbortController | undefined
   const logger = options?.logger
   const readServers = options?.readServers ?? readPersistedServers
@@ -94,6 +97,7 @@ export function createWslServersController(
   }
 
   const beginJob = (job: WslJob): AbortController => {
+    if (closed) throw new Error("NovaClaw is shutting down")
     jobAbort?.abort()
     const abort = new AbortController()
     jobAbort = abort
@@ -145,7 +149,7 @@ export function createWslServersController(
   }
 
   const hasServer = (id: string, distro: string) => {
-    return state.servers.some((item) => item.config.id === id && item.config.distro === distro)
+    return !closed && state.servers.some((item) => item.config.id === id && item.config.distro === distro)
   }
 
   const refreshNovaclawCheckBackground = (id: string, distro: string) => {
@@ -196,10 +200,10 @@ export function createWslServersController(
   }
 
   const isCurrentStartAttempt = (id: string, attempt: number) => {
-    return startAttempts.get(id) === attempt && state.servers.some((item) => item.config.id === id)
+    return !closed && startAttempts.get(id) === attempt && state.servers.some((item) => item.config.id === id)
   }
 
-  const startServer = async (id: string) => {
+  const acquireServer = async (id: string) => {
     const item = state.servers.find((x) => x.config.id === id)
     if (!item) return
     const attempt = nextStartAttempt(id)
@@ -211,7 +215,7 @@ export function createWslServersController(
       const sidecar = await spawnSidecar(item.config.distro)
       if (!isCurrentStartAttempt(id, attempt)) {
         try {
-          sidecar.listener.stop()
+          await sidecar.listener.stop()
         } catch {
           // ignore stop errors for stale sidecars
         }
@@ -244,12 +248,23 @@ export function createWslServersController(
     }
   }
 
+  const startServer = (id: string): Promise<void> => {
+    if (closed) return Promise.resolve()
+    const pending = acquireServer(id)
+    pendingStarts.add(pending)
+    void pending.then(
+      () => pendingStarts.delete(pending),
+      () => pendingStarts.delete(pending),
+    )
+    return pending
+  }
+
   const stopServerInternal = async (id: string) => {
     const existing = sidecars.get(id)
     if (!existing) return
     sidecars.delete(id)
     try {
-      existing.listener.stop()
+      await existing.listener.stop()
     } catch {
       // ignore stop errors
     }
@@ -282,6 +297,7 @@ export function createWslServersController(
     },
 
     async initialize() {
+      if (closed) return
       refreshFromStore()
       void refreshNovaclawChecks()
       for (const id of wslServerIdsToStartOnInitialize(state.servers.map((item) => item.config))) void startServer(id)
@@ -362,6 +378,7 @@ export function createWslServersController(
     },
 
     async addServer(distro: string): Promise<WslServerConfig> {
+      if (closed) throw new Error("NovaClaw is shutting down")
       const id = wslServerIdForDistro(distro)
       if (state.servers.some((item) => item.config.id === id)) {
         throw new Error(`${distro} is already added`)
@@ -400,9 +417,14 @@ export function createWslServersController(
      * spend three grace periods against a quit budget sized for one. `allSettled` because a stop that
      * throws must not stop its siblings from being asked — losing one is not a reason to leak two.
      */
-    async stopAll() {
+    stopAll(): Promise<void> {
+      if (stopping) return stopping
+      const completion = Promise.withResolvers<void>()
+      stopping = completion.promise
+      closed = true
+      jobAbort?.abort()
       for (const item of state.servers) invalidateStartAttempt(item.config.id)
-      const stopping = [...sidecars.values()].map(async (existing) => {
+      const stops = [...sidecars.values()].map(async (existing) => {
         try {
           await existing.listener.stop()
         } catch {
@@ -410,7 +432,9 @@ export function createWslServersController(
         }
       })
       sidecars.clear()
-      await Promise.allSettled(stopping)
+      // A pending spawn is owned too. Its stale-attempt branch awaits its stop before settling.
+      void Promise.allSettled([...stops, ...pendingStarts]).then(() => completion.resolve())
+      return stopping
     },
   }
 }

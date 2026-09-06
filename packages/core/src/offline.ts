@@ -39,13 +39,18 @@ import { readRowsSync } from "#sqlite"
 import { DatabasePath } from "./database/db-path"
 import { Global } from "./global"
 import { makeGlobalNode } from "./effect/app-node"
+import {
+  currentPolicy,
+  disabledPolicy,
+  publish,
+  publishBuild,
+  resetPolicy as resetPolicyState,
+  serviceBuilds,
+  type Policy,
+} from "./offline-state"
 
-export interface Policy {
-  readonly enabled: boolean
-  readonly allowedHosts: ReadonlySet<string>
-}
-
-export const disabledPolicy: Policy = { enabled: false, allowedHosts: new Set() }
+export { currentPolicy, disabledPolicy, serviceBuilds }
+export type { Policy } from "./offline-state"
 
 const normalizeHost = (host: string) =>
   host
@@ -217,12 +222,12 @@ export function loadPolicy(input: PolicySource): Policy {
 // One ref means every reader — the HttpClient chokepoint, `bash`/`js` egress env, websearch, the
 // messenger gateway — flips together, on their next call.
 
-let live: { readonly source: PolicySource; readonly policy: Policy } | undefined
+let liveSource: PolicySource | undefined
 
 /** Load the policy from `source` and publish it process-wide. Called when the layer is built. */
 function installPolicy(source: PolicySource): Policy {
   const policy = loadPolicy(source)
-  live = { source, policy }
+  liveSource = source
   return policy
 }
 
@@ -239,31 +244,16 @@ function installPolicy(source: PolicySource): Policy {
  * to refresh, and no I/O is done to discover that.
  */
 export function reload(): Policy {
-  return live === undefined ? disabledPolicy : installPolicy(live.source)
+  if (liveSource === undefined) return disabledPolicy
+  const policy = installPolicy(liveSource)
+  publish(policy)
+  return policy
 }
 
-/** The live policy — `disabledPolicy` until a layer installs one (nothing is guarding). */
-export function currentPolicy(): Policy {
-  return live?.policy ?? disabledPolicy
-}
-
-/** Tests only: forget the installed source so one file's temp db cannot leak into the next. */
+/** Tests only: forget both the live policy and the source it would otherwise reload. */
 export function resetPolicy(): void {
-  live = undefined
-}
-
-// How many times THIS LAYER has been built in this process. Not a policy fact — a GRAPH fact, and
-// the only one that is observable at runtime: a duplicate Offline in the composition root compiles
-// green, boots green, and answers every request correctly (the ref above is process-wide), so
-// nothing but a count can tell you it happened. It is exported so the invariant "a serve process
-// builds Offline exactly once" can be asserted instead of reasoned about.
-// Deliberately NOT reset by `resetPolicy` and NOT incremented by `reload` — it counts layer builds,
-// not policy installs, so a test can bracket a graph build and read the delta.
-let builds = 0
-
-/** Number of times the Offline layer has been built in this process (see `builds`). */
-export function serviceBuilds(): number {
-  return builds
+  liveSource = undefined
+  resetPolicyState()
 }
 
 // ── OFF-C: child-process proxy hints ────────────────────────────────────────────────────
@@ -390,8 +380,8 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/Of
 
 const makeService = (source: PolicySource) =>
   Effect.gen(function* () {
-    builds++
     const policy = installPolicy(source)
+    publishBuild(policy)
     if (policy.enabled)
       yield* Log.event("offline.policy.activate", {
         "offline.policy.hosts": [...policy.allowedHosts],
