@@ -54,7 +54,10 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
   const scheduler = yield* SessionScheduler.Service
 
   /** The common short-answer path for lifecycle presentation labels. */
-  const short = (sessionID: string, input: { system: string; text: string; task: string }) =>
+  const short = (
+    sessionID: string,
+    input: { system: string; text: string; task: string; reasoningBudget?: number },
+  ) =>
     Effect.gen(function* () {
       const session = yield* store.get(sessionID as never)
       if (!session) return undefined
@@ -67,7 +70,7 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
           llm,
           system: input.system,
           text: input.text,
-          reasoningBudget: LABEL_REASONING_BUDGET,
+          reasoningBudget: input.reasoningBudget ?? LABEL_REASONING_BUDGET,
           maxTokens: LABEL_MAX_TOKENS,
           scheduler,
           maintenance: {

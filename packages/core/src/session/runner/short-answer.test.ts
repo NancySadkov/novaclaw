@@ -43,4 +43,32 @@ describe("ShortAnswer interactive-idle admission", () => {
     expect(requests).toBe(1)
     expect((await run(scheduler.snapshot()))[0]!.inFlightMaintenance).toEqual([])
   })
+
+  test("zero budget disables thinking on the first request", async () => {
+    const scheduler = make()
+    let body: Record<string, unknown> | undefined
+    const answer = await run(
+      generate({
+        model,
+        llm: {
+          stream: (request) => {
+            body = request.http?.body
+            return Stream.fromIterable([
+              LLMEvent.textDelta({ id: "answer", text: "Search the project" }),
+              LLMEvent.finish({ reason: "stop" }),
+            ])
+          },
+        },
+        system: "Return one label.",
+        text: "rg -n hello packages",
+        reasoningBudget: 0,
+        maxTokens: 512,
+        scheduler,
+        maintenance: { ownerID: "owner", task: "tool-title", deviceKey: "device" },
+      }),
+    )
+
+    expect(answer).toBe("Search the project")
+    expect(body?.["chat_template_kwargs"]).toEqual({ enable_thinking: false })
+  })
 })

@@ -11,12 +11,26 @@ export function shellActionTitle(command: string): string {
 }
 
 export function commandElapsed(
-  started: number | undefined,
-  completed: number | undefined,
+  started: unknown,
+  completed: unknown,
   now: number,
 ): string | undefined {
-  if (started === undefined) return undefined
-  const seconds = Math.max(0, Math.floor(((completed ?? now) - started) / 1000))
+  const millis = (value: unknown): number | undefined => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : undefined
+    if (value instanceof Date) {
+      const at = value.getTime()
+      return Number.isFinite(at) ? at : undefined
+    }
+    if (typeof value !== "object" || value === null) return undefined
+    const at = (value as { epochMillis?: unknown }).epochMillis
+    return typeof at === "number" && Number.isFinite(at) ? at : undefined
+  }
+
+  const began = millis(started)
+  if (began === undefined) return undefined
+  const ended = millis(completed) ?? now
+  if (!Number.isFinite(ended)) return undefined
+  const seconds = Math.max(0, Math.floor((ended - began) / 1000))
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${seconds % 60}s`

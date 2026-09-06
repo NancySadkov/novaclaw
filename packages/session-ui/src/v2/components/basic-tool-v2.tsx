@@ -2,6 +2,7 @@ import { Collapsible } from "@kobalte/core/collapsible"
 import { type ComponentProps, type JSX, For, Show, createMemo, createSignal, splitProps } from "solid-js"
 import { DiffChanges } from "@novaclaw/ui/v2/diff-changes-v2"
 import { TextShimmerV2 } from "@novaclaw/ui/v2/text-shimmer-v2"
+import { Icon, type IconName } from "@novaclaw/ui/v2/icon"
 
 function ChevronIcon() {
   return (
@@ -23,6 +24,7 @@ function ChevronIcon() {
 }
 
 export interface BasicToolV2TriggerTitle {
+  icon?: IconName
   title: string
   subtitle?: string
   args?: string[]
@@ -96,6 +98,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
             {(title) => (
               <>
                 <span data-slot="basic-tool-v2-title">
+                  <Show when={title().icon}>{(icon) => <Icon name={icon()} size="small" />}</Show>
                   <TextShimmerV2 text={title().title} active={pending()} />
                 </span>
                 <Show when={title().subtitle}>

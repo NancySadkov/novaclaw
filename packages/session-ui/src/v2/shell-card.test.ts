@@ -13,4 +13,11 @@ describe("shell command card", () => {
     expect(commandElapsed(1_000, undefined, 8_900)).toBe("7s")
     expect(commandElapsed(1_000, 66_000, 90_000)).toBe("1m 5s")
   })
+
+  test("formats decoded DateTime carriers without leaking NaN", () => {
+    expect(commandElapsed({ epochMillis: 1_000 }, { epochMillis: 66_000 }, 90_000)).toBe("1m 5s")
+    expect(commandElapsed(new Date(1_000), new Date(8_900), 90_000)).toBe("7s")
+    expect(commandElapsed({ epochMillis: Number.NaN }, undefined, 90_000)).toBeUndefined()
+    expect(commandElapsed({}, {}, 90_000)).toBeUndefined()
+  })
 })

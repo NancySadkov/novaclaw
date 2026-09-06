@@ -151,6 +151,7 @@ export const layer = Layer.effect(
           system: COMMAND_SYSTEM,
           text: input.command,
           task: "tool-title",
+          reasoningBudget: 0,
         })
         if (!raw) return
         const title = cleanCommandLabel(raw)

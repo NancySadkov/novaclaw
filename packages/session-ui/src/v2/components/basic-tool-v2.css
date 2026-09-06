@@ -67,6 +67,11 @@
     user-select: none;
   }
 
+  [data-slot="basic-tool-v2-title"] > [data-slot="icon-svg"] {
+    flex-shrink: 0;
+    margin-right: 5px;
+  }
+
   [data-slot="basic-tool-v2-sep"] {
     display: flex;
     align-items: center;

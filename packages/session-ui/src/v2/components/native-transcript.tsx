@@ -1132,9 +1132,10 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           defaultOpen={toolOpenDefault(foldMode().tool)}
           expandWhilePending={props.part.name === "bash"}
           trigger={{
+            icon: props.part.name === "bash" ? "terminal" : undefined,
             title:
               props.part.name === "bash"
-                ? `🖥 ${props.part.title ?? shellActionTitle(shellCommand() ?? "")}`
+                ? (props.part.title ?? shellActionTitle(shellCommand() ?? ""))
                 : meta().title,
             subtitle: props.part.name === "bash" ? elapsed() : meta().subtitle,
             args: meta().args,

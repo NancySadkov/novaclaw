@@ -25,6 +25,10 @@ import { SessionScheduler } from "../scheduler"
  * ⚠️ It deliberately does NOT take the `UtilityCap` ladder the extraction passes use. `ReasoningBudget`
  * already owns a bounded multi-phase recovery for exactly this failure; stacking a second retry loop
  * on top would be two recoveries racing over one turn, which is how a bounded thing becomes unbounded.
+ * A caller that explicitly supplies a ZERO reasoning budget takes the stricter path: the opening
+ * request disables thinking structurally and streams that one request directly. That is for labels
+ * where deliberation has no value and latency is the feature; it still enters through this shared
+ * short-answer and scheduler seam rather than growing a second utility-call implementation.
  *
  * ⚠️ A recorded assumption mismatch, carried over from the titler rather than quietly dropped:
  * `reasoning-budget.ts` argues its safety from phases inheriting an UNSET `max_tokens`, so an answer
@@ -43,7 +47,7 @@ export const generate = <E, R>(input: {
   readonly llm: { readonly stream: (request: ReturnType<typeof LLM.request>) => Stream.Stream<LLMEvent, E, R> }
   readonly system: string
   readonly text: string
-  /** Reasoning ceiling. 128 for a one-line answer — enough to settle on one, not to deliberate. */
+  /** Reasoning ceiling. Zero disables thinking on the opening request; 128 allows brief deliberation. */
   readonly reasoningBudget: number
   /** Answer ceiling. Kept well above the hard stop's measured landing point. */
   readonly maxTokens: number
@@ -60,17 +64,31 @@ export const generate = <E, R>(input: {
     input.maintenance,
     Effect.gen(function* () {
       const chunks: string[] = []
-      yield* ReasoningBudget.stream({
-        request: LLM.request({
-          model: input.model,
-          system: [SystemPart.make(input.system)],
-          messages: [Message.user(input.text)],
-          tools: [],
-          generation: { maxTokens: input.maxTokens },
-        }),
-        stream: (next) => input.llm.stream(next),
-        budget: input.reasoningBudget,
-      }).pipe(
+      const request = LLM.request({
+        model: input.model,
+        system: [SystemPart.make(input.system)],
+        messages: [Message.user(input.text)],
+        tools: [],
+        generation: { maxTokens: input.maxTokens },
+        ...(input.reasoningBudget <= 0
+          ? {
+              http: {
+                body: {
+                  chat_template_kwargs: { enable_thinking: false },
+                },
+              },
+            }
+          : {}),
+      })
+      const stream =
+        input.reasoningBudget <= 0
+          ? input.llm.stream(request)
+          : ReasoningBudget.stream({
+              request,
+              stream: (next) => input.llm.stream(next),
+              budget: input.reasoningBudget,
+            })
+      yield* stream.pipe(
         Stream.runForEach((event) => {
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
           return Effect.void
