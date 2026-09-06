@@ -69,7 +69,7 @@ export const DialogModelConfig: Component<{
   modelName: string
   apiModelID: string
   providerApi: ProviderApi
-  defaults?: ModelConfig
+  defaults?: Pick<ModelConfig, "capabilities">
   /**
    * The connection to probe through, passed in like `DialogNewModel`'s.
    *
@@ -161,6 +161,8 @@ export const DialogModelConfig: Component<{
   }
   const [revealKey, setRevealKey] = createSignal(false)
 
+  // Editable numbers are stored overrides. Seeding from resolved catalog defaults would pin
+  // inheritance on the next unrelated Save; blank stays the default until explicitly overridden.
   const [form, setForm] = createStore({
     apiPath: providerCfg().api?.url ?? props.providerApi.url ?? "",
     // Seeded from what is STORED, because the owner's ask was to see it as well as change it. A
@@ -177,15 +179,15 @@ export const DialogModelConfig: Component<{
     repetition_penalty: optNum("repetition_penalty"),
     presence_penalty: optNum("presence_penalty"),
     frequency_penalty: optNum("frequency_penalty"),
-    context: nstr(init.limit?.context ?? d.limit?.context),
-    maxTokens: nstr(init.limit?.output ?? d.limit?.output),
-    images: nstr(init.limit?.images ?? d.limit?.images),
-    thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
+    context: nstr(init.limit?.context),
+    maxTokens: nstr(init.limit?.output),
+    images: nstr(init.limit?.images),
+    thinkingBudget: nstr(bodyBudget(init)),
     thinkingEffort: ((): string => {
-      const value = bodyEffort(init) ?? bodyEffort(d)
+      const value = bodyEffort(init)
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
-    retryAttempts: nstr(init.retry?.attempts ?? d.retry?.attempts ?? 3),
+    retryAttempts: nstr(init.retry?.attempts),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
     prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
@@ -230,7 +232,10 @@ export const DialogModelConfig: Component<{
       limit,
       capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
-      retry: { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts) ?? 3))) },
+      retry:
+        num(form.retryAttempts) === undefined
+          ? undefined
+          : { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts)!))) },
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
@@ -278,6 +283,7 @@ export const DialogModelConfig: Component<{
       // owns, after the new values have been accepted; a failed deletion keeps the dialog open.
       const base = ["providers", props.providerID, "models", props.modelID]
       await serverSync().removeConfig([
+        ...(model.retry === undefined ? [[...base, "retry"]] : []),
         ...[...SAMPLING, "thinkingBudget", "reasoning_effort"]
           .filter((key) => body[key] === undefined)
           .map((key) => [...base, "request", "body", key]),

@@ -103,9 +103,9 @@ describe("Model Configure — thinking effort", () => {
   })
 
   test("round-trips through request.body.reasoning_effort, and unset CLEARS the key", () => {
-    // Read from the model's own body, falling back to the catalog default…
+    // Read the stored override; absence leaves the server default in force.
     expect(source).toContain("reasoning_effort")
-    expect(source).toContain("const value = bodyEffort(init) ?? bodyEffort(d)")
+    expect(source).toContain("const value = bodyEffort(init)")
     // …and written where the wire will carry it: `request.body` survives into the HTTP overlay
     // (`session/runner/model.ts` → `withDefaults` → `splitModelSampling`), unlike `thinkingBudget`
     // beside it, which is pulled out before the wire because it is NovaClaw's own controller.

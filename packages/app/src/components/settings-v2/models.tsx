@@ -305,7 +305,6 @@ export const SettingsModelsV2: Component = () => {
                                 apiModelID={item.api.id}
                                 providerApi={item.provider.api}
                                 defaults={{
-                                  limit: item.limit,
                                   capabilities: {
                                     tools: item.capabilities.tools,
                                     input: [...item.capabilities.input],

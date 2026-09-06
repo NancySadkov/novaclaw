@@ -36,7 +36,7 @@ function merge(target: any, patch: any): any {
     target[key] = value && typeof value === "object" && !Array.isArray(value) ? merge(target[key] ?? {}, value) : value
   return target
 }
-function mount(failRemoval = false) {
+function mount(failRemoval = false, inheritedLimits = false) {
   let config: any = {
     providers: {
       local: {
@@ -51,6 +51,11 @@ function mount(failRemoval = false) {
         },
       },
     },
+  }
+  if (inheritedLimits) config.providers.local.models.test.limit = {}
+  const catalogDefaults = {
+    limit: { context: 65536, output: 8192, images: 3 },
+    capabilities: { tools: false, input: ["text"], output: ["text"] },
   }
   const [store, setStore] = createStore({ config: structuredClone(config) })
   const sync = () => ({
@@ -78,6 +83,7 @@ function mount(failRemoval = false) {
         onClick={() =>
           dialog.show(() => (
             <DialogModelConfig
+              defaults={inheritedLimits ? catalogDefaults : undefined}
               providerID="local"
               modelID="test"
               modelName="Test"
@@ -149,4 +155,27 @@ test("a refused default deletion keeps the form open and reports failure", async
   expect(saved().request.body.temperature).toBe(0.7)
   expect(field("Temperature")).not.toBeNull()
   expect(document.body.textContent).toContain("deletion refused")
+})
+
+test("unrelated model edits preserve inherited limits and connection recovery", async () => {
+  const saved = mount(false, true)
+  click(button("Configure test"))
+  await settle()
+  fill("Temperature", "0.4")
+  click(button("Save"))
+  await settle()
+  expect(saved().limit).toEqual({})
+  expect(saved().retry).toBeUndefined()
+  click(button("Configure test"))
+  await settle()
+  fill("Connection attempts", "5")
+  click(button("Save"))
+  await settle()
+  expect(saved().retry).toEqual({ attempts: 5 })
+  click(button("Configure test"))
+  await settle()
+  fill("Connection attempts", "")
+  click(button("Save"))
+  await settle()
+  expect(saved().retry).toBeUndefined()
 })
