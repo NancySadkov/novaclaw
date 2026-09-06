@@ -2,6 +2,23 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.69",
+      "released": "2026-09-06T04:40:37.171Z",
+      "supersedes": "0.1.67",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.69-sbom.cdx.json",
+          "sha256": "2666ad46c2368d2997d792e9070e61f4d63e1b4ce2616eda171adf267b2485ea",
+          "bytes": 364639
+        },
+        {
+          "name": "NovaClaw-0.1.69-windows-x64.7z",
+          "sha256": "c7c04dbda9855bc118f71d30d1cc04beed14ad0d2e0ae89d675782023ca76751",
+          "bytes": 202313265
+        }
+      ]
+    },
+    {
       "version": "0.1.67",
       "released": "2026-09-03T21:53:07.803Z",
       "supersedes": null,
