@@ -359,6 +359,19 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
     ),
   )
   .add(
+    HttpApiEndpoint.post("memory.protection", "/api/memory/protection", {
+      payload: Schema.Struct({ ids: Schema.Array(Schema.String).check(Schema.isMaxLength(500)) }),
+      success: Schema.Array(Schema.Struct({ id: Schema.String, protected: Schema.Boolean })),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.protection",
+        summary: "Read memory protection",
+        description: "Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("memory.feedback", "/api/memory/feedback", {
       payload: Schema.Struct({
         id: Schema.String,

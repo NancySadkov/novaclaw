@@ -18,6 +18,31 @@ const hit = (id: string, rank: number, over: Partial<MemoryAccessLedger.Hit> = {
 })
 
 describe("MemoryAccessLedger", () => {
+  it.effect("protection reads answer every requested id and survive both feedback transitions", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* MemoryAccessLedger.feedback(db, { id: "protected", useful: true, at: 100, scope: "global" })
+      expect(yield* MemoryAccessLedger.protectionFor(db, ["unknown", "protected", "protected"])).toEqual([
+        { id: "unknown", protected: false },
+        { id: "protected", protected: true },
+      ])
+      yield* MemoryAccessLedger.feedback(db, { id: "protected", useful: false, at: 101, scope: "global" })
+      expect(yield* MemoryAccessLedger.protectionFor(db, ["protected"])).toEqual([
+        { id: "protected", protected: false },
+      ])
+    }),
+  )
+
+  it.effect("explicit protection reads and writes fail when their table is unavailable", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db.run("DROP TABLE memory_usage")
+      expect((yield* Effect.exit(MemoryAccessLedger.protectionFor(db, ["unknown"])))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.feedback(db, { id: "unknown", useful: true, at: 100 })))._tag).toBe(
+        "Failure",
+      )
+    }),
+  )
   it.effect("a recall writes one row per returned memory, and the rollup counts the recall", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

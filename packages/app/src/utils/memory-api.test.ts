@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import type { ServerConnection } from "@/context/server"
 import { InstanceFetchError } from "@/utils/instance-fetch"
-import { memoryClearScopeVerified, memoryEraseVerified, memoryExport } from "@/utils/memory-api"
+import { memoryClearScopeVerified, memoryEraseVerified, memoryExport, memoryProtection } from "@/utils/memory-api"
 
 const server: ServerConnection.HttpBase = { url: "http://instance.test:4096" }
 const realFetch = globalThis.fetch
@@ -69,4 +69,16 @@ describe("scoped clear propagation", () => {
       memoryClearScopeVerified(server, { directory: "C:/work", scope: "session:chat" }),
     ).rejects.toBeInstanceOf(InstanceFetchError)
   })
+})
+
+test("protection reads batch every id without treating a truncated answer as unprotected", async () => {
+  const ids = Array.from({ length: 501 }, (_, index) => `id_${index}`)
+  answer = (_path, body) =>
+    Response.json((body as { ids: string[] }).ids.map((id) => ({ id, protected: id === "id_500" })))
+  const states = await memoryProtection(server, { directory: "C:/work", ids })
+  expect(states.size).toBe(501)
+  expect(states.get("id_500")).toBe(true)
+  expect(seen.map((call) => (call.body as { ids: string[] }).ids.length)).toEqual([500, 1])
+  answer = () => Response.json([])
+  await expect(memoryProtection(server, { directory: "C:/work", ids: ["missing"] })).rejects.toThrow("Incomplete")
 })

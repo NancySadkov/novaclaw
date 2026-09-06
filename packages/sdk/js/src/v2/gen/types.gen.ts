@@ -12902,6 +12902,40 @@ export type V2MemoryUsageDetailResponses = {
 
 export type V2MemoryUsageDetailResponse = V2MemoryUsageDetailResponses[keyof V2MemoryUsageDetailResponses]
 
+export type V2MemoryProtectionData = {
+  body: {
+    ids: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/protection"
+}
+
+export type V2MemoryProtectionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryProtectionError = V2MemoryProtectionErrors[keyof V2MemoryProtectionErrors]
+
+export type V2MemoryProtectionResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    protected: boolean
+  }>
+}
+
+export type V2MemoryProtectionResponse = V2MemoryProtectionResponses[keyof V2MemoryProtectionResponses]
+
 export type V2MemoryFeedbackData = {
   body: {
     id: string

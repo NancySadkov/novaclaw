@@ -12,6 +12,7 @@ import {
   memoryList,
   memoryCorrectionProne,
   memoryFeedback,
+  memoryProtection,
   memoryNeverUsed,
   memoryStats,
   memoryUseful,
@@ -22,6 +23,7 @@ import { memoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
 import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from "@/utils/memory-lens"
 import type { MemoryOwner } from "@/apps/memory-owner"
+import { createSettledResource } from "@/utils/settled-resource"
 
 /** One shared empty set, so a lens with nothing to mark does not mint a new one per read. */
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>()
@@ -258,9 +260,7 @@ export const MemoryRemembered: Component<{
       ? describeScope({ loaded: loadedRows().length, total: totals()?.total })
       : undefined
 
-  createEffect(() =>
-    props.onCounts?.({ visible: count(), loaded: loadedRows().length, total: totals()?.total }),
-  )
+  createEffect(() => props.onCounts?.({ visible: count(), loaded: loadedRows().length, total: totals()?.total }))
 
   /**
    * 🔴 Is the store BROKEN, or merely empty?
@@ -319,9 +319,7 @@ export const MemoryRemembered: Component<{
       ? props.owner.scopes.map((scope) => ({ scope, label: props.owner!.label }))
       : [
           { scope: "global", label: language.t("memory.clearScope.shared") },
-          ...(sessionScope()
-            ? [{ scope: sessionScope()!, label: language.t("settings.memory.scope.chat") }]
-            : []),
+          ...(sessionScope() ? [{ scope: sessionScope()!, label: language.t("settings.memory.scope.chat") }] : []),
         ],
   )
   const forgetScope = async (target: { scope: string; label: string }) => {
@@ -348,27 +346,29 @@ export const MemoryRemembered: Component<{
     void refetch()
   }
 
-  /**
-   * WHICH MEMORIES THIS SESSION HAS VOUCHED FOR.
-   *
-   * ⚠️ Local, and deliberately not a re-read of `usage/useful` per row. The vouch is a write whose
-   * only visible consequence lives in another lens; keeping the button's own state here is what lets
-   * it answer immediately, and the authority is still the server — switching to `Vouched for` asks
-   * it, and this set never contradicts that list because it only ever holds what this session sent.
-   */
-  const [vouched, setVouched] = createSignal<ReadonlySet<string>>(EMPTY_IDS)
+  // Protection is durable state. One complete batch answers for these rows; absence in a capped
+  // useful-memory list cannot establish that a memory is unprotected.
+  const [protection, protectionActions] = createSettledResource(
+    () => {
+      const cn = conn()
+      return cn ? { cn, directory: directory(), ids: loadedRows().map((row) => row.id) } : undefined
+    },
+    ({ cn, ...input }) => memoryProtection(cn.http, input),
+  )
+  const protectedState = (id: string) => (protection.state === "ready" ? protection()?.get(id) : undefined)
+  const [savingProtection, setSavingProtection] = createSignal<ReadonlySet<string>>(EMPTY_IDS)
   const vouch = async (row: MemoryRow) => {
     const cn = conn()
-    if (!cn) return
-    const next = !vouched().has(row.id)
+    const current = protectedState(row.id)
+    if (!cn || current === undefined || savingProtection().has(row.id)) return
+    const next = !current
+    const dir = directory()
+    setSavingProtection((ids) => new Set([...ids, row.id]))
     try {
-      await memoryFeedback(cn.http, { directory: directory(), id: row.id, useful: next })
-      setVouched((current) => {
-        const set = new Set(current)
-        if (next) set.add(row.id)
-        else set.delete(row.id)
-        return set
-      })
+      if (!(await memoryFeedback(cn.http, { directory: dir, id: row.id, useful: next })))
+        throw new Error("Memory protection was not saved")
+      const saved = await memoryProtection(cn.http, { directory: dir, ids: [row.id] })
+      if (saved.get(row.id) !== next) throw new Error("Memory protection was not saved")
       // The `Vouched for` lens reads the ledger, so it has to be re-asked rather than patched.
       setLocalTick((value) => value + 1)
     } catch (error) {
@@ -377,6 +377,9 @@ export const MemoryRemembered: Component<{
         title: "Could not save that",
         description: error instanceof Error ? error.message : String(error),
       })
+    } finally {
+      await protectionActions.refetch()
+      setSavingProtection((ids) => new Set([...ids].filter((id) => id !== row.id)))
     }
   }
 
@@ -418,11 +421,7 @@ export const MemoryRemembered: Component<{
           <div class="flex shrink-0 gap-1.5" data-slot="memory-batch">
             <For each={clearTargets()}>
               {(target) => (
-                <ButtonV2
-                  size="small"
-                  variant="ghost-muted"
-                  onClick={() => void forgetScope(target)}
-                >
+                <ButtonV2 size="small" variant="ghost-muted" onClick={() => void forgetScope(target)}>
                   {language.t("memory.clearScope.action", { owner: target.label })}
                 </ButtonV2>
               )}
@@ -447,132 +446,132 @@ export const MemoryRemembered: Component<{
           </div>
         }
       >
-      <Show
-        when={count() > 0}
-        fallback={
-          // ⚠️ Two different emptinesses. "Nothing remembered" is a fact about the cabinet; "nothing
-          // matches" is a fact about the query, and saying the first when the second is true tells a
-          // user their memories are gone.
-          <div class="flex flex-col gap-1" data-slot="memory-list-empty">
-            {/* THREE emptinesses, and telling them apart is the whole point. The cabinet is empty; the
+        <Show
+          when={count() > 0}
+          fallback={
+            // ⚠️ Two different emptinesses. "Nothing remembered" is a fact about the cabinet; "nothing
+            // matches" is a fact about the query, and saying the first when the second is true tells a
+            // user their memories are gone.
+            <div class="flex flex-col gap-1" data-slot="memory-list-empty">
+              {/* THREE emptinesses, and telling them apart is the whole point. The cabinet is empty; the
                 query matched nothing; the focused neighborhood holds nothing this list shows. Saying
                 the first when either of the others is true tells someone their memories are gone. */}
-            {/* FOUR emptinesses now, and the fourth is not an emptiness at all: the lens has no
+              {/* FOUR emptinesses now, and the fourth is not an emptiness at all: the lens has no
                 data source yet, so "nothing here" would be a claim about a measurement nobody took.
                 It outranks the others — a question that CANNOT be answered is not one that was
                 answered "none". */}
-            <Show
-              when={unmeasured()}
-              fallback={
-                <p class="settings-v2-field-description">
-                  {props.restrictLabel
-                    ? `Nothing else here connects to ${props.restrictLabel}.`
-                    : loadedRows().length > 0
-                      ? "No memory here matches that search."
-                      : language.t("settings.memory.list.empty")}
-                </p>
-              }
-            >
-              {(note) => (
-                <p class="settings-v2-field-description" data-slot="memory-lens-unmeasured">
-                  {note()}
-                </p>
-              )}
-            </Show>
-            <Show when={props.restrictLabel}>
-              <button
-                type="button"
-                data-slot="memory-focus-clear-empty"
-                class="self-start text-xs underline opacity-70 hover:opacity-100"
-                onClick={props.onClearRestrict}
+              <Show
+                when={unmeasured()}
+                fallback={
+                  <p class="settings-v2-field-description">
+                    {props.restrictLabel
+                      ? `Nothing else here connects to ${props.restrictLabel}.`
+                      : loadedRows().length > 0
+                        ? "No memory here matches that search."
+                        : language.t("settings.memory.list.empty")}
+                  </p>
+                }
               >
-                Show everything
-              </button>
-            </Show>
-            <Show when={scopeNote()}>
-              {(note) => (
-                <p class="settings-v2-field-description" data-slot="memory-search-scope">
-                  {note()}
-                </p>
-              )}
-            </Show>
-          </div>
-        }
-      >
-        <Show when={notListed() > 0}>
-          <p class="settings-v2-field-description" data-slot="memory-passages-hidden">
-            {language.t("settings.memory.list.sourceHidden", { count: notListed() })}
-          </p>
-        </Show>
-        <Show when={scopeNote()}>
-          {(note) => (
-            <p class="settings-v2-field-description" data-slot="memory-search-scope">
-              {note()}
+                {(note) => (
+                  <p class="settings-v2-field-description" data-slot="memory-lens-unmeasured">
+                    {note()}
+                  </p>
+                )}
+              </Show>
+              <Show when={props.restrictLabel}>
+                <button
+                  type="button"
+                  data-slot="memory-focus-clear-empty"
+                  class="self-start text-xs underline opacity-70 hover:opacity-100"
+                  onClick={props.onClearRestrict}
+                >
+                  Show everything
+                </button>
+              </Show>
+              <Show when={scopeNote()}>
+                {(note) => (
+                  <p class="settings-v2-field-description" data-slot="memory-search-scope">
+                    {note()}
+                  </p>
+                )}
+              </Show>
+            </div>
+          }
+        >
+          <Show when={notListed() > 0}>
+            <p class="settings-v2-field-description" data-slot="memory-passages-hidden">
+              {language.t("settings.memory.list.sourceHidden", { count: notListed() })}
             </p>
-          )}
-        </Show>
-        {/* ⚠️ A SHORT ANSWER IS NOT PROOF THERE ARE NO MORE. The never-used scan stops at a depth
+          </Show>
+          <Show when={scopeNote()}>
+            {(note) => (
+              <p class="settings-v2-field-description" data-slot="memory-search-scope">
+                {note()}
+              </p>
+            )}
+          </Show>
+          {/* ⚠️ A SHORT ANSWER IS NOT PROOF THERE ARE NO MORE. The never-used scan stops at a depth
             the server chooses, and without this line a list of three would read as "only three
             memories have never been used" — which is the slice-presented-as-the-whole failure the
             Map already learned to report. */}
-        <Show when={partialScan()}>
-          {(scanned) => (
-            <p class="settings-v2-field-description" data-slot="memory-usage-partial">
-              Looked at the {scanned()} oldest, not the whole cabinet.
-            </p>
-          )}
-        </Show>
-        <Show when={props.restrictLabel}>
-          {(label) => (
-            <p class="settings-v2-field-description" data-slot="memory-focus-note">
-              Showing what connects to <strong>{label()}</strong>.{" "}
-              <button type="button" class="underline opacity-70 hover:opacity-100" onClick={props.onClearRestrict}>
-                Show everything
-              </button>
-            </p>
-          )}
-        </Show>
-        <div class="flex flex-col gap-1.5 overflow-y-auto pr-1">
-          <For each={visibleRows()}>
-            {(row) => (
-              <div
-                class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2"
-                data-slot="memory-row"
-                data-memory-id={row.id}
-                data-status={row.status}
-              >
-                <div class="flex min-w-0 flex-col gap-0.5">
-                  <span class="text-sm leading-snug break-words">{row.text}</span>
-                  <span class="flex flex-wrap items-center gap-1.5 text-xs opacity-60">
-                    <span>{scopeLabel(row.scope)}</span>
-                    {/* 🔴 The badge appears only when the status is NOT the ordinary one. A tag on
+          <Show when={partialScan()}>
+            {(scanned) => (
+              <p class="settings-v2-field-description" data-slot="memory-usage-partial">
+                Looked at the {scanned()} oldest, not the whole cabinet.
+              </p>
+            )}
+          </Show>
+          <Show when={props.restrictLabel}>
+            {(label) => (
+              <p class="settings-v2-field-description" data-slot="memory-focus-note">
+                Showing what connects to <strong>{label()}</strong>.{" "}
+                <button type="button" class="underline opacity-70 hover:opacity-100" onClick={props.onClearRestrict}>
+                  Show everything
+                </button>
+              </p>
+            )}
+          </Show>
+          <div class="flex flex-col gap-1.5 overflow-y-auto pr-1">
+            <For each={visibleRows()}>
+              {(row) => (
+                <div
+                  class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2"
+                  data-slot="memory-row"
+                  data-memory-id={row.id}
+                  data-status={row.status}
+                >
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="text-sm leading-snug break-words">{row.text}</span>
+                    <span class="flex flex-wrap items-center gap-1.5 text-xs opacity-60">
+                      <span>{scopeLabel(row.scope)}</span>
+                      {/* 🔴 The badge appears only when the status is NOT the ordinary one. A tag on
                         every row saying "active" trains the eye to skip exactly the place the one
                         meaningful word will appear. ⚠️ FORGOTTEN is not a status — it is a closed
                         validity range the wire does not carry — so it arrives as a set of ids and
                         falls through to the same badge. */}
-                    <Show when={statusBadge(row.status) ?? (forgotten().has(row.id) ? FORGOTTEN_BADGE : undefined)}>
-                      {(badge) => (
-                        <span
-                          class="rounded px-1.5 py-0.5"
-                          data-slot="memory-row-status"
-                          style={{ background: badge().tint, color: badge().ink }}
-                          title={badge().title}
+                      <Show when={statusBadge(row.status) ?? (forgotten().has(row.id) ? FORGOTTEN_BADGE : undefined)}>
+                        {(badge) => (
+                          <span
+                            class="rounded px-1.5 py-0.5"
+                            data-slot="memory-row-status"
+                            style={{ background: badge().tint, color: badge().ink }}
+                            title={badge().title}
+                          >
+                            {badge().label}
+                          </span>
+                        )}
+                      </Show>
+                      <Show when={props.onInspect}>
+                        <button
+                          type="button"
+                          data-slot="memory-row-inspect"
+                          class="underline opacity-70 hover:opacity-100"
+                          onClick={() => props.onInspect?.(row.id)}
                         >
-                          {badge().label}
-                        </span>
-                      )}
-                    </Show>
-                    <Show when={props.onInspect}>
-                      <button
-                        type="button"
-                        data-slot="memory-row-inspect"
-                        class="underline opacity-70 hover:opacity-100"
-                        onClick={() => props.onInspect?.(row.id)}
-                      >
-                        Show on the map
-                      </button>
-                    </Show>
-                    {/* 🔴 THE VOUCH — the only door to the pruning protection.
+                          Show on the map
+                        </button>
+                      </Show>
+                      {/* 🔴 THE VOUCH — the only door to the pruning protection.
                         `POST /api/memory/feedback` shipped with no caller, so a memory could be
                         protected from the forgetting pass and nobody had any way to protect one. It
                         sits beside Forget deliberately: the two are the same question asked in
@@ -580,23 +579,35 @@ export const MemoryRemembered: Component<{
                         answers in one place.
                         ⚠️ The label says what it DOES, not what it is. "Useful" is a judgement; "Keep
                         this" is the consequence, which is the thing a user is actually choosing. */}
-                    <button
-                      type="button"
-                      data-slot="memory-row-vouch"
-                      data-vouched={vouched().has(row.id) ? "" : undefined}
-                      class="underline opacity-70 hover:opacity-100"
-                      title={
-                        vouched().has(row.id)
-                          ? "Stop protecting this from the forgetting pass."
-                          : "Never forget this one, however rarely it comes up."
-                      }
-                      onClick={() => void vouch(row)}
-                    >
-                      {vouched().has(row.id) ? "Kept ✓" : "Keep this"}
-                    </button>
-                  </span>
-                </div>
-                {/* 🔴 **Forgetting was ADVANCED, and that is why the owner reported the Memory app
+                      <button
+                        type="button"
+                        data-slot="memory-row-vouch"
+                        data-vouched={protectedState(row.id) ? "" : undefined}
+                        aria-pressed={protectedState(row.id)}
+                        disabled={
+                          savingProtection().has(row.id) || (!protection.failed && protectedState(row.id) === undefined)
+                        }
+                        class="underline opacity-70 hover:opacity-100"
+                        title={
+                          protectedState(row.id)
+                            ? "Stop protecting this from the forgetting pass."
+                            : "Never forget this one, however rarely it comes up."
+                        }
+                        onClick={() => (protection.failed ? void protectionActions.refetch() : void vouch(row))}
+                      >
+                        {protection.failed
+                          ? language.t("memory.protection.retry")
+                          : savingProtection().has(row.id)
+                            ? language.t("memory.protection.saving")
+                            : protectedState(row.id) === undefined
+                              ? language.t("memory.protection.loading")
+                              : protectedState(row.id)
+                                ? "Kept ✓"
+                                : "Keep this"}
+                      </button>
+                    </span>
+                  </div>
+                  {/* 🔴 **Forgetting was ADVANCED, and that is why the owner reported the Memory app
                     had "no way to remove memories" (2026-08-20) — the button was there and their
                     level hid it.** The old note said reading is for everyone while deleting is "the
                     irreversible half" and keeps its guard. That reasoning does not survive contact
@@ -607,19 +618,19 @@ export const MemoryRemembered: Component<{
                     wrong about themselves and cannot remove it has been handed a fault they cannot
                     fix. The irreversibility is answered by the CONFIRM below, which is a question
                     anyone can answer, not by hiding the control from most people. */}
-                <ButtonV2
-                  size="small"
-                  variant="ghost-muted"
-                  icon="close-small"
-                  aria-label={language.t("settings.memory.forget.action")}
-                  title={language.t("settings.memory.forget.action")}
-                  onClick={() => void forget(row)}
-                />
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
+                  <ButtonV2
+                    size="small"
+                    variant="ghost-muted"
+                    icon="close-small"
+                    aria-label={language.t("settings.memory.forget.action")}
+                    title={language.t("settings.memory.forget.action")}
+                    onClick={() => void forget(row)}
+                  />
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       </Show>
     </div>
   )

@@ -262,17 +262,26 @@ export const MemoryHandler = handlerLayer(
             }),
           )
           .handle(
+            "memory.protection",
+            Effect.fn(function* (ctx) {
+              return yield* MemoryAccessLedger.protectionFor(db, ctx.payload.ids).pipe(
+                Effect.mapError(() => new InvalidRequestError({ message: "Could not read memory protection" })),
+              )
+            }),
+          )
+          .handle(
             "memory.feedback",
             Effect.fn(function* (ctx) {
               const memory = Memory.client(yield* Memory.node.service)
               // The scope rides along so a cleared cabinet can drop its ledger rows with it.
-              const row = (yield* memory.byIds([ctx.payload.id]).pipe(Effect.orElseSucceed(() => [])))[0]
+              const row = (yield* asBadRequest(memory.byIds([ctx.payload.id])))[0]
+              if (!row) return yield* Effect.fail(new InvalidRequestError({ message: "That memory is unavailable" }))
               yield* MemoryAccessLedger.feedback(db, {
                 id: ctx.payload.id,
                 useful: ctx.payload.useful,
                 at: Date.now(),
                 ...(row === undefined ? {} : { scope: row.scope }),
-              })
+              }).pipe(Effect.mapError(() => new InvalidRequestError({ message: "Could not save memory protection" })))
               return true
             }),
           )

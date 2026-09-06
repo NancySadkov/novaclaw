@@ -14,11 +14,13 @@ export const RAW_ROW_HORIZON = 50_000
 /**
  * THE RETRIEVAL ACCESS LEDGER — what recall delivered, and what became of it.
  *
- * 🔴 **Every function here DEGRADES rather than fails, and that is deliberate.** The ledger is a
+ * Background observations DEGRADE rather than fail. The ledger is a
  * measurement surface hanging off the store boundary; a locked database or a missing table must cost
  * an observation, never a turn. So the writes end in `Effect.ignore` and the reads in
  * `orElseSucceed`, exactly as `memory-observed.ts` treats the event bus — and for the same reason:
  * memory degrades, it does not take the turn down with it.
+ * Explicit protection reads and feedback writes are different: the UI must learn whether they
+ * succeeded. `protectionFor` and `feedback` preserve failures instead of inventing an empty state.
  *
  * ⚠️ **`Effect.orDie` is what the sibling stores use and it is the wrong stance HERE.** A defect
  * from `AgentUsage.record` surfaces on a path the user is already watching; a defect from a recall
@@ -258,7 +260,7 @@ export const feedback = (
           .where(eq(MemoryAccessTable.memory_id, input.id))
           .run(),
       ),
-      degradeWrite,
+      Effect.asVoid,
     )
 
 /**
@@ -311,6 +313,21 @@ const toUsage = (row: typeof MemoryUsageTable.$inferSelect): Usage => ({
   useful: row.useful,
   corrections: row.corrections,
 })
+
+/** Complete protection state for the requested ids. A missing ledger row means unprotected;
+ * a failed query does not. This is an explicit UI read, unlike best-effort recall observations. */
+export const protectionFor = (db: Db, ids: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const unique = [...new Set(ids)]
+    if (!unique.length) return [] as { id: string; protected: boolean }[]
+    const rows = yield* db
+      .select({ id: MemoryUsageTable.memory_id, useful: MemoryUsageTable.useful })
+      .from(MemoryUsageTable)
+      .where(inArray(MemoryUsageTable.memory_id, unique))
+      .all()
+    const protectedIDs = new Set(rows.filter((row) => row.useful > 0).map((row) => row.id))
+    return unique.map((id) => ({ id, protected: protectedIDs.has(id) }))
+  })
 
 /** The rollup for a specific set of memories — what the pruning policy reads. */
 export const usageFor = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<Map<string, Usage>> =>

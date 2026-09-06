@@ -303,6 +303,31 @@ export function memoryFeedback(
   })
 }
 
+/** Explicit, complete answers for the requested ids; a capped useful list cannot answer this. */
+export async function memoryProtection(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; ids: readonly string[] },
+) {
+  const result = new Map<string, boolean>()
+  const ids = [...new Set(input.ids)]
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const batch = ids.slice(offset, offset + 500)
+    const rows = await call<{ id: string; protected: boolean }[]>(
+      server,
+      "POST",
+      "api/memory/protection",
+      input.directory,
+      { ids: batch },
+    )
+    for (const row of rows) {
+      if (typeof row.protected !== "boolean") throw new Error("Invalid memory protection state")
+      result.set(row.id, row.protected)
+    }
+    if (batch.some((id) => !result.has(id))) throw new Error("Incomplete memory protection state")
+  }
+  return result
+}
+
 export function memoryGraph(
   server: ServerConnection.HttpBase,
   input: { directory: string; scopes?: readonly string[]; limit?: number },

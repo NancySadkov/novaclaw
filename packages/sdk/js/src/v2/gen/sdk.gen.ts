@@ -3214,6 +3214,30 @@ class ApiV2Memory extends NovaClawApiClient {
   }
 
   /**
+   * Read memory protection
+   *
+   * Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.
+   */
+  public protection<ThrowOnError extends boolean = false>(
+    parameters: {
+      ids: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { ids: parameters?.["ids"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryProtectionResponses,
+      T.V2MemoryProtectionErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/protection",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Mark useful
    *
    * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.

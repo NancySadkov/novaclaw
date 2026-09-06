@@ -11723,6 +11723,88 @@
         ]
       }
     },
+    "/api/memory/protection": {
+      "post": {
+        "tags": ["memory lifecycle"],
+        "operationId": "v2.memory.protection",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "protected": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["id", "protected"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.",
+        "summary": "Read memory protection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 500
+                  }
+                },
+                "required": ["ids"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.memory.protection({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/memory/feedback": {
       "post": {
         "tags": ["memory lifecycle"],
