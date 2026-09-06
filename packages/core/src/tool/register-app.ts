@@ -69,6 +69,12 @@ export type Output = typeof Output.Type
 export const toModelOutput = (output: Output) =>
   `Registered home app "${output.title}" (id: ${output.id}). It appears on the user's home screen.`
 
+export const metadata = {
+  description: `Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens a built-in app by route id (${MANIFEST_ROUTE_IDS.join(", ")}), an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.`,
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -79,9 +85,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description: `Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens a built-in app by route id (${MANIFEST_ROUTE_IDS.join(", ")}), an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.`,
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

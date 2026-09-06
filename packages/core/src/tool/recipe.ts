@@ -197,6 +197,8 @@ export const savedMessage = (recipe: Recipe.Recipe, folder: string, replaced: bo
 
 const failure = (message: string) => new ToolFailure({ message })
 
+export const metadata = { description, input: Input, output: Output } as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -212,9 +214,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description,
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
             execute: (input, context) =>
               Effect.gen(function* () {

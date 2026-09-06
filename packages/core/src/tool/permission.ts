@@ -315,6 +315,8 @@ export const description =
 
 const failure = (message: string) => new ToolFailure({ message })
 
+export const metadata = { description, input: Input, output: Output, structured: StructuredOutput } as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -328,10 +330,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description,
-            input: Input,
-            output: Output,
-            structured: StructuredOutput,
+            ...metadata,
             toStructuredOutput: ({ output }) => ({
               changed: output.changed,
               mode: output.mode,

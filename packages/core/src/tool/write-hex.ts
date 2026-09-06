@@ -43,6 +43,17 @@ export type Output = typeof Output.Type
 export const toModelOutput = (output: Output) =>
   `${output.created ? "Created file and wrote" : "Patched"} ${output.bytesWritten} bytes @${output.offset}; file is now ${output.size} bytes`
 
+export const metadata = {
+  sideEffect: "idempotent-write",
+  description:
+    "Patch bytes in a BINARY file at a byte offset (in place — the rest of the file is untouched; writing at the file size appends; a missing file is created only at offset 0). `data` is hex text — canonical input example:\n" +
+    "  4d 5a 90 00 03 00 00 00 ; first 8 bytes\n" +
+    "  ff fe\n" +
+    'Anything after ";" is a comment, blank lines and indentation are ignored, and a byte may be written as 4d, 0x4d, 4dh or 4d-h — so read-hex output can be edited and written back verbatim. Use this (not `write`) for any non-text file.',
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -53,14 +64,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            sideEffect: "idempotent-write",
-            description:
-              "Patch bytes in a BINARY file at a byte offset (in place — the rest of the file is untouched; writing at the file size appends; a missing file is created only at offset 0). `data` is hex text — canonical input example:\n" +
-              "  4d 5a 90 00 03 00 00 00 ; first 8 bytes\n" +
-              "  ff fe\n" +
-              'Anything after ";" is a comment, blank lines and indentation are ignored, and a byte may be written as 4d, 0x4d, 4dh or 4d-h — so read-hex output can be edited and written back verbatim. Use this (not `write`) for any non-text file.',
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

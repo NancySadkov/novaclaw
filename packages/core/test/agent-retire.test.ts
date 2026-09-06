@@ -1,10 +1,10 @@
+import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
-import { KbTool } from "@novaclaw/core/tool/kb"
 import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -161,7 +161,7 @@ describe("a set-aside cabinet is unreachable from any agent's own search", () =>
     // cabinet, the household. There is no unscoped search on the agent-facing door, which is what
     // makes `retired:*` invisible without a rule that has to be remembered.
     for (const scope of ["session", "agent", "global", "all", undefined] as const) {
-      const scopes = KbTool.scopesForSearch("ses_1", "theron", scope)
+      const scopes = MemoryAccess.scopesForSearch("ses_1", "theron", scope)
       expect(scopes.every((entry) => !entry.startsWith("retired:"))).toBe(true)
       expect(scopes.length).toBeGreaterThan(0)
     }
@@ -170,7 +170,7 @@ describe("a set-aside cabinet is unreachable from any agent's own search", () =>
   test("NEGATIVE CONTROL: the widest ask really does widen", () => {
     // Without this, the assertion above would pass just as happily on a function that returned one
     // scope forever.
-    expect(KbTool.scopesForSearch("ses_1", "theron", "all")).toEqual(["ses_1", "agent:theron", "global"])
-    expect(KbTool.scopesForSearch("ses_1", "theron", "agent")).toEqual(["agent:theron"])
+    expect(MemoryAccess.scopesForSearch("ses_1", "theron", "all")).toEqual(["ses_1", "agent:theron", "global"])
+    expect(MemoryAccess.scopesForSearch("ses_1", "theron", "agent")).toEqual(["agent:theron"])
   })
 })

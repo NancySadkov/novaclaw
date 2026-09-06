@@ -8,6 +8,8 @@ import { UserProfile } from "../user-profile"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { sharingEnabled } from "./profile-availability"
+export { sharingEnabled as available } from "./profile-availability"
 
 export const name = "profile"
 
@@ -26,6 +28,8 @@ export type Output = typeof Output.Type
 // injected layer — "About your user: …". Empty profile still yields a clear, non-scaffolded line.
 export const toModelOutput = (output: Output) =>
   UserProfile.resolve(output, {}) ?? "The user has not filled in any profile details yet."
+
+export const metadata = { description, input: Input, output: Output } as const
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -95,22 +99,14 @@ export const layer = Layer.effectDiscard(
     // ⚠️ A store failure DIES rather than defaulting, deliberately: this is a privacy switch, so
     // "assume sharing is on" is the wrong answer to "I could not read your setting", and
     // `Config.entries()` already dies the same way on the per-turn path. Do not wrap it fail-open.
-    const sharingEnabled = config
-      .entries()
-      .pipe(Effect.map((entries) => Config.latest(entries, "user_profile")?.enabled !== false))
 
     yield* tools
       .register({
         [name]: ToolRegistry.withAvailability(
           Tool.withDeferred(
             Tool.make({
-              description,
-              input: Input,
-              output: Output,
+              ...metadata,
               toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-              // Reads through to the settings store on every call (ruling 3), so a profile edited
-              // mid-session is what the next call returns — there is no registration-time snapshot to
-              // go stale. `username` is the legacy name fallback (mirrors B4).
               execute: () =>
                 config.entries().pipe(
                   Effect.map((current) => {
@@ -123,7 +119,7 @@ export const layer = Layer.effectDiscard(
                 ),
             }),
           ),
-          sharingEnabled,
+          sharingEnabled.pipe(Effect.provideService(Config.Service, config)),
         ),
       })
       .pipe(Effect.orDie)

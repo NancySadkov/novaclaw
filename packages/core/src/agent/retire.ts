@@ -8,7 +8,7 @@ import type { MemoryClient } from "../kb-graph/memory-client"
 import { RosterChat } from "../session/roster-chat"
 import { SessionPatch } from "../session/patch"
 import { SessionSchema } from "../session/schema"
-import { KbTool } from "../tool/kb"
+import * as MemoryAccess from "../kb-graph/memory-access"
 import { AgentUsage } from "./usage"
 import { GraphRegistry } from "./graph-registry"
 
@@ -59,7 +59,7 @@ const archiveChats = (input: {
  * be a cabinet nobody clears rather than an error anybody sees. `undefined` is impossible for a real
  * id and is treated as "nothing to clear" rather than being forced.
  */
-export const cabinetOf = (agent: string): string | undefined => KbTool.agentScope(agent)
+export const cabinetOf = (agent: string): string | undefined => MemoryAccess.agentScope(agent)
 
 /**
  * Erase everything keyed on a retired colleague's id.

@@ -262,7 +262,10 @@ export interface Source {
 /** The instance's own log directory. **Not a parameter** — see the refusal note in `run`. */
 export const instanceSource = (): Source => ({ directory: Global.Path.log, name: "novaclaw", now: Date.now })
 
-const filterOf = (input: { level?: Level; key?: string; subsystem?: string; correlator?: string; match?: string; since?: string }, source: Source) => {
+const filterOf = (
+  input: { level?: Level; key?: string; subsystem?: string; correlator?: string; match?: string; since?: string },
+  source: Source,
+) => {
   const since = input.since === undefined ? undefined : durationMs(input.since)
   return {
     level: input.level,
@@ -328,7 +331,10 @@ export function run(input: typeof Input.Type, source: Source): Output | ToolFail
     })
 
   if (input.op === "count") {
-    const buckets = LogRead.tally({ ...filter, directory: source.directory, name: source.name, limit: 0 }, input.by ?? "event")
+    const buckets = LogRead.tally(
+      { ...filter, directory: source.directory, name: source.name, limit: 0 },
+      input.by ?? "event",
+    )
     if (buckets.length === 0) return { ok: true, message: "No lines match. Widen the filter, or check {op:'keys'}." }
     const shown = buckets.slice(0, MAX_BUCKETS)
     const total = buckets.reduce((sum, [, n]) => sum + n, 0)
@@ -365,6 +371,8 @@ export function run(input: typeof Input.Type, source: Source): Output | ToolFail
   return { ok: true, message: `${header}\n${formatLines(result.lines, plane)}` }
 }
 
+export const metadata = { description, input: Input, output: Output } as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -372,9 +380,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description,
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
             execute: (input) =>
               // Reading a log must never be the thing that takes the instance down — the same rule
@@ -383,9 +389,12 @@ export const layer = Layer.effectDiscard(
               // `log-read.ts` is already total; this is the outer belt for anything that is not.
               Effect.try({
                 try: () => run(input, instanceSource()),
-                catch: (error) =>
-                  new ToolFailure({ message: `Could not read the instance log: ${String(error)}` }),
-              }).pipe(Effect.flatMap((result) => (result instanceof ToolFailure ? Effect.fail(result) : Effect.succeed(result)))),
+                catch: (error) => new ToolFailure({ message: `Could not read the instance log: ${String(error)}` }),
+              }).pipe(
+                Effect.flatMap((result) =>
+                  result instanceof ToolFailure ? Effect.fail(result) : Effect.succeed(result),
+                ),
+              ),
           }),
         ),
       })

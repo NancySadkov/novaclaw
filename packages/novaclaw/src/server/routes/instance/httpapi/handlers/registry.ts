@@ -1,6 +1,6 @@
 import { DbRegistry } from "@novaclaw/core/db-registry"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { DbRegistryTool } from "@novaclaw/core/tool/db-registry"
+import { DbRegistryView } from "@novaclaw/core/db-registry-view"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -94,7 +94,7 @@ export const registryHandlers = HttpApiBuilder.group(InstanceHttpApi, "registry"
           if (
             writer === "agent" &&
             DbRegistry.configBackedTables().has(ctx.query.table) &&
-            !DbRegistryTool.configRoutes().has(ctx.query.table)
+            !DbRegistryView.configRoutes().has(ctx.query.table)
           )
             return yield* new InvalidRequestError({
               message:
@@ -105,7 +105,7 @@ export const registryHandlers = HttpApiBuilder.group(InstanceHttpApi, "registry"
           const page = yield* mapError(
             DbRegistry.rows({ table: ctx.query.table, limit: ctx.query.limit, offset: ctx.query.offset }),
           )
-          return writer === "agent" ? DbRegistryTool.redactPage(page) : page
+          return writer === "agent" ? DbRegistryView.redactPage(page) : page
         }),
       )
       .handle(

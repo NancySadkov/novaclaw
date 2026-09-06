@@ -134,6 +134,23 @@ type Runtime = {
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
 
+/** A schema-only registration whose implementation is resolved by the location's lazy owner.
+ * It goes through the same settlement, permission and output gates as every other registration. */
+export function lazy(config: {
+  readonly definition: ToolDefinition
+  readonly sideEffect: SideEffectClass
+  readonly load: Effect.Effect<AnyTool, ToolFailure>
+}): AnyTool {
+  const tool = Object.freeze({}) as AnyTool
+  runtimes.set(tool, {
+    deferred: true,
+    sideEffect: config.sideEffect,
+    definition: (name) => new ToolDefinition({ ...config.definition, name }),
+    settle: (call, context) => config.load.pipe(Effect.flatMap((implementation) => settle(implementation, call, context))),
+  })
+  return tool
+}
+
 const runtimes = new WeakMap<AnyTool, Runtime>()
 
 export function make<

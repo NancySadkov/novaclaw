@@ -214,45 +214,21 @@ const probe = <A>(effect: Effect.Effect<A, MemoryClient.MemoryError>): Effect.Ef
 const OVERFETCH = 3
 const OVERFETCH_CAP = 40
 
-/** The agent's own filing cabinet, or `undefined` when this session has no agent to own one.
- *
- *  🔴 **Why the surface grew a third literal instead of re-pointing `session`** (the decision
- *  `notes/named-agents.md` reserved). Under the roster (AGENTS.md — the structural metaphor) there are
- *  genuinely three durable places a fact can belong: this chat, this OFFICER across its chats, and the
- *  household every agent shares. Re-pointing `session` at the agent would have kept the vocabulary
- *  two-wide by making its own description ("this chat only") false, and a lying enum is worse than a
- *  wider one — the model reads these strings and the user reads the same words in the UI. */
-export const agentScope = (agent: string | undefined): string | undefined =>
-  agent === undefined || agent === "" ? undefined : `agent:${agent}`
-
-/** Which scopes a `search` reads. `all` is everything this agent may see — never another agent's
- *  cabinet, which is not reachable through any value of this parameter. */
-export const scopesForSearch = (
-  session: string,
-  agent: string | undefined,
-  scope: "session" | "agent" | "global" | "all" | undefined,
-): string[] => {
-  const own = agentScope(agent)
-  if (scope === "session") return [session]
-  if (scope === "global") return ["global"]
-  // A request for `agent` on a session that has none degrades to this chat rather than to `global`:
-  // widening a narrowing request is the one direction that can leak.
-  if (scope === "agent") return own === undefined ? [session] : [own]
-  return own === undefined ? [session, "global"] : [session, own, "global"]
-}
-
-/** Where a `remember`/`ingest` writes. The default is the OFFICER's cabinet — an officer's durable
- *  fact belongs to the officer, not to whichever chat was open and not to the household pile every
- *  other agent reads. With no agent, `global` remains the durable default, as before. */
-export const scopeForWrite = (
-  session: string,
-  agent: string | undefined,
-  scope: "session" | "agent" | "global" | undefined,
-): string => {
-  if (scope === "session") return session
-  if (scope === "global") return "global"
-  return agentScope(agent) ?? "global"
-}
+export const metadata = {
+description:
+              "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
+              "by keyword) · remember (save a fact; returns its id — default durably across all chats; give " +
+              "`name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · " +
+              "history (what a memory replaced, and what it rested on) · relate " +
+              "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
+              "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
+              "linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable " +
+              "passages — the file never enters your context, so ingest a big manual then search it). " +
+              "Chain them: remember the entities, then relate what connects them. " +
+              'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"mem_…","to":"mem_…","type":"wrote"}.',
+input: Input,
+output: Output
+} as const
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -266,19 +242,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description:
-              "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
-              "by keyword) · remember (save a fact; returns its id — default durably across all chats; give " +
-              "`name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · " +
-              "history (what a memory replaced, and what it rested on) · relate " +
-              "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
-              "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
-              "linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable " +
-              "passages — the file never enters your context, so ingest a big manual then search it). " +
-              "Chain them: remember the entities, then relate what connects them. " +
-              'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"mem_…","to":"mem_…","type":"wrote"}.',
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
             execute: (input, context) =>
               Effect.gen(function* () {
@@ -313,7 +277,7 @@ export const layer = Layer.effectDiscard(
                  * `all` is exactly what `search` already meant by it — this chat, this officer's
                  * cabinet, and the household's shared facts. Never another officer's.
                  */
-                const access = MemoryAccess.of(scopesForSearch(sessionScope, agentID, "all"))
+                const access = MemoryAccess.of(MemoryAccess.scopesForSearch(sessionScope, agentID, "all"))
                 switch (input.op) {
                   case "search": {
                     // The VECTOR leg: embedding the query makes the engine fuse vector KNN with FTS
@@ -326,7 +290,7 @@ export const layer = Layer.effectDiscard(
                         // Over-fetch, then re-rank down to k: ordering can only choose among what
                         // retrieval returned, so the candidate pool must be wider than the answer.
                         k: Math.min(k * OVERFETCH, OVERFETCH_CAP),
-                        scopes: scopesForSearch(sessionScope, agentID, input.scope),
+                        scopes: MemoryAccess.scopesForSearch(sessionScope, agentID, input.scope),
                         surface: "kb-tool",
                         ...(queryVector === undefined ? {} : { embedding: queryVector }),
                       }),
@@ -347,7 +311,7 @@ export const layer = Layer.effectDiscard(
                     return { ok: true, message: formatHits(hits) } satisfies Output
                   }
                   case "remember": {
-                    const scope = scopeForWrite(sessionScope, agentID, input.scope)
+                    const scope = MemoryAccess.scopeForWrite(sessionScope, agentID, input.scope)
                     // Embed on write so this memory is reachable by the vector leg later; degrades to
                     // an FTS-only memory when no device is configured.
                     const vector = yield* Effect.promise(() => KbEmbedder.embedOne(input.text))
@@ -551,7 +515,7 @@ export const layer = Layer.effectDiscard(
                           message: `"${input.path}" looks like a binary file — ingest text documents only.`,
                         } satisfies Output
                       const label = input.name?.trim() || basename(target.canonical)
-                      const ingestScope = scopeForWrite(sessionScope, agentID, input.scope)
+                      const ingestScope = MemoryAccess.scopeForWrite(sessionScope, agentID, input.scope)
                       const passages = KbChunk.chunk(KbChunk.stripGutenberg(raw))
                       if (passages.length === 0)
                         return { ok: false, message: `"${label}" has no readable text to ingest.` } satisfies Output

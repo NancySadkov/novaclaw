@@ -75,3 +75,36 @@ export const narrowest = (a: string, b: string): string => {
 
 /** Do two scopes belong to the same private space, or is one of them shared? */
 export const compatible = (a: string, b: string): boolean => a === b || a === "global" || b === "global"
+
+// Canonical memory scopes, shared by tools and colleague lifecycle operations.
+export const agentScope = (agent: string | undefined): string | undefined =>
+  agent === undefined || agent === "" ? undefined : `agent:${agent}`
+
+/** Which scopes a `search` reads. `all` is everything this agent may see — never another agent's
+ *  cabinet, which is not reachable through any value of this parameter. */
+export const scopesForSearch = (
+  session: string,
+  agent: string | undefined,
+  scope: "session" | "agent" | "global" | "all" | undefined,
+): string[] => {
+  const own = agentScope(agent)
+  if (scope === "session") return [session]
+  if (scope === "global") return ["global"]
+  // A request for `agent` on a session that has none degrades to this chat rather than to `global`:
+  // widening a narrowing request is the one direction that can leak.
+  if (scope === "agent") return own === undefined ? [session] : [own]
+  return own === undefined ? [session, "global"] : [session, own, "global"]
+}
+
+/** Where a `remember`/`ingest` writes. The default is the OFFICER's cabinet — an officer's durable
+ *  fact belongs to the officer, not to whichever chat was open and not to the household pile every
+ *  other agent reads. With no agent, `global` remains the durable default, as before. */
+export const scopeForWrite = (
+  session: string,
+  agent: string | undefined,
+  scope: "session" | "agent" | "global" | undefined,
+): string => {
+  if (scope === "session") return session
+  if (scope === "global") return "global"
+  return agentScope(agent) ?? "global"
+}

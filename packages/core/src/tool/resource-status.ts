@@ -15,6 +15,13 @@ export type Output = typeof Output.Type
 
 export const toModelOutput = (output: Output) => output.lines.join("\n")
 
+export const metadata = {
+  description:
+    "Inspect this instance's live memory pressure and disk headroom. Use after a resource warning or cleanup to confirm whether pressure returned to normal.",
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -23,10 +30,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description:
-              "Inspect this instance's live memory pressure and disk headroom. Use after a resource warning or cleanup to confirm whether pressure returned to normal.",
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: () => pressure.inspect().pipe(Effect.map((lines) => ({ lines: [...lines] }))),
           }),

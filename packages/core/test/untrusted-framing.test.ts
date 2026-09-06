@@ -698,6 +698,29 @@ const UNFRAMED_DEBT: ReadonlyArray<string> = []
 
 /** Everything else in `src/tool/`: no third-party bytes of its own. See the rule above. */
 const NO_EXTERNAL = [
+  // Schema-only declarations and lazy dispatch add no output of their own. Each implementation
+  // remains classified separately above/below; generation is checked by tool-deferred-manifest.
+  "deferred/community.gen.ts",
+  "deferred/computer.gen.ts",
+  "deferred/configure.gen.ts",
+  "deferred/db-registry.gen.ts",
+  "deferred/kb.gen.ts",
+  "deferred/log.gen.ts",
+  "deferred/messenger.gen.ts",
+  "deferred/permission.gen.ts",
+  "deferred/profile.gen.ts",
+  "deferred/quality-provision.gen.ts",
+  "deferred/read-hex.gen.ts",
+  "deferred/recipe.gen.ts",
+  "deferred/register-app.gen.ts",
+  "deferred/resource-status.gen.ts",
+  "deferred/revert.gen.ts",
+  "deferred/session.gen.ts",
+  "deferred/trash.gen.ts",
+  "deferred/write-hex.gen.ts",
+  "lazy-builtin.ts",
+  // Reads the owner's sharing switch; emits no model-facing content.
+  "profile-availability.ts",
   "application-tools.ts",
   "apply-patch.ts",
   "bash-jobs.sql.ts",

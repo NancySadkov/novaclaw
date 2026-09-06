@@ -531,6 +531,14 @@ const readCapture = (
     ),
   )
 
+export const metadata = {
+  sideEffect: "non-idempotent",
+  description,
+  input: Input,
+  output: Output,
+  structured: StructuredOutput,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -563,11 +571,7 @@ export const layer = Layer.effectDiscard(
          */
         [name]: Tool.withDeferred(
           Tool.make({
-            sideEffect: "non-idempotent",
-            description,
-            input: Input,
-            output: Output,
-            structured: StructuredOutput,
+            ...metadata,
             toStructuredOutput: ({ output }) => toStructured(output),
             toModelOutput: ({ output }) => toModelContent(output),
             execute: (input, context) =>

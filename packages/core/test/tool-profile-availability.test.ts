@@ -15,6 +15,8 @@ import { ProfileTool } from "../src/tool/profile"
 import { ToolRegistry } from "../src/tool/registry"
 import { Tool } from "../src/tool/tool"
 import { Tools } from "../src/tool/tools"
+import { SessionSchema } from "../src/session/schema"
+import { executeTool, toolIdentity } from "./lib/tool"
 
 // v0.2.0 B7 tier-2a — the `profile` tool's registration gate was computed at LAYER scope, so
 // switching profile sharing on in Settings did not put the tool on the model's horizon until the
@@ -65,6 +67,33 @@ const probeTool = () =>
   })
 
 describe("the profile tool's availability is live, not frozen at location open", () => {
+  it.live("the generated registration executes the real implementation and reads later settings writes", () =>
+    Effect.scoped(
+      withLocation((location) =>
+        Effect.gen(function* () {
+          const store = yield* SettingsConfigStore.Service
+          yield* store.set("user_profile", { enabled: true, name: "First name" })
+          yield* Effect.gen(function* () {
+            const registry = yield* ToolRegistry.Service
+            const invoke = (id: string) =>
+              executeTool(registry, {
+                ...toolIdentity,
+                sessionID: SessionSchema.ID.make("ses_lazy_profile"),
+                call: { type: "tool-call", id, name: "profile", input: {} },
+              })
+            expect(JSON.stringify(yield* invoke("first"))).toContain("First name")
+            yield* store.set("user_profile", { enabled: true, name: "Updated name" })
+            expect(JSON.stringify(yield* invoke("second"))).toContain("Updated name")
+            yield* store.set("user_profile", { enabled: false, name: "Private name" })
+            const withdrawn = yield* invoke("withdrawn")
+            expect(withdrawn.type).toBe("error")
+            expect(JSON.stringify(withdrawn)).not.toContain("Private name")
+          }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
+        }),
+      ),
+    ),
+  )
+
   it.live("turning sharing ON in Settings reaches the horizon with NO layer rebuild", () =>
     Effect.scoped(
       withLocation((location) =>

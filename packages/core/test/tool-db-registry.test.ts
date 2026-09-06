@@ -1,3 +1,4 @@
+import { DbRegistryView } from "@novaclaw/core/db-registry-view"
 import { describe, expect } from "bun:test"
 import { sql } from "drizzle-orm"
 import { Effect } from "effect"
@@ -169,12 +170,12 @@ describe("registry tool: a read never hands the model a stored credential", () =
 
       const credential = yield* message({ op: "rows", table: "credential" })
       expect(credential).not.toContain(CREDENTIAL_VALUE)
-      expect(credential).toContain(DbRegistryTool.SECRET_CELL)
+      expect(credential).toContain(DbRegistryView.SECRET_CELL)
       expect(credential).toContain("probe-label")
 
       const identity = yield* message({ op: "rows", table: "instance_identity" })
       expect(identity).not.toContain(IDENTITY_SECRET)
-      expect(identity).toContain(DbRegistryTool.SECRET_CELL)
+      expect(identity).toContain(DbRegistryView.SECRET_CELL)
       // The PUBLIC key is published by design and must survive — the ledger of what is secret is a
       // decision per column, not "this table is dangerous".
       expect(identity).toContain("ident-public-key")
@@ -197,14 +198,14 @@ describe("registry tool: a read never hands the model a stored credential", () =
       //    no redaction route here. The tool FAILS CLOSED on such a table, so the cost of missing it
       //    is a refusal rather than a leak — but a refusal is still a repair path removed.
       //  · a new column anywhere in the schema whose NAME reads as a credential.
-      const routes = DbRegistryTool.configRoutes()
+      const routes = DbRegistryView.configRoutes()
       const backed = DbRegistry.configBackedTables()
       for (const table of backed) expect(`${table}:${routes.has(table)}`).toBe(`${table}:true`)
       // …and no route for a table that is not config-backed, so the map can only track that set.
       for (const table of routes.keys()) expect(`${table}:${backed.has(table)}`).toBe(`${table}:true`)
 
       const { db } = yield* Database.Service
-      const declared = DbRegistryTool.secretColumns()
+      const declared = DbRegistryView.secretColumns()
       const names = (yield* DbRegistry.tables()).map((table) => table.name)
       // The sweep has something to look at: an empty schema would make the scan below vacuous.
       expect(names.length).toBeGreaterThan(30)
@@ -214,7 +215,7 @@ describe("registry tool: a read never hands the model a stored credential", () =
           .all(sql`SELECT name FROM pragma_table_info(${table})`)
           .pipe(Effect.orDie)) as { name: string }[]
         for (const { name } of columns)
-          if (DbRegistryTool.SECRET_COLUMN_PATTERN.test(name) && declared.get(table)?.has(name) !== true)
+          if (DbRegistryView.SECRET_COLUMN_PATTERN.test(name) && declared.get(table)?.has(name) !== true)
             undeclared.push(`${table}.${name}`)
       }
       expect(undeclared).toEqual([])
@@ -227,7 +228,7 @@ describe("registry tool: a read never hands the model a stored credential", () =
           .all(sql`SELECT name FROM pragma_table_info(${table})`)
           .pipe(Effect.orDie)) as { name: string }[]
         for (const { name } of columns)
-          if (DbRegistryTool.SECRET_COLUMN_PATTERN.test(name)) found.push(`${table}.${name}`)
+          if (DbRegistryView.SECRET_COLUMN_PATTERN.test(name)) found.push(`${table}.${name}`)
       }
       expect(found.sort()).toEqual([
         "account.access_token",

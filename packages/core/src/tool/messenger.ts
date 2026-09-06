@@ -442,6 +442,50 @@ export const formatHistory = (
   )
 }
 
+export const metadata = {
+  sideEffect: "non-idempotent",
+  description:
+    "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
+    "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
+    "TOOL IS your access to the user's email and messaging. Whenever the user mentions email, mail, " +
+    "their inbox, Gmail/Outlook, a chat, or 'my messages', do NOT assume you have no access — START " +
+    'by calling {"op":"status"} to see which accounts are actually connected. ' +
+    "Ops: status (connected accounts + connection state + this session's bindings) · chats (list an " +
+    "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
+    "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
+    "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
+    "user, paced at human speed; writing to a chat that has never messaged this account is a COLD " +
+    "START — refused unless you pass initiate:true, which asks the user for permission and is " +
+    "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
+    "to a chat/thread — pick a trust tier) · " +
+    "disconnect · upload (send a workspace file, optional caption) · download (save every attachment on " +
+    "one message) · " +
+    "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
+    "platform supports it). " +
+    'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
+    'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
+    "The user's messages and emails are private: handle them inside this workspace and never forward " +
+    "them anywhere without being asked. " +
+    "ALSO USE THIS TOOL AS A RESEARCH SOURCE — it reads platforms the open web cannot. Many sources " +
+    "publish ONLY inside a chat platform: Telegram channels, Discord announcement/news channels " +
+    "(indie studios often post releases there before anywhere else), subreddits. Their web pages are " +
+    "JavaScript-only or blocked, so webfetch returns an empty shell. When research leads to one of " +
+    'those and the account is connected, read it HERE: {"op":"chats","account":"<id>"} to find the ' +
+    'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
+    "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
+    "the platform's website. Cite the channel and post date like any other source. " +
+    '⚠️ For RESEARCH, pass purpose:"research" on `history` and read ONLY chats `chats` labels ' +
+    '"public source". The label is per chat and the user owns it, so the chat KIND tells you nothing ' +
+    "about it: a server text channel can be a public news feed or a company's private staff room. " +
+    '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
+    "has said yet — in all three cases you may still read the chat as correspondence when the user " +
+    "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
+    "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
+    "you cannot mark it yourself, and that is deliberate.",
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -597,47 +641,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            sideEffect: "non-idempotent",
-            description:
-              "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
-              "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
-              "TOOL IS your access to the user's email and messaging. Whenever the user mentions email, mail, " +
-              "their inbox, Gmail/Outlook, a chat, or 'my messages', do NOT assume you have no access — START " +
-              'by calling {"op":"status"} to see which accounts are actually connected. ' +
-              "Ops: status (connected accounts + connection state + this session's bindings) · chats (list an " +
-              "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
-              "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
-              "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
-              "user, paced at human speed; writing to a chat that has never messaged this account is a COLD " +
-              "START — refused unless you pass initiate:true, which asks the user for permission and is " +
-              "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
-              "to a chat/thread — pick a trust tier) · " +
-              "disconnect · upload (send a workspace file, optional caption) · download (save every attachment on " +
-              "one message) · " +
-              "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
-              "platform supports it). " +
-              'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
-              'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
-              "The user's messages and emails are private: handle them inside this workspace and never forward " +
-              "them anywhere without being asked. " +
-              "ALSO USE THIS TOOL AS A RESEARCH SOURCE — it reads platforms the open web cannot. Many sources " +
-              "publish ONLY inside a chat platform: Telegram channels, Discord announcement/news channels " +
-              "(indie studios often post releases there before anywhere else), subreddits. Their web pages are " +
-              "JavaScript-only or blocked, so webfetch returns an empty shell. When research leads to one of " +
-              'those and the account is connected, read it HERE: {"op":"chats","account":"<id>"} to find the ' +
-              'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
-              "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
-              "the platform's website. Cite the channel and post date like any other source. " +
-              '⚠️ For RESEARCH, pass purpose:"research" on `history` and read ONLY chats `chats` labels ' +
-              '"public source". The label is per chat and the user owns it, so the chat KIND tells you nothing ' +
-              "about it: a server text channel can be a public news feed or a company's private staff room. " +
-              '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
-              "has said yet — in all three cases you may still read the chat as correspondence when the user " +
-              "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
-              "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
-              "you cannot mark it yourself, and that is deliberate.",
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: modelText(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

@@ -37,6 +37,14 @@ export type Output = typeof Output.Type
 export const toModelOutput = (output: Output) =>
   `Moved ${output.type} to trash (restorable for about ${TrashSettings.retentionDays()} days): ${output.id}`
 
+export const metadata = {
+  sideEffect: "idempotent-write",
+  description:
+    "Safely delete a file or directory: moves it into a dated Trash store (restorable for the configured retention period) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -47,11 +55,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            sideEffect: "idempotent-write",
-            description:
-              "Safely delete a file or directory: moves it into a dated Trash store (restorable for the configured retention period) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

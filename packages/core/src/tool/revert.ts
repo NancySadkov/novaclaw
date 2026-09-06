@@ -76,6 +76,13 @@ export function planSteps(rows: readonly StepInfo[], steps: number): { readonly 
   return { files }
 }
 
+export const metadata = {
+  description:
+    "UNDO file changes by restoring files to an earlier snapshot (git-backed, captured every step). Default undoes your last file-changing step; `steps: N` undoes the last N; `steps: 0` undoes only the current step's changes so far. Restores file EDITS — deletions are restored from the Trash instead. Use when an edit made things worse and you want a known-good state back.",
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -87,10 +94,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description:
-              "UNDO file changes by restoring files to an earlier snapshot (git-backed, captured every step). Default undoes your last file-changing step; `steps: N` undoes the last N; `steps: 0` undoes only the current step's changes so far. Restores file EDITS — deletions are restored from the Trash instead. Use when an edit made things worse and you want a known-good state back.",
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

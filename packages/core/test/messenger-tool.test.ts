@@ -741,6 +741,9 @@ const INITIATE_FILES: readonly string[] = [
   "messenger/gateway.ts",
   // The gate: `SendOp.initiate`, `initiationRefusal`, and the `messenger.initiate` assert.
   "tool/messenger.ts",
+  // Generated schema metadata names the flag for discovery; it never calls the gateway. The
+  // manifest drift check proves this is a copy of the gated implementation's metadata.
+  "tool/deferred/messenger.gen.ts",
   // ⚠️ The third entry, added 2026-09-03, and it is a different KIND of mention. The other two
   // pass the flag; this one NAMES the action so the project rule editor can offer it as something a
   // folder may refuse (principle 12(b): a list-shaped setting offers its list). Naming a gate is the

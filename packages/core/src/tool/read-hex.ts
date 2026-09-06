@@ -46,6 +46,14 @@ export const toModelOutput = (output: Output) => {
   return `${head}\n${output.content}${tail}`
 }
 
+export const metadata = {
+  sideEffect: "read",
+  description:
+    "Inspect a BINARY file as a hex dump: 16 hex bytes per line, `;` starts a comment carrying the line's offset and ascii gloss. Reads a window of `length` bytes at `offset` — it pages, so it works on multi-GB images. The output format is exactly what `write-hex` accepts, so you can edit a dump and write it back. Use this (not `read`) for .bin/.iso/.o/object files/images and any non-text file.",
+  input: Input,
+  output: Output,
+} as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -56,11 +64,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            sideEffect: "read",
-            description:
-              "Inspect a BINARY file as a hex dump: 16 hex bytes per line, `;` starts a comment carrying the line's offset and ascii gloss. Reads a window of `length` bytes at `offset` — it pages, so it works on multi-GB images. The output format is exactly what `write-hex` accepts, so you can edit a dump and write it back. Use this (not `read`) for .bin/.iso/.o/object files/images and any non-text file.",
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {

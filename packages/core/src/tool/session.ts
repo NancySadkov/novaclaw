@@ -108,6 +108,8 @@ const renderEntry = (entry: SessionComponentRegistry.Entry) =>
     ...(entry.staleReason === undefined ? {} : { staleReason: entry.staleReason }),
   })
 
+export const metadata = { description, input: Input, output: Output } as const
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -120,9 +122,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description,
-            input: Input,
-            output: Output,
+            ...metadata,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
