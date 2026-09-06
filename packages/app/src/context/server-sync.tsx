@@ -34,6 +34,7 @@ import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
 import { createDirSyncContext } from "./directory-sync"
 import { createSimpleContext } from "@novaclaw/ui/context"
+import { createConfigRemover } from "@/utils/config-remove"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
@@ -627,6 +628,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queryOptions: queryOptionsApi,
     updateConfig: (config: Config, options?: ConfigUpdateOptions) =>
       updateConfigMutation.mutateAsync({ config, ...options }),
+    removeConfig: createConfigRemover({
+      current: () => globalStore.config,
+      remove: (paths) => serverSDK.client.v2.config.remove({ configRemoveRequest: { paths } }),
+      refresh: () => configQuery.refetch(),
+    }),
     // Re-read the global config after something OTHER than `updateConfig` wrote it — the capability
     // probe writes its measured verdict server-side, and without this the panel that just triggered
     // the measurement keeps showing the answer from before it.

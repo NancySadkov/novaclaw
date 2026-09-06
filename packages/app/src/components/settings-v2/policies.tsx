@@ -478,6 +478,7 @@ const FolderPoliciesEditor: Component<{
         <TextInputV2
           value={typed()}
           placeholder={language.t("policies.folder.edit.addPlaceholder")}
+          aria-label={language.t("policies.folder.edit.addPlaceholder")}
           data-action="folder-policy-id"
           class="min-w-[12rem] flex-1"
           onInput={(event) => setTyped(event.currentTarget.value)}

@@ -1,5 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { useControlLabel } from "./control-label"
 
 /**
  * ⚠️ **This wraps UNCONDITIONALLY — with no `groupBy` every option lands in one `""` section — and
@@ -157,6 +158,7 @@ export type SelectV2Props<T> = Pick<
   }
 
 export function SelectV2<T>(props: SelectV2Props<T>) {
+  const labelId = useControlLabel()
   const [local, root, trigger] = splitProps(
     props,
     [
@@ -285,6 +287,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       <Kobalte.Trigger
         {...trigger}
         as="div"
+        role="button"
+        aria-labelledby={trigger["aria-labelledby"] ?? (trigger["aria-label"] ? undefined : labelId)}
         data-component="select-v2"
         data-appearance={local.appearance ?? "base"}
         data-invalid={local.invalid ? "" : undefined}
@@ -309,8 +313,9 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
           <ChevronDown />
         </span>
       </Kobalte.Trigger>
+      {/* Kobalte's modal boundary must see portalled controls as part of the active layer. */}
       <Kobalte.Portal>
-        <Kobalte.Content data-component="menu-v2-content" data-slot="select-v2-content">
+        <Kobalte.Content data-kb-top-layer="" data-component="menu-v2-content" data-slot="select-v2-content">
           <Kobalte.Listbox data-slot="select-v2-listbox" />
         </Kobalte.Content>
       </Kobalte.Portal>

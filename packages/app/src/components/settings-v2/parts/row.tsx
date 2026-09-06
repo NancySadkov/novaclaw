@@ -1,4 +1,5 @@
-import { Show, type Component, type JSX } from "solid-js"
+import { Show, createUniqueId, type Component, type JSX } from "solid-js"
+import { ControlLabelContext } from "@novaclaw/ui/v2/control-label"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 
@@ -16,10 +17,13 @@ export interface SettingsRowV2Props {
 
 export const SettingsRowV2: Component<SettingsRowV2Props> = (props) => {
   const { atLeast } = useExpertise()
+  const titleId = createUniqueId()
   // A function, not a shared element: each branch of the Show needs its own DOM nodes.
   const copy = () => (
     <>
-      <div data-slot="settings-v2-row-title">{props.title}</div>
+      <div id={titleId} data-slot="settings-v2-row-title">
+        {props.title}
+      </div>
       <div data-slot="settings-v2-row-description">{props.description}</div>
     </>
   )
@@ -27,7 +31,9 @@ export const SettingsRowV2: Component<SettingsRowV2Props> = (props) => {
     <Show when={!props.minLevel || atLeast(props.minLevel)}>
       <div data-component="settings-v2-row">
         <div data-slot="settings-v2-row-copy">{copy()}</div>
-        <div data-slot="settings-v2-row-control">{props.children}</div>
+        <div data-slot="settings-v2-row-control">
+          <ControlLabelContext.Provider value={titleId}>{props.children}</ControlLabelContext.Provider>
+        </div>
       </div>
     </Show>
   )

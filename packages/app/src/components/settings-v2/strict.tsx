@@ -130,14 +130,17 @@ export const SettingsStrictV2: Component = () => {
 
   const current = (): StrictConfig => (serverSync().data.config as { strict?: StrictConfig }).strict ?? {}
 
-  const persist = (patch: Partial<StrictConfig>) => {
-    const next = { ...current(), ...patch }
-    for (const key of Object.keys(next) as Array<keyof StrictConfig>) if (next[key] === undefined) delete next[key]
+  const persist = <K extends keyof StrictConfig>(key: K, value: Required<StrictConfig>[K]) => {
     return reportedWrite(
-      () => serverSync().updateConfig({ strict: next } as never),
+      () => serverSync().updateConfig({ strict: { [key]: value } } as never),
       (error) => showToast({ variant: "error", title: language.t("settings.strict.toast.failed"), description: error }),
     )
   }
+  const clear = (key: keyof StrictConfig) =>
+    reportedWrite(
+      () => serverSync().removeConfig([["strict", key]]),
+      (error) => showToast({ variant: "error", title: language.t("settings.strict.toast.failed"), description: error }),
+    )
 
   return (
     <>
@@ -167,7 +170,7 @@ export const SettingsStrictV2: Component = () => {
             >
               <Switch
                 checked={current().enabled === true}
-                onChange={(checked) => void persist({ enabled: checked })}
+                onChange={(checked) => void persist("enabled", checked)}
                 hideLabel
               >
                 {language.t("settings.strict.row.enabled.title")}
@@ -181,7 +184,7 @@ export const SettingsStrictV2: Component = () => {
               >
                 <Switch
                   checked={current()[group] !== false}
-                  onChange={(checked) => void persist({ [group]: checked ? undefined : false })}
+                  onChange={(checked) => void persist(group, checked)}
                   hideLabel
                 >
                   {language.t(`settings.strict.row.${group}.title`)}
@@ -209,8 +212,8 @@ export const SettingsStrictV2: Component = () => {
               <div class="w-full sm:w-[100px]">
                 <SettingsNumberFieldV2
                   value={() => current().attempts || undefined}
-                  onCommit={(attempts) => void persist({ attempts })}
-                  onClear={() => void persist({ attempts: undefined })}
+                  onCommit={(attempts) => void persist("attempts", attempts)}
+                  onClear={() => void clear("attempts")}
                   min={1}
                   max={8}
                   placeholder="1"
@@ -229,8 +232,8 @@ export const SettingsStrictV2: Component = () => {
               <div class="w-full sm:w-[100px]">
                 <SettingsNumberFieldV2
                   value={() => current().wallMinutes || undefined}
-                  onCommit={(wallMinutes) => void persist({ wallMinutes })}
-                  onClear={() => void persist({ wallMinutes: undefined })}
+                  onCommit={(wallMinutes) => void persist("wallMinutes", wallMinutes)}
+                  onClear={() => void clear("wallMinutes")}
                   min={1}
                   max={480}
                   placeholder={String(DEFAULT_WALL_MINUTES)}
@@ -257,7 +260,7 @@ export const SettingsStrictV2: Component = () => {
                 fallbackPlaceholder={String(DEFAULT_EXECUTION_TOKENS)}
                 label={language.t("settings.strict.row.executionTokens.title")}
                 action="settings-strict-execution-budget"
-                onPersist={(value) => void persist({ executionTokens: value })}
+                onPersist={(value) => void persist("executionTokens", value)}
               />
             </SettingsRowV2>
 
@@ -279,7 +282,7 @@ export const SettingsStrictV2: Component = () => {
                 fallbackPlaceholder="0"
                 label={language.t("settings.strict.row.reasoningTokens.title")}
                 action="settings-strict-reasoning-budget"
-                onPersist={(value) => void persist({ reasoningTokens: value })}
+                onPersist={(value) => void persist("reasoningTokens", value)}
               />
             </SettingsRowV2>
           </SettingsListV2>

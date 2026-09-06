@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createSignal, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
+import { createConfigRemover } from "@/utils/config-remove"
 import { render } from "solid-js/web"
 import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
@@ -45,7 +46,7 @@ afterEach(() => {
 })
 
 function mount(panel: () => JSX.Element, initial: Record<string, unknown>) {
-  const counts = { patch: 0 }
+  const counts = { patch: 0, remove: 0 }
   const [store, setStore] = createStore<{ config: Record<string, unknown>; path: unknown }>({
     config: initial,
     path: { directory: "/tmp/tunes", home: "/home/tester" },
@@ -56,9 +57,34 @@ function mount(panel: () => JSX.Element, initial: Record<string, unknown>) {
     updateConfig: async (patch: Record<string, unknown>) => {
       counts.patch++
       // The server merges and this context re-reads — the move that used to rewrite the box.
-      setStore("config", (prev) => ({ ...prev, ...patch }))
+      const merge = (before: Record<string, unknown>, next: Record<string, unknown>): Record<string, unknown> => {
+        const result = { ...before }
+        for (const [key, value] of Object.entries(next)) {
+          if (value === undefined) continue
+          result[key] =
+            value && typeof value === "object" && !Array.isArray(value)
+              ? merge((result[key] ?? {}) as Record<string, unknown>, value as Record<string, unknown>)
+              : value
+        }
+        return result
+      }
+      setStore("config", reconcile(merge(store.config, patch)))
       return {}
     },
+    removeConfig: createConfigRemover({
+      current: () => store.config,
+      remove: async (paths) => {
+        counts.remove++
+        const next = JSON.parse(JSON.stringify(store.config))
+        for (const path of paths) {
+          let parent = next
+          for (const key of path.slice(0, -1)) parent = parent[key]
+          delete parent[path.at(-1)!]
+        }
+        setStore("config", reconcile(next))
+      },
+      refresh: async () => {},
+    }),
     refetchConfig: async () => {
       setStore("config", (prev) => ({ ...prev }))
       return {}
@@ -111,6 +137,28 @@ const refusals = () => [...document.querySelectorAll('[data-slot="settings-v2-nu
 const CADENCE = en["settings.tunes.todo.cadence.title"]
 const BUDGET = en["settings.tunes.todo.budget.title"]
 const ATTEMPTS = en["settings.strict.row.attempts.title"]
+
+test("every Strict group can be re-enabled against a merging config store", async () => {
+  const groups = ["verification", "recovery", "editingAids", "budgetSteering"] as const
+  const { config } = mount(() => <SettingsStrictV2 />, {
+    strict: Object.fromEntries(groups.map((key) => [key, false])),
+  })
+  await settle()
+  for (const group of groups) {
+    const title = en[`settings.strict.row.${group}.title`]
+    const input = [...document.querySelectorAll<HTMLInputElement>('input[role="switch"]')].find((node) =>
+      node
+        .getAttribute("aria-labelledby")
+        ?.split(" ")
+        .some((id) => document.getElementById(id)?.textContent === title),
+    )!
+    expect(input.checked).toBe(false)
+    input.click()
+    await settle()
+    expect((config().strict as Record<string, unknown>)[group]).toBe(true)
+    expect(input.checked).toBe(true)
+  }
+})
 
 describe("Tunes — a value below the field's minimum can be typed", () => {
   test("typing 512 into a min-64 box writes nothing until it is committed, then writes 512 once", async () => {
@@ -213,7 +261,8 @@ describe("Strict — Attempts stores the value its own copy documents", () => {
 
     commit(box(ATTEMPTS), "")
     await settle()
-    expect(counts.patch).toBe(2)
+    expect(counts.patch).toBe(1)
+    expect(counts.remove).toBe(1)
     expect("attempts" in (config().strict as object)).toBe(false)
   })
 

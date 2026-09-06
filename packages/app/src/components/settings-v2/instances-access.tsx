@@ -166,6 +166,7 @@ export const InstancesAccess: Component = () => {
                 setTokenDraft(event.currentTarget.value)
               }}
               placeholder={language.t("settings.instances.access.placeholder")}
+              aria-label={language.t("settings.instances.access.placeholder")}
               autocomplete="off"
               data-slot="instances-access-token"
             />
@@ -264,6 +265,7 @@ export const InstancesAccess: Component = () => {
               value={draft().name}
               onInput={(event) => setDraft({ ...draft(), name: event.currentTarget.value })}
               placeholder={language.t("settings.instances.peers.name")}
+              aria-label={language.t("settings.instances.peers.name")}
               autocomplete="off"
             />
             <TextInputV2
@@ -271,6 +273,7 @@ export const InstancesAccess: Component = () => {
               value={draft().url}
               onInput={(event) => setDraft({ ...draft(), url: event.currentTarget.value })}
               placeholder={language.t("settings.instances.peers.url")}
+              aria-label={language.t("settings.instances.peers.url")}
               autocomplete="off"
             />
             <TextInputV2
@@ -279,6 +282,7 @@ export const InstancesAccess: Component = () => {
               value={draft().token ?? ""}
               onInput={(event) => setDraft({ ...draft(), token: event.currentTarget.value })}
               placeholder={language.t("settings.instances.peers.token")}
+              aria-label={language.t("settings.instances.peers.token")}
               autocomplete="off"
             />
             <IconButtonV2

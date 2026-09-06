@@ -66,6 +66,7 @@ function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
   const [local, rest] = splitProps(props, ["class", "classList", "children"])
   return (
     <Kobalte.Content
+      data-kb-top-layer=""
       {...rest}
       data-component="dropdown-menu-content"
       classList={{
@@ -274,6 +275,7 @@ function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>)
   const [local, rest] = splitProps(props, ["class", "classList", "children"])
   return (
     <Kobalte.SubContent
+      data-kb-top-layer=""
       {...rest}
       data-component="dropdown-menu-sub-content"
       classList={{

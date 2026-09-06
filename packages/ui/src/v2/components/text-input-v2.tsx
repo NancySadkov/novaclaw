@@ -1,5 +1,6 @@
 import { type ComponentProps, Show, splitProps } from "solid-js"
 import { Icon } from "./icon"
+import { useControlLabel } from "./control-label"
 
 export interface TextInputV2Props extends Omit<ComponentProps<"input">, "type"> {
   /** Show the trailing copy action. */
@@ -17,6 +18,7 @@ export interface TextInputV2Props extends Omit<ComponentProps<"input">, "type"> 
 }
 
 export function TextInputV2(props: TextInputV2Props) {
+  const labelId = useControlLabel()
   const [local, inputProps] = splitProps(props, [
     "class",
     "classList",
@@ -44,6 +46,7 @@ export function TextInputV2(props: TextInputV2Props) {
       <div data-slot="text-input-v2-value">
         <input
           {...inputProps}
+          aria-labelledby={inputProps["aria-labelledby"] ?? (inputProps["aria-label"] ? undefined : labelId)}
           type={inputProps.type ?? "text"}
           disabled={local.disabled}
           aria-invalid={local.invalid ? true : undefined}

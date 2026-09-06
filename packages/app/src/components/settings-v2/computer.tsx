@@ -9,13 +9,7 @@ import { useServer } from "@/context/server"
 import { shellStatus } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import {
-  effectOf,
-  showsUnsetWarning,
-  withEffect,
-  type PermissionEffect,
-  type PermissionRule,
-} from "./computer-rules"
+import { effectOf, showsUnsetWarning, withEffect, type PermissionEffect, type PermissionRule } from "./computer-rules"
 import { SettingsExplainV2 } from "./explain"
 
 // The Computer Use settings tab.
@@ -43,7 +37,6 @@ interface ComputerConfig {
   screenshotPath?: string
 }
 
-
 export const SettingsComputerV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
@@ -53,8 +46,7 @@ export const SettingsComputerV2: Component = () => {
   const global = useGlobal()
   const [shell] = createResource(
     () => server.current ?? global.servers.list()[0],
-    (conn) =>
-      shellStatus(conn.http, { directory: serverSync().data.path?.directory ?? "" }).catch(() => undefined),
+    (conn) => shellStatus(conn.http, { directory: serverSync().data.path?.directory ?? "" }).catch(() => undefined),
   )
   const isWindows = createMemo(() => (shell()?.platform ?? "").toLowerCase() === "win32")
 
@@ -92,6 +84,19 @@ export const SettingsComputerV2: Component = () => {
     // list would leave the OLD rule in front and the new one dead — a control that appears to work
     // and changes nothing.
     await save({ permissions: withEffect(rules(), effect) }, language.t("settings.computer.save.failed"))
+  }
+
+  const saveField = async (key: keyof ComputerConfig, raw: string) => {
+    const value = raw.trim()
+    if (value) return save({ computer: { [key]: value } }, language.t("settings.computer.save.failed"))
+    try {
+      await serverSync().removeConfig([["computer", key]])
+    } catch (error) {
+      showToast({
+        title: language.t("settings.computer.save.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   return (
@@ -146,12 +151,7 @@ export const SettingsComputerV2: Component = () => {
               autocomplete="off"
               value={config().display ?? ""}
               placeholder=":99"
-              onChange={(event) =>
-                void save(
-                  { computer: { ...config(), display: event.currentTarget.value.trim() || undefined } },
-                  language.t("settings.computer.save.failed"),
-                )
-              }
+              onChange={(event) => void saveField("display", event.currentTarget.value)}
             />
           </SettingsRowV2>
         </Show>
@@ -172,12 +172,7 @@ export const SettingsComputerV2: Component = () => {
             autocomplete="off"
             value={config().screenshotPath ?? ""}
             placeholder={isWindows() ? "%TEMP%\\novaclaw-computer.png" : "/tmp/novaclaw-computer.png"}
-            onChange={(event) =>
-              void save(
-                { computer: { ...config(), screenshotPath: event.currentTarget.value.trim() || undefined } },
-                language.t("settings.computer.save.failed"),
-              )
-            }
+            onChange={(event) => void saveField("screenshotPath", event.currentTarget.value)}
           />
         </SettingsRowV2>
 

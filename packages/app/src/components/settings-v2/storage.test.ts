@@ -74,7 +74,7 @@ describe("Storage tab entries", () => {
 
   test("activity-log controls are instance-owned, live, and expertise-gated", () => {
     expect(storageSource).toContain("sync().updateConfig({ log: next }")
-    expect(storageSource).not.toContain("useSettings")
+    expect(storageSource).not.toMatch(/\buseSettings\b/)
     expect(storageSource).toContain('minLevel="advanced"')
     expect(storageSource).toContain('expertise.atLeast("developer")')
     expect(storageSource).toContain("LogSettings.subsystems")

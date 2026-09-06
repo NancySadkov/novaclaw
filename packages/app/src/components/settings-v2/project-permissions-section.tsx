@@ -281,6 +281,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
           options={[...PermissionActions.ALL]}
           current={PermissionActions.ALL.includes(action()) ? action() : undefined}
           placeholder={language.t("settings.permissions.project.actionPick")}
+          aria-label={language.t("settings.permissions.project.actionPick")}
           label={actionLabel}
           groupBy={(value) => language.t(GROUP_LABEL[PermissionActions.groupOf(value) ?? "legacy"])}
           data-action="project-permission-action-pick"
@@ -294,6 +295,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
         <TextInputV2
           value={action()}
           placeholder={language.t("settings.permissions.project.addAction")}
+          aria-label={language.t("settings.permissions.project.addAction")}
           data-action="project-permission-action"
           class="min-w-[10rem] flex-1"
           onInput={(event) => setAction(event.currentTarget.value)}
@@ -301,6 +303,7 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
         <TextInputV2
           value={resource()}
           placeholder={language.t("settings.permissions.project.addResource")}
+          aria-label={language.t("settings.permissions.project.addResource")}
           data-action="project-permission-resource"
           class="min-w-[10rem] flex-1"
           onInput={(event) => setResource(event.currentTarget.value)}
@@ -582,6 +585,7 @@ export const ProjectExcludeSection: Component<ProjectPermissionsProps> = (props)
         <TextInputV2
           value={pattern()}
           placeholder={language.t("settings.project.exclude.addPattern")}
+          aria-label={language.t("settings.project.exclude.addPattern")}
           data-action="project-exclude-pattern"
           class="min-w-[12rem] flex-1"
           onInput={(event) => setPattern(event.currentTarget.value)}

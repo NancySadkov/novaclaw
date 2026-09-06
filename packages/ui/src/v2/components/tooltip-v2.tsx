@@ -140,6 +140,7 @@ export function TooltipV2(props: TooltipV2Props) {
           </KobalteTooltip.Trigger>
           <KobalteTooltip.Portal>
             <KobalteTooltip.Content
+              data-kb-top-layer=""
               ref={(el) => {
                 const theme = ref?.closest("[data-theme]")?.getAttribute("data-theme")
                 if (theme) el.setAttribute("data-theme", theme)

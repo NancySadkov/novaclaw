@@ -20,6 +20,7 @@ import { SettingsRowV2 } from "./parts/row"
 import { InstanceResources } from "./instance-resources"
 import { STORAGE_ENTRIES, type PathInfo } from "./storage-entries"
 import { SettingsExplainV2 } from "./explain"
+import { useSettingsConfigWrite } from "./parts/config-write"
 
 // The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //
@@ -51,6 +52,7 @@ export const SettingsStorageV2: Component = () => {
   const platform = usePlatform()
   const sync = useServerSync()
   const expertise = useExpertise()
+  const writeConfig = useSettingsConfigWrite()
 
   // The SDK's generated PathInfo type lags the fields the server sends (same cast the new-agent bar
   // uses for scratchDir); regenerating the client for a read-only display is not worth the churn.
@@ -138,7 +140,7 @@ export const SettingsStorageV2: Component = () => {
             label={(option) => option.label}
             onSelect={(option) => {
               if (!option || option.value === (trashConfig().retention_days ?? 30)) return
-              void sync().updateConfig({ trash: { ...trashConfig(), retention_days: option.value } } as never)
+              void writeConfig({ trash: { ...trashConfig(), retention_days: option.value } })
             }}
           />
         </SettingsRowV2>

@@ -1,6 +1,5 @@
 import {
   createContext,
-  createEffect,
   createRoot,
   getOwner,
   onCleanup,
@@ -14,7 +13,6 @@ import {
   createSignal,
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
-import { makeEventListener } from "@solid-primitives/event-listener"
 import { createDialogScope, createDialogStack, nextDialogID } from "./dialog-stack"
 
 type DialogElement = () => JSX.Element
@@ -77,18 +75,8 @@ function init() {
     },
   })
 
-  createEffect(() => {
-    if (stack.stack().length === 0) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      stack.close()
-      event.preventDefault()
-      event.stopPropagation()
-    }
-
-    makeEventListener(window, "keydown", onKeyDown, { capture: true })
-  })
+  // Kobalte owns Escape through its topmost dismissable layer. A window capture listener here
+  // would close the dialog before a nested select, popover or menu can consume the same key.
 
   return stack
 }
