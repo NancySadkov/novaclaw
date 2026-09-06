@@ -377,8 +377,8 @@
   container-type: inline-size;
 }
 
-/* Stack the per-model action buttons UNDER the name when the panel is narrow, so the name is never
-   truncated just to keep the buttons on one line. Inline again once there's room. */
+/* Model rows have two semantic lines at every width: identity, then controls/status. Six controls
+   plus an arbitrary endpoint or failure sentence do not have a safe one-line breakpoint. */
 .settings-v2-models [data-component="settings-v2-row"] {
   flex-direction: column;
   align-items: stretch;
@@ -391,20 +391,7 @@
 }
 
 .settings-v2-models-row-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-@container (min-width: 600px) {
-  .settings-v2-models [data-component="settings-v2-row"] {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .settings-v2-models [data-slot="settings-v2-row-control"] {
-    width: auto;
-  }
+  width: 100%;
 }
 
 .settings-v2-models-group-header {
@@ -439,12 +426,11 @@
 
 .settings-v2-models [data-slot="settings-v2-row-title"] {
   min-width: 0;
-  overflow: hidden;
   font-size: 13px;
   font-weight: 440;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .settings-v2-models-status {
@@ -548,12 +534,19 @@
 /* B15 — per-model probe button + result chip */
 .settings-v2-models-row-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
-  /* The probe result is a SENTENCE, not a word: without wrapping here the row grows past the panel
-     instead of the chip taking a second line. */
-  flex-wrap: wrap;
   min-width: 0;
+}
+
+.settings-v2-models-row-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .settings-v2-models-probe-result {
@@ -567,6 +560,51 @@
   overflow-wrap: anywhere;
   min-width: 0;
   color: var(--v2-text-text-muted);
+}
+
+/* The Configure dialog owns one vertical scroller. Its rows use bounded tracks, so long measured
+   prose cannot steal the label's width or manufacture a horizontal scrollbar. */
+.model-config-dialog {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.model-config-dialog [data-component="settings-v2-row"] {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(12rem, 1.35fr);
+  align-items: center;
+}
+
+.model-config-dialog [data-slot="settings-v2-row-copy"],
+.model-config-dialog [data-slot="settings-v2-row-control"],
+.model-config-dialog [data-slot="settings-v2-row-control"] > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.model-config-dialog [data-slot="settings-v2-row-control"] {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+@container (max-width: 25rem) {
+  .model-config-dialog [data-component="settings-v2-row"] {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .model-config-dialog [data-slot="settings-v2-row-control"] {
+    justify-content: flex-start;
+  }
+
+  .model-config-dialog [data-tool-channel] {
+    align-items: flex-start;
+  }
+
+  .model-config-dialog [data-tool-channel] > span {
+    text-align: left;
+  }
 }
 
 .settings-v2-models-probe-result[data-status="ok"] {

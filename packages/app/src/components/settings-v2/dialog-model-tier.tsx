@@ -31,7 +31,7 @@ export const DialogModelTier: Component<{
 
   return (
     <Dialog size="content">
-      <div class="flex flex-col gap-4 px-7 py-7 min-w-[20rem] max-w-[32rem]">
+      <div class="flex w-[min(32rem,calc(100vw-32px))] max-w-full flex-col gap-4 px-7 py-7">
         <div class="flex flex-col gap-1 text-center">
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {language.t("settings.models.tier.dialog.title")}
@@ -41,7 +41,7 @@ export const DialogModelTier: Component<{
           </span>
         </div>
 
-        <div class="flex flex-col gap-2 max-h-[60vh] overflow-y-auto -mx-1 px-1">
+        <div class="-mx-1 flex max-h-[60vh] flex-col gap-2 overflow-y-auto overflow-x-hidden px-1">
           <For each={TIER_CARDS}>
             {(tier) => (
               <button

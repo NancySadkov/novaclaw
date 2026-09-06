@@ -132,6 +132,11 @@ export const SettingsModelsV2: Component = () => {
           [key.providerID]: { ...provider, models: { ...(provider.models ?? {}), [cloneID]: entry } },
         },
       } as never)
+      const refreshed = await serverSync().refetchProviders()
+      const visible = refreshed?.models.get(key.providerID) ?? []
+      if (!visible.some((model) => model.id === cloneID)) {
+        throw new Error(language.t("settings.models.new.refreshMissing", { count: 1 }))
+      }
       showToast({
         variant: "success",
         icon: "circle-check",
@@ -268,63 +273,91 @@ export const SettingsModelsV2: Component = () => {
                   return (
                     <SettingsRowV2 title={item.name} description={item.provider.name}>
                       <div class="settings-v2-models-row-actions">
-                        <ButtonV2
-                          size="small"
-                          variant="neutral"
-                          aria-label={language.t("settings.models.tier.pick")}
-                          onClick={() =>
-                            dialog.push(() => (
-                              <DialogModelTier
-                                modelName={item.name}
-                                current={models.tier.get(key)}
-                                onSelect={(tier) => models.tier.set(key, tier)}
-                              />
-                            ))
-                          }
-                        >
-                          {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
-                        </ButtonV2>
-                        <ButtonV2
-                          size="small"
-                          variant="ghost-muted"
-                          aria-label={language.t("settings.models.config.open")}
-                          onClick={() => {
-                            const cn = conn()
-                            const dir = routeDir()
-                            // The same guard the sibling openers use: without a connection and a
-                            // directory the dialog cannot probe, and pushing it anyway would offer a
-                            // Test button that fails for a reason the user cannot see.
-                            if (!cn || !dir) return
-                            dialog.push(() => (
-                              <DialogModelConfig
-                                http={cn.http}
-                                directory={dir}
-                                providerID={key.providerID}
-                                modelID={key.modelID}
-                                modelName={item.name}
-                                apiModelID={item.api.id}
-                                providerApi={item.provider.api}
-                                defaults={{
-                                  capabilities: {
-                                    tools: item.capabilities.tools,
-                                    input: [...item.capabilities.input],
-                                    output: [...item.capabilities.output],
-                                  },
-                                }}
-                              />
-                            ))
-                          }}
-                        >
-                          {language.t("settings.models.config.open")}
-                        </ButtonV2>
-                        <ButtonV2
-                          size="small"
-                          variant="ghost-muted"
-                          aria-label={language.t("settings.models.clone.action")}
-                          onClick={() => void cloneModel(key, item.name)}
-                        >
-                          {language.t("settings.models.clone.action")}
-                        </ButtonV2>
+                        <div class="settings-v2-models-row-controls">
+                          <ButtonV2
+                            size="small"
+                            variant="neutral"
+                            aria-label={language.t("settings.models.tier.pick")}
+                            onClick={() =>
+                              dialog.push(() => (
+                                <DialogModelTier
+                                  modelName={item.name}
+                                  current={models.tier.get(key)}
+                                  onSelect={(tier) => models.tier.set(key, tier)}
+                                />
+                              ))
+                            }
+                          >
+                            {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
+                          </ButtonV2>
+                          <ButtonV2
+                            size="small"
+                            variant="ghost-muted"
+                            aria-label={language.t("settings.models.config.open")}
+                            onClick={() => {
+                              const cn = conn()
+                              const dir = routeDir()
+                              // The same guard the sibling openers use: without a connection and a
+                              // directory the dialog cannot probe, and pushing it anyway would offer a
+                              // Test button that fails for a reason the user cannot see.
+                              if (!cn || !dir) return
+                              dialog.push(() => (
+                                <DialogModelConfig
+                                  http={cn.http}
+                                  directory={dir}
+                                  providerID={key.providerID}
+                                  modelID={key.modelID}
+                                  modelName={item.name}
+                                  apiModelID={item.api.id}
+                                  providerApi={item.provider.api}
+                                  defaults={{
+                                    capabilities: {
+                                      tools: item.capabilities.tools,
+                                      input: [...item.capabilities.input],
+                                      output: [...item.capabilities.output],
+                                    },
+                                  }}
+                                />
+                              ))
+                            }}
+                          >
+                            {language.t("settings.models.config.open")}
+                          </ButtonV2>
+                          <ButtonV2
+                            size="small"
+                            variant="ghost-muted"
+                            aria-label={language.t("settings.models.clone.action")}
+                            onClick={() => void cloneModel(key, item.name)}
+                          >
+                            {language.t("settings.models.clone.action")}
+                          </ButtonV2>
+                          <ButtonV2
+                            size="small"
+                            variant="neutral"
+                            disabled={probeState() === "probing"}
+                            onClick={() => void probe(key)}
+                          >
+                            {probeState() === "probing"
+                              ? language.t("settings.models.probe.probing")
+                              : language.t("settings.models.probe.test")}
+                          </ButtonV2>
+                          <Switch
+                            checked={models.visible(key)}
+                            onChange={(checked) => {
+                              models.setVisibility(key, checked)
+                            }}
+                            hideLabel
+                          >
+                            {item.name}
+                          </Switch>
+                          <IconButtonV2
+                            size="small"
+                            variant="ghost-muted"
+                            aria-label={language.t("settings.models.remove.confirm.action")}
+                            icon={<Icon name="trash" size="normal" />}
+                            onClick={() => void removeModel(key, item.name)}
+                          />
+                        </div>
                         <Show when={probeResult()}>
                           {(result) => (
                             <span
@@ -336,32 +369,6 @@ export const SettingsModelsV2: Component = () => {
                             </span>
                           )}
                         </Show>
-                        <ButtonV2
-                          size="small"
-                          variant="neutral"
-                          disabled={probeState() === "probing"}
-                          onClick={() => void probe(key)}
-                        >
-                          {probeState() === "probing"
-                            ? language.t("settings.models.probe.probing")
-                            : language.t("settings.models.probe.test")}
-                        </ButtonV2>
-                        <Switch
-                          checked={models.visible(key)}
-                          onChange={(checked) => {
-                            models.setVisibility(key, checked)
-                          }}
-                          hideLabel
-                        >
-                          {item.name}
-                        </Switch>
-                        <IconButtonV2
-                          size="small"
-                          variant="ghost-muted"
-                          aria-label={language.t("settings.models.remove.confirm.action")}
-                          icon={<Icon name="trash" size="normal" />}
-                          onClick={() => void removeModel(key, item.name)}
-                        />
                       </div>
                     </SettingsRowV2>
                   )

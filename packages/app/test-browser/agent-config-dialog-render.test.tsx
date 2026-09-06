@@ -80,6 +80,7 @@ afterEach(() => {
  * — which is the window D3 lives in. `models` likewise, so the D2 race can be driven from either end.
  */
 function mount(options: {
+  agentID?: string
   agents?: unknown[]
   models?: () => unknown[]
   write?: (patch: unknown) => void
@@ -139,7 +140,7 @@ function mount(options: {
                     <ModelsContext.Provider value={modelsStub as never}>
                       <TabsContext.Provider value={tabsStub as never}>
                         <DialogProvider>
-                          <Opener />
+                          <Opener agentID={options.agentID ?? "theron"} />
                         </DialogProvider>
                       </TabsContext.Provider>
                     </ModelsContext.Provider>
@@ -165,9 +166,9 @@ function mount(options: {
  * `useDialogContext must be used within a Dialog component` — so a bare mount would be testing a
  * composition the product never builds.
  */
-function Opener() {
+function Opener(props: { agentID: string }) {
   const dialog = useDialog()
-  onMount(() => void dialog.show(() => <AgentConfigDialog agentID="theron" onDismiss={() => {}} />))
+  onMount(() => void dialog.show(() => <AgentConfigDialog agentID={props.agentID} onDismiss={() => {}} />))
   return null
 }
 
@@ -187,6 +188,22 @@ const saveButton = () =>
 const dialogText = () => document.body.textContent ?? ""
 
 describe("AgentConfigDialog renders", () => {
+  test("VR-001 · the governing colleague is read-only before a write can be attempted", async () => {
+    const writes: unknown[] = []
+    mount({
+      agentID: "nova",
+      agents: [{ ...AGENT, id: "nova", name: "Nova" }],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+
+    expect(dialogText()).toContain("agentConfig.governingLocked")
+    expect(saveButton()).toBeUndefined()
+    expect(document.querySelector("input:not([disabled]), textarea:not([disabled]), select:not([disabled])")).toBeNull()
+    expect(writes).toEqual([])
+    expect(dialogText()).not.toContain("NOTHING was written")
+  })
+
   test("the dialog mounts at all", async () => {
     mount({ agents: [AGENT] })
     await settle()

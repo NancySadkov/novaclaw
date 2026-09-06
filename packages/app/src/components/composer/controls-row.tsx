@@ -12,6 +12,7 @@ import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import type { ComposerAgentControlState } from "./agent-option"
+import { GOVERNING_ID } from "@/apps/contacts"
 
 export type ComposerControlsRowState = {
   /** New-session composer OR an active session id — gates the per-chat controls cluster (1K). */
@@ -41,7 +42,10 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
   const pickProject = () => {
     const conn = server.current
     const agentID = props.state.features.agent
-    if (!conn || !agentID) return
+    // Nova's folder is part of its compiled charter. Keep the forbidden config patch unreachable
+    // here as well as in the full profile: this composer shortcut was the one sibling write surface
+    // found by the governing-agent sweep.
+    if (!conn || !agentID || agentID === GOVERNING_ID) return
     pickDirectory({
       server: conn,
       title: language.t("prompt.agent.project.pick"),
@@ -90,7 +94,7 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
           state={{
             ...props.state.agent,
             onOpenConfig: tune.open,
-            onPickProject: pickProject,
+            onPickProject: props.state.features.agent === GOVERNING_ID ? undefined : pickProject,
             modeSuffix: tune.modeSuffix,
             unattended: tune.unattended,
           }}

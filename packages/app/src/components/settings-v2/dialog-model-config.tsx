@@ -359,7 +359,7 @@ export const DialogModelConfig: Component<{
 
   return (
     <Dialog size="content">
-      <div class="flex flex-col gap-4 px-7 py-7 min-w-[22rem] max-w-[34rem]">
+      <div class="model-config-dialog flex w-[min(34rem,calc(100vw-32px))] max-w-full flex-col gap-4 px-7 py-7">
         <div class="flex flex-col gap-1 text-center">
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {language.t("settings.models.config.title", { model: props.modelName })}
@@ -369,7 +369,7 @@ export const DialogModelConfig: Component<{
           </span>
         </div>
 
-        <div class="flex flex-col gap-4 max-h-[62vh] overflow-y-auto -mx-1 px-1">
+        <div class="model-config-dialog-scroll -mx-1 flex max-h-[62vh] flex-col gap-4 overflow-y-auto overflow-x-hidden px-1">
           {section("identity")}
           <SettingsListV2>
             <SettingsRowV2
@@ -424,9 +424,9 @@ export const DialogModelConfig: Component<{
                 </>
               }
             >
-              <div class="flex items-center gap-2">
+              <div class="flex w-full min-w-0 items-center gap-2">
                 <TextInputV2
-                  class="w-64 max-w-full"
+                  class="min-w-0 flex-1"
                   type={revealKey() ? "text" : "password"}
                   value={form.apiKey}
                   onInput={(event) => setForm("apiKey", event.currentTarget.value)}

@@ -40,7 +40,7 @@
     "ui": 66,
     "core": 7499,
     "app:unit": 2044,
-    "app:browser": 261,
+    "app:browser": 264,
     "desktop": 224,
     "server": 118,
     "novaclaw:server": 474,
@@ -78,10 +78,7 @@
     "novaclaw:control-plane": 868,
     "novaclaw:fixture": 910
   },
-  "peaksDeliberatelyAbsent": [
-    "script",
-    "effect-drizzle-sqlite"
-  ],
+  "peaksDeliberatelyAbsent": ["script", "effect-drizzle-sqlite"],
   "hostCommitWarnPct": {
     "core": 85
   },

@@ -2218,6 +2218,8 @@ export const dict = {
     "Limits not reported. Nova will start at {{context}} context and {{output}} response; review them in Configure before long tasks.",
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
+  "settings.models.new.refreshMissing":
+    "The model was saved, but it is not visible in the refreshed model list yet. Keep this window open and try again.",
   // S0 — the local-runtime probe. A model server the user ALREADY runs is the shortest path out of
   // the zero-provider first-run state, so it is offered above the presets instead of behind a form.
   // ⚠️ The wording is careful on purpose (ruling 2): we verified an endpoint, not a vendor, so the

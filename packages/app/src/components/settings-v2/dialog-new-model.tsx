@@ -207,10 +207,10 @@ export const DialogNewModel: Component<{
       : form.providerID.trim()
   const saved = (): SavedProvider | undefined => config().providers?.[effectiveProviderID()]
   const savedKey = () => typeof saved()?.request?.body?.apiKey === "string" && !!saved()?.request?.body?.apiKey
-  const models = () => result()?.models ?? []
+  const discoveredModels = () => result()?.models ?? []
   const validID = () => PROVIDER_ID.test(effectiveProviderID())
   const canDiscover = () => !!form.baseURL.trim() && validID() && !probing()
-  const pickedIDs = () => models().filter((id) => picked[id])
+  const pickedIDs = () => discoveredModels().filter((id) => picked[id])
   const visiblePresets = () => Object.entries(presets()).filter(([, entry]) => entry.hidden !== true)
   const discoveredLimits = (id: string) => result()?.limits?.[id]
   const tokenLabel = (tokens: number) =>
@@ -403,6 +403,17 @@ export const DialogNewModel: Component<{
         },
         disabled_providers: disabled,
       } as never)
+      // The write response only says the config store accepted the fragment. The Models surface is
+      // fed by the materialised provider catalog, so success belongs after that projection has been
+      // re-read and every promised model is observable through the same store the surface renders.
+      // A failed refresh stays a failure (and keeps this dialog open); it must never collapse into
+      // either a success toast or the Models tab's honest empty state.
+      const refreshed = await serverSync().refetchProviders()
+      const visible = new Set((refreshed?.models.get(providerID) ?? []).map((model) => model.id))
+      const missing = input.ids.filter((id) => !visible.has(id))
+      if (missing.length > 0) {
+        throw new Error(t("settings.models.new.refreshMissing", { count: missing.length }))
+      }
       showToast({
         variant: "success",
         icon: "circle-check",
@@ -544,7 +555,7 @@ export const DialogNewModel: Component<{
 
   return (
     <Dialog size="content">
-      <div class="flex flex-col gap-4 px-7 py-7 min-w-[22rem] max-w-[32rem]">
+      <div class="flex w-[min(32rem,calc(100vw-32px))] max-w-full flex-col gap-4 px-7 py-7">
         <div class="flex flex-col gap-1 text-center">
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {step() === "connect"
@@ -809,7 +820,12 @@ export const DialogNewModel: Component<{
                                 : t("settings.models.new.managed.install")}
                           </ButtonV2>
                           <Show when={managedBusy() && status().profileID === profile.id}>
-                            <ButtonV2 size="normal" variant="neutral" disabled={status().stage === "stopping"} onClick={() => void cancelManaged()}>
+                            <ButtonV2
+                              size="normal"
+                              variant="neutral"
+                              disabled={status().stage === "stopping"}
+                              onClick={() => void cancelManaged()}
+                            >
                               {t("settings.models.new.managed.cancel")}
                             </ButtonV2>
                           </Show>
@@ -864,10 +880,10 @@ export const DialogNewModel: Component<{
           <div class="flex flex-col gap-2">
             <BackButton to="connect" />
             <label class="text-[12px] font-medium text-v2-text-text-faint">
-              {t("settings.models.new.pick", { count: models().length })}
+              {t("settings.models.new.pick", { count: discoveredModels().length })}
             </label>
-            <div class="flex flex-col gap-1.5 max-h-[36vh] overflow-y-auto -mx-1 px-1">
-              <For each={models()}>
+            <div class="-mx-1 flex max-h-[36vh] flex-col gap-1.5 overflow-y-auto overflow-x-hidden px-1">
+              <For each={discoveredModels()}>
                 {(id) => (
                   <button
                     type="button"

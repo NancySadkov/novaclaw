@@ -547,6 +547,81 @@ export function AgentConfigDialog(props: {
     }
   }
 
+  // Nova's charter is compiled into the instance, so it is a different kind of surface from an
+  // officer profile: a projection, never a disabled edit form. Keeping the editable tree mounted
+  // behind disabled controls still advertises values the store will refuse and leaves future
+  // controls one forgotten `disabled` away from repeating the same defect. This branch makes the
+  // forbidden write structurally unreachable and leaves a calm, useful surface with an obvious way
+  // back.
+  if (governing()) {
+    return (
+      <Dialog size="full">
+        <div
+          class="flex h-full w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+          data-agent-profile="governing-readonly"
+        >
+          <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-3">
+            <button
+              type="button"
+              data-action="agent-config-back"
+              class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+              aria-label={language.t("agentConfig.back")}
+              title={language.t("agentConfig.back")}
+              onClick={props.onDismiss}
+            >
+              <Icon name="chevron-left" size="normal" />
+            </button>
+            <AgentPortrait
+              id={props.agentID ?? ""}
+              name={name()}
+              avatar={agent()?.avatar}
+              class="size-9 border border-v2-border-border-strong text-base"
+            />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-semibold">{name()}</span>
+              <span class="block truncate text-xs text-v2-text-text-muted">
+                {agent()?.title ?? language.t("agentConfig.noTitle")}
+              </span>
+            </span>
+            <ControlScope kind="colleague" class="hidden sm:inline-flex" />
+            <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
+              {language.t("agentConfig.close")}
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+            <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
+              <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                  {language.t("agentConfig.who")}
+                </h3>
+                <p class="mt-2 text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
+                <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.name")}</dt>
+                    <dd class="mt-1 text-sm">{nameValue()}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.jobTitle")}</dt>
+                    <dd class="mt-1 text-sm">{titleValue() || language.t("agentConfig.noTitle")}</dd>
+                  </div>
+                  <Show when={personalityValue()}>
+                    {(value) => (
+                      <div class="sm:col-span-2">
+                        <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.personality")}</dt>
+                        <dd class="mt-1 whitespace-pre-wrap text-sm">{value()}</dd>
+                      </div>
+                    )}
+                  </Show>
+                </dl>
+              </section>
+              <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
+            </div>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   return (
     // 🔴 A real MODAL, through the v2 `Dialog` shell — not a bare `<div>` (owner, 2026-08-23).
     //

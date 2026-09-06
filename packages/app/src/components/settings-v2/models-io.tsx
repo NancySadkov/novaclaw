@@ -103,19 +103,29 @@ export const ModelBundleIO: Component = () => {
     })
     if (!proceed) return
     // Re-sanitize on import too: a hand-edited bundle must not smuggle credential fields into config.
-    const ok = await serverSync()
-      .updateConfig({ providers: sanitizeModelBundle(providers) } as never)
-      .then(() => true)
-      .catch((err: unknown) => {
-        showToast({
-          variant: "error",
-          title: language.t("settings.providers.import.failed"),
-          description: err instanceof Error ? err.message : String(err),
-        })
-        return false
+    // Like Add and Clone, importing models is complete only when the refreshed catalog projection
+    // contains every imported id. These are the two sibling writers found by the VR-004 class sweep.
+    const expected = Object.entries(providers).flatMap(([providerID, value]) => {
+      if (!isJSONObject(value) || !isJSONObject(value.models)) return []
+      return Object.keys(value.models).map((modelID) => ({ providerID, modelID }))
+    })
+    try {
+      await serverSync().updateConfig({ providers: sanitizeModelBundle(providers) } as never)
+      const refreshed = await serverSync().refetchProviders()
+      const missing = expected.filter(
+        ({ providerID, modelID }) => !(refreshed?.models.get(providerID) ?? []).some((model) => model.id === modelID),
+      )
+      if (missing.length > 0) {
+        throw new Error(language.t("settings.models.new.refreshMissing", { count: missing.length }))
+      }
+      showToast({ variant: "success", icon: "circle-check", title: language.t("settings.providers.import.toast") })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("settings.providers.import.failed"),
+        description: err instanceof Error ? err.message : String(err),
       })
-    if (!ok) return
-    showToast({ variant: "success", icon: "circle-check", title: language.t("settings.providers.import.toast") })
+    }
   }
 
   return (

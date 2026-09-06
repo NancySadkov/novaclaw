@@ -650,6 +650,16 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
     // probe writes its measured verdict server-side, and without this the panel that just triggered
     // the measurement keeps showing the answer from before it.
     refetchConfig: () => configQuery.refetch(),
+    /**
+     * A config write being accepted is not evidence that its catalog projection is visible.
+     * Settings flows which promise a model was added await this read and inspect the resulting
+     * model store before reporting success.
+     */
+    refetchProviders: async () => {
+      const result = await providerQuery.refetch()
+      if (result.isError) throw result.error
+      return result.data
+    },
     project: projectApi,
     session,
     nativeMessages,
