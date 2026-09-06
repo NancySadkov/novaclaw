@@ -965,7 +965,7 @@ export function MemoryGraphPage() {
                 // adds: URL `owner=agent:lysander`, graph showing Lysander's three memories, picker
                 // saying Nova. A control that names the wrong owner is worse than no control.
                 <option value={entry.key} selected={entry.key === owner()?.key}>
-                  {entry.avatar ? `${entry.avatar} ${entry.label}` : entry.label}
+                  {entry.label}
                 </option>
               )}
             </For>

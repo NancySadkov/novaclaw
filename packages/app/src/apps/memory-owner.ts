@@ -12,7 +12,6 @@ export interface MemoryOwner {
   /** `agent:<id>`, or the sentinel `global` for the household's shared facts. */
   readonly key: string
   readonly label: string
-  readonly avatar: string | undefined
   /** The scopes to query for this owner. */
   readonly scopes: readonly string[]
   readonly kind: "agent" | "shared"
@@ -28,7 +27,6 @@ export const ownersFor = (agents: readonly AgentLike[], sharedLabel: string): re
     (view: ContactView): MemoryOwner => ({
       key: `agent:${view.id}`,
       label: view.name,
-      avatar: view.avatar,
       // A colleague's OWN cabinet only. Deliberately not `agent:<id>` ∪ `global`, even though that is
       // what its turns read: this view answers "what does Trader know that nobody else does", and
       // folding the household's facts into every colleague's page would make all of them look
@@ -37,7 +35,7 @@ export const ownersFor = (agents: readonly AgentLike[], sharedLabel: string): re
       kind: "agent",
     }),
   ),
-  { key: SHARED_KEY, label: sharedLabel, avatar: undefined, scopes: ["global"], kind: "shared" },
+  { key: SHARED_KEY, label: sharedLabel, scopes: ["global"], kind: "shared" },
 ]
 
 /** The owner to show when the app opens, or `undefined` when there is nobody at all. Nova first,

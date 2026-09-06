@@ -492,6 +492,7 @@ function RegistryAppPage() {
                                 <div class="pt-1 font-mono text-[12px] text-v2-text-text-faint">{column}</div>
                                 <textarea
                                   rows={1}
+                                  aria-label={column}
                                   data-registry-new-column={column}
                                   class="min-h-7 w-full resize-y rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 font-mono text-[12px] text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
                                   value={form().draft[column] ?? ""}
@@ -532,6 +533,7 @@ function RegistryAppPage() {
                                 <div class="pt-1 font-mono text-[12px] text-v2-text-text-faint">{column}</div>
                                 <textarea
                                   rows={1}
+                                  aria-label={column}
                                   data-registry-column={column}
                                   class="min-h-7 w-full resize-y rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 font-mono text-[12px] text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
                                   value={form().draft[column] ?? ""}

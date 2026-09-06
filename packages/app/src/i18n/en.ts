@@ -95,6 +95,7 @@ export const dict = {
   "notes.namePlaceholder": "note name…",
   "notes.placeholder": "Write anything — phone numbers, sites, birthdays…",
   "notes.loading": "Loading…",
+  "notes.readFailed": "Could not read this note. Try again to continue editing.",
   "notes.empty": "No notes yet",
   "notes.loadFailed": "Could not read your notes. This is not an empty folder — the list did not arrive.",
   "notes.saving": "Saving…",

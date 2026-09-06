@@ -48,9 +48,9 @@ export function NotesPage() {
   const [saveFailed, setSaveFailed] = createSignal(false)
   const [naming, setNaming] = createSignal(false)
   const [tick, setTick] = createSignal(0)
-  // True while a note's content is loading; the textarea is read-only during it so keystrokes
-  // can never land in a half-switched binding (the "New note overwrites the open note" data loss).
-  const [noteLoading, setNoteLoading] = createSignal(false)
+  // Editing requires a successful read. Loading and failure must never masquerade as an empty
+  // note that autosave could write over the original file.
+  const [noteState, setNoteState] = createSignal<"loading" | "ready" | "failed">("loading")
 
   // Resolve the notes dir: the server data root (PathInfo.data — read via cast, the generated SDK
   // type predates the field) + "/notes", created idempotently on first visit. FS-3 (T7): under
@@ -87,7 +87,9 @@ export function NotesPage() {
     async ({ c, d }) => {
       const rows = await c.sdk.client.file.list({ directory: d, path: "" }).then((r) => r.data as Entry[] | undefined)
       if (!rows) throw new Error("the notes folder could not be listed")
-      return rows.filter((e) => e.type === "file" && e.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name))
+      return rows
+        .filter((e) => e.type === "file" && e.name.endsWith(".md"))
+        .sort((a, b) => a.name.localeCompare(b.name))
     },
   )
   const listing = createListState<Entry>(entries, { failedWhen: notesDirUnavailable })
@@ -156,7 +158,7 @@ export function NotesPage() {
     const c = ctx()
     const d = notesDir()
     if (!c || !d) return
-    setNoteLoading(true)
+    setNoteState("loading")
     setCurrent(name)
     setText("")
     setDirty(false)
@@ -166,8 +168,12 @@ export function NotesPage() {
       .catch(() => undefined)
     // Only lay the content in if this note is still the bound one (a faster later switch wins).
     if (current() === name) {
-      setText(res?.type === "text" ? (res.content ?? "") : "")
-      setNoteLoading(false)
+      if (res?.type !== "text" || typeof res.content !== "string") {
+        setNoteState("failed")
+      } else {
+        setText(res.content)
+        setNoteState("ready")
+      }
     }
     try {
       localStorage.setItem(LAST_KEY, name)
@@ -240,7 +246,7 @@ export function NotesPage() {
   return (
     <AppPage class="flex flex-col overflow-hidden">
       <AppPageHeader glyph="notes" title={language.t("notes.title")} hint={language.t("notes.hint")}>
-        <Show when={current()}>
+        <Show when={current() && noteState() === "ready"}>
           <span
             class="shrink-0 text-xs"
             classList={{
@@ -275,6 +281,7 @@ export function NotesPage() {
                 // body, the typed name goes nowhere and the user's next keystrokes land in
                 // the editor, still bound to the previous note). Focus explicitly instead.
                 ref={(el) => setTimeout(() => el.focus())}
+                aria-label={language.t("notes.namePlaceholder")}
                 placeholder={language.t("notes.namePlaceholder")}
                 class="w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 text-sm outline-none"
                 onKeyDown={(e) => {
@@ -335,16 +342,37 @@ export function NotesPage() {
               </div>
             }
           >
-            <textarea
-              class="h-full w-full resize-none bg-transparent px-4 py-3 font-mono text-sm leading-relaxed outline-none"
-              placeholder={noteLoading() ? language.t("notes.loading") : language.t("notes.placeholder")}
-              value={text()}
-              readOnly={noteLoading()}
-              onInput={(e) => {
-                setText(e.currentTarget.value)
-                scheduleSave()
-              }}
-            />
+            <Show
+              when={noteState() !== "failed"}
+              fallback={
+                <div class="flex flex-col items-start gap-3 p-4" role="alert">
+                  <p>{language.t("notes.readFailed")}</p>
+                  <button
+                    type="button"
+                    class={btn}
+                    onClick={() => {
+                      const name = current()
+                      if (name) void openNote(name)
+                    }}
+                  >
+                    {language.t("error.page.action.retry")}
+                  </button>
+                </div>
+              }
+            >
+              <textarea
+                aria-label={language.t("notes.title") + ": " + current()}
+                class="h-full w-full resize-none bg-transparent px-4 py-3 font-mono text-sm leading-relaxed outline-none"
+                placeholder={noteState() === "loading" ? language.t("notes.loading") : language.t("notes.placeholder")}
+                value={text()}
+                readOnly={noteState() !== "ready"}
+                onInput={(e) => {
+                  if (noteState() !== "ready") return
+                  setText(e.currentTarget.value)
+                  scheduleSave()
+                }}
+              />
+            </Show>
           </Show>
         </div>
       </div>
