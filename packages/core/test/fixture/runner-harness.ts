@@ -170,6 +170,7 @@ export interface RunnerScript {
 const OUT_OF_BAND = [
   { channel: "title", marker: "You are a title generator" },
   { channel: "maintenance", marker: "You extract durable MEMORIES" },
+  { channel: "utility", marker: "You are a completion auditor" },
 ] as const
 
 /**
@@ -485,6 +486,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         if (channel === "maintenance") {
           maintenanceRequests.push(request)
           return Stream.fromIterable(maintenanceTurns.shift() ?? [])
+        }
+        if (channel === "utility") {
+          utilityRequests.push(request)
+          return Stream.fromIterable(utilityTurns.shift() ?? [])
         }
         requests.push(request)
         // ⚠️ Gating and failure are applied ONLY here, on the interactive path — deliberately below the

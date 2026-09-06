@@ -2210,6 +2210,24 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.finish.audit": {
+    level: "info",
+    message: "silent finish completion audit",
+    attributes: {
+      "session.id": "correlate",
+      "session.finish.audit.yes": "flag",
+      "session.finish.audit.no": "flag",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  "session.finish.audit.failed": {
+    level: "warn",
+    message: "silent finish completion audit failed",
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   // The turn described files it never opened. Counted, because the SCALE is the finding: 331 of 351
   // lines in the run that prompted this.
   "session.finish.set.ungrounded": {

@@ -90,6 +90,7 @@ import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
 import { ShortAnswer } from "./short-answer"
+import { FinishAudit } from "./finish-audit"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { TruncationDetection } from "./truncation-detection"
@@ -723,6 +724,33 @@ export const layer = Layer.effect(
         }),
       )
       return replacement === undefined ? settlement : { ...settlement, ...replacement }
+    })
+
+    const auditSilentFinish = Effect.fn("SessionRunner.auditSilentFinish")(function* (
+      sessionID: SessionSchema.ID,
+      model: Parameters<typeof LLM.request>[0]["model"],
+      device: SessionRunnerModel.ScheduledDevice,
+      context: readonly SessionMessage.Message[],
+    ) {
+      const evidence = FinishAudit.excerpt(context)
+      if (evidence === undefined) return "unknown" as const
+      const reply = yield* ShortAnswer.generate({
+        model,
+        llm,
+        system: FinishAudit.SYSTEM,
+        text: FinishAudit.prompt(evidence),
+        reasoningBudget: 128,
+        maxTokens: 512,
+        scheduler,
+        maintenance: {
+          ownerID: sessionID,
+          task: "finish-audit",
+          deviceKey: device.key,
+          ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+          ...(device.locality === undefined ? {} : { locality: device.locality }),
+        },
+      })
+      return FinishAudit.verdict(reply)
     })
 
     const introspect = Effect.fn("SessionRunner.introspect")(function* (
@@ -2089,6 +2117,10 @@ export const layer = Layer.effect(
       // duplicate text or tool side effects). Protocol bookkeeping such as `step-start` alone
       // is safe to discard, so failures before the assistant begins reconnect in-place below.
       let brokenResponse = false
+      // A successful provider stream that emitted no assistant output. This must travel with the
+      // provider turn: rereading the transcript after `failAssistant` sees the durable ERROR row (or,
+      // before that existed, the previous tool row), so absence cannot be reconstructed from history.
+      let emptyResponse = false
       let handledResponseFailure = false
       let providerPromptAnchor: SessionMessage.PromptAnchor | undefined
       // MindControl thinking budget (reasoning-budget.ts): when the model carries a budget and this
@@ -2652,6 +2684,7 @@ export const layer = Layer.effect(
             // this would report a fault on paths that are working correctly — which is the same ruling
             // broken in the other direction.
             yield* Log.event("session.provider.response.empty", { "session.id": session.id })
+            emptyResponse = true
             yield* withPublication(
               publisher.failAssistant({
                 message: "The provider returned an empty response",
@@ -2902,8 +2935,11 @@ export const layer = Layer.effect(
             step: currentStep,
             finish: stepSettlement?.finish,
             brokenResponse,
+            emptyResponse,
             maxProviderAttempts,
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
+            model,
+            scheduledDevice,
           }
         })
       const attemptID = EventV2.ID.create()
@@ -2979,8 +3015,13 @@ export const layer = Layer.effect(
         readonly step: number
         readonly finish: string | undefined
         readonly brokenResponse: boolean
+        /** This provider turn emitted no assistant output before its durable failure row was added. */
+        readonly emptyResponse: boolean
         readonly maxProviderAttempts: number
         readonly offeredTools: readonly string[]
+        /** The exact route and scheduler placement this turn used; finish audit must judge like-for-like. */
+        readonly model: Parameters<typeof LLM.request>[0]["model"]
+        readonly scheduledDevice: SessionRunnerModel.ScheduledDevice
       },
       RunError
     >
@@ -3608,9 +3649,14 @@ export const layer = Layer.effect(
             // this programme two days on the fan-out. The three predicates are computed once here and
             // the arms branch on the locals; until 2026-09-03 this log sat INSIDE an `else if` condition
             // with a body marked unreachable, and every arm below recomputed the predicates.
-            const finishEmpty = isEmptyAssistantTurn(context)
-            const finishAnnounced = announcedToolButCalledNone(context)
             const finishCalls = callsSinceLastUser.length
+            // The provider-local fact outranks the transcript heuristic after useful work.
+            // `failAssistant` turns an empty stream into an error-bearing assistant row, so history
+            // cannot reconstruct that absence. An empty first response remains a provider failure;
+            // there is no completed work for a completion auditor to judge.
+            const finishEmpty =
+              (result.emptyResponse && finishCalls > 0) || isEmptyAssistantTurn(context)
+            const finishAnnounced = announcedToolButCalledNone(context)
             yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
               "session.finish.empty": finishEmpty,
@@ -3624,8 +3670,33 @@ export const layer = Layer.effect(
               // isn't working, so stop and surface the server-side fix instead of looping silently.
               consecutiveEmpty++
               if (consecutiveEmpty === 1) {
+                let audit: FinishAudit.Verdict = "unknown"
+                if (finishCalls > 0)
+                  audit = yield* auditSilentFinish(
+                    input.sessionID,
+                    result.model,
+                    result.scheduledDevice,
+                    context,
+                  ).pipe(
+                    Effect.catchCause((cause) =>
+                      Log.event("session.finish.audit.failed", {
+                        "session.id": input.sessionID,
+                        "session.cause": Log.fault(cause),
+                      }).pipe(Effect.as("unknown" as const)),
+                    ),
+                  )
+                yield* Log.event("session.finish.audit", {
+                  "session.id": input.sessionID,
+                  "session.finish.audit.yes": audit === "yes",
+                  "session.finish.audit.no": audit === "no",
+                })
                 yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
-                yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
+                yield* SessionInput.steer(
+                  db,
+                  events,
+                  input.sessionID,
+                  finishCalls > 0 ? FinishAudit.nudge(audit) : EMPTY_TURN_RECOVERY,
+                )
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
                 // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
