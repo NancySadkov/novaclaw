@@ -4,6 +4,7 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import * as Timestamp from "@novaclaw/schema/time"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import {
@@ -1755,8 +1756,8 @@ export function MemoryGraphPage() {
                                         <For each={answer().accesses.slice(0, 6)}>
                                           {(access) => (
                                             <li class="opacity-60">
-                                              {new Date(access.accessedAt).toLocaleString()} · {access.surface} · rank{" "}
-                                              {access.rank}
+                                              {Timestamp.toDate(access.accessedAt)?.toLocaleString() ?? "—"} ·{" "}
+                                              {access.surface} · rank {access.rank}
                                               {access.usedAt === null ? " · not shown to the model" : ""}
                                             </li>
                                           )}

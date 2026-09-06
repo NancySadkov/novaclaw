@@ -23,6 +23,7 @@ import { scopedDirectory } from "@/utils/routing-directory"
 import { createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
 import { ControlScope } from "@/components/control-scope"
+import * as Timestamp from "@novaclaw/schema/time"
 
 // Calendar app: the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
@@ -51,6 +52,7 @@ const datetimeLocal = (ms: number) => {
   const date = new Date(ms)
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
+const localeDateTime = (value: unknown) => Timestamp.toDate(value)?.toLocaleString() ?? "—"
 
 /** Preserve the draft text until submit, then accept only a real calendar day. */
 export function calendarDay(raw: string): number {
@@ -62,7 +64,7 @@ export function calendarDay(raw: string): number {
 function describeRecurrence(r: Recurrence): string {
   switch (r.kind) {
     case "once":
-      return `Once — ${new Date(r.at).toLocaleString()}`
+      return `Once — ${localeDateTime(r.at)}`
     case "daily":
       return `Every day at ${hm(r.time)}`
     case "weekly":
@@ -77,7 +79,9 @@ function describeRecurrence(r: Recurrence): string {
   }
 }
 
-function relative(ms: number, now: number): string {
+function relative(value: unknown, now: number): string {
+  const ms = Timestamp.toEpochMillis(value)
+  if (ms === undefined) return "time unknown"
   const d = ms - now
   if (d <= 0) return "due now"
   const s = Math.round(d / 1000)
@@ -216,7 +220,11 @@ export function CalendarPage() {
   const upcoming = createMemo(() =>
     schedules()
       .filter((s) => s.enabled && s.nextFireAt !== null)
-      .sort((a, b) => (a.nextFireAt ?? 0) - (b.nextFireAt ?? 0)),
+      .sort(
+        (a, b) =>
+          (Timestamp.toEpochMillis(a.nextFireAt) ?? Number.POSITIVE_INFINITY) -
+          (Timestamp.toEpochMillis(b.nextFireAt) ?? Number.POSITIVE_INFINITY),
+      ),
   )
   const nextUp = createMemo(() => upcoming()[0])
 
@@ -436,7 +444,7 @@ export function CalendarPage() {
                 <>
                   <div class="mt-1 truncate text-lg font-semibold">{n().title || "Untitled task"}</div>
                   <div class="text-sm text-v2-text-text-accent">
-                    {relative(n().nextFireAt ?? 0, now())} · {new Date(n().nextFireAt ?? 0).toLocaleString()}
+                    {relative(n().nextFireAt, now())} · {localeDateTime(n().nextFireAt)}
                   </div>
                 </>
               )}
@@ -506,13 +514,10 @@ export function CalendarPage() {
                             when={s.nextFireAt !== null}
                             fallback={<span class="text-v2-text-text-faint">no next run</span>}
                           >
-                            next {relative(s.nextFireAt ?? 0, now())} · {new Date(s.nextFireAt ?? 0).toLocaleString()}
+                            next {relative(s.nextFireAt, now())} · {localeDateTime(s.nextFireAt)}
                           </Show>
                           <Show when={s.lastFiredAt}>
-                            <span class="text-v2-text-text-faint">
-                              {" "}
-                              · last ran {new Date(s.lastFiredAt ?? 0).toLocaleString()}
-                            </span>
+                            <span class="text-v2-text-text-faint"> · last ran {localeDateTime(s.lastFiredAt)}</span>
                           </Show>
                         </div>
                       </div>
@@ -560,7 +565,7 @@ export function CalendarPage() {
                 {(f) => (
                   <div class={`${CARD} flex items-center gap-3 py-2`}>
                     <span class="min-w-0 flex-1 truncate text-sm">{titleFor(f.scheduleId)}</span>
-                    <span class="text-xs text-v2-text-text-faint">{new Date(f.firedAt).toLocaleString()}</span>
+                    <span class="text-xs text-v2-text-text-faint">{localeDateTime(f.firedAt)}</span>
                     <span
                       class={`text-xs ${f.status === "error" || f.outcome === "failed" || f.outcome === "interrupted" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}
                     >

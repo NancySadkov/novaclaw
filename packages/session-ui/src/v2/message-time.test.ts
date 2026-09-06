@@ -47,6 +47,14 @@ describe("messageTime", () => {
     expect(messageTime({ created: 0, locale: "en-GB", now: NOON })).toBeDefined()
   })
 
+  test("decoded and ISO transport shapes format identically", () => {
+    const millis = Date.UTC(2026, 7, 23, 9, 5, 0)
+    const expected = messageTime({ created: millis, locale: "en-GB", now: NOON })
+    expect(messageTime({ created: { epochMillis: millis }, locale: "en-GB", now: NOON })).toEqual(expected)
+    expect(messageTime({ created: new Date(millis).toISOString(), locale: "en-GB", now: NOON })).toEqual(expected)
+    expect(expected?.iso).toBe("2026-08-23T09:05:00.000Z")
+  })
+
   test("the locale is honoured", () => {
     const de = messageTime({ created: Date.UTC(2026, 7, 21, 9, 5, 0), locale: "de-DE", now: NOON })!
     expect(de.full).toContain("August")

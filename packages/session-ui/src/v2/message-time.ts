@@ -1,3 +1,5 @@
+import * as Timestamp from "@novaclaw/schema/time"
+
 // WHEN a message was written, for the hover chrome beside Copy (owner, 2026-08-23).
 //
 // 🔴 **Two strings, not one.** A transcript row has almost no horizontal budget, and a full
@@ -19,6 +21,8 @@ export interface MessageTime {
   readonly label: string
   /** The full form, for the chip's `title` — always complete, never abbreviated. */
   readonly full: string
+  /** Machine-readable form for the HTML `dateTime` attribute. */
+  readonly iso: string
 }
 
 function parts(formatter: Intl.DateTimeFormat, date: Date): { y: string; m: string; d: string } {
@@ -65,16 +69,15 @@ export const resetMessageTimeFormatterCache = (): void => formatterCache.clear()
  * and so a row cannot disagree with its neighbour about what "today" is mid-render.
  */
 export function messageTime(input: {
-  readonly created: number | undefined
+  readonly created: unknown
   readonly locale?: string | undefined
   readonly now?: number | undefined
 }): MessageTime | undefined {
-  const created = input.created
+  const created = Timestamp.toEpochMillis(input.created)
   // ⚠️ Not `!created`: epoch 0 is a real instant, and a falsy check would drop it. `undefined` is
   // the only "we do not know", and a message we cannot date shows no chip rather than a wrong one.
-  if (created === undefined || !Number.isFinite(created)) return undefined
-  const date = new Date(created)
-  if (Number.isNaN(date.getTime())) return undefined
+  if (created === undefined) return undefined
+  const date = Timestamp.toDate(created)!
   const locale = input.locale || undefined
   const now = new Date(input.now ?? Date.now())
 
@@ -88,5 +91,6 @@ export function messageTime(input: {
   return {
     label: sameDay ? clock.format(date) : dated.format(date),
     full: complete.format(date),
+    iso: date.toISOString(),
   }
 }

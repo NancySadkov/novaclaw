@@ -1,6 +1,7 @@
 export * as SessionMarkdown from "./session-markdown"
 
 import type { SessionMessage } from "@novaclaw/schema/session-message"
+import * as Timestamp from "@novaclaw/schema/time"
 
 // Render a session as a readable Markdown transcript (the Chats app's "Export as Markdown").
 //
@@ -29,26 +30,12 @@ export interface Result {
 
 /**
  * Timestamps arrive in two shapes and this must survive both. Over the wire `time.created` is a number
- * (milliseconds), but the schema field is `DateTimeUtcFromMillis`, so the DECODED value the server hands
- * us is an Effect `DateTime.Utc` object carrying `epochMillis`. Passing that object to `new Date()`
- * yields an Invalid Date and `toISOString()` THROWS — which surfaced as an opaque UnknownError on every
+ * (milliseconds), but the schema field is `DateTimeUtcFromMillis`, so the decoded value the server hands
+ * us is an Effect `DateTime.Utc` carrier. Passing that object to `new Date()` yields an Invalid Date and
+ * `toISOString()` THROWS — which surfaced as an opaque UnknownError on every
  * session that actually had messages. Never throw here: an unformattable timestamp is simply omitted.
  */
-const iso = (value: unknown): string | undefined => {
-  const millis =
-    typeof value === "number"
-      ? value
-      : value instanceof Date
-        ? value.getTime()
-        : typeof value === "object" &&
-            value !== null &&
-            typeof (value as { epochMillis?: unknown }).epochMillis === "number"
-          ? (value as { epochMillis: number }).epochMillis
-          : undefined
-  if (millis === undefined || !Number.isFinite(millis)) return undefined
-  const date = new Date(millis)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
-}
+const iso = Timestamp.toISOString
 
 /** A fence long enough to survive content that itself contains backticks. */
 const fence = (body: string): string => {

@@ -6,17 +6,18 @@ type Assistant = Extract<SessionMessage, { type: "assistant" }>
 
 const assistant = (
   id: string,
-  created: number,
+  created: unknown,
   findings: NonNullable<Assistant["context"]>["findings"] = [],
-): Assistant => ({
-  id,
-  type: "assistant",
-  agent: "build",
-  model: { providerID: "dgx-spark", id: "qwen3.6-35b" },
-  content: [],
-  time: { created },
-  context: { window: 32_000, estimatedTokens: 8_000, droppedMessages: 0, elidedOutputs: 0, findings },
-})
+): Assistant =>
+  ({
+    id,
+    type: "assistant",
+    agent: "build",
+    model: { providerID: "dgx-spark", id: "qwen3.6-35b" },
+    content: [],
+    time: { created },
+    context: { window: 32_000, estimatedTokens: 8_000, droppedMessages: 0, elidedOutputs: 0, findings },
+  }) as Assistant
 
 describe("Debug context findings", () => {
   test("selects only packed assistant turns, newest first", () => {
@@ -27,6 +28,15 @@ describe("Debug context findings", () => {
       assistant("new", 5),
     ]
     expect(contextTurns(messages, 1).map((message) => message.id)).toEqual(["new"])
+  })
+
+  test("sorts decoded, wire, and legacy timestamp shapes together", () => {
+    const messages = [
+      assistant("decoded", { epochMillis: 3_000 }),
+      assistant("wire", 1_000),
+      assistant("legacy", "1970-01-01T00:00:02.000Z"),
+    ]
+    expect(contextTurns(messages).map((message) => message.id)).toEqual(["decoded", "legacy", "wire"])
   })
 
   test("explains duplicate output as an action, never an opaque score", () => {

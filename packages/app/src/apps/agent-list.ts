@@ -3,6 +3,7 @@
 // disagreeing about who exists.
 
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import * as Timestamp from "@novaclaw/schema/time"
 import type { AgentLike } from "./contacts"
 import type { SessionLike, UsageMinute } from "./roster-live"
 
@@ -136,9 +137,11 @@ export const listSessions = async (sdk: {
   return rows.flatMap((row) => {
     const id = typeof row["id"] === "string" ? row["id"] : undefined
     const time = row["time"] as { created?: unknown; updated?: unknown; archived?: unknown } | undefined
-    if (id === undefined || typeof time?.created !== "number") return []
+    const created = Timestamp.toEpochMillis(time?.created)
+    if (id === undefined || created === undefined) return []
     const text = (key: string) => (typeof row[key] === "string" ? (row[key] as string) : undefined)
-    const number = (value: unknown) => (typeof value === "number" ? value : undefined)
+    const updated = Timestamp.toEpochMillis(time?.updated)
+    const archived = Timestamp.toEpochMillis(time?.archived)
     return [
       {
         id,
@@ -147,9 +150,9 @@ export const listSessions = async (sdk: {
         title: text("title"),
         tokens: row["tokens"] as SessionLike["tokens"],
         time: {
-          created: time.created,
-          ...(number(time.updated) === undefined ? {} : { updated: number(time.updated) }),
-          ...(number(time.archived) === undefined ? {} : { archived: number(time.archived) }),
+          created,
+          ...(updated === undefined ? {} : { updated }),
+          ...(archived === undefined ? {} : { archived }),
         },
       } satisfies SessionLike,
     ]

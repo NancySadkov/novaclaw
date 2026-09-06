@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { listAgents, listUsage } from "./agent-list"
+import { listAgents, listSessions, listUsage } from "./agent-list"
 
 /**
  * WHAT SURVIVES THE TRIP from the roster response to the UI.
@@ -134,10 +134,35 @@ describe("roster usage uses one batch response", () => {
   })
 
   test("a failed batch dims rates without rejecting the roster", async () => {
-    const usage = await listUsage(
-      { agent: { usageMany: async () => ({ error: { _tag: "Unavailable" } }) } } as never,
-      ["nova", "theron"],
-    )
+    const usage = await listUsage({ agent: { usageMany: async () => ({ error: { _tag: "Unavailable" } }) } } as never, [
+      "nova",
+      "theron",
+    ])
     expect(usage).toEqual({ nova: [], theron: [] })
+  })
+})
+
+describe("roster session time boundary", () => {
+  test("keeps decoded, wire, and legacy timestamp shapes as epoch millis", async () => {
+    const rows = await listSessions({
+      session: {
+        list: async () => ({
+          data: {
+            data: [
+              {
+                id: "ses_nova",
+                time: {
+                  created: { epochMillis: 1_000 },
+                  updated: "1970-01-01T00:00:02.000Z",
+                  archived: new Date(3_000),
+                },
+              },
+            ],
+          },
+        }),
+      },
+    } as never)
+
+    expect(rows[0]?.time).toEqual({ created: 1_000, updated: 2_000, archived: 3_000 })
   })
 })

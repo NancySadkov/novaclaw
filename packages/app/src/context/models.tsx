@@ -1,6 +1,7 @@
 import { type Accessor, createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
+import * as Timestamp from "@novaclaw/schema/time"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useProviders } from "@/hooks/use-providers"
@@ -34,7 +35,11 @@ function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
 }
 
-export const { use: useModels, provider: ModelsProvider, context: ModelsContext } = createSimpleContext({
+export const {
+  use: useModels,
+  provider: ModelsProvider,
+  context: ModelsContext,
+} = createSimpleContext({
   name: "Models",
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {
@@ -119,7 +124,8 @@ export const { use: useModels, provider: ModelsProvider, context: ModelsContext 
       () =>
         new Map(
           available().map((model) => {
-            const parsed = DateTime.fromMillis(model.time.released)
+            const released = Timestamp.toEpochMillis(model.time.released)
+            const parsed = released === undefined ? DateTime.invalid("invalid") : DateTime.fromMillis(released)
             return [modelKey({ providerID: model.provider.id, modelID: model.id }), parsed] as const
           }),
         ),

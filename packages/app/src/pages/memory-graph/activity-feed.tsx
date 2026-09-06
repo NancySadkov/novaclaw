@@ -1,6 +1,7 @@
 import { For, Show, type Component } from "solid-js"
 import type { ServerStreamStatus } from "@/context/server-sdk"
 import { FEED_MAX, linkSentence, type FeedEntry, type FeedTone } from "./activity"
+import * as Timestamp from "@novaclaw/schema/time"
 
 /**
  * THE ACTIVITY RAIL — what the memory store just did, in sentences.
@@ -28,11 +29,7 @@ const TONE_COLOUR: Record<FeedTone, string> = {
 /** Clock time, not "3 minutes ago" — a relative label needs a ticking clock, and a ticker on an
  *  idle page is a busy loop bought for a nicety. */
 const clock = (at: number) => {
-  try {
-    return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-  } catch {
-    return ""
-  }
+  return Timestamp.toDate(at)?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) ?? ""
 }
 
 export const MemoryActivityFeedRail: Component<{
@@ -69,7 +66,10 @@ export const MemoryActivityFeedRail: Component<{
           background is folded silently — every caption kept, every flare dropped — and a viewer
           who was not told would read the calm map as "nothing happened while I was away". */}
       <Show when={props.skipped > 0}>
-        <p class="border-b border-v2-border-border-muted px-3 py-1.5 text-[11px] opacity-60" data-slot="memory-activity-skipped">
+        <p
+          class="border-b border-v2-border-border-muted px-3 py-1.5 text-[11px] opacity-60"
+          data-slot="memory-activity-skipped"
+        >
           {props.skipped} {props.skipped === 1 ? "change" : "changes"} arrived at once — listed, not animated.
         </p>
       </Show>
@@ -78,8 +78,8 @@ export const MemoryActivityFeedRail: Component<{
           when={props.entries.length > 0}
           fallback={
             <p class="px-3 py-3 text-[11px] leading-relaxed opacity-50" data-slot="memory-activity-empty">
-              Nothing yet. This is where remembering, recalling and correcting show up as they happen —
-              whichever colleague or tool caused them.
+              Nothing yet. This is where remembering, recalling and correcting show up as they happen — whichever
+              colleague or tool caused them.
             </p>
           }
         >

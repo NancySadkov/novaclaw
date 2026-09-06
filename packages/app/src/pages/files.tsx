@@ -16,6 +16,7 @@ import { useFilesystemOperations, type FilesystemTarget } from "@/components/fil
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
 import { AppPage, AppPageHeader } from "@/components/app-page"
 import { ProjectChip, ProjectDetail, useProjectSummary } from "@/components/project-indicator"
+import * as Timestamp from "@novaclaw/schema/time"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
 // via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
@@ -615,7 +616,7 @@ export function FilesPage() {
                             {entry.originalPath}
                           </span>
                           <span class="shrink-0 text-xs text-v2-text-text-faint">
-                            {new Date(entry.trashedAt).toLocaleString()}
+                            {Timestamp.toDate(entry.trashedAt)?.toLocaleString() ?? "—"}
                           </span>
                           <button type="button" class={btn} onClick={() => void doRestore(entry.id)}>
                             {language.t("files.restore")}

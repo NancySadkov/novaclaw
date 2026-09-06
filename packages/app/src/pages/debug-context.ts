@@ -1,11 +1,12 @@
 import type { SessionMessage, SessionMessageAssistant, SessionMessageContext } from "@novaclaw/sdk/v2/client"
+import * as Timestamp from "@novaclaw/schema/time"
 
 export type ContextTurn = SessionMessageAssistant & { context: SessionMessageContext }
 
 export const contextTurns = (messages: ReadonlyArray<SessionMessage>, limit = 8): ContextTurn[] =>
   messages
     .filter((message): message is ContextTurn => message.type === "assistant" && message.context !== undefined)
-    .sort((a, b) => b.time.created - a.time.created)
+    .sort((a, b) => (Timestamp.toEpochMillis(b.time.created) ?? 0) - (Timestamp.toEpochMillis(a.time.created) ?? 0))
     .slice(0, Math.max(0, limit))
 
 export const formatContextTokens = (tokens: number): string => {

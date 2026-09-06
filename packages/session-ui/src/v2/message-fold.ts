@@ -7,6 +7,7 @@ import type {
   SessionMessageShell,
   V2Event,
 } from "@novaclaw/sdk/v2"
+import * as Timestamp from "@novaclaw/schema/time"
 
 /**
  * Client-side fold of the native V2 `session.next.*` event stream into a flat
@@ -428,15 +429,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
 /** Creation time in epoch millis, tolerating both the wire number and a decoded DateTime carrier. */
 function messageCreatedAt(message: SessionMessage): number | undefined {
   const created = (message as { time?: { created?: unknown } }).time?.created
-  if (typeof created === "number") return created
-  if (created instanceof Date) return created.getTime()
-  if (
-    typeof created === "object" &&
-    created !== null &&
-    typeof (created as { epochMillis?: unknown }).epochMillis === "number"
-  )
-    return (created as { epochMillis: number }).epochMillis
-  return undefined
+  return Timestamp.toEpochMillis(created)
 }
 
 export function isInFlightAssistant(message: SessionMessage): boolean {

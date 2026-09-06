@@ -12,7 +12,7 @@ import { AgentTokenMinuteTable } from "./usage.sql"
 
 /** The bucket a moment belongs to. ONE definition, so a writer and a reader can never disagree
  *  about which minute a step landed in. */
-export const minuteOf = (epochMillis: number): number => Math.floor(epochMillis / 60_000)
+export const minuteOf = (instant: number): number => Math.floor(instant / 60_000)
 
 /** Generated tokens = what the model PRODUCED. Prompt ingestion is not work a person recognises. */
 export const generatedOf = (tokens: { readonly output?: number; readonly reasoning?: number }): number =>

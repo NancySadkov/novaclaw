@@ -1,5 +1,5 @@
 import { DateTime } from "luxon"
-import { sessionTimeMillis } from "@/utils/session-time"
+import * as Timestamp from "@novaclaw/schema/time"
 
 export function createSessionContextFormatter(locale: string) {
   return {
@@ -13,14 +13,12 @@ export function createSessionContextFormatter(locale: string) {
       if (value === null) return "—"
       return value.toLocaleString(locale) + "%"
     },
-    // A `time.created` fed here can be epoch millis (REST/replay) OR an ISO string: native message
-    // times aren't run through `normalizeSessionTimes`, and the live SSE mirror carries Type-side
-    // DateTime as an ISO string (see utils/session-time.ts). `DateTime.fromMillis` throws on a
-    // string, which crashed the whole context tab — so tolerate both, like `sessionTimeMillis`.
-    time(value: number | string | null | undefined) {
-      if (value === undefined || value === null || value === "") return "—"
-      const millis = typeof value === "number" ? value : sessionTimeMillis(value)
-      if (!millis) return "—"
+    // Native message times do not pass through the session-store normalizer. Older event/cache
+    // inputs and decoded in-process values may therefore differ from REST's epoch millis. Luxon
+    // throws on those shapes, so normalize through the shared boundary before formatting.
+    time(value: unknown) {
+      const millis = Timestamp.toEpochMillis(value)
+      if (millis === undefined) return "—"
       return DateTime.fromMillis(millis).setLocale(locale).toLocaleString(DateTime.DATETIME_MED)
     },
   }

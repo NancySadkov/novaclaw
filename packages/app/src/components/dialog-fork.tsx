@@ -11,6 +11,7 @@ import { promptFromUserMessage } from "@/utils/prompt"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { useLanguage } from "@/context/language"
+import * as Timestamp from "@novaclaw/schema/time"
 
 interface ForkableMessage {
   id: string
@@ -18,8 +19,8 @@ interface ForkableMessage {
   time: string
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, { timeStyle: "short" })
+function formatTime(value: unknown): string {
+  return Timestamp.toDate(value)?.toLocaleTimeString(undefined, { timeStyle: "short" }) ?? "—"
 }
 
 export const DialogFork: Component = () => {
@@ -51,7 +52,7 @@ export const DialogFork: Component = () => {
       result.push({
         id: message.id,
         text: message.text.replace(/\n/g, " ").slice(0, 200),
-        time: formatTime(new Date(message.time.created)),
+        time: formatTime(message.time.created),
       })
     }
 

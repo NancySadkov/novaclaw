@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { normalizeSessionTimes, sessionTimeMillis } from "./session-time"
 
-// Store-boundary contract (owner-hit 2026-07-21): live-event session records carry ISO-string
-// times (the SSE mirrors Type-side payloads) while REST serves epoch millis; DateTime.fromMillis
-// threw on the strings and faulted the whole Chats pane. Folds normalize through here.
+// Store-boundary contract (owner-hit 2026-07-21): older live/cache records can carry ISO-string
+// times while REST serves epoch millis; DateTime.fromMillis threw on the strings and faulted the
+// whole Chats pane. Folds normalize through here.
 
 describe("normalizeSessionTimes", () => {
   test("coerces ISO-string times to epoch millis", () => {
@@ -24,7 +24,11 @@ describe("normalizeSessionTimes", () => {
 
   test("handles archived and mixed encodings", () => {
     const input: { time: { created?: unknown; updated?: unknown; archived?: unknown } } = {
-      time: { created: 1784662154383, updated: "2026-07-21T21:19:58.352Z", archived: "2026-07-21T22:00:00.000Z" },
+      time: {
+        created: { epochMillis: 1784662154383 },
+        updated: "2026-07-21T21:19:58.352Z",
+        archived: "2026-07-21T22:00:00.000Z",
+      },
     }
     const normalized = normalizeSessionTimes(input)
     expect(normalized.time.created).toBe(1784662154383)

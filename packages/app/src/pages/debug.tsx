@@ -2,6 +2,7 @@ import { A } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
+import * as Timestamp from "@novaclaw/schema/time"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { instanceFetch } from "@/utils/instance-fetch"
 import { useGlobal } from "@/context/global"
@@ -117,7 +118,7 @@ function DebugAppPage() {
         model: s.model,
         tokens: s.tokens,
         parentID: s.parentID,
-        status: active[s.id] !== undefined ? "busy" : status[s.id]?.type ?? "idle",
+        status: active[s.id] !== undefined ? "busy" : (status[s.id]?.type ?? "idle"),
         // The presence column's busy half. Read from the session-status signal through its ONE
         // owner — never from the `status` column above, which shows the durable EXECUTION state
         // when there is one and would report an exited worker as busy.
@@ -382,7 +383,7 @@ function DebugAppPage() {
 
   /** One entry as one line. The ONE rendering of an entry as text — `copyLog` reuses it. */
   const logLine = (entry: { at: number; level: string; text: string }) =>
-    `${new Date(entry.at).toISOString()} [${entry.level}] ${entry.text}`
+    `${Timestamp.toISOString(entry.at) ?? "unknown-time"} [${entry.level}] ${entry.text}`
 
   const copyLog = () => {
     // A bug report wants to know WHICH instance and WHICH slice of the log, or the paste is a wall
@@ -769,7 +770,10 @@ function DebugAppPage() {
                       {(message) => (
                         <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
                           <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-v2-text-text-faint">
-                            <span>{new Date(message.time.completed ?? message.time.created).toLocaleString()}</span>
+                            <span>
+                              {Timestamp.toDate(message.time.completed ?? message.time.created)?.toLocaleString() ??
+                                "—"}
+                            </span>
                             <span>
                               {formatContextTokens(message.context.estimatedTokens)} /{" "}
                               {formatContextTokens(message.context.window)} tokens
@@ -883,7 +887,7 @@ function DebugAppPage() {
                 {(entry) => (
                   <div class="flex gap-2 py-0.5 text-[11px] leading-4">
                     <span class="shrink-0 tabular-nums text-v2-text-text-faint">
-                      {new Date(entry.at).toLocaleTimeString()}
+                      {Timestamp.toDate(entry.at)?.toLocaleTimeString() ?? "—"}
                     </span>
                     <span
                       class="w-14 shrink-0 font-medium"
@@ -1079,118 +1083,124 @@ function DebugAppPage() {
           <div class="max-h-72 overflow-y-auto overflow-x-auto px-4 pb-3">
             <Show
               when={!processRoster.failed}
-              fallback={<div class="text-[11px] text-v2-state-fg-danger">could not read the instance session roster</div>}
+              fallback={
+                <div class="text-[11px] text-v2-state-fg-danger">could not read the instance session roster</div>
+              }
             >
               <Show
                 when={!processRoster.loading && sessions().length > 0}
-                fallback={<div class={hint}>{processRoster.loading ? "reading the instance session roster…" : "no sessions"}</div>}
+                fallback={
+                  <div class={hint}>
+                    {processRoster.loading ? "reading the instance session roster…" : "no sessions"}
+                  </div>
+                }
               >
-              <table class="w-full border-collapse text-[11px]">
-                <thead>
-                  <tr class="text-left text-v2-text-text-faint">
-                    <th class="py-1 pr-2 font-medium">id</th>
-                    <th class="py-1 pr-2 font-medium">status</th>
-                    <th class="py-1 pr-2 font-medium">presence</th>
-                    <th class="py-1 pr-2 font-medium">phase / recovery</th>
-                    <th class="py-1 pr-2 font-medium">agent</th>
-                    <th class="py-1 pr-2 font-medium">model</th>
-                    <th class="py-1 pr-2 font-medium">tokens</th>
-                    <th class="py-1 pr-2 font-medium">parent</th>
-                    <th class="py-1 font-medium">title</th>
-                    <th class="py-1 font-medium">actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={sessions()}>
-                    {(row) => (
-                      <tr class="align-top">
-                        <td class="py-0.5 pr-2 font-mono">
-                          <A href={row.href} class="text-v2-text-text-muted hover:underline">
-                            {row.id}
-                          </A>
-                        </td>
-                        <td
-                          class="py-0.5 pr-2"
-                          classList={{
-                            "text-v2-state-fg-success": ["busy", "retry"].includes(row.status),
-                            "text-v2-text-text-faint": ["idle", "exited"].includes(row.status),
-                          }}
-                        >
-                          {executionBySession()[row.id]?.state ?? row.status}
-                        </td>
-                        {/* Attendance, composed with the status column's busy signal. The ids ride
+                <table class="w-full border-collapse text-[11px]">
+                  <thead>
+                    <tr class="text-left text-v2-text-text-faint">
+                      <th class="py-1 pr-2 font-medium">id</th>
+                      <th class="py-1 pr-2 font-medium">status</th>
+                      <th class="py-1 pr-2 font-medium">presence</th>
+                      <th class="py-1 pr-2 font-medium">phase / recovery</th>
+                      <th class="py-1 pr-2 font-medium">agent</th>
+                      <th class="py-1 pr-2 font-medium">model</th>
+                      <th class="py-1 pr-2 font-medium">tokens</th>
+                      <th class="py-1 pr-2 font-medium">parent</th>
+                      <th class="py-1 font-medium">title</th>
+                      <th class="py-1 font-medium">actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={sessions()}>
+                      {(row) => (
+                        <tr class="align-top">
+                          <td class="py-0.5 pr-2 font-mono">
+                            <A href={row.href} class="text-v2-text-text-muted hover:underline">
+                              {row.id}
+                            </A>
+                          </td>
+                          <td
+                            class="py-0.5 pr-2"
+                            classList={{
+                              "text-v2-state-fg-success": ["busy", "retry"].includes(row.status),
+                              "text-v2-text-text-faint": ["idle", "exited"].includes(row.status),
+                            }}
+                          >
+                            {executionBySession()[row.id]?.state ?? row.status}
+                          </td>
+                          {/* Attendance, composed with the status column's busy signal. The ids ride
                             the tooltip because two windows of one browser are honestly both "a
                             browser window" and only the opaque per-surface id separates them. */}
-                        <td class="max-w-72 py-0.5 pr-2">
-                          {(() => {
-                            const cell = presenceFor(row.id, row.busy)
-                            return (
-                              <span
-                                data-slot="debug-session-presence"
-                                data-session={row.id}
-                                data-attached={String(cell.attached)}
-                                data-unverified={cell.unverified ? "true" : "false"}
-                                class={cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"}
-                                title={cell.title}
-                              >
-                                {cell.text}
-                              </span>
-                            )
-                          })()}
-                        </td>
-                        <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
-                          <Show when={executionBySession()[row.id]} fallback="—">
-                            {(attempt) => (
-                              <span title={attempt().failureDetail}>
-                                {attempt().phase}
-                                {attempt().failureClass ? ` · ${attempt().failureClass}` : ""}
-                                {attempt().toolName
-                                  ? ` · ${attempt().toolName} (${attempt().toolSideEffect}, ${attempt().toolState})`
-                                  : ""}
-                                {attempt().failureCount
-                                  ? ` · ${attempt().failureCount} failure${attempt().failureCount === 1 ? "" : "s"}`
-                                  : ""}
-                              </span>
-                            )}
-                          </Show>
-                        </td>
-                        <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
-                        <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
-                          {row.model ? `${row.model.providerID}/${row.model.id}` : "inherit"}
-                        </td>
-                        <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
-                          {row.tokens.input + row.tokens.output + row.tokens.reasoning}
-                        </td>
-                        <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
-                        <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
-                        <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
-                          <Show
-                            when={["paused", "failed", "interrupted"].includes(
-                              executionBySession()[row.id]?.state ?? "",
-                            )}
-                          >
-                            <button class="mr-2 hover:underline" onClick={() => void actOnExecution("retry", row.id)}>
-                              {language.t("debug.page.retry")}
+                          <td class="max-w-72 py-0.5 pr-2">
+                            {(() => {
+                              const cell = presenceFor(row.id, row.busy)
+                              return (
+                                <span
+                                  data-slot="debug-session-presence"
+                                  data-session={row.id}
+                                  data-attached={String(cell.attached)}
+                                  data-unverified={cell.unverified ? "true" : "false"}
+                                  class={cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"}
+                                  title={cell.title}
+                                >
+                                  {cell.text}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                          <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
+                            <Show when={executionBySession()[row.id]} fallback="—">
+                              {(attempt) => (
+                                <span title={attempt().failureDetail}>
+                                  {attempt().phase}
+                                  {attempt().failureClass ? ` · ${attempt().failureClass}` : ""}
+                                  {attempt().toolName
+                                    ? ` · ${attempt().toolName} (${attempt().toolSideEffect}, ${attempt().toolState})`
+                                    : ""}
+                                  {attempt().failureCount
+                                    ? ` · ${attempt().failureCount} failure${attempt().failureCount === 1 ? "" : "s"}`
+                                    : ""}
+                                </span>
+                              )}
+                            </Show>
+                          </td>
+                          <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
+                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                            {row.model ? `${row.model.providerID}/${row.model.id}` : "inherit"}
+                          </td>
+                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                            {row.tokens.input + row.tokens.output + row.tokens.reasoning}
+                          </td>
+                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
+                          <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
+                          <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
+                            <Show
+                              when={["paused", "failed", "interrupted"].includes(
+                                executionBySession()[row.id]?.state ?? "",
+                              )}
+                            >
+                              <button class="mr-2 hover:underline" onClick={() => void actOnExecution("retry", row.id)}>
+                                {language.t("debug.page.retry")}
+                              </button>
+                            </Show>
+                            <Show
+                              when={["starting", "busy", "recovering"].includes(
+                                executionBySession()[row.id]?.state ?? "",
+                              )}
+                            >
+                              <button class="mr-2 hover:underline" onClick={() => void actOnExecution("stop", row.id)}>
+                                {language.t("debug.page.stop")}
+                              </button>
+                            </Show>
+                            <button class="hover:underline" onClick={showModels}>
+                              {language.t("debug.page.models")}
                             </button>
-                          </Show>
-                          <Show
-                            when={["starting", "busy", "recovering"].includes(
-                              executionBySession()[row.id]?.state ?? "",
-                            )}
-                          >
-                            <button class="mr-2 hover:underline" onClick={() => void actOnExecution("stop", row.id)}>
-                              {language.t("debug.page.stop")}
-                            </button>
-                          </Show>
-                          <button class="hover:underline" onClick={showModels}>
-                            {language.t("debug.page.models")}
-                          </button>
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
               </Show>
             </Show>
             {/* A room outlives the session row when the session is deleted (or was never cached

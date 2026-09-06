@@ -98,7 +98,7 @@ function useFaultText() {
  *
  * The short label is what fits; the full form is on `title`. Reasoning: `../message-time.ts`.
  */
-function MessageTimestamp(props: { created: number | undefined }) {
+function MessageTimestamp(props: { created: unknown }) {
   const i18n = useI18n()
   // `Date.now()` is read here, untracked, and that is correct: the chip is created when the row
   // renders and only decides today-vs-not-today, which does not change while a row is on screen.
@@ -106,7 +106,7 @@ function MessageTimestamp(props: { created: number | undefined }) {
   return (
     <Show when={stamp()}>
       {(value) => (
-        <time data-slot="native-msg-time" dateTime={new Date(props.created!).toISOString()} title={value().full}>
+        <time data-slot="native-msg-time" dateTime={value().iso} title={value().full}>
           {value().label}
         </time>
       )}
@@ -1134,9 +1134,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           trigger={{
             icon: props.part.name === "bash" ? "terminal" : undefined,
             title:
-              props.part.name === "bash"
-                ? (props.part.title ?? shellActionTitle(shellCommand() ?? ""))
-                : meta().title,
+              props.part.name === "bash" ? (props.part.title ?? shellActionTitle(shellCommand() ?? "")) : meta().title,
             subtitle: props.part.name === "bash" ? elapsed() : meta().subtitle,
             args: meta().args,
           }}

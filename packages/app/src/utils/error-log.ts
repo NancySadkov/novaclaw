@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import * as Timestamp from "@novaclaw/schema/time"
 
 // Dependability P5 (uix-dependability-plan): the client-side error ring buffer behind the Debug
 // app's Error-log panel. The calm surfaces (reconnect banner, ErrorPage) stay clean — THIS is
@@ -40,13 +41,15 @@ export type ClientLogSender = (entry: ErrorLogEntry) => Promise<boolean>
  * NOT retried: the instance's limiter deliberately refused it, and fighting that answer would
  * defeat the write-amplification bound. The queue keeps the newest ring-sized window while offline.
  */
-export function createClientLogDrain(options: {
-  readonly soon?: (run: () => void) => void
-  readonly later?: (run: () => void, milliseconds: number) => unknown
-  readonly cancelLater?: (handle: unknown) => void
-  readonly batchSize?: number
-  readonly capacity?: number
-} = {}) {
+export function createClientLogDrain(
+  options: {
+    readonly soon?: (run: () => void) => void
+    readonly later?: (run: () => void, milliseconds: number) => unknown
+    readonly cancelLater?: (handle: unknown) => void
+    readonly batchSize?: number
+    readonly capacity?: number
+  } = {},
+) {
   const soon = options.soon ?? queueMicrotask
   const later = options.later ?? ((run, milliseconds) => setTimeout(run, milliseconds))
   const cancelLater = options.cancelLater ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
@@ -123,7 +126,7 @@ export function clientLogPayload(entry: ErrorLogEntry) {
     message: entry.text,
     extra: {
       kind: entry.level,
-      at: new Date(entry.at).toISOString(),
+      at: Timestamp.toISOString(entry.at) ?? "unknown-time",
     },
   }
 }

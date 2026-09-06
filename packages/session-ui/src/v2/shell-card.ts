@@ -1,3 +1,5 @@
+import * as Timestamp from "@novaclaw/schema/time"
+
 /** Friendly fallback while the parallel model label is not available yet. Never expose a blank `Shell`. */
 export function shellActionTitle(command: string): string {
   const text = command.trim().toLowerCase()
@@ -10,27 +12,10 @@ export function shellActionTitle(command: string): string {
   return "Run a terminal command"
 }
 
-export function commandElapsed(
-  started: unknown,
-  completed: unknown,
-  now: number,
-): string | undefined {
-  const millis = (value: unknown): number | undefined => {
-    if (typeof value === "number") return Number.isFinite(value) ? value : undefined
-    if (value instanceof Date) {
-      const at = value.getTime()
-      return Number.isFinite(at) ? at : undefined
-    }
-    if (typeof value !== "object" || value === null) return undefined
-    const at = (value as { epochMillis?: unknown }).epochMillis
-    return typeof at === "number" && Number.isFinite(at) ? at : undefined
-  }
-
-  const began = millis(started)
-  if (began === undefined) return undefined
-  const ended = millis(completed) ?? now
-  if (!Number.isFinite(ended)) return undefined
-  const seconds = Math.max(0, Math.floor((ended - began) / 1000))
+export function commandElapsed(started: unknown, completed: unknown, now: number): string | undefined {
+  const elapsed = Timestamp.elapsedMillis(started, completed ?? now)
+  if (elapsed === undefined) return undefined
+  const seconds = Math.max(0, Math.floor(elapsed / 1000))
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${seconds % 60}s`

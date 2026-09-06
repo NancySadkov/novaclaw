@@ -11,13 +11,16 @@ import { AppPage, AppPageHeader } from "@/components/app-page"
 import { resolveInstanceGlobalDirectory } from "@/utils/routing-directory"
 import { answeredNothing, createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
+import * as Timestamp from "@novaclaw/schema/time"
 
 // The Trash app (B8 surface — plan.md M6). A home tile over the M4 endpoints: list every trashed
 // entry (the store is GLOBAL — deletions from any root land here), restore with one click, and show
 // the live server retention countdown.
 
-function expiresLabel(trashedAt: number, retentionDays: number, t: Translator): string {
-  const left = trashedAt + retentionDays * 24 * 3600 * 1000 - Date.now()
+function expiresLabel(trashedAt: unknown, retentionDays: number, t: Translator): string {
+  const at = Timestamp.toEpochMillis(trashedAt)
+  if (at === undefined) return ""
+  const left = at + retentionDays * 24 * 3600 * 1000 - Date.now()
   if (left <= 0) return t("trash.expiringNow")
   const hours = Math.round(left / 3600_000)
   if (hours < 1) return t("trash.expiresUnderHour")
@@ -105,11 +108,7 @@ export function TrashPage() {
       </AppPageHeader>
 
       <div class="min-h-0 flex-1 overflow-auto py-1">
-        <Switch
-          fallback={
-            <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("trash.loading")}</div>
-          }
-        >
+        <Switch fallback={<div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("trash.loading")}</div>}>
           <Match when={listing().kind === "failed"}>
             <div
               class="flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-v2-state-fg-danger"
@@ -139,7 +138,7 @@ export function TrashPage() {
                       {entry.originalPath}
                     </span>
                     <span class="shrink-0 text-xs text-v2-text-text-faint">
-                      {new Date(entry.trashedAt).toLocaleString()}
+                      {Timestamp.toDate(entry.trashedAt)?.toLocaleString() ?? "—"}
                     </span>
                     <span class="shrink-0 text-xs text-v2-text-text-faint">
                       {expiresLabel(entry.trashedAt, retentionDays(), language.t)}

@@ -141,11 +141,11 @@ export function ContactsPage() {
   // How fast each colleague is going, from the per-minute series the projector writes. Refetched on
   // the same beat the page is looked at rather than polled: a roster is a glance, not a dashboard.
   const usageSource = createMemo(() => {
-      const current = ctx()
-      const ids = (agents() ?? []).map((row) => row.id)
-      if (!current || ids.length === 0) return undefined
-      return `${ServerConnection.key(conn()!)}\u0000${ids.join(",")}`
-    })
+    const current = ctx()
+    const ids = (agents() ?? []).map((row) => row.id)
+    if (!current || ids.length === 0) return undefined
+    return `${ServerConnection.key(conn()!)}\u0000${ids.join(",")}`
+  })
   const [usage] = createResource(usageSource, (source) => {
     const separator = source.indexOf("\u0000")
     const ids = separator < 0 ? [] : source.slice(separator + 1).split(",")
@@ -509,13 +509,13 @@ function ContactRow(props: {
   })
   /** The facts that FOLLOW the task, each present only when it has something to say. Built as a list
    *  so the separators can be joined between them rather than written beside each one. */
-  const meta = createMemo<{ text: string; at?: number; title?: string }[]>(() => {
-    const parts: { text: string; at?: number; title?: string }[] = [{ text: language.t(`contacts.state.${state()}`) }]
+  const meta = createMemo<{ text: string; iso?: string; title?: string }[]>(() => {
+    const parts: { text: string; iso?: string; title?: string }[] = [{ text: language.t(`contacts.state.${state()}`) }]
     const speed = perSecond()
     if (speed) parts.push({ text: language.t("contacts.perSecond", { tokens: speed }) })
     const stamp = lastTouched()
     const updated = live().updatedAt
-    if (stamp && updated !== undefined) parts.push({ text: stamp.label, at: updated, title: stamp.full })
+    if (stamp && updated !== undefined) parts.push({ text: stamp.label, iso: stamp.iso, title: stamp.full })
     return parts
   })
   // The row IS the way into the colleague's one chat — that is what replacing the chat list means.
@@ -591,8 +591,8 @@ function ContactRow(props: {
             {(part) => (
               <span class="text-v2-text-text-faint">
                 {" · "}
-                <Show when={part.at !== undefined} fallback={part.text}>
-                  <time dateTime={new Date(part.at!).toISOString()} title={part.title}>
+                <Show when={part.iso !== undefined} fallback={part.text}>
+                  <time dateTime={part.iso} title={part.title}>
                     {part.text}
                   </time>
                 </Show>

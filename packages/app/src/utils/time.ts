@@ -1,3 +1,5 @@
+import * as Timestamp from "@novaclaw/schema/time"
+
 type TimeKey =
   | "common.time.justNow"
   | "common.time.minutesAgo.short"
@@ -6,10 +8,10 @@ type TimeKey =
 
 type Translate = (key: TimeKey, params?: Record<string, string | number>) => string
 
-export function getRelativeTime(dateString: string, t: Translate): string {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+export function getRelativeTime(value: unknown, t: Translate, now: number = Date.now()): string | undefined {
+  const at = Timestamp.toEpochMillis(value)
+  if (at === undefined) return undefined
+  const diffMs = Math.max(0, now - at)
   const diffSeconds = Math.floor(diffMs / 1000)
   const diffMinutes = Math.floor(diffSeconds / 60)
   const diffHours = Math.floor(diffMinutes / 60)
