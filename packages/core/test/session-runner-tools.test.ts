@@ -81,6 +81,10 @@ describe("SessionRunnerLLM — application tools", () => {
       agent: AgentV2.DEFAULT_COLLEAGUE_ID,
       assistantMessageID: expect.stringMatching(/^msg_/),
       toolCallID: "call-application",
+      model: {
+        providerID: "harness",
+        id: "harness-model",
+      },
     })
     // …and a separate RATCHET on the shape, kept because a silently-added context field is how an
     // execution stops being fully attributable without anything going red. A new key here is fine —
@@ -96,6 +100,9 @@ describe("SessionRunnerLLM — application tools", () => {
       // SPREAD, `ToolRegistry.ExecuteInput` never declared it, spreads are exempt from
       // excess-property checking, and so the gate read `undefined` for the life of the feature.
       "imageBudget",
+      // Exact model identity for introspection and diagnostics. This is the model that survived
+      // runtime routing/fallback, not a second catalog lookup made after the request began.
+      "model",
       "sessionID",
       // The Working receipt's span handle (`Tool.Context.timing`): a tool opens a `capability-*`
       // phase so a long service call shows up in the turn receipt instead of reading as a stall.

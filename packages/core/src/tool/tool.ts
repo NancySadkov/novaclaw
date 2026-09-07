@@ -21,6 +21,13 @@ export interface Context {
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly toolCallID: string
+  /** The catalog identity that actually runs this turn, after default, availability and health fallbacks.
+   * Optional only for direct/non-runner tool execution, where no model has run. The session runner always supplies it. */
+  readonly model?: {
+    readonly providerID: string
+    readonly id: string
+    readonly name?: string
+  }
   /** Server-owned Working receipt. `begin` returns the exact close handle, so parallel tool spans
    * cannot close one another merely because they share a phase name. */
   readonly timing?: {
@@ -146,7 +153,8 @@ export function lazy(config: {
     deferred: true,
     sideEffect: config.sideEffect,
     definition: (name) => new ToolDefinition({ ...config.definition, name }),
-    settle: (call, context) => config.load.pipe(Effect.flatMap((implementation) => settle(implementation, call, context))),
+    settle: (call, context) =>
+      config.load.pipe(Effect.flatMap((implementation) => settle(implementation, call, context))),
   })
   return tool
 }

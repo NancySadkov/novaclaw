@@ -14,6 +14,7 @@ describe("the lines a colleague reads about itself", () => {
     const text = SelfTool.toModelOutput({
       title: "Bookkeeper",
       model: "spark-holo/holo3.1",
+      pinnedModel: "spark-holo/holo3.1",
       memory: "none",
       canAddressColleagues: false,
       workingInOwnScratch: false,
@@ -56,10 +57,29 @@ describe("the lines a colleague reads about itself", () => {
     expect(text).not.toMatch(/[A-Za-z]:[\/]/)
   })
 
-  test("an unpinned model is stated as such, not omitted", () => {
-    // Silence would read as "I have no model", which is the one thing that cannot be true.
-    const text = SelfTool.toModelOutput({ memory: "own", canAddressColleagues: false, workingInOwnScratch: false })
-    expect(text).toContain("default model")
+  test("an unpinned colleague is told the exact model resolved for this turn", () => {
+    const text = SelfTool.toModelOutput({
+      model: "Qwen3-Coder (spark/qwen3-coder-30b)",
+      memory: "own",
+      canAddressColleagues: false,
+      workingInOwnScratch: false,
+    })
+    expect(text).toContain("Qwen3-Coder (spark/qwen3-coder-30b)")
+    expect(text).toContain("no model pin")
+    expect(text).toContain("resolved for this turn")
+  })
+
+  test("a runtime fallback names both the running model and the different roster pin", () => {
+    const text = SelfTool.toModelOutput({
+      model: "local/qwen",
+      pinnedModel: "local/llama",
+      memory: "own",
+      canAddressColleagues: false,
+      workingInOwnScratch: false,
+    })
+    expect(text).toContain("currently think with local/qwen")
+    expect(text).toContain("roster pins local/llama")
+    expect(text).toContain("different model")
   })
 
   test("a step budget appears only when there is one", () => {

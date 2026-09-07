@@ -43,6 +43,7 @@ const ModelOutput = Schema.Struct({
   portrait: Schema.optional(PortraitImage),
   portraitGlyph: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
+  pinnedModel: Schema.optional(Schema.String),
   memory: Schema.optional(Schema.String),
   archiveChats: Schema.optional(Schema.Boolean),
   steps: Schema.optional(Schema.Number),
@@ -54,6 +55,7 @@ export const Output = Schema.Struct({
   title: Schema.optional(Schema.String),
   personality: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
+  pinnedModel: Schema.optional(Schema.String),
   memory: Schema.optional(Schema.String),
   archiveChats: Schema.optional(Schema.Boolean),
   steps: Schema.optional(Schema.Number),
@@ -73,14 +75,21 @@ export const toModelOutput = (output: Output): string => {
   const lines: string[] = []
   if (output.title) lines.push(`Your job here: ${output.title}.`)
   if (output.personality) lines.push(`How you are meant to come across: ${output.personality}`)
-  const modelPortrait = (output as Output & { readonly portraitGlyph?: string; readonly portrait?: unknown })
+  const modelPortrait = output as Output & { readonly portraitGlyph?: string; readonly portrait?: unknown }
   if (modelPortrait.portraitGlyph) lines.push(`Your portrait is the glyph ${modelPortrait.portraitGlyph}.`)
   else if (modelPortrait.portrait) lines.push("Your instance-owned portrait is attached below.")
-  lines.push(
-    output.model
-      ? `You think with ${output.model} — the user chose it for you, and it is the same in every chat you have.`
-      : `You think with this instance's default model; nobody has pinned one to you.`,
-  )
+  if (output.model) {
+    if (output.pinnedModel === output.model)
+      lines.push(`You currently think with ${output.model}; your roster pins this model to you.`)
+    else if (output.pinnedModel)
+      lines.push(
+        `You currently think with ${output.model}. Your roster pins ${output.pinnedModel}, so this turn resolved to a different model.`,
+      )
+    else
+      lines.push(
+        `You currently think with ${output.model}. Your roster has no model pin; this is the model NovaClaw resolved for this turn.`,
+      )
+  } else lines.push(`NovaClaw could not identify the model running this turn.`)
   lines.push(
     output.memory === "none"
       ? `You are a THROWAWAY: you remember nothing between chats and nothing you are told is kept. Say so if you are asked to remember something.`
@@ -158,98 +167,109 @@ export const layer = Layer.effectDiscard(
     // into the location graph and surfaces somewhere unrelated — it landed on `V2Session.spawn`.
     yield* tools
       .register({
-      [name]: Tool.make({
-        description,
-        input: Input,
-        output: ModelOutput,
-        structured: Output,
-        toStructuredOutput: ({ output }) => {
-          const { portrait: _portrait, portraitGlyph: _portraitGlyph, ...structured } = output
-          return structured
-        },
-        toModelOutput: ({ output }) => toModelContent(output),
-        // Read through to the LIVE roster on every call (ruling 3): a colleague reconfigured mid-chat
-        // must answer with what it is now, not with a snapshot taken when the tool was registered.
-        // That is the whole point — the user edits the dialog and the agent is not otherwise told.
-        execute: (_input, context) =>
-          Effect.gen(function* () {
-            const id = String(context.agent ?? "")
-            const own = id === "" ? undefined : yield* agents.get(AgentV2.ID.make(id))
-            const roster = yield* agents.all()
-            if (own === undefined)
+        [name]: Tool.make({
+          description,
+          input: Input,
+          output: ModelOutput,
+          structured: Output,
+          toStructuredOutput: ({ output }) => {
+            const { portrait: _portrait, portraitGlyph: _portraitGlyph, ...structured } = output
+            return structured
+          },
+          toModelOutput: ({ output }) => toModelContent(output),
+          // Read through to the LIVE roster on every call (ruling 3): a colleague reconfigured mid-chat
+          // must answer with what it is now, not with a snapshot taken when the tool was registered.
+          // That is the whole point — the user edits the dialog and the agent is not otherwise told.
+          execute: (_input, context) =>
+            Effect.gen(function* () {
+              const id = String(context.agent ?? "")
+              const modelRef = context.model ? `${context.model.providerID}/${context.model.id}` : undefined
+              const model = context.model
+                ? context.model.name && context.model.name !== context.model.id
+                  ? `${context.model.name} (${modelRef})`
+                  : modelRef
+                : undefined
+              const own = id === "" ? undefined : yield* agents.get(AgentV2.ID.make(id))
+              const roster = yield* agents.all()
+              if (own === undefined)
+                return {
+                  ...(model === undefined ? {} : { model }),
+                  canAddressColleagues: false,
+                  workingInOwnScratch: false,
+                } satisfies Output
+              const record = own as unknown as Record<string, unknown>
+              const pinnedModelRef = own.model ? `${own.model.providerID}/${own.model.id}` : undefined
+              const pinnedModel = pinnedModelRef === modelRef ? model : pinnedModelRef
+              const text = (key: string) => (typeof record[key] === "string" ? (record[key] as string) : undefined)
+              const portrait = yield* Effect.promise(() => Avatar.portrait(id, text("avatar"), text("name")))
               return {
-                canAddressColleagues: false,
-                workingInOwnScratch: false,
+                ...(text("title") === undefined ? {} : { title: text("title")! }),
+                ...(text("personality") === undefined ? {} : { personality: text("personality")! }),
+                ...(model === undefined ? {} : { model }),
+                ...(pinnedModel === undefined ? {} : { pinnedModel }),
+                ...(text("memory") === undefined ? {} : { memory: text("memory")! }),
+                ...(typeof record["archiveChats"] === "boolean" ? { archiveChats: record["archiveChats"] } : {}),
+                ...(typeof record["steps"] === "number" ? { steps: record["steps"] } : {}),
+                ...(portrait.kind === "glyph"
+                  ? { portraitGlyph: portrait.text }
+                  : portrait.kind === "placeholder"
+                    ? {
+                        portraitGlyph: `server-owned placeholder portrait marked ${Avatar.placeholderLabel(id, text("name"))}`,
+                      }
+                    : {
+                        portrait: {
+                          mime: portrait.mime,
+                          data: Buffer.from(portrait.bytes).toString("base64"),
+                          hash: portrait.hash,
+                        },
+                      }),
+                // Read from the RULESET rather than from the agent's id: "may this colleague delegate"
+                // is a permission question, and answering it from a name would go stale the moment the
+                // floor changes (it did, twice, on 2026-08-21).
+                //
+                // 🔴 …and answered by the EVALUATOR, not by `some(effect === "allow")`. That scan got
+                // three things wrong at once, all in the direction of promising what a call then
+                // refuses: it ignored rule ORDER (a later deny never won, though `evaluate` is
+                // `findLast` precisely so it does), it ignored WILDCARDS (an `action: "*"` deny was
+                // invisible to an `=== "colleague"` test), and it ignored the PAUSED deny-all
+                // (`permission.ts` answers deny-`*` for a set-aside colleague, which no configured
+                // rule reflects).
+                canAddressColleagues: yield* addressableByMe({
+                  own,
+                  selfID: id,
+                  roster,
+                  verdict: (colleague) =>
+                    permission
+                      .ask({
+                        action: "colleague",
+                        resources: [colleague],
+                        save: ["*"],
+                        sessionID: context.sessionID,
+                        agent: context.agent,
+                        source: {
+                          type: "tool" as const,
+                          messageID: context.assistantMessageID,
+                          callID: context.toolCallID,
+                        },
+                      })
+                      .pipe(
+                        Effect.map((result) => result.effect === "allow"),
+                        // A capability REPORT must not fail a turn. An unanswerable question reads as
+                        // "no", which is the direction that cannot mislead: the model tries, and the
+                        // real call gives it the real answer.
+                        //
+                        // ⚠️ DEFECTS too, not only failures. In a session worker `permission.ask` is
+                        // `Effect.die("permission request inspection is host-only…")`, which sails
+                        // straight past `orElseSucceed` — so this guard read as present while the tool
+                        // crashed, and the internal sentence reached the model, which relayed it to the
+                        // user as its own refusal. Measured 2026-09-02 against a live instance.
+                        Effect.catchDefect(() => Effect.succeed(false)),
+                        Effect.orElseSucceed(() => false),
+                      ),
+                }),
+                workingInOwnScratch: AgentWorkspace.isOwnScratch({ agentID: id, directory: text("directory") }),
               } satisfies Output
-            const record = own as unknown as Record<string, unknown>
-            const model = own.model ? `${own.model.providerID}/${own.model.id}` : undefined
-            const text = (key: string) => (typeof record[key] === "string" ? (record[key] as string) : undefined)
-            const portrait = yield* Effect.promise(() => Avatar.portrait(id, text("avatar"), text("name")))
-            return {
-              ...(text("title") === undefined ? {} : { title: text("title")! }),
-              ...(text("personality") === undefined ? {} : { personality: text("personality")! }),
-              ...(model === undefined ? {} : { model }),
-              ...(text("memory") === undefined ? {} : { memory: text("memory")! }),
-              ...(typeof record["archiveChats"] === "boolean" ? { archiveChats: record["archiveChats"] } : {}),
-              ...(typeof record["steps"] === "number" ? { steps: record["steps"] } : {}),
-              ...(portrait.kind === "glyph"
-                ? { portraitGlyph: portrait.text }
-                : portrait.kind === "placeholder"
-                  ? { portraitGlyph: `server-owned placeholder portrait marked ${Avatar.placeholderLabel(id, text("name"))}` }
-                  : {
-                      portrait: {
-                        mime: portrait.mime,
-                        data: Buffer.from(portrait.bytes).toString("base64"),
-                        hash: portrait.hash,
-                      },
-                    }),
-              // Read from the RULESET rather than from the agent's id: "may this colleague delegate"
-              // is a permission question, and answering it from a name would go stale the moment the
-              // floor changes (it did, twice, on 2026-08-21).
-              //
-              // 🔴 …and answered by the EVALUATOR, not by `some(effect === "allow")`. That scan got
-              // three things wrong at once, all in the direction of promising what a call then
-              // refuses: it ignored rule ORDER (a later deny never won, though `evaluate` is
-              // `findLast` precisely so it does), it ignored WILDCARDS (an `action: "*"` deny was
-              // invisible to an `=== "colleague"` test), and it ignored the PAUSED deny-all
-              // (`permission.ts` answers deny-`*` for a set-aside colleague, which no configured
-              // rule reflects).
-              canAddressColleagues: yield* addressableByMe({
-                own,
-                selfID: id,
-                roster,
-                verdict: (colleague) =>
-                  permission
-                    .ask({
-                      action: "colleague",
-                      resources: [colleague],
-                      save: ["*"],
-                      sessionID: context.sessionID,
-                      agent: context.agent,
-                      source: {
-                        type: "tool" as const,
-                        messageID: context.assistantMessageID,
-                        callID: context.toolCallID,
-                      },
-                    })
-                    .pipe(
-                      Effect.map((result) => result.effect === "allow"),
-                      // A capability REPORT must not fail a turn. An unanswerable question reads as
-                      // "no", which is the direction that cannot mislead: the model tries, and the
-                      // real call gives it the real answer.
-                      //
-                      // ⚠️ DEFECTS too, not only failures. In a session worker `permission.ask` is
-                      // `Effect.die("permission request inspection is host-only…")`, which sails
-                      // straight past `orElseSucceed` — so this guard read as present while the tool
-                      // crashed, and the internal sentence reached the model, which relayed it to the
-                      // user as its own refusal. Measured 2026-09-02 against a live instance.
-                      Effect.catchDefect(() => Effect.succeed(false)),
-                      Effect.orElseSucceed(() => false),
-                    ),
-              }),
-              workingInOwnScratch: AgentWorkspace.isOwnScratch({ agentID: id, directory: text("directory") }),
-            } satisfies Output
-          }),
+            }),
         }),
       })
       .pipe(Effect.orDie)

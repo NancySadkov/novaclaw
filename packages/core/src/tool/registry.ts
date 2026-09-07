@@ -39,6 +39,8 @@ export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
+  /** Present for runner-owned execution; absent only when a caller executes a tool without running a model. */
+  readonly model?: ToolContext["model"]
   /** Canonical paths of the user's attachments for this turn; forwarded to every tool's Context. */
   readonly attachmentPaths?: ReadonlySet<string>
   /**
@@ -269,6 +271,7 @@ const registryLayer = Layer.effect(
           agent: input.agent,
           assistantMessageID: input.assistantMessageID,
           toolCallID: input.call.id,
+          ...(input.model === undefined ? {} : { model: input.model }),
           ...(input.timing === undefined ? {} : { timing: input.timing }),
           attachmentPaths: input.attachmentPaths ?? new Set(),
           ...(input.imageBudget === undefined ? {} : { imageBudget: input.imageBudget }),

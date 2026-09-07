@@ -2351,6 +2351,14 @@ export const layer = Layer.effect(
                   sessionID: session.id,
                   agent: agent.id,
                   assistantMessageID,
+                  // The model that ACTUALLY runs this turn, not the model merely configured before
+                  // availability/health fallback. `self` consumes it, and the runner context-key
+                  // ratchet test prevents this hand-off from silently losing it.
+                  model: {
+                    providerID: modelRef?.providerID ?? String(model.provider),
+                    id: modelRef?.id ?? String(model.id),
+                    ...(ran?.name === undefined ? {} : { name: ran.name }),
+                  },
                   attachmentPaths,
                   // The mechanical half of the vision fix (`tool/tool.ts` → `imageBudget`). Counted
                   // PER ASSISTANT TURN, which is what makes it sound: within one turn there is no
@@ -3654,8 +3662,7 @@ export const layer = Layer.effect(
             // `failAssistant` turns an empty stream into an error-bearing assistant row, so history
             // cannot reconstruct that absence. An empty first response remains a provider failure;
             // there is no completed work for a completion auditor to judge.
-            const finishEmpty =
-              (result.emptyResponse && finishCalls > 0) || isEmptyAssistantTurn(context)
+            const finishEmpty = (result.emptyResponse && finishCalls > 0) || isEmptyAssistantTurn(context)
             const finishAnnounced = announcedToolButCalledNone(context)
             yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
@@ -3672,12 +3679,7 @@ export const layer = Layer.effect(
               if (consecutiveEmpty === 1) {
                 let audit: FinishAudit.Verdict = "unknown"
                 if (finishCalls > 0)
-                  audit = yield* auditSilentFinish(
-                    input.sessionID,
-                    result.model,
-                    result.scheduledDevice,
-                    context,
-                  ).pipe(
+                  audit = yield* auditSilentFinish(input.sessionID, result.model, result.scheduledDevice, context).pipe(
                     Effect.catchCause((cause) =>
                       Log.event("session.finish.audit.failed", {
                         "session.id": input.sessionID,
