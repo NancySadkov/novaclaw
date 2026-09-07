@@ -308,13 +308,13 @@ export const PACKAGES: Pkg[] = [
     // honest run — the same reasoning `server` above carries, and the same lesson: an under-set
     // backstop turns a slow machine into a fake red.
     //
-    // `run-process.test.ts` measured 187.75 s when run alone on 2026-08-31. Its first isolated gate
-    // then inherited the 150 s default and was killed after 10/14 passing cases, with host commit at
-    // only 68%. The process boundary fixed a real memory-composition crash; this measured backstop
-    // keeps that fix from manufacturing a different red while still bounding an actual hang.
+    // `run-process.test.ts` measured 187.75 s when run alone on 2026-08-31, then 310.1 s on the
+    // 2026-09-07 release host after the suite grew to fifteen real subprocess cases. A 300 s bound
+    // killed it after fourteen PASS results with no assertion failure. 420 s restores measured
+    // headroom while still bounding an actual hang.
     subdirWallclockMs: {
       "test/*": 900_000,
-      "test/cli/run/run-process.test.ts": 300_000,
+      "test/cli/run/run-process.test.ts": 420_000,
     },
   },
 ]

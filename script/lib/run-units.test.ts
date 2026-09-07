@@ -273,6 +273,6 @@ describe("NovaClaw full-tier process boundaries", () => {
   test("the subprocess-heavy CLI smoke keeps its measured wall-clock margin", () => {
     const unit = PACKAGES.find((candidate) => candidate.name === "novaclaw")
     expect(unit, "the full-tier NovaClaw unit vanished").toBeDefined()
-    expect(unit!.subdirWallclockMs?.["test/cli/run/run-process.test.ts"]).toBe(300_000)
+    expect(unit!.subdirWallclockMs?.["test/cli/run/run-process.test.ts"]).toBe(420_000)
   })
 })
