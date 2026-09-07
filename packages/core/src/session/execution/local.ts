@@ -82,14 +82,13 @@ export const layer = Layer.effect(
                   ? Effect.void
                   : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Log.fault(cause) }),
               ),
-              // `ensuring` so success, failure, AND interrupt (Stop) all settle back to idle —
-              // except a session that called exit(result) mid-drain: `exited` is the K1 terminal
-              // state and must not be stomped by a trailing idle.
+              // `ensuring` so success, failure, AND interrupt (Stop) all publish the status derived
+              // from durable state. Reasserting `exited` is intentional: a tool-local terminal event
+              // can be followed by live timing, and "skip idle" leaves that later `busy` uncorrected.
               Effect.ensuring(
                 Effect.gen(function* () {
                   const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
-                  if (latest?.result !== undefined) return
-                  yield* publishStatus({ type: "idle" })
+                  yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
                 }),
               ),
               Effect.onExit((exit) =>

@@ -117,7 +117,7 @@ export const dict = {
 
   // Processes — the friendly "what your agents are doing" activity view (uix.md §6.4 / SP1).
   "nav.tasks.untitled": "Untitled chat",
-  "nav.tasks.all": "All tasks",
+  "nav.tasks.all": "All Officers",
   "nav.tasks.close": "Close this task",
   "processes.status.working": "Working…",
 

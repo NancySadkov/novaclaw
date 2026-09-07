@@ -1,7 +1,6 @@
 export * as ExitTool from "./exit"
 
 import { ToolFailure } from "@novaclaw/llm"
-import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -52,12 +51,9 @@ export const layer = Layer.effectDiscard(
                 timestamp,
                 result: input.result ?? "",
               })
-              // K1: announce the terminal thread state so ps/task managers show "exited" live
-              // (the durable record is the Completed event + the session row's result).
-              yield* events.publish(SessionStatusEvent.Status, {
-                sessionID: context.sessionID,
-                status: { type: "exited" },
-              })
+              // Lifecycle status belongs to the runner/executor that owns the whole drain. Publishing
+              // `exited` here, inside a tool fiber, let later snapshot timing publish `busy` over it.
+              // Completed is durable; the owner derives and reasserts the terminal status from it.
               return { completed: true, message: "Session marked complete; result recorded." }
             }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to mark session complete." }))),
         }),

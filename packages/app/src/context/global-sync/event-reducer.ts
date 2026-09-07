@@ -78,12 +78,14 @@ export function applyDirectoryEvent(input: {
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       if (result.found) {
         input.setStore("session", result.index, reconcile(info))
+        if (info.result !== undefined) input.setStore("session_status", info.id, reconcile({ type: "exited" }))
         break
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
       const trimmed = trimSessions(next, { limit })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
+      if (info.result !== undefined) input.setStore("session_status", info.id, reconcile({ type: "exited" }))
       cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
       if (!info.parentID) input.setStore("sessionTotal", (value) => value + 1)
       break
@@ -108,12 +110,14 @@ export function applyDirectoryEvent(input: {
       }
       if (result.found) {
         input.setStore("session", result.index, reconcile(info))
+        if (info.result !== undefined) input.setStore("session_status", info.id, reconcile({ type: "exited" }))
         break
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
       const trimmed = trimSessions(next, { limit })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
+      if (info.result !== undefined) input.setStore("session_status", info.id, reconcile({ type: "exited" }))
       cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
       break
     }

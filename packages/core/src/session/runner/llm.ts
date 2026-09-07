@@ -4212,13 +4212,18 @@ export const layer = Layer.effect(
       // Idle FIRST, then the housekeeping, still inside the drain and under the same lease (so
       // nothing about lifetime, interruption or ordering changes — only what the UI is told).
       // `execution/local.ts` publishes idle again in its `ensuring`; a repeat is a no-op.
-      // ⚠️ Guarded on `result` for the same reason that finalizer is: `exit(result)` makes `exited`
-      // the terminal status (K1), and a trailing idle would stomp it.
+      // Derive the terminal lifecycle from the durable row and ALWAYS publish it. The previous
+      // `if result is absent, publish idle; otherwise publish nothing` relied on exit's tool fiber
+      // having won an event-ordering race against later snapshot timing. On a real long turn the
+      // snapshot's final `busy` landed after `exited`, and every outer finalizer skipped its chance
+      // to repair the lie for exactly the same reason.
       const settled = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-      if (settled?.result === undefined)
-        yield* events
-          .publish(SessionStatusEvent.Status, { sessionID: input.sessionID, status: { type: "idle" } })
-          .pipe(Effect.ignore)
+      yield* events
+        .publish(SessionStatusEvent.Status, {
+          sessionID: input.sessionID,
+          status: { type: settled?.result === undefined ? "idle" : "exited" },
+        })
+        .pipe(Effect.ignore)
       yield* maintenance.postRun(input.sessionID)
     })
 

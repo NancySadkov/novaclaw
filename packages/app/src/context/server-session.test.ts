@@ -119,6 +119,20 @@ describe("server session", () => {
     expect(ctx.store.data.session_working("root")).toBe(false)
   })
 
+  test("a durable completion repairs a stale live busy status", () => {
+    const ctx = setup({})
+    ctx.store.apply({ type: "session.created", properties: { sessionID: "root", info: session("root") } })
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "root", status: { type: "busy" } } })
+
+    ctx.store.apply({
+      type: "session.updated",
+      properties: { sessionID: "root", info: { ...session("root"), result: "done" } },
+    })
+
+    expect(ctx.store.data.session_status.root?.type).toBe("exited")
+    expect(ctx.store.data.session_working("root")).toBe(false)
+  })
+
   test("preserves pinned session info under server-wide cache pressure", () => {
     const ctx = setup({})
     ctx.store.pin("active")

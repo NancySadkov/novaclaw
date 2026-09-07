@@ -4,10 +4,11 @@ import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
 
-const rootSession = (input: { id: string; parentID?: string; archived?: number }) =>
+const rootSession = (input: { id: string; parentID?: string; archived?: number; result?: string }) =>
   ({
     id: input.id,
     parentID: input.parentID,
+    result: input.result,
     time: {
       created: 1,
       updated: 1,
@@ -65,6 +66,25 @@ describe("applyGlobalEvent", () => {
 describe("applyDirectoryEvent", () => {
   const sessionWithDir = (id: string, directory: string) =>
     ({ id, time: { created: 1, updated: 1 }, location: { directory } }) as unknown as Session
+
+  test("a folded completion repairs the directory store's stale busy status", () => {
+    const [store, setStore] = createStore(
+      baseState({
+        session: [rootSession({ id: "ses_1" })],
+        session_status: { ses_1: { type: "busy" } },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "session.updated", properties: { info: rootSession({ id: "ses_1", result: "done" }) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+    })
+
+    expect(store.session_status.ses_1?.type).toBe("exited")
+  })
 
   test("folds a folder move onto the stale copy so the Chats list stops double-rendering", () => {
     const [store, setStore] = createStore(

@@ -22,8 +22,8 @@ import { testEffect } from "./lib/effect"
 // The stale-"working" regression (owner report 2026-07-21): the server never published
 // `session.status` busy/idle, so the app's optimistic submit-time busy was never cleared and a
 // session looked "working" forever after its first turn (folder-move guard stuck). The drain in
-// execution/local.ts is the authoritative seam: busy on start, idle on ANY settle — except after
-// exit(result), where the K1 terminal `exited` must not be stomped.
+// execution/local.ts is the authoritative seam: busy on start, then a status derived from the
+// durable result on ANY settle — idle ordinarily, K1 terminal `exited` after exit(result).
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionStore.node])))
 
@@ -154,8 +154,8 @@ describe("SessionExecutionLocal status lifecycle", () => {
       Effect.gen(function* () {
         const h = yield* harness({ run: (setResult) => Effect.sync(() => setResult("done")) })
         yield* h.exec.resume(sessionID)
-        // exit.ts publishes `exited` itself; the drain must not follow with idle.
-        expect(h.captured.map((c) => c.status.type)).toEqual(["busy"])
+        // The execution owner derives `exited` from the durable result and reasserts it last.
+        expect(h.captured.map((c) => c.status.type)).toEqual(["busy", "exited"])
       }),
     ),
   )

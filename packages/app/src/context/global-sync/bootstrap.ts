@@ -315,12 +315,17 @@ export async function bootstrapDirectory(input: {
           input.sdk.v2.session.active({ signal: input.signal }).then(async (x) => {
             if (input.signal?.aborted) return
             // Native /active reports {type:"running"}; the store vocabulary is "busy".
-            const statuses: Record<string, { type: "busy" }> = Object.fromEntries(
-              Object.keys(x.data?.data ?? {}).map((sessionID) => [sessionID, { type: "busy" as const }]),
-            )
+            const activeIDs = Object.keys(x.data?.data ?? {})
             if (input.session) {
               await Promise.all(
-                Object.keys(statuses).map((sessionID) => input.session!.resolve(sessionID).catch(() => undefined)),
+                activeIDs.map((sessionID) => input.session!.resolve(sessionID).catch(() => undefined)),
+              )
+              // `/active` is an in-memory drain snapshot. A terminal drain can remain in it while
+              // post-run cleanup unwinds; the durable result outranks that transient overlap.
+              const statuses: Record<string, { type: "busy" }> = Object.fromEntries(
+                activeIDs
+                  .filter((sessionID) => input.session!.get(sessionID)?.result === undefined)
+                  .map((sessionID) => [sessionID, { type: "busy" as const }]),
               )
               input.session.set(
                 "session_status",
@@ -335,7 +340,11 @@ export async function bootstrapDirectory(input: {
                 input.session.set("session_status", sessionID, reconcile(status))
               }
             }
-            if (!input.session) input.setStore("session_status", statuses)
+            if (!input.session)
+              input.setStore(
+                "session_status",
+                Object.fromEntries(activeIDs.map((sessionID) => [sessionID, { type: "busy" as const }])),
+              )
           }),
         ),
       () =>

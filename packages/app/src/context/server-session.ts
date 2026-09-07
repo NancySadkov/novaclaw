@@ -113,6 +113,12 @@ export function createServerSession(
     // strings — see utils/session-time.ts).
     const session = normalizeSessionTimes(input)
     setData("info", session.id, reconcile(session))
+    // Completion is durable while `session.status` is live-only. Folding a completed session must
+    // therefore repair a missed or overwritten terminal event instead of preserving stale `busy`.
+    if (session.result !== undefined) {
+      setData("session_status", session.id, reconcile({ type: "exited" }))
+      clearLive(session.id)
+    }
     infoSeen.delete(session.id)
     infoSeen.add(session.id)
     if (infoSeen.size > sessionInfoLimit) {

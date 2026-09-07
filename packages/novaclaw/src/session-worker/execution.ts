@@ -260,9 +260,9 @@ export const layer = Layer.effect(
             // The attempt row is updated BEFORE every call below and owns whether the stop was settled,
             // interrupted, failed or paused. UI attention must join both facts; treating idle alone as
             // success is how an exhausted recovery used to disappear behind a healthy-looking roster.
-            const publishIdle = Effect.gen(function* () {
+            const publishSettledStatus = Effect.gen(function* () {
               const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
-              if (latest?.result === undefined) yield* publishStatus({ type: "idle" })
+              yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
             })
 
             for (;;) {
@@ -426,7 +426,7 @@ export const layer = Layer.effect(
                     Effect.promise(() => spawned.value.interrupt()).pipe(
                       Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
                       Effect.andThen(noteInterrupted),
-                      Effect.andThen(publishIdle),
+                      Effect.andThen(publishSettledStatus),
                     ),
                   ),
                 )
@@ -434,13 +434,13 @@ export const layer = Layer.effect(
 
               if (outcome.type === "settled") {
                 yield* attempts.settle(lease, "settled")
-                yield* publishIdle
+                yield* publishSettledStatus
                 return
               }
               if (outcome.type === "interrupted") {
                 yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
                 yield* noteInterrupted
-                yield* publishIdle
+                yield* publishSettledStatus
                 return
               }
 
@@ -465,7 +465,7 @@ export const layer = Layer.effect(
                     { location },
                   )
                   .pipe(Effect.ignore)
-                yield* publishIdle
+                yield* publishSettledStatus
                 return yield* Effect.die(new Error(detail))
               }
               const info = yield* attempts.get(sessionID)
