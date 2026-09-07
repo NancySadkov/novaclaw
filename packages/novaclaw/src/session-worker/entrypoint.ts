@@ -1,11 +1,11 @@
 export * as SessionWorkerEntrypoint from "./entrypoint"
 
-import { createInterface } from "node:readline"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionWorkerClient } from "./client"
 import { SessionWorkerCapabilities } from "./capabilities"
 import * as ProtocolWrite from "./protocol-write"
+import { SessionWorkerFraming } from "./protocol-framing"
 
 export interface Context {
   readonly lease: SessionExecutionAttempt.Lease
@@ -39,8 +39,7 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   console.log = stderr
   console.info = stderr
   console.debug = stderr
-  const lines = createInterface({ input: process.stdin })
-  const iterator = lines[Symbol.asyncIterator]()
+  const iterator = SessionWorkerFraming.lines(process.stdin)[Symbol.asyncIterator]()
   const first = await iterator.next()
   if (first.done) throw new Error("session worker stdin closed before start")
   const decoded = SessionWorkerProtocol.decodeHostLine(first.value)
@@ -61,7 +60,11 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   // like losing stdin does — never become an unhandled process exception.
   ProtocolWrite.observeErrors(process.stdout, rejectWrite)
   const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
-    ProtocolWrite.write(process.stdout, SessionWorkerProtocol.encodeLine(message), rejectWrite)
+    ProtocolWrite.write(
+      process.stdout,
+      SessionWorkerFraming.encode(SessionWorkerProtocol.encodeLine(message)),
+      rejectWrite,
+    )
   const client = SessionWorkerClient.make({ lease, send: emit })
   const capabilities = SessionWorkerCapabilities.make({ lease, client })
 
@@ -118,6 +121,6 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   } finally {
     clearInterval(heartbeat)
     client.close(new Error("session worker drain ended"))
-    lines.close()
+    await iterator.return?.(undefined)
   }
 }

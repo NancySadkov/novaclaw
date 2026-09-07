@@ -5,6 +5,7 @@ import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { SessionWorkerMemoryBridge } from "./memory-bridge"
 import { SessionWorkerRunnerLayer } from "./runner-layer"
 import { SessionWorkerServices } from "./services"
@@ -117,7 +118,10 @@ test("a claim written inside a turn lands in the HOST's store, with the session'
   }
   const reply = await run(
     store,
-    request("addClaim", [{ scope: "session:x", statement: "the probe cat is called Mittens" }, MemoryAccess.of(["session:x"])]),
+    request("addClaim", [
+      { scope: "session:x", statement: "the probe cat is called Mittens" },
+      MemoryAccess.of(["session:x"]),
+    ]),
   )
   expect(reply.outcome).toBe("ok")
   expect((reply.value as { id: string }).id).toBe("mem_1")
@@ -159,26 +163,28 @@ test("a stale lease is rejected before the store is touched", async () => {
   expect(reached).toBe(false)
 })
 
-test("a result too large for the 1 MiB line protocol is a failure, not a corrupted stream", async () => {
-  const huge = Array.from({ length: 400 }, (_value, index) => ({
-    id: `mem_${index}`,
-    kind: "passage" as const,
-    text: "x".repeat(4000),
-    name: null,
-    scope: "global",
-    source: null,
-    confidence: null,
-    relation: "staged" as const,
-    status: "active" as const,
-    subject: null,
-    predicate: null,
-    conflictKey: null,
-    supersededBy: null,
-    evidence: null,
-    evidenceKind: null,
-  }))
+test("a result too large for the logical protocol is a failure, not a corrupted stream", async () => {
+  const huge = [
+    {
+      id: "mem_huge",
+      kind: "passage" as const,
+      text: "x".repeat(SessionWorkerProtocol.MAX_MESSAGE_BYTES + 1),
+      name: null,
+      scope: "global",
+      source: null,
+      confidence: null,
+      relation: "staged" as const,
+      status: "active" as const,
+      subject: null,
+      predicate: null,
+      conflictKey: null,
+      supersededBy: null,
+      evidence: null,
+      evidenceKind: null,
+    },
+  ]
   const store: MemoryClient.Interface = { ...MemoryClient.stub(), list: () => Effect.succeed(huge) }
-  const reply = await run(store, request("list", [{ limit: 400 }]))
+  const reply = await run(store, request("list", [{ limit: 1 }]))
   expect(reply.outcome).toBe("failed")
   expect(reply.reason).toContain("too large")
 })

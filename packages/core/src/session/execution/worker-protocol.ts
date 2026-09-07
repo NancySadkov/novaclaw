@@ -13,7 +13,10 @@ import { SystemContext } from "../../system-context/index"
 import { Location } from "../../location"
 
 export const VERSION = 1 as const
-export const MAX_LINE_BYTES = 1024 * 1024
+// Large enough for the base64 envelope of the read tool's 20 MiB media-ingest ceiling in both the
+// structured result and its model-facing file part. The process transport separately chunks this
+// logical message into bounded physical frames.
+export const MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 
 const Identity = {
   version: Schema.Literal(VERSION),
@@ -664,7 +667,7 @@ export type DecodeResult<A> =
   | { readonly ok: false; readonly error: string }
 
 /**
- * THE line size, in the unit `decodeLine` enforces.
+ * THE logical message size, in the unit `decodeLine` enforces.
  *
  * 🔴 Exported because every guard whose job is to keep an oversized line away from that decoder must
  * compute THIS number. A guard using `String.length` — UTF-16 code units — against a byte budget is
@@ -675,7 +678,7 @@ export type DecodeResult<A> =
 export const byteLength = (value: string) => new TextEncoder().encode(value).byteLength
 
 const decodeLine = <A>(decode: (input: unknown) => A, line: string): DecodeResult<A> => {
-  if (byteLength(line) > MAX_LINE_BYTES) return { ok: false, error: "worker message exceeds the 1 MiB limit" }
+  if (byteLength(line) > MAX_MESSAGE_BYTES) return { ok: false, error: "worker message exceeds the 64 MiB limit" }
   let parsed: unknown
   try {
     parsed = JSON.parse(line)

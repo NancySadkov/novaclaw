@@ -141,7 +141,7 @@ import { UnjoinedChildren } from "./unjoined-children"
 import { SessionTitle } from "../title"
 import { SessionMapRetention } from "./session-map-retention"
 import { SessionDriveState } from "./drive-state"
-import { lastRealUserText } from "../steer-provenance"
+import { applySteerProvenance, lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
 import { ColleagueBound } from "../colleague-bound"
@@ -3332,11 +3332,14 @@ export const layer = Layer.effect(
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
           timestamp: yield* DateTime.now,
-          text:
-            "⚠️ NovaClaw recovered a provider turn interrupted by process loss. Any response content already saved is still here. " +
-            (providerRecovery.toolProtocol
-              ? "A tool may have changed its target, so inspect the workspace or external system before repeating it."
-              : "The officer is continuing automatically from the saved transcript."),
+          // Recovery is routine unless its circuit opens. Give the transcript renderer the same
+          // provenance marker as the actionable steer below so routine notices fold; the repeated-
+          // failure notice remains visible and carries the diagnosis when recovery actually loops.
+          text: applySteerProvenance(
+            providerRecovery.toolProtocol
+              ? "Recovery resumed this work. Inspect an interrupted tool's target before repeating it."
+              : "Recovery resumed this work from its saved transcript.",
+          ),
         })
         yield* failInterruptedTools(
           input.sessionID,

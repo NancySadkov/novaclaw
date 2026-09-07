@@ -16,6 +16,7 @@ import { activeWorkerCount, readLines, spawn } from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
+import { SessionWorkerFraming } from "./protocol-framing"
 
 const joinStub: SessionJoin.Interface = {
   awaitCompletion: () => Effect.die(new Error("join is not exercised by this test")),
@@ -40,9 +41,32 @@ test("worker line framing decodes split UTF-8 once per complete line", async () 
   expect(lines).toEqual(["first", "second é", "tail"])
 })
 
-test("worker line framing rejects an oversized line before delivery", async () => {
-  const chunk = Buffer.alloc(SessionWorkerProtocol.MAX_LINE_BYTES + 1)
-  await expect(readLines(Readable.from([chunk]), () => undefined)).rejects.toThrow("worker line exceeds limit")
+test("worker framing rejects an oversized physical frame before delivery", async () => {
+  const chunk = Buffer.alloc(SessionWorkerFraming.MAX_FRAME_BYTES + 1)
+  await expect(readLines(Readable.from([chunk]), () => undefined)).rejects.toThrow(
+    "worker transport frame exceeds limit",
+  )
+})
+
+test("worker framing carries the base64 result of the image that exposed the recovery loop", async () => {
+  const message = {
+    version: SessionWorkerProtocol.VERSION,
+    type: "publish-event" as const,
+    sessionID: lease.sessionID,
+    attemptID: lease.attemptID,
+    generation: lease.generation,
+    requestID: "rpc_image",
+    eventType: "session.next.tool.success",
+    // The live mockup was 1,242,717 bytes; base64 expands it beyond the former 1 MiB line limit.
+    data: { content: Buffer.alloc(1_242_717, 0xa5).toString("base64") },
+  }
+  const logical = SessionWorkerProtocol.encodeLine(message)
+  expect(SessionWorkerProtocol.byteLength(logical)).toBeGreaterThan(SessionWorkerFraming.MAX_FRAME_BYTES)
+  const wire = SessionWorkerFraming.encode(logical)
+  const decoded: string[] = []
+  await readLines(Readable.from([Buffer.from(wire)]), (line) => decoded.push(line))
+  expect(decoded).toEqual([logical.trimEnd()])
+  expect(SessionWorkerProtocol.decodeWorkerLine(decoded[0]!)).toEqual({ ok: true, message })
 })
 
 const fixture = path.resolve(import.meta.dir, "../../test/fixtures/session-worker.ts")

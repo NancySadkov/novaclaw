@@ -7,6 +7,7 @@ import type { Location } from "@novaclaw/core/location"
 import childProcess from "node:child_process"
 import type { Readable } from "node:stream"
 import * as ProtocolWrite from "./protocol-write"
+import { SessionWorkerFraming } from "./protocol-framing"
 
 export type Outcome =
   | { readonly type: "settled" }
@@ -315,7 +316,7 @@ export function spawn(input: Input): Handle {
       finish({ type: "protocol-error", detail: "host attempted to send a stale worker message" })
       return
     }
-    ProtocolWrite.write(child.stdin, SessionWorkerProtocol.encodeLine(message), (error) =>
+    ProtocolWrite.write(child.stdin, SessionWorkerFraming.encode(SessionWorkerProtocol.encodeLine(message)), (error) =>
       finish({ type: "protocol-error", detail: `failed to write worker message: ${error.message}` }),
     )
   }
@@ -626,7 +627,12 @@ export function spawn(input: Input): Handle {
       return
     }
     accept(decoded.message)
-  }).catch(() => finish({ type: "protocol-error", detail: "failed to read worker output" }))
+  }).catch((error) =>
+    finish({
+      type: "protocol-error",
+      detail: `failed to read worker output: ${error instanceof Error ? error.message : String(error)}`,
+    }),
+  )
 
   child.once("exit", (code, signal) => {
     if (!done)
@@ -685,50 +691,5 @@ export function spawn(input: Input): Handle {
 }
 
 export async function readLines(stream: Readable, onLine: (line: string) => void) {
-  const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  let pending: Uint8Array[] = []
-  let pendingBytes = 0
-
-  const append = (bytes: Uint8Array) => {
-    if (bytes.length === 0) return
-    pending.push(bytes)
-    pendingBytes += bytes.byteLength
-    if (pendingBytes > SessionWorkerProtocol.MAX_LINE_BYTES) throw new Error("worker line exceeds limit")
-  }
-
-  const joinPending = () => {
-    if (pending.length === 1) return pending[0]
-    const joined = new Uint8Array(pendingBytes)
-    let offset = 0
-    for (const part of pending) {
-      joined.set(part, offset)
-      offset += part.byteLength
-    }
-    return joined
-  }
-
-  const emitPending = () => {
-    if (pendingBytes === 0) return
-    const line = decoder.decode(joinPending()).replace(/\r$/, "")
-    pending = []
-    pendingBytes = 0
-    if (line) onLine(line)
-  }
-
-  for await (const chunk of stream) {
-    const bytes = typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk as Uint8Array)
-    let offset = 0
-    while (offset < bytes.byteLength) {
-      const newline = bytes.indexOf(10, offset)
-      if (newline < 0) {
-        append(bytes.slice(offset))
-        break
-      }
-      append(bytes.slice(offset, newline))
-      emitPending()
-      offset = newline + 1
-    }
-  }
-  emitPending()
+  for await (const line of SessionWorkerFraming.lines(stream)) onLine(line)
 }

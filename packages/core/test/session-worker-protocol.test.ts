@@ -257,9 +257,9 @@ describe("SessionWorkerProtocol", () => {
         ok: false,
         error: "worker message does not match protocol version 1",
       })
-    const secret = "s".repeat(SessionWorkerProtocol.MAX_LINE_BYTES + 1)
+    const secret = "s".repeat(SessionWorkerProtocol.MAX_MESSAGE_BYTES + 1)
     const oversized = SessionWorkerProtocol.decodeWorkerLine(secret)
-    expect(oversized).toEqual({ ok: false, error: "worker message exceeds the 1 MiB limit" })
+    expect(oversized).toEqual({ ok: false, error: "worker message exceeds the 64 MiB limit" })
     expect(JSON.stringify(oversized)).not.toContain(secret)
   })
 

@@ -408,7 +408,15 @@ export const layer = Layer.effect(
         const now = Date.now()
         yield* db
           .update(SessionExecutionTable)
-          .set({ tool_state: "settled", checkpoint_at: now, heartbeat_at: now, time_updated: now })
+          .set({
+            tool_state: "settled",
+            checkpoint_at: now,
+            // The breaker counts consecutive worker losses without durable forward progress, not
+            // losses over a whole long-running task. A completed tool is such a boundary.
+            failure_count: 0,
+            heartbeat_at: now,
+            time_updated: now,
+          })
           .where(
             and(
               eq(SessionExecutionTable.session_id, lease.sessionID),
@@ -530,7 +538,14 @@ export const layer = Layer.effect(
         if (row?.recovery?.attemptID !== providerAttemptID) return
         yield* db
           .update(SessionExecutionTable)
-          .set({ provider_recovery: null, time_updated: Date.now() })
+          .set({
+            provider_recovery: null,
+            // A text-only provider turn is durable forward progress. A tool-producing turn is not:
+            // resetting here would let a deterministic crash in that tool replay forever because
+            // every replay first completes the same provider tool call.
+            ...(row.recovery.toolProtocol ? {} : { failure_count: 0 }),
+            time_updated: Date.now(),
+          })
           .where(
             and(
               eq(SessionExecutionTable.session_id, lease.sessionID),

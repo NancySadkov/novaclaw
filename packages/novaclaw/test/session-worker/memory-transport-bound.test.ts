@@ -73,7 +73,7 @@ const answer = (text: string) =>
 const CYRILLIC_YA = String.fromCharCode(0x044f) // 1 UTF-16 code unit, 2 UTF-8 bytes
 
 /** Under the limit as code units, over it as bytes — the entire gap between the two readings. */
-const UNITS = 600_000
+const UNITS = 34_000_000
 
 const bytes = (value: string) => new TextEncoder().encode(value).byteLength
 
@@ -81,12 +81,12 @@ const bytes = (value: string) => new TextEncoder().encode(value).byteLength
 const survivesTheWire = (reply: SessionWorkerMemoryBridge.Reply) =>
   SessionWorkerProtocol.decodeHostLine(SessionWorkerProtocol.encodeLine(reply)).ok
 
-test("a memory result over the 1 MiB line bound IN BYTES fails the call, and the reply still decodes", async () => {
+test("a memory result over the logical bound IN BYTES fails the call, and the reply still decodes", async () => {
   const text = CYRILLIC_YA.repeat(UNITS)
 
   // The probe must prove it straddles the threshold, or it proves nothing about the threshold.
-  expect(text.length).toBeLessThan(SessionWorkerProtocol.MAX_LINE_BYTES) // what the OLD guard measured
-  expect(bytes(text)).toBeGreaterThan(SessionWorkerProtocol.MAX_LINE_BYTES) // what the decoder measures
+  expect(text.length).toBeLessThan(SessionWorkerProtocol.MAX_MESSAGE_BYTES) // what the OLD guard measured
+  expect(bytes(text)).toBeGreaterThan(SessionWorkerProtocol.MAX_MESSAGE_BYTES) // what the decoder measures
 
   const reply = await answer(text)
 
@@ -101,7 +101,7 @@ test("a memory result over the 1 MiB line bound IN BYTES fails the call, and the
 
 test("control: the same COUNT of ASCII code units is under the byte bound and still succeeds", async () => {
   const text = "x".repeat(UNITS)
-  expect(bytes(text)).toBeLessThan(SessionWorkerProtocol.MAX_LINE_BYTES)
+  expect(bytes(text)).toBeLessThan(SessionWorkerProtocol.MAX_MESSAGE_BYTES)
 
   const reply = await answer(text)
 
@@ -111,8 +111,8 @@ test("control: the same COUNT of ASCII code units is under the byte bound and st
 })
 
 test("control: an ASCII result genuinely over the bound is still refused", async () => {
-  const text = "x".repeat(SessionWorkerProtocol.MAX_LINE_BYTES + 1)
-  expect(bytes(text)).toBeGreaterThan(SessionWorkerProtocol.MAX_LINE_BYTES)
+  const text = "x".repeat(SessionWorkerProtocol.MAX_MESSAGE_BYTES + 1)
+  expect(bytes(text)).toBeGreaterThan(SessionWorkerProtocol.MAX_MESSAGE_BYTES)
 
   const reply = await answer(text)
 

@@ -228,6 +228,48 @@ describe("SessionExecutionAttempt", () => {
     }),
   )
 
+  it.effect("counts only consecutive losses since durable forward progress", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionSchema.ID.make("ses_execution_progress_resets_breaker")
+      yield* makeSession(sessionID)
+      const attempts = yield* SessionExecutionAttempt.Service
+
+      const first = yield* attempts.start(sessionID, "worker-1")
+      yield* attempts.recoverFailure(first, { classification: "pipe-loss" })
+      expect((yield* attempts.get(sessionID))?.failureCount).toBe(1)
+
+      const toolProgress = yield* attempts.start(sessionID, "worker-2")
+      yield* attempts.toolDispatched(toolProgress, { callID: "call_ok", name: "bash", sideEffect: "external-unknown" })
+      yield* attempts.toolSettled(toolProgress, "call_ok")
+      expect((yield* attempts.get(sessionID))?.failureCount, "a completed tool resets stale failures").toBe(0)
+
+      yield* attempts.recoverFailure(toolProgress, { classification: "later-loss" })
+      expect((yield* attempts.get(sessionID))?.failureCount).toBe(1)
+
+      const textProgress = yield* attempts.start(sessionID, "worker-3")
+      const textRecovery = {
+        attemptID: EventV2.ID.create(),
+        assistantMessageID: SessionMessage.ID.create(),
+        model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+        startedAt: DateTime.makeUnsafe(2345),
+        toolProtocol: false,
+      }
+      yield* attempts.providerStarted(textProgress, textRecovery)
+      yield* attempts.providerSettled(textProgress, textRecovery.attemptID)
+      expect((yield* attempts.get(sessionID))?.failureCount, "a completed text turn resets stale failures").toBe(0)
+
+      const replay = yield* attempts.start(sessionID, "worker-4")
+      const toolRecovery = { ...textRecovery, attemptID: EventV2.ID.create(), toolProtocol: true }
+      yield* attempts.providerStarted(replay, toolRecovery)
+      yield* attempts.providerSettled(replay, toolRecovery.attemptID)
+      yield* attempts.recoverFailure(replay, { classification: "same-tool-loss" })
+      expect(
+        (yield* attempts.get(sessionID))?.failureCount,
+        "producing another tool call is not progress and cannot defeat the loop breaker",
+      ).toBe(1)
+    }),
+  )
+
   it.effect("retries a dispatched read and resumes every unsettled write through inspection", () =>
     Effect.gen(function* () {
       const attempts = yield* SessionExecutionAttempt.Service

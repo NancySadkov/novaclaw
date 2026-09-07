@@ -95,23 +95,23 @@ export const handle = Effect.fn("SessionWorkerMemoryBridge.handle")(function* (i
   // Every arm below either returns a Reply directly (a refusal) or runs the op. The failure
   // translation and the transport bound are written once, here.
   //
-  // ⚠️ **A result too large for the line protocol is a REJECTION, not a truncation.** The worker
-  // transport caps a message at 1 MiB (`MAX_LINE_BYTES`) and a decoder on the far side would fail the
+  // ⚠️ **A result too large for the logical protocol is a REJECTION, not a truncation.** The worker
+  // transport caps a logical message (`MAX_MESSAGE_BYTES`) and a decoder on the far side would fail the
   // whole worker rather than the call. None of the ops a worker actually makes returns anything near
   // that — `search` is `k` rows, `byIds` is a handful — but "none of them today" is not a bound, and
   // a graph slice of a real document would be. So it is answered as an ordinary memory failure, which
   // every caller already degrades on, instead of killing the turn.
   //
   // 🔴 **The guard is measured in BYTES, because that is the unit the far side enforces.** It used to
-  // read `encodeLine(reply).length`, i.e. UTF-16 code units, against a budget named `MAX_LINE_BYTES`,
+  // read `encodeLine(reply).length`, i.e. UTF-16 code units, against a byte budget,
   // so the guard was TOO PERMISSIVE by exactly the string's bytes-per-unit ratio — 2 for Cyrillic or
   // an astral-plane emoji, 3 for CJK. A ~400 KB Cyrillic passage set counts ~400 000 units (passes)
   // and ~1.2 MB (the decoder fails the whole worker). A guard whose whole job is to keep a decoder
   // from killing the worker must therefore compute the decoder's own number and nothing else — see
   // `decodeLine` in `core/session/execution/worker-protocol.ts`, which is where the answer is
-  // adjudicated. `supervisor.ts`'s two line bounds already measure it this way.
+  // adjudicated. Physical pipe framing is a separate, smaller bound and reassembles before this one.
   const withinTransportBound = (line: string) =>
-    new TextEncoder().encode(line).byteLength <= SessionWorkerProtocol.MAX_LINE_BYTES
+    new TextEncoder().encode(line).byteLength <= SessionWorkerProtocol.MAX_MESSAGE_BYTES
   const run = (effect: Effect.Effect<unknown, MemoryClient.MemoryError>) =>
     effect.pipe(
       Effect.match({
