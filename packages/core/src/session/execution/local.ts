@@ -64,24 +64,57 @@ export const layer = Layer.effect(
             yield* attempts
               .heartbeat(lease, "drain")
               .pipe(Effect.repeat(Schedule.spaced(HEARTBEAT_INTERVAL)), Effect.forkScoped)
-            return yield* SessionRunner.Service.use((runner) => runner.run({ sessionID, force })).pipe(
-              Effect.provideService(SessionExecutionAttempt.Current, {
-                fence: { attemptID: lease.attemptID, generation: lease.generation },
-                advance: (phase, checkpoint) => attempts.advance(lease, phase, checkpoint),
-                toolDispatched: (receipt) => attempts.toolDispatched(lease, receipt),
-                toolSettled: (callID) => attempts.toolSettled(lease, callID),
-                providerStarted: (recovery) => attempts.providerStarted(lease, recovery),
-                providerToolProtocol: () => attempts.providerToolProtocol(lease),
-                providerSettled: (providerAttemptID) => attempts.providerSettled(lease, providerAttemptID),
-                providerRecovery: () => attempts.providerRecovery(lease),
-                servedBy: (fingerprint) => attempts.servedBy(lease, fingerprint),
-              }),
-              Effect.provide(located),
-              Effect.tapCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.void
-                  : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Log.fault(cause) }),
-              ),
+            const currentAttempt = {
+              fence: { attemptID: lease.attemptID, generation: lease.generation },
+              advance: (phase, checkpoint) => attempts.advance(lease, phase, checkpoint),
+              toolDispatched: (receipt) => attempts.toolDispatched(lease, receipt),
+              toolSettled: (callID) => attempts.toolSettled(lease, callID),
+              providerStarted: (recovery) => attempts.providerStarted(lease, recovery),
+              providerToolProtocol: () => attempts.providerToolProtocol(lease),
+              providerSettled: (providerAttemptID) => attempts.providerSettled(lease, providerAttemptID),
+              providerRecovery: () => attempts.providerRecovery(lease),
+              servedBy: (fingerprint) => attempts.servedBy(lease, fingerprint),
+            } satisfies SessionExecutionAttempt.CurrentInterface
+            const runOnce = () =>
+              SessionRunner.Service.use((runner) => runner.run({ sessionID, force })).pipe(
+                Effect.provideService(SessionExecutionAttempt.Current, currentAttempt),
+                Effect.provide(located),
+                Effect.tapCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.void
+                    : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Log.fault(cause) }),
+                ),
+              )
+            const drain: () => ReturnType<typeof runOnce> = () =>
+              runOnce().pipe(
+                Effect.onExit((exit) =>
+                  Exit.isSuccess(exit)
+                    ? attempts
+                        .settle(lease, "settled")
+                        .pipe(
+                          Effect.flatMap((settlement) =>
+                            settlement === "recovery-pending"
+                              ? Log.event("session.settlement.refused.recovery", { "session.id": sessionID }).pipe(
+                                  Effect.andThen(drain()),
+                                )
+                              : Effect.void,
+                          ),
+                        )
+                    : Cause.hasInterrupts(exit.cause)
+                      ? // The ledger already recorded this (`state: "interrupted"`), and a ledger row
+                        // is not a message — which is why the transcript showed the prompt and then
+                        // nothing at all. `noteInterrupted` is the transcript's half.
+                        SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }).pipe(
+                          Effect.andThen(attempts.settle(lease, "interrupted", { classification: "interrupt" })),
+                          Effect.andThen(noteInterrupted),
+                        )
+                      : attempts.settle(lease, "failed", {
+                          classification: "runner-failure",
+                          detail: Cause.pretty(exit.cause),
+                        }),
+                ),
+              )
+            return yield* drain().pipe(
               // `ensuring` so success, failure, AND interrupt (Stop) all publish the status derived
               // from durable state. Reasserting `exited` is intentional: a tool-local terminal event
               // can be followed by live timing, and "skip idle" leaves that later `busy` uncorrected.
@@ -90,22 +123,6 @@ export const layer = Layer.effect(
                   const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
                   yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
                 }),
-              ),
-              Effect.onExit((exit) =>
-                Exit.isSuccess(exit)
-                  ? attempts.settle(lease, "settled")
-                  : Cause.hasInterrupts(exit.cause)
-                    ? // The ledger already recorded this (`state: "interrupted"`), and a ledger row
-                      // is not a message — which is why the transcript showed the prompt and then
-                      // nothing at all. `noteInterrupted` is the transcript's half.
-                      SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }).pipe(
-                        Effect.andThen(attempts.settle(lease, "interrupted", { classification: "interrupt" })),
-                        Effect.andThen(noteInterrupted),
-                      )
-                    : attempts.settle(lease, "failed", {
-                        classification: "runner-failure",
-                        detail: Cause.pretty(exit.cause),
-                      }),
               ),
             )
           }),

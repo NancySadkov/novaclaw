@@ -1,5 +1,6 @@
 export * as SessionBootRecovery from "./boot-recovery"
 
+import { and, eq, isNotNull } from "drizzle-orm"
 import { Clock, Duration, Effect, Schedule } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "../database/database"
@@ -8,6 +9,7 @@ import type { SessionExecution } from "./execution"
 import type { SessionExecutionAttempt } from "./execution-attempt"
 import { SessionInput } from "./input"
 import type { SessionSchema } from "./schema"
+import { SessionExecutionTable } from "./sql"
 import type { SessionStore } from "./store"
 
 /**
@@ -157,7 +159,7 @@ export const recoverStaleLeases = (
   )
 
 /**
- * Hand every session holding un-promoted queued input back to the executor, exactly as the admission
+ * Hand every session holding durable work back to the executor, exactly as the admission or recovery
  * that created it would have done had the process lived.
  *
  * Runs ONCE — the durable/in-memory split it repairs exists only across a restart, and every later
@@ -176,7 +178,17 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
   readonly store: SessionStore.Interface
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
 }) {
-  const sessions = yield* SessionInput.sessionsWithPendingQueue(input.db)
+  const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
+  // A replacement drain used to read the provider-recovery latch only AFTER its first empty-queue
+  // return. It therefore settled successfully without consuming the latch. That state is durable and
+  // otherwise has no future wake source, so upgrades must adopt it just like an abandoned prompt.
+  const strandedRecovery = yield* input.db
+    .select({ sessionID: SessionExecutionTable.session_id })
+    .from(SessionExecutionTable)
+    .where(and(eq(SessionExecutionTable.state, "settled"), isNotNull(SessionExecutionTable.provider_recovery)))
+    .all()
+    .pipe(Effect.orDie)
+  const sessions = [...new Set([...pending, ...strandedRecovery.map((row) => row.sessionID)])]
   if (sessions.length === 0) return 0
   let woken = 0
   let handedOff = 0

@@ -33,6 +33,7 @@ type Captured = { type: string; status: { type: string }; directory: string | un
 
 const harness = (input: {
   run: (setResult: (value: string) => void, sessionID: SessionSchema.ID) => Effect.Effect<void, never>
+  settle?: SessionExecutionAttempt.Interface["settle"]
   children?: Readonly<Record<string, ReadonlyArray<SessionSchema.ID>>>
 }) =>
   Effect.gen(function* () {
@@ -67,7 +68,7 @@ const harness = (input: {
         providerSettled: () => Effect.void,
         servedBy: () => Effect.void,
         providerRecovery: () => Effect.succeed(undefined),
-        settle: () => Effect.void,
+        settle: input.settle ?? (() => Effect.succeed("committed" as const)),
         recoverFailure: () => Effect.succeed(undefined),
         get: () => Effect.succeed(undefined),
         list: () => Effect.succeed([]),
@@ -144,6 +145,24 @@ describe("SessionExecutionLocal status lifecycle", () => {
       Effect.gen(function* () {
         const h = yield* harness({ run: () => Effect.die("boom") as Effect.Effect<void, never> })
         yield* h.exec.resume(sessionID).pipe(Effect.exit)
+        expect(h.captured.map((c) => c.status.type)).toEqual(["busy", "idle"])
+      }),
+    ),
+  )
+
+  it.effect("re-drives a successful drain when the ledger still owns provider recovery", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let runs = 0
+        let settlements = 0
+        const h = yield* harness({
+          run: () => Effect.sync(() => void runs++),
+          settle: () =>
+            Effect.sync(() => (settlements++ === 0 ? ("recovery-pending" as const) : ("committed" as const))),
+        })
+        yield* h.exec.resume(sessionID)
+        expect(runs).toBe(2)
+        expect(settlements).toBe(2)
         expect(h.captured.map((c) => c.status.type)).toEqual(["busy", "idle"])
       }),
     ),

@@ -3304,9 +3304,20 @@ export const layer = Layer.effect(
           ),
         )
       }
-      const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+      // A provider recovery latch IS pending work even though it is not a `session_input` row. The
+      // automatic boot/supervisor path wakes with `force=false`; checking only the two input queues
+      // here made that replacement worker return successfully before it reached the recovery block
+      // below. The executor then stamped the new lease `settled`, leaving the prior assistant turn's
+      // tools permanently `running` and the task abandoned behind "A previous reply was interrupted".
+      //
+      // Keep this read above the no-work return. Manual `resume` uses `force=true`, which is why the
+      // old recovery test passed while the shipped automatic path failed twice in the same live chat.
+      const providerRecovery =
+        (yield* SessionExecutionAttempt.providerRecoveryCurrent()) ??
+        (yield* store.get(input.sessionID))?.providerRecovery
+      let hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
-      if (!input.force && !hasSteer && !hasQueue) return
+      if (!input.force && !hasSteer && !hasQueue && providerRecovery === undefined) return
       // B10: live control handoff — when a human operator has taken control, Nova does NOT
       // auto-respond. Input still QUEUES durably (nothing lost); it drains the moment control
       // is handed back to nova. Resolve via the config walk so a child inherits the parent's
@@ -3316,9 +3327,6 @@ export const layer = Layer.effect(
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
-      const providerRecovery =
-        (yield* SessionExecutionAttempt.providerRecoveryCurrent()) ??
-        (yield* store.get(input.sessionID))?.providerRecovery
       if (providerRecovery) {
         yield* events.publish(SessionEvent.Synthetic, {
           sessionID: input.sessionID,
@@ -3353,6 +3361,10 @@ export const layer = Layer.effect(
             "Previously saved response content remains valid. Any in-flight tool was closed with an unknown outcome; " +
             "inspect the workspace or external target's current state before deciding whether to repeat it. Do not stop merely to report the interruption.",
         )
+        // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
+        // just changed the durable queue, so leaving the old `false` here passes the first no-work
+        // gate only to stop at the second one.
+        hasSteer = true
       } else {
         yield* failInterruptedTools(input.sessionID)
       }

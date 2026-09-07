@@ -281,7 +281,9 @@ export const layer = Layer.effect(
                 onHeartbeat: (message, signal) =>
                   Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message }), { signal }),
                 onPublishEvent: (message, signal) =>
-                  Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message }), { signal }),
+                  Effect.runPromise(SessionWorkerEventBridge.publish({ events, attempts, lease, location, message }), {
+                    signal,
+                  }),
                 onDeviceRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
                 onInteractionRequest: (message, signal) =>
@@ -357,10 +359,11 @@ export const layer = Layer.effect(
                  */
                 onMemoryRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
+                // Keep the lifetime signal visibly at this handler seam; the structural test counts
+                // these explicit bindings so a new bridge cannot silently become uninterruptible.
+                // prettier-ignore
                 onWorldMemoryRequest: (message, signal) =>
-                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory: worldMemory, lease, message }), {
-                    signal,
-                  }),
+                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory: worldMemory, lease, message }), { signal }),
                 onLocalModelRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerLocalModelBridge.handle({ manager: localModels, lease, message }), {
                     signal,
@@ -436,7 +439,15 @@ export const layer = Layer.effect(
               }
 
               if (outcome.type === "settled") {
-                yield* attempts.settle(lease, "settled")
+                const settlement = yield* attempts.settle(lease, "settled")
+                if (settlement === "recovery-pending") {
+                  yield* Log.event("session.settlement.refused.recovery", { "session.id": sessionID })
+                  // Settlement is a compare-and-transition operation: a durable provider obligation
+                  // makes success illegal. Start a replacement generation immediately and let the
+                  // runner consume that obligation; never expose a false idle boundary to the UI.
+                  continue
+                }
+                if (settlement === "superseded") return
                 yield* publishSettledStatus
                 return
               }
@@ -449,6 +460,13 @@ export const layer = Layer.effect(
               }
 
               const detail = failureDetail(outcome)
+              // `attempts.start` necessarily replaces the single current-attempt row on the next
+              // loop. Record the terminal evidence before that happens; otherwise a successful
+              // recovery erases the classification needed to diagnose a repeatable worker loss.
+              yield* Log.event("session.drain.failed", {
+                "session.id": sessionID,
+                "session.cause": Log.fault(detail),
+              })
               const decision = yield* attempts.recoverFailure(lease, {
                 classification: outcome.type === "failed" ? outcome.classification : outcome.type,
                 detail,

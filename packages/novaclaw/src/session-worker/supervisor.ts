@@ -274,6 +274,7 @@ export function spawn(input: Input): Handle {
   let monitor: ReturnType<typeof setInterval> | undefined
   let resolveResult!: (outcome: Outcome) => void
   let rpcTail = Promise.resolve()
+  const rpcInFlight = new Set<Promise<void>>()
   const lifetime = new AbortController()
   const result = new Promise<Outcome>((resolve) => {
     resolveResult = resolve
@@ -288,7 +289,16 @@ export function spawn(input: Input): Handle {
     // The normal terminal path can await: keep the parent-map walk and Windows taskkill off the
     // server event loop, while still holding result settlement behind the tree teardown so callers
     // never observe a finished worker whose descendants are still alive.
-    const cleanup = Promise.all([killTree(childPID), Promise.resolve().then(() => input.onExit?.(outcome))])
+    // Host RPCs are part of this generation's lifetime too. Resolving the worker outcome before they
+    // unwind lets the executor open the replacement lease while an old transcript write, spawn, or
+    // memory mutation is still running. Geryon's old tool-label publication landed after generation
+    // 2 had started through exactly that gap. Abort first (above), then join every request that was
+    // already admitted; the existing cleanup deadline remains the hard bound for a broken handler.
+    const cleanup = Promise.all([
+      killTree(childPID),
+      Promise.resolve().then(() => input.onExit?.(outcome)),
+      Promise.allSettled([...rpcInFlight]),
+    ])
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<void>((resolve) => {
       deadlineTimer = setTimeout(resolve, input.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS)
@@ -333,14 +343,16 @@ export function spawn(input: Input): Handle {
       }
       send(reply)
     }
-    if (!ORDERED_RPC[message.type]) {
-      void settle().catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
-      return
-    }
-    rpcTail = rpcTail.then(settle).catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
+    const pending = (ORDERED_RPC[message.type] ? rpcTail.then(settle) : settle()).catch(() =>
+      finish({ type: "protocol-error", detail: "worker RPC failed" }),
+    )
+    if (ORDERED_RPC[message.type]) rpcTail = pending
+    rpcInFlight.add(pending)
+    void pending.finally(() => rpcInFlight.delete(pending))
   }
 
   const accept = (message: SessionWorkerProtocol.WorkerMessage) => {
+    if (done) return
     if (!SessionWorkerProtocol.owns(input.lease, message)) {
       finish({ type: "stale-message" })
       return

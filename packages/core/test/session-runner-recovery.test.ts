@@ -9,6 +9,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionRunner } from "@novaclaw/core/session/runner"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, messageRoles } from "./fixture/runner-harness"
 
 /**
@@ -73,7 +74,7 @@ const orphanToolCall = (input: {
   })
 
 describe("SessionRunnerLLM — recovery from a prior process", () => {
-  test("an interrupted provider turn durably steers the officer back into the task", async () => {
+  test("an automatic wake with no pending input durably steers an interrupted provider turn back into the task", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "Recovered and continued")] })
     const recovery = {
       attemptID: EventV2.ID.create(),
@@ -106,7 +107,12 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           recovery,
         })
 
-        yield* session.resume(HARNESS_SESSION)
+        // This is the production recovery path: the stale-lease sweep calls `wake`, whose drain has
+        // `force=false`. Manual `session.resume` forces a run and therefore hid the no-input early
+        // return that abandoned the live Geryon chat.
+        expect(yield* SessionInput.hasPending((yield* Database.Service).db, HARNESS_SESSION, "steer")).toBe(false)
+        expect(yield* SessionInput.hasPending((yield* Database.Service).db, HARNESS_SESSION, "queue")).toBe(false)
+        yield* SessionRunner.Service.use((runner) => runner.run({ sessionID: HARNESS_SESSION, force: false }))
       }),
       "claim — provider process loss resumes the task",
     )

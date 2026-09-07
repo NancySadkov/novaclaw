@@ -8,7 +8,9 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
+import { ModelV2 } from "@novaclaw/core/model"
 import { ProjectV2 } from "@novaclaw/core/project"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionBootRecovery } from "@novaclaw/core/session/boot-recovery"
@@ -22,6 +24,7 @@ import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionExecutionTable } from "@novaclaw/core/session/sql"
 import type { SessionStore } from "@novaclaw/core/session/store"
 import { SessionStore as SessionStoreService } from "@novaclaw/core/session/store"
 import { it as bare, testEffect } from "./lib/effect"
@@ -278,6 +281,46 @@ describe("which sessions the sweep hands back", () => {
       const { woken, wake } = record()
       yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
       expect(woken).not.toContain(promoted.id)
+    }),
+  )
+
+  it.live("a settled replacement that stranded provider recovery is woken on upgrade", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const store = yield* SessionStoreService.Service
+
+      const interrupted = yield* session.create({ location, agent: rootAgent })
+      // This is the exact state left by 0.1.71: the replacement drain returned at its cached
+      // empty-queue gate and the supervisor truthfully settled that no-op, leaving recovery behind.
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: interrupted.id,
+          attempt_id: "provider-attempt",
+          generation: 2,
+          owner_id: "replacement-host",
+          state: "settled",
+          phase: "drain",
+          failure_count: 0,
+          heartbeat_at: 1234,
+          provider_recovery: {
+            attemptID: EventV2.ID.create(),
+            assistantMessageID: SessionMessage.ID.create(),
+            model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+            startedAt: 1234,
+            toolProtocol: true,
+          },
+          started_at: 1234,
+          time_updated: 1234,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const { woken, wake } = record()
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
+      expect(woken).toEqual([interrupted.id])
     }),
   )
 

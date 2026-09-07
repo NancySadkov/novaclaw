@@ -14,6 +14,8 @@ const sessionID = SessionSchema.ID.make("ses_worker_event_bridge")
 const lease = { sessionID, attemptID: "exe_event_bridge", generation: 4, ownerID: "host" }
 const location = Location.Ref.make({ directory: AbsolutePath.make("C:/project") })
 const published: Array<{ type: string; data: unknown; location?: Location.Ref }> = []
+let ownsLease = true
+const attempts = { owns: () => Effect.succeed(ownsLease) }
 const events = EventV2.Service.of({
   publish: (definition, data, options) =>
     Effect.sync(() => {
@@ -58,7 +60,7 @@ test("host validates, orders, and stamps a worker session event", async () => {
     text: "worker progress",
   }
   const reply = await Effect.runPromise(
-    SessionWorkerEventBridge.publish({ events, lease, location, message: request(data) }),
+    SessionWorkerEventBridge.publish({ events, attempts, lease, location, message: request(data) }),
   )
   expect(reply.type).toBe("event-published")
   expect(reply).toHaveProperty("durable.seq", 0)
@@ -71,6 +73,7 @@ test("host accepts non-session events from the server manifest", async () => {
   const reply = await Effect.runPromise(
     SessionWorkerEventBridge.publish({
       events,
+      attempts,
       lease,
       location,
       message: request({}, Catalog.Event.Updated.type),
@@ -95,6 +98,7 @@ test("host forwards live runner timing even though status is not an HTTP route d
   const reply = await Effect.runPromise(
     SessionWorkerEventBridge.publish({
       events,
+      attempts,
       lease,
       location,
       message: request(data, SessionStatusEvent.Status.type),
@@ -118,7 +122,29 @@ test("host rejects unknown, malformed, cross-session, and stale event requests",
     { ...request(valid), generation: lease.generation - 1 },
   ]
   for (const message of cases) {
-    const reply = await Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message }))
+    const reply = await Effect.runPromise(
+      SessionWorkerEventBridge.publish({ events, attempts, lease, location, message }),
+    )
     expect(reply.type).toBe("event-rejected")
+  }
+})
+
+test("host rejects an in-flight event after a replacement generation owns the session", async () => {
+  ownsLease = false
+  try {
+    const before = published.length
+    const data = {
+      sessionID,
+      messageID: SessionMessage.ID.create(),
+      timestamp: 1234,
+      text: "late worker progress",
+    }
+    const reply = await Effect.runPromise(
+      SessionWorkerEventBridge.publish({ events, attempts, lease, location, message: request(data) }),
+    )
+    expect(reply.type).toBe("event-rejected")
+    expect(published).toHaveLength(before)
+  } finally {
+    ownsLease = true
   }
 })

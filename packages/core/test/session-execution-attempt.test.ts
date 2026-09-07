@@ -180,10 +180,14 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.providerRecovery(first)).toEqual({ ...recovery, toolProtocol: true })
 
       const replacement = yield* attempts.start(sessionID, "host-b")
+      expect(yield* attempts.settle(replacement, "settled")).toBe("recovery-pending")
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering" })
       yield* attempts.providerSettled(first, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toEqual({ ...recovery, toolProtocol: true })
       yield* attempts.providerSettled(replacement, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toBeUndefined()
+      expect(yield* attempts.settle(replacement, "settled")).toBe("committed")
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "settled" })
     }),
   )
 

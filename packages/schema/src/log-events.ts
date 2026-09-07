@@ -2172,6 +2172,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/execution/local.ts",
   },
+  "session.settlement.refused.recovery": {
+    level: "warn",
+    message: "refused terminal settlement while provider recovery remained",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/session/execution/local.ts",
+  },
   "session.drive.cap.reached": {
     level: "warn",
     message: "self-drive cap reached",

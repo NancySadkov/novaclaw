@@ -11,7 +11,9 @@ type Publish = Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "pu
 type Reply = Extract<SessionWorkerProtocol.HostMessage, { readonly type: "event-published" | "event-rejected" }>
 
 // `session.status` is in `ServerDefinitions` since 2026-09-03; the bridge forwards the served set.
-const workerDefinitions: ReadonlyArray<(typeof EventManifest.Definitions)[number]> = [...EventManifest.ServerDefinitions]
+const workerDefinitions: ReadonlyArray<(typeof EventManifest.Definitions)[number]> = [
+  ...EventManifest.ServerDefinitions,
+]
 const definitions: ReadonlyMap<string, (typeof EventManifest.Definitions)[number]> = new Map(
   workerDefinitions.map((definition) => [definition.type, definition]),
 )
@@ -34,11 +36,15 @@ const rejected = (message: Publish, error: string): Reply => ({
  * location nor aggregate identity, and schema diagnostics are not reflected across the boundary. */
 export const publish = Effect.fn("SessionWorkerEventBridge.publish")(function* (input: {
   readonly events: EventV2.Interface
+  readonly attempts: Pick<SessionExecutionAttempt.Interface, "owns">
   readonly lease: SessionExecutionAttempt.Lease
   readonly location: Location.Ref
   readonly message: Publish
 }) {
-  if (!SessionWorkerProtocol.owns(input.lease, input.message))
+  // Envelope identity alone only proves the message came from the worker this callback was created
+  // for. After a retry replaces the durable lease, that old callback can still be draining an RPC;
+  // without the database fence it appended a late tool label to Geryon's replacement generation.
+  if (!SessionWorkerProtocol.owns(input.lease, input.message) || !(yield* input.attempts.owns(input.lease)))
     return rejected(input.message, "execution ownership changed")
   const definition = definitions.get(input.message.eventType)
   if (!definition) return rejected(input.message, "unknown server event type")

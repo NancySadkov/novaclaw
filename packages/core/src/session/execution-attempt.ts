@@ -1,6 +1,6 @@
 export * as SessionExecutionAttempt from "./execution-attempt"
 
-import { and, eq, inArray, lt, sql } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -49,6 +49,8 @@ export interface Recovered {
   readonly decision: SessionRecoveryDecision.Decision
 }
 
+export type Settlement = "committed" | "recovery-pending" | "superseded"
+
 export interface Interface {
   readonly start: (sessionID: SessionSchema.ID, ownerID: string) => Effect.Effect<Lease>
   readonly heartbeat: (lease: Lease, phase?: Phase) => Effect.Effect<void>
@@ -77,7 +79,7 @@ export interface Interface {
     lease: Lease,
     state: "settled" | "failed" | "interrupted",
     failure?: { readonly classification: string; readonly detail?: string },
-  ) => Effect.Effect<void>
+  ) => Effect.Effect<Settlement>
   /** Classifies a live worker loss against its durable side-effect boundary, increments the
    * circuit-breaker budget, and records recovering/paused atomically. A fenced lease returns
    * undefined and cannot influence the replacement owner. */
@@ -556,44 +558,63 @@ export const layer = Layer.effect(
       }),
       settle: Effect.fn("SessionExecutionAttempt.settle")(function* (lease, state, failure) {
         const now = Date.now()
-        yield* db
-          .update(SessionExecutionTable)
-          .set({
-            state,
-            heartbeat_at: now,
-            checkpoint_at: state === "settled" ? now : undefined,
-            failure_class: failure?.classification ?? null,
-            failure_detail: failure?.detail?.slice(0, 2_000) ?? null,
-            /**
-             * ⚠️ **A user stop is not a failure, and must not spend the budget.** This used to read
-             * `state === "settled" ? 0 : +1`, so every deliberate interrupt incremented — and with
-             * `FAILURE_LIMIT` at 3, three cancellations of a healthy session with no successful turn
-             * between them left the budget exhausted, so the NEXT genuine fault paused the session
-             * reporting `repeated-failure`. That is ruling 2 on the recovery report: the user's own
-             * stops described as failures.
-             *
-             * `interrupted` leaves the count UNCHANGED rather than resetting it. Resetting would let
-             * a stop erase a real failure history — two genuine losses followed by one cancellation
-             * would look like a healthy session, which is the same defect pointing the other way.
-             *
-             * ⚠️ This is the `settle` path only. `recoverFailure` also lands rows in `interrupted`
-             * when it decides an automatic retry, and there the increment is CORRECT — that state
-             * came from a loss. It does its own counting inside its transaction and does not reach
-             * here.
-             */
-            ...(state === "interrupted"
-              ? { provider_recovery: null }
-              : { failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1` }),
-            time_updated: now,
-          })
-          .where(
-            and(
-              eq(SessionExecutionTable.session_id, lease.sessionID),
-              eq(SessionExecutionTable.attempt_id, lease.attemptID),
-              eq(SessionExecutionTable.generation, lease.generation),
-            ),
+        const fence = and(
+          eq(SessionExecutionTable.session_id, lease.sessionID),
+          eq(SessionExecutionTable.attempt_id, lease.attemptID),
+          eq(SessionExecutionTable.generation, lease.generation),
+        )
+        return yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const values = {
+                state,
+                heartbeat_at: now,
+                checkpoint_at: state === "settled" ? now : undefined,
+                failure_class: failure?.classification ?? null,
+                failure_detail: failure?.detail?.slice(0, 2_000) ?? null,
+                /**
+                 * ⚠️ **A user stop is not a failure, and must not spend the budget.** This used to read
+                 * `state === "settled" ? 0 : +1`, so every deliberate interrupt incremented — and with
+                 * `FAILURE_LIMIT` at 3, three cancellations of a healthy session with no successful turn
+                 * between them left the budget exhausted, so the NEXT genuine fault paused the session
+                 * reporting `repeated-failure`. That is ruling 2 on the recovery report: the user's own
+                 * stops described as failures.
+                 *
+                 * `interrupted` leaves the count UNCHANGED rather than resetting it. Resetting would let
+                 * a stop erase a real failure history — two genuine losses followed by one cancellation
+                 * would look like a healthy session, which is the same defect pointing the other way.
+                 *
+                 * ⚠️ This is the `settle` path only. `recoverFailure` also lands rows in `interrupted`
+                 * when it decides an automatic retry, and there the increment is CORRECT — that state
+                 * came from a loss. It does its own counting inside its transaction and does not reach
+                 * here.
+                 */
+                ...(state === "interrupted"
+                  ? { provider_recovery: null }
+                  : { failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1` }),
+                time_updated: now,
+              }
+              const committed = yield* tx
+                .update(SessionExecutionTable)
+                .set(values)
+                // A provider latch is a durable obligation, not advisory metadata. A successful
+                // terminal state while it exists is illegal at the storage boundary, regardless of
+                // what any runner's cached queue snapshot claims.
+                .where(state === "settled" ? and(fence, isNull(SessionExecutionTable.provider_recovery)) : fence)
+                .returning({ sessionID: SessionExecutionTable.session_id })
+                .get()
+              if (committed) return "committed" as const
+              if (state !== "settled") return "superseded" as const
+
+              const pending = yield* tx
+                .update(SessionExecutionTable)
+                .set({ state: "recovering", heartbeat_at: now, time_updated: now })
+                .where(and(fence, isNotNull(SessionExecutionTable.provider_recovery)))
+                .returning({ sessionID: SessionExecutionTable.session_id })
+                .get()
+              return pending ? ("recovery-pending" as const) : ("superseded" as const)
+            }),
           )
-          .run()
           .pipe(Effect.orDie)
       }),
       recoverFailure: Effect.fn("SessionExecutionAttempt.recoverFailure")(function* (lease, failure) {
