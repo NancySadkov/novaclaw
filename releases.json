@@ -2,6 +2,28 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.71",
+      "released": "2026-09-07T04:24:38.565Z",
+      "supersedes": "0.1.70",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.71-source.7z",
+          "sha256": "4ba8cd4870ebc7475c15e1bca6371706ed5f9d92d64962bf404c6b8660fe4913",
+          "bytes": 21884504
+        },
+        {
+          "name": "NovaClaw-0.1.71-windows-x64.7z",
+          "sha256": "d42f1d7a2062455c7330bf04ca8bf495db990ff6cba12234af6a21361bd4c418",
+          "bytes": 202318149
+        },
+        {
+          "name": "w64devkit-2.9.0-source.tar",
+          "sha256": "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec",
+          "bytes": 233297920
+        }
+      ]
+    },
+    {
       "version": "0.1.70",
       "released": "2026-09-06T23:44:33.570Z",
       "supersedes": "0.1.69",
