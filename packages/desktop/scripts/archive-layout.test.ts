@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { verifyArchiveLayout } from "./archive-layout"
 
 function fixture(run: (archive: string, bytes: Buffer) => void) {
-  const directory = mkdtempSync(join(tmpdir(), "novaclaw-archive-layout-"))
+  // The verifier is content-based. A synthetic `.asar` name makes Windows security/indexing open
+  // the just-closed fixture asynchronously and turns teardown into a nondeterministic EBUSY race.
+  const archive = join(tmpdir(), `novaclaw-archive-layout-${randomUUID()}.bin`)
   try {
     const json = Buffer.from(
       JSON.stringify({
@@ -25,11 +28,10 @@ function fixture(run: (archive: string, bytes: Buffer) => void) {
     header.writeUInt32LE(json.length, 12)
     json.copy(header, 16)
     const bytes = Buffer.concat([header, Buffer.from("abcdef")])
-    const archive = join(directory, "app.asar")
     writeFileSync(archive, bytes)
     run(archive, bytes)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(archive, { force: true })
   }
 }
 
