@@ -99,8 +99,8 @@ export const Info = Schema.Struct({
   resumeInterrupted: Schema.optional(Schema.Boolean).annotate({
     description:
       "After a crash or restart, resume runs that were interrupted mid-turn (default: true). Only runs " +
-      "the recovery policy already judged safe are resumed — one whose tool outcome is unknown, or " +
-      "that has failed repeatedly, stays paused for a human either way.",
+      "the recovery policy already judged safe are resumed — an unknown tool outcome is inspected " +
+      "before work continues, while a run that has failed repeatedly stays paused.",
   }),
 })
 export type Info = typeof Info.Type

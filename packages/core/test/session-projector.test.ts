@@ -55,9 +55,7 @@ describe("SessionProjector", () => {
     const paths = [...source.matchAll(/events\.project\(SessionEvent\.([A-Za-z.]+)/g)].map((match) => match[1]!)
     const definitionAt = (path: string) =>
       path.split(".").reduce((value, key) => (value as Record<string, unknown>)[key], SessionEvent as unknown)
-    const projected = new Set(
-      paths.map((path) => (definitionAt(path) as { readonly type: string }).type),
-    )
+    const projected = new Set(paths.map((path) => (definitionAt(path) as { readonly type: string }).type))
 
     // This is a durable lifecycle marker for the compaction overlay, not a live message/row update;
     // Compaction.Ended owns the full projected value. Every other durable session event changes a
@@ -114,6 +112,19 @@ describe("SessionProjector", () => {
       })
       expect(
         (yield* db.select({ recovery: SessionTable.provider_recovery }).from(SessionTable).get())?.recovery,
+      ).toBeNull()
+
+      const stopped = EventV2.ID.make("evt_provider_stopped")
+      yield* start(stopped)
+      yield* events.publish(SessionEvent.ProviderAttempt.Settled, {
+        sessionID,
+        timestamp: startedAt,
+        attemptID: stopped,
+        outcome: "interrupted",
+      })
+      expect(
+        (yield* db.select({ recovery: SessionTable.provider_recovery }).from(SessionTable).get())?.recovery,
+        "a user stop must clear the session projection as well as the execution lease",
       ).toBeNull()
     }),
   )

@@ -5,6 +5,7 @@ import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-p
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionWorkerClient } from "./client"
 import { SessionWorkerCapabilities } from "./capabilities"
+import * as ProtocolWrite from "./protocol-write"
 
 export interface Context {
   readonly lease: SessionExecutionAttempt.Lease
@@ -52,8 +53,15 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   const protocolFailure = new Promise<never>((_resolve, reject) => {
     rejectProtocol = reject
   })
+  const rejectWrite = (error: unknown) =>
+    rejectProtocol(error instanceof Error ? error : new Error("session worker protocol output failed"))
+  // `Writable.write` can accept the bytes synchronously and report EPIPE later through BOTH its
+  // callback and the stream's `error` event. A try/catch around `write` catches neither form. Since
+  // stdout is this worker's protocol, losing it is a protocol failure and must race the drain just
+  // like losing stdin does — never become an unhandled process exception.
+  ProtocolWrite.observeErrors(process.stdout, rejectWrite)
   const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
-    process.stdout.write(SessionWorkerProtocol.encodeLine(message))
+    ProtocolWrite.write(process.stdout, SessionWorkerProtocol.encodeLine(message), rejectWrite)
   const client = SessionWorkerClient.make({ lease, send: emit })
   const capabilities = SessionWorkerCapabilities.make({ lease, client })
 

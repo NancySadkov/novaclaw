@@ -8,6 +8,43 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import type { SessionStore } from "./store"
+import type { SessionExecutionAttempt } from "./execution-attempt"
+
+/** Clear both projections of an in-flight provider attempt before settling a deliberate Stop. The
+ * attempt row and session row are separate durable projections; clearing only one makes the next
+ * manual prompt misread the user's cancellation as a process loss and auto-resume it. */
+export const settleProvider = (input: {
+  readonly events: EventV2.Interface
+  readonly attempts: SessionExecutionAttempt.Interface
+  readonly lease: SessionExecutionAttempt.Lease
+  readonly sessionID: SessionSchema.ID
+  readonly located: Layer.Layer<LocationServices, LocationError>
+}) =>
+  Effect.gen(function* () {
+    const recovery = yield* input.attempts.providerRecovery(input.lease)
+    if (!recovery) return
+    const timestamp = yield* DateTime.now
+    yield* Location.Service.use((location) =>
+      input.events.publish(
+        SessionEvent.ProviderAttempt.Settled,
+        {
+          sessionID: input.sessionID,
+          timestamp,
+          attemptID: recovery.attemptID,
+          outcome: "interrupted",
+        },
+        {
+          location: new Location.Info({
+            directory: location.directory,
+            ...(location.workspaceID ? { workspaceID: location.workspaceID } : {}),
+            root: location.root,
+            origin: location.origin,
+          }),
+        },
+      ),
+    )
+    yield* input.attempts.providerSettled(input.lease, recovery.attemptID)
+  }).pipe(Effect.provide(input.located), Effect.ignore)
 
 /**
  * Say, in the transcript, that a turn was stopped before it produced anything.

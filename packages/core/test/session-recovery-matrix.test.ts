@@ -56,8 +56,8 @@ const MATRIX: readonly Point[] = [
     id: "after-side-effect",
     fault: "the adapter completed its external effect, then the process died before recording it",
     covered: [
-      ["session-execution-attempt", "pauses an orphaned unsettled tool instead of replaying it"],
-      ["session-recovery-decision", "never automatically replays an unsettled tool"],
+      ["session-execution-attempt", "resumes an orphaned unsettled tool through inspection instead of replaying it"],
+      ["session-recovery-decision", "automatically inspects after an unsettled tool without replaying it"],
     ],
   },
   {

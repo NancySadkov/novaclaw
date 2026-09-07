@@ -20,8 +20,9 @@ export interface Decision {
 }
 
 /** Pure recovery policy over the durable boundary. The caller supplies the failure count INCLUDING
- * the loss being classified. `automatic` is deliberately false for an uncertain tool and after the
- * per-session circuit breaker opens; neither state may be papered over by a model retry. */
+ * the loss being classified. An uncertain tool is never replayed: the replacement turn receives a
+ * grounded inspection steer and continues from the durable transcript. Only the circuit breaker
+ * suppresses automatic recovery, so one process loss cannot silently end the user's task. */
 export function decide(input: {
   readonly phase: SessionExecutionAttempt.Phase
   readonly checkpointed: boolean
@@ -32,14 +33,14 @@ export function decide(input: {
   if (input.failureCount >= FAILURE_LIMIT) return { action: "pause", reason: "repeated-failure", automatic: false }
 
   if (input.phase === "tool") {
-    // A read has no side effect to duplicate. An idempotent write is easier to INSPECT and may be
-    // explicitly repeated, but automatic continuation is still forbidden after any write dispatch:
-    // "idempotent" describes the adapter operation, not every external system it may touch.
+    // A read has no side effect to duplicate. Every other unsettled call CONTINUES through a fresh
+    // model turn which is explicitly told to inspect actual state first; it does not replay the old
+    // call. "Idempotent" describes the adapter operation, not every external system it may touch.
     if (!input.checkpointed && input.toolState === "dispatched" && input.toolSideEffect === "read")
       return { action: "retry", reason: "replay-safe-tool", automatic: true }
     return input.checkpointed
       ? { action: "continue", reason: "settled-tool", automatic: true }
-      : { action: "inspect", reason: "outcome-unknown", automatic: false }
+      : { action: "inspect", reason: "outcome-unknown", automatic: true }
   }
 
   if (input.phase === "provider" && input.checkpointed)

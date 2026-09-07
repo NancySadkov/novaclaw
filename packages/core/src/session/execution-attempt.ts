@@ -582,7 +582,7 @@ export const layer = Layer.effect(
              * here.
              */
             ...(state === "interrupted"
-              ? {}
+              ? { provider_recovery: null }
               : { failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1` }),
             time_updated: now,
           })
@@ -701,7 +701,7 @@ export const layer = Layer.effect(
                   const updated = yield* tx
                     .update(SessionExecutionTable)
                     .set({
-                      state: decision.action === "pause" || decision.action === "inspect" ? "paused" : "interrupted",
+                      state: decision.automatic ? "interrupted" : "paused",
                       failure_class: decision.reason,
                       failure_detail:
                         decision.reason === "outcome-unknown"

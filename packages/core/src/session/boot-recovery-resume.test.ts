@@ -9,9 +9,8 @@ import type { SessionSchema } from "./schema"
 //
 // 🔴 The answer was that `recoverStale` computed a recovery decision for every abandoned execution
 // and nothing acted on it. These tests pin the acting — and above all pin WHICH runs are resumed,
-// because the filter is the entire safety argument. Resuming a session the policy paused would
-// re-run a tool whose outcome is unknown, or restart a run that has already killed the instance
-// twice.
+// because the filter is the entire safety argument. An unknown tool outcome is resumed through an
+// inspection steer rather than replayed; only a run that repeatedly kills the instance is paused.
 
 const id = (name: string) => name as SessionSchema.ID
 
@@ -75,12 +74,12 @@ describe("resumeInterrupted", () => {
   })
 
   // 🔴 THE SIDE-EFFECT HAZARD. A write tool that was dispatched without a durable result may or may
-  // not have happened. Re-running it could duplicate it, which is why the policy says `inspect` and
-  // a human decides.
-  test("does NOT wake a run whose tool outcome is unknown", async () => {
-    expect(verdicts.outcomeUnknown.automatic).toBe(false)
+  // not have happened. The new process must wake, but `inspect` makes the officer ground itself in
+  // actual state rather than replaying the call.
+  test("wakes a run whose tool outcome is unknown through inspection", async () => {
+    expect(verdicts.outcomeUnknown).toMatchObject({ action: "inspect", automatic: true })
     const { woken } = await run([entry("ses_uncertain", verdicts.outcomeUnknown)])
-    expect(woken).toEqual([])
+    expect(woken).toEqual(["ses_uncertain"])
   })
 
   // ⚠️ MIXED is the realistic sweep, and the one where a sloppy filter shows: two safe runs must be
@@ -92,8 +91,8 @@ describe("resumeInterrupted", () => {
       entry("ses_ok2", verdicts.beforeSideEffect),
       entry("ses_uncertain", verdicts.outcomeUnknown),
     ])
-    expect(woken).toEqual(["ses_ok1", "ses_ok2"])
-    expect(count).toBe(2)
+    expect(woken).toEqual(["ses_ok1", "ses_ok2", "ses_uncertain"])
+    expect(count).toBe(3)
   })
 
   test("an empty sweep wakes nothing and reports nothing", async () => {
@@ -110,9 +109,9 @@ describe("resumeInterrupted", () => {
    * they assert the filter, and the filter would be faithfully passing through a now-wrong verdict.
    * So the verdicts are asserted directly.
    */
-  test("the policy still refuses to automate the two dangerous shapes", () => {
+  test("the policy pauses crash loops but resumes unknown effects through inspection", () => {
     expect(verdicts.repeatedFailure).toMatchObject({ action: "pause", automatic: false })
-    expect(verdicts.outcomeUnknown).toMatchObject({ action: "inspect", automatic: false })
+    expect(verdicts.outcomeUnknown).toMatchObject({ action: "inspect", automatic: true })
     expect(verdicts.beforeSideEffect.automatic).toBe(true)
   })
 })

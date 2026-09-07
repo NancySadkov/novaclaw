@@ -12,6 +12,9 @@ import { ConfinementRows, type ShellStatusWithJail } from "./confinement"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { scopedDirectory } from "@/utils/routing-directory"
+import { useNotification } from "@/context/notification"
+import { usePlatform } from "@/context/platform"
+import { fetchInstanceDiagnostics } from "@/utils/diagnostic-export"
 
 /**
  * Nova Health — **the health report**: the one place that answers "is anything wrong with this
@@ -74,6 +77,8 @@ export const NovaHealthBoard: Component = () => {
   const server = useServer()
   const global = useGlobal()
   const sync = useServerSync()
+  const notifications = useNotification()
+  const platform = usePlatform()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   // `probe` is a SIGNAL, not an argument to the initial load: the board must open without
   // contacting anyone, and only a deliberate click may spend egress.
@@ -123,6 +128,27 @@ export const NovaHealthBoard: Component = () => {
 
   const confirm = useConfirm()
   const [erasing, setErasing] = createSignal(false)
+  const [exporting, setExporting] = createSignal(false)
+  const recentNotifications = createMemo(() => notifications.history.recent().slice(0, 20))
+
+  const exportLogs = async () => {
+    const conn = connection()
+    if (!conn || !platform.exportDebugLogs) return
+    setExporting(true)
+    try {
+      const diagnostics = await fetchInstanceDiagnostics(conn.http).catch(() => undefined)
+      await platform.exportDebugLogs(diagnostics)
+      showToast({ variant: "success", title: language.t("settings.health.logs.exported") })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("settings.health.logs.failed"),
+        description: String(error),
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
   /**
    * Erase every memory in every scope, Nova's included.
    *
@@ -267,6 +293,57 @@ export const NovaHealthBoard: Component = () => {
           {erasing() ? language.t("settings.health.eraseMemory.erasing") : language.t("settings.health.eraseMemory")}
         </button>
       </div>
+
+      <div class="mt-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 class="settings-v2-section-title">{language.t("settings.health.notifications.title")}</h3>
+          <p class="settings-v2-tab-description">{language.t("settings.health.notifications.description")}</p>
+        </div>
+        <Show when={platform.exportDebugLogs}>
+          <button
+            type="button"
+            class="settings-v2-tab-description shrink-0 underline disabled:opacity-60"
+            disabled={exporting()}
+            onClick={() => void exportLogs()}
+          >
+            {exporting() ? language.t("settings.health.logs.exporting") : language.t("settings.health.logs.export")}
+          </button>
+        </Show>
+      </div>
+      <SettingsListV2>
+        <For each={recentNotifications()}>
+          {(notification) => (
+            <SettingsRowV2
+              title={
+                notification.type === "toast"
+                  ? notification.title || notification.description || language.t("settings.health.notifications.notice")
+                  : notification.type === "error"
+                    ? language.t("settings.health.notifications.error", { session: notification.session ?? "NovaClaw" })
+                    : language.t("settings.health.notifications.complete", {
+                        session: notification.session ?? "NovaClaw",
+                      })
+              }
+              description={
+                notification.type === "toast" && notification.title
+                  ? notification.description
+                  : new Date(notification.time).toLocaleString()
+              }
+            >
+              <span class="select-text text-[11px] text-v2-text-text-muted">
+                {new Date(notification.time).toLocaleString()}
+              </span>
+            </SettingsRowV2>
+          )}
+        </For>
+        <Show when={recentNotifications().length === 0}>
+          <SettingsRowV2
+            title={language.t("settings.health.notifications.empty")}
+            description={language.t("settings.health.notifications.emptyDescription")}
+          >
+            <span />
+          </SettingsRowV2>
+        </Show>
+      </SettingsListV2>
     </section>
   )
 }

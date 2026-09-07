@@ -6,6 +6,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import type { Location } from "@novaclaw/core/location"
 import childProcess from "node:child_process"
 import type { Readable } from "node:stream"
+import * as ProtocolWrite from "./protocol-write"
 
 export type Outcome =
   | { readonly type: "settled" }
@@ -304,12 +305,17 @@ export function spawn(input: Input): Handle {
       finish({ type: "protocol-error", detail: "host attempted to send a stale worker message" })
       return
     }
-    try {
-      child.stdin.write(SessionWorkerProtocol.encodeLine(message))
-    } catch {
-      finish({ type: "protocol-error", detail: "failed to write worker message" })
-    }
+    ProtocolWrite.write(child.stdin, SessionWorkerProtocol.encodeLine(message), (error) =>
+      finish({ type: "protocol-error", detail: `failed to write worker message: ${error.message}` }),
+    )
   }
+
+  // The callback above catches asynchronous write completion failures; Node also emits `error` on
+  // the Writable. Without this listener an EPIPE is an uncaught exception in the SERVER process —
+  // exactly the same class as the worker-side stdout hole, mirrored across the protocol boundary.
+  ProtocolWrite.observeErrors(child.stdin, (error) =>
+    finish({ type: "protocol-error", detail: `worker input pipe failed: ${error.message}` }),
+  )
 
   /**
    * Route one worker RPC: onto the serial chain, or straight out.

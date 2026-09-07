@@ -3328,7 +3328,7 @@ export const layer = Layer.effect(
             "⚠️ NovaClaw recovered a provider turn interrupted by process loss. Any response content already saved is still here. " +
             (providerRecovery.toolProtocol
               ? "A tool may have changed its target, so inspect the workspace or external system before repeating it."
-              : "The interrupted turn will not run again automatically."),
+              : "The officer is continuing automatically from the saved transcript."),
         })
         yield* failInterruptedTools(
           input.sessionID,
@@ -3341,6 +3341,18 @@ export const layer = Layer.effect(
           reason: "new-input",
         })
         yield* SessionExecutionAttempt.providerSettledCurrent(providerRecovery.attemptID)
+        // A replacement worker with no pending input exits successfully after closing the orphaned
+        // provider attempt. That is process recovery but task abandonment: the user's work remains
+        // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the
+        // latch, and make inspection part of the steer so an uncertain tool is never blindly replayed.
+        yield* SessionInput.steer(
+          db,
+          events,
+          input.sessionID,
+          "A process loss interrupted your previous reply. Continue the user's task now from the durable transcript. " +
+            "Previously saved response content remains valid. Any in-flight tool was closed with an unknown outcome; " +
+            "inspect the workspace or external target's current state before deciding whether to repeat it. Do not stop merely to report the interruption.",
+        )
       } else {
         yield* failInterruptedTools(input.sessionID)
       }

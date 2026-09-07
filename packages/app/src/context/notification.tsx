@@ -21,6 +21,7 @@ import type { ServerScope } from "@/utils/server-scope"
 import { sessionExecutions } from "@/utils/session-execution-api"
 import { terminalAttention } from "@/apps/roster-live"
 import { withTransientOwner } from "@/utils/transient-owner"
+import { flushToastHistory, subscribeToastHistory, type ToastHistoryEntry } from "@/utils/toast-history"
 
 type NotificationBase = {
   directory?: string
@@ -39,7 +40,12 @@ type ErrorNotification = NotificationBase & {
   error: EventSessionError["properties"]["error"]
 }
 
-export type Notification = TurnCompleteNotification | ErrorNotification
+type ToastNotification = NotificationBase &
+  ToastHistoryEntry & {
+    type: "toast"
+  }
+
+export type Notification = TurnCompleteNotification | ErrorNotification | ToastNotification
 
 // Stable empty results for the graceful-degradation path (a not-yet-connected server).
 const NO_NOTIFICATIONS: Notification[] = []
@@ -210,6 +216,16 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       return ensure(conn)
     }
     const selected = (): NotificationState | undefined => serverState(activeServer())
+    const unsubscribeToastHistory = subscribeToastHistory((entry) => {
+      const state = selected()
+      if (!state?.ready()) return false
+      state.appendToast(entry)
+      return true
+    })
+    createEffect(() => {
+      if (selected()?.ready()) flushToastHistory()
+    })
+    onCleanup(unsubscribeToastHistory)
 
     return {
       ready: () => selected()?.ready() ?? false,
@@ -228,6 +244,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         unseenCount: (directory: string) => selected()?.project.unseenCount(directory) ?? 0,
         unseenHasError: (directory: string) => selected()?.project.unseenHasError(directory) ?? false,
         markViewed: (directory: string) => selected()?.project.markViewed(directory),
+      },
+      history: {
+        recent: () => selected()?.history.recent() ?? NO_NOTIFICATIONS,
       },
     }
   },
@@ -337,6 +356,8 @@ function createServerNotificationState(input: {
       setStore("list", list)
     })
   }
+
+  const appendToast = (entry: ToastHistoryEntry) => append({ ...entry, type: "toast", viewed: true })
 
   // 🔴 This runs from the SSE flush (`event.listen` -> setTimeout), where NO Solid owner is
   // current. `ensureDirSyncContext` is refcounted and registers its DECREMENT with `onCleanup`, so
@@ -608,6 +629,12 @@ function createServerNotificationState(input: {
             updateUnseen("session", session, next)
           })
         })
+      },
+    },
+    appendToast,
+    history: {
+      recent() {
+        return store.list.slice(-50).reverse()
       },
     },
   }

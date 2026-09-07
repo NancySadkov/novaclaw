@@ -131,7 +131,7 @@ describe("SessionExecutionAttempt", () => {
     }),
   )
 
-  it.effect("pauses an orphaned unsettled tool instead of replaying it", () =>
+  it.effect("resumes an orphaned unsettled tool through inspection instead of replaying it", () =>
     Effect.gen(function* () {
       const sessionID = SessionSchema.ID.make("ses_execution_unknown_tool")
       yield* makeSession(sessionID)
@@ -149,11 +149,11 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.recoverStale(2)).toEqual([
         {
           sessionID,
-          decision: { action: "inspect", reason: "outcome-unknown", automatic: false },
+          decision: { action: "inspect", reason: "outcome-unknown", automatic: true },
         },
       ])
       expect(yield* attempts.get(sessionID)).toMatchObject({
-        state: "paused",
+        state: "interrupted",
         phase: "tool",
         failureClass: "outcome-unknown",
         failureCount: 1,
@@ -206,9 +206,9 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.recoverFailure(uncertain, { classification: "exited" })).toEqual({
         action: "inspect",
         reason: "outcome-unknown",
-        automatic: false,
+        automatic: true,
       })
-      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "paused", failureCount: 2 })
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering", failureCount: 2 })
 
       const repeated = yield* attempts.start(sessionID, "worker-3")
       expect(yield* attempts.recoverFailure(repeated, { classification: "start-timeout" })).toEqual({
@@ -224,22 +224,22 @@ describe("SessionExecutionAttempt", () => {
     }),
   )
 
-  it.effect("retries a dispatched read but pauses every unsettled write", () =>
+  it.effect("retries a dispatched read and resumes every unsettled write through inspection", () =>
     Effect.gen(function* () {
       const attempts = yield* SessionExecutionAttempt.Service
-      for (const [suffix, sideEffect, automatic] of [
-        ["read", "read", true],
-        ["write", "idempotent-write", false],
-        ["send", "non-idempotent", false],
-        ["unknown", "external-unknown", false],
+      for (const [suffix, sideEffect] of [
+        ["read", "read"],
+        ["write", "idempotent-write"],
+        ["send", "non-idempotent"],
+        ["unknown", "external-unknown"],
       ] as const) {
         const sessionID = SessionSchema.ID.make(`ses_receipt_${suffix}`)
         yield* makeSession(sessionID)
         const lease = yield* attempts.start(sessionID, "host-a")
         yield* attempts.toolDispatched(lease, { callID: `call_${suffix}`, name: suffix, sideEffect })
         const decision = yield* attempts.recoverFailure(lease, { classification: "worker-exit" })
-        expect(decision?.automatic).toBe(automatic)
-        expect((yield* attempts.get(sessionID))?.state).toBe(automatic ? "recovering" : "paused")
+        expect(decision?.automatic).toBe(true)
+        expect((yield* attempts.get(sessionID))?.state).toBe("recovering")
       }
     }),
   )
@@ -268,6 +268,15 @@ describe("SessionExecutionAttempt", () => {
       const lease = yield* attempts.start(sessionID, "host-a")
       yield* attempts.toolDispatched(lease, { callID: "call_send", name: "send", sideEffect: "non-idempotent" })
 
+      const recovery = {
+        attemptID: EventV2.ID.create(),
+        assistantMessageID: SessionMessage.ID.create(),
+        model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+        startedAt: DateTime.makeUnsafe(1234),
+        toolProtocol: true,
+      }
+      yield* attempts.providerStarted(lease, recovery)
+
       yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
 
       const after = yield* attempts.get(sessionID)
@@ -286,6 +295,7 @@ describe("SessionExecutionAttempt", () => {
         .pipe(Effect.orDie)
       // Durable, not just in-memory: recovery reads this row from a later process.
       expect(row?.state).toBe("interrupted")
+      expect(row?.provider_recovery, "a user stop must not be recovered as process loss").toBeNull()
 
       // ⚠️ THE negative control, and the reason this test is not just the assertion above. The fix
       // narrows WHICH states charge the budget, so a version that simply stopped counting would

@@ -73,6 +73,53 @@ const orphanToolCall = (input: {
   })
 
 describe("SessionRunnerLLM — recovery from a prior process", () => {
+  test("an interrupted provider turn durably steers the officer back into the task", async () => {
+    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "Recovered and continued")] })
+    const recovery = {
+      attemptID: EventV2.ID.create(),
+      assistantMessageID: SessionMessage.ID.create(),
+      model: { id: ModelV2.ID.make("harness-model"), providerID: ProviderV2.ID.make("harness") },
+      startedAt: DateTime.makeUnsafe(1234),
+      toolProtocol: true,
+    }
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const events = yield* EventV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Finish the interrupted task" }),
+          resume: false,
+        })
+        yield* SessionInput.promoteSteers(
+          (yield* Database.Service).db,
+          events,
+          HARNESS_SESSION,
+          Number.MAX_SAFE_INTEGER,
+        )
+        yield* SessionInput.promoteNextQueued((yield* Database.Service).db, events, HARNESS_SESSION)
+        yield* events.publish(SessionEvent.ProviderAttempt.Started, {
+          sessionID: HARNESS_SESSION,
+          timestamp: recovery.startedAt,
+          recovery,
+        })
+
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — provider process loss resumes the task",
+    )
+
+    // The harness may issue its normal empty-response correction after the recovery turn; the
+    // invariant here is that at least one actual provider request carries the durable continuation.
+    const continued = harness.requests.find((request) =>
+      JSON.stringify(request.messages).includes("Continue the user's task now"),
+    )
+    expect(continued, "the recovery steer never reached the model").toBeDefined()
+    expect(continued?.messages.some((message) => message.role === "user")).toBe(true)
+  })
+
   test("durably fails local tools left running by a prior process before continuing", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
     const assistantMessageID = SessionMessage.ID.create()

@@ -99,8 +99,8 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
  *
  * ⭐ **This adds no policy.** Every safety question was already answered by `decide`: a session past
  * `FAILURE_LIMIT` is `paused` (the circuit breaker against a run that keeps killing the instance),
- * and one whose tool was dispatched with an unknown outcome is `paused` (the side-effect hazard).
- * Only `automatic` decisions are woken here.
+ * while one whose tool was dispatched with an unknown outcome is resumed through an inspection
+ * steer instead of replaying the tool. Only `automatic` decisions are woken here.
  */
 export const resumeInterrupted = (input: {
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]

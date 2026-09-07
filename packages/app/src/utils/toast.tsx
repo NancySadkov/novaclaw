@@ -1,5 +1,6 @@
 import { Icon, type IconProps } from "@novaclaw/ui/v2/icon"
 import { ToastV2, showToastV2 } from "@novaclaw/ui/v2/toast-v2"
+import { recordToastHistory } from "./toast-history"
 
 /**
  * The app's one toast surface. It is a *facade*, not a fork: it exists because callers name an icon
@@ -32,17 +33,35 @@ export interface ToastOptions {
   actions?: ToastAction[]
 }
 
+export const DEFAULT_TOAST_DURATION_MS = 7_000
+
+export function resolveToastLifetime(options: Pick<ToastOptions, "duration" | "persistent" | "variant">) {
+  const persistent = options.persistent ?? options.variant === "loading"
+  return {
+    persistent,
+    duration: options.duration ?? DEFAULT_TOAST_DURATION_MS,
+  }
+}
+
 export function ToastRegion() {
   return <ToastV2.Region />
 }
 
 export function showToast(options: ToastOptions | string) {
-  if (typeof options === "string") return showToastV2(options)
+  const normalized: ToastOptions = typeof options === "string" ? { description: options } : options
+  const lifetime = resolveToastLifetime(normalized)
+  recordToastHistory({
+    title: normalized.title,
+    description: normalized.description,
+    variant: normalized.variant ?? "default",
+    time: Date.now(),
+  })
 
   return showToastV2({
-    ...options,
-    icon: resolveIcon(options.icon, options.variant),
-    actions: options.actions?.map((action) => ({
+    ...normalized,
+    ...lifetime,
+    icon: resolveIcon(normalized.icon, normalized.variant),
+    actions: normalized.actions?.map((action) => ({
       ...action,
       variant: action.onClick === "dismiss" ? "secondary" : "primary",
     })),

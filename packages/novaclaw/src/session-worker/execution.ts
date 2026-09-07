@@ -424,6 +424,9 @@ export const layer = Layer.effect(
                   Effect.ensuring(Effect.sync(releaseWorker)),
                   Effect.onInterrupt(() =>
                     Effect.promise(() => spawned.value.interrupt()).pipe(
+                      Effect.andThen(
+                        SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }),
+                      ),
                       Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
                       Effect.andThen(noteInterrupted),
                       Effect.andThen(publishSettledStatus),
@@ -438,6 +441,7 @@ export const layer = Layer.effect(
                 return
               }
               if (outcome.type === "interrupted") {
+                yield* SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located })
                 yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
                 yield* noteInterrupted
                 yield* publishSettledStatus

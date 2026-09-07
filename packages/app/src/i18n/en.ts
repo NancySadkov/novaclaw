@@ -1349,9 +1349,9 @@ export const dict = {
   "settings.recovery.row.resumeInterrupted.description":
     "If Nova is interrupted mid-task — a crash, a restart, a power cut — carry on where it left off.",
   "settings.recovery.row.resumeInterrupted.description.more":
-    "Only work that is safe to repeat is resumed. If Nova was in the middle of something whose outcome it " +
-    "cannot be sure of — a file it may or may not have finished writing — that task waits for you " +
-    "instead, and so does anything that has already failed several times in a row. Turn this off if you would " +
+    "Nova never blindly repeats unfinished actions. If it cannot be sure whether a file or external action finished, " +
+    "the officer first inspects what is actually there, then continues. Anything that has already failed several " +
+    "times in a row still waits for you. Turn this off if you would " +
     "rather decide every restart yourself; nothing is lost either way, it simply waits.",
   "settings.recovery.section.restore": "Ways back",
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
@@ -1411,6 +1411,18 @@ export const dict = {
   "settings.health.unreachable": "This instance could not be reached, so nothing below was checked.",
   "settings.health.recheck": "Check again",
   "settings.health.testProvider": "Test the connection to my model provider",
+  "settings.health.notifications.title": "Recent notifications",
+  "settings.health.notifications.description": "Pop-ups fade away, but their recent messages remain here for 30 days.",
+  "settings.health.notifications.notice": "Notification",
+  "settings.health.notifications.error": "{{session}} needs attention",
+  "settings.health.notifications.complete": "{{session}} finished a reply",
+  "settings.health.notifications.empty": "No recent notifications",
+  "settings.health.notifications.emptyDescription":
+    "Notifications that fade from the screen will remain reviewable here.",
+  "settings.health.logs.export": "Download all logs",
+  "settings.health.logs.exporting": "Preparing logs…",
+  "settings.health.logs.exported": "Logs downloaded",
+  "settings.health.logs.failed": "Could not download logs",
   // Erase Memory (owner, 2026-08-22) — for starting a run from a clean slate without reinstalling.
   // ⚠️ The wording names WHOSE memory goes, because "erase memory" reads as "this chat's" to most
   // people and the actual scope is every colleague on the roster plus Nova.

@@ -98,9 +98,10 @@ export const layer = Layer.effect(
                     ? // The ledger already recorded this (`state: "interrupted"`), and a ledger row
                       // is not a message — which is why the transcript showed the prompt and then
                       // nothing at all. `noteInterrupted` is the transcript's half.
-                      attempts
-                        .settle(lease, "interrupted", { classification: "interrupt" })
-                        .pipe(Effect.andThen(noteInterrupted))
+                      SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }).pipe(
+                        Effect.andThen(attempts.settle(lease, "interrupted", { classification: "interrupt" })),
+                        Effect.andThen(noteInterrupted),
+                      )
                     : attempts.settle(lease, "failed", {
                         classification: "runner-failure",
                         detail: Cause.pretty(exit.cause),

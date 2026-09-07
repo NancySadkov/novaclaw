@@ -30,11 +30,11 @@ describe("SessionRecoveryDecision", () => {
     })
   })
 
-  test("never automatically replays an unsettled tool", () => {
+  test("automatically inspects after an unsettled tool without replaying it", () => {
     expect(SessionRecoveryDecision.decide({ phase: "tool", checkpointed: false, failureCount: 1 })).toEqual({
       action: "inspect",
       reason: "outcome-unknown",
-      automatic: false,
+      automatic: true,
     })
   })
 
@@ -60,8 +60,8 @@ describe("SessionRecoveryDecision", () => {
           failureCount: 1,
           toolSideEffect,
           toolState: "dispatched",
-        }).automatic,
-      ).toBe(false)
+        }),
+      ).toEqual({ action: "inspect", reason: "outcome-unknown", automatic: true })
   })
 
   test("opens the per-session circuit breaker at the failure limit", () => {
