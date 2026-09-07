@@ -35323,6 +35323,9 @@
           "personality": {
             "type": "string"
           },
+          "superior": {
+            "type": "string"
+          },
           "avatar": {
             "type": "string"
           },
@@ -35364,6 +35367,10 @@
           },
           "reground": {
             "type": "boolean"
+          },
+          "reasoningBudget": {
+            "type": "integer",
+            "minimum": 0
           },
           "description": {
             "type": "string"
@@ -37769,6 +37776,9 @@
           "personality": {
             "type": "string"
           },
+          "superior": {
+            "type": "string"
+          },
           "avatar": {
             "type": "string"
           },
@@ -37828,6 +37838,10 @@
           },
           "reground": {
             "type": "boolean"
+          },
+          "reasoningBudget": {
+            "type": "integer",
+            "minimum": 0
           },
           "mode": {
             "type": "string",

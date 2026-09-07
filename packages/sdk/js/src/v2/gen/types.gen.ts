@@ -3582,6 +3582,7 @@ export type ConfigV2Agent = {
   name?: string
   title?: string
   personality?: string
+  superior?: string
   avatar?: string
   memory?: "own" | "none"
   archiveChats?: boolean
@@ -3595,6 +3596,7 @@ export type ConfigV2Agent = {
   }
   shortChat?: boolean
   reground?: boolean
+  reasoningBudget?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4427,6 +4429,7 @@ export type AgentV2Info = {
   name?: string
   title?: string
   personality?: string
+  superior?: string
   avatar?: string
   memory?: AgentMemory
   archiveChats?: boolean
@@ -4446,6 +4449,7 @@ export type AgentV2Info = {
   }
   shortChat?: boolean
   reground?: boolean
+  reasoningBudget?: number
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   paused?: boolean

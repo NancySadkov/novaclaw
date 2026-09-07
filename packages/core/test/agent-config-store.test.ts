@@ -171,7 +171,7 @@ describe("the roster a CLEAN install opens with", () => {
 
       yield* AgentConfigSeed.seedFromDirectory(globalDir)
       const agents = yield* store.agents()
-      for (const id of ["xenia", "daedalus", "myron"]) expect(Object.keys(agents), id).toContain(id)
+      for (const id of ["xenia", "daedalus", "myron", "researcher"]) expect(Object.keys(agents), id).toContain(id)
     }),
   )
 

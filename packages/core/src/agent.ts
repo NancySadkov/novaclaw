@@ -119,6 +119,32 @@ export const mayStaff = (agentID: string | undefined): boolean => agentID === NO
  */
 export const hasFullAuthority = (agentID: string | undefined): boolean => agentID === NOVA_ID
 
+/** Resolve one reporting line against the live roster. Invalid, missing, self-referential and cyclic
+ * lines all fall back to Nova, so imported config cannot turn the chain of command into a loop. */
+export const resolveSuperior = (
+  selfID: string,
+  configured: string | undefined,
+  roster: ReadonlyArray<Info>,
+): Info | undefined => {
+  if (selfID === NOVA_ID) return undefined
+  const byID = new Map(roster.map((agent) => [String(agent.id), agent]))
+  const fallback = byID.get(NOVA_ID)
+  const requested = configured ?? NOVA_ID
+  if (requested === selfID) return fallback
+  const superior = byID.get(requested)
+  if (superior === undefined || !isColleague(superior) || superior.paused === true) return fallback
+  const seen = new Set([selfID])
+  let cursor: Info | undefined = superior
+  while (cursor !== undefined && String(cursor.id) !== NOVA_ID) {
+    const id = String(cursor.id)
+    if (seen.has(id)) return fallback
+    seen.add(id)
+    cursor = byID.get(String(cursor.superior ?? NOVA_ID))
+    if (cursor === undefined || cursor.paused === true) return fallback
+  }
+  return superior
+}
+
 /**
  * The POSTURE agents. `build` and `plan` are permission modes wearing an agent's shape (owner,
  * 2026-08-22), not people — and `build` is this instance's DEFAULT agent (see `defaultID` above), so

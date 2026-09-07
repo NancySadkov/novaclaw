@@ -15,9 +15,9 @@ import { showToast } from "@/utils/toast"
 import { listSessions, startChat } from "@/apps/agent-list"
 import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
-import { cloneAgent } from "@/apps/agent-clone"
+import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
-import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
+import { GOVERNING_ID, displayName, memoryDisclosure, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
 import { memoryList } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -122,7 +122,9 @@ export function AgentConfigDialog(props: {
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
+  const [reasoningBudget, setReasoningBudget] = createSignal<string | undefined>()
   const [needsTier, setNeedsTier] = createSignal<string | undefined>()
+  const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
   // from Cancel.
@@ -199,6 +201,20 @@ export function AgentConfigDialog(props: {
     const bound = agent()?.model
     return bound ? modelRef(bound) : ""
   }
+  const reasoningBudgetValue = () => {
+    const chosen = reasoningBudget()
+    if (chosen !== undefined) return chosen
+    const stored = (agent()?.config as Record<string, unknown> | undefined)?.["reasoningBudget"]
+    return typeof stored === "number" ? String(stored) : ""
+  }
+  const parsedReasoningBudget = () => {
+    const value = reasoningBudgetValue().trim()
+    if (value === "") return undefined
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN
+  }
+  const reasoningBudgetValid = () => !Number.isNaN(parsedReasoningBudget())
+  const superiorValue = () => superior() ?? agent()?.superior ?? ""
   const boundTier = createMemo(() => {
     const ref = parseModelRef(modelValue())
     if (ref === undefined) return undefined
@@ -242,6 +258,8 @@ export function AgentConfigDialog(props: {
     archive() !== undefined ||
     needsTier() !== undefined ||
     model() !== undefined ||
+    reasoningBudget() !== undefined ||
+    superior() !== undefined ||
     avatarFile() !== undefined ||
     avatarRemoved()
 
@@ -292,7 +310,14 @@ export function AgentConfigDialog(props: {
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
-      showToast({ variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) })
+      showToast(
+        isNovaCloneRefusal(error)
+          ? {
+              title: language.t("agentConfig.cloneNovaTitle"),
+              description: language.t("agentConfig.cloneNovaDescription"),
+            }
+          : { variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) },
+      )
     } finally {
       setBusy(undefined)
     }
@@ -487,9 +512,12 @@ export function AgentConfigDialog(props: {
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
       const tier = needsTierValue()
-      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> = {
+      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> & { reasoningBudget?: number } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(needsTier() === undefined || !isTier(tier) ? {} : { needsTier: tier }),
+        ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
+          ? {}
+          : { reasoningBudget: parsedReasoningBudget() }),
       }
       await sync().updateConfig({
         agents: {
@@ -508,6 +536,7 @@ export function AgentConfigDialog(props: {
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
             ...(reground() === undefined ? {} : { reground: reground()! }),
             archiveChats: archiveValue(),
+            ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
             ...binding,
           },
         },
@@ -517,6 +546,8 @@ export function AgentConfigDialog(props: {
       await sync().removeConfig([
         ...(model() === "" ? [["agents", id, "model"]] : []),
         ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
+        ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
+        ...(superior() === "" ? [["agents", id, "superior"]] : []),
       ])
       const current = conn()
       if (current === undefined) throw new Error("No instance is connected")
@@ -535,6 +566,8 @@ export function AgentConfigDialog(props: {
       setReground(undefined)
       setArchive(undefined)
       setModel(undefined)
+      setReasoningBudget(undefined)
+      setSuperior(undefined)
       setNeedsTier(undefined)
       props.onChanged?.()
       props.onDismiss()
@@ -616,6 +649,17 @@ export function AgentConfigDialog(props: {
               </section>
               <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
             </div>
+          </div>
+          {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
+              while `planClone` remains the enforcement seam for every caller. */}
+          <div class="border-t border-v2-border-border-muted px-4 py-2.5">
+            <button
+              type="button"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+              onClick={() => void clone()}
+            >
+              {language.t("agentConfig.clone")}
+            </button>
           </div>
         </div>
       </Dialog>
@@ -843,6 +887,27 @@ export function AgentConfigDialog(props: {
                 }}
               </For>
             </select>
+            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
+              {language.t("agentConfig.reasoningBudget")}
+            </label>
+            <input
+              id="agent-reasoning-budget"
+              aria-label={language.t("agentConfig.reasoningBudget")}
+              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+              type="number"
+              min="0"
+              step="1"
+              value={reasoningBudgetValue()}
+              placeholder={language.t("agentConfig.reasoningBudgetModel")}
+              onInput={(event) => setReasoningBudget(event.currentTarget.value)}
+            />
+            <p class="mt-1 text-[11px] text-v2-text-text-faint">
+              {reasoningBudgetValue().trim() === ""
+                ? language.t("agentConfig.reasoningBudgetDefault")
+                : parsedReasoningBudget() === 0
+                  ? language.t("agentConfig.reasoningBudgetOff")
+                  : language.t("agentConfig.reasoningBudgetCustom", { tokens: reasoningBudgetValue() })}
+            </p>
             {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
                 sometimes the right one. */}
             <Show when={mindTooSmall()}>
@@ -878,6 +943,28 @@ export function AgentConfigDialog(props: {
             <Show when={belowFloor()}>
               <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
             </Show>
+            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
+              {language.t("agentConfig.superior")}
+            </label>
+            <select
+              id="agent-superior"
+              aria-label={language.t("agentConfig.superior")}
+              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+              onChange={(event) => setSuperior(event.currentTarget.value)}
+            >
+              <option value="" selected={superiorValue() === "" || superiorValue() === GOVERNING_ID}>
+                {language.t("agentConfig.superiorNova")}
+              </option>
+              <For each={superiorCandidates(agents() ?? [], props.agentID ?? "")}>
+                {(candidate) => (
+                  <option value={candidate.id} selected={superiorValue() === candidate.id}>
+                    {candidate.name?.trim() || displayName(candidate.id)} ·{" "}
+                    {candidate.title ?? language.t("agentConfig.noTitle")}
+                  </option>
+                )}
+              </For>
+            </select>
+            <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
           </section>
 
           <section class="mt-5">
@@ -1122,7 +1209,9 @@ export function AgentConfigDialog(props: {
               // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
               // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
               // without it a save fired before the roster landed wrote the fields it had not read yet.
-              disabled={!dirty() || saving() || props.agentID === undefined || agent() === undefined}
+              disabled={
+                !dirty() || !reasoningBudgetValid() || saving() || props.agentID === undefined || agent() === undefined
+              }
               onClick={() => void save()}
             >
               {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}

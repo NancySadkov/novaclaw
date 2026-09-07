@@ -66,6 +66,7 @@ export const listAgents = async (sdk: {
         title: text("title"),
         description: text("description"),
         personality: text("personality"),
+        superior: text("superior"),
         system: text("system"),
         ...(typeof (row["model"] as { providerID?: unknown } | undefined)?.providerID === "string"
           ? { model: row["model"] as { providerID: string; id: string } }

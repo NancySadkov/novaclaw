@@ -39,6 +39,7 @@ describe("what a capped turn is offered", () => {
     expect(capped).toContain("list")
     expect(capped).toContain("hire")
     expect(capped).toContain("retire")
+    expect(capped).toContain("set_superior")
   })
 })
 

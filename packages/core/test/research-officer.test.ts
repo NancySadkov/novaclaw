@@ -1,17 +1,17 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { AgentV2 } from "@novaclaw/core/agent"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { AgentPlugin } from "@novaclaw/core/plugin/agent"
-import { AbsolutePath } from "@novaclaw/core/schema"
 import { SkillBuiltin } from "@novaclaw/core/skill/builtin"
-import { location } from "./fixture/location"
+import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
-import { agentHost, host } from "./plugin/host"
 
 /**
  * THE RESEARCH OFFICER, AND THE SKILL IT STANDS ON.
@@ -27,14 +27,18 @@ import { agentHost, host } from "./plugin/host"
  * "the model didn't use the skill", which reads like a model problem.
  */
 
-const at = Location.Service.of(location({ directory: AbsolutePath.make("/project") }))
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([AgentV2.node, FSUtil.node])))
+const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, AgentConfigStore.node, FSUtil.node])))
 
-/** Build the built-in roster with the REAL plugin — no hand-written fixture of what it registers. */
-const builtins = Effect.gen(function* () {
-  const agent = yield* AgentV2.Service
-  yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(Effect.provideService(Location.Service, at))
-  return new Map((yield* agent.all()).map((item) => [String(item.id), item]))
+/** Seed the REAL clean-install roster, then read the researcher's folded config. */
+const seededResearcher = Effect.gen(function* () {
+  const store = yield* AgentConfigStore.Service
+  const dir = yield* Effect.promise(() => tmpdir())
+  yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+  const globalDir = path.join(dir.path, "global")
+  yield* Effect.promise(() => fs.mkdir(globalDir, { recursive: true }))
+  yield* AgentConfigSeed.seedFromDirectory(globalDir)
+  const layers = (yield* store.agents())["researcher"]
+  return layers === undefined ? undefined : AgentConfigStore.fold(layers)
 })
 
 describe("the bundled research skill", () => {
@@ -68,39 +72,28 @@ describe("the bundled research skill", () => {
 })
 
 describe("the research officer", () => {
-  it.effect("🔴 is REGISTERED by the plugin, like the other shipped agents", () =>
+  it.effect("🔴 is seeded as a PRIMARY officer on a clean install", () =>
     Effect.gen(function* () {
-      const roster = yield* builtins
-      const researcher = roster.get("researcher")
+      const researcher = yield* seededResearcher
       expect(researcher).toBeDefined()
-      expect(researcher!.mode).toBe("subagent")
-      expect(String(researcher!.description)).toContain("EVIDENCE")
+      expect(researcher!.mode).toBe("primary")
+      expect(researcher!.title).toBe("Research Officer")
     }),
   )
 
-  it.effect("🔴 may actually INVOKE the skill — the prompt asks, the charter permits", () =>
+  it.effect("🔴 may invoke the bundled skill as well as carrying its doctrine", () =>
     Effect.gen(function* () {
-      const roster = yield* builtins
-      const rules = roster.get("researcher")!.permissions as PermissionV2.Ruleset
+      const researcher = (yield* seededResearcher)!
+      const rules = researcher.permissions as PermissionV2.Ruleset
       expect(PermissionV2.evaluate("skill", SkillBuiltin.RESEARCH_SKILL, rules).effect).toBe("allow")
     }),
   )
 
-  it.effect("⚠️ its prompt NAMES the skill that is actually bundled", () =>
+  it.effect("⚠️ the skill body itself is the officer's personality prompt", () =>
     Effect.gen(function* () {
-      // The rename guard. A prompt naming `research` while the bundle ships `research-v2` is a
-      // failure no type checks and no test of either half alone can see.
-      const roster = yield* builtins
-      const system = String(roster.get("researcher")!.system ?? "")
-      expect(system).toContain(SkillBuiltin.RESEARCH_SKILL)
-      expect(system.length).toBeGreaterThan(200)
-    }),
-  )
-
-  it.effect("⚠️ shipping it did not disturb the other built-ins", () =>
-    Effect.gen(function* () {
-      const roster = yield* builtins
-      for (const id of ["build", "plan", "nova", "general", "explore"]) expect(roster.has(id)).toBe(true)
+      const researcher = (yield* seededResearcher)!
+      const skill = SkillBuiltin.ALL.find((item) => item.name === SkillBuiltin.RESEARCH_SKILL)!
+      expect(researcher.personality).toBe(skill.content)
     }),
   )
 })

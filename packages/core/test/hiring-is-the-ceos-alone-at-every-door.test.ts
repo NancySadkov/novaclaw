@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 
 /**
  * HIRING IS THE CEO'S ALONE — CHECKED WHERE THE HOST DECIDES, NOT WHERE THE WORKER DOES.
@@ -78,5 +79,86 @@ describe("the rule itself", () => {
     // `tool/colleague.ts` imports the handoff, so the handoff importing the tool would close a cycle
     // — which is why the rule moved rather than being copied.
     expect(AgentV2.mayStaff("nova")).toBe(true)
+  })
+})
+
+describe("who may organize reporting lines", () => {
+  const record = (id: string, superior?: string) =>
+    AgentV2.Info.make({
+      id: AgentV2.ID.make(id),
+      request: { headers: {}, body: {} },
+      mode: "primary",
+      hidden: false,
+      permissions: [],
+      ...(superior === undefined ? {} : { superior: AgentV2.ID.make(superior) }),
+    })
+
+  const organize = (by: string, colleague: string, superior: string) => {
+    let written: ConfigAgent.Info[] | undefined
+    const handoff = ColleagueHandoff.fromParts({
+      db: undefined as never,
+      events: undefined as never,
+      session: () => Effect.succeed({ agent: by }),
+      wake: () => Effect.succeed(true),
+      store: {
+        agents: () =>
+          Effect.succeed({
+            iris: [ConfigAgent.Info.make({ name: "Iris", mode: "primary" })],
+            theron: [ConfigAgent.Info.make({ name: "Theron", mode: "primary" })],
+          }),
+        setLayers: (_id: string, layers: ConfigAgent.Info[]) => Effect.sync(() => (written = layers)),
+      } as never,
+      refresh: Effect.void,
+      roster: Effect.succeed([record("nova"), record("iris"), record("theron")]),
+      takenNames: Effect.succeed([]),
+      forget: () => Effect.void,
+    })
+    return Effect.runPromise(handoff.setSuperior({ colleague, superior, bySession: "ses" as never })).then(
+      (changed) => ({
+        changed,
+        written,
+      }),
+    )
+  }
+
+  test("Nova can assign an intermediate superior and an officer cannot", async () => {
+    const allowed = await organize("nova", "iris", "theron")
+    expect(allowed.changed).toBe(true)
+    expect(String(allowed.written?.[0]?.superior)).toBe("theron")
+    expect((await organize("wren", "iris", "theron")).changed).toBe(false)
+  })
+
+  test("Nova cannot organize a self-line or put Nova under an officer", async () => {
+    expect((await organize("nova", "iris", "iris")).changed).toBe(false)
+    expect((await organize("nova", "nova", "iris")).changed).toBe(false)
+  })
+
+  test("retiring a superior clears each direct report's override before removing it", async () => {
+    const writes: Array<{ id: string; layers: ConfigAgent.Info[] }> = []
+    const removed: string[] = []
+    const handoff = ColleagueHandoff.fromParts({
+      db: undefined as never,
+      events: undefined as never,
+      session: () => Effect.succeed({ agent: "nova" }),
+      wake: () => Effect.succeed(true),
+      store: {
+        agents: () =>
+          Effect.succeed({
+            iris: [ConfigAgent.Info.make({ name: "Iris", mode: "primary", superior: "theron" })],
+            theron: [ConfigAgent.Info.make({ name: "Theron", mode: "primary" })],
+          }),
+        setLayers: (id: string, layers: ConfigAgent.Info[]) => Effect.sync(() => writes.push({ id, layers })),
+        removeAgent: (id: string) => Effect.sync(() => removed.push(id)),
+      } as never,
+      refresh: Effect.void,
+      takenNames: Effect.succeed([]),
+      forget: () => Effect.void,
+    })
+
+    expect(await Effect.runPromise(handoff.retire("theron"))).toBe(true)
+    expect(writes).toHaveLength(1)
+    expect(writes[0]?.id).toBe("iris")
+    expect(writes[0]?.layers[0]?.superior).toBeUndefined()
+    expect(removed).toEqual(["theron"])
   })
 })

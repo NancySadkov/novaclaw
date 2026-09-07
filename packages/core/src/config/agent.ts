@@ -3,7 +3,7 @@ export * as ConfigAgent from "./agent"
 import { Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { ConfigProvider } from "./provider"
-import { PositiveInt } from "../schema"
+import { NonNegativeInt, PositiveInt } from "../schema"
 import { ModelV2 } from "../model"
 
 export const Color = Schema.Union([
@@ -42,6 +42,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   /** Who the agent IS, as opposed to what it does — layered into the prompt ahead of the job. Kept a
    *  separate field from `system` so the user can restyle a colleague without rewriting its remit. */
   personality: Schema.String.pipe(Schema.optional),
+  /** The officer this colleague reports to. Absent = Nova, the immutable root. */
+  superior: Schema.String.pipe(Schema.optional),
   /** The roster face: an emoji or a short glyph token. Colour stays in `color`. */
   avatar: Schema.String.pipe(Schema.optional),
   memory: Memory.pipe(Schema.optional),
@@ -118,6 +120,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * part of how that officer works, while the instance setting remains the fleet-wide fallback.
    */
   reground: Schema.Boolean.pipe(Schema.optional),
+  /** Per-turn reasoning-token ceiling for this officer. Absent = the selected model's budget;
+   *  `0` structurally disables reasoning for the officer. */
+  reasoningBudget: NonNegativeInt.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

@@ -144,6 +144,17 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
       if (!Exit.isSuccess(retired)) return reject()
       return { ...identity(input.message), type: "colleague-result" as const, outcome: "retired" as const }
     }
+    if (request.op === "set_superior") {
+      const organized = yield* input.colleague
+        .setSuperior({ colleague: request.colleague, superior: request.superior, bySession: input.lease.sessionID })
+        .pipe(Effect.exit)
+      if (!Exit.isSuccess(organized)) return reject()
+      return {
+        ...identity(input.message),
+        type: "colleague-result" as const,
+        outcome: organized.value ? ("organized" as const) : ("organization-refused" as const),
+      }
+    }
     if (request.op === "ask_group") {
       const group = yield* input.colleague
         .deliverGroup({ from: input.lease.sessionID, colleagues: request.colleagues, message: request.message })

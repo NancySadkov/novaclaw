@@ -200,6 +200,7 @@ describe("AgentConfigDialog renders", () => {
     expect(dialogText()).toContain("agentConfig.governingLocked")
     expect(saveButton()).toBeUndefined()
     expect(document.querySelector("input:not([disabled]), textarea:not([disabled]), select:not([disabled])")).toBeNull()
+    expect(dialogText()).toContain("agentConfig.clone")
     expect(writes).toEqual([])
     expect(dialogText()).not.toContain("NOTHING was written")
   })
@@ -267,13 +268,45 @@ describe("AgentConfigDialog renders", () => {
     name.dispatchEvent(new Event("input", { bubbles: true }))
     expect(saveButton()!.disabled).toBe(false)
   })
+
+  test("an officer can set zero as a real reasoning override", async () => {
+    const writes: unknown[] = []
+    mount({ agents: [AGENT], write: (patch) => writes.push(patch) })
+    await settle()
+    const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
+    budget.value = "0"
+    budget.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(dialogText()).toContain("agentConfig.reasoningBudgetOff")
+    saveButton()!.click()
+    await settle()
+    expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.reasoningBudget).toBe(0)
+  })
+
+  test("an officer can report through another officer, while descendants cannot create a cycle", async () => {
+    const writes: unknown[] = []
+    const iris = { ...AGENT, id: "iris", name: "Iris", superior: "theron" }
+    const wren = { ...AGENT, id: "wren", name: "Wren" }
+    mount({ agents: [AGENT, iris, wren], write: (patch) => writes.push(patch) })
+    await settle()
+    const superior = document.querySelector("#agent-superior") as HTMLSelectElement
+    expect([...superior.options].map((option) => option.value)).not.toContain("iris")
+    const nova = { ...AGENT, id: "nova", name: "Nova" }
+    // Nova is represented by the default option rather than a duplicate roster choice.
+    expect([...superior.options].filter((option) => option.value === "")).toHaveLength(1)
+    expect(nova.id).toBe("nova")
+    superior.value = "wren"
+    superior.dispatchEvent(new Event("change", { bubbles: true }))
+    saveButton()!.click()
+    await settle()
+    expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.superior).toBe("wren")
+  })
 })
 
 test("returning a colleague to default model and no requirement deletes both overrides", async () => {
   const writes: unknown[] = []
   const removals: string[][][] = []
   mount({
-    agents: [{ ...AGENT, config: { needsTier: "medium" } }],
+    agents: [{ ...AGENT, config: { needsTier: "medium", reasoningBudget: 512 } }],
     write: (patch) => writes.push(patch),
     remove: (paths) => removals.push(paths),
   })
@@ -284,6 +317,9 @@ test("returning a colleague to default model and no requirement deletes both ove
     select.value = ""
     select.dispatchEvent(new Event("change", { bubbles: true }))
   }
+  const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
+  budget.value = ""
+  budget.dispatchEvent(new Event("input", { bubbles: true }))
   saveButton()!.click()
   await settle()
   const patch = writes[0] as { agents: { theron: Record<string, unknown> } }
@@ -293,6 +329,7 @@ test("returning a colleague to default model and no requirement deletes both ove
     [
       ["agents", "theron", "model"],
       ["agents", "theron", "needsTier"],
+      ["agents", "theron", "reasoningBudget"],
     ],
   ])
 })

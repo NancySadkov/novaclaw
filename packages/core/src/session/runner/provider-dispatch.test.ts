@@ -44,6 +44,30 @@ const immediateTransient = () =>
   })
 
 describe("ProviderDispatch", () => {
+  test("zero-budget officers disable reasoning without dropping existing provider options", () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const request = ProviderDispatch.withoutReasoning(
+      LLM.request({
+        model,
+        messages: [Message.user("classify this")],
+        providerOptions: {
+          openai: { promptCacheKey: "stable" },
+          gemini: { thinkingConfig: { includeThoughts: true } },
+          anthropic: { thinking: { type: "enabled", budgetTokens: 1024 }, beta: "keep" },
+        },
+        http: { body: { temperature: 0, chat_template_kwargs: { custom: true } } },
+      }),
+    )
+
+    expect(request.providerOptions?.openai).toMatchObject({ promptCacheKey: "stable", reasoningEffort: "none" })
+    expect(request.providerOptions?.anthropic).toEqual({ thinking: { type: "disabled" }, beta: "keep" })
+    expect(request.providerOptions?.gemini?.thinkingConfig).toEqual({ thinkingBudget: 0, includeThoughts: false })
+    expect(request.http?.body).toMatchObject({
+      temperature: 0,
+      chat_template_kwargs: { custom: true, enable_thinking: false },
+    })
+  })
+
   test("normal and Strict turns consume all three shared dispatch stages", () => {
     for (const name of ["llm.ts", "strict-drain.ts"]) {
       const source = fs.readFileSync(path.join(import.meta.dir, name), "utf8")
@@ -254,8 +278,10 @@ describe("ProviderDispatch", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
     const output: LLMEvent[] = []
-    const observed: Array<{ usage: Usage | undefined; providerMetadata: Readonly<Record<string, unknown>> | undefined }> =
-      []
+    const observed: Array<{
+      usage: Usage | undefined
+      providerMetadata: Readonly<Record<string, unknown>> | undefined
+    }> = []
     const firstUsage = new Usage({
       inputTokens: 120,
       outputTokens: 20,
@@ -470,9 +496,7 @@ describe("ProviderDispatch", () => {
           slot: { sessionID, deviceKey: "device", sessionClass: "interactive" },
           maxAttempts: 3,
           hasOutput: () => false,
-          attempt: executor
-            .execute(HttpClientRequest.get("https://provider.test/v1/chat"))
-            .pipe(Effect.asVoid),
+          attempt: executor.execute(HttpClientRequest.get("https://provider.test/v1/chat")).pipe(Effect.asVoid),
         })
       }).pipe(Effect.provide(executorLayer)),
     )

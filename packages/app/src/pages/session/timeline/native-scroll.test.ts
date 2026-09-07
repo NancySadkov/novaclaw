@@ -18,23 +18,23 @@ test("nextPinned pins when scrolled to the bottom", () => {
 })
 
 test("a near-bottom move toward history cannot undo explicit user unpinning", () => {
-  expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 360, clientHeight: 600 }, true)).toBe(false)
+  expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 360, clientHeight: 600 })).toBe(false)
   expect(nextPinned(false, { scrollHeight: 1000, scrollTop: 360, clientHeight: 600 })).toBe(false)
 })
 
-test("an upward viewport move revokes the pin as soon as it leaves the exact bottom", () => {
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 399, clientHeight: 600 }, true)).toBe(true)
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 398, clientHeight: 600 }, true)).toBe(false)
+test("a delayed browser viewport move cannot revoke user intent", () => {
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 399, clientHeight: 600 }, true, true)).toBe(true)
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 0, clientHeight: 600 }, true, true)).toBe(true)
 })
 
-test("a browser clamp during a DOM layout transaction does not revoke the pin", () => {
-  expect(nextPinned(true, { scrollHeight: 600, scrollTop: 0, clientHeight: 600 }, true, true)).toBe(true)
+test("a scrollbar move after layout settles still revokes the pin", () => {
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 200, clientHeight: 600 }, true, false)).toBe(false)
 })
 
 test("nextPinned keeps the current pin on a zero-height (headless) layout", () => {
   // scrollHeight huge, clientHeight 0 → isAtBottom would say false, but we must not unpin.
-  expect(nextPinned(true, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 }, true)).toBe(true)
-  expect(nextPinned(false, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 }, true)).toBe(false)
+  expect(nextPinned(true, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(true)
+  expect(nextPinned(false, { scrollHeight: 166332, scrollTop: 0, clientHeight: 0 })).toBe(false)
 })
 
 test("only history-directed keys explicitly unpin", () => {

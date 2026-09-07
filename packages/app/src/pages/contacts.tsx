@@ -12,7 +12,7 @@ import { hiddenRoster, roster, searchRoster, type ContactView } from "@/apps/con
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
-import { cloneAgent } from "@/apps/agent-clone"
+import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { describeFailure } from "@/utils/failure-copy"
@@ -216,7 +216,14 @@ export function ContactsPage() {
       showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
       refetchAgents()
     } catch (error) {
-      showToast({ variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) })
+      showToast(
+        isNovaCloneRefusal(error)
+          ? {
+              title: language.t("agentConfig.cloneNovaTitle"),
+              description: language.t("agentConfig.cloneNovaDescription"),
+            }
+          : { variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) },
+      )
     } finally {
       setCloning(undefined)
     }

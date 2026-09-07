@@ -138,7 +138,6 @@ describe("AgentV2", () => {
         // is the research commandments. It is held to the same floor as every other built-in: the ONE
         // thing its charter adds is `{action:"skill", resource:"research"}`, which is narrow by
         // construction and grants no ambient authority over what it may run.
-        "researcher",
         "summary",
         "title",
       ])

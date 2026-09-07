@@ -18,11 +18,10 @@ export function isAtBottom(m: ScrollMetrics, tolerance = 1): boolean {
 
 /**
  * The next `pinned` state after a scroll event. A pin is USER INTENT, not geometry: browser scroll
- * anchoring, a fold collapsing, or a route remount can all move `scrollTop` and emit the same event
- * as a wheel. Layout movement at the bottom remains at the exact bottom, while native scrollbar
- * chrome exposes no dependable pointer event to the DOM and is observable only as an upward
- * `scrollTop` transition. That transition revokes the pin as soon as it leaves the exact bottom,
- * unless a DOM layout transaction owns the movement.
+ * anchoring, a fold collapsing, history reconciliation, and a route remount can all move
+ * `scrollTop` and emit the same event as a wheel — sometimes several frames after the DOM mutation.
+ * Therefore geometry may revoke a pin only after the DOM has stayed quiet for the layout ownership
+ * window. Revocation otherwise belongs to the wheel/touch/key handlers in the controller below.
  * Once user intent has unpinned the view, proximity may not overwrite it: the reader re-pins only
  * on actually reaching the bottom (with one pixel of tolerance for fractional layout geometry).
  */
@@ -57,13 +56,15 @@ export function createBottomPinController(input: {
 }) {
   let touchY: number | undefined
   let lastScrollTop = input.scroller.scrollTop
-  let layoutPending = false
+  // A scroll notification can trail the mutation that caused it by several frames. One RAF was
+  // too short: history reconciliation arrived seconds after navigation, briefly collapsed the DOM,
+  // then its delayed clamp revoked the pin after the frame flag had already cleared.
+  const LAYOUT_SETTLE_MS = 1_000
+  let layoutUntil = performance.now() + LAYOUT_SETTLE_MS
   let layoutFrame: number | undefined
   const stick = () => {
     if (!input.pinned()) return
     input.scroller.scrollTop = input.scroller.scrollHeight
-    // A controller-owned write emits `scroll` later. Advance the baseline now so that event cannot
-    // be mistaken for a scrollbar gesture.
     lastScrollTop = input.scroller.scrollTop
   }
   const scrollToBottom = () => {
@@ -72,7 +73,7 @@ export function createBottomPinController(input: {
   }
   const onScroll = () => {
     const top = input.scroller.scrollTop
-    const next = nextPinned(input.pinned(), input.scroller, top < lastScrollTop - 1, layoutPending)
+    const next = nextPinned(input.pinned(), input.scroller, top < lastScrollTop - 1, performance.now() < layoutUntil)
     lastScrollTop = top
     input.setPinned(next)
     if (next) stick()
@@ -94,6 +95,12 @@ export function createBottomPinController(input: {
   const onKeyDown = (event: KeyboardEvent) => {
     if (keyboardUnpins(event.key)) input.setPinned(false)
   }
+  // Pointer events on the scrollbar target the scroll container itself; content clicks target a
+  // descendant. This gives native scrollbar dragging an explicit intent seam without treating a
+  // later browser-generated scroll event as proof that the user moved it.
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.target === input.scroller) input.setPinned(false)
+  }
 
   input.scroller.addEventListener("scroll", onScroll)
   input.scroller.addEventListener("wheel", onWheel)
@@ -101,6 +108,7 @@ export function createBottomPinController(input: {
   input.scroller.addEventListener("touchmove", onTouchMove)
   input.scroller.addEventListener("touchend", onTouchEnd)
   input.scroller.addEventListener("keydown", onKeyDown)
+  input.scroller.addEventListener("pointerdown", onPointerDown)
   const resizeObserver = new ResizeObserver(stick)
   resizeObserver.observe(input.content)
   // A history reconcile can replace DOM rows with equal-height rows in one rendering turn. The
@@ -108,12 +116,11 @@ export function createBottomPinController(input: {
   // may already have clamped scrollTop while the old rows were absent. MutationObserver is the only
   // seam that sees that layout transaction before its deferred `scroll` event arrives.
   const mutationObserver = new MutationObserver(() => {
-    layoutPending = true
+    layoutUntil = performance.now() + LAYOUT_SETTLE_MS
     if (layoutFrame !== undefined) cancelAnimationFrame(layoutFrame)
     layoutFrame = requestAnimationFrame(() => {
       layoutFrame = undefined
       stick()
-      layoutPending = false
     })
   })
   mutationObserver.observe(input.content, { childList: true, subtree: true, characterData: true, attributes: true })
@@ -136,6 +143,7 @@ export function createBottomPinController(input: {
       input.scroller.removeEventListener("touchmove", onTouchMove)
       input.scroller.removeEventListener("touchend", onTouchEnd)
       input.scroller.removeEventListener("keydown", onKeyDown)
+      input.scroller.removeEventListener("pointerdown", onPointerDown)
     },
   }
 }

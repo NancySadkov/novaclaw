@@ -218,6 +218,12 @@ export interface Interface {
      */
     readonly bySession?: SessionSchema.ID | undefined
   }) => Effect.Effect<Hired>
+  /** Change one officer's reporting line. Host-authoritative for the same reason hiring is. */
+  readonly setSuperior: (input: {
+    readonly colleague: string
+    readonly superior: string
+    readonly bySession?: SessionSchema.ID | undefined
+  }) => Effect.Effect<boolean>
   /**
    * Retire a colleague: remove the role, forget what it spent, and CLEAR ITS CABINET.
    *
@@ -433,6 +439,8 @@ export const fromParts = (input: {
    * Absent means "cannot tell", and a hand-off is DELIVERED rather than refused on a maybe.
    */
   readonly paused?: (colleague: string) => Effect.Effect<boolean>
+  /** Live roster used to reject missing, self-referential and cyclic reporting lines. */
+  readonly roster?: Effect.Effect<ReadonlyArray<AgentV2.Info>>
 }): Interface => ({
   hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
     // 🔴 The org chart itself, enforced where every door reaches it — see `by` on the interface.
@@ -460,6 +468,24 @@ export const fromParts = (input: {
     yield* input.refresh
     return { id: drawn, name: display }
   }),
+  setSuperior: Effect.fn("ColleagueHandoff.setSuperior")(function* (request) {
+    const staffing = request.bySession === undefined ? undefined : (yield* input.session(request.bySession))?.agent
+    if (!AgentV2.mayStaff(staffing)) return false
+    if (AgentV2.isProtected(request.colleague) || request.colleague === request.superior || input.roster === undefined)
+      return false
+    const roster = yield* input.roster
+    const target = roster.find((agent) => String(agent.id) === request.colleague)
+    const resolved = AgentV2.resolveSuperior(request.colleague, request.superior, roster)
+    if (target === undefined || resolved === undefined || String(resolved.id) !== request.superior) return false
+    const layers = (yield* input.store.agents())[request.colleague] ?? []
+    const current = AgentConfigStore.fold(layers)
+    if (current === undefined) return false
+    yield* input.store.setLayers(request.colleague, [
+      Schema.decodeUnknownSync(ConfigAgent.Info)({ ...current, superior: request.superior }),
+    ])
+    yield* input.refresh
+    return true
+  }),
   retire: Effect.fn("ColleagueHandoff.retire")(function* (colleague) {
     // 🔴 THE GOVERNING AGENT IS NOT RETIRABLE, checked in the SHARED implementation rather than at
     // each door. AGENTS.md: *"the charter is not editable from inside … an instance whose governing
@@ -474,6 +500,15 @@ export const fromParts = (input: {
     // maps a non-success onto its refusal, and the tool door — which is where a model actually meets
     // this — still produces the sentence explaining why.
     if (AgentV2.isProtected(colleague)) return false
+    // A reporting line may not dangle. Reassign direct reports to the default root before the
+    // superior disappears; runtime fallback is a safety net, not a substitute for clean config.
+    const configured = yield* input.store.agents()
+    for (const [id, layers] of Object.entries(configured)) {
+      const current = AgentConfigStore.fold(layers)
+      if (current?.superior !== colleague) continue
+      const { superior: _retired, ...rest } = current
+      yield* input.store.setLayers(id, [Schema.decodeUnknownSync(ConfigAgent.Info)(rest)])
+    }
     yield* input.store.removeAgent(colleague)
     yield* input.forget(colleague)
     yield* input.refresh
@@ -562,7 +597,11 @@ export const fromParts = (input: {
       }
     }
     if (ColleagueBound.exceedsHopCap(hop))
-      return { delivered: false, started: false, refused: ColleagueBound.hopRefusal({ colleague: request.colleague, hop }) }
+      return {
+        delivered: false,
+        started: false,
+        refused: ColleagueBound.hopRefusal({ colleague: request.colleague, hop }),
+      }
     const now = yield* Clock.currentTimeMillis
     // Keyed on the sender's SESSION, which is one chat per colleague — so this is per-colleague
     // without needing the agent id, and a colleague with no agent row still gets a window.
@@ -737,6 +776,7 @@ export const layer = Layer.effect(
         wake: (id) => wake.wake(id),
         store,
         refresh: agents.reload(),
+        roster: agents.all(),
         forget: (colleague) =>
           AgentRetire.everything({ db, events, memory, worldMemory, agent: colleague, at: Date.now() }),
         // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,

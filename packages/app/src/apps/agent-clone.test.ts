@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { cloneAgent, clonedFields, NOT_CLONED, planClone } from "./agent-clone"
+import { cloneAgent, clonedFields, NOT_CLONED, NovaCloneRefusal, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
 const source: AgentLike = {
@@ -16,6 +16,23 @@ const source: AgentLike = {
 }
 
 describe("what a clone inherits", () => {
+  test("Nova cannot be cloned through planning or persistence", async () => {
+    const nova: AgentLike = { ...source, id: "nova", name: "Nova" }
+    expect(() => planClone({ source: nova, taken: [], random: () => 0 })).toThrow(NovaCloneRefusal)
+    let wrote = false
+    await expect(
+      cloneAgent({
+        source: nova,
+        roster: [nova],
+        random: () => 0,
+        updateConfig: async () => {
+          wrote = true
+        },
+      }),
+    ).rejects.toThrow("deploy a separate NovaClaw instance")
+    expect(wrote).toBe(false)
+  })
+
   test("every surface writes the same planned clone patch", async () => {
     const writes: unknown[] = []
     const clone = await cloneAgent({

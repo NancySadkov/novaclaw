@@ -144,6 +144,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.name !== undefined) agent.name = item.name
     if (item.title !== undefined) agent.title = item.title
     if (item.personality !== undefined) agent.personality = item.personality
+    if (item.superior !== undefined) agent.superior = AgentV2.ID.make(item.superior)
     if (item.avatar !== undefined) agent.avatar = item.avatar
     if (item.memory !== undefined) agent.memory = item.memory
     if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
@@ -158,6 +159,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.strict !== undefined) agent.strict = item.strict
     if (item.shortChat !== undefined) agent.shortChat = item.shortChat
     if (item.reground !== undefined) agent.reground = item.reground
+    if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

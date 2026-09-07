@@ -292,6 +292,18 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           reply.outcome === "retired" ? Effect.succeed(true) : Effect.die(unavailable("colleague retire")),
         ),
       ),
+    setSuperior: (request) =>
+      Effect.promise(() =>
+        capabilities.colleague({ op: "set_superior", colleague: request.colleague, superior: request.superior }),
+      ).pipe(
+        Effect.flatMap((reply) =>
+          reply.outcome === "organized"
+            ? Effect.succeed(true)
+            : reply.outcome === "organization-refused"
+              ? Effect.succeed(false)
+              : Effect.die(unavailable("colleague organization")),
+        ),
+      ),
     deliver: (request) =>
       Effect.promise(() =>
         capabilities.colleague({ op: "ask", colleague: request.colleague, message: request.message }),

@@ -5,7 +5,7 @@ import { optional } from "./schema"
 import { Model } from "./model"
 import { Permission } from "./permission"
 import { Provider } from "./provider"
-import { PositiveInt, statics } from "./schema"
+import { NonNegativeInt, PositiveInt, statics } from "./schema"
 
 export const ID = Schema.String.pipe(Schema.brand("AgentV2.ID"))
 export type ID = typeof ID.Type
@@ -34,6 +34,8 @@ export const Info = Schema.Struct({
   name: Schema.String.pipe(optional),
   title: Schema.String.pipe(optional),
   personality: Schema.String.pipe(optional),
+  /** Reporting line. Absent resolves to Nova; the runtime rejects self/cyclic lines. */
+  superior: ID.pipe(optional),
   avatar: Schema.String.pipe(optional),
   /** `own` = private `agent:<id>` scope + `global`; `none` = a throwaway with no memory at all. */
   memory: Memory.pipe(optional),
@@ -88,6 +90,8 @@ export const Info = Schema.Struct({
   shortChat: Schema.Boolean.pipe(optional),
   /** Finish re-grounding stance for this colleague; absent = the instance harness default. */
   reground: Schema.Boolean.pipe(optional),
+  /** Per-turn reasoning-token ceiling. Absent = selected model default; 0 = reasoning disabled. */
+  reasoningBudget: NonNegativeInt.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   /**

@@ -2784,6 +2784,9 @@ export const dict = {
   "agentConfig.cloning": "Cloning…",
   "agentConfig.clonedTitle": "Hired {{name}} — same brief, its own memory",
   "agentConfig.cloneFailed": "Could not clone this colleague",
+  "agentConfig.cloneNovaTitle": "One Nova per NovaClaw",
+  "agentConfig.cloneNovaDescription":
+    "Nova is this instance's single CEO. If you want another Nova, deploy a separate NovaClaw instance.",
   "agentConfig.retire": "Retire",
   "agentConfig.retiring": "Retiring…",
   // The door into ONE colleague's cabinet, opened from that colleague. Two spellings because a count
@@ -2845,6 +2848,15 @@ export const dict = {
   "agentHelp.chat.body":
     "A colleague has exactly one conversation, so there is no list to lose things in. Clearing it puts the conversation away and starts fresh — the colleague, its brief and its memories all stay. When a chat gets long it is summarised to keep going, and by default the older part is kept in the colleague's memory so it can still look things up.",
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
+  "agentConfig.reasoningBudget": "Reasoning budget",
+  "agentConfig.reasoningBudgetModel": "Model default",
+  "agentConfig.reasoningBudgetDefault": "Uses the selected model's reasoning budget.",
+  "agentConfig.reasoningBudgetOff": "Reasoning is off — answer directly.",
+  "agentConfig.reasoningBudgetCustom": "Wrap up reasoning after about {{tokens}} tokens, then answer.",
+  "agentConfig.superior": "Superior",
+  "agentConfig.superiorNova": "Nova — CEO (default)",
+  "agentConfig.superiorDescription":
+    "This colleague asks its superior to resolve overlapping work and conflicts. Reporting lines cannot form a loop.",
   "agentConfig.needsTier": "This job needs at least",
   "agentConfig.needsTierNone": "No requirement — any model is fine",
   "agentConfig.needsTierBelow":

@@ -148,6 +148,17 @@ export function NativeTimeline(props: {
     if (pinController) pinController.scrollToBottom()
     else setPinned(true)
   }
+  // Solid reuses this component when one chat route changes to another, so its signal is not a
+  // per-chat value unless we make it one. A reader who scrolled up in chat A must not make chat B's
+  // asynchronous history load start unpinned and strand it at B's first message.
+  let pinnedSession: string | undefined
+  createEffect(() => {
+    const sid = props.sessionID
+    if (sid === pinnedSession) return
+    pinnedSession = sid
+    scrollToBottom()
+    queueMicrotask(scrollToBottom)
+  })
 
   const navigateUser = (offset: number) => {
     const root = scroller

@@ -66,6 +66,7 @@ describe("the lines a colleague reads about itself", () => {
     })
     expect(text).toContain("Qwen3-Coder (spark/qwen3-coder-30b)")
     expect(text).toContain("no model pin")
+    expect(text).toContain("current default model")
     expect(text).toContain("resolved for this turn")
   })
 

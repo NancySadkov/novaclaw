@@ -526,6 +526,29 @@ export const agentIdentitySection = (profile: AgentIdentityProfile): string => {
   ].join("\n")
 }
 
+/** The immutable chain of command for roster officers.
+ *
+ * This is kernel material, not an editable personality: an officer must not be able to resolve a
+ * collision by overpowering a peer, and Nova's coordinating authority must not be cloneable as text. */
+export const organizationSection = (input: {
+  readonly agentID: string
+  readonly officer: boolean
+  readonly superior?: { readonly id: string; readonly name?: string | undefined } | undefined
+}): string | undefined => {
+  if (input.agentID === "nova")
+    return [
+      "You are this instance's CEO and are accountable only to the user.",
+      "You are responsible for resolving conflicts between officers. When their work overlaps — for example, two officers need to edit the same file — assign ownership or sequence the work so they do not fight, overwrite one another, or stop one another's processes.",
+    ].join("\n")
+  if (!input.officer) return undefined
+  const superior = input.superior?.name?.trim() || input.superior?.id || "Nova"
+  const id = input.superior?.id ?? "nova"
+  return [
+    `Your superior is ${superior} (id \`${id}\`). Nova is the instance's CEO and is ultimately accountable to the user.`,
+    `If your work conflicts with another officer's work, pause the conflicting part and message ${superior} with the \`colleague\` tool. Do not start an edit war, overwrite their work, or stop/kill their processes; ask your superior to assign ownership or sequence the work.`,
+  ].join("\n")
+}
+
 export interface SystemPromptParts {
   /** The role-neutral harness baseline — composed FIRST (persona.ts). */
   readonly persona?: string
@@ -541,6 +564,8 @@ export interface SystemPromptParts {
   readonly agentIdentity?: string
   /** The selected agent's own system prompt. */
   readonly agentSystem?: string
+  /** Immutable officer hierarchy and conflict escalation. */
+  readonly organization?: string
   /** That the tool list is partial (via `toolDiscoverySection`); absent when nothing is deferred. */
   readonly toolDiscovery?: string
   /** That the model can SEE (via `perceptionSection`); absent unless an `image` modality is declared. */
@@ -596,6 +621,9 @@ export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ bl
   { block: "systemPromptOverride", text: parts.systemPromptOverride },
   { block: "agentIdentity", text: parts.agentIdentity },
   { block: "agentSystem", text: parts.agentSystem },
+  // The org chart is a kernel constraint. It lands after editable identity/job text so neither a
+  // personality nor a cloned brief can promote an officer into a second CEO.
+  { block: "organization", text: parts.organization },
   { block: "toolDiscovery", text: parts.toolDiscovery },
   // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can
   // REACH — one about tools, one about perception — and both are kernel material a persona or an

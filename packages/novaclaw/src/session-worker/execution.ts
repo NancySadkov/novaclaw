@@ -320,6 +320,7 @@ export const layer = Layer.effect(
                           // from `GET /api/agent`.
                           store: agentConfig,
                           refresh: roster.reload(),
+                          roster: roster.all(),
                           takenNames: roster
                             .all()
                             .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),

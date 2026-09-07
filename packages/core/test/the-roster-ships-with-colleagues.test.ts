@@ -22,20 +22,19 @@ import { isColleague } from "@novaclaw/core/agent"
  * bug; a colleague you cannot get rid of is not yours.
  */
 
-const SEEDED = ["xenia", "daedalus", "myron"] as const
+const SEEDED = ["xenia", "daedalus", "myron", "researcher"] as const
 
 /** The seed source, read as text: these are config literals, not exported values. */
-const SEED_SOURCE = fs.readFileSync(
-  path.join(import.meta.dir, "..", "src", "agent-config-seed.ts"),
-  "utf8",
-)
+const SEED_SOURCE = fs.readFileSync(path.join(import.meta.dir, "..", "src", "agent-config-seed.ts"), "utf8")
 
 describe("the colleagues that ship", () => {
   test("🔴 their names come from the SAME pool a hire draws from", () => {
     // Not a separate naming scheme. A seeded roster and a hired one must be the same kind of thing,
     // or the address book reads as two lists — and `planHire`'s taken-set, which reads the roster,
     // would not know to avoid these.
-    for (const id of SEEDED) expect(OfficerName.POOL).toContain(id)
+    for (const id of SEEDED.filter((id) => id !== "researcher")) expect(OfficerName.POOL).toContain(id)
+    // Researcher is a named product role, retained from the bundled skill the user sees.
+    expect(SEEDED).toContain("researcher")
   })
 
   test("🔴 each is a COLLEAGUE, not machinery", () => {

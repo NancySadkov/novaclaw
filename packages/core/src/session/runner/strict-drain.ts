@@ -260,7 +260,7 @@ export const make = (dependencies: Dependencies) => {
     // is filed. The seam is correct here, and correct for every in-process executor.
     const slotFor = (attempt: number) => attemptSlot(dispatchSlot, attempt)
     const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
-    const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
+    const thinkingBudget = resolved.reasoningBudget ?? model.route.defaults.limits?.thinkingBudget ?? 0
     const budgetEnforced = stanceOf("thinkingBudget", resolved.thinkingBudget)
     // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
     // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
@@ -275,14 +275,16 @@ export const make = (dependencies: Dependencies) => {
         const text: string[] = []
         const reasoning: string[] = []
         let costTokens: number | undefined
+        const ordinaryRequest = LLM.request({
+          model,
+          system: [SystemPart.make(system)],
+          messages: [Message.user(user)],
+          tools: [],
+          generation: { maxTokens },
+        })
         const prepared = ProviderDispatch.prepare({
-          request: LLM.request({
-            model,
-            system: [SystemPart.make(system)],
-            messages: [Message.user(user)],
-            tools: [],
-            generation: { maxTokens },
-          }),
+          request:
+            resolved.reasoningBudget === 0 ? ProviderDispatch.withoutReasoning(ordinaryRequest) : ordinaryRequest,
           promptCacheKey,
           contextSize: model.route.defaults.limits?.context,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,

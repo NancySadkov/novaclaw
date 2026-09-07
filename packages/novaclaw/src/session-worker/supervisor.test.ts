@@ -357,6 +357,7 @@ test("permission assertions execute in host-owned services", async () => {
             deliver: () => Effect.die("unused"),
             deliverGroup: () => Effect.die("unused"),
             hire: () => Effect.die("unused"),
+            setSuperior: () => Effect.die("unused"),
             retire: () => Effect.die("unused"),
           },
           lease,

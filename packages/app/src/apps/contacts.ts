@@ -23,6 +23,8 @@ export interface AgentLike {
   readonly title?: string | undefined
   readonly description?: string | undefined
   readonly personality?: string | undefined
+  /** Who this officer reports to. Absent means Nova. */
+  readonly superior?: string | undefined
   /** The standing brief. Not shown on a row — it can be pages long — but a CLONE must carry it, or
    *  the copy shares a job title with the original and none of its instructions. */
   readonly system?: string | undefined
@@ -99,6 +101,30 @@ export interface ContactView {
  *  spirit — if the kernel's id ever changes, the roster stops marking anyone as governing, which is
  *  visible rather than silent. */
 export const GOVERNING_ID = "nova"
+
+/** Valid choices for a reporting line. Descendants are excluded so Tune cannot author a cycle. */
+export const superiorCandidates = (roster: readonly AgentLike[], selfID: string): readonly AgentLike[] => {
+  const byID = new Map(roster.map((agent) => [agent.id, agent]))
+  const reachesSelf = (candidate: AgentLike) => {
+    const seen = new Set<string>()
+    let current: AgentLike | undefined = candidate
+    while (current?.superior && !seen.has(current.id)) {
+      if (current.superior === selfID) return true
+      seen.add(current.id)
+      current = byID.get(current.superior)
+    }
+    return false
+  }
+  return roster.filter(
+    (candidate) =>
+      candidate.id !== selfID &&
+      candidate.id !== GOVERNING_ID &&
+      candidate.mode !== "subagent" &&
+      !candidate.hidden &&
+      candidate.paused !== true &&
+      !reachesSelf(candidate),
+  )
+}
 
 /** A slug is not a name. Agent ids are lowercase and hyphenated (`talent-scout`) because they are
  *  keys; the roster shows a person, so the row reads "Talent Scout".

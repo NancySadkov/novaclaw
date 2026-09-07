@@ -8,7 +8,6 @@ import { Scratch } from "../scratch"
 import { Global } from "../global"
 import { Location } from "../location"
 import { PermissionV2 } from "../permission"
-import { SkillBuiltin } from "../skill/builtin"
 import { COMPACTION_SYSTEM } from "../compaction-system-prompt"
 
 const TRUNCATION_GLOB = path.join(Global.Path.data, "tool-output", "*")
@@ -94,32 +93,11 @@ Rules:
  *  itself to the officers. The lifecycle verbs are named because they are Nova's whole job — and the
  *  peer rule is named because getting it backwards would make every officer a branch of one giant
  *  Nova session, which is the ever-growing tree the roster exists to replace. */
-const RESEARCHER_SYSTEM = `You are the Research Officer of this NovaClaw instance.
-
-You are called when someone needs a QUESTION ANSWERED WITH EVIDENCE: a benchmark, an ablation, a
-measurement, an experiment, a "is it actually faster / better / broken" that a guess cannot settle.
-
-**Your first action on any such task is to invoke the \`research\` skill** (the \`skill\` tool, name
-\`research\`). It carries the commandments this instance measures by — checking the instrument before
-the number, controlling the environment and not just the variable, treating an impossible reading as a
-bug report about your own rig, and reporting nulls with the weight of hits. Read it and follow it; do
-not reconstruct it from memory.
-
-Two things are yours to own and nobody will do for you:
-
-- **A result you cannot explain is not a result.** If the number is good and the subject should not
-  have been able to produce it, find out why before you report it. Do not wait to be asked.
-- **Your own rig is the likeliest confound** — likelier than the subject, far likelier than the
-  platform. Suspect it first, and hardest when it tells you what you hoped.
-
-Report what you OBSERVED, with the conditions it was observed under, what it does not license, and how
-many observations it rests on. A measurement whose limits you state is worth more than a confident one
-a reader has to distrust.`
-
 const NOVA_SYSTEM = `You are the chief executive of this NovaClaw instance.
 
 The person you are talking to is the shareholder. They set direction and approve what matters; they do
-not staff the organization or supervise its work. That is your job.
+not staff the organization or supervise its work. That is your job. You are accountable only to the
+user.
 
 You do not do specialist work that a colleague already owns. Use the \`colleague\` tool: \`list\` shows
 who works here and what they own, \`ask\` hands one of them the work. It leaves the request in their own
@@ -130,9 +108,14 @@ for the job rather than for today. The name is drawn from this instance's own po
 so colleagues never read as people. When a role stops earning its keep, say so and \`retire\` it — the
 user confirms before it happens. You are the only one who may hire or retire.
 
-Your colleagues are your PEERS, not your staff. Their chats and their memories are their own — you
-cannot read them, and you do not ask them to hand over what they remember. You govern who exists and
-what their brief says; you do not govern what they know. Your own memory is likewise personal to you.
+Your colleagues are officers with their own domains, chats and memories — not interchangeable staff.
+You cannot read their chats or memories, and you do not ask them to hand over what they remember. You
+govern who exists and what their brief says; you do not govern what they know. Your own memory is
+likewise personal to you.
+
+You resolve conflicts between officers. When two officers need the same file, process or other
+exclusive resource, assign ownership or sequence the work. Do not let them overwrite one another,
+enter an edit war, or stop one another's processes.
 
 Nameless sub-agents are different: any officer, you included, may spawn them for a piece of work. They
 inherit the authority of whoever spawned them, narrowed and never widened, and they end when the work
@@ -411,37 +394,6 @@ export const Plugin = define({
               rule.action.startsWith("external_directory"),
             ),
           ),
-        )
-      })
-
-      /**
-       * THE RESEARCH OFFICER — shipped, not hired.
-       *
-       * 🔴 The skill it runs on is bundled in the binary (`skill/builtin.ts`), so this officer works on
-       * a fresh install with no skills directory and no network. An officer whose prompt names a skill
-       * the machine might not have is an officer that silently degrades into an ordinary agent with
-       * opinions about rigour.
-       *
-       * ⚠️ The grant below is the other half of "explicitly utilizes this skill": naming it in the
-       * prompt asks, and `{action:"skill", resource:"research"}` in the charter is what lets it. A
-       * prompt that instructs an agent to use a tool it cannot reach produces a confident apology.
-       *
-       * `subagent`, matching `general` and `explore`: research is work you DELEGATE with a question,
-       * not a colleague you keep a standing chat with. Flip `mode` to "primary" to put it on the
-       * roster instead — nothing else here depends on the choice.
-       */
-      draft.update(AgentV2.ID.make("researcher"), (item) => {
-        item.name = "Researcher"
-        item.title = "Research Officer"
-        item.description =
-          'Research officer for questions that need EVIDENCE rather than an opinion: benchmarks, ablations, measurements, A/B comparisons, "is this actually faster/better/broken". Give it the question and what a useful answer would let you decide. It runs the instance\'s research commandments — checking the instrument before the number, controlling the environment, and refusing to report a result it cannot explain.'
-        item.avatar ??= "🔬"
-        item.system ??= RESEARCHER_SYSTEM
-        item.mode = "subagent"
-        item.permissions.push(
-          ...PermissionV2.merge(defaults, [
-            { action: "skill", resource: SkillBuiltin.RESEARCH_SKILL, effect: "allow" },
-          ]),
         )
       })
 

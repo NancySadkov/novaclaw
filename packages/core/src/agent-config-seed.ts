@@ -8,6 +8,7 @@ import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
+import { SkillBuiltin } from "./skill/builtin"
 
 const NAMES = ["config.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
@@ -36,6 +37,12 @@ const SEEDED_OFFICERS: ReadonlyArray<{
    * tool — `upgrade_chat`. Everything else is hard-denied by `ShortChat.permissionRules`.
    */
   readonly shortChat?: boolean
+  readonly personality?: string
+  readonly permissions?: ReadonlyArray<{
+    readonly action: string
+    readonly resource: string
+    readonly effect: "allow"
+  }>
 }> = [
   {
     id: "xenia",
@@ -80,6 +87,19 @@ const SEEDED_OFFICERS: ReadonlyArray<{
       "problem. Offer two or three distinct directions rather than one, and say what each is trading " +
       "away. Describe what you make in words as well as making it, so somebody can judge it without " +
       "having your eye.",
+  },
+  {
+    id: "researcher",
+    name: "Researcher",
+    title: "Research Officer",
+    brief:
+      "Answer questions that need evidence rather than opinion: measurements, benchmarks, ablations, " +
+      "comparisons and investigations. Report what was observed, under which conditions, and what the " +
+      "evidence does not establish.",
+    // The skill IS the personality prompt. Keeping a second summary here would create two research
+    // doctrines that can drift while both still sound plausible.
+    personality: SkillBuiltin.ALL.find((skill) => skill.name === SkillBuiltin.RESEARCH_SKILL)!.content,
+    permissions: [{ action: "skill", resource: SkillBuiltin.RESEARCH_SKILL, effect: "allow" }],
   },
 ]
 
@@ -141,12 +161,14 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             // No `avatar`: each of these ships a portrait, and the renderer shows it exactly when the
             // row carries no glyph of its own. A seeded glyph here would hide the face (2026-09-03).
             system: officer.brief,
+            ...(officer.personality === undefined ? {} : { personality: officer.personality }),
             description: `${officer.name}, ${officer.title}.`,
             // A chat stance carries no memory: recall is the other half of what makes a companion
             // turn slow, and `shortChat` already denies the tools that would use it.
             memory: officer.shortChat ? "none" : "own",
             mode: "primary",
             ...(officer.shortChat ? { shortChat: true } : {}),
+            ...(officer.permissions === undefined ? {} : { permissions: officer.permissions }),
           }),
         ])
 

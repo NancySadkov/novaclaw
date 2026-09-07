@@ -125,7 +125,7 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     expect(ordinary.indexOf("Review standing job brief.")).toBeGreaterThan(
       ordinary.findIndex((part) => part.includes("<agent_identity>")),
     )
-    expect(ordinaryText).not.toContain("Nova")
+    expect(ordinaryText).toContain("Your superior is Nova")
 
     const personalityOnly = systems[1]!
     const personalityOnlyText = personalityOnly.join("\n")

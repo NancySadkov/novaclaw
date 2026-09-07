@@ -96,7 +96,13 @@ const RetireOp = Schema.Struct({
   colleague: Schema.String.annotate({ description: "Which colleague to retire, by id." }),
 })
 
-export const Input = Schema.Union([ListOp, IdentityOp, AskOp, AskGroupOp, HireOp, RetireOp])
+const SetSuperiorOp = Schema.Struct({
+  op: Schema.Literal("set_superior"),
+  colleague: Schema.String.annotate({ description: "The officer whose reporting line changes, by id." }),
+  superior: Schema.String.annotate({ description: "Their new superior, by id. Use `nova` for the CEO." }),
+})
+
+export const Input = Schema.Union([ListOp, IdentityOp, AskOp, AskGroupOp, HireOp, RetireOp, SetSuperiorOp])
 
 /**
  * The key for the turn's narrowed surface at the colleague-loop cap.
@@ -112,7 +118,7 @@ export const Input = Schema.Union([ListOp, IdentityOp, AskOp, AskGroupOp, HireOp
 export const CAPPED = "capped"
 
 /** What `colleague` offers at the cap: everything the loop bound has nothing to do with. */
-export const CappedInput = Schema.Union([ListOp, IdentityOp, HireOp, RetireOp])
+export const CappedInput = Schema.Union([ListOp, IdentityOp, HireOp, RetireOp, SetSuperiorOp])
 
 const PortraitImage = Schema.Struct({ mime: Schema.String, data: Schema.String, hash: Schema.String })
 const ModelOutput = Schema.Struct({
@@ -197,7 +203,8 @@ export const layer = Layer.effectDiscard(
             "`identity` returns a colleague's exact instance-owned portrait so you can recognise who you are " +
             "working with. " +
             "`hire` and `retire` staff the organization and are Nova's alone — a hire is given a name from the " +
-            "instance's own pool, so colleagues never read as people.",
+            "instance's own pool, so colleagues never read as people. `set_superior` changes an officer's " +
+            "reporting line; Nova alone may organize it, and the hierarchy cannot form a cycle.",
           input: Input,
           // At the cap the asking ops are not offered at all — see `CAPPED`.
           variants: { [CAPPED]: CappedInput },
@@ -217,7 +224,10 @@ export const layer = Layer.effectDiscard(
                 const target = input.colleague.trim()
                 if (target === "" || target === selfID)
                   return yield* new ToolFailure({
-                    message: target === selfID ? "That is you. Use `self` for your own portrait." : "Name the colleague to inspect — call `list` first.",
+                    message:
+                      target === selfID
+                        ? "That is you. Use `self` for your own portrait."
+                        : "Name the colleague to inspect — call `list` first.",
                   })
                 const all = yield* agents.all()
                 const found = addressable(all, selfID).find((agent) => String(agent.id) === target)
@@ -238,7 +248,9 @@ export const layer = Layer.effectDiscard(
                   ...(portrait.kind === "glyph"
                     ? { portraitGlyph: portrait.text }
                     : portrait.kind === "placeholder"
-                      ? { portraitGlyph: `server-owned placeholder portrait marked ${Avatar.placeholderLabel(target, label)}` }
+                      ? {
+                          portraitGlyph: `server-owned placeholder portrait marked ${Avatar.placeholderLabel(target, label)}`,
+                        }
                       : {
                           portrait: {
                             mime: portrait.mime,
@@ -249,18 +261,17 @@ export const layer = Layer.effectDiscard(
                 }
               }
 
-              if (input.op === "hire" || input.op === "retire") {
+              if (input.op === "hire" || input.op === "retire" || input.op === "set_superior") {
                 // The org chart, before the permission dial: an officer that could hire would be a
                 // second CEO, and an organization with two CEOs has none.
                 if (!mayStaff(selfID))
                   return yield* new ToolFailure({
                     message:
-                      "Only Nova hires and retires colleagues. Say what role you think is missing, or who is no " +
-                      "longer needed, and let the user or Nova decide.",
+                      "Only Nova staffs and organizes the officer hierarchy. Tell your superior what change is needed.",
                   })
                 yield* permission.assert({
                   action: name,
-                  resources: [input.op === "hire" ? "hire" : `retire:${input.colleague}`],
+                  resources: [input.op === "hire" ? "hire" : `${input.op}:${input.colleague}`],
                   save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
@@ -316,6 +327,23 @@ export const layer = Layer.effectDiscard(
                     `Retired ${target}. Their chat is archived and what they remembered is set aside, so nobody ` +
                     `inherits it — the name goes back into the pool. Tell the user what they used to own, in case ` +
                     `it needs a new owner.`,
+                } satisfies Output
+              }
+
+              if (input.op === "set_superior") {
+                const changed = yield* handoff.setSuperior({
+                  colleague: input.colleague.trim(),
+                  superior: input.superior.trim(),
+                  bySession: context.sessionID,
+                })
+                if (!changed)
+                  return yield* new ToolFailure({
+                    message:
+                      "That reporting line is invalid. Both ids must name active officers; Nova cannot report to anyone; and a hierarchy cannot point to itself or form a cycle.",
+                  })
+                return {
+                  ok: true,
+                  message: `${input.colleague.trim()} now reports to ${input.superior.trim()}.`,
                 } satisfies Output
               }
 

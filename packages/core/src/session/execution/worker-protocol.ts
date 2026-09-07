@@ -122,7 +122,17 @@ export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("colleague-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["delivered", "group-delivered", "no-chat", "refused", "hired", "retired", "rejected"]),
+  outcome: Schema.Literals([
+    "delivered",
+    "group-delivered",
+    "no-chat",
+    "refused",
+    "hired",
+    "retired",
+    "organized",
+    "organization-refused",
+    "rejected",
+  ]),
   /** Why the loop bound refused; present only when `outcome` is "refused". Read by the sender. */
   reason: Schema.String.pipe(Schema.optional),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
@@ -402,6 +412,7 @@ export const ColleagueRequest = Schema.Struct({
       personality: Schema.String.pipe(Schema.optional),
     }),
     Schema.Struct({ op: Schema.Literal("retire"), colleague: Schema.String }),
+    Schema.Struct({ op: Schema.Literal("set_superior"), colleague: Schema.String, superior: Schema.String }),
     /**
      * Put ONE message to SEVERAL colleagues, as one conversation.
      *

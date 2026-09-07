@@ -31,9 +31,9 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
     page.locator("#timeline").evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)
   await expect.poll(gap).toBeLessThanOrEqual(2)
 
-  // Native scrollbar chrome does not reliably send pointer events through the DOM element. Its
-  // observable contract is an upward scrollTop change followed by `scroll`: that movement must win
-  // even when it is smaller than the near-bottom re-pin threshold.
+  // A scrollbar gesture explicitly releases the pin before its scroll event. Geometry alone cannot
+  // do that job because Chromium emits identical, delayed events for route/reconcile layout clamps.
+  await page.waitForTimeout(1_100)
   await page.locator("#timeline").evaluate((timeline) => {
     timeline.scrollTop -= 20
   })
@@ -45,6 +45,13 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
   // Returning to the bottom through the scrollbar geometry restores follow mode.
   await page.locator("#timeline").evaluate((timeline) => (timeline.scrollTop = timeline.scrollHeight))
   await expect.poll(gap).toBeLessThanOrEqual(2)
+  await expect
+    .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
+    .toBe(true)
+  // The clamp's scroll notification may arrive well after Mutation/Resize observers have settled.
+  // It still describes layout, not new user intent, and must not revoke the pin.
+  await page.waitForTimeout(100)
+  await page.locator("#timeline").evaluate((timeline) => timeline.dispatchEvent(new Event("scroll")))
   await expect
     .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
     .toBe(true)

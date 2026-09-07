@@ -18,6 +18,41 @@ const thinkingEnabled = (request: LLMRequest): boolean => {
   return body?.chat_template_kwargs?.enable_thinking !== false
 }
 
+/** Remove reasoning at the request boundary for every protocol shape NovaClaw owns.
+ *
+ * A zero officer budget is an instruction to answer without reasoning, not merely a controller
+ * ceiling of zero. The controller deliberately treats zero as "do not monitor", so implementing
+ * this at `ReasoningBudget` would do the opposite of what the Tune control says. */
+export const withoutReasoning = (request: LLMRequest): LLMRequest => {
+  const input = LLM.requestInput(request)
+  return LLM.request({
+    ...input,
+    providerOptions: {
+      ...(input.providerOptions ?? {}),
+      openai: { ...(input.providerOptions?.openai ?? {}), reasoningEffort: "none" },
+      anthropic: { ...(input.providerOptions?.anthropic ?? {}), thinking: { type: "disabled" } },
+      gemini: {
+        ...(input.providerOptions?.gemini ?? {}),
+        thinkingConfig: {
+          ...((input.providerOptions?.gemini?.thinkingConfig as Record<string, unknown> | undefined) ?? {}),
+          thinkingBudget: 0,
+          includeThoughts: false,
+        },
+      },
+    },
+    http: {
+      ...(input.http ?? {}),
+      body: {
+        ...(input.http?.body ?? {}),
+        chat_template_kwargs: {
+          ...((input.http?.body?.["chat_template_kwargs"] as Record<string, unknown> | undefined) ?? {}),
+          enable_thinking: false,
+        },
+      },
+    },
+  })
+}
+
 export interface PrepareInput {
   readonly request: LLMRequest
   readonly promptCacheKey: string

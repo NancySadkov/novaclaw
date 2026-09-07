@@ -87,7 +87,7 @@ export const toModelOutput = (output: Output): string => {
       )
     else
       lines.push(
-        `You currently think with ${output.model}. Your roster has no model pin; this is the model NovaClaw resolved for this turn.`,
+        `You currently think with ${output.model}. Your roster has no model pin; this is the instance's current default model as resolved for this turn.`,
       )
   } else lines.push(`NovaClaw could not identify the model running this turn.`)
   lines.push(

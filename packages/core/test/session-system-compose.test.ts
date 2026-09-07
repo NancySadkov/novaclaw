@@ -36,6 +36,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
       | "memoryStance"
       | "workspace"
       | "delegation"
+      | "organization"
       // Optional, and populated in exactly ONE posture: Fast Chat, where nothing else in the request
       // carries the working folder. An ordinary chat leaves it absent — its horizon rides the
       // grounding cadence — which is what keeps this file's byte-identity claim true.
@@ -75,6 +76,24 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     expect(section).toContain("&lt;agent_identity>")
     expect(section).toContain("&lt;/agent_identity>")
     expect(section).toContain("<b>useful markup</b>")
+  })
+
+  it("routes officer conflicts through the configured superior and gives only Nova the CEO charter", () => {
+    const officer = SystemCompose.organizationSection({
+      agentID: "iris",
+      officer: true,
+      superior: { id: "theron", name: "Theron" },
+    })!
+    expect(officer).toContain("Your superior is Theron")
+    expect(officer).toContain("message Theron")
+    expect(officer).toContain("Do not start an edit war")
+    expect(officer).not.toContain("accountable only to the user")
+
+    const nova = SystemCompose.organizationSection({ agentID: "nova", officer: true })!
+    expect(nova).toContain("CEO")
+    expect(nova).toContain("accountable only to the user")
+    expect(nova).toContain("resolving conflicts between officers")
+    expect(SystemCompose.organizationSection({ agentID: "explore", officer: false })).toBeUndefined()
   })
 
   it("(a) is byte-identical to today when no pre-prompt is set", () => {

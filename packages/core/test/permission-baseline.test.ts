@@ -160,9 +160,6 @@ describe("the built-in agents the plugin actually builds", () => {
         "nova",
         "plan",
         "recipe",
-        // The Research Officer. Its only added rule names a single skill by resource, so it is not a
-        // catch-all and the loop below still holds it to the same bar as the rest.
-        "researcher",
         "summary",
         "title",
       ])

@@ -23,7 +23,10 @@ const parts = () =>
     events: undefined as never,
     session: () => Effect.succeed({ agent: "nova" }),
     wake: () => Effect.succeed(true),
-    store: { removeAgent: (name: string) => Effect.sync(() => void removed.push(name)) } as never,
+    store: {
+      agents: () => Effect.succeed({}),
+      removeAgent: (name: string) => Effect.sync(() => void removed.push(name)),
+    } as never,
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: (name) => Effect.sync(() => void removed.push(`forgot:${name}`)),

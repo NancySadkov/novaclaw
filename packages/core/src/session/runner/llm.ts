@@ -1773,6 +1773,15 @@ export const layer = Layer.effect(
         title: agent.info?.title,
         personality: agent.info?.personality,
       })
+      const roster = yield* agents.all()
+      const superior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
+      const organization = SystemCompose.organizationSection({
+        agentID: String(agent.id),
+        officer: agent.info !== undefined && AgentV2.isColleague(agent.info),
+        ...(superior === undefined
+          ? {}
+          : { superior: { id: String(superior.id), ...(superior.name === undefined ? {} : { name: superior.name }) } }),
+      })
       /**
        * 🔴 WHO tells this turn where it is working — read ONCE, here, and consulted by every
        * mechanism that could deliver it. Before this, the cadence decided `!strict && !shortChat` on
@@ -1789,6 +1798,7 @@ export const layer = Layer.effect(
             ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }),
             agentIdentity,
             agentSystem: agent.info?.system,
+            organization,
             // The horizon for this posture, because nothing else in a Fast Chat request carries it:
             // there is no `<env>` (the context load short-circuits above) and no cadence. One line,
             // no listing — see `system-compose.ts` for why the listing would be dead weight under a
@@ -1810,6 +1820,7 @@ export const layer = Layer.effect(
             systemPromptOverride: config.systemPromptOverride,
             agentIdentity,
             agentSystem: agent.info?.system,
+            organization,
             // The tool list the model is about to receive is `toolMaterialization.definitions`; the
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
             // see the section's own note on why a count and not a hedge.
@@ -1910,7 +1921,7 @@ export const layer = Layer.effect(
       const projectGrounding = groundingDecision.due
         ? SessionInput.applySteerProvenance(ProjectGrounding.render(location, groundingListing))
         : undefined
-      const baseRequest = LLM.request({
+      const ordinaryRequest = LLM.request({
         model,
         // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
         // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
@@ -1941,6 +1952,11 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
+      // An explicit officer budget of zero means NO reasoning, not an unmonitored reasoning stream.
+      // Apply the provider-neutral structural switches before prompt measurement and dispatch so
+      // every downstream consumer sees the exact request that reaches the provider.
+      const baseRequest =
+        config.reasoningBudget === 0 ? ProviderDispatch.withoutReasoning(ordinaryRequest) : ordinaryRequest
       const attemptModelRef = {
         id: ModelV2.ID.make(model.id),
         providerID: ProviderV2.ID.make(model.provider),
@@ -1948,8 +1964,10 @@ export const layer = Layer.effect(
       }
       // The controller envelope is part of tokenizer identity: a budgeted opening request carries a
       // stable extra system part, while a plain request does not. A change falls back for one turn.
-      const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
-      const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
+      const thinkingBudget = config.reasoningBudget ?? model.route.defaults.limits?.thinkingBudget ?? 0
+      const budgetEnforced =
+        stanceOf("thinkingBudget", config.thinkingBudget) &&
+        (config.reasoningBudget !== undefined || !ShortChat.enabled(config.shortChat))
       // Build checkpoint 1 ONCE, before any consumer measures capacity. Prompt estimation,
       // compaction, packing and provider dispatch must all see the same controller system part;
       // otherwise the final append can overflow a pack that was correct for a smaller request.

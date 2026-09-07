@@ -21,6 +21,14 @@ import { OfficerName } from "@novaclaw/core/agent/officer-name"
 import { modelRef } from "./agent-model"
 import type { AgentLike } from "./contacts"
 
+/** Nova's charter is unique to one instance; copying its prompt would create a second apparent CEO
+ * without creating a second authority root. */
+export class NovaCloneRefusal extends Error {
+  readonly name = "NovaCloneRefusal"
+}
+
+export const isNovaCloneRefusal = (error: unknown): error is NovaCloneRefusal => error instanceof NovaCloneRefusal
+
 /**
  * Fields a clone deliberately does NOT take, each for its own reason. Everything else in
  * `ConfigAgent.Info` is carried, so adding a field to the schema carries it by default — the safe
@@ -85,6 +93,10 @@ export const planClone = (input: {
   readonly taken: Iterable<string>
   readonly random: () => number
 }): Clone => {
+  if (input.source.id === "nova")
+    throw new NovaCloneRefusal(
+      "Nova is the single CEO of this instance. To have another Nova, deploy a separate NovaClaw instance.",
+    )
   const name = OfficerName.pick({ taken: input.taken, random: input.random })
   const fragment: Record<string, unknown> = { name: OfficerName.display(name) }
   // The CONFIG bag when the loader supplied one, the view object otherwise. The bag is the whole

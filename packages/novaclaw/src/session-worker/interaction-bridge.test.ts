@@ -37,6 +37,7 @@ const colleagueStub = {
   deliver: () => Effect.die("unused"),
   deliverGroup: () => Effect.die("unused"),
   hire: () => Effect.die("unused"),
+  setSuperior: () => Effect.die("unused"),
   retire: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface
 
