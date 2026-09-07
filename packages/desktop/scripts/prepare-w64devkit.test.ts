@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test"
 import {
+  resolveW64devkitSupplySource,
   W64DEVKIT_ARCHIVE,
   W64DEVKIT_SHA256,
   W64DEVKIT_SOURCE_ARCHIVE,
   W64DEVKIT_SOURCE_SHA256,
+  W64DEVKIT_SUPPLY_SOURCE,
   W64DEVKIT_VERSION,
 } from "./prepare-w64devkit"
 
@@ -13,4 +15,9 @@ test("pins both the embedded Windows archive and its exact corresponding source"
   expect(W64DEVKIT_SHA256).toMatch(/^[0-9a-f]{64}$/)
   expect(W64DEVKIT_SOURCE_ARCHIVE).toBe("source.tar")
   expect(W64DEVKIT_SOURCE_SHA256).toMatch(/^[0-9a-f]{64}$/)
+  expect(W64DEVKIT_SUPPLY_SOURCE.replaceAll("\\", "/")).toEndWith(
+    "/supply/w64devkit-2.9.0-source.tar",
+  )
+  expect(resolveW64devkitSupplySource(undefined)).toBe(W64DEVKIT_SUPPLY_SOURCE)
+  expect(resolveW64devkitSupplySource("./explicit-source.tar")).toEndWith("explicit-source.tar")
 })

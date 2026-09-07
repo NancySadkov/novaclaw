@@ -12,6 +12,16 @@ export const W64DEVKIT_SOURCE_ARCHIVE = "source.tar"
 export const W64DEVKIT_SOURCE_SHA256 = "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec"
 
 const packageDir = path.resolve(import.meta.dir, "..")
+export const W64DEVKIT_SUPPLY_SOURCE = path.resolve(
+  packageDir,
+  "..",
+  "..",
+  "supply",
+  `w64devkit-${W64DEVKIT_VERSION}-source.tar`,
+)
+export function resolveW64devkitSupplySource(override: string | undefined) {
+  return override ? path.resolve(override) : W64DEVKIT_SUPPLY_SOURCE
+}
 export const W64DEVKIT_RESOURCE = path.join(packageDir, "resources", "third-party", "w64devkit")
 const marker = path.join(W64DEVKIT_RESOURCE, ".novaclaw-w64devkit.json")
 const required = [
@@ -90,12 +100,12 @@ async function validateTree(root: string) {
 
 export async function prepareW64devkitSource(file: string) {
   await mkdir(path.dirname(file), { recursive: true })
-  const supplied = process.env.NOVACLAW_W64DEVKIT_SOURCE_ARCHIVE
-  if (supplied) {
-    const source = path.resolve(supplied)
-    await ensureArchive(source, W64DEVKIT_SOURCE_SHA256, "NOVACLAW_W64DEVKIT_SOURCE_ARCHIVE")
-    if (source !== file) await copyFile(source, file)
-  }
+  // Release inputs belong in the repository's durable supply cabinet, never in tmp/ or dist/:
+  // both are deliberately disposable. The environment variable remains a useful explicit override
+  // for reproducing a build with a separately staged archive.
+  const source = resolveW64devkitSupplySource(process.env.NOVACLAW_W64DEVKIT_SOURCE_ARCHIVE)
+  await ensureArchive(source, W64DEVKIT_SOURCE_SHA256, "NOVACLAW_W64DEVKIT_SOURCE_ARCHIVE")
+  if (source !== file) await copyFile(source, file)
   await ensureArchive(file, W64DEVKIT_SOURCE_SHA256, "NOVACLAW_W64DEVKIT_SOURCE_ARCHIVE")
 }
 
