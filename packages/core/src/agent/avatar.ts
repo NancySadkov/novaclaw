@@ -3,6 +3,7 @@ export * as Avatar from "./avatar"
 import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { Global } from "../global"
 // @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
 import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
@@ -56,11 +57,15 @@ const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
 
 const baseAgentID = (agentID: string) => agentID.trim().toLowerCase().replace(/-\d+$/, "")
 
+/** Bun's file loader emits an absolute path in source runs and a chunk-relative path in a bundle. */
+export const bundledAssetPath = (file: string, moduleURL: string = import.meta.url) =>
+  path.isAbsolute(file) ? file : fileURLToPath(new URL(file, moduleURL))
+
 export const builtin = async (agentID: string): Promise<Stored | undefined> => {
   const file = BUILTIN_PORTRAITS[baseAgentID(agentID)]
   if (file === undefined) return undefined
   try {
-    const bytes = new Uint8Array(await fs.readFile(file))
+    const bytes = new Uint8Array(await fs.readFile(bundledAssetPath(file)))
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) return undefined
     return { bytes, mime: "image/webp", hash: digest(bytes) }
   } catch {

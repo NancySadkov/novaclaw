@@ -593,11 +593,13 @@ export namespace Tool {
   export type Called = typeof Called.Type
 
   /**
-   * A parallel short-answer label for a running tool. Live-only: replay derives an immediate,
-   * deterministic fallback from the command, so this presentation hint never delays execution.
+   * A parallel short-answer label for a running tool. The deterministic command-derived label is
+   * only a fallback while this arrives; once shown, the generated title is transcript state and
+   * must survive message reload and event replay.
    */
   export const Labelled = Event.define({
     type: "session.next.tool.labelled",
+    ...options,
     schema: {
       ...ToolBase,
       title: Schema.String,
@@ -752,6 +754,7 @@ export const DurableDefinitions = Event.inventory(
   Tool.Input.Progress,
   Tool.Input.Ended,
   Tool.Called,
+  Tool.Labelled,
   Tool.Progress,
   Tool.Success,
   Tool.Failed,

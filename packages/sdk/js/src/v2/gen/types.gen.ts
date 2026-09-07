@@ -1266,6 +1266,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextToolInputProgress
     | SyncEventSessionNextToolInputEnded
     | SyncEventSessionNextToolCalled
+    | SyncEventSessionNextToolLabelled
     | SyncEventSessionNextToolProgress
     | SyncEventSessionNextToolSuccess
     | SyncEventSessionNextToolFailed
@@ -1742,6 +1743,7 @@ export type SessionDurableEvent =
   | SessionNextToolInputProgress
   | SessionNextToolInputEnded
   | SessionNextToolCalled
+  | SessionNextToolLabelled
   | SessionNextToolProgress
   | SessionNextToolSuccess
   | SessionNextToolFailed
@@ -3366,6 +3368,24 @@ export type SyncEventSessionNextToolCalled = {
         executed: boolean
         metadata?: LlmProviderMetadata
       }
+    }
+  }
+}
+
+export type SyncEventSessionNextToolLabelled = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.tool.labelled.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      assistantMessageID: string
+      callID: string
+      title: string
     }
   }
 }
@@ -5288,6 +5308,27 @@ export type SessionNextToolCalled = {
   }
 }
 
+export type SessionNextToolLabelled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.tool.labelled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    assistantMessageID: string
+    callID: string
+    title: string
+  }
+}
+
 export type SessionNextToolProgress = {
   id: string
   metadata?: {
@@ -6153,27 +6194,6 @@ export type SessionNextToolInputDelta = {
     assistantMessageID: string
     callID: string
     delta: string
-  }
-}
-
-export type SessionNextToolLabelled = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "session.next.tool.labelled"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    timestamp: number
-    sessionID: string
-    assistantMessageID: string
-    callID: string
-    title: string
   }
 }
 

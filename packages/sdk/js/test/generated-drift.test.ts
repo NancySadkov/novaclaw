@@ -304,7 +304,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // 2026-09-04: the current emitter normalizes the five MCP status names to `Mcp...`.
 // 2026-09-05: retired the remaining 13 QuestionV2/QuestionNotFound/EventQuestionV2 names.
 // The existing MCP idle-state change also adds MCPStatusIdle; no other names changed.
-const SCHEMA_NAME_FINGERPRINT = "ab51415d96cabc16f5879142bad1dc7e1733b5f907961080107402581710682b"
+// 2026-09-07: reviewed +1 generated sync schema. Tool.Labelled became durable so its already-public
+// event schema now also has the expected `SyncEventSessionNextToolLabelled` replay envelope.
+const SCHEMA_NAME_FINGERPRINT = "ec55eb4c1fcf8de170086677bfe42c51c7db9470d07f945696116d6b99b70746"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

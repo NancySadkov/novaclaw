@@ -1,4 +1,5 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { DateTime, Effect, Schema } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
@@ -49,6 +50,31 @@ const assistantRow = (
 }
 
 describe("SessionProjector", () => {
+  test("registers every durable session projection", () => {
+    const source = readFileSync(new URL("../src/session/projector.ts", import.meta.url), "utf8")
+    const paths = [...source.matchAll(/events\.project\(SessionEvent\.([A-Za-z.]+)/g)].map((match) => match[1]!)
+    const definitionAt = (path: string) =>
+      path.split(".").reduce((value, key) => (value as Record<string, unknown>)[key], SessionEvent as unknown)
+    const projected = new Set(
+      paths.map((path) => (definitionAt(path) as { readonly type: string }).type),
+    )
+
+    // This is a durable lifecycle marker for the compaction overlay, not a live message/row update;
+    // Compaction.Ended owns the full projected value. Every other durable session event changes a
+    // projection and must be wired here, or it will appear live and disappear on the next reload.
+    const durableJournalOnly = new Set<string>([SessionEvent.Compaction.Started.type])
+    expect(
+      SessionEvent.DurableDefinitions.filter(
+        (definition) => !projected.has(definition.type) && !durableJournalOnly.has(definition.type),
+      ).map((definition) => definition.type),
+    ).toEqual([])
+    expect(
+      [...durableJournalOnly].filter(
+        (type) => !SessionEvent.DurableDefinitions.some((definition) => definition.type === type),
+      ),
+    ).toEqual([])
+  })
+
   it.effect("keeps only the current unsettled provider attempt", () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db
@@ -134,6 +160,78 @@ describe("SessionProjector", () => {
       yield* SessionMessageUpdater.update(reconnectAdapter, textStarted)
       yield* SessionMessageUpdater.update(reconnectAdapter, checkpoint)
       expect(textOf(reconnected)).toBe("hello")
+    }),
+  )
+
+  it.effect("persists generated tool titles in the transcript and durable event stream", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({ id: sessionID, slug: "test", directory: "/project", title: "test", version: "test" })
+        .run()
+        .pipe(Effect.orDie)
+      const events = yield* EventV2.Service
+      const assistantMessageID = SessionMessage.ID.make("msg_labelled_tool")
+      const callID = "call_labelled_tool"
+
+      yield* events.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID,
+        timestamp: created,
+        agent: "build",
+        model,
+      })
+      yield* events.publish(SessionEvent.Tool.Input.Started, {
+        sessionID,
+        assistantMessageID,
+        callID,
+        timestamp: created,
+        name: "bash",
+      })
+      yield* events.publish(SessionEvent.Tool.Called, {
+        sessionID,
+        assistantMessageID,
+        callID,
+        timestamp: created,
+        tool: "bash",
+        sideEffect: "read",
+        input: { command: "ls" },
+        provider: { executed: true },
+      })
+      const labelled = yield* events.publish(SessionEvent.Tool.Labelled, {
+        sessionID,
+        assistantMessageID,
+        callID,
+        timestamp: DateTime.makeUnsafe(1),
+        title: "Inspect the durable command titles",
+      })
+
+      expect(labelled.durable).toMatchObject({ aggregateID: sessionID, version: 1 })
+      expect(
+        (yield* db
+          .select({ type: EventTable.type })
+          .from(EventTable)
+          .where(eq(EventTable.id, labelled.id))
+          .get()
+          .pipe(Effect.orDie))?.type,
+      ).toBe(EventV2.versionedType(SessionEvent.Tool.Labelled.type, 1))
+
+      const row = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.id, assistantMessageID))
+        .get()
+        .pipe(Effect.orDie)
+      const message = Schema.decodeUnknownSync(SessionMessage.Message)({
+        ...row?.data,
+        id: row?.id,
+        type: row?.type,
+      })
+      expect(message).toMatchObject({
+        type: "assistant",
+        content: [{ type: "tool", id: callID, title: "Inspect the durable command titles" }],
+      })
     }),
   )
 

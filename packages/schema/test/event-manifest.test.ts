@@ -84,7 +84,7 @@ describe("public event manifest", () => {
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
       // 2026-09-05: removed three non-durable question.v2 events with the retired blocking sideband.
-    }).toEqual({ server: 92, all: 92, latest: 92, durable: 48 })
+    }).toEqual({ server: 92, all: 92, latest: 92, durable: 49 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -112,7 +112,24 @@ describe("public event manifest", () => {
     expect(EventManifest.Latest.get("session.next.message.recorded")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.message.recorded.1")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.permission.changed.1")).toBe(SessionEvent.PermissionChanged)
+    expect(EventManifest.Durable.get("session.next.tool.labelled.1")).toBe(SessionEvent.Tool.Labelled)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)
     expect(EventManifest.Durable.get("session.next.step.ended.2")).toBe(SessionEvent.Step.Ended)
+  })
+
+  test("keeps only reconstructable stream fragments live-only", () => {
+    const liveOnly = SessionEvent.Definitions.filter((definition) => definition.durable === undefined).map(
+      (definition) => definition.type,
+    )
+
+    // Each accepted arm is a partial stream value with a durable progress/full-value boundary.
+    // A presentation update such as a generated title does not belong here: without a later full
+    // value, reconnect silently replaces it with a fallback.
+    expect(liveOnly).toEqual([
+      SessionEvent.Text.Delta.type,
+      SessionEvent.Reasoning.Delta.type,
+      SessionEvent.Tool.Input.Delta.type,
+      SessionEvent.Compaction.Delta.type,
+    ])
   })
 })

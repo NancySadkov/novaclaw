@@ -92,6 +92,7 @@ const paths = [
   "/global/health",
   "/global/config",
   "/api/capability",
+  "/api/agent",
   "/config",
   "/agent",
 ]
@@ -112,6 +113,48 @@ for (const path of paths) {
     failures += 1
     console.error(`node-sidecar-smoke: ${path} threw — ${error?.stack ?? error}`)
   }
+}
+
+// File-loader assets are emitted beside the split chunks. The roster must name the authenticated
+// route AND that route must return the real shipped bytes; checking only the JSON allowed a missing
+// `.webp` to degrade silently to a placeholder in packaged builds.
+try {
+  const rosterResponse = await fetch(`http://127.0.0.1:${port}/api/agent`, { headers: { authorization: auth } })
+  const rosterBody = await rosterResponse.json()
+  const roster = Array.isArray(rosterBody) ? rosterBody : rosterBody?.data
+  const daedalus = Array.isArray(roster) ? roster.find((agent) => agent?.id === "daedalus") : undefined
+  if (typeof daedalus?.avatar !== "string" || !daedalus.avatar.startsWith("/api/agent/daedalus/avatar?v=")) {
+    throw new Error("the roster did not publish Daedalus's versioned server-owned portrait route")
+  }
+  const portraitResponse = await fetch(`http://127.0.0.1:${port}${daedalus.avatar}`, {
+    headers: { authorization: auth },
+  })
+  const portrait = new Uint8Array(await portraitResponse.arrayBuffer())
+  if (
+    !portraitResponse.ok ||
+    portraitResponse.headers.get("content-type") !== "image/webp" ||
+    portrait.length < 4 ||
+    String.fromCharCode(...portrait.slice(0, 4)) !== "RIFF"
+  ) {
+    throw new Error(`portrait route returned ${portraitResponse.status} ${portraitResponse.headers.get("content-type")}`)
+  }
+
+  const fallbackResponse = await fetch(`http://127.0.0.1:${port}/api/agent/portrait-smoke-missing/avatar`, {
+    headers: { authorization: auth },
+  })
+  const fallback = new TextDecoder().decode(await fallbackResponse.arrayBuffer())
+  if (
+    !fallbackResponse.ok ||
+    fallbackResponse.headers.get("content-type") !== "image/svg+xml" ||
+    !fallback.startsWith("<svg ")
+  ) {
+    throw new Error(
+      `portrait fallback returned ${fallbackResponse.status} ${fallbackResponse.headers.get("content-type")}`,
+    )
+  }
+} catch (error) {
+  failures += 1
+  console.error(`node-sidecar-smoke: shipped portrait failed — ${error?.stack ?? error}`)
 }
 
 await listener.stop?.(true).catch?.(() => undefined)

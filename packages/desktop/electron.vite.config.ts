@@ -2,9 +2,9 @@ import { defineConfig } from "electron-vite"
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import appPlugin from "@novaclaw/app/vite"
-import { copyFile, mkdir, readdir, rm } from "node:fs/promises"
 
 import { resolveChannel } from "@novaclaw/script/channel"
+import { copyServerRuntime } from "./scripts/server-runtime-assets"
 
 const NOVACLAW_SERVER_DIST = "../novaclaw/dist/node"
 
@@ -71,33 +71,11 @@ export default defineConfig({
       {
         name: "novaclaw:copy-server-assets",
         async writeBundle() {
-          // This producer owns only its runtime directory. Electron's dynamic modules have a
-          // separate chunks directory, which must survive copying a new sidecar generation.
           const output = "./out/main/server-runtime"
-          // The sidecar build rotates content hashes. Replace this destination before copying so a
-          // prior desktop build cannot leave an unreachable generation inside the packaged app.
-          await rm(output, { recursive: true, force: true })
-          await mkdir(output, { recursive: true })
-          for (const name of await readdir(NOVACLAW_SERVER_DIST)) {
-            // 🔴 CHUNKS TOO. The sidecar bundle is built with `splitting: true`, so the entry is a
-            // small file that imports ~160 sibling `chunk-*.js` at runtime. Copying only the entries
-            // produced a package whose server could not load ANY of its own code — and it built
-            // clean, because nothing here knew the shape had changed. An allow-list that names files
-            // has to be revisited whenever the producer's output shape does.
-            const isChunk = /^chunk-[^/]+\.js$/.test(name)
-            if (name !== "node.js" && name !== "session-worker-node.js" && !name.endsWith(".wasm") && !isChunk) continue
-            // The server is already a complete Bun bundle. Treat it like the WASM payload: copy it
-            // verbatim instead of making Rollup parse and re-emit 23 MB of generated JavaScript.
-            // Parsing that bundle was the desktop build's dominant avoidable RAM spike.
-            // Chunks keep their own names: the entry imports them by exactly these filenames.
-            const packagedName =
-              name === "node.js"
-                ? "novaclaw-server.js"
-                : name === "session-worker-node.js"
-                  ? "novaclaw-session-worker.js"
-                  : name
-            await copyFile(`${NOVACLAW_SERVER_DIST}/${name}`, `${output}/${packagedName}`)
-          }
+          // The producer owns this directory. Copy the COMPLETE output: Bun file-loader assets sit
+          // beside chunks and are just as load-bearing as them. The helper replaces the destination
+          // first so old content-hash generations cannot survive a rebuild.
+          await copyServerRuntime(NOVACLAW_SERVER_DIST, output)
         },
       },
     ],

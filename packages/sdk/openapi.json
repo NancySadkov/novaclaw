@@ -27982,6 +27982,9 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextToolCalled"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextToolLabelled"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextToolProgress"
               },
               {
@@ -29513,6 +29516,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextToolCalled"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextToolLabelled"
           },
           {
             "$ref": "#/components/schemas/SessionNextToolProgress"
@@ -34625,6 +34631,66 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "tool", "input", "provider"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextToolLabelled": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.tool.labelled.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "assistantMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "callID": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
                 "additionalProperties": false
               }
             },
@@ -40375,6 +40441,67 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionNextToolLabelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.tool.labelled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "assistantMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "callID": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "SessionNextToolProgress": {
         "type": "object",
         "properties": {
@@ -43086,67 +43213,6 @@
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "delta"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "SessionNextToolLabelled": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.next.tool.labelled"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "timestamp": {
-                "type": "number"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "assistantMessageID": {
-                "type": "string",
-                "pattern": "^msg_"
-              },
-              "callID": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            },
-            "required": ["timestamp", "sessionID", "assistantMessageID", "callID", "title"],
             "additionalProperties": false
           }
         },

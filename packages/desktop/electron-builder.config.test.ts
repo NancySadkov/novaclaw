@@ -66,10 +66,10 @@ test("does not carry an updater runtime dependency", () => {
   expect(pkg.dependencies?.[dependency]).toBeUndefined()
 })
 
-test("replaces copied sidecar chunks instead of overlaying generations", async () => {
+test("copies the server producer's complete output instead of an asset allow-list", async () => {
   const config = await Bun.file(join(import.meta.dir, "electron.vite.config.ts")).text()
-  expect(config).toContain('await rm(output, { recursive: true, force: true })')
-  expect(config).toContain('await mkdir(output, { recursive: true })')
+  expect(config).toContain("await copyServerRuntime(NOVACLAW_SERVER_DIST, output)")
+  expect(config).not.toContain("name.endsWith")
 })
 
 test("embeds the prepared w64devkit tree in Windows packages", async () => {

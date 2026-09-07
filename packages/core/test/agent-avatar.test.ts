@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Avatar } from "@novaclaw/core/agent/avatar"
 
 const roots: string[] = []
@@ -16,6 +17,16 @@ afterEach(async () => {
 })
 
 describe("instance-owned agent portraits", () => {
+  test("resolves a bundled file-loader asset beside its emitted chunk, independent of cwd", () => {
+    const chunk = path.join(path.parse(process.cwd()).root, "opt", "novaclaw", "server", "chunk.js")
+    expect(Avatar.bundledAssetPath("./daedalus-hash.webp", pathToFileURL(chunk).href)).toBe(
+      path.join(path.dirname(chunk), "daedalus-hash.webp"),
+    )
+    expect(Avatar.bundledAssetPath(path.resolve("portrait.webp"), "file:///somewhere/else/chunk.js")).toBe(
+      path.resolve("portrait.webp"),
+    )
+  })
+
   test("publishes bytes and reopens the same portrait by agent identity", async () => {
     const data = await root()
     const bytes = Uint8Array.of(0x89, 0x50, 0x4e, 0x47)
