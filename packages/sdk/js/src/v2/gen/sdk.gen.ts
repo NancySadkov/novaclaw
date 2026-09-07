@@ -3581,7 +3581,9 @@ class ApiV2Fs extends NovaClawApiClient {
       query,
     })
   }
+}
 
+class ApiV2Directory extends NovaClawApiClient {
   /**
    * Browse a host directory
    *
@@ -3594,7 +3596,7 @@ class ApiV2Fs extends NovaClawApiClient {
     options?: Options<never, ThrowOnError>,
   ) {
     const query = { directory: parameters?.["directory"] }
-    return (options?.client ?? this.client).get<T.V2FsBrowseResponses, T.V2FsBrowseErrors, ThrowOnError>({
+    return (options?.client ?? this.client).get<T.V2DirectoryBrowseResponses, T.V2DirectoryBrowseErrors, ThrowOnError>({
       url: "/api/directory/browse",
       ...options,
       query,
@@ -4351,6 +4353,11 @@ class ApiV2 extends NovaClawApiClient {
   private _fs?: ApiV2Fs
   get fs(): ApiV2Fs {
     return (this._fs ??= new ApiV2Fs({ client: this.client }))
+  }
+
+  private _directory?: ApiV2Directory
+  get directory(): ApiV2Directory {
+    return (this._directory ??= new ApiV2Directory({ client: this.client }))
   }
 
   private _command?: ApiV2Command

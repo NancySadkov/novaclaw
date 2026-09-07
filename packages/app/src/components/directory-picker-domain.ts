@@ -349,7 +349,7 @@ export function createDirectorySearch(args: { sdk: ServerSDK; base: () => string
     const key = trimPickerPath(directory)
     const existing = cache.get(key)
     if (existing) return existing
-    const request = args.sdk.client.v2.fs
+    const request = args.sdk.client.v2.directory
       .browse({ directory: key })
       .then((result) => result.data ?? [])
       .catch(() => [])

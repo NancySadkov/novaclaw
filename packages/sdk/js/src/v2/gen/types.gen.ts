@@ -17136,7 +17136,7 @@ export type V2FsFindResponses = {
 
 export type V2FsFindResponse = V2FsFindResponses[keyof V2FsFindResponses]
 
-export type V2FsBrowseData = {
+export type V2DirectoryBrowseData = {
   body?: never
   path?: never
   query: {
@@ -17145,7 +17145,7 @@ export type V2FsBrowseData = {
   url: "/api/directory/browse"
 }
 
-export type V2FsBrowseErrors = {
+export type V2DirectoryBrowseErrors = {
   /**
    * InvalidRequestError
    */
@@ -17156,9 +17156,9 @@ export type V2FsBrowseErrors = {
   401: UnauthorizedError
 }
 
-export type V2FsBrowseError = V2FsBrowseErrors[keyof V2FsBrowseErrors]
+export type V2DirectoryBrowseError = V2DirectoryBrowseErrors[keyof V2DirectoryBrowseErrors]
 
-export type V2FsBrowseResponses = {
+export type V2DirectoryBrowseResponses = {
   /**
    * Success
    */
@@ -17168,7 +17168,7 @@ export type V2FsBrowseResponses = {
   }>
 }
 
-export type V2FsBrowseResponse = V2FsBrowseResponses[keyof V2FsBrowseResponses]
+export type V2DirectoryBrowseResponse = V2DirectoryBrowseResponses[keyof V2DirectoryBrowseResponses]
 
 export type V2CommandListData = {
   body?: never

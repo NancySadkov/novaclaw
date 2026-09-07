@@ -21247,8 +21247,8 @@
     },
     "/api/directory/browse": {
       "get": {
-        "tags": ["filesystem"],
-        "operationId": "v2.fs.browse",
+        "tags": ["directory"],
+        "operationId": "v2.directory.browse",
         "parameters": [
           {
             "name": "directory",
@@ -21311,7 +21311,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.fs.browse({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.directory.browse({\n  ...\n})"
           }
         ]
       }
@@ -48777,8 +48777,8 @@
       "description": "Experimental location-scoped filesystem routes."
     },
     {
-      "name": "filesystem",
-      "description": "Filesystem routes."
+      "name": "directory",
+      "description": "Host directory browsing."
     },
     {
       "name": "commands",

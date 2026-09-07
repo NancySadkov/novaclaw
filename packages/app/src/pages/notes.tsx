@@ -85,7 +85,7 @@ export function NotesPage() {
       return c && d ? { c, d, t: tick() } : undefined
     },
     async ({ c, d }) => {
-      const rows = await c.sdk.client.v2.fs.browse({ directory: d }).then((r) => r.data as Entry[] | undefined)
+      const rows = await c.sdk.client.v2.directory.browse({ directory: d }).then((r) => r.data as Entry[] | undefined)
       if (!rows) throw new Error("the notes folder could not be listed")
       return rows
         .filter((e) => e.type === "file" && e.name.endsWith(".md"))
@@ -196,7 +196,7 @@ export function NotesPage() {
     // the resource (re)loads; trusting it here used to truncate an existing note with ""), and
     // not /file/content (it answers {type:"text",content:""} for MISSING files — file.ts:99 —
     // so a read can never distinguish absent from empty).
-    const listing = await c.sdk.client.v2.fs
+    const listing = await c.sdk.client.v2.directory
       .browse({ directory: d })
       .then((r) => r.data as Entry[] | undefined)
       .catch(() => undefined)

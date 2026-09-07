@@ -216,7 +216,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
       existing ??
       loads.schedule(`${generation}:${key}`, eager ? "background" : "user", () => {
         if (!activeTreeNavigation(generation, navigation)) return Promise.resolve(undefined)
-        return sdk.client.v2.fs
+        return sdk.client.v2.directory
           .browse({ directory: absolute })
           .then((result) => result.data)
           .catch(() => undefined)

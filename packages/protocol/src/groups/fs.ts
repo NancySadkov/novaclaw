@@ -85,13 +85,13 @@ export const DirectoryBrowseGroup = HttpApiGroup.make("server.directory-browse")
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
-        identifier: "v2.fs.browse",
+        identifier: "v2.directory.browse",
         summary: "Browse a host directory",
         description: "List direct file and folder names without booting a project or agent location for the directory.",
       }),
     ),
   )
-  .annotateMerge(OpenApi.annotations({ title: "filesystem", description: "Filesystem routes." }))
+  .annotateMerge(OpenApi.annotations({ title: "directory", description: "Host directory browsing." }))
 
 export const FileSystemGroup = HttpApiGroup.make("server.fs")
   .add(
