@@ -471,6 +471,21 @@ function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
   )
 }
 
+/** Structural equality for wire messages, whose values are JSON and therefore acyclic. */
+function sameWireValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((value, index) => sameWireValue(value, b[index]))
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+  if (keys.length !== Object.keys(right).length) return false
+  return keys.every((key) => Object.hasOwn(right, key) && sameWireValue(left[key], right[key]))
+}
+
 /**
  * Merge a fetched native history page into the current live-folded list (both
  * oldest-first), returning a new sorted array. Used to bootstrap, page older history,
@@ -528,6 +543,13 @@ export function mergeNativeMessages(
   for (const message of current) {
     const fetchedCopy = byId.get(message.id)
     if (fetchedCopy) {
+      // A mount/reconnect refresh commonly returns the exact rows already on screen. Preserve their
+      // identities: Solid keys transcript turns by the message objects, so replacing equal wire data
+      // tears down and rebuilds the whole chat for no semantic change, collapsing its scroll box.
+      if (sameWireValue(message, fetchedCopy)) {
+        byId.set(message.id, message)
+        continue
+      }
       // Keep our streaming copy while the server's is still incomplete, else take the server's.
       // Settlement is monotonic too: a response captured before the turn ended must not replace a
       // completed current assistant after a newer live event or fetch has settled it. This is the

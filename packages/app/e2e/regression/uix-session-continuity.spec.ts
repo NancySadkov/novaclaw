@@ -31,18 +31,6 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
     page.locator("#timeline").evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)
   await expect.poll(gap).toBeLessThanOrEqual(2)
 
-  // A remount/reconcile can insert or expand rows above the viewport. ResizeObserver must restick.
-  await page.locator("#content").evaluate((content) => {
-    const growth = document.createElement("div")
-    growth.style.height = "900px"
-    content.prepend(growth)
-  })
-  await expect.poll(gap).toBeLessThanOrEqual(2)
-
-  // Folding the live Working region changes geometry without expressing user navigation.
-  await page.locator("#working").evaluate((details: HTMLDetailsElement) => (details.open = false))
-  await expect.poll(gap).toBeLessThanOrEqual(2)
-
   // Native scrollbar chrome does not reliably send pointer events through the DOM element. Its
   // observable contract is an upward scrollTop change followed by `scroll`: that movement must win
   // even when it is smaller than the near-bottom re-pin threshold.
@@ -60,6 +48,38 @@ test("keeps the real timeline pin through layout changes until the user scrolls"
   await expect
     .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
     .toBe(true)
+
+  // A remount/reconcile can insert or expand rows above the viewport. ResizeObserver must restick.
+  await page.locator("#content").evaluate((content) => {
+    const growth = document.createElement("div")
+    growth.style.height = "900px"
+    content.prepend(growth)
+  })
+  await expect.poll(gap).toBeLessThanOrEqual(2)
+
+  // Folding the live Working region changes geometry without expressing user navigation.
+  await page.locator("#working").evaluate((details: HTMLDetailsElement) => (details.open = false))
+  await expect.poll(gap).toBeLessThanOrEqual(2)
+
+  // Replacing one chat with another can briefly collapse the transcript while its rows reconcile.
+  // Chromium clamps scrollTop to the new maximum and emits the same upward `scroll` event as a
+  // scrollbar gesture. That browser-owned movement must keep follow mode so the restored transcript
+  // returns to its latest row instead of stranding the reader at the first message.
+  await page.locator("#content").evaluate((content) => {
+    content.replaceChildren()
+    const timeline = content.parentElement!
+    timeline.scrollTop = 0
+    // Exercise the ordering observed during a chat swap: the clamp's scroll notification can run
+    // before ResizeObserver gets its turn to restick the changed content box.
+    timeline.dispatchEvent(new Event("scroll"))
+  })
+  await expect
+    .poll(() => page.evaluate(() => (window as never as { uixPin: { pinned: () => boolean } }).uixPin.pinned()))
+    .toBe(true)
+  await page.locator("#content").evaluate((content) => {
+    content.innerHTML = Array.from({ length: 12 }, (_, index) => `<div class="row">new chat ${index}</div>`).join("")
+  })
+  await expect.poll(gap).toBeLessThanOrEqual(2)
 
   // A single ordinary wheel tick must release follow mode even though it remains inside the
   // near-bottom re-pin threshold. The old controller unpinned on `wheel`, then immediately re-pinned

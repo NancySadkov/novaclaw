@@ -577,6 +577,19 @@ describe("mergeNativeMessages", () => {
     if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("fresh")
   })
 
+  test("an equal reconcile preserves message identity instead of rebuilding the transcript", () => {
+    const current = [
+      userMsg("msg_1", 1, "same prompt"),
+      assistantMsg("msg_2", 2, { completed: 3, text: "same answer" }),
+    ]
+    const fetched = structuredClone(current)
+    const merged = mergeNativeMessages(current, fetched, { authoritative: true, asOf: 100 })
+
+    expect(merged).not.toBe(current)
+    expect(merged[0]).toBe(current[0])
+    expect(merged[1]).toBe(current[1])
+  })
+
   test("in-flight assistant: the current copy wins (live deltas preserved over a lagging fetch)", () => {
     const current = [assistantMsg("msg_a", 1, { text: "Hello (live)" })] // no completed → in-flight
     const fetched = [assistantMsg("msg_a", 1, { text: "" })] // persisted copy lags, still in-flight

@@ -27,8 +27,8 @@ test("an upward viewport move revokes the pin as soon as it leaves the exact bot
   expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 398, clientHeight: 600 }, true)).toBe(false)
 })
 
-test("layout movement does not revoke the pin", () => {
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 0, clientHeight: 600 })).toBe(true)
+test("a browser clamp during a DOM layout transaction does not revoke the pin", () => {
+  expect(nextPinned(true, { scrollHeight: 600, scrollTop: 0, clientHeight: 600 }, true, true)).toBe(true)
 })
 
 test("nextPinned keeps the current pin on a zero-height (headless) layout", () => {
