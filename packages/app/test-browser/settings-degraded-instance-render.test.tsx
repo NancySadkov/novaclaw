@@ -12,6 +12,7 @@ import { NovaHealthBoard } from "@/components/settings-v2/nova-health"
 import { SettingsProjectSection } from "@/components/settings-v2/project"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
+import { NotificationContext } from "@/context/notification"
 
 /**
  * **TWO SETTINGS PANELS, RENDERED AGAINST AN INSTANCE THAT WILL NOT ANSWER.**
@@ -144,19 +145,21 @@ function mount(panel: () => JSX.Element) {
             <GlobalContext.Provider value={globalStub as never}>
               <ServerContext.Provider value={{ current: connection } as never}>
                 <ServerSyncContext.Provider value={syncStub as never}>
-                  <DialogProvider>
-                    {/* ⚠️ The fallback REPORTS the error rather than just marking that one fired.
-                        A boundary that says only "something threw" makes the next regression here
-                        a bisect; naming the throw makes it a read. */}
-                    <ErrorBoundary
-                      fallback={(error: unknown) => (
-                        <div data-slot="probe-boundary">the whole application is gone: {String(error)}</div>
-                      )}
-                    >
-                      <div data-slot="probe-app">the rest of the application</div>
-                      {panel()}
-                    </ErrorBoundary>
-                  </DialogProvider>
+                  <NotificationContext.Provider value={{ history: { recent: () => [] } } as never}>
+                    <DialogProvider>
+                      {/* ⚠️ The fallback REPORTS the error rather than just marking that one fired.
+                          A boundary that says only "something threw" makes the next regression here
+                          a bisect; naming the throw makes it a read. */}
+                      <ErrorBoundary
+                        fallback={(error: unknown) => (
+                          <div data-slot="probe-boundary">the whole application is gone: {String(error)}</div>
+                        )}
+                      >
+                        <div data-slot="probe-app">the rest of the application</div>
+                        {panel()}
+                      </ErrorBoundary>
+                    </DialogProvider>
+                  </NotificationContext.Provider>
                 </ServerSyncContext.Provider>
               </ServerContext.Provider>
             </GlobalContext.Provider>

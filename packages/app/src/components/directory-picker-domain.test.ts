@@ -61,7 +61,7 @@ test("uses the minimal host-directory listing for path autocomplete", async () =
   const sdk = {
     client: {
       v2: {
-        fs: {
+        directory: {
           browse: (input: { directory: string }) => {
             listed.push(input.directory)
             return Promise.resolve({ data: [{ name: "src", type: "directory" as const }] })

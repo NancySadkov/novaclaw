@@ -112,7 +112,7 @@ const serverCtx = {
         read: async () => ({ data: { type: "text", content: "hello" } }),
       },
       v2: {
-        fs: {
+        directory: {
           browse: async () => (faulty("list") ? boom() : { data: blank("list") ? [] : [...FILE_ROWS, ...NOTE_ROWS] }),
         },
         skill: {

@@ -30,7 +30,7 @@ function mount(initial: "reject" | "missing" | "binary" | "empty") {
       client: {
         path: { get: async () => ({ data: { data: "/tmp/notes-test" } }) },
         v2: {
-          fs: {
+          directory: {
             browse: async () => ({ data: [{ name: "record.md", type: "file" }] }),
           },
         },

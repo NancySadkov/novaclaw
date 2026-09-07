@@ -23,12 +23,6 @@ beforeAll(async () => {
     useLocation: () => ({ pathname: "", query: {} }),
     useNavigate: () => () => undefined,
   }))
-  mock.module("@novaclaw/ui/context", () => ({
-    createSimpleContext: () => ({
-      use: () => undefined,
-      provider: () => undefined,
-    }),
-  }))
   mock.module("@/context/platform", () => ({
     usePlatform: () => ({ platform: "desktop", storage: () => storage }),
   }))

@@ -137,7 +137,11 @@ function buildNotificationIndex(list: Notification[]) {
   return index
 }
 
-export const { use: useNotification, provider: NotificationProvider } = createSimpleContext({
+export const {
+  use: useNotification,
+  provider: NotificationProvider,
+  context: NotificationContext,
+} = createSimpleContext({
   name: "Notification",
   gate: false,
   init: () => {
