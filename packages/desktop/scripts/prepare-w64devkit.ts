@@ -2,7 +2,6 @@
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises"
-import { homedir } from "node:os"
 import path from "node:path"
 
 export const W64DEVKIT_VERSION = "2.9.0"
@@ -12,13 +11,12 @@ export const W64DEVKIT_SOURCE_ARCHIVE = "source.tar"
 export const W64DEVKIT_SOURCE_SHA256 = "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec"
 
 const packageDir = path.resolve(import.meta.dir, "..")
-export const W64DEVKIT_SUPPLY_SOURCE = path.resolve(
-  packageDir,
-  "..",
-  "..",
-  "supply",
-  `w64devkit-${W64DEVKIT_VERSION}-source.tar`,
-)
+const supplyDir = path.resolve(packageDir, "..", "..", "supply")
+export const W64DEVKIT_SUPPLY_ARCHIVE = path.join(supplyDir, W64DEVKIT_ARCHIVE)
+export const W64DEVKIT_SUPPLY_SOURCE = path.resolve(supplyDir, `w64devkit-${W64DEVKIT_VERSION}-source.tar`)
+export function resolveW64devkitArchive(override: string | undefined) {
+  return override ? path.resolve(override) : W64DEVKIT_SUPPLY_ARCHIVE
+}
 export function resolveW64devkitSupplySource(override: string | undefined) {
   return override ? path.resolve(override) : W64DEVKIT_SUPPLY_SOURCE
 }
@@ -40,21 +38,14 @@ export async function prepareW64devkit() {
   if (process.platform !== "win32") return
   if (await validResource()) return
 
-  const cache = process.env.NOVACLAW_W64DEVKIT_ARCHIVE
-    ? path.resolve(process.env.NOVACLAW_W64DEVKIT_ARCHIVE)
-    : path.join(
-        process.env.LOCALAPPDATA ?? path.join(homedir(), "AppData", "Local"),
-        "novaclaw-build-cache",
-        "third-party",
-        W64DEVKIT_ARCHIVE,
-      )
-  await mkdir(path.dirname(cache), { recursive: true })
-  await ensureArchive(cache, W64DEVKIT_SHA256, "NOVACLAW_W64DEVKIT_ARCHIVE")
+  const archive = resolveW64devkitArchive(process.env.NOVACLAW_W64DEVKIT_ARCHIVE)
+  await mkdir(path.dirname(archive), { recursive: true })
+  await ensureArchive(archive, W64DEVKIT_SHA256, "NOVACLAW_W64DEVKIT_ARCHIVE")
 
   const stage = path.join(path.dirname(W64DEVKIT_RESOURCE), `.w64devkit-stage-${process.pid}`)
   await rm(stage, { recursive: true, force: true })
   await mkdir(stage, { recursive: true })
-  const extract = Bun.spawn([cache, `-o${stage}`, "-y"], { stdout: "ignore", stderr: "pipe", windowsHide: true })
+  const extract = Bun.spawn([archive, `-o${stage}`, "-y"], { stdout: "ignore", stderr: "pipe", windowsHide: true })
   const stderr = await new Response(extract.stderr).text()
   const code = await extract.exited
   if (code !== 0) throw new Error(`w64devkit extractor exited ${code}: ${stderr.trim()}`)
@@ -113,7 +104,9 @@ async function ensureArchive(file: string, expected: string, variable: string) {
   const digest = await sha256(file)
   if (digest === expected) return
   if (digest === undefined)
-    throw new Error(`w64devkit archive is not available locally: ${file}. Set ${variable} to the verified archive.`)
+    throw new Error(
+      `w64devkit archive is not available locally: ${file}. Restore supply with git lfs pull, or set ${variable} to a verified override.`,
+    )
   throw new Error(`w64devkit SHA-256 mismatch: expected ${expected}, got ${digest}`)
 }
 

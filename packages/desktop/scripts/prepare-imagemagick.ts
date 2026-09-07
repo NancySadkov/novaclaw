@@ -21,13 +21,13 @@
 // loses colour-name lookup, format delegates and the security policy — the last of which is the file
 // that decides what an agent's `magick` invocation is allowed to touch.
 //
-// Mirrors `prepare-w64devkit.ts` deliberately: same cache location, same SHA-256 pin, same
-// idempotent marker, same "a supplied archive that fails verification is an error, not a re-download".
+// Mirrors `prepare-w64devkit.ts` deliberately: same repository supply cabinet, same SHA-256 pin,
+// same idempotent marker, same "a supplied archive that fails verification is an error, not an
+// update or re-download".
 
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { cp, mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises"
-import { homedir } from "node:os"
 import path from "node:path"
 import { resolveSevenZipArchiver } from "../../../script/lib/build-tools"
 
@@ -36,6 +36,10 @@ export const IMAGEMAGICK_ARCHIVE = `ImageMagick-${IMAGEMAGICK_VERSION}-portable-
 export const IMAGEMAGICK_SHA256 = "4715072c158c46bbdc3e6971817e92ed43fca7c93142cad142ee42c603baaac1"
 
 const packageDir = path.resolve(import.meta.dir, "..")
+export const IMAGEMAGICK_SUPPLY_ARCHIVE = path.resolve(packageDir, "..", "..", "supply", IMAGEMAGICK_ARCHIVE)
+export function resolveImageMagickArchive(override: string | undefined) {
+  return override ? path.resolve(override) : IMAGEMAGICK_SUPPLY_ARCHIVE
+}
 export const IMAGEMAGICK_RESOURCE = path.join(packageDir, "resources", "third-party", "imagemagick")
 const marker = path.join(IMAGEMAGICK_RESOURCE, ".novaclaw-imagemagick.json")
 
@@ -57,16 +61,9 @@ export async function prepareImageMagick() {
   if (process.platform !== "win32") return
   if (await validResource()) return
 
-  const cache = process.env["NOVACLAW_IMAGEMAGICK_ARCHIVE"]
-    ? path.resolve(process.env["NOVACLAW_IMAGEMAGICK_ARCHIVE"])
-    : path.join(
-        process.env["LOCALAPPDATA"] ?? path.join(homedir(), "AppData", "Local"),
-        "novaclaw-build-cache",
-        "third-party",
-        IMAGEMAGICK_ARCHIVE,
-      )
-  await mkdir(path.dirname(cache), { recursive: true })
-  await ensureArchive(cache, IMAGEMAGICK_SHA256)
+  const archive = resolveImageMagickArchive(process.env["NOVACLAW_IMAGEMAGICK_ARCHIVE"])
+  await mkdir(path.dirname(archive), { recursive: true })
+  await ensureArchive(archive, IMAGEMAGICK_SHA256)
 
   const stage = path.join(path.dirname(IMAGEMAGICK_RESOURCE), `.imagemagick-stage-${process.pid}`)
   await rm(stage, { recursive: true, force: true })
@@ -76,7 +73,7 @@ export async function prepareImageMagick() {
   // `resolveSevenZipArchiver` is the one that PROBES for libarchive rather than trusting whichever
   // `tar.exe` PATH answers with — the lottery that killed the 0.1.66 release.
   const archiver = resolveSevenZipArchiver(path.resolve(packageDir, "..", ".."))
-  const extract = Bun.spawn([archiver.path, "-xf", cache, "-C", stage], {
+  const extract = Bun.spawn([archiver.path, "-xf", archive, "-C", stage], {
     stdout: "ignore",
     stderr: "pipe",
     windowsHide: true,
@@ -152,7 +149,7 @@ async function ensureArchive(file: string, expected: string) {
   if (digest === expected) return
   if (digest === undefined)
     throw new Error(
-      `ImageMagick archive is not available locally: ${file}. Set NOVACLAW_IMAGEMAGICK_ARCHIVE to the verified archive.`,
+      `ImageMagick archive is not available locally: ${file}. Restore supply with git lfs pull, or set NOVACLAW_IMAGEMAGICK_ARCHIVE to a verified override.`,
     )
   throw new Error(`ImageMagick SHA-256 mismatch: expected ${expected}, got ${digest}`)
 }

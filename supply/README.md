@@ -4,5 +4,11 @@ This directory retains third-party inputs required to reproduce specific NovaCla
 artifacts are stored with Git LFS, and build tooling must verify a pinned digest before using them.
 They belong here rather than in `tmp/` or a release `dist/` directory because both are disposable.
 
-`w64devkit-2.9.0-source.tar` is the corresponding-source archive for the Windows toolchain shipped
-by NovaClaw 0.1.71. `packages/desktop/scripts/prepare-w64devkit.ts` owns its filename and SHA-256.
+The current Windows baseline contains:
+
+- `w64devkit-x64-2.9.0.7z.exe`, the prebuilt compiler/toolchain environment;
+- `w64devkit-2.9.0-source.tar`, its corresponding source; and
+- `ImageMagick-7.1.2-29-portable-Q16-x64.7z`, the image-tool redistributable.
+
+The preparation scripts in `packages/desktop/scripts/` own their filenames and SHA-256 digests.
+Changing a baseline is an explicit source change; builds never discover or auto-update these assets.
