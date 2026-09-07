@@ -8,13 +8,13 @@
       "artifacts": [
         {
           "name": "NovaClaw-0.1.71-source.7z",
-            "sha256": "e52bf9b88070639648c9179185f5a6eae91fb146b087a83a1493e4d0696d7c62",
-            "bytes": 21887833
+            "sha256": "6f95dc11dd2c9224bcf9af68a483a7f7adb37f1e615076fb5ddc68ccf01d12bd",
+            "bytes": 21890108
         },
         {
           "name": "NovaClaw-0.1.71-windows-x64.7z",
-            "sha256": "04227722d74c6a4390cc07beb9653b1b2435f6f902a75eaa46fa668854f79c75",
-            "bytes": 202309224
+            "sha256": "a3821dbc3d687ce128dc8b8357aa336c38dd4ea077233eba8a792fc18f5fec2d",
+            "bytes": 202336505
         },
         {
           "name": "w64devkit-2.9.0-source.tar",
