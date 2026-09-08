@@ -300,6 +300,36 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
 })
 
 describe("the Geryon sleep-recovery regression", () => {
+  test("a model-specific compaction timeout ends a hung summary stream", async () => {
+    const model = routed({ context: 12_000, output: 4_096 })
+    const declines: SessionCompaction.DeclineReason[] = []
+    const compactor = SessionCompaction.make({
+      events: { publish: () => Effect.void } as unknown as EventV2.Interface,
+      llm: { stream: () => Stream.never },
+      config: [{ type: "document", info: { compaction: { keep: { tokens: 8 } } } } as unknown as Config.Entry],
+      prefixHash: () => Effect.succeed("0".repeat(64)),
+    })
+    const started = Date.now()
+    const compacted = await Effect.runPromise(
+      compactor.compactAfterOverflow({
+        sessionID,
+        entries: entries(
+          user(`ancient ${"alpha ".repeat(3_000)}`),
+          assistant("work complete"),
+          user("continue"),
+          assistant("continuing"),
+        ),
+        model,
+        request: LLM.request({ model, messages: [], tools: [] }),
+        compactionTimeoutMs: 20,
+        onDecline: (reason) => declines.push(reason),
+      }),
+    )
+    expect(compacted).toBe(false)
+    expect(declines).toEqual(["summarizer-unavailable"])
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
   test("a hung compactor yields to a new chat, falls back deterministically, and stays backed off next turn", async () => {
     const scheduler = SessionScheduler.make()
     const model = routed({ context: 12_000, output: 4_096 })
@@ -348,9 +378,7 @@ describe("the Geryon sleep-recovery regression", () => {
     // same device. Foreground admission must abort the maintenance decode rather than merely put a
     // second request beside it on an already-starved model server.
     const admittedAt = Date.now()
-    await Effect.runPromise(
-      scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive" }),
-    )
+    await Effect.runPromise(scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive" }))
     const compacted = await Promise.race([
       Effect.runPromise(Fiber.join(hung)),
       Bun.sleep(1_000).then(() => {

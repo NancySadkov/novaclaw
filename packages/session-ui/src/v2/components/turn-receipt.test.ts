@@ -92,7 +92,9 @@ describe("turn receipt", () => {
 
   test("does not promise that a failed compaction can only happen once", () => {
     const note = longStageNote("compaction", 30_000)!
-    expect(note).toContain("half a minute")
+    expect(note).toContain("configured timeout")
+    expect(note).toContain("five minutes by default")
+    expect(note).not.toContain("half a minute")
     expect(note).not.toMatch(/happens once|not every turn/i)
   })
 

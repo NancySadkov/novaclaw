@@ -71,6 +71,8 @@ export const Plugin = define({
                 if (config.tier !== undefined) model.tier = config.tier
                 if (config.prePrompt !== undefined) model.prePrompt = config.prePrompt
                 if (config.retry !== undefined) Object.assign(model, { retry: { attempts: config.retry.attempts } })
+                if (config.compaction !== undefined)
+                  Object.assign(model, { compaction: { timeoutMs: config.compaction.timeoutMs } })
                 if (config.name !== undefined) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }
                 if (config.capabilities !== undefined) {

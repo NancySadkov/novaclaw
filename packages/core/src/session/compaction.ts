@@ -163,6 +163,8 @@ type Input = {
   readonly prefixCacheRetentionTokens?: number
   /** Empirically honoured window for this exact serving route; overrides an optimistic catalog. */
   readonly contextWindowTokens?: number
+  /** Deadline from the exact catalog model selected for this turn. */
+  readonly compactionTimeoutMs?: number
   /** Admission identity for this decode-shaped maintenance pass. */
   readonly maintenance?: SessionScheduler.MaintenanceInput
   /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
@@ -482,6 +484,7 @@ export const make = (dependencies: Dependencies) => {
     readonly prompt: string
     readonly model: Model
     readonly outputTokens: number
+    readonly timeoutMs?: number
     readonly maintenance?: SessionScheduler.MaintenanceInput
   }) {
     const chunks: string[] = []
@@ -512,7 +515,7 @@ export const make = (dependencies: Dependencies) => {
       Effect.as(true),
       Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
       Effect.timeoutOrElse({
-        duration: CalloutPolicy.summarizer.timeoutMs,
+        duration: CalloutPolicy.compaction(input.timeoutMs).timeoutMs,
         orElse: () => Effect.succeed(false),
       }),
     )
@@ -661,6 +664,7 @@ export const make = (dependencies: Dependencies) => {
       prompt: summaryPrompt,
       model: input.model,
       outputTokens: summaryOutput,
+      timeoutMs: input.compactionTimeoutMs,
       maintenance: input.maintenance,
     })
     if (!first.completed || first.failed || !first.text.trim()) return decline("summarizer-unavailable")
@@ -684,6 +688,7 @@ export const make = (dependencies: Dependencies) => {
               prompt: trimPrompt,
               model: input.model,
               outputTokens: summaryOutput,
+              timeoutMs: input.compactionTimeoutMs,
               maintenance: input.maintenance,
             })
           : undefined

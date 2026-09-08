@@ -231,6 +231,7 @@ describe("ConfigProviderPlugin.Plugin", () => {
                 models: {
                   chat: {
                     name: "First",
+                    compaction: { timeoutMs: 600_000 },
                     capabilities: { tools: true, input: ["text"], output: ["text"] },
                     disabled: true,
                     limit: { context: 100, output: 50 },
@@ -301,6 +302,7 @@ describe("ConfigProviderPlugin.Plugin", () => {
         expect(provider.request.headers).toEqual({ first: "first", shared: "last", last: "last" })
         expect(model.api.id).toBe(ModelV2.ID.make("api-chat"))
         expect(model.name).toBe("Last")
+        expect(model.compaction?.timeoutMs).toBe(600_000)
         expect(model.capabilities).toEqual({ tools: true, input: ["text"], output: ["text"] })
         expect(model.enabled).toBe(false)
         expect(model.limit).toEqual({ context: 100, output: 75 })

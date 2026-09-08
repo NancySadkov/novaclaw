@@ -62,6 +62,7 @@ const bodyEffort = (m: unknown): unknown => (m as WithRequestBody | undefined)?.
  * takes high and max), so the row says that rather than pretending to know for every endpoint.
  */
 const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
+const DEFAULT_COMPACTION_TIMEOUT_MINUTES = 5
 
 export const DialogModelConfig: Component<{
   providerID: string
@@ -188,6 +189,7 @@ export const DialogModelConfig: Component<{
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
     retryAttempts: nstr(init.retry?.attempts),
+    compactionTimeout: nstr((init.compaction?.timeoutMs ?? DEFAULT_COMPACTION_TIMEOUT_MINUTES * 60_000) / 60_000),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
     prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
@@ -207,6 +209,11 @@ export const DialogModelConfig: Component<{
     if (num(form.images) !== undefined) limit.images = num(form.images)
     const input = MODALITIES.filter((m) => form[`in${cap(m)}` as "inText" | "inImage" | "inAudio"])
     const output = MODALITIES.filter((m) => form[`out${cap(m)}` as "outText" | "outImage" | "outAudio"])
+    const enteredCompactionMinutes = num(form.compactionTimeout)
+    const compactionMinutes =
+      enteredCompactionMinutes !== undefined && enteredCompactionMinutes > 0
+        ? enteredCompactionMinutes
+        : DEFAULT_COMPACTION_TIMEOUT_MINUTES
 
     // Thinking budget rides request.body (the runtime carrier), preserving any other body params.
     const saved = savedModel()
@@ -236,6 +243,9 @@ export const DialogModelConfig: Component<{
         num(form.retryAttempts) === undefined
           ? undefined
           : { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts)!))) },
+      compaction: {
+        timeoutMs: Math.round(compactionMinutes * 60_000),
+      },
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
@@ -545,7 +555,10 @@ export const DialogModelConfig: Component<{
           </SettingsListV2>
 
           {section("reliability")}
-          <SettingsListV2>{paramRow("retryAttempts")}</SettingsListV2>
+          <SettingsListV2>
+            {paramRow("retryAttempts")}
+            {paramRow("compactionTimeout")}
+          </SettingsListV2>
 
           {section("capabilities")}
           <SettingsListV2>
