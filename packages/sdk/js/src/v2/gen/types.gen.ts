@@ -3746,6 +3746,50 @@ export type ConfigV2ToolRouting = {
   rules: Array<ConfigV2ToolRoutingRule>
 }
 
+export type ConfigV2Nudge = {
+  id: string
+  name: string
+  enabled?: boolean
+  agents?: Array<string>
+  /**
+   * A closed, harness-owned event selector. Free-form code is never executed.
+   */
+  hook:
+    | {
+        type: "text-match"
+        pattern: string
+      }
+    | {
+        type: "tool-call"
+        tool: string
+      }
+    | {
+        type: "mcp-call"
+        server: string
+      }
+    | {
+        type: "file-read"
+        extension: string
+      }
+    | {
+        type: "file-write"
+        extension: string
+      }
+    | {
+        type: "after-compaction"
+      }
+    | {
+        type: "resource-pressure"
+        level: "warning" | "floor" | "either"
+      }
+    | {
+        type: "time-of-day"
+        after: string
+        before: string
+      }
+  text: string
+}
+
 export type ConfigV2McpTimeout = {
   startup?: number
   request?: number
@@ -4141,6 +4185,7 @@ export type ConfigInfo = {
   tool_output?: ConfigV2ToolOutput
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
+  nudges?: Array<ConfigV2Nudge>
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction
   context?: ConfigV2Context
@@ -4164,7 +4209,6 @@ export type ConfigInfo = {
   }
   harness_drives?: {
     reground?: boolean
-    set?: boolean
     children?: boolean
     imageShortcut?: boolean
     resumeInterrupted?: boolean

@@ -805,7 +805,11 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number; live: boo
   onCleanup(() => {
     if (timer) clearInterval(timer)
   })
-  return <span data-slot="native-turn-elapsed">{seconds(elapsedMs(props.startedAt, props.completedAt, now()))}</span>
+  return (
+    <Show when={seconds(elapsedMs(props.startedAt, props.completedAt, now()))}>
+      {(value) => <span data-slot="native-turn-elapsed">{value()}</span>}
+    </Show>
+  )
 }
 
 /**
@@ -1407,8 +1411,10 @@ function CompactionMessage(props: { message: SessionMessageCompaction | SessionM
         tokens: Token.estimateFromChars(props.message.generatedChars ?? 0),
       })
     if (props.message.type === "compaction-status")
-      return i18n.t("ui.transcript.compaction.failed", { time: elapsed() })
-    return i18n.t("ui.transcript.compacted.in", { time: elapsed() })
+      return elapsed()
+        ? i18n.t("ui.transcript.compaction.failed", { time: elapsed()! })
+        : i18n.t("ui.transcript.compaction.failed.short")
+    return elapsed() ? i18n.t("ui.transcript.compacted.in", { time: elapsed()! }) : i18n.t("ui.transcript.compacted")
   }
   return (
     <div data-slot="native-compaction">

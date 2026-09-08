@@ -16,9 +16,9 @@ const detail = [
 const resourceLayer = Layer.succeed(
   ResourcePressureContext.Service,
   ResourcePressureContext.Service.of({
-    lines: () => Effect.succeed([]),
     inspect: () => Effect.succeed(detail),
     capacity: () => Effect.succeed(undefined),
+    level: () => Effect.succeed("ok"),
   }),
 )
 const layer = ResourceStatusTool.layer.pipe(

@@ -1,6 +1,6 @@
 export * as SessionHistory from "./history"
 
-import { and, asc, desc, eq, gt, lte, ne, or } from "drizzle-orm"
+import { and, asc, desc, eq, gt, lte, ne, notInArray, or } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Database } from "../database/database"
 import { Hash } from "../util/hash"
@@ -86,7 +86,10 @@ export const prefixHash = Effect.fn("SessionHistory.prefixHash")(function* (
       and(
         eq(SessionMessageTable.session_id, sessionID),
         lte(SessionMessageTable.seq, prefixSeq),
-        ne(SessionMessageTable.type, "compaction"),
+        // Compaction audit rows are presentation state, not transcript prefix. A running row changes
+        // from `compaction-status` to `compaction` when it settles; hashing one form but excluding the
+        // other makes a summary invalidate its own prefix at the moment it completes.
+        notInArray(SessionMessageTable.type, ["compaction", "compaction-status"]),
       ),
     )
     .orderBy(asc(SessionMessageTable.seq))

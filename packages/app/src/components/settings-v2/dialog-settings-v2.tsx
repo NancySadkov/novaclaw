@@ -28,12 +28,14 @@ import { SettingsRecoveryV2 } from "./recovery"
 import { SettingsMessengersV2 } from "./messengers"
 import { SettingsWebSearchV2 } from "./web-search"
 import { SettingsTunesV2 } from "./tunes"
+import { SettingsNudgesV2 } from "./nudges"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   "system-prompt": "advanced",
   tunes: "advanced",
+  nudges: "advanced",
   computer: "advanced",
   tools: "advanced",
   strict: "advanced",
@@ -147,6 +149,12 @@ export const DialogSettings: Component<{
                               {language.t("settings.tunes.title")}
                             </TabsV2.Trigger>
                           </Show>
+                          <Show when={tabVisible("nudges")}>
+                            <TabsV2.Trigger value="nudges">
+                              <Icon name="prompt" size="large" />
+                              {language.t("settings.nudges.title")}
+                            </TabsV2.Trigger>
+                          </Show>
                           <Show when={tabVisible("introspection")}>
                             <TabsV2.Trigger value="introspection">
                               <Icon name="eye" size="large" />
@@ -246,6 +254,11 @@ export const DialogSettings: Component<{
               <Show when={tabVisible("tunes")}>
                 <TabsV2.Content value="tunes" class="settings-v2-panel">
                   <SettingsTunesV2 />
+                </TabsV2.Content>
+              </Show>
+              <Show when={tabVisible("nudges")}>
+                <TabsV2.Content value="nudges" class="settings-v2-panel">
+                  <SettingsNudgesV2 />
                 </TabsV2.Content>
               </Show>
               <Show when={tabVisible("introspection")}>

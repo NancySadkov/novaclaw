@@ -1,10 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5721cd5f-3533-4770-897d-86bd8736b56c",
-  "prevIds": [
-    "b5ce1a9f-0553-4bba-ae53-6db942e7413f"
-  ],
+  "id": "0f1880ad-8aa7-4d74-86db-af46ba082262",
+  "prevIds": ["5721cd5f-3533-4770-897d-86bd8736b56c"],
   "ddl": [
     {
       "name": "agent_token_minute",
@@ -40,6 +38,10 @@
     },
     {
       "name": "memory_usage",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_nudge_delivery",
       "entityType": "tables"
     },
     {
@@ -843,6 +845,46 @@
       "name": "corrections",
       "entityType": "columns",
       "table": "memory_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_nudge_delivery"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nudge_id",
+      "entityType": "columns",
+      "table": "session_nudge_delivery"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "occurrence",
+      "entityType": "columns",
+      "table": "session_nudge_delivery"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fired_at",
+      "entityType": "columns",
+      "table": "session_nudge_delivery"
     },
     {
       "type": "text",
@@ -4695,13 +4737,9 @@
       "table": "tool_catalogue"
     },
     {
-      "columns": [
-        "schedule_id"
-      ],
+      "columns": ["schedule_id"],
       "tableTo": "calendar_schedule",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4710,13 +4748,9 @@
       "table": "calendar_fire"
     },
     {
-      "columns": [
-        "active_account_id"
-      ],
+      "columns": ["active_account_id"],
       "tableTo": "account",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4725,13 +4759,9 @@
       "table": "account_state"
     },
     {
-      "columns": [
-        "aggregate_id"
-      ],
+      "columns": ["aggregate_id"],
       "tableTo": "event_sequence",
-      "columnsTo": [
-        "aggregate_id"
-      ],
+      "columnsTo": ["aggregate_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4740,13 +4770,9 @@
       "table": "event"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4755,13 +4781,9 @@
       "table": "session_auto_grant"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4770,13 +4792,9 @@
       "table": "session_compaction"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4785,13 +4803,9 @@
       "table": "session_component"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4800,13 +4814,9 @@
       "table": "session_context_epoch"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4815,13 +4825,9 @@
       "table": "session_execution"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4830,13 +4836,9 @@
       "table": "session_input"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4845,13 +4847,9 @@
       "table": "session_message"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4860,13 +4858,9 @@
       "table": "session_tag"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4875,572 +4869,441 @@
       "table": "todo"
     },
     {
-      "columns": [
-        "agent",
-        "minute"
-      ],
+      "columns": ["agent", "minute"],
       "nameExplicit": false,
       "name": "agent_token_minute_pk",
       "entityType": "pks",
       "table": "agent_token_minute"
     },
     {
-      "columns": [
-        "email",
-        "url"
-      ],
+      "columns": ["session_id", "nudge_id"],
+      "nameExplicit": false,
+      "name": "session_nudge_delivery_pk",
+      "entityType": "pks",
+      "table": "session_nudge_delivery"
+    },
+    {
+      "columns": ["email", "url"],
       "nameExplicit": false,
       "name": "control_account_pk",
       "entityType": "pks",
       "table": "control_account"
     },
     {
-      "columns": [
-        "plan_id",
-        "artifact_id"
-      ],
+      "columns": ["plan_id", "artifact_id"],
       "nameExplicit": false,
       "name": "jh_artifact_pk",
       "entityType": "pks",
       "table": "jh_artifact"
     },
     {
-      "columns": [
-        "plan_id",
-        "seq"
-      ],
+      "columns": ["plan_id", "seq"],
       "nameExplicit": false,
       "name": "jh_log_pk",
       "entityType": "pks",
       "table": "jh_log"
     },
     {
-      "columns": [
-        "account_id",
-        "chat_id"
-      ],
+      "columns": ["account_id", "chat_id"],
       "nameExplicit": false,
       "name": "messenger_chat_pk",
       "entityType": "pks",
       "table": "messenger_chat"
     },
     {
-      "columns": [
-        "account_id",
-        "sender_id"
-      ],
+      "columns": ["account_id", "sender_id"],
       "nameExplicit": false,
       "name": "messenger_contact_pk",
       "entityType": "pks",
       "table": "messenger_contact"
     },
     {
-      "columns": [
-        "account_id",
-        "chat_id",
-        "message_id"
-      ],
+      "columns": ["account_id", "chat_id", "message_id"],
       "nameExplicit": false,
       "name": "messenger_inbound_pk",
       "entityType": "pks",
       "table": "messenger_inbound"
     },
     {
-      "columns": [
-        "session_id",
-        "kind",
-        "component_id"
-      ],
+      "columns": ["session_id", "kind", "component_id"],
       "nameExplicit": false,
       "name": "session_component_pk",
       "entityType": "pks",
       "table": "session_component"
     },
     {
-      "columns": [
-        "session_id",
-        "tag"
-      ],
+      "columns": ["session_id", "tag"],
       "nameExplicit": false,
       "name": "session_tag_pk",
       "entityType": "pks",
       "table": "session_tag"
     },
     {
-      "columns": [
-        "attempt_id",
-        "position"
-      ],
+      "columns": ["attempt_id", "position"],
       "nameExplicit": false,
       "name": "todo_snapshot_pk",
       "entityType": "pks",
       "table": "todo_snapshot"
     },
     {
-      "columns": [
-        "session_id",
-        "position"
-      ],
+      "columns": ["session_id", "position"],
       "nameExplicit": false,
       "name": "todo_pk",
       "entityType": "pks",
       "table": "todo"
     },
     {
-      "columns": [
-        "scope",
-        "name"
-      ],
+      "columns": ["scope", "name"],
       "nameExplicit": false,
       "name": "tool_catalogue_pk",
       "entityType": "pks",
       "table": "tool_catalogue"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "community_channel_pk",
       "table": "community_channel",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "pattern"
-      ],
+      "columns": ["pattern"],
       "nameExplicit": false,
       "name": "community_filter_pk",
       "table": "community_filter",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "community_message_pk",
       "table": "community_message",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "community_direct_message_pk",
       "table": "community_direct_message",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workspace_pk",
       "table": "workspace",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "data_migration_pk",
       "table": "data_migration",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "memory_access_pk",
       "table": "memory_access",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "memory_id"
-      ],
+      "columns": ["memory_id"],
       "nameExplicit": false,
       "name": "memory_usage_pk",
       "table": "memory_usage",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "calendar_fire_pk",
       "table": "calendar_fire",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "calendar_schedule_pk",
       "table": "calendar_schedule",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_compaction_request_pk",
       "table": "session_compaction_request",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_memory_cleanup_pk",
       "table": "session_memory_cleanup",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_quality_check_pk",
       "table": "session_quality_check",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_policy_decision_pk",
       "table": "session_policy_decision",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "bash_job_pk",
       "table": "bash_job",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "host"
-      ],
+      "columns": ["host"],
       "nameExplicit": false,
       "name": "web_host_budget_pk",
       "table": "web_host_budget",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "account_state_pk",
       "table": "account_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "account_pk",
       "table": "account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "agent_config_pk",
       "table": "agent_config",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "agent_setting_pk",
       "table": "agent_setting",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "agent"
-      ],
+      "columns": ["agent"],
       "nameExplicit": false,
       "name": "agent_status_pk",
       "table": "agent_status",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "catalog_provider_pk",
       "table": "catalog_provider",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "catalog_setting_pk",
       "table": "catalog_setting",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "command_config_pk",
       "table": "command_config",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "community_answered_pk",
       "table": "community_answered",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "network_id"
-      ],
+      "columns": ["network_id"],
       "nameExplicit": false,
       "name": "community_contact_pk",
       "table": "community_contact",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "community_observation_pk",
       "table": "community_observation",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "community_offer_pk",
       "table": "community_offer",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "network_id"
-      ],
+      "columns": ["network_id"],
       "nameExplicit": false,
       "name": "community_peer_pk",
       "table": "community_peer",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "network_id"
-      ],
+      "columns": ["network_id"],
       "nameExplicit": false,
       "name": "community_succession_pk",
       "table": "community_succession",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "credential_pk",
       "table": "credential",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "aggregate_id"
-      ],
+      "columns": ["aggregate_id"],
       "nameExplicit": false,
       "name": "event_sequence_pk",
       "table": "event_sequence",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "event_pk",
       "table": "event",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "instance_identity_pk",
       "table": "instance_identity",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "jh_plan_pk",
       "table": "jh_plan",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "messenger_account_pk",
       "table": "messenger_account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "messenger_binding_pk",
       "table": "messenger_binding",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "account_id"
-      ],
+      "columns": ["account_id"],
       "nameExplicit": false,
       "name": "messenger_cursor_pk",
       "table": "messenger_cursor",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "scope"
-      ],
+      "columns": ["scope"],
       "nameExplicit": false,
       "name": "messenger_initiation_pk",
       "table": "messenger_initiation",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "permission_pk",
       "table": "permission",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "reference_config_pk",
       "table": "reference_config",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_auto_grant_pk",
       "table": "session_auto_grant",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_compaction_pk",
       "table": "session_compaction",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_context_epoch_pk",
       "table": "session_context_epoch",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_execution_pk",
       "table": "session_execution",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_input_pk",
       "table": "session_input",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_message_pk",
       "table": "session_message",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "runtime_setting_pk",
       "table": "runtime_setting",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "source"
-      ],
+      "columns": ["source"],
       "nameExplicit": false,
       "name": "skill_config_pk",
       "table": "skill_config",
@@ -6161,9 +6024,7 @@
       "table": "tool_catalogue"
     },
     {
-      "columns": [
-        "attempt_id"
-      ],
+      "columns": ["attempt_id"],
       "nameExplicit": false,
       "name": "session_execution_attempt_id_unique",
       "entityType": "uniques",

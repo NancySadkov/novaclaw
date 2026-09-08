@@ -59,9 +59,9 @@ const graph = (input: {
   const pressure = Layer.succeed(
     ResourcePressureContext.Service,
     ResourcePressureContext.Service.of({
-      lines: () => Effect.succeed([]),
       inspect: () => Effect.succeed([]),
       capacity: () => Effect.sync(input.capacity),
+      level: () => Effect.succeed("ok"),
     }),
   )
   return CapabilityServiceRuntime.layer.pipe(

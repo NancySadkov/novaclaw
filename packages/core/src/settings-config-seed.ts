@@ -56,6 +56,7 @@ export const SETTINGS_KEYS = [
   "tool_output",
   "tool_routing",
   "resource_pressure",
+  "nudges",
   "mcp",
   "compaction",
   "context",

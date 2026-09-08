@@ -12,11 +12,10 @@ import { SystemContext } from "@novaclaw/core/system-context"
 import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
-import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
-import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
+import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
@@ -58,26 +57,6 @@ const itWithInstructions = testEffect(
     [Location.node, locationLayer],
     [FSUtil.node, instructionFS],
     [Global.node, Global.layerWith({ config: "/global" })],
-  ]),
-)
-let resourceLines: ReadonlyArray<string> = []
-const resourcePressureNode = makeGlobalNode({
-  service: ResourcePressureContext.Service,
-  layer: Layer.succeed(
-    ResourcePressureContext.Service,
-    ResourcePressureContext.Service.of({
-      lines: () => Effect.sync(() => resourceLines),
-      inspect: () => Effect.succeed(["Resource pressure: ok."]),
-      capacity: () => Effect.succeed(undefined),
-    }),
-  ),
-  deps: [],
-})
-const itWithResourcePressure = testEffect(
-  AppNodeBuilder.build(builtInsNode, [
-    [Location.node, locationLayer],
-    [Global.node, Global.layerWith({ config: "/global" })],
-    [ResourcePressureContext.node, resourcePressureNode],
   ]),
 )
 let mcpLines: ReadonlyArray<string> = []
@@ -133,79 +112,6 @@ describe("SystemContextBuiltIns", () => {
           `Today's date: ${localDate(timestamp)}`,
         ].join("\n"),
       )
-    }),
-  )
-
-  itWithResourcePressure.effect("reconciles live resource headroom without rebuilding the location", () =>
-    Effect.gen(function* () {
-      resourceLines = []
-      const context = yield* SystemContextRegistry.Service
-      const initialized = yield* SystemContext.initialize(yield* context.load())
-
-      resourceLines = ["Memory headroom is low. Use resource_status for live detail."]
-      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
-
-      expect(refreshed).toMatchObject({ _tag: "Updated" })
-      if (refreshed._tag !== "Updated") return
-      expect(refreshed.text).toContain("The environment you are running in has changed:")
-      expect(refreshed.text).toContain("  Memory headroom is low. Use resource_status for live detail.")
-      expect(refreshed.text).not.toContain(`  Platform: ${process.platform}`)
-      expect(refreshed.text).not.toContain("Resource pressure: ok")
-    }),
-  )
-
-  itWithResourcePressure.effect("admits at most one moving memory warning per rolling hour", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(timestamp)
-      resourceLines = [
-        "Memory headroom is low: 34816 MB of 40960 MB committed. Avoid memory-intensive work.",
-        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
-      ]
-      const context = yield* SystemContextRegistry.Service
-      const initialized = yield* SystemContext.initialize(yield* context.load())
-
-      yield* TestClock.setTime(timestamp + 30 * 60 * 1000)
-      resourceLines = [
-        "Memory headroom is low: 35840 MB of 40960 MB committed. Avoid memory-intensive work.",
-        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
-      ]
-      expect(yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)).toEqual({
-        _tag: "Unchanged",
-      })
-
-      yield* TestClock.setTime(timestamp + 60 * 60 * 1000)
-      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
-      expect(refreshed).toMatchObject({ _tag: "Updated" })
-      if (refreshed._tag !== "Updated") return
-      expect(refreshed.text).toContain("35840 MB of 40960 MB committed")
-    }),
-  )
-
-  itWithResourcePressure.effect("reports escalation and recovery without waiting for the cadence", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(timestamp)
-      resourceLines = [
-        "Memory headroom is low: 34816 MB of 40960 MB committed. Avoid memory-intensive work.",
-        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
-      ]
-      const context = yield* SystemContextRegistry.Service
-      const initialized = yield* SystemContext.initialize(yield* context.load())
-
-      yield* TestClock.setTime(timestamp + 1000)
-      resourceLines = [
-        "Memory headroom is critically low: 38912 MB of 40960 MB committed. Avoid memory-intensive work.",
-        "Use tool_search for resource status, then resource_status to inspect and confirm recovery.",
-      ]
-      const escalated = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
-      expect(escalated).toMatchObject({ _tag: "Updated" })
-      if (escalated._tag !== "Updated") return
-      expect(escalated.text).toContain("critically low")
-
-      resourceLines = []
-      const recovered = yield* SystemContext.reconcile(yield* context.load(), escalated.snapshot)
-      expect(recovered).toMatchObject({ _tag: "Updated" })
-      if (recovered._tag !== "Updated") return
-      expect(recovered.text).toContain("No longer applies: Memory headroom is critically low")
     }),
   )
 

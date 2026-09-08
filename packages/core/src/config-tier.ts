@@ -230,6 +230,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   instances: "privileged",
   // `prompt` and `interjection` are text steered into a running session; `model` picks the judge.
   introspection: "privileged",
+  // Free-form text is steered into future sessions. The closed hook vocabulary executes no user
+  // code, but the instruction itself is authorship and therefore shares introspection's tier.
+  nudges: "privileged",
   // Chooses the URL and expected digest of binaries/models Nova downloads and executes.
   local_model_catalog: "privileged",
   // `mcp.servers` spawns a child process — ruling 4 names it as an execution surface.
