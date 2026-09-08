@@ -35,7 +35,24 @@ describe("SessionDriveState", () => {
   test("an older controller snapshot keeps its state and defaults the new recovery latch", () => {
     expect(
       SessionDriveState.decode({ opened: ["README.md"], attempted: [], joined: ["child"], restartRounds: 2 }),
-    ).toEqual({ opened: ["README.md"], attempted: [], joined: ["child"], restartRounds: 2, runawayNudgedAtCalls: 0 })
+    ).toEqual({
+      opened: ["README.md"],
+      attempted: [],
+      joined: ["child"],
+      spawned: [],
+      restartRounds: 2,
+      runawayNudgedAtCalls: 0,
+    })
+  })
+
+  test("retains the user-task boundary and its spawned children across worker drains", () => {
+    expect(
+      SessionDriveState.decode({
+        ...SessionDriveState.empty,
+        childTask: "msg_user_2",
+        spawned: ["ses_child_1", "ses_child_2"],
+      }),
+    ).toMatchObject({ childTask: "msg_user_2", spawned: ["ses_child_1", "ses_child_2"] })
   })
 
   test("🔴 an idle session is swept after the forgiveness window, and a live one is pinned", async () => {
