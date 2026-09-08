@@ -3510,13 +3510,7 @@ export const layer = Layer.effect(
        *  the self-drive's own round cap does. */
       // Latched per drain: one re-prompt for a narrated-but-uncalled tool. A second would mean the
       // call cannot get through at all, which is the empty-turn diagnostic's territory.
-      // Latched per drain: one correction for describing files that were never opened. A second
-      // would be arguing with a model that has already been told plainly.
-      let groundingCorrected = false
       let announcedRecovered = false
-      let setRounds = 0
-      // Rounds in a row that opened nothing new — the drive's real stop condition. Tracked here
-      // beside `setRounds` because both are per-request state that must survive a turn boundary.
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
       // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
@@ -3692,7 +3686,7 @@ export const layer = Layer.effect(
           // ⚠️ A latch that only fires at a late point has not been latched at all; it has merely
           // moved the race. Here it runs on turn one, while the prompt is certainly present, and the
           // `has` guard keeps every later turn a no-op.
-          if (!setRequests.has(input.sessionID)) {
+          if (harness.drives.set && !setRequests.has(input.sessionID)) {
             const firstText = lastRealUserText(context)
             if (firstText !== undefined)
               setRequests.set(input.sessionID, {
@@ -3736,18 +3730,7 @@ export const layer = Layer.effect(
               })
               yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
             }
-            // 🔴 The runaway threshold RISES with the work the harness itself asked for. Measured
-            // 2026-08-20: a legitimate "describe the first 100 png files" made 96 calls, tripped the
-            // 75-call detector, and the nudge — deliberately self-assessment, "if you're stuck, tell
-            // the user where things stand" — invited the model to wrap up at ~78 of 100. A detector
-            // built to break repetition was ending honest bulk work.
-            //
-            // ⚠️ Proportional, not disabled: each set-drive round explicitly asked for `STEER_BATCH`
-            // more files, so the budget grows by exactly what was requested and by nothing else. With
-            // no drive in progress (`setRounds === 0`) the threshold is unchanged, so a genuine loop
-            // is caught exactly as before — which is the case this detector exists for.
-            const runawayThreshold = RUNAWAY_THRESHOLD + setRounds * UnfinishedSet.STEER_BATCH
-            if (runawayNudgeWatermark === 0 && detectRunaway(callsSinceLastUser.length, runawayThreshold)) {
+            if (runawayNudgeWatermark === 0 && detectRunaway(callsSinceLastUser.length, RUNAWAY_THRESHOLD)) {
               runawayNudgeWatermark = callsSinceLastUser.length
               runawayNudgedAtCalls.set(input.sessionID, runawayNudgeWatermark)
               yield* flushDriveState(input.sessionID)
@@ -3908,7 +3891,7 @@ export const layer = Layer.effect(
               // compaction the honest answer to "what did the user ask?" is no longer in the window,
               // and asking again returns a confident wrong answer rather than an absent one.
               const realUserText = lastRealUserText(context)
-              if (!setRequests.has(input.sessionID) && realUserText !== undefined)
+              if (harness.drives.set && !setRequests.has(input.sessionID) && realUserText !== undefined)
                 setRequests.set(input.sessionID, {
                   // Same exemption as the sibling latch above — see its note.
                   asked: UnfinishedSet.asksForSet(realUserText) && !UnfinishedSet.asksToDelegate(realUserText),
@@ -3917,17 +3900,18 @@ export const layer = Layer.effect(
                     : { limit: UnfinishedSet.requestedLimit(realUserText) }),
                   named: UnfinishedSet.requestedNames(realUserText),
                 })
-              yield* flushDriveState(input.sessionID)
+              if (harness.drives.set) yield* flushDriveState(input.sessionID)
               const setRequest = setRequests.get(input.sessionID)
               const askedForSet = setRequest?.asked ?? false
               // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
               // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
               // exactly the question the 100-icon run left open.
-              yield* Log.event("session.finish.set.branch", {
-                "session.id": input.sessionID,
-                "session.set.asked": askedForSet,
-                "session.set.calls": finishCalls,
-              })
+              if (harness.drives.set)
+                yield* Log.event("session.finish.set.branch", {
+                  "session.id": input.sessionID,
+                  "session.set.asked": askedForSet,
+                  "session.set.calls": finishCalls,
+                })
               const readsThisTurn = askedForSet
                 ? callsSinceLastUser.flatMap((call) => {
                     // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
@@ -3950,11 +3934,8 @@ export const layer = Layer.effect(
               /**
                * The reads that SUCCEEDED — what the session has actually seen.
                *
-               * ⚠️ Both remaining consumers want this rather than every attempt. `describedWithoutOpening`
-               * asks whether the model wrote about a picture it never looked at, and a read that ERRORED
-               * returned no picture; counting it would make an invented description look honest. The
-               * `session.set.opened` log field is read as coverage in the reports, so it must mean the
-               * same thing there.
+               * Only successful reads count as coverage. A read that errored returned no file, so the
+               * `session.set.opened` log field must not claim it was seen.
                */
               const openedThisTurn = readsThisTurn.filter((read) => !read.failed).map((read) => read.path)
               // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
@@ -4027,30 +4008,11 @@ export const layer = Layer.effect(
                 // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
                 // runs it was built for, and each time the cause was invisible afterwards — the same
                 // trap that cost this programme two days on the fan-out. One line names every clause.
-                // 🔴 GROUNDING FIRST — before asking for more files, check what was claimed about the
-                // ones already "done". Measured 2026-08-20: denied `spawn`, the model globbed the folder
-                // and emitted 351 description lines from 20 reads — 331 files it never opened, each
-                // rendered as its own filename plus a grid position. Steering that turn toward the
-                // REMAINING files would have asked it to fabricate more, faster.
-                //
-                // ⚠️ Ahead of the coverage check on purpose: a fabricated line makes a file look done,
-                // so coverage read after it is measuring the invention.
-                const invented = UnfinishedSet.describedWithoutOpening(openedThisTurn, finalText)
-                if (invented.length > 0 && !groundingCorrected) {
-                  groundingCorrected = true
-                  yield* Log.event("session.finish.set.ungrounded", {
-                    "session.id": input.sessionID,
-                    "session.set.invented": invented.length,
-                    "session.set.opened": openedThisTurn.length,
-                  })
-                  yield* SessionInput.steer(db, events, input.sessionID, UnfinishedSet.groundingMessage(invented))
-                  needsContinuation = true
-                }
                 yield* Log.event("session.finish.set.considered", {
                   "session.id": input.sessionID,
                   "session.set.available": setCoverage.available.length,
                   "session.set.opened": setCoverage.opened.length,
-                  "session.set.rounds": setRounds,
+                  "session.set.rounds": 0,
                 })
                 // Counted BEFORE the decision: a round that opened nothing new is barren whether or not
                 // the drive goes on to steer again.
@@ -4061,27 +4023,6 @@ export const layer = Layer.effect(
                 barrenState.lastOpened = Math.max(barrenState.lastOpened, setCoverage.opened.length)
                 setBarrenBySession.set(input.sessionID, barrenState)
                 yield* flushDriveState(input.sessionID)
-                if (
-                  UnfinishedSet.shouldContinue({
-                    asked: true,
-                    coverage: setCoverage,
-                    rounds: setRounds,
-                    barren: barrenState.barren,
-                  })
-                ) {
-                  setRounds += 1
-                  const remaining = UnfinishedSet.untouched(setCoverage)
-                  yield* Log.event("session.finish.set.continue", {
-                    "session.id": input.sessionID,
-                    "session.set.remaining": remaining.length,
-                  })
-                  yield* SessionInput.steer(
-                    db,
-                    events,
-                    input.sessionID,
-                    UnfinishedSet.continueMessage(remaining, setCoverage.opened.length),
-                  )
-                }
               }
               /**
                * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined.**

@@ -26,7 +26,7 @@ export const resumeInterruptedOn = (config: Config | undefined): boolean =>
 /**
  * The patch to send when the switch moves.
  *
- * ⚠️ **Merges rather than replaces.** `harness_drives` carries four other switches (reground, set,
+ * ⚠️ **Merges rather than replaces.** `harness_drives` carries the other recovery switches (reground,
  * children, imageShortcut); writing `{ resumeInterrupted: value }` alone would silently clear
  * whichever of them an operator had set. The tab only owns one field of a block it does not own.
  */

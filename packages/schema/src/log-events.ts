@@ -2235,15 +2235,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  // The turn described files it never opened. Counted, because the SCALE is the finding: 331 of 351
-  // lines in the run that prompted this.
-  "session.finish.set.ungrounded": {
-    level: "warn",
-    message: "described files that were never opened",
-    attributes: { "session.id": "correlate", "session.set.invented": "count", "session.set.opened": "count" },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
   "session.finish.set.branch": {
     level: "info",
     message: "set-completion branch entered",
@@ -2267,13 +2258,6 @@ export const EVENTS = {
       "session.set.opened": "count",
       "session.set.rounds": "count",
     },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
-  "session.finish.set.continue": {
-    level: "info",
-    message: "steered back to the rest of the set",
-    attributes: { "session.id": "correlate", "session.set.remaining": "count" },
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },

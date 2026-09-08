@@ -56,9 +56,8 @@ const CUE_MATCHERS: readonly RegExp[] = COLLECTION_CUES.map((cue) => new RegExp(
  * folder, and the steer drove that session through twenty unrelated repository files —
  * `.oxlintrc.json`, `LICENSE`, `package.json` — before it was interrupted.
  *
- * ⚠️ The cost is not "one wrong nudge". `continueMessage` names files and says *do not stop to ask*,
- * so a false positive does not read as a suggestion the model may decline — it reads as the user's
- * own instruction, again each turn, until the steer budget is spent. `call the`, `install the` and
+ * ⚠️ The retired automatic continuation made this false positive expensive: it read as the user's
+ * own instruction and repeated until its steer budget was spent. `call the`, `install the` and
  * `recall the` are ordinary phrasing for a coding agent, which is what made a substring test
  * expensive rather than merely imprecise.
  */
@@ -195,9 +194,8 @@ export const requestedLimit = (userText: string): number | undefined => {
  * the session root. ⭐ A count that does not move when the subject quadruples is the instrument
  * talking, and that is how this was found.
  *
- * **And the drive fired on it.** After the model had correctly opened all 100 images it was told:
- * *"Not finished: you have opened 100 files and 2 remain. Open these 2 next … : novaclaw, run.log"* —
- * steered onto a directory junction and a log file.
+ * **And the now-retired drive fired on it.** After the model had correctly opened all 100 images it
+ * was steered onto a directory junction and a log file from the session root.
  *
  * 🔴 **This is the mechanism behind the measured SHOWSTOPPER:** the drive
  * *"fabricated twenty ROOT files as user-requested work"*. The root files are the session root's
@@ -395,80 +393,4 @@ export const shouldContinue = (input: {
   // `MAX_BARREN_ROUNDS` above and the drive stops. Enumeration is the precondition that makes this
   // safe — `available` naming the files means the world is known and only the opening is missing.
   return untouched(input.coverage).length > 0
-}
-
-/**
- * Files the turn DESCRIBED without ever opening them.
- *
- * 🔴 Measured 2026-08-20: a run that opened 20 files emitted 351 description lines, 331 of them for
- * images it never saw — the filename restated as a grid position, which reads as a completed table.
- * The run that opened 100 described exactly those 100. So this is not a rare edge: it is what the
- * model does when finishing the set honestly looks expensive.
- *
- * ⚠️ Every clause here exists to avoid firing on an HONEST line. A model names files it is about to
- * open, files it failed to open, and files in plans and headings; none of those are claims about what
- * a picture shows. A line qualifies only when it names an unopened file AND carries a separator with
- * real content after it.
- *
- * @param opened Basenames actually opened this request (same source the coverage check uses).
- * @param text   The assistant's prose for the turn.
- */
-export const describedWithoutOpening = (opened: ReadonlyArray<string>, text: string): ReadonlyArray<string> => {
-  const seen = new Set(opened.map((name) => leaf(name)))
-  const claimed = new Set<string>()
-  for (const line of text.split("\n")) {
-    const match = line.match(/[\w-]+\.(?:png|jpe?g|gif|webp)/i)
-    if (!match) continue
-    const name = leaf(match[0])
-    if (seen.has(name)) continue
-    // The claim has to come AFTER the name — a heading or a plan mentions the file and stops.
-    const after = line.slice(line.indexOf(match[0]) + match[0].length)
-    const body = after.replace(/^[\s:|\-–—>.]+/, "")
-    if (body.length < 12) continue
-    // ⚠️ An announced or failed read is not a fabrication. Both are honest, and both put a filename
-    // on a line with words after it.
-    if (/\b(?:will|going to|next|let me|about to|cannot|could not|failed|unable|does not exist|missing)\b/i.test(line))
-      continue
-    claimed.add(name)
-  }
-  return [...claimed]
-}
-
-/** The correction. Names the files, because "you invented some" is not actionable. */
-export const groundingMessage = (invented: ReadonlyArray<string>): string => {
-  const batch = invented.slice(0, STEER_BATCH)
-  return (
-    `You described ${invented.length} file${invented.length === 1 ? "" : "s"} you never opened, including ` +
-    `${batch.join(", ")}. A filename is not a picture: nothing you wrote about those is based on ` +
-    `anything you saw. Open them one at a time and say what each actually shows, or remove those ` +
-    `lines from your answer. Do not restate the filename or its grid position as a description.`
-  )
-}
-
-/**
- * What the model is told. Names the files, because "you missed some" is not actionable and the
- * measured failure is a model that believed it was finished.
- */
-export const continueMessage = (remaining: ReadonlyArray<string>, opened: number): string => {
-  // ⭐ The NEXT BATCH, not the whole remainder. A model asked for ten files opens ten; asked for 399
-  // it stops, argues, or invents — all three were measured on 2026-08-20.
-  const batch = remaining.slice(0, STEER_BATCH)
-  const after = remaining.length - batch.length
-  // ⚠️ Opening NOTHING needs a different sentence. "You have opened 0 files" invites the model to
-  // argue about whether it was supposed to; naming the listing it just made and the files to open
-  // does not. Measured: the model globbed the folder, said what it would do, and stopped.
-  if (opened === 0)
-    return (
-      `You listed the files but have not opened any of them yet, and a listing never shows what a ` +
-      `picture contains. Open these ${batch.length} now, one at a time, and say what each shows: ` +
-      `${batch.join(", ")}. ` +
-      (after > 0 ? `Then continue with the remaining ${after}. ` : "") +
-      `Do not describe a file you have not opened, and do not stop to ask which files to do — they are named above.`
-    )
-  return (
-    `Not finished: you have opened ${opened} file${opened === 1 ? "" : "s"} and ${remaining.length} remain. ` +
-    `Open these ${batch.length} next, one at a time, and say what each shows: ${batch.join(", ")}. ` +
-    (after > 0 ? `Then continue with the remaining ${after}. ` : "") +
-    `Do not describe a file you have not opened, and do not stop to ask which files to do — they are named above.`
-  )
 }

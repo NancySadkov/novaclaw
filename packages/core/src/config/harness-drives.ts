@@ -4,7 +4,7 @@ import { Schema } from "effect"
 
 /**
  * The HARNESS DRIVES — the automatic continuations the harness applies to a turn that thinks it is
- * finished. All default ON; this block exists so each can be turned OFF independently.
+ * finished. Live drives default ON; this block exists so each can be turned OFF independently.
  *
  * 🔴 **Why a switch exists at all: without one, "can the model do this alone?" is unanswerable.**
  * Every earlier batch-file measurement was taken with at least one drive live, because
@@ -28,7 +28,7 @@ import { Schema } from "effect"
  * **If a per-session stance is ever wanted, promote it through the full nine-step chain rather
  * than widening this block** — half a feature in each place is how two answers to one question start.
  *
- * ⚠️ **Turning a drive off makes the product WORSE, on purpose.** These are not preferences: each
+ * ⚠️ **Turning a live drive off makes the product WORSE, on purpose.** These are not preferences: each
  * exists because a measured failure needed it, and both are documented at their call sites. The
  * default is ON and a user who never touches this never notices it. AGENTS.md principle 12(a):
  * *work by default — a setting is an override, not a doorway.*
@@ -44,15 +44,6 @@ export const Info = Schema.Struct({
       "Re-prompt a confident-sounding finish to walk its own acceptance criteria before stopping (default: true). " +
       "Turning this off removes the harness's last check on an over-confident summary — it exists for " +
       "measuring the model unaided, not as a preference.",
-  }),
-  /**
-   * The unfinished-SET continuation (`unfinished-set.ts`): when the user asked about a set of files
-   * and the turn ends with some unopened, the harness names the next batch and says not to stop.
-   */
-  set: Schema.optional(Schema.Boolean).annotate({
-    description:
-      "Steer a turn back to the rest of a set the user asked about, naming the next batch (default: true). " +
-      "Turning this off lets a batch request stop wherever the model stops.",
   }),
   /**
    * The FAN-OUT supervisor (`unjoined-children.ts`): when a turn finishes with children it spawned
@@ -105,10 +96,11 @@ export const Info = Schema.Struct({
 })
 export type Info = typeof Info.Type
 
-/** Every drive resolved to a plain boolean, defaults applied. */
+/** Every live drive resolved to a plain boolean, defaults applied. */
 export interface Resolved {
   readonly reground: boolean
-  readonly set: boolean
+  /** Retired. Kept as a false literal until old set-controller state is removed. */
+  readonly set: false
   readonly children: boolean
   readonly imageShortcut: boolean
   readonly resumeInterrupted: boolean
@@ -124,7 +116,8 @@ export const resolve = (value: unknown): Resolved => {
   const info = Schema.is(Info)(value) ? value : undefined
   return {
     reground: info?.reground ?? true,
-    set: info?.set ?? true,
+    // Old settings may still carry `set: true`; it must not resurrect the retired file-list drive.
+    set: false,
     children: info?.children ?? true,
     imageShortcut: info?.imageShortcut ?? true,
     resumeInterrupted: info?.resumeInterrupted ?? true,

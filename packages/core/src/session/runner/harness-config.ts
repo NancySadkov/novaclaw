@@ -86,7 +86,7 @@ export interface Derived {
   readonly strict: Config.Info["strict"]
   readonly affective: Config.Info["affective"]
   readonly introspection: Introspection.Resolved
-  /** The automatic continuations applied to a finished-looking turn. All default ON. */
+  /** The live automatic continuations applied to a finished-looking turn. */
   readonly drives: ConfigHarnessDrives.Resolved
   readonly context: Config.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]

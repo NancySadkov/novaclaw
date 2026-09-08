@@ -43,7 +43,7 @@ describe("resumeInterruptedOn", () => {
 })
 
 describe("resumeInterruptedPatch", () => {
-  // 🔴 `harness_drives` carries four other switches. Writing this field alone would clear whichever
+  // 🔴 `harness_drives` carries other switches. Writing this field alone would clear whichever
   // of them an operator had set — a setting silently turning OFF three others is the worst kind of
   // config bug, because nothing points at the screen that did it.
   test("preserves the sibling switches it does not own", () => {
