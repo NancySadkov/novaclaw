@@ -5,6 +5,7 @@ import * as HttpServer from "effect/unstable/http/HttpServer"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { SYSTEM as STATUS_SYSTEM } from "@novaclaw/core/agent-status/label"
 import { SYSTEM as COMMAND_SYSTEM } from "@novaclaw/core/agent-status/command-label"
+import { SYSTEM as WORKER_SYSTEM } from "@novaclaw/core/agent-status/worker-label"
 import { SYSTEM as TITLE_SYSTEM } from "@novaclaw/core/session/title"
 
 export type Usage = { input: number; output: number }
@@ -617,7 +618,7 @@ export function isMetadataRequest(body: unknown): boolean {
   return system.some(
     (text) =>
       typeof text === "string" &&
-      [STATUS_SYSTEM, COMMAND_SYSTEM, TITLE_SYSTEM].some((prompt) => text.startsWith(prompt)),
+      [STATUS_SYSTEM, COMMAND_SYSTEM, WORKER_SYSTEM, TITLE_SYSTEM].some((prompt) => text.startsWith(prompt)),
   )
 }
 

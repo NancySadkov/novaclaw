@@ -19,10 +19,11 @@ describe("wait transcript row", () => {
             time: { created: 1, completed: 2 },
             state: {
               status: "completed",
-              input: { prompt: "Audit the battle scene" },
+              input: { prompt: "A verbose prompt whose details stay folded" },
               structured: { childID: "ses_child" },
               content: [],
             },
+            title: "Audit the battle scene",
           },
         ],
         time: { created: 1, completed: 2 },
@@ -32,6 +33,33 @@ describe("wait transcript row", () => {
       title: "Waiting for worker",
       subtitle: "Audit the battle scene",
     })
+  })
+
+  test("uses a short fallback while the generated spawn title is pending", () => {
+    const messages = [
+      {
+        id: "assistant",
+        type: "assistant",
+        agent: "build",
+        model: { providerID: "test", modelID: "test" },
+        content: [
+          {
+            id: "call",
+            type: "tool",
+            name: "spawn",
+            time: { created: 1, completed: 2 },
+            state: {
+              status: "completed",
+              input: { prompt: "Investigate the cursor jump and cover every delayed hydration race" },
+              structured: { childID: "ses_child" },
+              content: [],
+            },
+          },
+        ],
+        time: { created: 1, completed: 2 },
+      },
+    ] as never
+    expect(waitRow({ sessionID: "ses_child" }, messages, t).subtitle).toBe("Investigate the cursor jump and")
   })
 
   test("falls back to the child id when no spawn row is available", () => {

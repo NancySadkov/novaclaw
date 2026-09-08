@@ -36,6 +36,7 @@ import { colleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
 import { waitRow } from "./wait-row"
 import { toolIcon } from "./tool-icon"
+import { fallbackWorkerLabel } from "@novaclaw/core/agent-status/worker-label"
 import { Markdown } from "../../components/markdown"
 import {
   reasoningGoesInReceipt,
@@ -1464,10 +1465,10 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n, messages: rea
     case "task":
       return {
         title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : i18n.t("ui.transcript.tool.task"),
-        subtitle: str(input.description),
+        subtitle: part.title?.trim() || fallbackWorkerLabel(str(input.description) ?? ""),
       }
     case "spawn":
-      return spawnRow(input, i18n.t)
+      return spawnRow(input, part.title, i18n.t)
     case "wait":
       return waitRow(input, messages, i18n.t)
     case "bash":

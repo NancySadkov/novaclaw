@@ -82,10 +82,17 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     return getCursorPosition(el())
   }
 
-  const renderWithCursor = (parts: Prompt) => {
+  const renderWithCursor = (parts: Prompt, fallbackCursor?: number) => {
+    const focused = document.activeElement === el()
     const cursor = currentCursor()
     render(parts)
-    if (cursor !== null) setCursorPosition(el(), cursor)
+    // Chromium can temporarily clear the Selection range while a focused contenteditable survives
+    // a surrounding reactive update. Rebuilding its DOM in that window leaves the browser caret at
+    // offset zero, so the next keystrokes prefix the draft. The prompt store already owns the last
+    // confirmed cursor from `input`; use it only when this editor still owns focus, never to steal
+    // selection back from another control.
+    const restore = cursor ?? (focused ? fallbackCursor : undefined)
+    if (restore !== undefined) setCursorPosition(el(), restore)
   }
 
   const parse = (): Prompt => {

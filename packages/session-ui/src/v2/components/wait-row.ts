@@ -1,6 +1,7 @@
 import type { SessionMessage, SessionMessageAssistantTool } from "@novaclaw/sdk/v2"
 import type { UiI18n } from "@novaclaw/ui/context/i18n"
 import type { Row } from "./colleague-row"
+import { fallbackWorkerLabel } from "@novaclaw/core/agent-status/worker-label"
 
 const inputOf = (part: SessionMessageAssistantTool): Record<string, unknown> =>
   part.state.status === "pending" ? {} : ((part.state.input ?? {}) as Record<string, unknown>)
@@ -15,9 +16,10 @@ export const waitRow = (input: Record<string, unknown>, messages: readonly Sessi
       if (part.state.status !== "completed") return false
       return (part.state.structured as { childID?: unknown }).childID === childID
     })
-  const purpose = spawn === undefined ? undefined : inputOf(spawn).prompt
+  const prompt = spawn === undefined ? undefined : inputOf(spawn).prompt
+  const purpose = spawn?.title?.trim() || (typeof prompt === "string" ? fallbackWorkerLabel(prompt) : undefined)
   return {
     title: t("ui.transcript.tool.wait"),
-    subtitle: typeof purpose === "string" && purpose.trim() ? purpose : childID,
+    subtitle: purpose || childID,
   }
 }

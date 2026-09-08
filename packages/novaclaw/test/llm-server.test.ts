@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SYSTEM as STATUS_SYSTEM } from "@novaclaw/core/agent-status/label"
 import { SYSTEM as COMMAND_SYSTEM } from "@novaclaw/core/agent-status/command-label"
+import { SYSTEM as WORKER_SYSTEM } from "@novaclaw/core/agent-status/worker-label"
 import { SYSTEM as TITLE_SYSTEM } from "@novaclaw/core/session/title"
 import { isMetadataRequest, TestLLMServer } from "./lib/llm-server"
 
@@ -21,7 +22,7 @@ test("metadata requests leave the interactive response queue intact", async () =
           return response.text()
         })
       // ShortAnswer appends a reasoning-budget instruction to the canonical system prompt.
-      for (const system of [STATUS_SYSTEM, COMMAND_SYSTEM, TITLE_SYSTEM]) {
+      for (const system of [STATUS_SYSTEM, COMMAND_SYSTEM, WORKER_SYSTEM, TITLE_SYSTEM]) {
         const metadata = yield* post([{ role: "system", content: `${system}\nReasoning budget: 128 tokens.` }])
         expect(metadata).not.toContain("the interactive reply")
         expect(yield* llm.pending).toBe(1)

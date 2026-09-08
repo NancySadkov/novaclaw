@@ -506,14 +506,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       mirror.input = false
       if (editor.isNormalized()) return
 
-      editor.renderWithCursor(input)
+      editor.renderWithCursor(input, prompt.cursor())
       return
     }
 
     const dom = editor.parse()
     if (editor.isNormalized() && isPromptEqual(input, dom)) return
 
-    editor.renderWithCursor(input)
+    editor.renderWithCursor(input, prompt.cursor())
   }
 
   createEffect(

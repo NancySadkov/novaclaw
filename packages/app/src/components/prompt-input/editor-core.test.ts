@@ -100,6 +100,30 @@ describe("editor-core (ui-arch P4a)", () => {
     expect(getCursorPosition(host)).toBe(3)
   })
 
+  test("renderWithCursor restores the stored caret when Chromium temporarily loses the focused selection", () => {
+    core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
+    host.focus()
+    window.getSelection()?.removeAllRanges()
+
+    core.renderWithCursor([{ type: "text", content: "hello!", start: 0, end: 6 }], 5)
+
+    expect(document.activeElement).toBe(host)
+    expect(getCursorPosition(host)).toBe(5)
+  })
+
+  test("renderWithCursor never takes selection back from another focused control", () => {
+    core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
+    const other = document.createElement("input")
+    document.body.appendChild(other)
+    other.focus()
+    window.getSelection()?.removeAllRanges()
+
+    core.renderWithCursor([{ type: "text", content: "hello!", start: 0, end: 6 }], 5)
+
+    expect(document.activeElement).toBe(other)
+    expect(window.getSelection()?.rangeCount).toBe(0)
+  })
+
   test("caretState reports collapsed cursor inside the editor and zeros outside", () => {
     core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
     setCursorPosition(host, 4)

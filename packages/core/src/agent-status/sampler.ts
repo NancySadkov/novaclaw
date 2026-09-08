@@ -14,6 +14,7 @@ import { SessionStore } from "../session/store"
 import { llmClient } from "../effect/app-node-platform"
 import { AgentStatusDerive } from "./derive"
 import { cleanCommandLabel, SYSTEM as COMMAND_SYSTEM } from "./command-label"
+import { SYSTEM as WORKER_SYSTEM } from "./worker-label"
 
 /**
  * The general lifecycle sampler for agent entity components.
@@ -64,6 +65,32 @@ export const shellCall = (event: { readonly type: string; readonly data: unknown
   }
 }
 
+export const workerCall = (event: { readonly type: string; readonly data: unknown }) => {
+  if (event.type !== "session.next.tool.called") return undefined
+  const data = event.data as {
+    sessionID?: unknown
+    assistantMessageID?: unknown
+    callID?: unknown
+    tool?: unknown
+    input?: { prompt?: unknown; description?: unknown }
+  }
+  const prompt = data.tool === "spawn" ? data.input?.prompt : data.tool === "task" ? data.input?.description : undefined
+  if (
+    typeof data.sessionID !== "string" ||
+    typeof data.assistantMessageID !== "string" ||
+    typeof data.callID !== "string" ||
+    typeof prompt !== "string" ||
+    !prompt.trim()
+  )
+    return undefined
+  return {
+    sessionID: data.sessionID,
+    assistantMessageID: data.assistantMessageID,
+    callID: data.callID,
+    prompt,
+  }
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -75,7 +102,7 @@ export const layer = Layer.effect(
     type PendingSample = { readonly revision: number; readonly sessionID: string }
     const pendingByAgent = new Map<string, PendingSample>()
     const active = new Set<string>()
-    const commandLabels = new Set<string>()
+    const toolLabels = new Set<string>()
     let lifecycleRevision = 0
 
     const sample = (agent: string, sessionID: string, revision: number): Effect.Effect<void> =>
@@ -143,13 +170,19 @@ export const layer = Layer.effect(
         schedule(agent, sessionID, revision)
       }).pipe(Effect.catchCause(() => Effect.void))
 
-    const labelCommand = (input: NonNullable<ReturnType<typeof shellCall>>) =>
+    const labelTool = (input: {
+      readonly sessionID: string
+      readonly assistantMessageID: string
+      readonly callID: string
+      readonly system: string
+      readonly text: string
+    }) =>
       Effect.gen(function* () {
         const session = yield* store.get(input.sessionID as never)
         if (!session) return
         const raw = yield* labeller.short(input.sessionID, {
-          system: COMMAND_SYSTEM,
-          text: input.command,
+          system: input.system,
+          text: input.text,
           task: "tool-title",
           reasoningBudget: 0,
         })
@@ -171,17 +204,23 @@ export const layer = Layer.effect(
         // This label is presentation-only and already has a deterministic fallback. A failed
         // maintenance sample must not turn into another ambient warning in the working chat.
         Effect.catchCause(() => Effect.void),
-        Effect.ensuring(Effect.sync(() => commandLabels.delete(input.callID))),
+        Effect.ensuring(Effect.sync(() => toolLabels.delete(input.callID))),
       )
 
     const unsubscribe = yield* events.listen((event) => {
       const sessionID = lifecycleSession(event)
       const command = shellCall(event)
+      const worker = workerCall(event)
       return Effect.sync(() => {
         if (sessionID) fork(routeSample(sessionID, ++lifecycleRevision))
-        if (command && !commandLabels.has(command.callID)) {
-          commandLabels.add(command.callID)
-          fork(labelCommand(command))
+        const presentation = command
+          ? { ...command, system: COMMAND_SYSTEM, text: command.command }
+          : worker
+            ? { ...worker, system: WORKER_SYSTEM, text: worker.prompt }
+            : undefined
+        if (presentation && !toolLabels.has(presentation.callID)) {
+          toolLabels.add(presentation.callID)
+          fork(labelTool(presentation))
         }
       })
     })
