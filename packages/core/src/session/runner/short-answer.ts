@@ -100,4 +100,5 @@ export const generate = <E, R>(input: {
       // that cannot tell it from a blank answer cannot say so.
       return chunks.join("")
     }),
+    Effect.succeed(""),
   )

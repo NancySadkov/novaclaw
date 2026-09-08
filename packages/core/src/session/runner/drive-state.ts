@@ -1,7 +1,7 @@
 /**
  * The runner's SESSION-scoped controller state, as a service the executor can put where it belongs.
  *
- * 🔴 Six maps in `llm.ts` carry facts the drives need across DRAINS: the latched set request, every
+ * 🔴 The maps in `llm.ts` carry facts the drives need across DRAINS: the latched set request, every
  * file the set has opened and attempted, the barren-round counter, the children joined, the restart
  * rounds. Each was moved out of a drain local after a measured failure (runs 12, 13 and 15 of the
  * set drive) and documented as "session-scoped, this process". That was true for the in-process
@@ -45,9 +45,13 @@ export interface Snapshot {
   readonly joined: ReadonlyArray<string>
   /** Times the session was steered back to unaccounted children — `childRestartRounds`. */
   readonly restartRounds: number
+  /** Tool-call count at which the broad runaway warning fired for this durable user-task span. */
+  readonly runawayNudgedAtCalls: number
+  /** Automatic compaction backoff after a summary model failed to answer. */
+  readonly compactionRetryAt?: number
 }
 
-export const empty: Snapshot = { opened: [], attempted: [], joined: [], restartRounds: 0 }
+export const empty: Snapshot = { opened: [], attempted: [], joined: [], restartRounds: 0, runawayNudgedAtCalls: 0 }
 
 const stringArray = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
@@ -61,6 +65,12 @@ export const decode = (raw: unknown): Snapshot | undefined => {
   const value = raw as Record<string, unknown>
   if (!stringArray(value.opened) || !stringArray(value.attempted) || !stringArray(value.joined)) return undefined
   if (typeof value.restartRounds !== "number") return undefined
+  // Older persisted controller snapshots predate the runaway latch. Preserve their set-drive and
+  // join state while defaulting only the new watermark; a harness upgrade must not erase unrelated
+  // recovery state merely because it learned one more field.
+  const runawayNudgedAtCalls = value.runawayNudgedAtCalls === undefined ? 0 : value.runawayNudgedAtCalls
+  if (typeof runawayNudgedAtCalls !== "number" || !Number.isFinite(runawayNudgedAtCalls)) return undefined
+  if (value.compactionRetryAt !== undefined && typeof value.compactionRetryAt !== "number") return undefined
   let request: Snapshot["request"]
   if (value.request !== undefined) {
     const r = value.request as Record<string, unknown> | null
@@ -87,6 +97,8 @@ export const decode = (raw: unknown): Snapshot | undefined => {
     ...(barren === undefined ? {} : { barren }),
     joined: value.joined,
     restartRounds: value.restartRounds,
+    runawayNudgedAtCalls,
+    ...(value.compactionRetryAt === undefined ? {} : { compactionRetryAt: value.compactionRetryAt }),
   }
 }
 

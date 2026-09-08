@@ -211,6 +211,8 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     release: (request) => Effect.promise(() => capabilities.releaseDevice(request)).pipe(Effect.asVoid),
     report: (request) => Effect.promise(() => capabilities.reportDevice(request)).pipe(Effect.asVoid),
     admitMaintenance: (request) => Effect.promise(() => capabilities.admitMaintenance(request)),
+    awaitMaintenancePreemption: (request) =>
+      Effect.promise(() => capabilities.awaitMaintenancePreemption(request.lease)).pipe(Effect.asVoid),
     // `ownerID` is deliberately not forwarded: the host stamps ownership from the fenced worker
     // lease, so worker code can neither claim nor release another session's maintenance slot.
     releaseMaintenance: (request) =>

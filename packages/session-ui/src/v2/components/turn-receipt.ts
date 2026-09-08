@@ -80,7 +80,7 @@ export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number):
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":
-      return "The conversation is long, so it's being summarised to fit. This happens once, not every turn."
+      return "Nova is condensing earlier work before continuing. If the summary model cannot finish within half a minute, the conversation continues with a safely fitted context instead."
     case "context-load":
     case "context-fit":
       return "A long conversation takes longer to assemble."

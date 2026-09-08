@@ -119,6 +119,24 @@ describe("SessionWorkerProtocol", () => {
     expect(
       SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(maintenanceRelease).trimEnd()),
     ).toEqual({ ok: true, message: maintenanceRelease })
+
+    const awaitPreemption = {
+      ...maintenanceRelease,
+      type: "device-maintenance-await-preemption" as const,
+      requestID: "rpc_maintenance_preemption",
+    }
+    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(awaitPreemption).trimEnd())).toEqual(
+      { ok: true, message: awaitPreemption },
+    )
+    const preempted = {
+      ...identity,
+      type: "device-maintenance-preempted" as const,
+      requestID: awaitPreemption.requestID,
+    }
+    expect(SessionWorkerProtocol.decodeHostLine(SessionWorkerProtocol.encodeLine(preempted).trimEnd())).toEqual({
+      ok: true,
+      message: preempted,
+    })
   })
 
   test("round-trips permission assertions and rejects the retired question sideband", () => {

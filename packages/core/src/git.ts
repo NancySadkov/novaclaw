@@ -12,6 +12,7 @@ import { AppProcess } from "./process"
 import { makeGlobalNode } from "./effect/app-node"
 import { File } from "./file"
 import { KeyedMutex } from "./effect/keyed-mutex"
+import { Flock } from "./util/flock"
 import { ShellBundle } from "./shell-bundle"
 import { which } from "./util/which"
 
@@ -527,14 +528,9 @@ export const layer = Layer.effect(
         if (!candidates.length) return { skipped: [] }
         const ignored = input.ignores
           ? new Set(
-              (yield* repositoryOperation(
-                "refresh",
-                input.ignores,
-                ["check-ignore", "--no-index", "--stdin", "-z"],
-                {
-                  stdin: candidates.join("\0") + "\0",
-                },
-              ).pipe(Effect.catch(() => Effect.succeed({ text: "", stderr: "" })))).text
+              (yield* repositoryOperation("refresh", input.ignores, ["check-ignore", "--no-index", "--stdin", "-z"], {
+                stdin: candidates.join("\0") + "\0",
+              }).pipe(Effect.catch(() => Effect.succeed({ text: "", stderr: "" })))).text
                 .split("\0")
                 .filter(Boolean),
             )
@@ -631,13 +627,23 @@ export const layer = Layer.effect(
       }) =>
         locked(
           input.repository,
-          Effect.gen(function* () {
-            yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
-            input.timing?.start("hash")
-            return yield* writeTree(input.repository).pipe(
-              Effect.ensuring(Effect.sync(() => input.timing?.end("hash"))),
-            )
-          }),
+          Effect.scoped(
+            Effect.gen(function* () {
+              // Location services live in separate worker processes, so the in-process keyed mutex
+              // above cannot serialize two sibling sessions sharing this snapshot index. Git then
+              // rejects one with index.lock — exactly the live fan-out failure. One process-safe
+              // lease covers refresh + write-tree as a single capture; a crashed owner is reclaimed
+              // by Flock's heartbeat/stale protocol.
+              yield* Flock.effect(`git-snapshot:${input.repository.gitDirectory}`, {
+                dir: path.join(input.repository.gitDirectory, "novaclaw-locks"),
+              })
+              yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
+              input.timing?.start("hash")
+              return yield* writeTree(input.repository).pipe(
+                Effect.ensuring(Effect.sync(() => input.timing?.end("hash"))),
+              )
+            }),
+          ),
         ),
     )
 

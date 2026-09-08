@@ -324,6 +324,7 @@ export const layer = Layer.effect(
                 return Effect.void
               }),
             ),
+          Effect.void,
         )
         const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
         if (!verdict.retry) {
@@ -475,6 +476,7 @@ export const layer = Layer.effect(
                         return Effect.void
                       }),
                     ),
+                  Effect.void,
                 )
                 const verdict = UtilityCap.decide({ finish, text: linkChunks.join(""), attempt, cap: attemptCap })
                 if (!verdict.retry) break

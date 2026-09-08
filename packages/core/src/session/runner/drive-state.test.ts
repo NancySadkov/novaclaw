@@ -16,9 +16,26 @@ describe("SessionDriveState", () => {
     expect(seen.barren).toEqual({ barren: 2, lastOpened: 199 })
   })
 
+  test("recovery latches survive a worker drain", async () => {
+    const state = SessionDriveState.make()
+    const snapshot = {
+      ...SessionDriveState.empty,
+      runawayNudgedAtCalls: 75,
+      compactionRetryAt: 123_456,
+    }
+    await Effect.runPromise(state.withSession("ses_recovery", state.save("ses_recovery", snapshot)))
+    expect(await Effect.runPromise(state.withSession("ses_recovery", state.load("ses_recovery")))).toEqual(snapshot)
+  })
+
   test("a session nobody has written answers `empty`, never undefined", async () => {
     const state = SessionDriveState.make()
     expect(await Effect.runPromise(state.load("ses_unknown"))).toEqual(SessionDriveState.empty)
+  })
+
+  test("an older controller snapshot keeps its state and defaults the new recovery latch", () => {
+    expect(
+      SessionDriveState.decode({ opened: ["README.md"], attempted: [], joined: ["child"], restartRounds: 2 }),
+    ).toEqual({ opened: ["README.md"], attempted: [], joined: ["child"], restartRounds: 2, runawayNudgedAtCalls: 0 })
   })
 
   test("🔴 an idle session is swept after the forgiveness window, and a live one is pinned", async () => {

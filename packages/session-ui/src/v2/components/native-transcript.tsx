@@ -31,6 +31,7 @@ import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-f
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
+import { spawnRow } from "./spawn-row"
 import { Markdown } from "../../components/markdown"
 import {
   reasoningGoesInReceipt,
@@ -1431,6 +1432,8 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
         title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : i18n.t("ui.transcript.tool.task"),
         subtitle: str(input.description),
       }
+    case "spawn":
+      return spawnRow(input, i18n.t)
     case "bash":
       return { title: i18n.t("ui.transcript.tool.bash"), subtitle: str(input.command) }
     // The file-mutating tools read as a finished action plus the file — "Edited pi.c" — and carry NO

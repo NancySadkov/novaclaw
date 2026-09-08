@@ -523,7 +523,7 @@ describe("SessionStrict.commandPlan (the host-execution gate, as Strict consumes
     expect(p.shell).toBeUndefined()
     expect(p.denied).toBeUndefined()
     const args = p.args ?? []
-    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "make all"])
+    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "set -o pipefail\nmake all"])
     expect(p.inherit).toBe(false)
   })
 

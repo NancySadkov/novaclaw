@@ -72,6 +72,12 @@ export type Shape =
    */
   | { readonly kind: "argv"; readonly argv: ReadonlyArray<string> }
 
+/** Bash pipelines report the first failing stage. Without this, `python failing.py | tail` exits
+ * zero and the harness records a failed verification as green — observed in Geryon's live run. */
+export function shellProgram(shell: string, command: string): string {
+  return Shell.name(shell) === "bash" ? `set -o pipefail\n${command}` : command
+}
+
 /**
  * The argv a shape becomes when it is exec'd directly (inside the sandbox, or as a plain exec).
  *
@@ -79,7 +85,7 @@ export type Shape =
  * would undo the one property it exists to provide.
  */
 export function argvOf(shape: Shape): string[] {
-  if (shape.kind === "shell-command") return [shape.shell, "-c", shape.command]
+  if (shape.kind === "shell-command") return [shape.shell, "-c", shellProgram(shape.shell, shape.command)]
   if (shape.kind === "runtime-eval") return [shape.runtime, "-e", shape.program]
   return [...shape.argv]
 }
@@ -558,7 +564,13 @@ export function plan(request: Request): Plan {
     if (file === undefined) return { via: "none", decision: "deny", message: "empty argv: nothing to execute" }
     return { via: "exec", decision, file, args, env }
   }
-  return { via: "shell", decision, shell: request.shape.shell, command: request.shape.command, env }
+  return {
+    via: "shell",
+    decision,
+    shell: request.shape.shell,
+    command: shellProgram(request.shape.shell, request.shape.command),
+    env,
+  }
 }
 
 // ── the jh-runner wire shape ────────────────────────────────────────────────────────────────────

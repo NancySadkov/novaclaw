@@ -14,6 +14,7 @@ export type Request = Extract<
       | "device-report"
       | "device-maintenance-admit"
       | "device-maintenance-release"
+      | "device-maintenance-await-preemption"
   }
 >
 export type Reply = Extract<
@@ -25,6 +26,7 @@ export type Reply = Extract<
       | "device-reported"
       | "device-maintenance-admitted"
       | "device-maintenance-released"
+      | "device-maintenance-preempted"
       | "device-rejected"
   }
 >
@@ -96,6 +98,16 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
         },
       })
       return { ...identity(input.message), type: "device-maintenance-released" as const }
+    case "device-maintenance-await-preemption":
+      yield* input.scheduler.awaitMaintenancePreemption({
+        ownerID: input.lease.sessionID,
+        lease: {
+          maintenanceID: input.message.maintenanceID,
+          sessionID: input.message.maintenanceID,
+          deviceKey: input.message.deviceKey,
+        },
+      })
+      return { ...identity(input.message), type: "device-maintenance-preempted" as const }
   }
 })
 

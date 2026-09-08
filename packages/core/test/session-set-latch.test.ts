@@ -184,13 +184,17 @@ describe("WHEN the latch fires decides whether it works at all", () => {
     // That run compacted BEFORE its first turn ended, so the prompt was already summarised away:
     // asked:false, one branch entry, the drive never engaged, 81 files. Run 15's turns ended sooner,
     // its latch caught the prompt, and it reached 220. The difference was entirely WHEN it looked.
-    const fetchAt = source.indexOf("const context = yield* getContext(input.sessionID)")
     const latchAt = source.indexOf("if (!setRequests.has(input.sessionID)) {")
+    const fetchAt = source.lastIndexOf("const context = yield* getContext(input.sessionID)", latchAt)
+    const continuationAt = source.indexOf("if (result.needsContinuation)", latchAt)
     expect(fetchAt).toBeGreaterThan(-1)
     expect(latchAt).toBeGreaterThan(-1)
-    // Immediately after the fetch — turn one, before any compaction can run.
+    expect(continuationAt).toBeGreaterThan(-1)
+    // In the per-turn settlement block: after its fresh context read, before either continuation
+    // arm. Character distance is not an invariant; adding a diagnostic beside the latch must not
+    // make this test claim that the latch moved.
     expect(latchAt).toBeGreaterThan(fetchAt)
-    expect(latchAt - fetchAt).toBeLessThan(1200)
+    expect(latchAt).toBeLessThan(continuationAt)
   })
 
   test("⚠️ a latch that fires late has not been latched — it has moved the race", () => {

@@ -115,6 +115,12 @@ test("maintenance leases cross as opaque host-owned ids and release through thei
             type: "device-maintenance-released",
             requestID: message.requestID,
           })
+        else if (message.type === "device-maintenance-await-preemption")
+          client.accept({
+            ...identity,
+            type: "device-maintenance-preempted",
+            requestID: message.requestID,
+          })
       })
     },
   })
@@ -131,6 +137,7 @@ test("maintenance leases cross as opaque host-owned ids and release through thei
     deviceKey: "spark",
   })
   await capabilities.releaseMaintenance(admitted)
+  await capabilities.awaitMaintenancePreemption(admitted)
 
   expect(sent[0]).toMatchObject({
     type: "device-maintenance-admit",
@@ -142,6 +149,12 @@ test("maintenance leases cross as opaque host-owned ids and release through thei
   })
   expect(sent[1]).toMatchObject({
     type: "device-maintenance-release",
+    sessionID: lease.sessionID,
+    maintenanceID: "maintenance:host-owned",
+    deviceKey: "spark",
+  })
+  expect(sent[2]).toMatchObject({
+    type: "device-maintenance-await-preemption",
     sessionID: lease.sessionID,
     maintenanceID: "maintenance:host-owned",
     deviceKey: "spark",

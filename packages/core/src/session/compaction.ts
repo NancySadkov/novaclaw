@@ -17,6 +17,7 @@ import { ReasoningBudget } from "./runner/reasoning-budget"
 import { FinishRecovery } from "./runner/finish-recovery"
 import { PromptEstimate } from "./runner/prompt-estimate"
 import { Flag } from "../flag/flag"
+import { SessionScheduler } from "./scheduler"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -62,15 +63,17 @@ const HISTORY_HEAD_REMOVED =
  * resort. Its stated invariant is the point of this change: **every phase has a finite ceiling and
  * the chain is finite, so the call always terminates.**
  *
- * ⚠️ **2,048 is a FIRST value, not a measured one**, and it is a knob for exactly that reason — the
+ * ⚠️ **128 is a FIRST value, not a measured optimum**, and it is a knob for exactly that reason — the
  * same treatment `ABSORB_REASONING_BUDGET` gives its own. The recorded sweep that motivates the size
  * (2026-08-12 chat-mode eval) is: **18/24 at a 300-token budget, 24/24 at 2,048**. Compaction is a
- * harder judgement than either the 128-token title or absorb's 512, so it starts at the top of that
- * range. **A budget reported without being swept is a number about the harness, not the model.**
+ * harder judgement than either the 128-token title or absorb's 512. The former 2,048 default was
+ * impossible to spend inside the callout's hard bound at the 1–2 t/s observed during the live
+ * Geryon fan-out; the controller timed out without an answer on every tool turn. **A budget reported
+ * without being swept is a number about the harness, not the model.**
  */
 export const COMPACTION_REASONING_BUDGET = ((): number => {
   const raw = Number(Flag.NOVACLAW_COMPACTION_BUDGET)
-  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 2_048
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 128
 })()
 export const SUMMARY_TEMPLATE = `Output exactly the Markdown structure inside <template>, in this order, without the tags.
 <template>
@@ -145,6 +148,7 @@ type Dependencies = {
   }
   readonly config: readonly Config.Entry[]
   readonly prefixHash: (sessionID: SessionSchema.ID, prefixSeq: number) => Effect.Effect<string>
+  readonly scheduler?: SessionScheduler.Interface
 }
 
 type Input = {
@@ -157,6 +161,10 @@ type Input = {
   readonly imagePatchPixels?: number
   /** Exact-route prompt prefix known to remain reusable; absent keeps the context-only guard. */
   readonly prefixCacheRetentionTokens?: number
+  /** Empirically honoured window for this exact serving route; overrides an optimistic catalog. */
+  readonly contextWindowTokens?: number
+  /** Admission identity for this decode-shaped maintenance pass. */
+  readonly maintenance?: SessionScheduler.MaintenanceInput
   /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
   readonly overflowPromptTokens?: number
   /** One fixed post-compaction target derived from that rejected prompt. */
@@ -474,12 +482,13 @@ export const make = (dependencies: Dependencies) => {
     readonly prompt: string
     readonly model: Model
     readonly outputTokens: number
+    readonly maintenance?: SessionScheduler.MaintenanceInput
   }) {
     const chunks: string[] = []
     let failed = false
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
-    const completed = yield* ReasoningBudget.stream({
+    const generation = ReasoningBudget.stream({
       request: LLM.request({
         model: input.model,
         messages: [Message.user(input.prompt)],
@@ -507,6 +516,9 @@ export const make = (dependencies: Dependencies) => {
         orElse: () => Effect.succeed(false),
       }),
     )
+    const completed = yield* dependencies.scheduler !== undefined && input.maintenance !== undefined
+      ? SessionScheduler.runMaintenance(dependencies.scheduler, input.maintenance, generation, Effect.succeed(false))
+      : generation
     return { text: chunks.join(""), completed, failed, finish, reportedTokens } as const
   })
   /**
@@ -561,7 +573,7 @@ export const make = (dependencies: Dependencies) => {
       input.onDecline?.(why)
       return false
     }
-    const context = input.model.route.defaults.limits?.context
+    const context = input.contextWindowTokens ?? input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return decline("context-window-unknown")
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const entries = yield* pruneCheapTier(input.entries, input.imagePatchPixels)
@@ -645,7 +657,12 @@ export const make = (dependencies: Dependencies) => {
     // The chain is deliberately finite: one ordinary summary, one request to trim that ACTUAL
     // output, then a deterministic oldest-first cut. A model cannot turn compaction into an
     // unbounded self-edit loop.
-    const first = yield* summarize({ prompt: summaryPrompt, model: input.model, outputTokens: summaryOutput })
+    const first = yield* summarize({
+      prompt: summaryPrompt,
+      model: input.model,
+      outputTokens: summaryOutput,
+      maintenance: input.maintenance,
+    })
     if (!first.completed || first.failed || !first.text.trim()) return decline("summarizer-unavailable")
     const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
     const firstClean = first.finish === "stop" && firstFits
@@ -663,7 +680,12 @@ export const make = (dependencies: Dependencies) => {
       // into a second oversized request; the deterministic fallback is already the terminal step.
       const second =
         Token.estimate(trimPrompt) <= context - summaryOutput
-          ? yield* summarize({ prompt: trimPrompt, model: input.model, outputTokens: summaryOutput })
+          ? yield* summarize({
+              prompt: trimPrompt,
+              model: input.model,
+              outputTokens: summaryOutput,
+              maintenance: input.maintenance,
+            })
           : undefined
       const secondClean =
         second !== undefined &&
@@ -705,7 +727,7 @@ export const make = (dependencies: Dependencies) => {
       return false
     }
     if (!config.auto) return decline("auto-disabled")
-    const context = input.model.route.defaults.limits?.context
+    const context = input.contextWindowTokens ?? input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return decline("context-window-unknown")
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     /**

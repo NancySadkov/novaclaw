@@ -13,6 +13,7 @@ export type Request = Extract<
       | "device-report"
       | "device-maintenance-admit"
       | "device-maintenance-release"
+      | "device-maintenance-await-preemption"
       | "permission-assert"
       | "spawn-child"
       | "await-child"
@@ -43,6 +44,7 @@ export type Reply = Extract<
       | "device-reported"
       | "device-maintenance-admitted"
       | "device-maintenance-released"
+      | "device-maintenance-preempted"
       | "device-rejected"
       | "permission-result"
       | "spawn-result"
@@ -62,6 +64,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "device-report": new Set(["device-reported", "device-rejected"]),
   "device-maintenance-admit": new Set(["device-maintenance-admitted", "device-rejected"]),
   "device-maintenance-release": new Set(["device-maintenance-released", "device-rejected"]),
+  "device-maintenance-await-preemption": new Set(["device-maintenance-preempted", "device-rejected"]),
   "permission-assert": new Set(["permission-result"]),
   "spawn-child": new Set(["spawn-result"]),
   "await-child": new Set(["await-child-result"]),

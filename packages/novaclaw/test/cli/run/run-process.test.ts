@@ -90,20 +90,23 @@ describe("novaclaw run (non-interactive subprocess)", () => {
   // Regression for #27371: an unknown model used to hang the process forever
   // waiting on a session.status === idle event that never arrived. The fix
   // makes the SDK call surface an error promptly so the process exits nonzero.
-  // We assert nonzero exit AND wall-clock under the harness timeout — a hang
-  // would expire the timeout and produce a different (signal-killed) failure.
+  // We assert nonzero exit AND that the harness did not kill the child. `durationMs < timeoutMs`
+  // used to stand in for that second fact, but process cleanup can cross the wall-clock boundary
+  // after a natural exit on a loaded host. The harness already exposes the structural distinction.
   cliIt.concurrent(
     "exits nonzero promptly when the model is unknown (regression for #27371)",
     ({ novaclaw }) =>
       Effect.gen(function* () {
         const result = yield* novaclaw.run("say hi", {
           model: "test/nonexistent-model",
-          timeoutMs: 15_000,
+          // A cold CLI boot alone takes 20-24 s on the loaded release-gate host. The old 15 s
+          // deadline killed the process before it could exercise the unknown-model path.
+          timeoutMs: 30_000,
         })
+        expect(result.outputDiscarded ?? false, "the child was KILLED — the unknown model path hung").toBe(false)
         expect(result.exitCode).not.toBe(0)
-        expect(result.durationMs).toBeLessThan(15_000)
       }),
-    30_000,
+    60_000,
   )
 
   // The test provider's SSE error item is interpreted as a broken/unknown finish, so the runner

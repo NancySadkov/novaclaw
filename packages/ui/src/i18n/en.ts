@@ -247,6 +247,7 @@ export const dict = {
   "ui.transcript.tool.websearch": "Web search",
   "ui.transcript.tool.js": "Computing",
   "ui.transcript.tool.task": "Task",
+  "ui.transcript.tool.spawn": "Spawned a worker",
   "ui.transcript.tool.bash": "Shell",
   "ui.transcript.tool.edit": "Edited",
   "ui.transcript.tool.write": "Wrote",

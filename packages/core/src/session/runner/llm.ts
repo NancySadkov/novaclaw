@@ -141,6 +141,8 @@ import { UnjoinedChildren } from "./unjoined-children"
 import { SessionTitle } from "../title"
 import { SessionMapRetention } from "./session-map-retention"
 import { SessionDriveState } from "./drive-state"
+import { RecoveryJoin } from "./recovery-join"
+import { CompactionBackoff } from "./compaction-backoff"
 import { applySteerProvenance, lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
@@ -204,7 +206,6 @@ import { ToolOutputSummary } from "./tool-output-summary"
 
 /** How often the generation loop may ask the DB whether a steer has landed. Hot path — keep it coarse. */
 const STEER_POLL_MS = 400
-
 /**
  * When a harness stage stops being ordinary and becomes worth recording.
  *
@@ -389,6 +390,7 @@ export const layer = Layer.effect(
         compaction: SessionCompaction.make({
           events,
           llm,
+          scheduler,
           config: derived.entries,
           prefixHash: (sessionID, prefixSeq) => SessionHistory.prefixHash(db, sessionID, prefixSeq).pipe(Effect.orDie),
         }),
@@ -837,7 +839,7 @@ export const layer = Layer.effect(
      * from the compacted window each time and never fired. Same lifetime as `discoveredImageLimits`
      * above: this process, no schema, and a restart simply re-derives while the prompt is still there.
      */
-    // 🔴 **THE SIX MAPS BELOW ARE A PER-DRAIN CACHE, NOT THE STATE.** Each comment says "session-
+    // 🔴 **THE MAPS BELOW ARE A PER-DRAIN CACHE, NOT THE STATE.** Each comment says "session-
     // scoped, this process", and each was true for the in-process executor and false under the
     // worker one, where this layer is built inside ONE drain and disposed in `finally`: every steer
     // started a new worker with six empty maps, so the barren-round stop could never reach its
@@ -923,6 +925,8 @@ export const layer = Layer.effect(
      * before it can ever reach its bound.
      */
     const childRestartRounds = new Map<string, number>()
+    const runawayNudgedAtCalls = new Map<string, number>()
+    const compactionRetryAt = new Map<string, number>()
     const sessionMapRetention = SessionMapRetention.make([
       setRequests,
       setOpened,
@@ -930,8 +934,10 @@ export const layer = Layer.effect(
       setBarrenBySession,
       childrenJoined,
       childRestartRounds,
+      runawayNudgedAtCalls,
+      compactionRetryAt,
     ])
-    /** Fill the six caches for one session from the store, at the start of a run. */
+    /** Fill the controller caches for one session from the store, at the start of a run. */
     const hydrateDriveState = (sessionID: string) =>
       driveState.load(sessionID).pipe(
         Effect.map((snapshot) => {
@@ -943,9 +949,12 @@ export const layer = Layer.effect(
           else setBarrenBySession.delete(sessionID)
           childrenJoined.set(sessionID, new Set(snapshot.joined))
           childRestartRounds.set(sessionID, snapshot.restartRounds)
+          runawayNudgedAtCalls.set(sessionID, snapshot.runawayNudgedAtCalls)
+          if (snapshot.compactionRetryAt !== undefined) compactionRetryAt.set(sessionID, snapshot.compactionRetryAt)
+          else compactionRetryAt.delete(sessionID)
         }),
       )
-    /** Write the six caches for one session back to the store. Called after every mutation. */
+    /** Write the controller caches for one session back to the store. Called after every mutation. */
     const flushDriveState = (sessionID: string) => {
       const request = setRequests.get(sessionID)
       const barren = setBarrenBySession.get(sessionID)
@@ -956,6 +965,10 @@ export const layer = Layer.effect(
         ...(barren === undefined ? {} : { barren: { ...barren } }),
         joined: [...(childrenJoined.get(sessionID) ?? [])],
         restartRounds: childRestartRounds.get(sessionID) ?? 0,
+        runawayNudgedAtCalls: runawayNudgedAtCalls.get(sessionID) ?? 0,
+        ...(compactionRetryAt.get(sessionID) === undefined
+          ? {}
+          : { compactionRetryAt: compactionRetryAt.get(sessionID)! }),
       })
     }
     /**
@@ -2003,6 +2016,7 @@ export const layer = Layer.effect(
             promptResidualRatios: [],
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
             prefixCacheRetentionTokens: undefined,
+            contextWindowTokens: undefined,
             servedBy: undefined,
           })),
         )
@@ -2025,16 +2039,42 @@ export const layer = Layer.effect(
       // owner saw exactly that two messages into a fresh session on a packaged build (2026-08-11).
       // A receipt is a claim about what happened, so a stage that declined is withdrawn rather than
       // reported.
-      yield* timingStart("compaction")
-      const compacted = yield* harness.compaction.compactIfNeeded({
-        sessionID: session.id,
-        entries,
-        model,
-        request: openingRequest,
-        promptEstimate,
-        imagePatchPixels: routeProfile.imagePatchPixels,
-        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
-      })
+      const retryAt = compactionRetryAt.get(session.id) ?? 0
+      const shouldAttemptCompaction = CompactionBackoff.due(retryAt, Date.now())
+      let compacted = false
+      if (shouldAttemptCompaction) {
+        let declined: SessionCompaction.DeclineReason | undefined
+        yield* timingStart("compaction")
+        compacted = yield* harness.compaction.compactIfNeeded({
+          sessionID: session.id,
+          entries,
+          model,
+          request: openingRequest,
+          promptEstimate,
+          imagePatchPixels: routeProfile.imagePatchPixels,
+          prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
+          contextWindowTokens: routeProfile.contextWindowTokens,
+          maintenance: {
+            ownerID: session.id,
+            task: "compaction",
+            deviceKey: scheduledDevice.key,
+            ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+            ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
+          },
+          onDecline: (reason) => {
+            declined = reason
+          },
+        })
+        const nextRetryAt = CompactionBackoff.afterAttempt({
+          current: compactionRetryAt.get(session.id),
+          now: Date.now(),
+          compacted,
+          decline: declined,
+        })
+        if (nextRetryAt === undefined) compactionRetryAt.delete(session.id)
+        else compactionRetryAt.set(session.id, nextRetryAt)
+        yield* flushDriveState(session.id)
+      }
       // The conversation that just got compressed away is written into this colleague's OWN memory
       // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
       // why). Best-effort and AFTER the compaction is durable: an archive that failed must never
@@ -2048,7 +2088,8 @@ export const layer = Layer.effect(
           reportArchiveFailure(session.id, agent.id),
         )
       if (compacted) yield* timingEnd("compaction")
-      else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
+      else if (shouldAttemptCompaction)
+        yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an OpenAI-compatible server never silently front-truncates the
@@ -2059,7 +2100,7 @@ export const layer = Layer.effect(
       const preparedDispatch = ProviderDispatch.prepare({
         request: openingRequest,
         promptCacheKey,
-        contextSize: model.route.defaults.limits?.context,
+        contextSize: routeProfile.contextWindowTokens ?? model.route.defaults.limits?.context,
         prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
         profile: ContextBudget.enabled(harness.context, config.contextBudget)
           ? ContextBudget.resolve(harness.context, config.type)
@@ -2227,15 +2268,27 @@ export const layer = Layer.effect(
                   ),
                   Effect.andThen(
                     truncation?.status === "suspected" && truncation.pin !== undefined
-                      ? Log.event("session.context.truncation.suspected", {
-                          "session.id": session.id,
-                          "provider.id": attemptModelRef.providerID,
-                          "model.id": attemptModelRef.id,
-                          "session.prompt.tokens": reportedPrompt!,
-                          "session.estimated.tokens": calibratedEstimate,
-                          "session.context.size": packed.contextSize,
-                          "session.truncation.pin": truncation.pin,
-                        })
+                      ? routeProfiles
+                          .put(routeProfileScope, {
+                            ...(truncation.pin === "half-window"
+                              ? { contextWindowTokens: Math.floor(packed.contextSize / 2) }
+                              : { contextWindowTokens: packed.contextSize }),
+                            ...(servedBy === undefined ? {} : { servedBy }),
+                          })
+                          .pipe(
+                            Effect.ignore,
+                            Effect.andThen(
+                              Log.event("session.context.truncation.suspected", {
+                                "session.id": session.id,
+                                "provider.id": attemptModelRef.providerID,
+                                "model.id": attemptModelRef.id,
+                                "session.prompt.tokens": reportedPrompt!,
+                                "session.estimated.tokens": calibratedEstimate,
+                                "session.context.size": packed.contextSize,
+                                "session.truncation.pin": truncation.pin,
+                              }),
+                            ),
+                          )
                       : Effect.void,
                   ),
                 )
@@ -3203,6 +3256,7 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => ({
             promptFactor: 1,
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+            contextWindowTokens: undefined,
           })),
         )
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
@@ -3220,6 +3274,14 @@ export const layer = Layer.effect(
           model,
           request,
           imagePatchPixels: routeProfile.imagePatchPixels,
+          contextWindowTokens: routeProfile.contextWindowTokens,
+          maintenance: {
+            ownerID: session.id,
+            task: "manual-compaction",
+            deviceKey: scheduledDevice.key,
+            ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+            ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
+          },
           onDecline: (reason) => {
             declined = reason
           },
@@ -3328,6 +3390,9 @@ export const layer = Layer.effect(
         return
       }
       if (providerRecovery) {
+        const interruptedWaits = RecoveryJoin.interruptedChildIDs(yield* getContext(input.sessionID))
+        const directChildren = new Set(yield* store.children(input.sessionID))
+        const joinsToResume = interruptedWaits.filter((childID) => directChildren.has(SessionSchema.ID.make(childID)))
         yield* events.publish(SessionEvent.Synthetic, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
@@ -3336,9 +3401,11 @@ export const layer = Layer.effect(
           // provenance marker as the actionable steer below so routine notices fold; the repeated-
           // failure notice remains visible and carries the diagnosis when recovery actually loops.
           text: applySteerProvenance(
-            providerRecovery.toolProtocol
-              ? "Recovery resumed this work. Inspect an interrupted tool's target before repeating it."
-              : "Recovery resumed this work from its saved transcript.",
+            joinsToResume.length > 0
+              ? `Recovery resumed this work. A wait for ${joinsToResume.join(", ")} was interrupted; the child work was not cancelled.`
+              : providerRecovery.toolProtocol
+                ? "Recovery resumed this work. Inspect an interrupted tool's target before repeating it."
+                : "Recovery resumed this work from its saved transcript.",
           ),
         })
         yield* failInterruptedTools(
@@ -3360,9 +3427,14 @@ export const layer = Layer.effect(
           db,
           events,
           input.sessionID,
-          "A process loss interrupted your previous reply. Continue the user's task now from the durable transcript. " +
-            "Previously saved response content remains valid. Any in-flight tool was closed with an unknown outcome; " +
-            "inspect the workspace or external target's current state before deciding whether to repeat it. Do not stop merely to report the interruption.",
+          joinsToResume.length > 0
+            ? `A process loss interrupted your read-only wait for child ${joinsToResume.join(", ")}. ` +
+                "The child sessions remain authoritative and were not cancelled. Before editing files or redoing any delegated slice, " +
+                `call wait again for ${joinsToResume.join(", ")} and use the returned result. ` +
+                "Only replace a child if wait reports that it ended without finishing. Continue the user's task; do not merely report the interruption."
+            : "A process loss interrupted your previous reply. Continue the user's task now from the durable transcript. " +
+                "Previously saved response content remains valid. Any in-flight tool was closed with an unknown outcome; " +
+                "inspect the workspace or external target's current state before deciding whether to repeat it. Do not stop merely to report the interruption.",
         )
         // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
         // just changed the durable queue, so leaving the old `false` here passes the first no-work
@@ -3415,7 +3487,7 @@ export const layer = Layer.effect(
       // latch + a once-per-drain runaway latch; 1N/A3 a consecutive-empty-turn counter.
       const nudged = new Set<string>()
       const nudgedTargets = new Set<string>()
-      let runawayNudged = false
+      let runawayNudgeWatermark = runawayNudgedAtCalls.get(input.sessionID) ?? 0
       let consecutiveEmpty = 0
       let regrounded = false
       /** How many times this drain has steered the turn back to the rest of a set. Bounded by
@@ -3587,6 +3659,13 @@ export const layer = Layer.effect(
           }
           const context = yield* getContext(input.sessionID)
           const callsSinceLastUser = toolCallsSinceLastUser(context)
+          // A new real-user turn resets the call span to zero. Until then the watermark survives
+          // worker replacement, so waking a laptop cannot emit the same 75-call warning again.
+          if (callsSinceLastUser.length < runawayNudgeWatermark) {
+            runawayNudgeWatermark = 0
+            runawayNudgedAtCalls.set(input.sessionID, 0)
+            yield* flushDriveState(input.sessionID)
+          }
           // 🔴 LATCH THE REQUEST HERE — on every turn, not at the finish branch.
           //
           // Measured run 16: the latch lived only in the set-completion branch, which runs when a
@@ -3653,8 +3732,10 @@ export const layer = Layer.effect(
             // no drive in progress (`setRounds === 0`) the threshold is unchanged, so a genuine loop
             // is caught exactly as before — which is the case this detector exists for.
             const runawayThreshold = RUNAWAY_THRESHOLD + setRounds * UnfinishedSet.STEER_BATCH
-            if (!runawayNudged && detectRunaway(callsSinceLastUser.length, runawayThreshold)) {
-              runawayNudged = true
+            if (runawayNudgeWatermark === 0 && detectRunaway(callsSinceLastUser.length, runawayThreshold)) {
+              runawayNudgeWatermark = callsSinceLastUser.length
+              runawayNudgedAtCalls.set(input.sessionID, runawayNudgeWatermark)
+              yield* flushDriveState(input.sessionID)
               yield* Log.event("session.doom.runaway.detected", {
                 "session.id": input.sessionID,
                 "session.tool.calls": callsSinceLastUser.length,

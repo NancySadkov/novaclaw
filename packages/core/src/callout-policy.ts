@@ -85,7 +85,9 @@ export const telemetryLogs = define({
 
 export const summarizer = define({
   mode: "blocking",
-  timeoutMs: 300_000,
+  // A summary is an optimization with a deterministic pack fallback. Five minutes here produced a
+  // live repeating stall: every tool turn paid the whole bound, then immediately tried again.
+  timeoutMs: 30_000,
   retries: 0,
   retryDelayMs: 0,
   // The deterministic packer remains available when semantic compaction cannot answer.

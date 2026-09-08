@@ -16,13 +16,16 @@
 
 import { describe, expect, test } from "bun:test"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
+import { CompactionBackoff } from "@novaclaw/core/session/runner/compaction-backoff"
+import { packRequest } from "@novaclaw/core/session/runner/context-pack"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import type { Config } from "@novaclaw/core/config"
 import type { EventV2 } from "@novaclaw/core/event"
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
-import { LLM, LLMEvent, Model, type FinishReason, type LLMRequest } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, Model, type FinishReason, type LLMRequest } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 
 const user = (text: string): SessionMessage.Message => ({ type: "user", text }) as unknown as SessionMessage.Message
 const assistant = (text: string): SessionMessage.Message =>
@@ -294,4 +297,102 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
     expect(run.requests.length).toBe(0)
     expect(SessionCompaction.declineNotice(run.declines[0]!)).toContain("too large")
   })
+})
+
+describe("the Geryon sleep-recovery regression", () => {
+  test("a hung compactor yields to a new chat, falls back deterministically, and stays backed off next turn", async () => {
+    const scheduler = SessionScheduler.make()
+    const model = routed({ context: 12_000, output: 4_096 })
+    const declines: SessionCompaction.DeclineReason[] = []
+    let summaryCalls = 0
+    const compactor = SessionCompaction.make({
+      scheduler,
+      events: { publish: () => Effect.void } as unknown as EventV2.Interface,
+      llm: {
+        stream: () => {
+          summaryCalls++
+          return Stream.never
+        },
+      },
+      config: [
+        {
+          type: "document",
+          info: { compaction: { keep: { tokens: 8 } } },
+        } as unknown as Config.Entry,
+      ],
+      prefixHash: () => Effect.succeed("0".repeat(64)),
+    })
+    const compactionInput = {
+      sessionID,
+      entries: entries(
+        user(`ancient ${"alpha ".repeat(3_000)}`),
+        assistant(`work ${"beta ".repeat(1_000)}`),
+        user("the current question"),
+        assistant("the current answer"),
+      ),
+      model,
+      request: LLM.request({ model, messages: [], tools: [] }),
+      maintenance: { ownerID: "geryon", task: "compaction", deviceKey: "spark" },
+      onDecline: (reason: SessionCompaction.DeclineReason) => declines.push(reason),
+    }
+
+    const hung = Effect.runFork(compactor.compactAfterOverflow(compactionInput))
+    const maintenanceDeadline = Date.now() + 1_000
+    while ((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightMaintenance.length !== 1) {
+      if (Date.now() >= maintenanceDeadline) throw new Error("compaction never acquired its maintenance lease")
+      await Bun.sleep(5)
+    }
+    expect(summaryCalls).toBe(1)
+
+    // The exact incident: while Geryon's summary stream never answers, Daedalus arrives on the
+    // same device. Foreground admission must abort the maintenance decode rather than merely put a
+    // second request beside it on an already-starved model server.
+    const admittedAt = Date.now()
+    await Effect.runPromise(
+      scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive" }),
+    )
+    const compacted = await Promise.race([
+      Effect.runPromise(Fiber.join(hung)),
+      Bun.sleep(1_000).then(() => {
+        throw new Error("foreground admission did not preempt the hung compactor")
+      }),
+    ])
+    expect(compacted).toBe(false)
+    expect(Date.now() - admittedAt).toBeLessThan(1_000)
+    expect(declines).toEqual(["summarizer-unavailable"])
+    expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({
+      inFlightInteractive: ["daedalus"],
+      inFlightMaintenance: [],
+    })
+
+    // Persist the same named outcome the runner receives. The following tool turn must not launch
+    // another summary decode, but it must still fit the outgoing request deterministically.
+    const failedAt = 10_000
+    const retryAt = CompactionBackoff.afterAttempt({
+      now: failedAt,
+      compacted,
+      decline: declines[0],
+    })
+    expect(CompactionBackoff.due(retryAt, failedAt + 1)).toBe(false)
+    if (CompactionBackoff.due(retryAt, failedAt + 1))
+      await Effect.runPromise(compactor.compactAfterOverflow(compactionInput))
+    expect(summaryCalls).toBe(1)
+
+    const packed = packRequest({
+      request: LLM.request({
+        model,
+        messages: [
+          Message.user(`old request ${"gamma ".repeat(6_000)}`),
+          Message.assistant(`old answer ${"delta ".repeat(6_000)}`),
+          Message.user("continue safely"),
+        ],
+        tools: [],
+      }),
+      contextSize: 12_000,
+    })
+    expect(packed.dropped).toBeGreaterThan(0)
+    expect(packed.messages.at(-1)).toEqual(Message.user("continue safely"))
+
+    await Effect.runPromise(scheduler.release({ sessionID: "daedalus", deviceKey: "spark" }))
+  }, 3_000)
 })

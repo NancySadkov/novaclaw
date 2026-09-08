@@ -74,6 +74,10 @@ export const DeviceMaintenanceReleased = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-maintenance-released"),
 }).annotate({ identifier: "SessionWorker.DeviceMaintenanceReleased" })
+export const DeviceMaintenancePreempted = Schema.Struct({
+  ...DeviceReplyBase,
+  type: Schema.Literal("device-maintenance-preempted"),
+}).annotate({ identifier: "SessionWorker.DeviceMaintenancePreempted" })
 export const DeviceRejected = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-rejected"),
@@ -248,6 +252,7 @@ export const HostMessage = Schema.Union([
   DeviceReported,
   DeviceMaintenanceAdmitted,
   DeviceMaintenanceReleased,
+  DeviceMaintenancePreempted,
   DeviceRejected,
   PermissionResult,
   MemoryResult,
@@ -336,6 +341,11 @@ export const DeviceMaintenanceRelease = Schema.Struct({
   type: Schema.Literal("device-maintenance-release"),
   maintenanceID: Schema.String,
 }).annotate({ identifier: "SessionWorker.DeviceMaintenanceRelease" })
+export const DeviceMaintenanceAwaitPreemption = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-maintenance-await-preemption"),
+  maintenanceID: Schema.String,
+}).annotate({ identifier: "SessionWorker.DeviceMaintenanceAwaitPreemption" })
 
 /**
  * 🔴 **Spawn is a worker→host OPERATION, not an event the worker publishes.**
@@ -643,6 +653,7 @@ export const WorkerMessage = Schema.Union([
   DeviceReport,
   DeviceMaintenanceAdmit,
   DeviceMaintenanceRelease,
+  DeviceMaintenanceAwaitPreemption,
   PermissionAssert,
   MemoryRequest,
   LocalModelRequest,

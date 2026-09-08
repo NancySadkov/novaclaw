@@ -270,6 +270,7 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
                         .map((text) => ({ id: KbChunk.passageID(label, text), text })),
                       limit: absorbing,
                     }),
+                    Effect.succeed({ passages: 0, entities: 0 }),
                   )
                   // Detached work MUST report that it finished. Without this, "ran and found nothing"
                   // and "never started" look identical from outside.

@@ -36,11 +36,11 @@ const base = {
 }
 
 describe("HostExec.argvOf — the gate is not `-c`-shaped", () => {
-  test("a shell command becomes `<shell> -c <command>`", () => {
+  test("a bash command enables pipefail before the model's program", () => {
     expect(HostExec.argvOf({ kind: "shell-command", shell: "/bin/bash", command: "echo hi" })).toEqual([
       "/bin/bash",
       "-c",
-      "echo hi",
+      "set -o pipefail\necho hi",
     ])
   })
   test("a runtime eval becomes `<runtime> -e <program>` — the shape wrapArgs could never express", () => {
@@ -283,7 +283,7 @@ describe("HostExec.plan", () => {
     expect(p.via).toBe("shell")
     if (p.via !== "shell") throw new Error("unreachable")
     expect(p.shell).toBe("/bin/bash")
-    expect(p.command).toBe("make")
+    expect(p.command).toBe("set -o pipefail\nmake")
     expect(p.env.inherit).toBe(true)
   })
 
@@ -300,7 +300,11 @@ describe("HostExec.plan", () => {
     if (p.via !== "exec") throw new Error("unreachable")
     expect(p.file).toBe("bwrap")
     expect(p.args).toContain("--unshare-all")
-    expect(p.args.slice(p.args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "rm -rf /"])
+    expect(p.args.slice(p.args.indexOf("--") + 1)).toEqual([
+      "/bin/bash",
+      "-c",
+      "set -o pipefail\nrm -rf /",
+    ])
     expect(p.args.slice(p.args.indexOf("--bind"), p.args.indexOf("--bind") + 3)).toEqual([
       "--bind",
       "/home/nancy/proj",
@@ -403,7 +407,7 @@ describe("HostExec.spawnPlan — the jh-runner wire shape", () => {
     expect(p.file).toBe("bwrap")
     expect(p.shell).toBeUndefined()
     const args = p.args ?? []
-    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "make"])
+    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "set -o pipefail\nmake"])
   })
 
   test("a denied plan says so instead of describing a process", () => {

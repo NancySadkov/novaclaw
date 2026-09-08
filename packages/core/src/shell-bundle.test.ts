@@ -196,7 +196,7 @@ describe("shell bundle provisioning", () => {
 })
 
 describe("agent default shell (B11)", () => {
-  test("prefers embedded w64devkit sh on win32 and exposes its compiler environment", async () => {
+  test("prefers Git Bash for coherent Windows paths and exposes w64devkit as its compiler payload", async () => {
     if (process.platform !== "win32") return
     const w64devkit = await fakeW64devkit()
     const root = await fakeBundle()
@@ -204,10 +204,11 @@ describe("agent default shell (B11)", () => {
     process.env.NOVACLAW_SHELL_BUNDLE_ROOT = root
     ShellBundle.resolve.reset()
     Shell.agentDefault.reset()
-    expect(Shell.agentDefault()).toBe(path.join(w64devkit, "bin", "sh.exe"))
+    expect(Shell.agentDefault()).toBe(path.join(root, "bin", "bash.exe"))
     expect(Shell.gitbash()).toBe(path.join(root, "bin", "bash.exe"))
     const env = Shell.toolchainEnv(Shell.agentDefault(), { Path: "C:\\Windows" })
-    expect(env?.Path?.split(path.delimiter)[0]).toBe(path.join(w64devkit, "bin"))
+    expect(env?.Path?.split(path.delimiter)[0]).toBe(path.join(root, "mingw64", "bin"))
+    expect(env?.Path?.split(path.delimiter).at(-1)).toBe(path.join(w64devkit, "bin"))
     expect(env?.W64DEVKIT_HOME).toBe(w64devkit)
     expect(env?.W64DEVKIT).toBe("2.9.0")
     expect(Shell.agentShellIsPosix()).toBe(true)

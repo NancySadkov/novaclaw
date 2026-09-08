@@ -305,7 +305,10 @@ let defaultAgent: string | undefined
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
-    if (process.platform === "win32") return w64devkitShell() ?? gitbash() ?? process.env.COMSPEC ?? "cmd.exe"
+    // Git Bash owns path translation and filesystem semantics on Windows. w64devkit remains the
+    // compiler payload at the end of PATH; using its BusyBox sh as the shell made native tools and
+    // `ls` disagree about the very same cwd in a live delegated build.
+    if (process.platform === "win32") return gitbash() ?? w64devkitShell() ?? process.env.COMSPEC ?? "cmd.exe"
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent

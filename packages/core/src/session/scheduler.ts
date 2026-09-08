@@ -123,6 +123,8 @@ export interface Interface {
   readonly report: (input: ReportInput) => Effect.Effect<void>
   /** Acquire one unique interactive-idle maintenance lease. */
   readonly admitMaintenance: (input: MaintenanceInput) => Effect.Effect<MaintenanceLease>
+  /** Completes when a newly admitted interactive turn asks this maintenance pass to yield. */
+  readonly awaitMaintenancePreemption: (input: MaintenanceReleaseInput) => Effect.Effect<void>
   /** Release only a lease that belongs to the stated owner (worker RPCs cannot forge one). */
   readonly releaseMaintenance: (input: MaintenanceReleaseInput) => Effect.Effect<void>
   /** Session ended: drop it from ledgers/queues. */
@@ -145,6 +147,7 @@ interface DeviceState {
   readonly inFlightMaintenance: Set<string>
   readonly waiters: Map<string, Waiter>
   readonly maintenanceOwners: Map<string, string>
+  readonly maintenancePreemptions: Map<string, Deferred.Deferred<void>>
   concurrency: number
   locality?: ConfigDevice.Locality
   lastDispatched?: string
@@ -180,6 +183,7 @@ export const make = (options?: Options): Interface => {
           inFlightMaintenance: new Set(),
           waiters: new Map(),
           maintenanceOwners: new Map(),
+          maintenancePreemptions: new Map(),
           concurrency: MAX_BATCH,
         }),
       )
@@ -257,8 +261,22 @@ export const make = (options?: Options): Interface => {
         device.inFlightMaintenance.has(input.sessionID)
       if (alreadyInFlight) return Effect.void
       if (isInteractive(input.sessionClass)) {
+        // Maintenance is deliberately interruptible. Continuous batching does not make a long
+        // utility prefill free: on the Spark a compaction already in flight delayed a brand-new
+        // interactive chat's first token by 150 seconds. Signal every acquired maintenance lease;
+        // `runMaintenance` races its provider effect against this signal and aborts the request.
+        const preempt = [...device.inFlightMaintenance]
+        // Publish the interactive owner BEFORE waking another fiber. `Deferred.doneUnsafe` may
+        // resume that fiber synchronously; its maintenance finalizer calls `drain`, which must see
+        // the foreground owner and leave queued maintenance queued. Snapshot the ids too, so a
+        // re-entrant drain cannot append a fresh lease to the Set iteration and cancel work that
+        // never overlapped this arrival.
         device.inFlightInteractive.add(input.sessionID)
         device.lastDispatched = input.sessionID
+        for (const maintenanceID of preempt) {
+          const preemption = device.maintenancePreemptions.get(maintenanceID)
+          if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
+        }
         return Effect.void
       }
       if (batchCapacity(device)) {
@@ -321,15 +339,33 @@ export const make = (options?: Options): Interface => {
         ...(input.concurrency === undefined ? {} : { concurrency: input.concurrency }),
         ...(input.locality === undefined ? {} : { locality: input.locality }),
       }
+      const device = deviceFor(input.deviceKey)
+      device.maintenancePreemptions.set(taskID, Deferred.makeUnsafe<void>())
       return admitKind(slot, "maintenance", input.ownerID).pipe(
         Effect.as({ maintenanceID: taskID, sessionID: taskID, deviceKey: input.deviceKey }),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            device.maintenancePreemptions.delete(taskID)
+          }),
+        ),
       )
+    })
+
+  const awaitMaintenancePreemption: Interface["awaitMaintenancePreemption"] = (input) =>
+    Effect.suspend(() => {
+      const device = devices.get(input.lease.deviceKey)
+      if (device?.maintenanceOwners.get(input.lease.maintenanceID) !== input.ownerID) return Effect.void
+      const preemption = device.maintenancePreemptions.get(input.lease.maintenanceID)
+      return preemption === undefined ? Effect.void : Deferred.await(preemption)
     })
 
   const releaseMaintenance = (input: MaintenanceReleaseInput): Effect.Effect<void> =>
     Effect.suspend(() => {
       const device = devices.get(input.lease.deviceKey)
       if (device?.maintenanceOwners.get(input.lease.maintenanceID) !== input.ownerID) return Effect.void
+      const preemption = device.maintenancePreemptions.get(input.lease.maintenanceID)
+      if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
+      device.maintenancePreemptions.delete(input.lease.maintenanceID)
       return release({ sessionID: input.lease.maintenanceID, deviceKey: input.lease.deviceKey })
     })
 
@@ -354,6 +390,9 @@ export const make = (options?: Options): Interface => {
           if (ownerID !== sessionID) continue
           const maintenanceWaiter = device.waiters.get(taskID)
           device.maintenanceOwners.delete(taskID)
+          const preemption = device.maintenancePreemptions.get(taskID)
+          if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
+          device.maintenancePreemptions.delete(taskID)
           device.inFlightMaintenance.delete(taskID)
           device.ledger.remove(taskID)
           if (!maintenanceWaiter) continue
@@ -381,7 +420,7 @@ export const make = (options?: Options): Interface => {
       })),
     )
 
-  return { admit, release, report, admitMaintenance, releaseMaintenance, evict, snapshot }
+  return { admit, release, report, admitMaintenance, awaitMaintenancePreemption, releaseMaintenance, evict, snapshot }
 }
 
 /**
@@ -392,10 +431,15 @@ export const runMaintenance = <A, E, R>(
   scheduler: Interface,
   input: MaintenanceInput,
   effect: Effect.Effect<A, E, R>,
+  onPreempt: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
   Effect.acquireUseRelease(
     scheduler.admitMaintenance(input),
-    () => effect,
+    (lease) =>
+      Effect.raceFirst(
+        effect,
+        scheduler.awaitMaintenancePreemption({ ownerID: input.ownerID, lease }).pipe(Effect.andThen(onPreempt)),
+      ),
     (lease) => scheduler.releaseMaintenance({ ownerID: input.ownerID, lease }),
   )
 

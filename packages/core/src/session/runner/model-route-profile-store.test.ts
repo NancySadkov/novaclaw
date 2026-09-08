@@ -225,6 +225,14 @@ describe("model route profile persistence", () => {
 })
 
 describe("profile precedence", () => {
+  test("an empirically honoured half-window narrows an optimistic catalog window", () => {
+    expect(
+      resolveProfile(
+        { promptRatios: [], promptResidualRatios: [], contextWindowTokens: 131_072 },
+        { declared: { contextWindowTokens: 262_144 } },
+      ).contextWindowTokens,
+    ).toBe(131_072)
+  })
   test("resolves each property as declared, discovered, persisted, then safe default", () => {
     const persisted = {
       promptRatios: [1.1],
@@ -263,8 +271,7 @@ describe("profile precedence", () => {
     ).toBe(2_000)
     expect(resolveProfile(persisted, {}).prefixCacheRetentionTokens).toBe(3_000)
     expect(
-      resolveProfile(undefined, { safeDefault: { prefixCacheRetentionTokens: 1_000 } })
-        .prefixCacheRetentionTokens,
+      resolveProfile(undefined, { safeDefault: { prefixCacheRetentionTokens: 1_000 } }).prefixCacheRetentionTokens,
     ).toBe(1_000)
   })
 

@@ -52,6 +52,7 @@ export interface Input {
           | "device-report"
           | "device-maintenance-admit"
           | "device-maintenance-release"
+          | "device-maintenance-await-preemption"
       }
     >,
     signal: AbortSignal,
@@ -65,6 +66,7 @@ export interface Input {
           | "device-reported"
           | "device-maintenance-admitted"
           | "device-maintenance-released"
+          | "device-maintenance-preempted"
           | "device-rejected"
       }
     >
@@ -222,6 +224,7 @@ const ORDERED_RPC = {
   "device-report": false,
   "device-maintenance-admit": false,
   "device-maintenance-release": false,
+  "device-maintenance-await-preemption": false,
   "memory-request": false,
   "local-model-request": false,
   // Ordered: a `save` must land before the `load` of the next drain, and both come from one worker
@@ -421,7 +424,8 @@ export function spawn(input: Input): Handle {
       case "device-release":
       case "device-report":
       case "device-maintenance-admit":
-      case "device-maintenance-release": {
+      case "device-maintenance-release":
+      case "device-maintenance-await-preemption": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "device request arrived before ready" })
           return

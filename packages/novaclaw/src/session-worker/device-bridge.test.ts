@@ -11,7 +11,13 @@ const lease = {
   ownerID: "host",
 }
 const request = (
-  type: "device-admit" | "device-release" | "device-report" | "device-maintenance-admit" | "device-maintenance-release",
+  type:
+    | "device-admit"
+    | "device-release"
+    | "device-report"
+    | "device-maintenance-admit"
+    | "device-maintenance-release"
+    | "device-maintenance-await-preemption",
   extra: Record<string, unknown> = {},
 ) =>
   ({
@@ -88,6 +94,31 @@ test("maintenance admission crosses the worker boundary as a host-owned unique l
   )
   expect(released.type).toBe("device-maintenance-released")
   expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightMaintenance).toEqual([])
+})
+
+test("an interactive arrival preempts worker-owned maintenance", async () => {
+  const scheduler = SessionScheduler.make()
+  const admitted = await Effect.runPromise(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-maintenance-admit", { task: "session-compaction" }),
+    }),
+  )
+  expect(admitted.type).toBe("device-maintenance-admitted")
+  if (admitted.type !== "device-maintenance-admitted") throw new Error("maintenance admission failed")
+
+  const preempted = Effect.runFork(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-maintenance-await-preemption", { maintenanceID: admitted.maintenanceID }),
+    }),
+  )
+  await Effect.runPromise(
+    scheduler.admit({ sessionID: "foreground", deviceKey: "provider/model", sessionClass: "interactive" }),
+  )
+  expect((await Effect.runPromise(Fiber.join(preempted))).type).toBe("device-maintenance-preempted")
 })
 
 test("worker-exit reclaim releases an acquired maintenance lease", async () => {

@@ -64,6 +64,8 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
       barren: { barren: 1, lastOpened: 2 },
       joined: ["ses_child"],
       restartRounds: 1,
+      runawayNudgedAtCalls: 75,
+      compactionRetryAt: 123_456,
     }),
   )
   // Drain 2: a NEW worker hydrates — and sees drain 1's facts instead of six empty maps.
@@ -73,6 +75,8 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
   expect(seen.barren).toEqual({ barren: 1, lastOpened: 2 })
   expect(seen.joined).toEqual(["ses_child"])
   expect(seen.restartRounds).toBe(1)
+  expect(seen.runawayNudgedAtCalls).toBe(75)
+  expect(seen.compactionRetryAt).toBe(123_456)
   expect(requests).toEqual(["save", "load"])
 })
 

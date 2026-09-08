@@ -21,6 +21,7 @@ export interface Capabilities {
     input: Omit<SessionScheduler.MaintenanceInput, "ownerID">,
   ) => Promise<SessionScheduler.MaintenanceLease>
   readonly releaseMaintenance: (input: SessionScheduler.MaintenanceLease) => Promise<void>
+  readonly awaitMaintenancePreemption: (input: SessionScheduler.MaintenanceLease) => Promise<void>
   readonly assertPermission: (
     input: PermissionV2.AssertInput,
   ) => Promise<Extract<Reply, { readonly type: "permission-result" }>>
@@ -195,6 +196,19 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       )
       if (reply.type !== "device-maintenance-released")
         throw new Error(`unexpected ${reply.type} reply to maintenance release`)
+    },
+    awaitMaintenancePreemption: async (request) => {
+      const reply = rejected(
+        await input.client.request({
+          ...identity,
+          type: "device-maintenance-await-preemption",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+          maintenanceID: request.maintenanceID,
+        }),
+      )
+      if (reply.type !== "device-maintenance-preempted")
+        throw new Error(`unexpected ${reply.type} reply to maintenance preemption wait`)
     },
     assertPermission: async (request) => {
       const reply = await input.client.request({

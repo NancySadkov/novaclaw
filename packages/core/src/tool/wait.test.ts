@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { SessionSchema } from "../session/schema"
-import { deadChildMessage, resolveDirectChildID } from "./wait"
+import { deadChildMessage, resolveDirectChildID, sideEffect } from "./wait"
 
 const id = (value: string) => SessionSchema.ID.make(value)
+
+test("wait is recovery-safe because observing a child cannot duplicate its work", () => {
+  expect(sideEffect).toBe("read")
+})
 
 describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () => {
   test("keeps an exact direct child authoritative", () => {
@@ -10,14 +14,13 @@ describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () 
     expect(resolveDirectChildID(exact, [id("ses_other"), exact])).toBe(exact)
   })
 
-  test.each([
-    "ses_fa721b947ffe3Y6fwGD9ciiTiI",
-    "ses_fa721b947ffe3Y6fwGD9siiTi",
-    "ses_fa721b947ffe3Y6fwGD9xsiiTiI",
-  ])("repairs one substitution, deletion, or insertion inside a direct child id", (mistyped) => {
-    const child = id("ses_fa721b947ffe3Y6fwGD9siiTiI")
-    expect(resolveDirectChildID(id(mistyped), [child])).toBe(child)
-  })
+  test.each(["ses_fa721b947ffe3Y6fwGD9ciiTiI", "ses_fa721b947ffe3Y6fwGD9siiTi", "ses_fa721b947ffe3Y6fwGD9xsiiTiI"])(
+    "repairs one substitution, deletion, or insertion inside a direct child id",
+    (mistyped) => {
+      const child = id("ses_fa721b947ffe3Y6fwGD9siiTiI")
+      expect(resolveDirectChildID(id(mistyped), [child])).toBe(child)
+    },
+  )
 
   test("refuses two edits instead of guessing", () => {
     expect(resolveDirectChildID(id("ses_child_zz"), [id("ses_child_ab")])).toBeUndefined()

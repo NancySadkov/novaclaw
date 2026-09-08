@@ -20,6 +20,9 @@ export interface Scope {
 export interface Tunables {
   readonly imagePatchPixels?: number
   readonly prefixCacheRetentionTokens?: number
+  /** Context window the exact serving route demonstrably honoured. A provider may advertise a
+   * larger window while context-shift pins prompt use at half of it. */
+  readonly contextWindowTokens?: number
 }
 
 export interface Profile extends Tunables {
@@ -95,6 +98,7 @@ const decode = (value: unknown): Profile | undefined => {
     : []
   const imagePatchPixels = positive(row["imagePatchPixels"])
   const prefixCacheRetentionTokens = positive(row["prefixCacheRetentionTokens"])
+  const contextWindowTokens = positive(row["contextWindowTokens"])
   const servedBy =
     typeof row["servedBy"] === "string" && row["servedBy"].trim().length > 0 ? row["servedBy"] : undefined
   if (
@@ -102,6 +106,7 @@ const decode = (value: unknown): Profile | undefined => {
     promptResidualRatios.length === 0 &&
     imagePatchPixels === undefined &&
     prefixCacheRetentionTokens === undefined &&
+    contextWindowTokens === undefined &&
     servedBy === undefined
   )
     return undefined
@@ -110,6 +115,7 @@ const decode = (value: unknown): Profile | undefined => {
     promptResidualRatios,
     ...(imagePatchPixels === undefined ? {} : { imagePatchPixels }),
     ...(prefixCacheRetentionTokens === undefined ? {} : { prefixCacheRetentionTokens }),
+    ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
     ...(servedBy === undefined ? {} : { servedBy }),
   }
 }
@@ -145,6 +151,16 @@ export const resolveProfile = (persisted: Profile | undefined, input: ResolveInp
       input.safeDefault?.imagePatchPixels,
     )
     return imagePatchPixels === undefined ? {} : { imagePatchPixels }
+  })(),
+  ...(() => {
+    // An observed honoured window is a ceiling, not a preference. A stale advertised 262k must not
+    // outrank the 131k boundary the same serving process actually demonstrated.
+    const declared = positive(input.declared?.contextWindowTokens)
+    const discovered = positive(input.discovered?.contextWindowTokens)
+    const observed = positive(persisted?.contextWindowTokens)
+    const safe = positive(input.safeDefault?.contextWindowTokens)
+    const values = [declared, discovered, observed, safe].filter((value): value is number => value !== undefined)
+    return values.length === 0 ? {} : { contextWindowTokens: Math.min(...values) }
   })(),
   ...(() => {
     const prefixCacheRetentionTokens = firstPositive(
@@ -238,6 +254,9 @@ export const layer = Layer.effect(
             ...(positive(update.prefixCacheRetentionTokens) === undefined
               ? {}
               : { prefixCacheRetentionTokens: update.prefixCacheRetentionTokens }),
+            ...(positive(update.contextWindowTokens) === undefined
+              ? {}
+              : { contextWindowTokens: update.contextWindowTokens }),
             ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
             promptRatios:
               update.promptRatios === undefined

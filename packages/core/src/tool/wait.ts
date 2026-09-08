@@ -126,6 +126,7 @@ export const resolveDirectChildID = (
 }
 
 export const name = "wait"
+export const sideEffect = "read" as const
 /**
  * The bound, and its measurement, now live with the join itself — `SessionJoin.JOIN_TIMEOUT_MS`.
  *
@@ -156,6 +157,9 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
+          // Waiting observes controller-owned child state. Re-running it cannot duplicate the
+          // child's work, so a process loss must not classify the join like an unknown write.
+          sideEffect,
           description:
             "Block until a child session (spawned earlier) completes via exit(), then return its result. " +
             "Times out after ~10 minutes if the child has not completed.",

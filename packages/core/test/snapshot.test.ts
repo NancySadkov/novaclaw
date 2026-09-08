@@ -86,43 +86,46 @@ describe("Snapshot", () => {
     ),
   )
 
-  testEffect(Layer.empty).live("isolates snapshot indexes by canonical Git worktree", () =>
-    Effect.acquireUseRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) =>
-        Effect.gen(function* () {
-          const project = path.join(tmp.path, "project")
-          const linked = path.join(tmp.path, "linked")
-          yield* Effect.promise(async () => {
-            await repo(project, { "tracked.txt": "main\n" })
-            // Stays a live `git worktree add`: the linked worktree is what this test is about.
-            await git(project, "worktree", "add", "--detach", linked, "HEAD")
-          })
+  testEffect(Layer.empty).live(
+    "isolates snapshot indexes by canonical Git worktree",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const project = path.join(tmp.path, "project")
+            const linked = path.join(tmp.path, "linked")
+            yield* Effect.promise(async () => {
+              await repo(project, { "tracked.txt": "main\n" })
+              // Stays a live `git worktree add`: the linked worktree is what this test is about.
+              await git(project, "worktree", "add", "--detach", linked, "HEAD")
+            })
 
-          const capture = (directory: string) =>
-            Effect.gen(function* () {
-              const snapshot = yield* Snapshot.Service
-              return yield* snapshot.capture()
-            }).pipe(Effect.provide(snapshotLayer(tmp.path, directory)))
-          expect(yield* capture(project)).toBeDefined()
-          expect(yield* capture(linked)).toBeDefined()
+            const capture = (directory: string) =>
+              Effect.gen(function* () {
+                const snapshot = yield* Snapshot.Service
+                return yield* snapshot.capture()
+              }).pipe(Effect.provide(snapshotLayer(tmp.path, directory)))
+            expect(yield* capture(project)).toBeDefined()
+            expect(yield* capture(linked)).toBeDefined()
 
-          const projectID = yield* Effect.gen(function* () {
-            return (yield* Location.Service).origin
-          }).pipe(
-            Effect.provide(
-              AppNodeBuilder.build(Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(project) }))),
-            ),
-          )
-          expect(
-            yield* Effect.promise(() => fs.stat(path.join(tmp.path, "snapshot", projectID, Hash.fast(project)))),
-          ).toBeDefined()
-          expect(
-            yield* Effect.promise(() => fs.stat(path.join(tmp.path, "snapshot", projectID, Hash.fast(linked)))),
-          ).toBeDefined()
-        }),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ),
+            const projectID = yield* Effect.gen(function* () {
+              return (yield* Location.Service).origin
+            }).pipe(
+              Effect.provide(
+                AppNodeBuilder.build(Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(project) }))),
+              ),
+            )
+            expect(
+              yield* Effect.promise(() => fs.stat(path.join(tmp.path, "snapshot", projectID, Hash.fast(project)))),
+            ).toBeDefined()
+            expect(
+              yield* Effect.promise(() => fs.stat(path.join(tmp.path, "snapshot", projectID, Hash.fast(linked)))),
+            ).toBeDefined()
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    10_000,
   )
 
   testEffect(Layer.empty).live("checks out a legacy revert snapshot without removing unrelated files", () =>

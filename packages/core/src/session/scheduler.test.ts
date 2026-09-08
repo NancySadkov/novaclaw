@@ -238,6 +238,7 @@ describe("interactive-idle maintenance", () => {
         Effect.sync(() => {
           started = true
         }).pipe(Effect.andThen(Deferred.await(hold))),
+        Effect.void,
       ),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -265,10 +266,10 @@ describe("interactive-idle maintenance", () => {
     const firstHold = Deferred.makeUnsafe<void>()
     const secondHold = Deferred.makeUnsafe<void>()
     const first = Effect.runFork(
-      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(firstHold)),
+      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(firstHold), Effect.void),
     )
     const second = Effect.runFork(
-      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(secondHold)),
+      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(secondHold), Effect.void),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -278,8 +279,8 @@ describe("interactive-idle maintenance", () => {
     expect(device!.waitingMaintenance).toHaveLength(1)
     expect(device!.waitingMaintenance[0]).not.toBe(device!.inFlightMaintenance[0])
 
-    // Interactive work is never queued behind already-running background work. It cannot preempt
-    // the provider request already in flight, but it closes every further maintenance admission.
+    // Interactive work is never queued behind already-running background work. Its admission
+    // preempts the acquired maintenance effect and closes every further maintenance admission.
     await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive", concurrency: 2 }))
     await run(gate.release({ sessionID: "batch", deviceKey: "d" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -290,8 +291,7 @@ describe("interactive-idle maintenance", () => {
     await run(gate.release({ sessionID: "ui", deviceKey: "d" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     ;[device] = await run(gate.snapshot())
-    expect(device!.inFlightMaintenance).toHaveLength(2)
-    expect(new Set(device!.inFlightMaintenance).size).toBe(2)
+    expect(device!.inFlightMaintenance).toHaveLength(1)
 
     Deferred.doneUnsafe(firstHold, Effect.void)
     Deferred.doneUnsafe(secondHold, Effect.void)
@@ -303,7 +303,7 @@ describe("interactive-idle maintenance", () => {
   test("evicting an owner interrupts its queued maintenance lease", async () => {
     const gate = make()
     await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
-    const queued = Effect.runFork(runMaintenance(gate, maintenance("gone", "status"), Effect.never))
+    const queued = Effect.runFork(runMaintenance(gate, maintenance("gone", "status"), Effect.never, Effect.void))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await run(gate.snapshot()))[0]!.waitingMaintenance).toHaveLength(1)
 
@@ -341,12 +341,16 @@ describe("interactive-idle maintenance", () => {
 
   test("provider failure and interruption both release the acquired maintenance slot", async () => {
     const gate = make()
-    const failed = await run(Effect.exit(runMaintenance(gate, maintenance("owner", "extract"), Effect.fail("boom"))))
+    const failed = await run(
+      Effect.exit(runMaintenance(gate, maintenance("owner", "extract"), Effect.fail("boom"), Effect.void)),
+    )
     expect(Exit.isFailure(failed)).toBe(true)
     expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
 
     const hold = Deferred.makeUnsafe<void>()
-    const interrupted = Effect.runFork(runMaintenance(gate, maintenance("owner", "link"), Deferred.await(hold)))
+    const interrupted = Effect.runFork(
+      runMaintenance(gate, maintenance("owner", "link"), Deferred.await(hold), Effect.void),
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toHaveLength(1)
 

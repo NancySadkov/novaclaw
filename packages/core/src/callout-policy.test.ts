@@ -35,6 +35,7 @@ describe("owned callout policy audit", () => {
     expect(CalloutPolicy.AUDIT.websearch.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.telemetry_logs.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.summarizer.failureMode).toBe("fail_open")
+    expect(CalloutPolicy.AUDIT.summarizer.timeoutMs).toBe(30_000)
   })
 
   test("runtime-provided bounds are made finite and usable", () => {
