@@ -36,6 +36,7 @@ import { colleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
 import { waitRow } from "./wait-row"
 import { toolIcon } from "./tool-icon"
+import { toolInputForDisplay } from "./tool-input-preview"
 import { fallbackWorkerLabel } from "@novaclaw/core/agent-status/worker-label"
 import { Markdown } from "../../components/markdown"
 import {
@@ -1479,10 +1480,10 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n, messages: rea
       return waitRow(input, messages, i18n.t)
     case "bash":
       return { title: i18n.t("ui.transcript.tool.bash"), subtitle: str(input.command) }
-    // The file-mutating tools read as a finished action plus the file — "Edited pi.c" — and carry NO
+    // The file-mutating tools read as a compact action plus the file — "Edited pi.c" — and carry NO
     // +N/-M stat inline. The stat was noise on every edit, and the exact diff is one click away in this
-    // row's own body (and properly presented in the git-changes tab). Past tense on purpose: by the time
-    // a row is on screen the action has happened.
+    // row's own body (and properly presented in the git-changes tab). Pending input is decoded above,
+    // so the target appears as soon as `path` finishes streaming rather than after the mutation settles.
     case "edit":
       return { title: i18n.t("ui.transcript.tool.edit"), subtitle: filePathOf(input) }
     case "write":
@@ -1506,7 +1507,7 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n, messages: rea
 }
 
 function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, unknown> {
-  return state.status === "pending" ? {} : ((state.input ?? {}) as Record<string, unknown>)
+  return toolInputForDisplay(state)
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */
