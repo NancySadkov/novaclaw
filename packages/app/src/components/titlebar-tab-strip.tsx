@@ -15,9 +15,25 @@ import { useCommand } from "@/context/command"
 import { useTabs } from "@/context/tabs"
 import { createTabPromptState } from "@/context/prompt"
 import { base64Encode } from "@novaclaw/core/util/encode"
-import { canStartTabDrag } from "./titlebar-tab-gesture"
+import { canStartTabDrag, TAB_DRAG_ACTIVATION_DISTANCE } from "./titlebar-tab-gesture"
 
 const sortableTransition = { duration: 0 }
+
+/**
+ * Every titlebar tab has identical drag physics. Keeping the transition here prevents a future tab
+ * kind from silently restoring dnd-kit's drop animation and moving its neighbours after release.
+ */
+function useTabSortable(id: () => string, index: () => number) {
+  return useSortable({
+    get id() {
+      return id()
+    },
+    get index() {
+      return index()
+    },
+    transition: sortableTransition,
+  })
+}
 
 function SessionTabSlot(props: {
   tab: SessionTab
@@ -30,14 +46,7 @@ function SessionTabSlot(props: {
   onNavigate: (element: HTMLDivElement) => void
 }) {
   const tabs = useTabs()
-  const sortable = useSortable({
-    get id() {
-      return props.id
-    },
-    get index() {
-      return props.index()
-    },
-  })
+  const sortable = useTabSortable(() => props.id, props.index)
   let ref!: HTMLDivElement
   const sdk = createMemo(() => props.serverCtx()?.sdk ?? null)
   const cachedSession = createMemo(() => props.serverCtx()?.sync.session.peek(props.tab.sessionId))
@@ -138,14 +147,7 @@ function DraftTabSlot(props: {
   title: string
   onNavigate: (element: HTMLDivElement) => void
 }) {
-  const sortable = useSortable({
-    get id() {
-      return props.id
-    },
-    get index() {
-      return props.index()
-    },
-  })
+  const sortable = useTabSortable(() => props.id, props.index)
   let ref!: HTMLDivElement
 
   return (
@@ -226,7 +228,9 @@ export function TitlebarTabStrip(props: {
         <DragDropProvider
           sensors={[
             PointerSensor.configure({
-              activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
+              activationConstraints: [
+                new PointerActivationConstraints.Distance({ value: TAB_DRAG_ACTIVATION_DISTANCE }),
+              ],
               preventActivation: (event) =>
                 !canStartTabDrag(event.pointerType) ||
                 (event.target instanceof Element && !!event.target.closest('[contenteditable="true"]')),

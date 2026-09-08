@@ -13,6 +13,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { TitlebarTabStrip } from "@/components/titlebar-tab-strip"
+import { revealTabInStrip } from "@/components/titlebar-tab-gesture"
 import { NovaClawWordmark } from "@/components/brand"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -341,7 +342,7 @@ export function Titlebar() {
               onOverflowChange={setTabsAreOverflowing}
               onNavigate={(tab, el) => {
                 tabs.select(tab)
-                el?.scrollIntoView({ behavior: "instant" })
+                revealTabInStrip(el)
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
             />

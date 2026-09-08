@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { canOpenTabRename, canStartTabDrag, forwardTabRef } from "./titlebar-tab-gesture"
+import {
+  canOpenTabRename,
+  canStartTabDrag,
+  forwardTabRef,
+  revealTabInStrip,
+  TAB_DRAG_ACTIVATION_DISTANCE,
+} from "./titlebar-tab-gesture"
 
 describe("titlebar tab gestures", () => {
   test("forwards component refs", () => {
@@ -18,5 +24,37 @@ describe("titlebar tab gestures", () => {
     expect(canStartTabDrag("mouse")).toBe(true)
     expect(canStartTabDrag("pen")).toBe(true)
     expect(canStartTabDrag("touch")).toBe(false)
+  })
+
+  test("requires deliberate pointer travel before a click becomes a drag", () => {
+    expect(TAB_DRAG_ACTIVATION_DISTANCE).toBeGreaterThanOrEqual(8)
+  })
+
+  test("leaves an already visible tab and every ancestor scroll position still", () => {
+    const strip = document.createElement("div")
+    strip.dataset.slot = "titlebar-tabs-scroll"
+    const tab = document.createElement("div")
+    strip.append(tab)
+    strip.scrollLeft = 40
+    Object.defineProperty(strip, "getBoundingClientRect", { value: () => ({ left: 10, right: 210 }) })
+    Object.defineProperty(tab, "getBoundingClientRect", { value: () => ({ left: 50, right: 150 }) })
+
+    revealTabInStrip(tab)
+
+    expect(strip.scrollLeft).toBe(40)
+  })
+
+  test("reveals only the clipped horizontal edge inside the tab strip", () => {
+    const strip = document.createElement("div")
+    strip.dataset.slot = "titlebar-tabs-scroll"
+    const tab = document.createElement("div")
+    strip.append(tab)
+    strip.scrollLeft = 40
+    Object.defineProperty(strip, "getBoundingClientRect", { value: () => ({ left: 10, right: 210 }) })
+    Object.defineProperty(tab, "getBoundingClientRect", { value: () => ({ left: 180, right: 230 }) })
+
+    revealTabInStrip(tab)
+
+    expect(strip.scrollLeft).toBe(60)
   })
 })

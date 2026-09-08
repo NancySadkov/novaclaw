@@ -16,6 +16,17 @@ describe("narrow-window navigation remains reachable", () => {
     expect(strip).not.toContain("min-w-7")
   })
 
+  test("every sortable tab disables the post-click displacement animation", () => {
+    expect(strip.match(/useSortable\(/g)?.length).toBe(1)
+    expect(strip).toContain("transition: sortableTransition")
+    expect(strip.match(/useTabSortable\(/g)?.length).toBe(3)
+  })
+
+  test("tab selection never asks an ancestor scroller to reposition itself", () => {
+    expect(titlebar).toContain("revealTabInStrip(el)")
+    expect(titlebar).not.toContain("scrollIntoView")
+  })
+
   test("context stats can render as a modal below the desktop breakpoint", () => {
     expect(sidePanel).toContain("const reviewOpen = createMemo(() => view().reviewPanel.opened())")
     expect(sidePanel).toContain("const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())")
