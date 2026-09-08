@@ -142,16 +142,15 @@ export const attemptLabel = (attempt: ProviderAttemptTiming) => {
  * ## What it may say
  *
  * Only what the transcript actually knows: the turn settled, it ran N tools, and its last message
- * carried no prose. It must not guess why. A turn that ends on `exit` ended deliberately — the drain
- * stops there by design (`llm.ts`) — so that reads as finishing, not as stopping short, and calling
- * it "no closing message" would describe a fault that is not one (ruling 2).
+ * carried no trailing prose. It must not guess why. A turn that ends on `exit(result)` ended
+ * deliberately and already carries its terminal answer, so that result is shown; a bare `exit()`
+ * falls back to a truthful finish line rather than being described as stopping short (ruling 2).
  */
 export const turnOutcome = (input: {
   readonly toolCount: number
-  readonly lastToolName?: string
+  readonly lastTool?: { readonly name: string; readonly result: string | undefined }
 }): string | undefined => {
   if (input.toolCount <= 0) return undefined
-  const tools = `${input.toolCount} ${input.toolCount === 1 ? "step" : "steps"}`
-  if (input.lastToolName === "exit") return `Finished after ${tools}.`
-  return `Ran ${tools}. The model ended here without writing a reply.`
+  if (input.lastTool?.name === "exit") return input.lastTool.result?.trim() || "Finished."
+  return "The model ended here without writing a reply."
 }

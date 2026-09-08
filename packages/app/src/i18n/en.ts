@@ -2958,7 +2958,7 @@ export const dict = {
   "contacts.rate": "{{tokens}}/min",
   // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
   // longer than a label pushes the others off the row it exists to inform.
-  "contacts.noTask": "No task",
+  "contacts.noTask": "No job yet",
   // The tilde is load-bearing: a true rate needs each model'''s own tokenisation, so this is an
   // estimate that is about right across models rather than exact for one. It says the model and the
   // agent are alive and working — it is not a benchmark, and must not read like one.

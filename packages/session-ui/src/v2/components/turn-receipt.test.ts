@@ -126,15 +126,26 @@ describe("turn receipt", () => {
 
 describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
   // The case that unblocks the fold: 57% of tool-bearing turns end here.
-  test("names the step count and says plainly that no reply was written", () => {
-    expect(turnOutcome({ toolCount: 3 })).toBe("Ran 3 steps. The model ended here without writing a reply.")
-    expect(turnOutcome({ toolCount: 1 })).toBe("Ran 1 step. The model ended here without writing a reply.")
+  test("says plainly that no reply was written without exposing the internal step count", () => {
+    expect(turnOutcome({ toolCount: 3 })).toBe("The model ended here without writing a reply.")
+    expect(turnOutcome({ toolCount: 1 })).toBe("The model ended here without writing a reply.")
   })
 
   // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would
   // describe a fault that is not one — ruling 2, on the surface a user reads.
   test("a turn that ended on exit reads as finished, not as stopped short", () => {
-    expect(turnOutcome({ toolCount: 2, lastToolName: "exit" })).toBe("Finished after 2 steps.")
+    expect(turnOutcome({ toolCount: 2, lastTool: { name: "exit", result: undefined } })).toBe(
+      "Finished.",
+    )
+  })
+
+  test("an exit result is the answer, not cruft hidden behind a generic finish line", () => {
+    expect(
+      turnOutcome({
+        toolCount: 125,
+        lastTool: { name: "exit", result: "  Project accepted and complete.\n\n100 tests passed.  " },
+      }),
+    ).toBe("Project accepted and complete.\n\n100 tests passed.")
   })
 
   // No work means no fold, so there is nothing to stand in for — and a receipt that appeared over a

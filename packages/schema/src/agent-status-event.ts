@@ -13,4 +13,12 @@ export const Updated = Event.define({
   },
 })
 
-export const Definitions = Event.inventory(Updated)
+/** A colleague's chat was cleared, so its current task component no longer exists. */
+export const Removed = Event.define({
+  type: "agent.status.removed",
+  schema: {
+    agent: Schema.String,
+  },
+})
+
+export const Definitions = Event.inventory(Updated, Removed)

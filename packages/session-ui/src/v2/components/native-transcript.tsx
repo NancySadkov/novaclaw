@@ -367,7 +367,7 @@ function Turn(props: {
    * ever states what the transcript knows.
    */
   const outcome = () =>
-    running() || hasAnswer() ? undefined : turnOutcome({ toolCount: toolCount(), lastToolName: lastToolName() })
+    running() || hasAnswer() ? undefined : turnOutcome({ toolCount: toolCount(), lastTool: lastTool() })
   /**
    * 🔴 **The fold is BUILT AROUND the closing assistant message, so it may not render without one.**
    *
@@ -396,10 +396,13 @@ function Turn(props: {
       hasAnswer: hasAnswer(),
       outcome: outcome(),
     })
-  /** The closing message's last tool — an `exit` ends the drain deliberately, so it is not a stop-short. */
-  const lastToolName = () => {
+  /** The closing message's last tool, including exit(result), which is the terminal answer. */
+  const lastTool = () => {
     const parts = closing()?.content.filter((part) => part.type === "tool")
-    return parts?.at(-1)?.name
+    const part = parts?.at(-1)
+    if (!part) return undefined
+    const result = toolInput(part.state).result
+    return { name: part.name, result: typeof result === "string" ? result : undefined }
   }
   const toolCount = () =>
     body().reduce(
@@ -429,9 +432,6 @@ function Turn(props: {
                 the native triangle, which is what left this fold without one. */}
                 <span data-slot="native-turn-work-summary">
                   <span data-slot="native-turn-work-label">{i18n.t("ui.transcript.done")}</span>
-                  <Show when={toolCount() > 0}>
-                    <span data-slot="native-turn-work-count">{i18n.plural("ui.transcript.steps", toolCount())}</span>
-                  </Show>
                 </span>
               </summary>
               <div data-slot="native-turn-work-body">
@@ -459,7 +459,11 @@ function Turn(props: {
                 />
               }
             >
-              {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
+              {(line) => (
+                <div data-slot="native-turn-outcome">
+                  <Markdown text={line()} cacheKey={`${closingMessage.id}:outcome`} />
+                </div>
+              )}
             </Show>
           </>
         )}
