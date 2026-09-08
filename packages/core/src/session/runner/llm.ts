@@ -93,7 +93,6 @@ import { ShortAnswer } from "./short-answer"
 import { FinishAudit } from "./finish-audit"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
-import { TruncationDetection } from "./truncation-detection"
 import { OverflowRecoveryPolicy } from "./overflow-recovery-policy"
 import { Token } from "../../util/token"
 import { RequestFootprint } from "./footprint"
@@ -2027,7 +2026,6 @@ export const layer = Layer.effect(
             promptResidualRatios: [],
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
             prefixCacheRetentionTokens: undefined,
-            contextWindowTokens: undefined,
             servedBy: undefined,
           })),
         )
@@ -2052,7 +2050,7 @@ export const layer = Layer.effect(
       const preparedDispatch = ProviderDispatch.prepare({
         request: openingRequest,
         promptCacheKey,
-        contextSize: routeProfile.contextWindowTokens ?? model.route.defaults.limits?.context,
+        contextSize: model.route.defaults.limits?.context,
         prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
         profile: ContextBudget.enabled(harness.context, config.contextBudget)
           ? ContextBudget.resolve(harness.context, config.type)
@@ -2083,7 +2081,6 @@ export const layer = Layer.effect(
           promptEstimate,
           imagePatchPixels: routeProfile.imagePatchPixels,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
-          contextWindowTokens: routeProfile.contextWindowTokens,
           maintenance: {
             ownerID: session.id,
             task: "compaction",
@@ -2232,15 +2229,6 @@ export const layer = Layer.effect(
                 })
                 const anchoredEstimatedPrompt =
                   anchorable && providerEstimate.confidence !== "whole" ? providerEstimate.estimatedTokens : undefined
-                const calibratedEstimate = providerEstimate.estimatedTokens
-                const truncation =
-                  reportedPrompt === undefined
-                    ? undefined
-                    : TruncationDetection.classify({
-                        reportedPromptTokens: reportedPrompt,
-                        calibratedEstimateTokens: calibratedEstimate,
-                        serverContextWindow: packed.contextSize,
-                      })
                 if (anchorable) {
                   const observed = PromptEstimate.observe({
                     request: providerRequest,
@@ -2280,31 +2268,6 @@ export const layer = Layer.effect(
                         ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
                         : 0,
                     }),
-                  ),
-                  Effect.andThen(
-                    truncation?.status === "suspected" && truncation.pin !== undefined
-                      ? routeProfiles
-                          .put(routeProfileScope, {
-                            ...(truncation.pin === "half-window"
-                              ? { contextWindowTokens: Math.floor(packed.contextSize / 2) }
-                              : { contextWindowTokens: packed.contextSize }),
-                            ...(servedBy === undefined ? {} : { servedBy }),
-                          })
-                          .pipe(
-                            Effect.ignore,
-                            Effect.andThen(
-                              Log.event("session.context.truncation.suspected", {
-                                "session.id": session.id,
-                                "provider.id": attemptModelRef.providerID,
-                                "model.id": attemptModelRef.id,
-                                "session.prompt.tokens": reportedPrompt!,
-                                "session.estimated.tokens": calibratedEstimate,
-                                "session.context.size": packed.contextSize,
-                                "session.truncation.pin": truncation.pin,
-                              }),
-                            ),
-                          )
-                      : Effect.void,
                   ),
                 )
               },
@@ -3271,7 +3234,6 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => ({
             promptFactor: 1,
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
-            contextWindowTokens: undefined,
           })),
         )
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
@@ -3289,7 +3251,6 @@ export const layer = Layer.effect(
           model,
           request,
           imagePatchPixels: routeProfile.imagePatchPixels,
-          contextWindowTokens: routeProfile.contextWindowTokens,
           maintenance: {
             ownerID: session.id,
             task: "manual-compaction",

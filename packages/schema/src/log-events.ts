@@ -2116,21 +2116,6 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  "session.context.truncation.suspected": {
-    level: "warn",
-    message: "provider prompt count is pinned where silent context truncation occurs",
-    attributes: {
-      "session.id": "correlate",
-      "provider.id": "correlate",
-      "model.id": "correlate",
-      "session.prompt.tokens": "count",
-      "session.estimated.tokens": "count",
-      "session.context.size": "count",
-      "session.truncation.pin": "id",
-    },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
   "session.control.operator": {
     level: "info",
     message: "session under operator control — Nova is not responding",

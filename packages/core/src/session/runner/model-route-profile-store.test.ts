@@ -38,6 +38,10 @@ describe("model route profile decoding", () => {
         promptResidualRatios: [0.99, 1.01],
         imagePatchPixels: 1024,
         prefixCacheRetentionTokens: -1,
+        // 0.1.72 inferred this from ordinary successful requests that happened to use half of the
+        // current window. It is intentionally an unknown legacy field now, so poisoned installs
+        // self-heal on read instead of carrying the recursively halved ceiling forward.
+        contextWindowTokens: 32_768,
       },
       empty: { promptRatios: [0, Number.POSITIVE_INFINITY], imagePatchPixels: "1024" },
       array: [],
@@ -75,6 +79,38 @@ describe("model route profile decoding", () => {
 })
 
 describe("model route profile persistence", () => {
+  test("ordinary half-window observations cannot poison the shared route with a geometric cap", async () => {
+    const route = scope()
+    const values: Record<string, unknown> = {
+      [SETTINGS_KEY]: {
+        [key(route)]: {
+          promptRatios: [1],
+          promptResidualRatios: [],
+          contextWindowTokens: 32_768,
+          servedBy: "process-a",
+        },
+      },
+    }
+
+    await run(
+      values,
+      Effect.gen(function* () {
+        const store = yield* Service
+        const recovered = yield* store.resolve(route, {})
+        expect(recovered).not.toHaveProperty("contextWindowTokens")
+
+        // These are the two live Geryon-route shapes which used to turn 262,144 -> 131,072 ->
+        // 65,536 solely because each successful prompt happened to be near half of the current cap.
+        yield* store.observe(route, { estimatedTokens: 126_416, reportedTokens: 126_107 }, "process-a")
+        yield* store.observe(route, { estimatedTokens: 64_613, reportedTokens: 63_323 }, "process-a")
+      }),
+    )
+
+    const persisted = (values[SETTINGS_KEY] as Record<string, Record<string, unknown>>)[key(route)]!
+    expect(persisted).not.toHaveProperty("contextWindowTokens")
+    expect(persisted.promptRatios).toHaveLength(3)
+  })
+
   test("observations survive through SettingsConfigStore and stay bounded per exact scope", async () => {
     const values: Record<string, unknown> = {}
     const route = scope()
@@ -225,14 +261,6 @@ describe("model route profile persistence", () => {
 })
 
 describe("profile precedence", () => {
-  test("an empirically honoured half-window narrows an optimistic catalog window", () => {
-    expect(
-      resolveProfile(
-        { promptRatios: [], promptResidualRatios: [], contextWindowTokens: 131_072 },
-        { declared: { contextWindowTokens: 262_144 } },
-      ).contextWindowTokens,
-    ).toBe(131_072)
-  })
   test("resolves each property as declared, discovered, persisted, then safe default", () => {
     const persisted = {
       promptRatios: [1.1],
