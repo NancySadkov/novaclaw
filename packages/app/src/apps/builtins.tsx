@@ -143,6 +143,10 @@ export function useBuiltinApps(): () => HomeApp[] {
       // and is used by no other built-in, and an unknown v2 name would silently render a "plus".
       icon: "brain",
       tile: "/assets/skin/tiles/skills.png",
+      // Unlike every other built-in tile PNG, the owner-supplied file is the transparent GLYPH,
+      // not a finished framed icon. Keep that artwork intact and have the shared tile renderer add
+      // the same aubergine/gold frame around it; otherwise Skills alone floats borderless on Home.
+      tileNeedsFrame: true,
       accent: "#06b6d4",
       get subtitle() {
         return sub("skills")

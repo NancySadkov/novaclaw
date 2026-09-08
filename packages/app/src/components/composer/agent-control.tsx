@@ -1,5 +1,6 @@
-import { For, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { selectedOption, type ComposerAgentControlState } from "./agent-option"
@@ -22,6 +23,7 @@ import { AgentPortrait } from "@/components/agent-portrait"
 export function ComposerAgentControl(props: { state: ComposerAgentControlState }) {
   const language = useLanguage()
   const current = () => selectedOption(props.state)
+  const options = createMemo(() => [...props.state.options])
   const tooltip = () => language.t(props.state.working ? "prompt.agent.tooltip.working" : "prompt.agent.tooltip")
 
   /**
@@ -40,8 +42,8 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
    * ⚠️ The in-chat branch is now its own markup rather than a `<label>` bent into shape by `Dynamic`.
    * A label FORWARDS activation to the control inside it, which is why pressing the chip used to fire
    * the project picker; a real `<button>` needs no `role`, no `tabindex` and no hand-written Enter/
-   * Space handler, and cannot forward anything. The HOME branch stays a `<label>`, where it labels a
-   * real `<select>` and is correct.
+   * Space handler, and cannot forward anything. HOME uses the shared themed select, so its popup is
+   * part of the same design system instead of the operating system's black-on-white native menu.
    */
   return (
     <Show when={props.state.options.length > 0}>
@@ -49,7 +51,7 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
         when={props.state.readOnly}
         fallback={
           <TooltipV2 placement="top" gutter={4} value={tooltip()}>
-            <label
+            <div
               data-mode={props.state.unattended?.() ? "unattended" : undefined}
               class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"
             >
@@ -63,26 +65,36 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
                   />
                 )}
               </Show>
-              <select
+              <SelectV2
+                appearance="inline"
                 data-action="prompt-agent"
                 disabled={props.state.working}
-                class="max-w-[12rem] truncate bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                onChange={(event) => props.state.onSelect(event.currentTarget.value)}
+                options={options()}
+                current={current()}
+                value={(option) => option.id}
+                label={(option) => `${option.name}${option.ownScratch ? "" : ` · ${option.folder}`}`}
+                class="max-w-[12rem]"
+                valueClass="truncate text-v2-text-text-faint"
+                onSelect={(option) => {
+                  if (option) props.state.onSelect(option.id)
+                }}
               >
-                <For each={props.state.options}>
-                  {(option) => (
-                    // ⚠️ `selected` per option, not `value` on the select: the options arrive with the
-                    // roster, AFTER the element is created, and a browser keeps `selectedIndex` at 0
-                    // when children appear later. Measured on the Memory app's owner picker
-                    // 2026-08-21 — it read "Nova" over somebody else's memories.
-                    <option value={option.id} selected={option.id === current()?.id}>
+                {(option) => (
+                  <span class="flex min-w-0 items-center gap-2">
+                    <AgentPortrait
+                      id={option.id}
+                      name={option.name}
+                      avatar={option.avatar}
+                      class="size-5 shrink-0 text-[10px]"
+                    />
+                    <span class="min-w-0 truncate">
                       {option.name}
                       {option.ownScratch ? "" : ` · ${option.folder}`}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </label>
+                    </span>
+                  </span>
+                )}
+              </SelectV2>
+            </div>
           </TooltipV2>
         }
       >

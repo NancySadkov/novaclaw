@@ -360,13 +360,33 @@ describe("Calendar explains a disabled Add task instead of greying out in silenc
 })
 
 describe("Calendar refuses impossible monthly days before sending a schedule", () => {
+  const chooseRepeat = async (value: string) => {
+    const repeat = document.querySelector<HTMLElement>("#calendar-repeat")!
+    repeat.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await Promise.resolve()
+    repeat.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await settle()
+    const option = document.querySelector<HTMLElement>(`[role="option"][data-key="${value}"]`)!
+    expect(option).not.toBeNull()
+    option.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await Promise.resolve()
+    option.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await settle()
+  }
+
   test("empty, fractional, below-minimum and above-maximum days stay drafts and name the valid range", async () => {
     mount(() => <CalendarPage />)
     await settle()
 
-    const repeat = document.querySelector("#calendar-repeat") as HTMLSelectElement
-    repeat.value = "monthly"
-    repeat.dispatchEvent(new Event("change", { bubbles: true }))
+    await chooseRepeat("monthly")
     const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
     prompt.value = "send the report"
     prompt.dispatchEvent(new Event("input", { bubbles: true }))
@@ -387,9 +407,7 @@ describe("Calendar refuses impossible monthly days before sending a schedule", (
   test("CONTROL — a real monthly day is sent unchanged", async () => {
     mount(() => <CalendarPage />)
     await settle()
-    const repeat = document.querySelector("#calendar-repeat") as HTMLSelectElement
-    repeat.value = "monthly"
-    repeat.dispatchEvent(new Event("change", { bubbles: true }))
+    await chooseRepeat("monthly")
     const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
     prompt.value = "send the report"
     prompt.dispatchEvent(new Event("input", { bubbles: true }))

@@ -32,6 +32,8 @@ export interface HomeApp {
    * the gradient recipe, so `icon`/`accent` stay the fallback and the registry needs no asset.
    */
   readonly tile?: string
+  /** The tile URL is a transparent foreground glyph; paint the launcher's standard frame behind it. */
+  readonly tileNeedsFrame?: boolean
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void
   /** Renders as the 2×2 anchor tile that guides the eye (one per home — Tasks). */

@@ -24,9 +24,9 @@ import { useControlLabel } from "./control-label"
  * count in the browser first: the failure it would guard against is invisible to typecheck and to
  * every unit test, which is exactly how it shipped the first time.
  */
-function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
+function groupOptions<T>(options: readonly T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
   if (!groupBy) {
-    return [{ category: "", options }]
+    return [{ category: "", options: [...options] }]
   }
   const map = new Map<string, T[]>()
   for (const opt of options) {
@@ -141,7 +141,7 @@ export type SelectV2Props<T> = Pick<
     /** Disables the control: Kobalte's root state AND the trigger's own attribute + styling. */
     disabled?: boolean
     placeholder?: string
-    options: T[]
+    options: readonly T[]
     /** Selected option (single selection). */
     current?: T
     value?: (x: T) => string

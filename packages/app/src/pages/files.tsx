@@ -3,6 +3,7 @@ import { rowsForDirectory } from "./files-rows"
 import { downloadHostPath } from "@/apps/agent-file-link"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
@@ -382,17 +383,20 @@ export function FilesPage() {
           {language.t("files.newFolder")}
         </button>
         <Show when={roots().length > 1}>
-          <select
-            class="rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-1.5 py-1 text-xs text-v2-text-text-muted outline-none"
+          <SelectV2
+            appearance="inline"
+            class="max-w-[9rem]"
+            valueClass="font-mono text-xs text-v2-text-text-muted"
             title={language.t("files.drives")}
-            value={currentRoot()}
-            onChange={(e) => {
+            aria-label={language.t("files.drives")}
+            options={roots()}
+            current={currentRoot()}
+            onSelect={(root) => {
+              if (!root) return
               setSelected(undefined)
-              setDir(e.currentTarget.value)
+              setDir(root)
             }}
-          >
-            <For each={roots()}>{(root) => <option value={root}>{root}</option>}</For>
-          </select>
+          />
         </Show>
         <button
           type="button"

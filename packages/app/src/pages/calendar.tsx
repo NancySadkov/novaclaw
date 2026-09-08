@@ -3,6 +3,7 @@ import { useLanguage } from "@/context/language"
 import { fireStatusLabel } from "./calendar-status"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
@@ -24,6 +25,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
 import { ControlScope } from "@/components/control-scope"
 import * as Timestamp from "@novaclaw/schema/time"
+import { calendarDay } from "./calendar-day"
 
 // Calendar app: the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
@@ -33,6 +35,7 @@ import * as Timestamp from "@novaclaw/schema/time"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+const MONTH_OPTIONS = MONTHS.map((label, index) => ({ value: index + 1, label }))
 const RECURRENCE_KINDS: Recurrence["kind"][] = ["once", "daily", "weekly", "monthly", "yearly"]
 
 // Plain-language permission postures for an UNATTENDED scheduled run. Default "bypass" = act on anything
@@ -53,13 +56,6 @@ const datetimeLocal = (ms: number) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 const localeDateTime = (value: unknown) => Timestamp.toDate(value)?.toLocaleString() ?? "—"
-
-/** Preserve the draft text until submit, then accept only a real calendar day. */
-export function calendarDay(raw: string): number {
-  const value = Number(raw)
-  if (!Number.isInteger(value) || value < 1 || value > 31) throw new Error("Choose a whole day from 1 to 31")
-  return value
-}
 
 function describeRecurrence(r: Recurrence): string {
   switch (r.kind) {
@@ -612,14 +608,12 @@ export function CalendarPage() {
             <label for="calendar-repeat" class="text-sm text-v2-text-text-muted">
               {language.t("calendar.page.repeat")}
             </label>
-            <select
+            <SelectV2
               id="calendar-repeat"
-              class={FIELD}
-              value={kind()}
-              onChange={(e) => setKind(e.currentTarget.value as Recurrence["kind"])}
-            >
-              <For each={RECURRENCE_KINDS}>{(k) => <option value={k}>{k}</option>}</For>
-            </select>
+              options={RECURRENCE_KINDS}
+              current={kind()}
+              onSelect={(value) => value && setKind(value)}
+            />
 
             <Show when={kind() === "once"}>
               <input
@@ -670,14 +664,14 @@ export function CalendarPage() {
               />
             </Show>
             <Show when={kind() === "yearly"}>
-              <select
+              <SelectV2
                 aria-label="Month"
-                class={FIELD}
-                value={yearMonth()}
-                onChange={(e) => setYearMonth(Number(e.currentTarget.value))}
-              >
-                <For each={MONTHS}>{(m, i) => <option value={i() + 1}>{m}</option>}</For>
-              </select>
+                options={MONTH_OPTIONS}
+                current={MONTH_OPTIONS.find((option) => option.value === yearMonth())}
+                value={(option) => String(option.value)}
+                label={(option) => option.label}
+                onSelect={(option) => option && setYearMonth(option.value)}
+              />
               <input
                 aria-label={language.t("calendar.page.dayOfMonth")}
                 class={`${FIELD} w-20`}
@@ -694,24 +688,15 @@ export function CalendarPage() {
             <label for="calendar-agent" class="text-sm text-v2-text-text-muted">
               {language.t("calendar.page.responsible")}
             </label>
-            <select
+            <SelectV2
               id="calendar-agent"
-              class={`${FIELD} min-w-[220px] flex-1`}
-              onChange={(e) => setAgent(e.currentTarget.value)}
-            >
-              {/* ⚠️ `selected` per option, not `value` on the select: the roster arrives AFTER this
-                  element is created, and a browser keeps `selectedIndex` at 0 when children appear
-                  later — measured on the Memory app's owner picker, which read "Nova" over somebody
-                  else's memories. */}
-              <For each={agentOptions()}>
-                {(option) => (
-                  <option value={option.id} selected={option.id === (agent() || "nova")}>
-                    {option.name}
-                    {option.folder ? ` · ${option.folder}` : ""}
-                  </option>
-                )}
-              </For>
-            </select>
+              class="min-w-[220px] flex-1"
+              options={agentOptions()}
+              current={agentOptions().find((option) => option.id === (agent() || "nova")) ?? agentOptions()[0]}
+              value={(option) => option.id}
+              label={(option) => `${option.name}${option.folder ? ` · ${option.folder}` : ""}`}
+              onSelect={(option) => option && setAgent(option.id)}
+            />
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
@@ -747,14 +732,14 @@ export function CalendarPage() {
             <label for="calendar-permissions" class="text-sm text-v2-text-text-muted">
               {language.t("calendar.page.permissions")}
             </label>
-            <select
+            <SelectV2
               id="calendar-permissions"
-              class={FIELD}
-              value={permission()}
-              onChange={(e) => setPermission(e.currentTarget.value)}
-            >
-              <For each={PERMISSION_MODES}>{(m) => <option value={m.value}>{m.label}</option>}</For>
-            </select>
+              options={PERMISSION_MODES}
+              current={PERMISSION_MODES.find((mode) => mode.value === permission())}
+              value={(mode) => mode.value || "inherit"}
+              label={(mode) => mode.label}
+              onSelect={(mode) => mode && setPermission(mode.value)}
+            />
             <span class="text-xs text-v2-text-text-faint">
               {language.t("calendar.page.runsUnattendedAskStallsWithNo")}
             </span>
