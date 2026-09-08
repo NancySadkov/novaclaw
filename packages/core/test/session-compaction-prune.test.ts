@@ -411,6 +411,7 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
     for (const run of [off, on]) {
       expect(run.published.map((event) => event.type)).toEqual([
         "session.next.compaction.started",
+        "session.next.compaction.delta",
         "session.next.compaction.ended",
       ])
     }

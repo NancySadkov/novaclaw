@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { SessionSchema } from "../session/schema"
 import { deadChildMessage, resolveDirectChildID, sideEffect } from "./wait"
 
@@ -6,6 +7,14 @@ const id = (value: string) => SessionSchema.ID.make(value)
 
 test("wait is recovery-safe because observing a child cannot duplicate its work", () => {
   expect(sideEffect).toBe("read")
+})
+
+test("an already-halted worker is classified before the blocking join", () => {
+  const source = readFileSync(new URL("./wait.ts", import.meta.url), "utf8")
+  const precheck = source.indexOf("const alreadyDead = deadChildMessage")
+  const join = source.indexOf("const joined = yield* join.awaitCompletion")
+  expect(precheck).toBeGreaterThan(0)
+  expect(join).toBeGreaterThan(precheck)
 })
 
 describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () => {
@@ -44,14 +53,14 @@ describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () 
  * complete-looking, WRONG answer, and the nine successes are precisely what hide the tenth.
  */
 describe("deadChildMessage — a dead child must not read as a slow one", () => {
-  test("a FAILED or INTERRUPTED child is reported as not-finished work to re-issue", () => {
+  test("a FAILED or INTERRUPTED child is reported as not-finished work for a fresh replacement", () => {
     for (const state of ["failed", "interrupted"]) {
       const message = deadChildMessage("ses_child", state)
       expect(message).toBeDefined()
       // The three things the parent has to learn, because it will act on this sentence alone.
       expect(message).toContain("DID NOT FINISH")
       expect(message).toContain("waiting again will not help")
-      expect(message).toContain("re-issue")
+      expect(message).toContain("spawn a fresh replacement session")
     }
   })
 

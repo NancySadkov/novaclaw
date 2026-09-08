@@ -26,6 +26,13 @@ describe("the hero readout", () => {
     expect(stats.find((stat) => stat.id === "throughput")).toMatchObject({ value: "47", tone: undefined })
   })
 
+  test("slow real output stays fractional instead of rounding up to one", () => {
+    expect(byId(load({ running: 1, tps: 9 / 37.9 }), "throughput")).toMatchObject({
+      value: "0.2",
+      tone: undefined,
+    })
+  })
+
   test("a running agent between steps shows a dash, never a stalled-looking zero", () => {
     // 0 t/s with an agent running is normal (it is in a tool call). Printing "0" would read as hung.
     expect(byId(load({ running: 1, tps: 0 }), "throughput")).toMatchObject({ value: "—", tone: "idle" })
@@ -52,10 +59,6 @@ describe("the hero readout", () => {
   })
 
   test("every stat carries a label slot", () => {
-    expect(systemLoadStats(load(), t).map((stat) => stat.label)).toEqual([
-      "running",
-      "throughput",
-      "memory",
-    ])
+    expect(systemLoadStats(load(), t).map((stat) => stat.label)).toEqual(["running", "throughput", "memory"])
   })
 })

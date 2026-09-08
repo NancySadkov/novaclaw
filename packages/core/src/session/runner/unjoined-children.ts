@@ -178,7 +178,7 @@ const line = (verdict: Verdict): string => {
   return verdict.disposition === "unjoined"
     ? `${verdict.id} FINISHED and you never read its result — call wait("${verdict.id}")${slice}`
     : `${verdict.id} never reported back — call wait("${verdict.id}"), which will say whether it is ` +
-        `still working or died; if it died, re-issue that slice or spawn a replacement${slice}`
+        `still working or died; if it died, spawn a fresh replacement session${slice}`
 }
 
 /**

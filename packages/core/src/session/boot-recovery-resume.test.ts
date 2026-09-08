@@ -45,7 +45,7 @@ const run = async (recovered: readonly SessionExecutionAttempt.Recovered[]) => {
   const count = await Effect.runPromise(
     SessionBootRecovery.resumeInterrupted({
       recovered,
-      wake: (sessionID) => Effect.sync(() => void woken.push(sessionID)),
+      resume: (sessionID) => Effect.sync(() => void woken.push(sessionID)),
     }),
   )
   return { woken, count }
@@ -61,6 +61,51 @@ describe("resumeInterrupted", () => {
     ])
     expect(woken).toEqual(["ses_a", "ses_b", "ses_c"])
     expect(count).toBe(3)
+  })
+
+  test("joins each recovered run before starting the next", async () => {
+    const order: string[] = []
+    await Effect.runPromise(
+      SessionBootRecovery.resumeInterrupted({
+        recovered: [entry("ses_a", verdicts.beforeSideEffect), entry("ses_b", verdicts.beforeSideEffect)],
+        resume: (sessionID) =>
+          Effect.gen(function* () {
+            order.push(`start:${sessionID}`)
+            yield* Effect.sleep(10)
+            order.push(`end:${sessionID}`)
+          }),
+      }),
+    )
+    expect(order).toEqual(["start:ses_a", "end:ses_a", "start:ses_b", "end:ses_b"])
+  })
+
+  test("one failed recovery does not strand the remaining runs", async () => {
+    const resumed: string[] = []
+    const count = await Effect.runPromise(
+      SessionBootRecovery.resumeInterrupted({
+        recovered: [entry("ses_bad", verdicts.beforeSideEffect), entry("ses_ok", verdicts.beforeSideEffect)],
+        resume: (sessionID) =>
+          sessionID === id("ses_bad") ? Effect.fail("worker failed") : Effect.sync(() => void resumed.push(sessionID)),
+      }),
+    )
+    expect(resumed).toEqual(["ses_ok"])
+    expect(count).toBe(2)
+  })
+
+  test("leaves old worker sessions interrupted for the officer to replace", async () => {
+    const resumed: string[] = []
+    const count = await Effect.runPromise(
+      SessionBootRecovery.resumeInterrupted({
+        recovered: [
+          entry("ses_officer", verdicts.beforeSideEffect),
+          entry("ses_old_worker", verdicts.beforeSideEffect),
+        ],
+        shouldResume: (sessionID) => Effect.succeed(sessionID === id("ses_officer")),
+        resume: (sessionID) => Effect.sync(() => void resumed.push(sessionID)),
+      }),
+    )
+    expect(resumed).toEqual(["ses_officer"])
+    expect(count).toBe(1)
   })
 
   // 🔴 THE CIRCUIT BREAKER. A run that keeps killing the instance is exactly the run most likely to

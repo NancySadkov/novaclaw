@@ -82,7 +82,7 @@ describe("turn receipt", () => {
     // honestly explain gets nothing — an empty reassurance is what this replaces.
     expect(longStageNote("scheduler-wait", 30_000)).toContain("Another session")
     expect(longStageNote("capability-load", 30_000)).toContain("first time")
-    expect(longStageNote("compaction", 30_000)).toContain("condensing")
+    expect(longStageNote("compaction", 30_000, "~137 tokens")).toBe("Compacting the context ~137 tokens")
     expect(longStageNote("generation", 30_000)).toBeUndefined()
     expect(longStageNote("memory-rerank", 30_000)).toBeUndefined()
     // Observed live 2026-08-11: "Checking what changed…" sat at 10.6 s, and this map did not cover
@@ -93,12 +93,10 @@ describe("turn receipt", () => {
     expect(longStageNote("snapshot-before", 30_000)).toContain("last snapshot")
   })
 
-  test("does not promise that a failed compaction can only happen once", () => {
-    const note = longStageNote("compaction", 30_000)!
-    expect(note).toContain("configured timeout")
-    expect(note).toContain("five minutes by default")
-    expect(note).not.toContain("half a minute")
-    expect(note).not.toMatch(/happens once|not every turn/i)
+  test("reports succinct live compaction output without inventing a deadline", () => {
+    const note = longStageNote("compaction", 30_000, "~42 tokens")!
+    expect(note).toBe("Compacting the context ~42 tokens")
+    expect(note).not.toMatch(/timeout|minute|finish/i)
   })
 
   test("no note promises progress or an ending it cannot see", () => {

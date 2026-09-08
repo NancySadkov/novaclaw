@@ -85,7 +85,6 @@ export const budget = (input: {
     PromptEstimate.capacity({
       contextTokens: input.contextSize,
       outputTokens: input.maxTokens,
-      prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     }).promptCeilingTokens -
     systemTokens -
     toolTokens -

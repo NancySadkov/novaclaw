@@ -78,7 +78,7 @@ export const deadChildMessage = (childID: string, state: string | undefined): st
   return (
     `Session ${childID} DID NOT FINISH: its execution ${state === "failed" ? "failed" : "was interrupted"}. ` +
     `It is not still working and waiting again will not help. Its share of the work was NOT done — ` +
-    `re-issue that slice yourself, or spawn a replacement for it, before you treat the set as complete.`
+    `spawn a fresh replacement session for that slice before you treat the set as complete.`
   )
 }
 
@@ -183,6 +183,13 @@ export const layer = Layer.effectDiscard(
                 )
               }
 
+              // A boot deliberately leaves disposable worker attempts interrupted so their officer
+              // can replace them. Inspect that durable terminal state BEFORE subscribing: checking
+              // only after the ten-minute join made an already-dead worker look slow for ten minutes.
+              const before = yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
+              const alreadyDead = deadChildMessage(childID, before?.state)
+              if (alreadyDead) return { completed: false, terminal: true, message: alreadyDead }
+
               // ⚠️ Through `SessionJoin`, never `events.durable` directly — the worker's EventV2
               // replacement DIES on the durable stream, which is what killed `wait` inside every
               // session worker. The service is the seam the worker swaps for a host RPC.
@@ -199,8 +206,8 @@ export const layer = Layer.effectDiscard(
                * plausible, complete-looking, WRONG answer**, and the nine successes are what hide it.
                *
                * The attempt row is the liveness signal — a live child heartbeats, a dead one is `failed`
-               * or `interrupted`. Consulted only when the join did NOT complete, so the happy path is
-               * unchanged and costs nothing.
+               * or `interrupted`. Re-read after an incomplete join because the child may have halted
+               * while this call was subscribed.
                */
               const attempt = joined.completed
                 ? undefined

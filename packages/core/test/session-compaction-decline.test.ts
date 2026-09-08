@@ -18,6 +18,7 @@ import { describe, expect, test } from "bun:test"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { CompactionBackoff } from "@novaclaw/core/session/runner/compaction-backoff"
 import { packRequest } from "@novaclaw/core/session/runner/context-pack"
+import type { PromptEstimate } from "@novaclaw/core/session/runner/prompt-estimate"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import type { Config } from "@novaclaw/core/config"
 import type { EventV2 } from "@novaclaw/core/event"
@@ -54,6 +55,8 @@ const drive = (input: {
   readonly auto?: boolean
   readonly keepTokens?: number
   readonly through?: "overflow" | "ifNeeded"
+  readonly promptEstimate?: PromptEstimate.Result
+  readonly prefixCacheRetentionTokens?: number
 }) => {
   const requests: LLMRequest[] = []
   const published: string[] = []
@@ -97,6 +100,8 @@ const drive = (input: {
     entries: input.entries,
     model: input.model,
     request: LLM.request({ model: input.model, messages: [], tools: [] }),
+    promptEstimate: input.promptEstimate,
+    prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     onDecline: (reason: SessionCompaction.DeclineReason) => {
       declines.push(reason)
     },
@@ -230,6 +235,31 @@ describe("every decline names itself", () => {
     expect(under.declines).toEqual(["under-threshold"])
   })
 
+  test("a cache-retention target never lowers the model's semantic compaction ceiling", () => {
+    const estimate: PromptEstimate.Result = {
+      heuristicTokens: 120_000,
+      estimatedTokens: 120_000,
+      correctionTokens: 0,
+      marginTokens: 0,
+      deltaTokens: 0,
+      growth: 1,
+      confidence: "whole",
+      fallback: "none",
+      anchorReportedTokens: 0,
+      anchorHeuristicTokens: 0,
+    }
+    const run = drive({
+      model: routed({ context: 262_144, output: 16_384 }),
+      entries: entries(user("hello"), assistant("hi")),
+      through: "ifNeeded",
+      promptEstimate: estimate,
+      prefixCacheRetentionTokens: 100_000,
+    })
+    expect(run.compacted).toBe(false)
+    expect(run.declines).toEqual(["under-threshold"])
+    expect(run.requests).toHaveLength(0)
+  })
+
   /**
    * The control that makes the rest of this describe mean something: a cycle that SUCCEEDS reports
    * no reason at all. Without it, an `onDecline` fired unconditionally would pass every test above.
@@ -242,7 +272,11 @@ describe("every decline names itself", () => {
     })
     expect(run.compacted).toBe(true)
     expect(run.declines).toEqual([])
-    expect(run.published).toEqual(["session.next.compaction.started", "session.next.compaction.ended"])
+    expect(run.published).toEqual([
+      "session.next.compaction.started",
+      "session.next.compaction.delta",
+      "session.next.compaction.ended",
+    ])
   })
 })
 
@@ -300,36 +334,6 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
 })
 
 describe("the Geryon sleep-recovery regression", () => {
-  test("a model-specific compaction timeout ends a hung summary stream", async () => {
-    const model = routed({ context: 12_000, output: 4_096 })
-    const declines: SessionCompaction.DeclineReason[] = []
-    const compactor = SessionCompaction.make({
-      events: { publish: () => Effect.void } as unknown as EventV2.Interface,
-      llm: { stream: () => Stream.never },
-      config: [{ type: "document", info: { compaction: { keep: { tokens: 8 } } } } as unknown as Config.Entry],
-      prefixHash: () => Effect.succeed("0".repeat(64)),
-    })
-    const started = Date.now()
-    const compacted = await Effect.runPromise(
-      compactor.compactAfterOverflow({
-        sessionID,
-        entries: entries(
-          user(`ancient ${"alpha ".repeat(3_000)}`),
-          assistant("work complete"),
-          user("continue"),
-          assistant("continuing"),
-        ),
-        model,
-        request: LLM.request({ model, messages: [], tools: [] }),
-        compactionTimeoutMs: 20,
-        onDecline: (reason) => declines.push(reason),
-      }),
-    )
-    expect(compacted).toBe(false)
-    expect(declines).toEqual(["summarizer-unavailable"])
-    expect(Date.now() - started).toBeLessThan(1_000)
-  })
-
   test("a hung compactor yields to a new chat, falls back deterministically, and stays backed off next turn", async () => {
     const scheduler = SessionScheduler.make()
     const model = routed({ context: 12_000, output: 4_096 })

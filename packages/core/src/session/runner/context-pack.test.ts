@@ -64,7 +64,7 @@ describe("budget", () => {
 
   test("reserve scales with the window for big contexts", () => {
     const value = budget({ contextSize: 256_000, system: noSystem, tools: noTools })
-    expect(value).toBe(expectedBudget(256_000, 32_000))
+    expect(value).toBe(expectedBudget(256_000, 25_600))
   })
 
   test("an explicit maxTokens raises the reserve", () => {
@@ -72,7 +72,7 @@ describe("budget", () => {
     expect(value).toBe(expectedBudget(64_000, 20_000))
   })
 
-  test("an exact-route prefix-retention ceiling narrows history without changing the context window", () => {
+  test("an exact-route prefix-retention hint never narrows semantic history", () => {
     expect(
       budget({
         contextSize: 64_000,
@@ -80,7 +80,7 @@ describe("budget", () => {
         tools: noTools,
         prefixCacheRetentionTokens: 12_000,
       }),
-    ).toBe(12_000 - 1) // empty tools still consume their one-token JSON envelope
+    ).toBe(expectedBudget(64_000, 8_192))
     expect(
       budget({
         contextSize: 64_000,

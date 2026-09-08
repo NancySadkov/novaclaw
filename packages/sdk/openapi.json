@@ -36408,17 +36408,6 @@
         "required": ["attempts"],
         "additionalProperties": false
       },
-      "ConfigV2ModelCompaction": {
-        "type": "object",
-        "properties": {
-          "timeoutMs": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          }
-        },
-        "required": ["timeoutMs"],
-        "additionalProperties": false
-      },
       "ConfigV2ModelLimit": {
         "type": "object",
         "properties": {
@@ -36568,9 +36557,6 @@
           },
           "retry": {
             "$ref": "#/components/schemas/ConfigV2ModelRetry"
-          },
-          "compaction": {
-            "$ref": "#/components/schemas/ConfigV2ModelCompaction"
           },
           "disabled": {
             "type": "boolean"
@@ -36742,9 +36728,6 @@
           },
           "retry": {
             "$ref": "#/components/schemas/ConfigV2ModelRetry"
-          },
-          "compaction": {
-            "$ref": "#/components/schemas/ConfigV2ModelCompaction"
           },
           "disabled": {
             "type": "boolean"
@@ -37622,17 +37605,6 @@
               }
             },
             "required": ["attempts"],
-            "additionalProperties": false
-          },
-          "compaction": {
-            "type": "object",
-            "properties": {
-              "timeoutMs": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              }
-            },
-            "required": ["timeoutMs"],
             "additionalProperties": false
           },
           "name": {

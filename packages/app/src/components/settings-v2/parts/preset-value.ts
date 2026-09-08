@@ -45,7 +45,6 @@ export type FieldKey =
   | "images"
   | "thinkingBudget"
   | "retryAttempts"
-  | "compactionTimeout"
 
 // Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
 // is a literal unit label (context/output are token counts, not intensities). The number is the value.
@@ -185,14 +184,6 @@ export const PRESETS: Record<FieldKey, RawPreset[]> = {
     { word: "quickRecovery", num: 3 },
     { word: "patientRecovery", num: 5 },
     { word: "persistentRecovery", num: 10 },
-  ],
-  // Human minutes on screen; the config boundary converts them to milliseconds. Five is both the
-  // selected default in Model Configure and the kernel fallback for older configs.
-  compactionTimeout: [
-    { size: "1 min", num: 1 },
-    { size: "5 min", num: 5 },
-    { size: "10 min", num: 10 },
-    { size: "30 min", num: 30 },
   ],
 }
 

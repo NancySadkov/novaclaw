@@ -1,4 +1,4 @@
-import { expect } from "bun:test"
+import { expect, test } from "bun:test"
 import { asc, eq } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -29,6 +29,67 @@ const row = (id: string, seq: number, text: string) => {
     data,
   }
 }
+
+test("keeps prefix identity stable across presentation-only tool labels", () => {
+  const base = {
+    id: "msg_tool",
+    type: "assistant",
+    seq: 1,
+    time_created: 1,
+    time_updated: 1,
+    data: {
+      content: [
+        {
+          type: "tool",
+          id: "call_1",
+          name: "shell",
+          title: "Shell command",
+          state: {
+            status: "completed",
+            input: { command: "pwd", title: "model-visible input" },
+            content: [{ type: "text", text: "/repo" }],
+          },
+        },
+      ],
+    },
+  } as const
+  const before = SessionHistory.canonicalPrefixHash([base] as never)
+  const labelled = {
+    ...base,
+    time_updated: 2,
+    data: { content: [{ ...base.data.content[0], title: "Check the working directory" }] },
+  }
+  expect(SessionHistory.canonicalPrefixHash([labelled] as never)).toBe(before)
+
+  const changedResult = {
+    ...labelled,
+    data: {
+      content: [
+        {
+          ...labelled.data.content[0],
+          state: {
+            ...labelled.data.content[0].state,
+            content: [{ type: "text", text: "/different-repo" }],
+          },
+        },
+      ],
+    },
+  }
+  expect(SessionHistory.canonicalPrefixHash([changedResult] as never)).not.toBe(before)
+
+  const changedInput = {
+    ...labelled,
+    data: {
+      content: [
+        {
+          ...labelled.data.content[0],
+          state: { ...labelled.data.content[0].state, input: { command: "pwd", title: "changed input" } },
+        },
+      ],
+    },
+  }
+  expect(SessionHistory.canonicalPrefixHash([changedInput] as never)).not.toBe(before)
+})
 
 it.effect("keeps transcript source rows and rejects a stale derived compaction prefix", () =>
   Effect.gen(function* () {

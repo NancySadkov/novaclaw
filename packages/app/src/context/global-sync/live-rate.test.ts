@@ -18,6 +18,12 @@ describe("live-rate (Chats ps telemetry)", () => {
     expect(tps).toBeLessThan(350)
   })
 
+  test("keeps sub-one rates precise for the shared display formatter", () => {
+    const state = createState()
+    note(state, 4, 1000)
+    expect(snapshot(state, 5000).tps).toBe(0.25)
+  })
+
   test("a quiet stream decays to 0 t/s while total tokens stay", () => {
     const state = createState()
     note(state, 4000, 1000)
@@ -46,16 +52,20 @@ describe("live-rate (Chats ps telemetry)", () => {
     expect(generatedDelta({ type: "session.next.text.delta", properties: { sessionID, delta: "answer" } })).toEqual({
       sessionID,
       chars: 6,
+      source: "generation",
     })
     expect(
       generatedDelta({ type: "session.next.reasoning.delta", properties: { sessionID, delta: "thinking" } }),
-    ).toEqual({ sessionID, chars: 8 })
+    ).toEqual({ sessionID, chars: 8, source: "generation" })
     expect(
       generatedDelta({ type: "session.next.tool.input.delta", properties: { sessionID, delta: "huge markdown" } }),
-    ).toEqual({ sessionID, chars: 13 })
+    ).toEqual({ sessionID, chars: 13, source: "generation" })
     expect(
       generatedDelta({ type: "session.next.compaction.delta", properties: { sessionID, text: "summary" } }),
-    ).toEqual({ sessionID, chars: 7 })
+    ).toEqual({ sessionID, chars: 7, source: "compaction" })
+    const state = createState()
+    note(state, 40, 1_000, "compaction")
+    expect(snapshot(state, 2_000).approxCompactionTokens).toBe(10)
   })
 
   test("does not mistake tool results or malformed events for model generation", () => {
@@ -63,7 +73,10 @@ describe("live-rate (Chats ps telemetry)", () => {
       generatedDelta({ type: "session.next.tool.progress", properties: { sessionID: "ses_worker", delta: "output" } }),
     ).toBeUndefined()
     expect(
-      generatedDelta({ type: "session.next.compaction.delta", properties: { sessionID: "ses_worker", delta: "wrong" } }),
+      generatedDelta({
+        type: "session.next.compaction.delta",
+        properties: { sessionID: "ses_worker", delta: "wrong" },
+      }),
     ).toBeUndefined()
   })
 })

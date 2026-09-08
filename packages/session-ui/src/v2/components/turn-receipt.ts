@@ -70,7 +70,11 @@ export const LONG_STAGE_MS = 10_000
  * or "almost done": a reassurance that carries no information is the thing this replaces, and a
  * guess about progress we cannot see would be describing a fault falsely.
  */
-export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number): string | undefined => {
+export const longStageNote = (
+  phase: TurnPhaseTiming["phase"],
+  elapsed: number,
+  compactionTokens?: string,
+): string | undefined => {
   if (elapsed < LONG_STAGE_MS) return undefined
   switch (phase) {
     case "scheduler-wait":
@@ -80,7 +84,7 @@ export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number):
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":
-      return "Nova is condensing earlier work before continuing. If the summary model cannot finish within its configured timeout (five minutes by default), the conversation continues with a safely fitted context instead."
+      return `Compacting the context ${compactionTokens ?? "~0 tokens"}`
     case "context-load":
     case "context-fit":
       return "A long conversation takes longer to assemble."

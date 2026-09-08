@@ -2084,7 +2084,6 @@ export const layer = Layer.effect(
           imagePatchPixels: routeProfile.imagePatchPixels,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
           contextWindowTokens: routeProfile.contextWindowTokens,
-          compactionTimeoutMs: ran?.compaction?.timeoutMs,
           maintenance: {
             ownerID: session.id,
             task: "compaction",
@@ -3256,7 +3255,7 @@ export const layer = Layer.effect(
         })
         return
       }
-      const { session, model, ran, scheduledDevice, entries } = prepared
+      const { session, model, scheduledDevice, entries } = prepared
       const routeProfile = yield* routeProfiles
         .resolve(
           {
@@ -3291,7 +3290,6 @@ export const layer = Layer.effect(
           request,
           imagePatchPixels: routeProfile.imagePatchPixels,
           contextWindowTokens: routeProfile.contextWindowTokens,
-          compactionTimeoutMs: ran?.compaction?.timeoutMs,
           maintenance: {
             ownerID: session.id,
             task: "manual-compaction",

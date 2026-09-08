@@ -134,7 +134,7 @@ describe("PromptEstimate", () => {
     })
   })
 
-  test("uses only a positive exact-route prefix-retention value as a tighter prompt ceiling", () => {
+  test("keeps exact-route prefix retention informational rather than evicting semantic history", () => {
     expect(
       PromptEstimate.capacity({
         contextTokens: 256_000,
@@ -145,7 +145,7 @@ describe("PromptEstimate", () => {
       contextTokens: 256_000,
       responseReserveTokens: 32_000,
       prefixCacheRetentionTokens: 130_000,
-      promptCeilingTokens: 130_000,
+      promptCeilingTokens: 224_000,
     })
 
     // The context limit still wins when it is tighter than the route's cache retention.
@@ -166,6 +166,19 @@ describe("PromptEstimate", () => {
           prefixCacheRetentionTokens: invalid,
         }),
       ).toEqual(ordinary)
+  })
+
+  test("derives the automatic boundary from ninety percent of the resolved model window", () => {
+    expect(PromptEstimate.capacity({ contextTokens: 262_144 })).toEqual({
+      contextTokens: 262_144,
+      responseReserveTokens: 26_215,
+      promptCeilingTokens: 235_929,
+    })
+    expect(PromptEstimate.capacity({ contextTokens: 256_000 })).toEqual({
+      contextTokens: 256_000,
+      responseReserveTokens: 25_600,
+      promptCeilingTokens: 230_400,
+    })
   })
 
   test("does not mistake anchored residual spread for cold-start coverage", () => {

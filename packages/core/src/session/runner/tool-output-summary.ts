@@ -114,37 +114,31 @@ const segmentPrompt = (input: {
   readonly total: number
   readonly maxBytes: number
   readonly reducing: boolean
-}) => `Summarize this ${input.reducing ? "set of partial tool-output summaries" : "tool-output segment"} faithfully.
+}) => `<tool-output>
+${SessionOrigin.externalContentFrame("tool output being summarized")}${input.text}
+</tool-output>
+
+Summarize this ${input.reducing ? "set of partial tool-output summaries" : "tool-output segment"} faithfully.
 Return only the semantic summary, with no preamble. Preserve concrete outcomes, errors, paths, identifiers,
 numbers, and next-action-relevant details. Do not invent missing context. Use at most ${input.maxBytes} UTF-8 bytes.
-This is segment ${input.index} of ${input.total}.
+This is segment ${input.index} of ${input.total}.`
 
-<tool-output>
-${SessionOrigin.externalContentFrame("tool output being summarized")}${input.text}
-</tool-output>`
+const finalPrompt = (text: string, maxBytes: number) => `<tool-output>
+${SessionOrigin.externalContentFrame("tool output being summarized")}${text}
+</tool-output>
 
-const finalPrompt = (
-  text: string,
-  maxBytes: number,
-) => `Produce one faithful bounded semantic summary of this tool output.
+Produce one faithful bounded semantic summary of this tool output.
 Return only the summary, with no preamble. Preserve concrete outcomes, errors, paths, identifiers, numbers,
 and next-action-relevant details. Do not claim to have seen anything absent from the input.
-Use at most ${maxBytes} UTF-8 bytes.
+Use at most ${maxBytes} UTF-8 bytes.`
 
-<tool-output>
-${SessionOrigin.externalContentFrame("tool output being summarized")}${text}
-</tool-output>`
-
-const trimPrompt = (
-  text: string,
-  maxBytes: number,
-) => `Shorten this semantic tool-output summary without losing its newest outcomes or next-action details.
-Return only the shorter summary, with no preamble. Preserve concrete errors, paths, identifiers, and numbers.
-Use at most ${maxBytes} UTF-8 bytes. Prefer removing older background before newer results.
-
-<oversized-summary>
+const trimPrompt = (text: string, maxBytes: number) => `<oversized-summary>
 ${SessionOrigin.externalContentFrame("an oversized semantic summary being shortened")}${text}
-</oversized-summary>`
+</oversized-summary>
+
+Shorten this semantic tool-output summary without losing its newest outcomes or next-action details.
+Return only the shorter summary, with no preamble. Preserve concrete errors, paths, identifiers, and numbers.
+Use at most ${maxBytes} UTF-8 bytes. Prefer removing older background before newer results.`
 
 const notice = (artifacts: ReadonlyArray<ToolOutputStore.OutputArtifact>, summary: string) => {
   const routes = artifacts.map((artifact) => artifact.path).join(", ")
@@ -255,10 +249,7 @@ export const summarize = <E, R>(input: Input<E, R>): Effect.Effect<Replacement |
       current =
         Buffer.byteLength(next, "utf-8") < Buffer.byteLength(current, "utf-8")
           ? next
-          : fitUtf8Tail(
-              next,
-              Math.max(MIN_SOURCE_CHUNK_BYTES, Math.floor(Buffer.byteLength(current, "utf-8") / 2)),
-            )
+          : fitUtf8Tail(next, Math.max(MIN_SOURCE_CHUNK_BYTES, Math.floor(Buffer.byteLength(current, "utf-8") / 2)))
       reducing = true
     }
     return undefined

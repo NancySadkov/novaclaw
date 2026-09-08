@@ -1,7 +1,7 @@
 export * as SessionBootRecovery from "./boot-recovery"
 
 import { and, eq, isNotNull } from "drizzle-orm"
-import { Clock, Duration, Effect, Schedule } from "effect"
+import { Clock, Duration, Effect, Schedule, Semaphore } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "../database/database"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "./config-resolve"
@@ -106,19 +106,35 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
  */
 export const resumeInterrupted = (input: {
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]
-  readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
+  /** Disposable worker chats stay interrupted; their officer creates a fresh worker if needed. */
+  readonly shouldResume?: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, unknown>
 }) =>
   Effect.gen(function* () {
     // ⚠️ The filter is the whole safety argument, so it reads off `decision.automatic` rather than
     // re-deriving anything. A second opinion here would be a second policy, and the one that exists
     // is the one the durable state was written from.
-    const resumable = input.recovered.filter((entry) => entry.decision.automatic)
+    const policySafe = input.recovered.filter((entry) => entry.decision.automatic)
+    const resumable: SessionExecutionAttempt.Recovered[] = []
+    for (const entry of policySafe) {
+      const shouldResume = input.shouldResume
+        ? yield* input.shouldResume(entry.sessionID).pipe(Effect.catchCause(() => Effect.succeed(true)))
+        : true
+      if (shouldResume) resumable.push(entry)
+    }
     if (resumable.length === 0) return 0
-    for (const entry of resumable) yield* input.wake(entry.sessionID)
     yield* Log.event("session.interrupted.resumed", {
       "session.resumed": resumable.length,
       "session.paused": input.recovered.length - resumable.length,
     })
+    // A restart can recover many root chats at once. `wake` only starts an in-memory coordinator and
+    // returns, so looping over it fan-outs every recovered chat before the device scheduler sees a
+    // single provider request. Three large recovered prompts plus one fresh Xenia prompt saturated
+    // the Spark in the measured 0.1.72 regression: her 391-token request spent 57.5 s in provider
+    // prefill and decoded at 0.24 t/s; the next uncontended turn reached first output in 0.99 s.
+    // Recovery is background adoption, not three people asking at once. Join each drain before
+    // adopting the next so startup cannot manufacture unbounded interactive concurrency.
+    for (const entry of resumable) yield* input.resume(entry.sessionID).pipe(Effect.catchCause(() => Effect.void))
     return resumable.length
   })
 
@@ -176,7 +192,7 @@ export const recoverStaleLeases = (
 export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedInput")(function* (input: {
   readonly db: Database.Interface["db"]
   readonly store: SessionStore.Interface
-  readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
 }) {
   const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
   // A replacement drain used to read the provider-recovery latch only AFTER its first empty-queue
@@ -206,7 +222,9 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
       handedOff++
       continue
     }
-    yield* input.wake(sessionID)
+    // This is the sibling boot-time fan-out source. Pending prompts are durable, so joining each
+    // drain bounds adoption without losing work.
+    yield* input.resume(sessionID).pipe(Effect.catchCause(() => Effect.void))
     woken++
   }
   yield* Log.event("session.input.abandoned.resumed", {
@@ -237,16 +255,38 @@ export const start = (input: {
   readonly resumeInterrupted?: () => Effect.Effect<boolean>
 }) =>
   Effect.gen(function* () {
+    // Both durable-work scans share one lane. Two separately serial loops would still run one
+    // recovered chat from each arm at the same time.
+    const recoveryLane = yield* Semaphore.make(1)
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
         Effect.gen(function* () {
           const enabled = input.resumeInterrupted === undefined ? true : yield* input.resumeInterrupted()
           if (!enabled) return
-          yield* resumeInterrupted({ recovered, wake: input.execution.wake })
+          yield* recoveryLane.withPermits(1)(
+            resumeInterrupted({
+              recovered,
+              resume: input.execution.resume,
+              // Spawned workers are disposable attempts owned by their superior. Resurrecting
+              // their old contexts duplicates uncertain work and, in the measured restart, sent
+              // two 80k prompts beside Geryon. Leave them interrupted; the freshly recovered
+              // officer sees that result and may spawn a new worker from current filesystem state.
+              shouldResume: (sessionID) =>
+                input.store.get(sessionID).pipe(
+                  Effect.map(
+                    (session) =>
+                      session === undefined || (session.parentID === undefined && session.type !== "sub-agent"),
+                  ),
+                  Effect.catchCause(() => Effect.succeed(true)),
+                ),
+            }),
+          )
         }),
       ).pipe(Effect.ignore),
     )
     yield* Effect.forkScoped(
-      wakeAbandonedInput({ db: input.db, store: input.store, wake: input.execution.wake }).pipe(Effect.ignore),
+      recoveryLane
+        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, resume: input.execution.resume }))
+        .pipe(Effect.ignore),
     )
   })

@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { ProviderV2 } from "../provider"
 import { ModelV2 } from "../model"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
-import { PositiveInt } from "../schema"
 
 // Models-primary capability tier — the single source of truth is `ModelV2.Tier` (schema/model.ts),
 // re-exported here for config authoring.
@@ -72,11 +71,6 @@ class Retry extends Schema.Class<Retry>("ConfigV2.Model.Retry")({
   attempts: Schema.Int,
 }) {}
 
-class Compaction extends Schema.Class<Compaction>("ConfigV2.Model.Compaction")({
-  /** Wall-clock deadline for a conversation-summary pass. Stored in milliseconds; the UI uses minutes. */
-  timeoutMs: PositiveInt,
-}) {}
-
 const ModelApi = Schema.Union([
   Schema.Struct({
     id: ModelV2.ID.pipe(Schema.optional),
@@ -111,7 +105,6 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
   // ModelV2.Info by the catalog plugin the same way. Optional ⇒ no on-read migration, no DB break.
   prePrompt: Schema.String.pipe(Schema.optional),
   retry: Retry.pipe(Schema.optional),
-  compaction: Compaction.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   limit: Limit.pipe(Schema.optional),
 }) {}
@@ -150,7 +143,6 @@ export class ModelEntry extends Schema.Class<ModelEntry>("ConfigV2.ModelEntry")(
   // field, so a config authored either way (nested `providers` or flat `models`) reaches the catalog.
   prePrompt: Schema.String.pipe(Schema.optional),
   retry: Retry.pipe(Schema.optional),
-  compaction: Compaction.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   limit: Limit.pipe(Schema.optional),
 }) {}

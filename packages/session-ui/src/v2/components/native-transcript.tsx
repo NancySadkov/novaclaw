@@ -155,6 +155,8 @@ export function NativeTranscript(props: {
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
   onStopCommand?: (reason: string) => void | Promise<void>
   status?: SessionStatus
+  /** Live compaction output, formatted as `~N tokens` by the host telemetry store. */
+  compactionTokens?: string
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -293,6 +295,7 @@ export function NativeTranscript(props: {
                 developer={props.developer}
                 runStartedAt={runStartedAt()}
                 tokens={liveTokens()}
+                compactionTokens={props.compactionTokens}
                 reasoning={liveReasoning()}
               />
             )}
@@ -822,6 +825,8 @@ function TurnReceipt(props: {
   runStartedAt?: number
   /** Approximate tokens generated so far, already formatted with its `~`. Live turns only. */
   tokens?: string
+  /** Approximate output produced specifically by the active compaction pass. */
+  compactionTokens?: string
   /**
    * The model's reasoning while this run is live, held INSIDE the working fold.
    *
@@ -880,7 +885,9 @@ function TurnReceipt(props: {
     const value = timing()
     if (!props.live || !value) return undefined
     const phase = currentPhase(value)
-    return phase ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick())) : undefined
+    return phase
+      ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick()), props.compactionTokens)
+      : undefined
   }
   return (
     <Show

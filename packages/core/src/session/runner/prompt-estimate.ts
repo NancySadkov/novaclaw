@@ -55,11 +55,13 @@ export interface Result {
 }
 
 export const MIN_RESPONSE_RESERVE = 8_192
+/** Codex-style automatic compaction boundary: retain ten percent of the resolved model window. */
+export const AUTO_COMPACT_PERCENT = 90
 
 export interface Capacity {
   readonly contextTokens: number
   readonly responseReserveTokens: number
-  /** Exact-route prompt prefix known to remain reusable; absent means no cache-derived ceiling. */
+  /** Exact-route cache observation. Informational only: cache policy must never discard semantics. */
   readonly prefixCacheRetentionTokens?: number
   readonly promptCeilingTokens: number
 }
@@ -80,7 +82,10 @@ const tokenCount = (value: number | undefined): number => {
  * One prompt-capacity algebra shared by semantic compaction and deterministic packing.
  *
  * The response reserve is intentionally independent of estimation uncertainty. A caller may raise
- * the minimum (the compaction setting does); it cannot erase the base 1/8 or 8,192-token reserve.
+ * the minimum (the compaction setting does); it cannot erase the base 10% or 8,192-token reserve.
+ * A route's prefix-cache retention is deliberately not a capacity boundary: it describes what is
+ * cheap to replay, not what the model can understand. Treating it as capacity made a 262k model
+ * forget history around 110k and repeatedly rebuild the very prefix the hint was meant to save.
  */
 export const capacity = (input: {
   readonly contextTokens: number
@@ -90,12 +95,11 @@ export const capacity = (input: {
 }): Capacity => {
   const contextTokens = tokenCount(input.contextTokens)
   const responseReserveTokens = Math.max(
-    Math.floor(contextTokens / 8),
+    Math.ceil((contextTokens * (100 - AUTO_COMPACT_PERCENT)) / 100),
     MIN_RESPONSE_RESERVE,
     tokenCount(input.outputTokens),
     tokenCount(input.minimumResponseReserveTokens),
   )
-  const contextPromptCeiling = Math.max(0, contextTokens - responseReserveTokens)
   const prefixCacheRetentionTokens = positiveInt(input.prefixCacheRetentionTokens)
     ? input.prefixCacheRetentionTokens
     : undefined
@@ -103,10 +107,7 @@ export const capacity = (input: {
     contextTokens,
     responseReserveTokens,
     ...(prefixCacheRetentionTokens === undefined ? {} : { prefixCacheRetentionTokens }),
-    promptCeilingTokens:
-      prefixCacheRetentionTokens === undefined
-        ? contextPromptCeiling
-        : Math.min(contextPromptCeiling, prefixCacheRetentionTokens),
+    promptCeilingTokens: Math.max(0, contextTokens - responseReserveTokens),
   }
 }
 

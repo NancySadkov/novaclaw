@@ -256,7 +256,7 @@ describe("which sessions the sweep hands back", () => {
       yield* queue(steered.id, "steer")
 
       const { woken, wake } = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: wake })
 
       expect(woken).toContain(queued.id)
       // A steer is an interjection for a turn that no longer exists. It rides the cutoff of whatever
@@ -279,7 +279,7 @@ describe("which sessions the sweep hands back", () => {
       expect(yield* SessionInput.promoteNextQueued(db, events, promoted.id)).toBe(true)
 
       const { woken, wake } = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: wake })
       expect(woken).not.toContain(promoted.id)
     }),
   )
@@ -319,7 +319,7 @@ describe("which sessions the sweep hands back", () => {
         .pipe(Effect.orDie)
 
       const { woken, wake } = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: wake })
       expect(woken).toEqual([interrupted.id])
     }),
   )
@@ -336,7 +336,7 @@ describe("which sessions the sweep hands back", () => {
       yield* queue(handedOff.id)
 
       const { woken, wake } = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: wake })
       // The runner returns before any turn for these, so a wake buys one worker process per boot
       // that spawns only to discover it has nothing to do. `switchResponder("nova")` wakes it.
       expect(woken).not.toContain(handedOff.id)
@@ -345,7 +345,7 @@ describe("which sessions the sweep hands back", () => {
       // sweep resumes it. Without this the test above would also pass if the sweep were broken.
       yield* session.switchResponder({ sessionID: handedOff.id, responder: "nova" })
       const second = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, wake: second.wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: second.wake })
       expect(second.woken).toContain(handedOff.id)
     }),
   )
@@ -367,7 +367,7 @@ describe("which sessions the sweep hands back", () => {
       } as unknown as SessionStore.Interface
 
       const { woken, wake } = record()
-      yield* SessionBootRecovery.wakeAbandonedInput({ db, store: broken, wake })
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store: broken, resume: wake })
       expect(woken).toContain(created.id)
     }),
   )

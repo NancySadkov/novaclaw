@@ -14,6 +14,7 @@ import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { instancePressure } from "@/utils/resource-api"
+import { formatTokensPerSecond } from "@/utils/token-rate"
 import type { HeroStat } from "./registry"
 
 export interface ThreadActivity {
@@ -36,7 +37,7 @@ export function useThreadActivity(): () => ThreadActivity {
       running += 1
       tps += session.data.session_live(id)?.tps ?? 0
     }
-    return { running, tps: Math.round(tps) }
+    return { running, tps }
   })
 }
 
@@ -172,7 +173,7 @@ export function systemLoadStats(load: SystemLoad, t: (key: StatKey) => string): 
       id: "throughput",
       // A running agent between steps (a tool call) legitimately reports 0 t/s, and printing "0"
       // there reads as stalled — the dash says "nothing to report" instead.
-      value: load.tps > 0 ? String(load.tps) : UNKNOWN,
+      value: formatTokensPerSecond(load.tps) ?? UNKNOWN,
       label: t("home.app.contacts.stat.throughput"),
       tone: load.tps > 0 ? undefined : "idle",
     },

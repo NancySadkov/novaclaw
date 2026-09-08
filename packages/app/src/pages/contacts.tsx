@@ -37,6 +37,7 @@ import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { sessionExecutions, type SessionExecutionInfo } from "@/utils/session-execution-api"
+import { formatTokensPerSecond } from "@/utils/token-rate"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -543,7 +544,7 @@ function ContactRow(props: {
     const tps = sessionID
       ? threadRate(props.sessions, sessionID, (id) => sessionData().session_live(id)?.tps)
       : undefined
-    return tps && tps > 0 ? String(Math.round(tps)) : undefined
+    return formatTokensPerSecond(tps)
   })
   const workers = createMemo(() => {
     const sessionID = live().sessionID

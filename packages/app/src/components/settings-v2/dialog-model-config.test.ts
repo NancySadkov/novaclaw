@@ -84,24 +84,6 @@ describe("Model Configure — recovery", () => {
     }
     expect(en["settings.models.config.retryAttempts.desc"]).toContain("about three minutes")
   })
-
-  test("exposes compaction time in minutes, defaults it to five, and persists milliseconds", () => {
-    expect(source).toContain("const DEFAULT_COMPACTION_TIMEOUT_MINUTES = 5")
-    expect(source).toContain("init.compaction?.timeoutMs ?? DEFAULT_COMPACTION_TIMEOUT_MINUTES * 60_000")
-    expect(source).toContain("enteredCompactionMinutes > 0")
-    expect(source).toContain("Math.round(compactionMinutes * 60_000)")
-    expect(source).toContain('paramRow("compactionTimeout")')
-    expect(en["settings.models.config.compactionTimeout.name"]).toContain("minutes")
-    expect(en["settings.models.config.compactionTimeout.desc"]).toContain("five minutes")
-
-    const decoded = Schema.decodeUnknownSync(ConfigProvider.Info)({
-      models: { summary: { compaction: { timeoutMs: 600_000 } } },
-    })
-    expect(decoded.models?.summary?.compaction?.timeoutMs).toBe(600_000)
-    expect(() =>
-      Schema.decodeUnknownSync(ConfigProvider.Info)({ models: { summary: { compaction: { timeoutMs: 0 } } } }),
-    ).toThrow()
-  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────

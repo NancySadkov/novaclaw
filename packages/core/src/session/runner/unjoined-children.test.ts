@@ -93,12 +93,12 @@ describe("restartMessage", () => {
   })
 
   // ⚠️ A pending child must NOT be declared dead here — the remedy is `wait`, which owns that
-  // verdict. But the re-issue instruction must still reach the model for the case where it IS dead.
+  // verdict. But the fresh-replacement instruction must reach the model for the case where it IS dead.
   test("a PENDING child is sent to wait, and told what to do if it died", () => {
     const text = message([{ id: "ses_9", disposition: "pending", slice: "describe icons 81-90" }])
     expect(text).toContain('wait("ses_9")')
     expect(text).toContain("still working or died")
-    expect(text).toContain("re-issue that slice")
+    expect(text).toContain("spawn a fresh replacement session")
     expect(text).toContain("describe icons 81-90")
   })
 

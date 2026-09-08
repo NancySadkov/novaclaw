@@ -2145,9 +2145,6 @@ export const dict = {
   "settings.models.config.retryAttempts.name": "Connection attempts",
   "settings.models.config.retryAttempts.desc":
     "How patiently NovaClaw reconnects when this model sends no reply or an incomplete reply. Persistent keeps trying for about three minutes.",
-  "settings.models.config.compactionTimeout.name": "Compaction timeout (minutes)",
-  "settings.models.config.compactionTimeout.desc":
-    "How long Nova lets this model condense a long conversation before safely fitting the context. Defaults to five minutes.",
   "settings.models.config.tool_call.name": "Tool use",
   "settings.models.config.tool_call.desc": "Let the model use NovaClaw's tools.",
   "settings.models.config.tool_call.desc.more":

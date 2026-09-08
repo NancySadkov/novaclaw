@@ -241,7 +241,7 @@ test("the compaction trigger logs what it measured BEFORE it declines", () => {
   expect(source).toContain('"compaction.anchor.delta": promptEstimate.deltaTokens')
   expect(source).toContain('"compaction.anchor.low-confidence": promptEstimate.confidence === "low"')
   expect(source).toContain('"compaction.response.reserve": promptCapacity.responseReserveTokens')
-  expect(source).toContain('"compaction.prefix-cache.retention": promptCapacity.prefixCacheRetentionTokens ?? 0')
+  expect(source).toContain('"compaction.prefix-cache.retention": input.prefixCacheRetentionTokens ?? 0')
   expect(source).toContain('"compaction.threshold": threshold')
   expect(source).toContain('"compaction.fires": estimatedWithMargin > threshold')
 })
@@ -465,7 +465,7 @@ const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) 
     | undefined
   const userPrompt = (request: LLMRequest) =>
     request.messages.flatMap((message) => message.content.map((part) => ("text" in part ? part.text : ""))).join("\n")
-  return { compacted, requests, ended, userPrompt }
+  return { compacted, requests, ended, published, userPrompt }
 }
 
 describe("postfix compaction prompt", () => {
@@ -527,6 +527,13 @@ describe("postfix compaction prompt", () => {
 })
 
 describe("bounded compaction summaries", () => {
+  test("forced loss marking owns one marker even when the generated fragment already fits", () => {
+    const trimmed = SessionCompaction.trimSummaryHead("newest fact", 50, true)
+    expect(trimmed).toContain("Older summary content removed")
+    expect(trimmed).toContain("newest fact")
+    expect(trimmed.match(/Older summary content removed/g)).toHaveLength(1)
+  })
+
   test("mechanical head removal preserves complete Unicode scalars in the newest tail", () => {
     const rocket = String.fromCodePoint(0x1f680)
     const trimmed = SessionCompaction.trimSummaryHead(`${"old ".repeat(80)}${rocket.repeat(12)}`, 20)
@@ -535,51 +542,44 @@ describe("bounded compaction summaries", () => {
     expect(SessionCompaction.summaryWithinBudget(trimmed, 20)).toBe(true)
   })
 
-  test("a Token.estimate over-budget summary is retried even when provider usage under-reports it", () => {
+  test("a Token.estimate over-budget summary is deterministically trimmed even when provider usage under-reports it", () => {
     // Digit-dense output defeats chars/4 dramatically: this is over 32 estimated tokens despite
     // the canned provider claiming only 12.
     const first = `## Goal\n- ${"1234567890".repeat(5)}`
-    const second = "## Goal\n- concise\n\n## Next Steps\n- continue"
-    const run = driveSummary([
-      { text: first, reason: "stop", outputTokens: 12 },
-      { text: second, reason: "stop", outputTokens: 12 },
-    ])
+    const run = driveSummary([{ text: first, reason: "stop", outputTokens: 12 }])
 
     expect(run.compacted).toBe(true)
-    expect(run.requests).toHaveLength(2)
-    expect(run.userPrompt(run.requests[1]!)).toContain(first)
-    expect(run.userPrompt(run.requests[1]!)).toContain("no more than 32 output tokens")
-    expect(SessionCompaction.summaryWithinBudget(run.userPrompt(run.requests[1]!), 100_000 - 32)).toBe(true)
-    expect(run.requests.every((request) => request.generation?.maxTokens === 32)).toBe(true)
-    expect(run.ended?.text).toBe(second)
+    expect(run.requests).toHaveLength(1)
+    expect(run.requests[0]!.generation?.maxTokens).toBe(32)
+    expect(run.ended?.text).toContain("Older summary content removed")
+    expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
+    expect(run.published.map((event) => event.type)).toEqual([
+      SessionEvent.Compaction.Started.type,
+      SessionEvent.Compaction.Delta.type,
+      SessionEvent.Compaction.Ended.type,
+    ])
   })
 
-  test("finish=length retries once, then a failed retry cuts the oldest head of the first summary", () => {
+  test("finish=length cuts the oldest head without spending a second model pass", () => {
     const newest = "## Relevant Files\n- src/new.ts: newest fact"
     const first = `## Goal\n- ${"old ".repeat(80)}\n\n${newest}`
-    const run = driveSummary([
-      { text: first, reason: "length", outputTokens: 96 },
-      { text: "", reason: "stop", fail: true },
-    ])
+    const run = driveSummary([{ text: first, reason: "length", outputTokens: 96 }])
 
     expect(run.compacted).toBe(true)
-    expect(run.requests).toHaveLength(2)
+    expect(run.requests).toHaveLength(1)
     expect(run.ended?.text).toContain("Older summary content removed")
     expect(run.ended?.text).toContain(newest)
     expect(run.ended?.text).not.toContain("## Goal")
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
   })
 
-  test("an over-budget retry is the final model call and is mechanically tail-trimmed", () => {
+  test("an over-budget answer preserves its newest tail in one model call", () => {
     const newest = "## Relevant Files\n- src/final.ts: keep this"
-    const second = `## Goal\n- ${"still too long ".repeat(80)}\n\n${newest}`
-    const run = driveSummary([
-      { text: `## Goal\n- ${"first ".repeat(80)}`, reason: "stop", outputTokens: 90 },
-      { text: second, reason: "stop", outputTokens: 100 },
-    ])
+    const first = `## Goal\n- ${"still too long ".repeat(80)}\n\n${newest}`
+    const run = driveSummary([{ text: first, reason: "stop", outputTokens: 100 }])
 
     expect(run.compacted).toBe(true)
-    expect(run.requests).toHaveLength(2)
+    expect(run.requests).toHaveLength(1)
     expect(run.ended?.text).toContain(newest)
     expect(run.ended?.text).not.toContain("## Goal")
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)

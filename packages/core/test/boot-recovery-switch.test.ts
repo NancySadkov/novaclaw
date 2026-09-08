@@ -39,7 +39,7 @@ const runStart = async (resumeInterrupted?: () => Effect.Effect<boolean>) => {
   const attempts = {
     recoverStale: () => Effect.sync(() => recovered),
   }
-  const execution = { wake: (sessionID: string) => Effect.sync(() => void woken.push(sessionID)) }
+  const execution = { resume: (sessionID: string) => Effect.sync(() => void woken.push(sessionID)) }
 
   await Effect.runPromise(
     Effect.scoped(
@@ -49,7 +49,7 @@ const runStart = async (resumeInterrupted?: () => Effect.Effect<boolean>) => {
           // db it cannot use degrades instead of failing the test — which is the behaviour that
           // module documents for itself.
           db: {} as never,
-          store: {} as never,
+          store: { get: () => Effect.succeed({ parentID: undefined, type: "interactive" }) } as never,
           attempts: attempts as never,
           execution: execution as never,
           ...(resumeInterrupted === undefined

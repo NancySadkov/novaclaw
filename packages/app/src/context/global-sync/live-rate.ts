@@ -16,14 +16,22 @@ const SAMPLE_BUCKET_MS = 250
 export interface LiveRateState {
   /** Total streamed chars this run (since the tracker was created/cleared). */
   chars: number
+  /** Generated characters attributable specifically to the active compaction pass. */
+  compactionChars: number
   samples: Array<{ at: number; chars: number }>
 }
 
-export const createState = (): LiveRateState => ({ chars: 0, samples: [] })
+export const createState = (): LiveRateState => ({ chars: 0, compactionChars: 0, samples: [] })
 
-export function note(state: LiveRateState, chars: number, now: number): void {
+export function note(
+  state: LiveRateState,
+  chars: number,
+  now: number,
+  source: "generation" | "compaction" = "generation",
+): void {
   if (chars <= 0) return
   state.chars += chars
+  if (source === "compaction") state.compactionChars += chars
   const last = state.samples[state.samples.length - 1]
   if (last && now - last.at < SAMPLE_BUCKET_MS) last.chars += chars
   else state.samples.push({ at: now, chars })
@@ -33,6 +41,8 @@ export function note(state: LiveRateState, chars: number, now: number): void {
 export interface LiveRateSnapshot {
   /** ~tokens streamed this run (Token.estimateFromChars over the accumulated char count). */
   readonly approxTokens: number
+  /** ~tokens streamed by the active context-compaction pass. */
+  readonly approxCompactionTokens: number
   /** ~tokens/sec over the recent window; 0 when the stream has gone quiet. */
   readonly tps: number
 }
@@ -48,7 +58,7 @@ export interface LiveRateSnapshot {
 export function generatedDelta(event: {
   readonly type: string
   readonly properties?: unknown
-}): { readonly sessionID: string; readonly chars: number } | undefined {
+}): { readonly sessionID: string; readonly chars: number; readonly source: "generation" | "compaction" } | undefined {
   const properties = event.properties
   if (properties === null || typeof properties !== "object") return undefined
   const sessionID = "sessionID" in properties ? properties.sessionID : undefined
@@ -60,11 +70,15 @@ export function generatedDelta(event: {
     event.type === "session.next.tool.input.delta"
   ) {
     const delta = "delta" in properties ? properties.delta : undefined
-    return typeof delta === "string" && delta.length > 0 ? { sessionID, chars: delta.length } : undefined
+    return typeof delta === "string" && delta.length > 0
+      ? { sessionID, chars: delta.length, source: "generation" }
+      : undefined
   }
   if (event.type === "session.next.compaction.delta") {
     const text = "text" in properties ? properties.text : undefined
-    return typeof text === "string" && text.length > 0 ? { sessionID, chars: text.length } : undefined
+    return typeof text === "string" && text.length > 0
+      ? { sessionID, chars: text.length, source: "compaction" }
+      : undefined
   }
   return undefined
 }
@@ -75,6 +89,9 @@ export function snapshot(state: LiveRateState, now: number): LiveRateSnapshot {
   const spanMs = inWindow.length > 0 ? Math.max(1000, now - inWindow[0]!.at) : 1000
   return {
     approxTokens: Token.estimateFromChars(state.chars),
-    tps: Math.round(Token.estimateFromChars(windowChars) / (spanMs / 1000)),
+    approxCompactionTokens: Token.estimateFromChars(state.compactionChars),
+    // Keep the measurement numeric and unrounded. The presentation surfaces share one formatter,
+    // so a measured 0.24 t/s reads as 0.2 instead of the misleading integer 1.
+    tps: Token.estimateFromChars(windowChars) / (spanMs / 1000),
   }
 }

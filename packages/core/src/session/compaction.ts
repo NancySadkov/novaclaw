@@ -11,7 +11,6 @@ import { SessionSchema } from "./schema"
 import { ColleagueNote } from "./colleague-note"
 import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
-import { CalloutPolicy } from "../callout-policy"
 import { Log } from "@novaclaw/schema/log"
 import { ReasoningBudget } from "./runner/reasoning-budget"
 import { FinishRecovery } from "./runner/finish-recovery"
@@ -164,8 +163,6 @@ type Input = {
   readonly prefixCacheRetentionTokens?: number
   /** Empirically honoured window for this exact serving route; overrides an optimistic catalog. */
   readonly contextWindowTokens?: number
-  /** Deadline from the exact catalog model selected for this turn. */
-  readonly compactionTimeoutMs?: number
   /** Admission identity for this decode-shaped maintenance pass. */
   readonly maintenance?: SessionScheduler.MaintenanceInput
   /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
@@ -436,18 +433,18 @@ export const summaryWithinBudget = (text: string, budgetTokens: number, reported
 }
 
 /**
- * Last-resort deterministic fallback after the model has already had one chance to trim itself.
+ * Last-resort deterministic fallback after the model has already had one semantic summary pass.
  * Keep the newest/Tail facts and remove the oldest/Head facts. The omission marker is model-visible;
  * when even that marker cannot fit, the suffix alone is preferable to lying about a complete summary.
  *
  * The cut is tested through `Token.estimate` itself, not a `chars * 4` surrogate. That distinction
  * matters for dense structure, paths, digits, high-entropy strings, and non-ASCII text.
  */
-export const trimSummaryHead = (text: string, budgetTokens: number) => {
+export const trimSummaryHead = (text: string, budgetTokens: number, markLoss = false) => {
   const value = text.trimEnd()
   if (!value || !Number.isFinite(budgetTokens) || budgetTokens <= 0) return ""
   const fits = (candidate: string) => Token.estimate(candidate) <= budgetTokens
-  if (fits(value)) return value
+  if (!markLoss && fits(value)) return value
 
   // Search by Unicode scalar rather than UTF-16 code unit so the kept tail never begins with half
   // a surrogate pair. Mechanical recovery is allowed to lose the oldest prose, not corrupt the
@@ -469,14 +466,6 @@ export const trimSummaryHead = (text: string, budgetTokens: number) => {
   return markerFits ? withMarker(low) : scalars.slice(scalars.length - low).join("")
 }
 
-export const buildSummaryTrimPrompt = (summary: string, budgetTokens: number) =>
-  `Rewrite the actual summary inside <summary-to-trim> so it is complete and no more than ${budgetTokens} output tokens.
-Output only the rewritten summary. Do not add facts. Preserve the Markdown section order and headings, merging or shortening bullets as needed.
-
-<summary-to-trim>
-${summary}
-</summary-to-trim>`
-
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
   const summarize = Effect.fn("SessionCompaction.summarize")(function* (input: {
@@ -484,13 +473,15 @@ export const make = (dependencies: Dependencies) => {
     readonly preservesWorkingPrefix?: boolean
     readonly model: Model
     readonly outputTokens: number
-    readonly timeoutMs?: number
+    readonly sessionID: SessionSchema.ID
+    readonly messageID: SessionMessage.ID
     readonly maintenance?: SessionScheduler.MaintenanceInput
   }) {
     const chunks: string[] = []
     let failed = false
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
+    const deltaTimestamp = yield* DateTime.now
     const generation = ReasoningBudget.stream({
       request: input.request,
       // The request already contains the working turn's reasoning envelope. Appending another
@@ -501,7 +492,15 @@ export const make = (dependencies: Dependencies) => {
     }).pipe(
       Stream.runForEach((event) => {
         if (LLMEvent.is.providerError(event)) failed = true
-        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+        if (LLMEvent.is.textDelta(event)) {
+          chunks.push(event.text)
+          return dependencies.events.publish(SessionEvent.Compaction.Delta, {
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            timestamp: deltaTimestamp,
+            text: event.text,
+          })
+        }
         if (event.type === "finish" || event.type === "step-finish") {
           finish = event.reason
           const visible = event.usage?.visibleOutputTokens
@@ -512,10 +511,6 @@ export const make = (dependencies: Dependencies) => {
       }),
       Effect.as(true),
       Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
-      Effect.timeoutOrElse({
-        duration: CalloutPolicy.compaction(input.timeoutMs).timeoutMs,
-        orElse: () => Effect.succeed(false),
-      }),
     )
     const completed = yield* dependencies.scheduler !== undefined && input.maintenance !== undefined
       ? SessionScheduler.runMaintenance(dependencies.scheduler, input.maintenance, generation, Effect.succeed(false))
@@ -605,11 +600,11 @@ export const make = (dependencies: Dependencies) => {
     const promptFor = (head: string) =>
       buildPrompt({ previousSummary: carriedSummary, context: [carriedRecent, head].filter(Boolean) })
     const requestedSummaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    // The retry contains the first answer AND reserves the same amount for its replacement. Cap the
-    // answer so a conforming first attempt can always be quoted into a second request without
-    // overflowing the model merely because the recovery envelope exists.
-    const retryEnvelope = Token.estimate(buildSummaryTrimPrompt("", requestedSummaryOutput))
-    const summaryOutput = Math.min(requestedSummaryOutput, Math.floor((context - retryEnvelope) / 2))
+    // One semantic pass gets the declared output budget. If a server ignores that budget, recovery
+    // is deterministic: trim the oldest generated summary text. A second model pass used to double
+    // the decode work and could itself inflate the context it was meant to rescue.
+    if (requestedSummaryOutput >= context) return decline("context-too-small")
+    const summaryOutput = requestedSummaryOutput
     if (summaryOutput <= 0) return decline("context-too-small")
     /**
      * 🔴 **A TRANSCRIPT TOO LARGE TO SUMMARIZE USED TO BE A DEAD END.**
@@ -655,9 +650,9 @@ export const make = (dependencies: Dependencies) => {
       reason,
     })
 
-    // The chain is deliberately finite: one ordinary summary, one request to trim that ACTUAL
-    // output, then a deterministic oldest-first cut. A model cannot turn compaction into an
-    // unbounded self-edit loop.
+    // The chain is deliberately finite: one semantic summary followed, only if its token budget is
+    // violated, by a deterministic oldest-first cut. There is no wall-clock deadline: observable
+    // token progress is useful work, and interrupting it merely discards that work.
     // When the runner supplied its assembled request, preserve that exact request at the front and
     // append only the summarization operation. Direct compactor callers without provider history use
     // the serialized history as their evidence prefix; the instruction is still last.
@@ -669,7 +664,8 @@ export const make = (dependencies: Dependencies) => {
           })
         : undefined
     const summaryRequest =
-      cachedPrefixRequest !== undefined && Token.estimateStructured(LLM.requestInput(cachedPrefixRequest)) <= promptCeiling
+      cachedPrefixRequest !== undefined &&
+      Token.estimateStructured(LLM.requestInput(cachedPrefixRequest)) <= promptCeiling
         ? cachedPrefixRequest
         : LLM.request({
             model: input.model,
@@ -682,7 +678,8 @@ export const make = (dependencies: Dependencies) => {
       preservesWorkingPrefix: summaryRequest === cachedPrefixRequest,
       model: input.model,
       outputTokens: summaryOutput,
-      timeoutMs: input.compactionTimeoutMs,
+      sessionID: input.sessionID,
+      messageID,
       maintenance: input.maintenance,
     })
     if (!first.completed || first.failed || !first.text.trim()) return decline("summarizer-unavailable")
@@ -690,48 +687,17 @@ export const make = (dependencies: Dependencies) => {
     const firstClean = first.finish === "stop" && firstFits
     let summary = first.text
     if (!firstClean) {
-      const retryable = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
-      if (!retryable) return decline("summary-unusable")
+      const budgetCut = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
+      if (!budgetCut) return decline("summary-unusable")
       yield* Log.event("session.compaction.summary.truncated", {
         "session.id": String(input.sessionID),
         "compaction.output.cap": summaryOutput,
         "compaction.summary.chars": first.text.length,
       })
-      const trimPrompt = buildSummaryTrimPrompt(first.text, summaryOutput)
-      // A non-conforming server may emit more than its requested max_tokens. Never turn that defect
-      // into a second oversized request; the deterministic fallback is already the terminal step.
-      const second =
-        Token.estimate(trimPrompt) <= context - summaryOutput
-          ? yield* summarize({
-              request: LLM.request({
-                model: input.model,
-                messages: [Message.user(trimPrompt)],
-                tools: [],
-                generation: { maxTokens: summaryOutput },
-              }),
-              model: input.model,
-              outputTokens: summaryOutput,
-              timeoutMs: input.compactionTimeoutMs,
-              maintenance: input.maintenance,
-            })
-          : undefined
-      const secondClean =
-        second !== undefined &&
-        second.completed &&
-        !second.failed &&
-        !!second.text.trim() &&
-        second.finish === "stop" &&
-        summaryWithinBudget(second.text, summaryOutput, second.reportedTokens)
-      if (secondClean) summary = second.text
-      else {
-        // If the retry completed but remained oversized, its rewritten text is the best source.
-        // If it failed or was cut off, retain the first attempt: it is the only completed candidate.
-        const source =
-          second !== undefined && second.completed && !second.failed && second.finish === "stop" && second.text.trim()
-            ? second
-            : first
-        summary = trimSummaryHead(source.text, summaryOutput)
-      }
+      // A provider-reported length cut can fit the estimate while still ending mid-summary. Mark
+      // that loss inside the summary itself, then keep as much of the newest generated tail as the
+      // declared budget allows. An over-budget stop follows the same deterministic path.
+      summary = trimSummaryHead(first.text, summaryOutput, true)
     }
     if (!summary.trim()) return decline("summarizer-unavailable")
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
@@ -781,7 +747,6 @@ export const make = (dependencies: Dependencies) => {
       contextTokens: context,
       outputTokens: output,
       minimumResponseReserveTokens: config.buffer,
-      prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     })
     const threshold = promptCapacity.promptCeilingTokens
     yield* Log.event("session.compaction.threshold", {
@@ -798,7 +763,9 @@ export const make = (dependencies: Dependencies) => {
       "compaction.anchor.low-confidence": promptEstimate.confidence === "low",
       "compaction.anchor.fallback": promptEstimate.fallback,
       "compaction.response.reserve": promptCapacity.responseReserveTokens,
-      "compaction.prefix-cache.retention": promptCapacity.prefixCacheRetentionTokens ?? 0,
+      // Cache retention is a performance preference, never a semantic context ceiling. Keep it in
+      // telemetry without feeding it into the trigger calculation.
+      "compaction.prefix-cache.retention": input.prefixCacheRetentionTokens ?? 0,
       "compaction.threshold": threshold,
       "compaction.fires": estimatedWithMargin > threshold,
     })

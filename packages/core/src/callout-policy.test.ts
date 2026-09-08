@@ -4,7 +4,6 @@ import { CalloutPolicy } from "./callout-policy"
 describe("owned callout policy audit", () => {
   test("every owned family declares the complete vocabulary", () => {
     expect(Object.keys(CalloutPolicy.AUDIT).sort()).toEqual([
-      "compaction",
       "mcp_tool",
       "quality_gate",
       "summarizer",
@@ -37,7 +36,6 @@ describe("owned callout policy audit", () => {
     expect(CalloutPolicy.AUDIT.telemetry_logs.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.summarizer.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.summarizer.timeoutMs).toBe(30_000)
-    expect(CalloutPolicy.AUDIT.compaction.timeoutMs).toBe(5 * 60_000)
   })
 
   test("runtime-provided bounds are made finite and usable", () => {
@@ -45,7 +43,5 @@ describe("owned callout policy audit", () => {
     expect(CalloutPolicy.mcpTool(Number.MAX_SAFE_INTEGER).timeoutMs).toBe(2_147_483_647)
     expect(CalloutPolicy.websearch(-50, 0)).toMatchObject({ timeoutMs: 1, maxConcurrency: 1 })
     expect(CalloutPolicy.qualityGate(9_999.9).timeoutMs).toBe(9_999)
-    expect(CalloutPolicy.compaction(12_345.9).timeoutMs).toBe(12_345)
-    expect(CalloutPolicy.compaction(Number.NaN).timeoutMs).toBe(5 * 60_000)
   })
 })

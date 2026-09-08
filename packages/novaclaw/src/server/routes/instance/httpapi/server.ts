@@ -250,8 +250,10 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
 const maintenanceRoute = HttpRouter.use((router) =>
   router.add("GET", "/api/maintenance/changelog", () =>
     Effect.gen(function* () {
-      const offline = yield* Offline.Service
-      const result = yield* fetchChangelog(offline.policy)
+      // Plain router layers do not receive the compiled app services in their request context.
+      // Read the same process-wide live policy ref that Offline.Service exposes; config writes
+      // update this ref synchronously, so this remains one policy source without a route-only layer.
+      const result = yield* fetchChangelog(Offline.currentPolicy())
       if (result.kind === "refused")
         // 403 with a named reason: the caller must be able to tell "your instance declined" from
         // "the host is down", because only one of them is something the user chose.

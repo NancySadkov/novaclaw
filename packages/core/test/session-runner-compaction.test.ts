@@ -311,24 +311,22 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     ])
   })
 
-  test("a summary cut off at max_tokens is retried once and only the clean rewrite is stored", async () => {
-    // A truncated summary cannot become durable memory. Give the model one bounded chance to trim
-    // the ACTUAL first answer, then store only the clean rewrite. The pure compaction suite owns the
-    // mechanical fallback when this second request also fails.
+  test("a summary cut off at max_tokens is marked and stored without another model pass", async () => {
+    // A truncated summary cannot masquerade as complete memory. Discard its incomplete generated
+    // tail and retain a deterministic head/tail cut behind a visible loss marker, without spending
+    // another decode pass that can inflate context again.
     // ⚠️ BOTH events carry the cut, because a real provider stream sets them together — the fixture
     // helper emits `stepFinish(reason)` and `finish(reason)` from one value. An earlier version of
     // this test overrode only `finish`, which modelled a stream that cannot occur and then failed for
     // the wrong reason under `ReasoningBudget` (which reads `stepFinish` and drops `finish`).
-    const truncated = fragmentFixture("text", "text-cut", ["## Goal - Half a sum"]).completeEvents.map(
-      (event) =>
-        event.type === "finish" || event.type === "step-finish" ? { ...event, reason: "length" as const } : event,
+    const truncated = fragmentFixture("text", "text-cut", ["## Goal - Half a sum"]).completeEvents.map((event) =>
+      event.type === "finish" || event.type === "step-finish" ? { ...event, reason: "length" as const } : event,
     )
     const harness = makeRunnerHarness({
       turns: [
         fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
         truncated,
-        fragmentFixture("text", "text-trimmed", ["## Goal\n- Trimmed safely"]).completeEvents,
         fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
       ],
     })
@@ -355,14 +353,18 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         yield* session.resume(HARNESS_SESSION)
         return yield* store.context(HARNESS_SESSION)
       }),
-      "claim — a truncated summary is rewritten once",
+      "claim — a truncated summary is marked without a retry",
     )
 
-    expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Trimmed safely" })
-    expect(JSON.stringify(context)).not.toContain("Half a sum")
+    expect(context[0]).toMatchObject({
+      type: "compaction",
+      summary: expect.stringContaining("Older summary content removed"),
+    })
+    expect(context[0]).toMatchObject({ summary: expect.not.stringContaining("Half a sum") })
+    expect(harness.requests).toHaveLength(4)
   })
 
-  test("and the retry also runs when only step-finish carries the cut — the wrapped shape", async () => {
+  test("and the deterministic cut also runs when only step-finish carries it — the wrapped shape", async () => {
     // 🔴 THE TWO CALL SHAPES EMIT DIFFERENT EVENTS, and reading one is how this guard dies silently.
     // A raw `llm.stream` forwards the provider's `finish`. `ReasoningBudget` — the thinking bound used
     // by compaction — SWALLOWS it and closes with `stepFinish({index, reason, usage})`
@@ -382,7 +384,6 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
         cutStepOnly,
-        fragmentFixture("text", "text-trimmed2", ["## Goal\n- Trimmed wrapped summary"]).completeEvents,
         fragmentFixture("text", "text-c", ["Continued"]).completeEvents,
       ],
     })
@@ -409,11 +410,15 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         yield* session.resume(HARNESS_SESSION)
         return yield* store.context(HARNESS_SESSION)
       }),
-      "claim — a truncated summary is rewritten via step-finish too",
+      "claim — a truncated summary is marked via step-finish too",
     )
 
-    expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Trimmed wrapped summary" })
-    expect(JSON.stringify(context)).not.toContain("Half again")
+    expect(context[0]).toMatchObject({
+      type: "compaction",
+      summary: expect.stringContaining("Older summary content removed"),
+    })
+    expect(context[0]).toMatchObject({ summary: expect.not.stringContaining("Half again") })
+    expect(harness.requests).toHaveLength(4)
   })
 
   test("discards partial summary text when a reasoning continuation fails", async () => {

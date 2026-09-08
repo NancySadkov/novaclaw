@@ -39,10 +39,40 @@ const canonical = (value: unknown): unknown => {
   )
 }
 
-/** SHA-256 identity of the exact, ordered, full-fidelity transcript prefix an overlay replaces. */
+/**
+ * Remove persisted presentation state that never reaches the model. Tool labels are produced by a
+ * detached service after the command starts, so including them (or the row's update timestamp) in
+ * prefix identity made a completed compaction stale merely because its UI label arrived later.
+ * Model-visible tool input, output, status, text, reasoning, and provider metadata remain intact.
+ */
+const semanticData = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(semanticData)
+  if (value === null || typeof value !== "object") return value
+  const record = value as Record<string, unknown>
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => !(record.type === "tool" && key === "title"))
+      .map(([key, item]) => [key, semanticData(item)]),
+  )
+}
+
+/** SHA-256 identity of the ordered, model-visible transcript prefix an overlay replaces. */
 export const canonicalPrefixHash = (
   rows: readonly Pick<MessageRow, "id" | "type" | "seq" | "time_created" | "time_updated" | "data">[],
-) => Hash.sha256(JSON.stringify(rows.map(canonical)))
+) =>
+  Hash.sha256(
+    JSON.stringify(
+      rows.map((row) =>
+        canonical({
+          id: row.id,
+          type: row.type,
+          seq: row.seq,
+          time_created: row.time_created,
+          data: semanticData(row.data),
+        }),
+      ),
+    ),
+  )
 
 export const prefixHash = Effect.fn("SessionHistory.prefixHash")(function* (
   db: DatabaseService,
@@ -135,7 +165,8 @@ const projectedEntries = Effect.fnUntraced(function* (
   baselineSeq?: number,
   knownCompaction?: CompactionRow | null,
 ) {
-  const compaction = knownCompaction === undefined ? yield* latestCompaction(db, sessionID) : (knownCompaction ?? undefined)
+  const compaction =
+    knownCompaction === undefined ? yield* latestCompaction(db, sessionID) : (knownCompaction ?? undefined)
   const entries = yield* Effect.forEach(yield* messageRows(db, sessionID, compaction, baselineSeq), (row) =>
     decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
   )

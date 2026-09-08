@@ -1,7 +1,7 @@
 export * as Model from "./model"
 
 import { Schema } from "effect"
-import { optional, PositiveInt, statics } from "./schema"
+import { optional, statics } from "./schema"
 import { Provider } from "./provider"
 
 export const ID = Schema.String.pipe(Schema.brand("ModelV2.ID"))
@@ -115,10 +115,6 @@ export const Info = Schema.Struct({
   /** Per-model connection recovery policy. Attempts includes the original request. */
   retry: Schema.Struct({
     attempts: Schema.Int,
-  }).pipe(optional),
-  /** Per-model deadline for semantic conversation compaction. */
-  compaction: Schema.Struct({
-    timeoutMs: PositiveInt,
   }).pipe(optional),
   name: Schema.String,
   api: Api,

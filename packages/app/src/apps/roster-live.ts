@@ -10,6 +10,7 @@
 // threads roll up into its totals, and what is shown when there is nothing to show yet.
 
 import { tokenTotals, type TokenTotals } from "@/pages/home-session-meta"
+import { formatTokensPerSecond as formatTokenRate } from "@/utils/token-rate"
 
 /** The session fields the roster needs. A structural subset, so the wire type can grow freely. */
 export interface SessionLike {
@@ -257,11 +258,7 @@ export const rosterTask = (input: {
  * our decision to render it.
  */
 export const formatTokensPerSecond = (perMinute: number | undefined): string | undefined => {
-  if (perMinute === undefined || perMinute <= 0) return undefined
-  const perSecond = perMinute / 60
-  if (perSecond >= 10) return String(Math.round(perSecond))
-  if (perSecond >= 0.1) return perSecond.toFixed(1).replace(/\.0$/, "")
-  return "<0.1"
+  return formatTokenRate(perMinute === undefined ? undefined : perMinute / 60)
 }
 
 /**

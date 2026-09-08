@@ -3937,10 +3937,6 @@ export type ConfigV2ModelRetry = {
   attempts: number
 }
 
-export type ConfigV2ModelCompaction = {
-  timeoutMs: number
-}
-
 export type ConfigV2ModelLimit = {
   context?: number
   input?: number
@@ -3995,7 +3991,6 @@ export type ConfigV2Model = {
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   prePrompt?: string
   retry?: ConfigV2ModelRetry
-  compaction?: ConfigV2ModelCompaction
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -4058,7 +4053,6 @@ export type ConfigV2ModelEntry = {
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   prePrompt?: string
   retry?: ConfigV2ModelRetry
-  compaction?: ConfigV2ModelCompaction
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -4380,9 +4374,6 @@ export type ModelV2Info = {
   prePrompt?: string
   retry?: {
     attempts: number
-  }
-  compaction?: {
-    timeoutMs: number
   }
   name: string
   api: ModelApi

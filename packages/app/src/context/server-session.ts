@@ -44,13 +44,13 @@ export function createServerSession(
   const liveRates = new Map<string, LiveRate.LiveRateState>()
   const [liveVersion, setLiveVersion] = createSignal(0)
   let livePending = false
-  const noteLive = (sessionID: string, chars: number) => {
+  const noteLive = (sessionID: string, chars: number, source: "generation" | "compaction") => {
     let state = liveRates.get(sessionID)
     if (!state) {
       state = LiveRate.createState()
       liveRates.set(sessionID, state)
     }
-    LiveRate.note(state, chars, Date.now())
+    LiveRate.note(state, chars, Date.now(), source)
     if (!livePending) {
       livePending = true
       setTimeout(() => {
@@ -297,7 +297,7 @@ export function createServerSession(
         // Repeats are dropped by the timeline itself, so this needs no guard of its own.
         reportBootPhase("first-chat-token")
       }
-      noteLive(generated.sessionID, generated.chars)
+      noteLive(generated.sessionID, generated.chars, generated.source)
       return
     }
     // P2 (ui-arch-hardening): fold V2 CONTROL events into the cached record so open views stay

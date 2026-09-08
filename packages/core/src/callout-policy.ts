@@ -96,25 +96,8 @@ export const summarizer = define({
   queueLimit: 0,
 })
 
-/** Conversation compaction gets its own policy: unlike a tool-output summary, it may need to
- * preserve an entire long-running task and is worth waiting for. The timeout is model-specific;
- * absence keeps the product default visible in Model Configure. */
-export const DEFAULT_COMPACTION_TIMEOUT_MS = 5 * 60_000
-export const compaction = (timeoutMs = DEFAULT_COMPACTION_TIMEOUT_MS) =>
-  define({
-    mode: "blocking",
-    timeoutMs: finite(timeoutMs, DEFAULT_COMPACTION_TIMEOUT_MS, 1),
-    retries: 0,
-    retryDelayMs: 0,
-    // The deterministic context fitter remains the terminal fallback.
-    failureMode: "fail_open",
-    maxConcurrency: 1,
-    queueLimit: 0,
-  })
-
 /** The audited default stance for every callout family named by adoption A9.7. */
 export const AUDIT = {
-  compaction: compaction(),
   mcp_tool: mcpTool(),
   webfetch: webfetch(),
   websearch: websearch(),

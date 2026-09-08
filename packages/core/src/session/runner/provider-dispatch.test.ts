@@ -94,7 +94,7 @@ describe("ProviderDispatch", () => {
     expect(prepared.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
-  test("packs to a tighter exact-route prefix-retention ceiling", () => {
+  test("does not mistake exact-route prefix retention for semantic capacity", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = LLM.request({
       model,
@@ -109,8 +109,9 @@ describe("ProviderDispatch", () => {
     })
 
     expect(ordinary.packed.dropped).toBe(0)
-    expect(retained.packed.dropped).toBe(1)
+    expect(retained.packed.dropped).toBe(0)
     expect(retained.packed.contextSize).toBe(64_000)
+    expect(retained.request.messages).toEqual(ordinary.request.messages)
     expect(retained.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
