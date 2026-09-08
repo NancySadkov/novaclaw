@@ -148,6 +148,9 @@ import { ColleagueTool } from "../../tool/colleague"
 import { ColleagueBound } from "../colleague-bound"
 import { VisionCopy } from "./vision-copy"
 import { ToolOutputSummary } from "./tool-output-summary"
+import { Nudge } from "../../nudge"
+import { NudgeService } from "../../nudge-service"
+import { ResourcePressureContext } from "../../resource-pressure-context"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -360,7 +363,18 @@ export const layer = Layer.effect(
     const memory = WorldMemory.client(yield* WorldMemory.node.service)
     const maintenance = yield* SessionMaintenance.Service
     const components = yield* SessionComponentRegistry.Service
+    const nudges = yield* NudgeService.Service
+    const resourcePressure = yield* ResourcePressureContext.Service
     const db = (yield* Database.Service).db
+    const deliverNudges = Effect.fn("SessionRunner.deliverNudges")(function* (
+      sessionID: SessionSchema.ID,
+      agentID: string | undefined,
+      event: Nudge.Event,
+    ) {
+      const claimed = yield* nudges.claim({ sessionID, ...(agentID === undefined ? {} : { agentID }), event })
+      for (const nudge of claimed) yield* SessionInput.steer(db, events, sessionID, Nudge.prompt(nudge, event))
+      return claimed.length
+    })
     /**
      * B7 tier-1 / ruling 3 — the harness configuration, derived ONCE PER TURN and never at layer
      * scope. This used to be `const configEntries = yield* config.entries()` right here, with every
@@ -2114,6 +2128,10 @@ export const layer = Layer.effect(
           // exactly the question a person debugging one would be asking.
           reportArchiveFailure(session.id, agent.id),
         )
+      if (compacted) {
+        const latest = yield* SessionHistory.latestCompaction(db, session.id)
+        if (latest) yield* deliverNudges(session.id, String(agent.id), { type: "compaction", id: latest.id })
+      }
       if (compacted) yield* timingEnd("compaction")
       else if (shouldAttemptCompaction)
         yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
@@ -2460,6 +2478,13 @@ export const layer = Layer.effect(
                           (entry) => entry.type === "file" && entry.mime.toLowerCase().startsWith("image/"),
                         ).length,
                       )
+                    yield* deliverNudges(session.id, String(agent.id), {
+                      type: "tool",
+                      id: event.id,
+                      name: event.name,
+                      input: event.input,
+                      output: modelSettlement.result,
+                    })
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and
@@ -3276,6 +3301,10 @@ export const layer = Layer.effect(
           memory,
           session,
         }).pipe(reportArchiveFailure(session.id, prepared.config.agent))
+      if (compacted) {
+        const latest = yield* SessionHistory.latestCompaction(db, session.id)
+        if (latest) yield* deliverNudges(session.id, prepared.config.agent, { type: "compaction", id: latest.id })
+      }
       yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
         yield* events.publish(SessionEvent.Synthetic, {
@@ -3365,6 +3394,22 @@ export const layer = Layer.effect(
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
+      // Targeted ambient hooks are evaluated only when this drain already has work. They never wake
+      // an idle colleague just because the clock moved or the host crossed a pressure line.
+      const now = new Date()
+      const clockNudges = yield* deliverNudges(input.sessionID, handoff.agent, { type: "clock", at: now })
+      const pressureLevel = yield* resourcePressure.level()
+      let ambientNudges = clockNudges
+      if (pressureLevel === "warning" || pressureLevel === "floor") {
+        const event: Nudge.Event = {
+          type: "resource",
+          level: pressureLevel,
+          bucket: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}`,
+          detail: yield* resourcePressure.inspect(),
+        }
+        ambientNudges += yield* deliverNudges(input.sessionID, handoff.agent, event)
+      }
+      if (ambientNudges > 0 && !hasQueue) hasSteer = true
       if (providerRecovery) {
         const interruptedWaits = RecoveryJoin.interruptedChildIDs(yield* getContext(input.sessionID))
         const directChildren = new Set(yield* store.children(input.sessionID))
@@ -4303,5 +4348,7 @@ export const node = makeLocationNode({
     PermissionV2.node,
     PluginV2.node,
     SessionComponentRegistry.node,
+    NudgeService.node,
+    ResourcePressureContext.node,
   ],
 })

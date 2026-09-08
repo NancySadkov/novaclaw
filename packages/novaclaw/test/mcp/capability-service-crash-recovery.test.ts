@@ -41,9 +41,9 @@ const graph = (fixture: string) => {
   const pressure = Layer.succeed(
     ResourcePressureContext.Service,
     ResourcePressureContext.Service.of({
-      lines: () => Effect.succeed([]),
       inspect: () => Effect.succeed([]),
       capacity: () => Effect.succeed({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      level: () => Effect.succeed("ok"),
     }),
   )
   const auth = Layer.succeed(

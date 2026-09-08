@@ -239,6 +239,7 @@ export const dict = {
   "ui.transcript.compacting": "Compacting the context ~{{tokens}} tokens",
   "ui.transcript.compacted.in": "Compacted in {{time}}",
   "ui.transcript.compaction.failed": "Compaction stopped after {{time}}",
+  "ui.transcript.compaction.failed.short": "Compaction stopped",
   "ui.transcript.summary": "Summary",
   "ui.transcript.tool.read": "Read",
   "ui.transcript.tool.read.offset": "offset {{value}}",

@@ -56,6 +56,14 @@ describe("turn receipt", () => {
     expect(seconds(elapsedMs(100, undefined, 650))).toBe("0.6s")
   })
 
+  test("normalizes every supported timestamp carrier and never formats NaN", () => {
+    const start = Date.UTC(2026, 8, 8, 10, 0, 0)
+    expect(seconds(elapsedMs({ epochMillis: start }, new Date(start + 1_250), start + 9_000))).toBe("1.3s")
+    expect(seconds(elapsedMs(new Date(start).toISOString(), start + 500, start + 9_000))).toBe("0.5s")
+    expect(elapsedMs("not-a-time", start + 500, start + 9_000)).toBeUndefined()
+    expect(seconds(Number.NaN)).toBeUndefined()
+  })
+
   test("takes the newest server-owned open phase as the live label", () => {
     const timing = {
       startedAt: 100,

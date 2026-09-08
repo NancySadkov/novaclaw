@@ -39,6 +39,7 @@ import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigToolRouting } from "./config/tool-routing"
 import { ConfigComputer } from "./config/computer"
 import { ConfigWatcher } from "./config/watcher"
+import { ConfigNudge } from "./config/nudge"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
 import { Log } from "@novaclaw/schema/log"
@@ -120,6 +121,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       "storage/pressure.ts, so a host that never sets this still gets a real line; overrides apply " +
       "per field. ⚠️ Ruling 4: CONSEQUENTIAL, never operational — an agent that can lower its own " +
       "floor has exempted itself from the guard.",
+  }),
+  nudges: ConfigNudge.List.pipe(Schema.optional).annotate({
+    description:
+      "Targeted user-authored harness instructions. Defaults ship in code; a stored array replaces them and is evaluated live at event boundaries.",
   }),
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",

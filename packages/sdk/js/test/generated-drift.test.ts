@@ -306,7 +306,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // The existing MCP idle-state change also adds MCPStatusIdle; no other names changed.
 // 2026-09-07: reviewed +1 generated sync schema. Tool.Labelled became durable so its already-public
 // event schema now also has the expected `SyncEventSessionNextToolLabelled` replay envelope.
-const SCHEMA_NAME_FINGERPRINT = "ec55eb4c1fcf8de170086677bfe42c51c7db9470d07f945696116d6b99b70746"
+// 2026-09-08: the user-facing Nudge config adds exactly one public schema, `ConfigV2Nudge`, and
+// removes none. Its name maps without a collision suffix; the ConfigInfo shape gains the list.
+const SCHEMA_NAME_FINGERPRINT = "dc257d861e7705552629903efefedc8df8aec8b7b8c10a77a66d1506ce51c4b0"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

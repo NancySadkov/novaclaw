@@ -249,6 +249,9 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "mcp",
       "memory",
       "models",
+      // Nudge text reaches selected agents' prompts and its closed hooks decide when, so changing it
+      // is prompt authorship even though no hook can execute user code.
+      "nudges",
       "offline",
       "permissions",
       "persona",

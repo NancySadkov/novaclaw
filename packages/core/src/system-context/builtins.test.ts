@@ -5,28 +5,25 @@ import { environmentUpdate } from "./builtins"
 /**
  * ── CACHE-004: THE ENVIRONMENT UPDATE IS A DIFF, NOT A RE-RENDER ─────────────────────────────────
  *
- * 🔴 Measured 2026-08-29 on a live N=400 sweep with the box at 92 % commit: **13 of 66 session
- * messages carried an `<env>` block and all 13 renders were DISTINCT**, differing only in the
- * megabyte figure that `resource-pressure-context.ts` probes live. The control is the same rig and
- * corpus on a quiet box: **0 of 217**. So this fires exactly while a long sweep is running.
+ * Exception-only environment facts such as an unavailable MCP server can appear, change and clear
+ * during a session. Repeating the whole stable platform block for one changed line deposits
+ * near-duplicate text in the durable transcript and every later compaction.
  *
- * ⚠️ It is a TAIL update and does NOT invalidate the prefix cache — a claim made and withdrawn the
- * same day. The cost is ~250 characters of near-duplicate text deposited in the DURABLE transcript
- * every time, carried by every later turn and re-summarised by every compaction, spent precisely
- * when the machine is already short.
+ * Resource pressure no longer travels through this path: it is a targeted, configurable Nudge. This
+ * helper remains the diff boundary for the exception facts which still belong in `<env>`.
  */
 
 const env = (...lines: string[]) => ["<env>", ...lines.map((line) => `  ${line}`), "</env>"].join("\n")
 
 const PLATFORM = "Platform: win32"
 const SHELL = "Shell: C:\soft\Git\bin\bash.exe"
-const LOW = "Memory headroom is low: 40655 MB of 43954 MB committed. Avoid memory-intensive work."
-const LOWER = "Memory headroom is low: 41354 MB of 43954 MB committed. Avoid memory-intensive work."
+const OFFLINE = 'MCP server "search" is configured but unavailable: connection refused.'
+const AUTH = 'MCP server "search" is configured but unavailable: authentication required.'
 
 describe("environmentUpdate", () => {
-  test("a moving megabyte figure emits ONE line, not the whole block", () => {
-    const update = environmentUpdate(env(PLATFORM, SHELL, LOW), env(PLATFORM, SHELL, LOWER))
-    expect(update).toContain("41354 MB")
+  test("a changed exception emits ONE line, not the whole block", () => {
+    const update = environmentUpdate(env(PLATFORM, SHELL, OFFLINE), env(PLATFORM, SHELL, AUTH))
+    expect(update).toContain("authentication required")
     // 🔴 The point of the change: the unchanged lines must NOT be re-sent.
     expect(update).not.toContain(PLATFORM)
     expect(update).not.toContain("Shell:")
@@ -37,15 +34,15 @@ describe("environmentUpdate", () => {
    * 🔴 THE CASE A NAIVE "WHAT IS NEW" DIFF SILENTLY DROPS, and the one that matters most: the model
    * must learn that a warning CLEARED, or it keeps avoiding memory-intensive work forever.
    */
-  test("a warning that CLEARS is reported, not silently omitted", () => {
-    const update = environmentUpdate(env(PLATFORM, SHELL, LOW), env(PLATFORM, SHELL))
+  test("an exception that CLEARS is reported, not silently omitted", () => {
+    const update = environmentUpdate(env(PLATFORM, SHELL, OFFLINE), env(PLATFORM, SHELL))
     expect(update).toContain("No longer applies")
-    expect(update).toContain("40655 MB")
+    expect(update).toContain("connection refused")
   })
 
-  test("a warning that APPEARS is reported", () => {
-    const update = environmentUpdate(env(PLATFORM, SHELL), env(PLATFORM, SHELL, LOW))
-    expect(update).toContain("40655 MB")
+  test("an exception that APPEARS is reported", () => {
+    const update = environmentUpdate(env(PLATFORM, SHELL), env(PLATFORM, SHELL, OFFLINE))
+    expect(update).toContain("connection refused")
     expect(update).not.toContain("No longer applies")
   })
 

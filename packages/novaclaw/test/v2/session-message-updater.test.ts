@@ -210,7 +210,7 @@ test.skip("tool completion stores completed timestamp", () => {
   expect(state.messages[0].content[0].provider).toEqual({ executed: true, metadata: { fake: { status: "done" } } })
 })
 
-test("compaction events never mutate the full-fidelity transcript", () => {
+test("compaction events project the durable audit row without storing streamed deltas", () => {
   const state: SessionMessageUpdater.MemoryState = { messages: [] }
   const sessionID = SessionID.make("session")
   const id = EventV2.ID.create()
@@ -229,7 +229,14 @@ test("compaction events never mutate the full-fidelity transcript", () => {
     } satisfies SessionEvent.Event),
   )
 
-  expect(state.messages).toEqual([])
+  expect(state.messages).toMatchObject([
+    {
+      id: compactionID,
+      type: "compaction-status",
+      status: "running",
+      generatedChars: 0,
+    },
+  ])
 
   Effect.runSync(
     SessionMessageUpdater.update(SessionMessageUpdater.memory(state), {
@@ -274,5 +281,14 @@ test("compaction events never mutate the full-fidelity transcript", () => {
     } satisfies SessionEvent.Event),
   )
 
-  expect(state.messages).toEqual([])
+  expect(state.messages).toMatchObject([
+    {
+      id: compactionID,
+      type: "compaction",
+      summary: "final summary",
+      recent: "recent context",
+      generatedChars: "final summary".length,
+    },
+  ])
+  expect(state.messages).toHaveLength(1)
 })

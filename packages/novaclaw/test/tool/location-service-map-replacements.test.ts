@@ -31,7 +31,7 @@ describe("ServerLocationServiceMap.replacements", () => {
   test.each([
     ["ExternalToolSource (MCP + plugin tools)", ExternalToolSource.node],
     ["ExternalCommandSource (MCP prompts as slash commands)", ExternalCommandSource.node],
-    ["ResourcePressureContext (host headroom in <env>)", ResourcePressureContext.node],
+    ["ResourcePressureContext (host headroom for admission, status and Nudges)", ResourcePressureContext.node],
     ["CapabilityServiceWorker (governed MCP lifecycle)", CapabilityServiceWorker.node],
     ["LocalModelManager (the local model runtime)", LocalModelManager.node],
   ])("%s is wired", (_label, node) => {

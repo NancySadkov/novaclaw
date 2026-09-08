@@ -1,4 +1,5 @@
 import type { SessionMessageAssistant } from "@novaclaw/sdk/v2"
+import * as Timestamp from "@novaclaw/schema/time"
 
 export type TurnTiming = NonNullable<SessionMessageAssistant["timing"]>
 export type TurnPhaseTiming = TurnTiming["phases"][number]
@@ -51,8 +52,10 @@ export const phaseLabels = LABELS
 export const phaseLabel = (phase: TurnPhaseTiming["phase"]) => LABELS[phase]
 export const detailLabel = (phase: NonNullable<TurnPhaseTiming["details"]>[number]["phase"]) => DETAIL_LABELS[phase]
 
-export const elapsedMs = (startedAt: number, completedAt: number | undefined, now: number) =>
-  Math.max(0, (completedAt ?? now) - startedAt)
+export const elapsedMs = (startedAt: unknown, completedAt: unknown, now: unknown): number | undefined => {
+  const elapsed = Timestamp.elapsedMillis(startedAt, completedAt ?? now)
+  return elapsed === undefined ? undefined : Math.max(0, elapsed)
+}
 
 /**
  * How long a stage may run before the receipt says something about it.
@@ -70,7 +73,8 @@ export const LONG_STAGE_MS = 10_000
  * or "almost done": a reassurance that carries no information is the thing this replaces, and a
  * guess about progress we cannot see would be describing a fault falsely.
  */
-export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number): string | undefined => {
+export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number | undefined): string | undefined => {
+  if (elapsed === undefined) return undefined
   if (elapsed < LONG_STAGE_MS) return undefined
   switch (phase) {
     case "scheduler-wait":
@@ -105,7 +109,8 @@ export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number):
   }
 }
 
-export const seconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(1)}s`
+export const seconds = (milliseconds: unknown): string | undefined =>
+  typeof milliseconds === "number" && Number.isFinite(milliseconds) ? `${(milliseconds / 1000).toFixed(1)}s` : undefined
 
 export const currentPhase = (timing: TurnTiming) => timing.phases.findLast((phase) => !phase.completedAt)
 

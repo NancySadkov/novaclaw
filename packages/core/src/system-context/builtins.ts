@@ -11,30 +11,14 @@ import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
-import { ResourcePressureContext } from "../resource-pressure-context"
 import { McpHealthContext } from "../mcp-health-context"
 import { CapabilityRegistry } from "../effect/capability-registry"
 
 /**
- * The environment update, as a DIFF rather than a full re-render.
- *
- * 🔴 **CACHE-004, measured 2026-08-29.** Under memory pressure the resource line carries live
- * megabytes (`resource-pressure-context.ts`), so it changes on nearly every probe and this update
- * fired repeatedly: **13 of 66 messages in an N=400 sweep carried an `<env>` block, all 13 renders
- * DISTINCT**, differing only in the MB figure. The control is a quiet-box run of the same rig and
- * corpus: **0 of 217**.
- *
- * ⚠️ It is a TAIL update, so it does NOT invalidate the prefix cache — that claim was made and
- * withdrawn. What it does is deposit ~250 characters of near-duplicate text into the DURABLE
- * transcript each time, permanently: carried by every later turn, re-summarised by every
- * compaction, and read by the model as a dozen near-identical notices it must reconcile. It fires
- * only while the box is already short, so it spends context exactly when context is scarce.
- *
- * ⚠️ **Removals are reported too.** A naive "what is new" diff would silently drop the case that
- * matters most — a warning CLEARING — leaving the model believing the machine is still short.
- *
- * ⚠️ Exported as a SEAM: it is a pure string diff and the only way to assert it through
- * `SystemContext.reconcile` would be to build a registry, an epoch and a store to read one line back.
+ * The environment update, as a DIFF rather than a full re-render. Resource pressure deliberately
+ * does not enter this ambient block any more: it is a targeted, configurable Nudge hook. Removals
+ * for MCP/capability state are still reported, because silently retaining a cleared fault would
+ * leave the model reasoning against an outage that no longer exists.
  */
 export const environmentUpdate = (previous: string, current: string): string => {
   const meaningful = (text: string) =>
@@ -64,33 +48,21 @@ export const environmentUpdate = (previous: string, current: string): string => 
   ].join("\n")
 }
 
-/** A moving commit count is useful once, then noise until the warning changes or an hour passes. */
-export const RESOURCE_NOTICE_INTERVAL_MS = 60 * 60 * 1000
-const MEMORY_PRESSURE_VALUE = /(Memory headroom is (?:low|critically low):) \d+ MB of \d+ MB committed\./g
-
 export interface EnvironmentObservation {
   readonly rendered: string
   readonly observedAt: number
 }
 
-/**
- * Compare the MEANING of two environment observations while retaining the exact current figures in
- * the admitted snapshot. A recovery, escalation, disk/MCP/capability change stays immediate. Only
- * the numeric wobble inside the same memory-pressure sentence is rate-limited.
- */
-export const environmentEquivalent = (previous: EnvironmentObservation, current: EnvironmentObservation): boolean => {
-  if (previous.rendered === current.rendered) return true
-  const before = previous.rendered.replace(MEMORY_PRESSURE_VALUE, "$1 <live> committed.")
-  const after = current.rendered.replace(MEMORY_PRESSURE_VALUE, "$1 <live> committed.")
-  if (before !== after) return false
-  return current.observedAt - previous.observedAt < RESOURCE_NOTICE_INTERVAL_MS
-}
+/** Environment changes other than resource pressure remain ordinary exact-value updates. Resource
+ * warnings moved to the user-configurable Nudge dispatcher, where an hourly occurrence key bounds
+ * repetition without depositing near-identical `<env>` blocks in the transcript. */
+export const environmentEquivalent = (previous: EnvironmentObservation, current: EnvironmentObservation): boolean =>
+  previous.rendered === current.rendered
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* SystemContextRegistry.Service
     const settingsStore = yield* SettingsConfigStore.Service
-    const resourcePressure = yield* ResourcePressureContext.Service
     const mcpHealth = yield* McpHealthContext.Service
     const capabilities = yield* CapabilityRegistry.Service
     // P2P: tell the model about configured peer instances — full free-form HTTP access with the
@@ -106,13 +78,8 @@ const builtIns = Layer.effectDiscard(
       const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`
     })
-    const environment = Effect.all([
-      resourcePressure.lines(),
-      mcpHealth.lines(),
-      capabilities.lines(),
-      DateTime.nowAsDate,
-    ]).pipe(
-      Effect.map(([resourceLines, mcpLines, capabilityLines, observedAt]) => ({
+    const environment = Effect.all([mcpHealth.lines(), capabilities.lines(), DateTime.nowAsDate]).pipe(
+      Effect.map(([mcpLines, capabilityLines, observedAt]) => ({
         observedAt: observedAt.getTime(),
         rendered: [
           "<env>",
@@ -154,7 +121,6 @@ const builtIns = Layer.effectDiscard(
                 `    \`magick in.png -format "%[pixel:p{2,3}]" info:\` (read one pixel).`,
               ]
             : []),
-          ...resourceLines.map((line) => `  ${line}`),
           // Only when a CONFIGURED MCP server is not usable. Empty for a healthy set, so the block is
           // byte-identical to one built without this seam — see `mcp-health-context.ts` for the whole
           // decision, and the "loads location-scoped environment" case in
@@ -178,11 +144,10 @@ const builtIns = Layer.effectDiscard(
             observedAt: Schema.Number,
           }),
         ),
-        // Resource headroom and MCP server health are both live per turn. Keeping this as an Effect
-        // instead of freezing the string at location boot lets SystemContext.reconcile tell the model
-        // when the machine moves across a pressure line — or when a configured MCP server drops or
-        // comes back — without restarting the instance, and pays for it in a TAIL update rather than
-        // a prompt-prefix re-render.
+        // MCP server health is live per turn. Keeping this as an Effect instead of freezing the
+        // string at location boot lets SystemContext.reconcile tell the model when a configured MCP
+        // server drops or comes back without restarting the instance. Resource pressure is a Nudge
+        // hook now and deliberately never enters this ambient block.
         load: environment,
         baseline: (environment) =>
           ["Here is some useful information about the environment you are running in:", environment.rendered].join(
@@ -220,7 +185,6 @@ export const node = makeLocationNode({
     FSUtil.node,
     Global.node,
     SettingsConfigStore.node,
-    ResourcePressureContext.node,
     McpHealthContext.node,
     CapabilityRegistry.node,
     // `InstructionContext` screens discovered AGENTS.md files against the project's `exclude` list.

@@ -101,6 +101,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_nudge_delivery\` (
+          \`session_id\` text NOT NULL,
+          \`nudge_id\` text NOT NULL,
+          \`occurrence\` text NOT NULL,
+          \`fired_at\` integer NOT NULL,
+          CONSTRAINT \`session_nudge_delivery_pk\` PRIMARY KEY(\`session_id\`, \`nudge_id\`)
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`calendar_fire\` (
           \`id\` text PRIMARY KEY,
           \`schedule_id\` text NOT NULL,
