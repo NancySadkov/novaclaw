@@ -2,7 +2,7 @@
 /**
  * Run the heavy-job guard on its own, so a caller can refuse BEFORE doing damage.
  *
- * 🔴 **Why this exists.** `build-desktop-release.bat` cleaned `dist` in step 0 and reached the guard
+ * 🔴 **Why this exists.** The old release wrapper cleaned `dist` in step 0 and reached the guard
  * in step 1 (inside `prebuild.ts`). So a build the guard REFUSED still deleted the artifact that was
  * there — measured 2026-08-11: 2.4 GB free against a 2.5 GB floor, no new build, and the previous
  * 179 MB `.7z` gone. A guard whose stated purpose is to refuse *before* the machine is forced into
@@ -23,7 +23,7 @@
 /**
  * ⚠️ **RESTORED 2026-09-03, and the deletion is the lesson.** This was removed as dead code by the
  * refactor sweep (`cb25f0ccd`) because nothing in THIS repository calls it. Its only caller is
- * `build-desktop-release.bat`, which lives in the plan repository — a separate git repo the sweep
+ * `build-release.bat`, which lives in the plan repository — a separate git repo the sweep
  * could not see. So the release path was broken from that commit until the next release was cut, and
  * it failed at step 0 with `Module not found`, having already been reported "done" by every ad-hoc
  * build in between because those bypassed the wrapper entirely.

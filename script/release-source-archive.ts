@@ -13,7 +13,7 @@
 // shipped kit is tried first and rejected on measured grounds (its `tar` is busybox, which cannot
 // write 7z at all) rather than skipped on a hunch.
 //
-// A batch file cannot express any of that, which is why this moved out of `build-desktop-release.bat`
+// A batch file cannot express any of that, which is why this moved out of the release wrapper
 // — the same move `doc/release.md` records for the hash manifest, and for the same reason: the
 // tested one should be the only one.
 

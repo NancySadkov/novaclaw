@@ -16,7 +16,7 @@
  *
  * ─── the semantics, identical at every call site ───────────────────────────────────────────────
  *   unset / empty     -> "dev"    `build-desktop.bat` sets nothing and expects a dev build;
- *                                 `build-desktop-release.bat` sets NOVACLAW_CHANNEL=prod.
+ *                                 `build-release.bat` sets NOVACLAW_CHANNEL=prod.
  *   "latest"          -> "prod"   electron-builder's publish vocabulary names the prod feed
  *                                 "latest" (see electron-builder.config.ts), and
  *                                 electron.vite.config.ts already normalised it this way.

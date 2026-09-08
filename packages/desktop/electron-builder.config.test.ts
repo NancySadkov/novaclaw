@@ -50,7 +50,7 @@ test("ships local archives without updater-only formats", async () => {
   const module = await import(`./electron-builder.config.ts?archive=${Date.now()}`)
   const config = module.default as Configuration
 
-  // The user-facing Windows download. `dir` + a hand-rolled zip in build-desktop-release.bat is what
+  // The user-facing Windows download. `dir` + a hand-rolled zip in the old release wrapper is what
   // this replaced, so the format was previously pinned by nothing at all.
   expect(config.win?.target).toEqual(["7z"])
   expect(config.win?.artifactName).toBe("NovaClaw-${version}-windows-${arch}.${ext}")

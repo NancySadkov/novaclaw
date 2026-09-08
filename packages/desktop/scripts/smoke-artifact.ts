@@ -19,8 +19,8 @@
  * the real database. ONLY the packaged Electron sidecar failed. The lesson recorded in AGENTS.md is
  * verbatim: *"a green suite proves nothing about the packaged app … **Smoke the artifact.**"* This
  * file is that sentence turned into a mechanism — informational levers engage, mechanical ones
- * convert — and it is wired in as step 4 of `build-desktop.bat` / `build-desktop-release.bat`, so a
- * build that reproduces either bug FAILS instead of shipping.
+ * convert. It remains an explicit formal-release check; the fast `build-release.bat` candidate path
+ * deliberately packages without launching the app.
  *
  * Do not delete this as ceremony. Every assertion below is a bug that actually shipped, or the
  * signature of one.
