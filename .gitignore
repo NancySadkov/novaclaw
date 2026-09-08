@@ -1,0 +1,45 @@
+.DS_Store
+node_modules
+.worktrees
+.sst
+.env
+.env.local
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+# A probe that must live INSIDE a package for module resolution (`bun test` resolves `solid-js`
+# only from within the package that depends on it) is one broad `git add` away from shipping into
+# a release surface. Measured twice: `ea62baa5d` swept three, and a fourth
+# (`packages/app/packages/app/tmp-probe/`) reached HEAD and red the `script` unit's own ledger,
+# which asserts that every test file in the tree belongs to a run unit.
+**/tmp-probe/
+dist
+ts-dist
+.ts-dist
+.turbo
+**/.serena
+.serena/
+**/.omo
+.omo/
+/result
+refs
+Session.vim
+/novaclaw.json
+a.out
+target
+.scripts
+.direnv/
+
+# Local dev files
+novaclaw-dev
+UPCOMING_CHANGELOG.md
+logs/
+*.bun-build
+tsconfig.tsbuildinfo
+
+# Internal working notes — must never enter the app repo (it is disjoint from the plan repo)
+notes/
+sbom.cdx.json

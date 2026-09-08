@@ -1,0 +1,122 @@
+import { Component, createMemo } from "solid-js"
+import { useNavigate, useParams } from "@solidjs/router"
+import { useServerSync } from "@/context/server-sync"
+import { useSDK } from "@/context/sdk"
+import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
+import { useDialog } from "@novaclaw/ui/context/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
+import { List } from "@novaclaw/ui/list"
+import { showToast } from "@/utils/toast"
+import { promptFromUserMessage } from "@/utils/prompt"
+import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
+import { base64Encode } from "@novaclaw/core/util/encode"
+import { useLanguage } from "@/context/language"
+import * as Timestamp from "@novaclaw/schema/time"
+
+interface ForkableMessage {
+  id: string
+  text: string
+  time: string
+}
+
+function formatTime(value: unknown): string {
+  return Timestamp.toDate(value)?.toLocaleTimeString(undefined, { timeStyle: "short" }) ?? "—"
+}
+
+export const DialogFork: Component = () => {
+  const params = useParams()
+  const navigate = useNavigate()
+  const serverSync = useServerSync()
+  const sdk = useSDK()
+  const prompt = usePrompt()
+  const dialog = useDialog()
+  const language = useLanguage()
+
+  // F1e S5: fork reads the native SessionMessage[] store (a user message carries its
+  // prompt text directly) and reconstructs the restored composer prompt from it.
+  const userMessage = (sessionID: string, id: string) =>
+    (serverSync().nativeMessages.messages(sessionID) ?? []).find(
+      (m): m is SessionMessageUser => m.type === "user" && m.id === id,
+    )
+
+  const messages = createMemo((): ForkableMessage[] => {
+    const sessionID = params.id
+    if (!sessionID) return []
+
+    const msgs = serverSync().nativeMessages.messages(sessionID) ?? []
+    const result: ForkableMessage[] = []
+
+    for (const message of msgs) {
+      if (message.type !== "user") continue
+
+      result.push({
+        id: message.id,
+        text: message.text.replace(/\n/g, " ").slice(0, 200),
+        time: formatTime(message.time.created),
+      })
+    }
+
+    return result.reverse()
+  })
+
+  const handleSelect = (item: ForkableMessage | undefined) => {
+    if (!item) return
+
+    const sessionID = params.id
+    if (!sessionID) return
+
+    const message = userMessage(sessionID, item.id)
+    const restored = message
+      ? promptFromUserMessage(message, {
+          directory: sdk().directory,
+          attachmentName: language.t("common.attachment"),
+        })
+      : DEFAULT_PROMPT
+    const dir = base64Encode(sdk().directory)
+
+    sdk()
+      .client.v2.session.fork({ sessionID, messageID: item.id })
+      .then((forked) => {
+        const created = forked.data?.data
+        if (!created) {
+          showToast({ title: language.t("common.requestFailed") })
+          return
+        }
+        dialog.close()
+        prompt.set(restored, undefined, { dir, id: created.id })
+        navigate(`/${dir}/session/${created.id}`)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+  }
+
+  return (
+    // v1's default box was 640x512; `size="large"` is v2's 640x480, i.e. the searchable-list shape
+    // this dialog relied on the v1 default for. Stated rather than inherited (ruling 13).
+    <Dialog size="large">
+      <DialogHeader>
+        <DialogTitle>{language.t("command.session.fork")}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <List
+          class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+          search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
+          emptyMessage={language.t("dialog.fork.empty")}
+          key={(x) => x.id}
+          items={messages}
+          filterKeys={["text"]}
+          onSelect={handleSelect}
+        >
+          {(item) => (
+            <div class="w-full flex items-center gap-2">
+              <span class="truncate flex-1 min-w-0 text-left font-normal">{item.text}</span>
+              <span class="text-text-weak shrink-0 font-normal">{item.time}</span>
+            </div>
+          )}
+        </List>
+      </DialogBody>
+    </Dialog>
+  )
+}

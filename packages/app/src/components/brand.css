@@ -1,0 +1,28 @@
+[data-component="novaclaw-wordmark"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+[data-component="novaclaw-wordmark"] [data-slot="novaclaw-wordmark-logo"] {
+  /* The logo is square (icon + wordmark); size its height off the caller's font-size so it
+     scales like the old text wordmark did. Width follows the square aspect. */
+  height: 2.1em;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+[data-component="novaclaw-wordmark"] [data-slot="novaclaw-wordmark-version"] {
+  font-size: 0.68em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-muted, #b8a9d8);
+  translate: 0 -0.05em;
+}

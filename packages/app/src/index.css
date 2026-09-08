@@ -1,0 +1,436 @@
+@import "@novaclaw/ui/styles/tailwind";
+@import "@novaclaw/session-ui/styles";
+@import "@novaclaw/ui/v2/styles/tailwind.css";
+@import "tw-animate-css";
+/* Color-scheme presets (uix.md §7). Nova (gold on purple) is the default, defined inline below
+   (data-app-theme absent); these override it under body[data-new-layout][data-app-theme="…"]. */
+@import "./themes/autumn.css";
+@import "./themes/summer.css";
+
+/* ── app component stylesheets ─────────────────────────────────────────────────────────────────
+   ⚠️ Imported HERE with an explicit layer, not from their `.tsx`. A stylesheet imported from a
+   component file lands UNLAYERED and outranks every Tailwind utility, so `class=` overrides on that
+   component silently do nothing — `app/src/ui-fork-ledger.test.ts` (`UNLAYERED_STYLESHEETS`) pins
+   the ones still doing that, shrink-only. These come AFTER the `@novaclaw/ui` imports above so that
+   within `components` an app rule still beats a ui-package one. */
+@import "./components/brand.css" layer(components);
+@import "./components/dialog-select-directory-v2.css" layer(components);
+@import "./components/titlebar.css" layer(components);
+@import "./components/titlebar-tab-nav.css" layer(components);
+@import "./components/settings-v2/settings-v2.css" layer(components);
+@import "./pages/session/file-tabs.css" layer(components);
+
+@font-face {
+  font-family: "JetBrainsMono Nerd Font Mono";
+  src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/Inter.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@media (display-mode: standalone) {
+  /* WebKit excludes safe-area insets from dvh in installed apps. */
+  #root {
+    height: 100vh;
+  }
+}
+
+@layer components {
+  /* The `getting-started` / `getting-started-actions` container-query block that used to live here
+     is gone with the legacy shell (pages/layout.tsx) — it was the only thing rendering either
+     attribute, and a stylesheet keyed on a selector nothing emits is invisible dead weight. */
+
+  .home-session-group-header::before {
+    content: "";
+    position: absolute;
+    top: -12px;
+    left: 0;
+    width: 100%;
+    height: 12px;
+    background: var(--v2-background-bg-base);
+  }
+
+  .home-session-group-header::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 16px;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      var(--v2-background-bg-base) 0%,
+      color-mix(in srgb, var(--v2-background-bg-base) 92.0456%, transparent) 7.93%,
+      color-mix(in srgb, var(--v2-background-bg-base) 84.9947%, transparent) 14.14%,
+      color-mix(in srgb, var(--v2-background-bg-base) 78.6813%, transparent) 19%,
+      color-mix(in srgb, var(--v2-background-bg-base) 72.9394%, transparent) 22.85%,
+      color-mix(in srgb, var(--v2-background-bg-base) 67.6028%, transparent) 26.05%,
+      color-mix(in srgb, var(--v2-background-bg-base) 62.5055%, transparent) 28.95%,
+      color-mix(in srgb, var(--v2-background-bg-base) 57.4815%, transparent) 31.91%,
+      color-mix(in srgb, var(--v2-background-bg-base) 52.3647%, transparent) 35.27%,
+      color-mix(in srgb, var(--v2-background-bg-base) 46.989%, transparent) 39.4%,
+      color-mix(in srgb, var(--v2-background-bg-base) 41.1884%, transparent) 44.65%,
+      color-mix(in srgb, var(--v2-background-bg-base) 34.7969%, transparent) 51.36%,
+      color-mix(in srgb, var(--v2-background-bg-base) 27.6484%, transparent) 59.9%,
+      color-mix(in srgb, var(--v2-background-bg-base) 19.5767%, transparent) 70.62%,
+      color-mix(in srgb, var(--v2-background-bg-base) 10.416%, transparent) 83.87%,
+      transparent 100%
+    );
+  }
+
+  [data-slot="titlebar-update-loader"] {
+    display: block;
+    flex-shrink: 0;
+    margin: 1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 9999px;
+    border: 2px solid color-mix(in srgb, var(--v2-icon-icon-accent) 30%, transparent);
+    border-top-color: var(--v2-icon-icon-accent);
+    animation: titlebar-update-loader-spin 0.67s linear infinite;
+    transform-origin: 50% 50%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="titlebar-update-loader"] {
+      animation: none;
+    }
+  }
+
+  @keyframes titlebar-update-loader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes home-projects-fade-top {
+    from {
+      visibility: hidden;
+    }
+    to {
+      visibility: visible;
+    }
+  }
+
+  @keyframes home-projects-fade-bottom {
+    from {
+      visibility: visible;
+    }
+    to {
+      visibility: hidden;
+    }
+  }
+
+  [data-slot="home-projects-scroll"] {
+    timeline-scope: --home-projects-scroll;
+  }
+
+  [data-slot="home-projects-scroll"]::before,
+  [data-slot="home-projects-scroll"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    height: 16px;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  [data-slot="home-projects-scroll"]::before {
+    top: 0;
+    background: linear-gradient(to bottom, var(--v2-background-bg-base), transparent);
+  }
+
+  [data-slot="home-projects-scroll"]::after {
+    bottom: 0;
+    background: linear-gradient(to top, var(--v2-background-bg-base), transparent);
+  }
+
+  @supports (animation-timeline: --home-projects-scroll) and (timeline-scope: --home-projects-scroll) {
+    [data-slot="home-projects-scroll"] .scroll-view__viewport {
+      scroll-timeline: --home-projects-scroll y;
+    }
+
+    [data-slot="home-projects-scroll"]::before {
+      animation: home-projects-fade-top linear both;
+      animation-timeline: --home-projects-scroll;
+      animation-range: 0 0.1px;
+    }
+
+    [data-slot="home-projects-scroll"]::after {
+      animation: home-projects-fade-bottom linear both;
+      animation-timeline: --home-projects-scroll;
+      animation-range: calc(100% - 1.1px) calc(100% - 1px);
+    }
+  }
+}
+
+/* ── NovaClaw "NOVA Agentic OS" theme ───────────────────────────────────────────────────────────
+   App-wide remap of the v2 semantic design tokens to the NOVA desktop skin (doc/gfx in the plan repo:
+   nova_desktop_skin_example.html + NOVA_Agentic_OS_UI_Kit design tokens, owner-supplied 2026-08-12):
+   deep aubergine field, brushed metallic gold accents/framing, ivory text. Every v2 component reads
+   these tokens, so overriding them here re-themes the whole new layout at once. Unlayered so it wins
+   over the `@layer theme` defaults; scoped to `[data-new-layout]` so the legacy layout is untouched.
+   Syntax-highlight colors are intentionally left alone. */
+body[data-new-layout] {
+  color-scheme: dark;
+
+  /* NovaClaw primitives — the one warm accent + the aurora, extracted so a color-scheme PRESET can
+     nominate its own (uix.md §7). Nova = brushed gold on aubergine. A preset overrides these + the
+     token field. The primary-action recipe (hero ink, Start button, tour Next, ButtonV2 gold) flows
+     from here. The gradient is the skin's brushed-metal button: alternating bright/deep bands, lit
+     from directly above (180deg), with a pale specular return at the bottom edge. */
+  --nc-accent-solid: #d8ab4b; /* hero accent + focus ring + bg-accent source */
+  --nc-accent-gradient: linear-gradient(180deg, #f4d985, #bd822a 58%, #f0c965); /* THE eye anchor */
+  --nc-gold-gradient: var(--nc-accent-gradient); /* back-compat alias (ButtonV2 gold, tiles) */
+  --nc-ink: #1a0e11; /* text/glyph on the accent */
+  --nc-aurora:
+    radial-gradient(circle at 50% -10%, rgba(108, 59, 126, 0.2), transparent 40%),
+    radial-gradient(85% 60% at 92% -8%, rgba(216, 171, 75, 0.06), transparent 55%),
+    linear-gradient(180deg, #12091e 0%, #09050f 48%, #050309 100%);
+  --nc-focus-ring-width: 2px;
+  /* The skin's panel frame: a gold hairline ring + a pale specular top edge on raised glass. These
+     feed the elevation recipe below so presets can retint the frame in one place. */
+  --nc-panel-line: rgba(216, 171, 75, 0.34);
+  --nc-panel-line-top: rgba(255, 241, 175, 0.18);
+  /* UI-kit textures (public/assets/skin/): fine monochrome grain for panels, the transparent
+     circuit/orbital overlay composited over the field at low opacity (never over content), the
+     NOVA wallpaper under a heavy dark veil, and the skin's panel-glass gradient. Presets override
+     the wallpaper (Nova nebula art) and the panel gradient; grain and circuit are hue-neutral. */
+  --nc-grain-image: url("/assets/skin/panel-grain.png");
+  --nc-ambient-image: url("/assets/skin/circuit-overlay.png");
+  --nc-wallpaper-image: url("/assets/skin/wallpaper.png");
+  --nc-panel-gradient: linear-gradient(180deg, rgba(44, 23, 57, 0.94), rgba(20, 10, 31, 0.96));
+
+  /* Backgrounds — deep aubergine, layered (kit: bg_0/bg_1/surface_0/1/2/violet) */
+  --v2-background-bg-deep: #09050f;
+  --v2-background-bg-base: #12091e;
+  --v2-background-bg-layer-01: #1b1027;
+  --v2-background-bg-layer-02: #251432;
+  --v2-background-bg-layer-03: #321a40;
+  --v2-background-bg-layer-04: #4c255f;
+  --v2-background-bg-inverse: #f1e5d3;
+  --v2-background-bg-contrast: #e9d9be;
+  --v2-background-bg-button-neutral: #251432;
+  --v2-background-bg-accent: var(--nc-accent-solid);
+
+  /* Text — high-contrast ivory, gold-highlight accent (kit: ivory/muted/gold_light) */
+  --v2-text-text-base: #f1e5d3;
+  --v2-text-text-muted: #b9a9bf;
+  --v2-text-text-faint: #8e7d98;
+  --v2-text-text-inverse: #1f1116;
+  --v2-text-text-contrast: #1f1116;
+  --v2-text-text-accent: #f5db8d;
+  --v2-text-text-accent-hover: #f9e7ae;
+  --v2-text-text-code-accent: #f5db8d;
+
+  /* Icons */
+  --v2-icon-icon-base: #c9b9cf;
+  --v2-icon-icon-muted: #8e7d98;
+  --v2-icon-icon-inverse: #1f1116;
+  --v2-icon-icon-contrast: #1f1116;
+  --v2-icon-icon-accent: #f5db8d;
+  --v2-icon-icon-accent-hover: #f9e7ae;
+
+  /* Borders — restrained violet for structure, gold for emphasis + focus (the skin draws its gold
+     line on PANELS via the elevation ring, and violet on inputs/inner structure). */
+  --v2-border-border-muted: rgba(108, 59, 126, 0.3);
+  --v2-border-border-base: rgba(108, 59, 126, 0.45);
+  --v2-border-border-strong: rgba(216, 171, 75, 0.42);
+  --v2-border-border-focus: var(--nc-accent-solid);
+  /* Inverse border (on light/inverse surfaces) — keeps to the palette's warm ink. */
+  --v2-border-border-inverse: rgba(26, 14, 17, 0.28);
+
+  /* Overlays — warm ivory light-alphas over the aubergine base; deep near-black scrim (skin modal). */
+  --v2-overlay-simple-overlay-hover: rgba(241, 229, 211, 0.07);
+  --v2-overlay-simple-overlay-pressed: rgba(241, 229, 211, 0.12);
+  --v2-overlay-simple-overlay-contrast-hover: rgba(26, 14, 17, 0.22);
+  --v2-overlay-simple-overlay-contrast-pressed: rgba(26, 14, 17, 0.38);
+  --v2-overlay-simple-overlay-scrim: rgba(4, 2, 7, 0.68);
+  --v2-overlay-simple-tab-active-scrim: #12091e00;
+  --v2-overlay-simple-tab-hover-scrim: #25143200;
+  --v2-overlay-simple-tab-scrim: #09050f00;
+  /* Depth-gradient (switch thumb + radio ring highlight) — ivory, not pure white, so the thumb/ring
+     sit IN the palette (the "off-color white over purple" bug class, uix.md §2/P2). */
+  --v2-overlay-gradient-depth-overlay-depth-top: rgba(246, 236, 222, 0.92);
+  --v2-overlay-gradient-depth-overlay-depth-bot: rgba(246, 236, 222, 0);
+
+  /* State chips — dark pairing (deep tinted bg, bright fg) at the kit's semantic hues
+     (success #69D47D · warning #E3B64C · danger #D86A6A); info stays a cool blue. */
+  --v2-state-bg-success: rgba(23, 74, 40, 0.55);
+  --v2-state-fg-success: #69d47d;
+  --v2-state-border-success: rgba(105, 212, 125, 0.4);
+  --v2-state-bg-warning: rgba(104, 82, 30, 0.5);
+  --v2-state-fg-warning: #e3b64c;
+  --v2-state-border-warning: rgba(227, 182, 76, 0.4);
+  --v2-state-bg-danger: rgba(122, 31, 35, 0.55);
+  --v2-state-fg-danger: #e98a8a;
+  --v2-state-border-danger: rgba(216, 106, 106, 0.45);
+  --v2-state-bg-info: rgba(38, 63, 169, 0.5);
+  --v2-state-fg-info: #9db7ff;
+  --v2-state-border-info: rgba(118, 152, 253, 0.4);
+
+  /* Elevation — the skin's glass panel: a deep close black-purple drop, a gold hairline ring
+     (via --nc-panel-line so presets retint it), and a pale specular top edge. Raised surfaces read
+     as gold-framed glass over the lit field, never grey smudges. */
+  --v2-elevation-raised:
+    0px 2px 6px 0px rgba(3, 1, 8, 0.45), 0px 1px 2px 0px rgba(3, 1, 8, 0.35),
+    0px 0px 0px 1px color-mix(in srgb, var(--nc-panel-line) 55%, transparent),
+    0px -0.5px 0px 0px color-mix(in srgb, var(--nc-panel-line-top) 70%, transparent);
+  --v2-elevation-floating:
+    0px 12px 32px 0px rgba(3, 1, 8, 0.5), 0px 4px 10px 0px rgba(3, 1, 8, 0.4),
+    0px 0px 0px 1px color-mix(in srgb, var(--nc-panel-line) 80%, transparent),
+    0px -0.5px 0px 0px color-mix(in srgb, var(--nc-panel-line-top) 85%, transparent);
+  --v2-elevation-overlay:
+    0px 24px 80px 0px rgba(0, 0, 0, 0.5), 0px 8px 24px 0px rgba(3, 1, 8, 0.4),
+    0px 0px 0px 1px var(--nc-panel-line),
+    0px -0.5px 0px 0px var(--nc-panel-line-top);
+  --v2-elevation-button-neutral:
+    0px 1px 2px 0px rgba(3, 1, 8, 0.4),
+    0px 0px 0px 0.5px color-mix(in srgb, var(--nc-panel-line) 85%, transparent),
+    0px -0.5px 0px 0px color-mix(in srgb, var(--nc-panel-line-top) 75%, transparent);
+  --v2-elevation-button-contrast:
+    0px 1px 2px 0px rgba(3, 1, 8, 0.4), 0px 0px 0px 0.5px var(--nc-panel-line),
+    inset 0px 0px 0px 0px rgba(255, 255, 255, 0), inset 0px 0px 0px 0px rgba(255, 255, 255, 0),
+    0px -0.5px 0px 0px var(--nc-panel-line-top);
+  --v2-elevation-switch-off:
+    inset 0px -0.5px 0px 0px rgba(245, 219, 141, 0.08),
+    inset 0px 0px 0px 0.5px color-mix(in srgb, var(--nc-panel-line) 60%, transparent);
+  --v2-elevation-switch-on:
+    inset 0px -0.5px 0px 0px rgba(245, 219, 141, 0.08),
+    inset 0px 0px 0px 0.5px color-mix(in srgb, var(--nc-panel-line) 60%, transparent);
+  /* Small-element drop (switch thumb) — a deep drop keeps the thumb raised on the dark track. */
+  --v2-elevation-elements: 0px 0.5px 1px 0px rgba(3, 1, 8, 0.5);
+
+  /* Illustration layers (empty states) — aubergine steps instead of grey */
+  --v2-illustration-illustration-layer-01: #251432;
+  --v2-illustration-illustration-layer-02: #321a40;
+  --v2-illustration-illustration-layer-03: #4c255f;
+
+  /* Firefox scrollbars follow the field (webkit ones are unstyled and translucent-dark already).
+     scrollbar-color inherits, so the body declaration covers every pane. */
+  scrollbar-color: var(--v2-background-bg-layer-04) transparent;
+
+  /* Legacy (v1) token bridge — some dialogs still read these; keep them on-palette */
+  --surface-base: #12091e;
+  --surface-base-hover: #1b1027;
+  --text-base: #f1e5d3;
+  --text-strong: #fff8ec;
+  --text-weak: #b9a9bf;
+  --border-weak-base: rgba(108, 59, 126, 0.45);
+  --icon-base: #c9b9cf;
+}
+
+/* ── Tailwind alias re-bake ─────────────────────────────────────────────────────────────────────
+   Tailwind's `bg-v2-*` / `text-v2-*` utilities read `--color-v2-*` ALIASES declared in @theme on
+   `:root` — and a custom property substitutes its var() at computed-value time ON THE ELEMENT THAT
+   DECLARES IT, so the :root aliases bake in the UPSTREAM grey `--v2-*` values before the body-scoped
+   remap above can matter. Every utility-styled panel then renders OS-grey over the aubergine field
+   (the uix.md §2 fork). Re-declaring the same var() indirections here re-computes them at `body`,
+   where both the Nova remap and any preset override live — one block re-skins every utility, and
+   presets flow through automatically. Keep this list in sync with
+   `packages/ui/src/styles/tailwind/colors.css` (the `--color-v2-*` section). */
+body[data-new-layout] {
+  --color-v2-background-bg-accent: var(--v2-background-bg-accent);
+  --color-v2-background-bg-base: var(--v2-background-bg-base);
+  --color-v2-background-bg-button-neutral: var(--v2-background-bg-button-neutral);
+  --color-v2-background-bg-contrast: var(--v2-background-bg-contrast);
+  --color-v2-background-bg-deep: var(--v2-background-bg-deep);
+  --color-v2-background-bg-inverse: var(--v2-background-bg-inverse);
+  --color-v2-background-bg-layer-01: var(--v2-background-bg-layer-01);
+  --color-v2-background-bg-layer-02: var(--v2-background-bg-layer-02);
+  --color-v2-background-bg-layer-03: var(--v2-background-bg-layer-03);
+  --color-v2-background-bg-layer-04: var(--v2-background-bg-layer-04);
+  --color-v2-border-border-base: var(--v2-border-border-base);
+  --color-v2-border-border-focus: var(--v2-border-border-focus);
+  --color-v2-border-border-inverse: var(--v2-border-border-inverse);
+  --color-v2-border-border-muted: var(--v2-border-border-muted);
+  --color-v2-border-border-strong: var(--v2-border-border-strong);
+  --color-v2-icon-icon-accent: var(--v2-icon-icon-accent);
+  --color-v2-icon-icon-accent-hover: var(--v2-icon-icon-accent-hover);
+  --color-v2-icon-icon-base: var(--v2-icon-icon-base);
+  --color-v2-icon-icon-contrast: var(--v2-icon-icon-contrast);
+  --color-v2-icon-icon-inverse: var(--v2-icon-icon-inverse);
+  --color-v2-icon-icon-muted: var(--v2-icon-icon-muted);
+  --color-v2-overlay-gradient-depth-overlay-depth-bot: var(--v2-overlay-gradient-depth-overlay-depth-bot);
+  --color-v2-overlay-gradient-depth-overlay-depth-top: var(--v2-overlay-gradient-depth-overlay-depth-top);
+  --color-v2-overlay-simple-overlay-contrast-hover: var(--v2-overlay-simple-overlay-contrast-hover);
+  --color-v2-overlay-simple-overlay-contrast-pressed: var(--v2-overlay-simple-overlay-contrast-pressed);
+  --color-v2-overlay-simple-overlay-hover: var(--v2-overlay-simple-overlay-hover);
+  --color-v2-overlay-simple-overlay-pressed: var(--v2-overlay-simple-overlay-pressed);
+  --color-v2-overlay-simple-overlay-scrim: var(--v2-overlay-simple-overlay-scrim);
+  --color-v2-overlay-simple-tab-active-scrim: var(--v2-overlay-simple-tab-active-scrim);
+  --color-v2-overlay-simple-tab-hover-scrim: var(--v2-overlay-simple-tab-hover-scrim);
+  --color-v2-overlay-simple-tab-scrim: var(--v2-overlay-simple-tab-scrim);
+  --color-v2-state-bg-danger: var(--v2-state-bg-danger);
+  --color-v2-state-bg-info: var(--v2-state-bg-info);
+  --color-v2-state-bg-success: var(--v2-state-bg-success);
+  --color-v2-state-bg-warning: var(--v2-state-bg-warning);
+  --color-v2-state-border-danger: var(--v2-state-border-danger);
+  --color-v2-state-border-info: var(--v2-state-border-info);
+  --color-v2-state-border-success: var(--v2-state-border-success);
+  --color-v2-state-border-warning: var(--v2-state-border-warning);
+  --color-v2-state-fg-danger: var(--v2-state-fg-danger);
+  --color-v2-state-fg-info: var(--v2-state-fg-info);
+  --color-v2-state-fg-success: var(--v2-state-fg-success);
+  --color-v2-state-fg-warning: var(--v2-state-fg-warning);
+  --color-v2-text-text-accent: var(--v2-text-text-accent);
+  --color-v2-text-text-accent-hover: var(--v2-text-text-accent-hover);
+  --color-v2-text-text-base: var(--v2-text-text-base);
+  --color-v2-text-text-code-accent: var(--v2-text-text-code-accent);
+  --color-v2-text-text-contrast: var(--v2-text-text-contrast);
+  --color-v2-text-text-faint: var(--v2-text-text-faint);
+  --color-v2-text-text-inverse: var(--v2-text-text-inverse);
+  --color-v2-text-text-muted: var(--v2-text-text-muted);
+}
+
+/* The lit field, three layers deep — all atmosphere, never content. On `main` (which is
+   `contain: strict`, hence a stacking context) so the z-index:-1 pseudo-elements sit above the
+   field but below every child:
+     main's own background — the aurora (violet bloom + faint gold return over the deep base)
+     ::before             — the NOVA wallpaper under a heavy dark veil (the skin's .wallpaper)
+     ::after              — the circuit/orbital overlay, screened at low opacity (the skin's .ambient)
+   ::after paints after ::before at equal z-index, which is exactly the skin's stacking. */
+body[data-new-layout] main {
+  position: relative;
+  background-image: var(--nc-aurora);
+}
+
+body[data-new-layout] main::before,
+body[data-new-layout] main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center top;
+}
+
+body[data-new-layout] main::before {
+  background-image: linear-gradient(180deg, rgba(8, 4, 14, 0.75), rgba(8, 4, 14, 0.94)), var(--nc-wallpaper-image);
+  opacity: 0.35;
+}
+
+body[data-new-layout] main::after {
+  background-image: var(--nc-ambient-image);
+  opacity: 0.1;
+  mix-blend-mode: screen;
+}
+
+/* Dialogs are the skin's glass panels: the panel gradient over fine grain, on top of the token
+   background (which stays as the fallback ground), with the skin's generous rounding. The gold
+   frame already comes from --v2-elevation-overlay. */
+body[data-new-layout] [data-slot="dialog-container"] {
+  background-image: var(--nc-panel-gradient), var(--nc-grain-image);
+  background-size: auto, 420px 420px;
+  border-radius: 16px;
+}

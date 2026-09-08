@@ -1,0 +1,54 @@
+{
+  "name": "@novaclaw/session-ui",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": {
+    "./*": "./src/components/*.tsx",
+    "./session-diff": "./src/components/session-diff.ts",
+    "./markdown-stream": "./src/components/markdown-stream.ts",
+    "./markdown-agent-file": "./src/components/markdown-agent-file.ts",
+    "./markdown-cache": "./src/components/markdown-cache.tsx",
+    "./line-comment-styles": "./src/components/line-comment-styles.ts",
+    "./pierre": "./src/pierre/index.ts",
+    "./pierre/*": "./src/pierre/*.ts",
+    "./context": "./src/context/index.ts",
+    "./context/*": "./src/context/*.tsx",
+    "./styles": "./src/styles/index.css",
+    "./v2/message-fold": "./src/v2/message-fold.ts",
+    "./v2/reasoning-fold": "./src/v2/reasoning-fold.ts",
+    "./v2/*.css": "./src/v2/components/*.css",
+    "./v2/message-time": "./src/v2/message-time.ts",
+    "./v2/*": "./src/v2/components/*.tsx"
+  },
+  "scripts": {
+    "typecheck": "bun ../../script/tsgo.ts -b",
+    "test": "bun test src --only-failures"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "dependencies": {
+    "@kobalte/core": "catalog:",
+    "@novaclaw/core": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
+    "@novaclaw/sdk": "workspace:*",
+    "@novaclaw/ui": "workspace:*",
+    "@pierre/diffs": "catalog:",
+    "@shikijs/stream": "catalog:",
+    "@solid-primitives/event-listener": "2.4.5",
+    "@solid-primitives/media": "2.3.3",
+    "@solid-primitives/resize-observer": "catalog:",
+    "diff": "catalog:",
+    "dompurify": "catalog:",
+    "marked": "catalog:",
+    "morphdom": "2.7.8",
+    "remend": "catalog:",
+    "shiki": "catalog:",
+    "solid-js": "catalog:"
+  }
+}

@@ -1,0 +1,102 @@
+import { NonNegativeInt } from "@novaclaw/core/schema"
+import { EventV2 } from "@novaclaw/core/event"
+import { SessionID } from "@/session/schema"
+import { Schema } from "effect"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { Authorization } from "../middleware/authorization"
+import { InstanceContextMiddleware } from "../middleware/instance-context"
+import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+import { described } from "./metadata"
+
+const root = "/sync"
+export const ReplayEvent = Schema.Struct({
+  id: EventV2.ID,
+  aggregateID: Schema.String,
+  seq: NonNegativeInt,
+  type: Schema.String,
+  data: Schema.Record(Schema.String, Schema.Unknown),
+})
+export const ReplayPayload = Schema.Struct({
+  directory: Schema.String,
+  events: Schema.NonEmptyArray(ReplayEvent),
+})
+export const ReplayResponse = Schema.Struct({
+  sessionID: Schema.String,
+})
+export const SessionPayload = Schema.Struct({
+  sessionID: SessionID,
+})
+export const HistoryPayload = Schema.Record(Schema.String, NonNegativeInt)
+export const HistoryEvent = Schema.Struct({
+  id: EventV2.ID,
+  aggregate_id: Schema.String,
+  seq: NonNegativeInt,
+  type: Schema.String,
+  data: Schema.Record(Schema.String, Schema.Unknown),
+})
+
+export const SyncPaths = {
+  replay: `${root}/replay`,
+  steal: `${root}/steal`,
+  history: `${root}/history`,
+} as const
+
+export const SyncApi = HttpApi.make("sync")
+  .add(
+    HttpApiGroup.make("sync")
+      .add(
+        HttpApiEndpoint.post("replay", SyncPaths.replay, {
+          query: WorkspaceRoutingQuery,
+          payload: ReplayPayload,
+          success: described(ReplayResponse, "Replayed sync events"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "sync.replay",
+            summary: "Replay sync events",
+            description: "Validate and replay a complete sync event history.",
+          }),
+        ),
+        HttpApiEndpoint.post("steal", SyncPaths.steal, {
+          query: WorkspaceRoutingQuery,
+          payload: SessionPayload,
+          success: described(SessionPayload, "Session stolen into workspace"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "sync.steal",
+            summary: "Steal session into workspace",
+            description: "Update a session to belong to the current workspace through the sync event system.",
+          }),
+        ),
+        HttpApiEndpoint.post("history", SyncPaths.history, {
+          query: WorkspaceRoutingQuery,
+          payload: HistoryPayload,
+          success: described(Schema.Array(HistoryEvent), "Sync events"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "sync.history.list",
+            summary: "List sync events",
+            description:
+              "List sync events for all aggregates. Keys are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history.",
+          }),
+        ),
+      )
+      .annotateMerge(
+        OpenApi.annotations({
+          title: "sync",
+          description: "Experimental HttpApi sync routes.",
+        }),
+      )
+      .middleware(InstanceContextMiddleware)
+      .middleware(WorkspaceRoutingMiddleware)
+      .middleware(Authorization),
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "novaclaw experimental HttpApi",
+      version: "0.0.1",
+      description: "Experimental HttpApi surface for selected instance routes.",
+    }),
+  )

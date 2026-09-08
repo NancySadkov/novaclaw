@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/host",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": {
+    ".": {
+      "bun": "./src/host.bun.ts",
+      "node": "./src/host.node.ts",
+      "default": "./src/host.bun.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "typecheck": "bun ../../script/tsgo.ts --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:"
+  }
+}

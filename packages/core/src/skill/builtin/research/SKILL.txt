@@ -1,0 +1,190 @@
+---
+name: research
+description: Commandments for measuring something and reporting what you found — check the instrument before the number, control the environment and not just the variable, score only what the subject produced, treat an impossible reading as a bug report about your rig, and report nulls with the weight of hits. Use for any experiment, benchmark, ablation, measurement or evaluation.
+---
+
+# Research — commandments for an agent doing research
+
+For any agent — frontier or small — that measures something and reports what it found. Every rule
+below was paid for by a real defect. Order is roughly the order in which they bite.
+
+**The single sentence:** *a result you cannot explain is not a result, and a measurement you have not
+attacked is not evidence.*
+
+---
+
+## I. Before you measure
+
+**1. Check the instrument before you trust the number.** Verify what *produces* the result, not only
+what surrounds it. Verifying the plumbing, the wiring and the parsing while assuming the SCORER is
+the classic miss — everything around the measurement is examined and the measurement itself is taken
+on faith.
+
+**2. A scorer reads only what the SUBJECT PRODUCED.** Never what it wrote down. If the haystack
+includes the subject's own files, notes, plans or arguments, it can pass by *asserting* the answer
+instead of producing it. Score outputs, exit codes, artifacts the subject had to *build*.
+
+**3. Demand a second, independent fact.** One string match is not a verdict. A good gate requires two
+things that a shortcut cannot satisfy at once — *the expected output* **and** *a compiled binary*;
+*the claim* **and** *the receipt*. The cross-check, not the match, is what makes it a measurement.
+
+**4. 🔴 A control proves only the HALF of the harness it exercises — and by passing, makes the other
+half look measured.** If the round trip is *send* then *receive*, a control that only reads proves
+nothing about writing; every "zero results" is then a query for a record that was never stored, and
+it will read as a finding about the subject. Ask which half yours covers and build one for the other.
+Where an instrument outside your own code can answer the same question, use it, and validate it on a
+known-positive in the same call.
+
+**5. Failure and zero must not share a representation.** If a crashed run, an unparsed report and a
+genuine zero all read as `0`, your pipeline will eventually report one as the other — and it will do
+so as a *finding*, with no error attached. Give "we could not measure" its own value and its own
+message. ⚠️ **The same applies to a CONDITION that cannot be evaluated.** A guard written
+`if (found.length > 0 && !found.includes(x)) fail()` passes silently the day the parse returns
+nothing: it reports success while checking nothing. A check that cannot locate its data must FAIL,
+naming what it could not find — never skip.
+
+**6. Write down how you will read the result BEFORE the data exists.** Which statistic, what counts
+as an effect, what you will do with a null. A metric chosen after seeing which one separates is not a
+measurement, it is a search. Pre-registration costs nothing when the answer is unknown and is
+worthless afterwards.
+
+**7. Predeclare what each possible outcome would LICENSE — and what it would not.** Especially the
+outcome you expect. Doing this while the answer is unknown is the only time it is honest.
+
+**8. 🔴 Control the ENVIRONMENT, not just the variable.** Everything that differs between arms is part
+of the experiment, whether you chose it or not. Three that bite hardest:
+
+- **The subject's own leftovers.** If run N can write where run N+1 reads — a scratch file, a cache, a
+  notes file, an answer it produced last time — then the later runs faced an easier task and you have
+  measured two different problems. Rebuild the world per arm, and *report* what the subject left
+  behind rather than silently sweeping it: an artifact it invented is evidence about how it works.
+- **Shared durable state.** A store, an index or a memory the subject can read across runs turns
+  recall into apparent competence. Assert the precondition (empty, fresh, isolated) — do not assume
+  it. A property that happens to hold today is not a control.
+- **Ambient load.** A timing taken while the machine is contended measures the machine. Record the
+  conditions with the number, and re-run when the box is quiet before believing a duration.
+
+⚠️ And a limit YOU imposed — a deadline, a cap, a truncation — is part of the instrument. A run cut
+off at your cap has told you it was slow and nothing else; do not let it enter the table beside runs
+that finished.
+
+---
+
+## II. While you measure
+
+**9. Change one thing.** If you must change two, you have two experiments, not one.
+
+**10. Never fix the instrument mid-run without restarting the comparison.** A budget, a seed set or a
+scorer changed halfway makes the completed arms incomparable with the rest. A known limitation
+honestly stated beats a silently contaminated dataset.
+
+**11. Keep every failure.** A run that crashed is a measurement about that configuration. Dropping it
+biases everything downstream, and the summary must report the failed count rather than averaging it
+away.
+
+**12. Write results incrementally.** After every unit, never at the end. Long runs meet reboots,
+timeouts and your own mistakes; a run that loses six hours to a crash lost them to the rig, not the
+crash.
+
+**13. Watch the SUBJECT, not the artifact.** A results file that stops growing looks identical
+whether the run is slow or dead. Check liveness, check the server's own counters, check process
+state. And a kill that reports failure has told you something — a kill that reports nothing has not.
+
+---
+
+## III. When you read the result
+
+**14. 🔴 An implausible result is a bug report about your instrument.** This is the most important
+rule here, and the easiest to skip because the number is *good*. If a subject that cannot do the easy
+thing appears to have done the hard thing, stop and explain the gap before reporting it. *Do not wait
+to be asked.* Suspicion is not something a reader supplies; it is the work.
+
+**15. ⭐ An impossible DIRECTION is the cheapest instrument check you own.** A cumulative count that
+decreases, a total that shrinks, a coverage that goes down, a monotone series that turns — none of
+these can be the subject. They are the rig, announcing itself. Assert monotonicity wherever the
+quantity should have it, so the rig says so instead of you noticing later. This costs one line and
+catches a whole class of contaminated data before it becomes a published table.
+
+**16. A VIEW is not a RECORD.** Endpoints, logs, consoles and UIs routinely hand you a truncated,
+paginated, newest-first or actively REWRITTEN slice of history — often with no total, no cursor, and
+nothing to say anything was dropped. Re-reading such a view as though it were the full record
+produces an undercount of unknown size that looks exactly like data. Two defences, and you need both:
+ask for the largest window the source permits, and **accumulate** — union each reading into a set
+keyed on a stable id, so nothing you have already seen can be taken away. Prefer an append-only
+source when one exists, and confirm it actually delivers before depending on it.
+
+**17. Explain the mechanism, or say you cannot.** "It scored higher" is not a finding. *Why* — and if
+you do not know, that sentence goes in the report.
+
+**18. Correlation inside a transcript is not cause.** What a successful run *did* is not what made it
+succeed; a run already going well produces different behaviour as a *symptom*. Test it as a cause or
+label it as a guess.
+
+**19. Count something that can only exist if the thing you are testing is present.** A mention that
+survives the component's absence proves nothing — it can rank the arms backwards, because a failing
+run often prints *more* of the surrounding text.
+
+**20. Beware the number that arrives at exactly the boundary.** A score landing precisely at what the
+subject could produce from memory, at a cap, at a default — treat coincidence with the boundary as
+evidence of the boundary, not of the subject.
+
+**21. One rate that sums two failure modes hides both.** "Chose the wrong tool" and "never tried"
+scored as the same zero; "gave up" and "was still working" counted as the same incomplete. Before
+tuning a stubbornly mediocre number, ask which distinct OUTCOMES it is adding together, split them,
+and report the un-correctable case beside the rate rather than folded into its denominator. The split
+frequently turns an apparent weakness into a different and larger claim.
+
+**22. A/B before owning or disowning a failure.** Against the pre-change state, one variable at a
+time. Do not adopt a defect you did not cause, and do not blame the platform for one you did.
+
+**23. Widen the scope before concluding.** The checks you chose are the ones aimed at what you
+*believe* you changed. Run the full gate; the interesting failures live outside that belief.
+
+---
+
+## IV. When you report
+
+**24. Report nulls and refutations with the weight you would have given a hit.** A prediction you
+made and refuted is a result. Delete nothing because it became inconvenient — a record of how a
+plausible story failed is worth more than a record of only the ones that held.
+
+**25. State what the result does NOT license.** Every design forecloses questions. Name them, or a
+reader will assume you answered them.
+
+**26. Distinguish "no detectable effect" from "no effect" from "harm."** If the differences sit
+inside the noise floor, say so, and do not let a verdict column imply an ordering the data cannot
+support.
+
+**27. Give the distribution, not just the centre.** A median hides variance; a mean lets one sample
+speak for all. When the spread IS the finding — the thing works sometimes rather than a little —
+neither number can say so alone. ⚠️ Two clean samples in a row are not evidence the failure is gone;
+consecutive successes are what a bimodal process looks like from one side.
+
+**28. Say how many observations the claim rests on, and mean it.** Three runs where only one
+discriminates is n=1. Report the effective n, not the nominal one.
+
+**29. Retract loudly, specifically, and at the top.** Name every claim that falls and every claim
+that stands, and say why each. A quiet correction is a second error. When the instrument was at
+fault, say which numbers survive it and which do not — a reader cannot separate them for you.
+
+**30. Put the finding where it is read first.** An appended document drifts: each edit locally
+correct, the whole burying the point. A count in a heading is a claim like any other.
+
+**31. Never park an answerable question.** "The owner should confirm" is a defect when the primary
+source is two greps away. Escalate for credentials, hardware and permission — not for work.
+
+---
+
+## V. The posture
+
+**32. You own correctness.** Assume no second reviewer. Report what you *observed*, not what should
+be true, and when you are unsure, dig until you are or state plainly what is unverified.
+
+**33. Prefer the check that can fail — then MAKE it fail.** A rule you can follow imperfectly needs a
+check that fails loudly, not a better-worded rule. Build the file; do not grep it. Run it; do not
+reason about it. ⭐ And a guard you have never seen red is a decoration: plant the condition it is
+supposed to catch and watch it fire. Keep that negative control in the harness, so the day the guard
+stops working something says so.
+
+**34. Your own rig is the most likely confound.** More likely than the subject, and far more likely
+than the platform. Suspect it first — and suspect it hardest when it is telling you what you hoped.

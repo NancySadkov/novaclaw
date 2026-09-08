@@ -1,0 +1,15 @@
+@layer theme, base, components, utilities;
+
+@import "../components/file.css" layer(components);
+@import "../components/markdown.css" layer(components);
+@import "../components/session-review.css" layer(components);
+
+/* ── v2 components ─────────────────────────────────────────────────────────────────────────────
+   ⚠️ Imported HERE with an explicit layer, not from their `.tsx`. A stylesheet imported from a
+   component file lands UNLAYERED and outranks every Tailwind utility, so `class=` overrides on that
+   component silently do nothing. `app/src/ui-fork-ledger.test.ts` (`UNLAYERED_STYLESHEETS`) pins the
+   ones still doing that, shrink-only. */
+@import "../v2/components/basic-tool-v2.css" layer(components);
+@import "../v2/components/native-transcript.css" layer(components);
+@import "../v2/components/session-progress-indicator-v2.css" layer(components);
+@import "../v2/components/tool-error-card-v2.css" layer(components);

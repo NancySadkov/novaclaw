@@ -1,0 +1,42 @@
+# Chats and sessions
+Why a chat behaves like a running program, and what spawning a helper means.
+
+Every chat is a **session**. A session is the unit NovaClaw schedules, lists, suspends and
+kills — the same way an operating system treats a running program. That one idea explains
+most of the app.
+
+## What a session carries
+
+- the **model** it talks to,
+- the **agent** it runs as (its role),
+- its **system prompt** (the standing instructions it works under),
+- its permissions, and its conversation so far.
+
+## Helper sessions
+
+A session can start another session — a **helper** — to do a piece of the job, then wait
+for it and use the result. This is how a big request gets broken into small ones. The
+helper is a real chat: you can open it, read it, and see exactly what it was asked and
+what it answered. Nothing happens in a hidden place.
+
+The Processes view lists every session with its agent, model, parent and status, and lets
+you stop one.
+
+## Settings flow downhill
+
+A helper inherits everything its parent did not explicitly change. Leave a setting alone
+and it comes from the parent; set it and it applies from there down.
+
+One setting works differently on purpose: **permissions can only get stricter going
+down**. A helper can give up capability it was granted, and can never gain capability its
+parent did not have. That is what makes it safe for a session to start helpers at all.
+
+## Ending a session
+
+A session finishes by handing back a result, which its parent then reads. A session you
+started yourself just ends when the conversation is over — you can always reopen it.
+
+## Reverting
+
+Each of your messages has a Revert control. It rewinds the conversation to just before
+that message, so a wrong turn costs you one click rather than a new chat.

@@ -1,0 +1,72 @@
+import { Agent } from "@novaclaw/schema/agent"
+import { Location } from "@novaclaw/schema/location"
+import { Permission } from "@novaclaw/schema/permission"
+import { PermissionSaved } from "@novaclaw/schema/permission-saved"
+import { Session } from "@novaclaw/schema/session"
+import { Context, Schema } from "effect"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { SessionNotFoundError } from "../errors"
+
+export const makePermissionGroup = <
+  LocationId extends HttpApiMiddleware.AnyId,
+  LocationService,
+  SessionLocationId extends HttpApiMiddleware.AnyId,
+  SessionLocationService,
+>(
+  locationMiddleware: Context.Key<LocationId, LocationService>,
+  sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>,
+) =>
+  HttpApiGroup.make("server.permission")
+    .add(
+      HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
+        query: Schema.Struct({ origin: Schema.String.pipe(Schema.optional) }),
+        success: Schema.Struct({ data: Schema.Array(PermissionSaved.Info) }),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.saved.list",
+          summary: "List saved permissions",
+          description: "Retrieve saved permissions, optionally filtered by project.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.delete("permission.saved.remove", "/api/permission/saved/:id", {
+        params: { id: PermissionSaved.ID },
+        success: HttpApiSchema.NoContent,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.saved.remove",
+          summary: "Remove saved permission",
+          description: "Remove a saved permission by ID.",
+        }),
+      ),
+    )
+    // Effect applies group middleware only to endpoints already added; session endpoints use session placement below.
+    .middleware(locationMiddleware)
+    .add(
+      HttpApiEndpoint.post("session.permission.create", "/api/session/:sessionID/permission", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          id: Permission.ID.pipe(Schema.optional),
+          action: Permission.Request.fields.action,
+          resources: Permission.Request.fields.resources,
+          save: Permission.Request.fields.save,
+          metadata: Permission.Request.fields.metadata,
+          source: Permission.Request.fields.source,
+          agent: Agent.ID.pipe(Schema.optional),
+        }),
+        success: Schema.Struct({
+          data: Schema.Struct({ id: Permission.ID, effect: Permission.Effect }),
+        }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.permission.create",
+            summary: "Evaluate permission",
+            description: "Evaluate the effective permission rules for a session action.",
+          }),
+        ),
+    )
+    .annotateMerge(OpenApi.annotations({ title: "permissions", description: "Experimental permission routes." }))

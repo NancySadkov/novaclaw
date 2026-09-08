@@ -1,0 +1,35 @@
+# Instances
+Running NovaClaw on one machine and using it from another.
+
+An **instance** is one whole NovaClaw: the engine, the interface and the storage. The
+window you look at is a thin layer over an instance, and it does not have to be the
+instance on the same machine.
+
+## Three ways to run
+
+- **Together** — the usual case. The desktop app runs its own instance inside itself.
+  Nothing to configure.
+- **Your window, someone else's engine** — the interface reaches an instance elsewhere on
+  your network, by address and credentials. Useful when the big machine with the GPU is
+  not the machine you sit at.
+- **Headless** — an instance with no window at all, waiting to be reached.
+
+## Every instance is a peer
+
+There is no client edition and no server edition, and there is no service of ours in the
+middle. Each install is a complete NovaClaw that can reach others and be reached. When a
+capability seems to need a server, the answer here is another instance — not an account.
+
+You are not expected to become a system administrator to use this. If you never leave the
+first mode, nothing about instances ever needs your attention.
+
+## Connecting
+
+Settings has an Instances section: the address of the instance you want, and the token it
+requires. On a local network an instance can also be discovered rather than typed.
+
+## What this is not
+
+It is not a way to put your data on our machines. An instance you connect to is one you or
+someone you trust is running; your chats live there and nowhere else. See the `privacy`
+topic.

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "composite": false,
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "types": ["bun", "node"]
+  },
+  "include": ["build.ts", "smoke.ts"]
+}

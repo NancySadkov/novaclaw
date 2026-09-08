@@ -1,0 +1,66 @@
+{
+  "name": "@novaclaw/desktop",
+  "private": true,
+  "version": "0.1.72",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "NovaClaw — a local-first AI agent OS",
+  "homepage": "https://novaclaw.app",
+  "author": {
+    "name": "Nancy Sadkov",
+    "email": "nancy@novaclaw.app"
+  },
+  "scripts": {
+    "typecheck": "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts --noEmit -p tsconfig.test.json",
+    "test": "bun test src electron-builder.config.test.ts scripts --only-failures",
+    "predev": "bun ./scripts/predev.ts",
+    "dev": "electron-vite dev",
+    "prebuild": "bun ./scripts/prebuild.ts",
+    "build": "electron-vite build",
+    "postbuild": "bun ./scripts/sanitize-build-output.ts",
+    "preview": "electron-vite preview",
+    "package": "electron-builder --config electron-builder.config.ts",
+    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
+    "package:win": "electron-builder --win --config electron-builder.config.ts",
+    "package:linux": "electron-builder --linux --config electron-builder.config.ts"
+  },
+  "main": "./out/main/index.js",
+  "dependencies": {
+    "@novaclaw/core": "workspace:*",
+    "@ladybugdb/wasm-core": "0.18.2",
+    "@lydell/node-pty": "catalog:",
+    "@zip.js/zip.js": "2.7.62",
+    "effect": "catalog:",
+    "electron-context-menu": "4.1.2",
+    "electron-log": "^5",
+    "electron-store": "11.0.2",
+    "electron-window-state": "^5.0.3",
+    "jsonc-parser": "3.3.1"
+  },
+  "devDependencies": {
+    "@novaclaw/app": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
+    "@novaclaw/script": "workspace:*",
+    "@novaclaw/ui": "workspace:*",
+    "@solid-primitives/i18n": "2.2.1",
+    "@solid-primitives/storage": "catalog:",
+    "@solidjs/router": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "electron": "42.3.3",
+    "electron-builder": "26.15.2",
+    "electron-vite": "^5",
+    "solid-js": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-darwin-x64": "1.2.0-beta.12",
+    "@lydell/node-pty-linux-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-linux-x64": "1.2.0-beta.12",
+    "@lydell/node-pty-win32-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-win32-x64": "1.2.0-beta.12"
+  }
+}

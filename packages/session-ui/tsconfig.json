@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/node22/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "target": "ESNext",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "../../.ts-dist/session-ui",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "strict": true,
+    "types": ["vite/client", "bun"]
+  },
+  "exclude": ["**/*.stories.*", "**/*.mdx"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../sdk/js" },
+    { "path": "../ui" }
+  ]
+}

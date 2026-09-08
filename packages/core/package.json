@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/core",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "scripts": {
+    "db": "bun drizzle-kit",
+    "migration": "bun run script/migration.ts",
+    "test": "bun test --only-failures",
+    "typecheck": "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts -p tsconfig.smoke.json"
+  },
+  "exports": {
+    "./effect/layer-node": "./src/effect/layer-node.ts",
+    "./effect/app-node": "./src/effect/app-node.ts",
+    "./session/runner": "./src/session/runner/index.ts",
+    "./system-context": "./src/system-context/index.ts",
+    "./test/source-scan": "./test/lib/source-scan.ts",
+    "./*": "./src/*.ts"
+  },
+  "imports": {
+    "#sqlite": {
+      "bun": "./src/database/sqlite.bun.ts",
+      "node": "./src/database/sqlite.node.ts",
+      "default": "./src/database/sqlite.bun.ts"
+    },
+    "#pty": {
+      "bun": "./src/pty/pty.bun.ts",
+      "node": "./src/pty/pty.node.ts",
+      "default": "./src/pty/pty.bun.ts"
+    },
+    "#fff": {
+      "bun": "./src/filesystem/fff.bun.ts",
+      "node": "./src/filesystem/fff.node.ts",
+      "default": "./src/filesystem/fff.bun.ts"
+    }
+  },
+  "devDependencies": {
+    "@novaclaw/sdk": "workspace:*",
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/cross-spawn": "catalog:",
+    "@types/node": "catalog:",
+    "@types/npm-package-arg": "6.1.4",
+    "@types/npmcli__arborist": "6.3.3",
+    "@types/turndown": "5.0.5",
+    "drizzle-kit": "catalog:",
+    "prettier": "3.6.2",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/sql-sqlite-bun": "catalog:",
+    "@ff-labs/fff-bun": "0.9.4",
+    "@ladybugdb/wasm-core": "0.18.2",
+    "@lydell/node-pty": "catalog:",
+    "@mtcute/bun": "0.31.0",
+    "@novaclaw/effect-drizzle-sqlite": "workspace:*",
+    "@novaclaw/host": "workspace:*",
+    "@novaclaw/llm": "workspace:*",
+    "@novaclaw/plugin": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
+    "@npmcli/arborist": "9.4.0",
+    "@npmcli/config": "10.8.1",
+    "@silvia-odwyer/photon-node": "0.3.4",
+    "bun-pty": "0.4.8",
+    "cross-spawn": "catalog:",
+    "decimal.js": "10.5.0",
+    "diff": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:",
+    "fuzzysort": "catalog:",
+    "gray-matter": "4.0.3",
+    "htmlparser2": "8.0.2",
+    "immer": "11.1.4",
+    "iconv-lite": "0.7.2",
+    "jsonc-parser": "3.3.1",
+    "mime-types": "3.0.2",
+    "npm-package-arg": "13.0.2",
+    "turndown": "7.2.0"
+  },
+  "overrides": {
+    "drizzle-orm": "catalog:"
+  }
+}

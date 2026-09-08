@@ -1,0 +1,40 @@
+# Models and providers
+How to connect an AI model, and what the settings on it mean.
+
+A **provider** is a server that hosts models. A **model** is one particular AI you can
+talk to. NovaClaw ships with no model of its own — you point it at one.
+
+## Connecting a provider
+
+Settings has a Models section. A provider needs, at minimum, a base URL: the address of
+an OpenAI-compatible API, ending in `/v1`. NovaClaw uses two endpoints on it —
+`/v1/chat/completions` to talk, and `/v1/models` to see what is available.
+
+That covers the model servers NovaClaw supports:
+
+- **vLLM** or **SGLang** — fast, good for a machine with a real GPU.
+- The bundled **llama.cpp** server — a friendly default for a laptop.
+- Any other server that exposes the same OpenAI-compatible endpoints.
+
+An API key is optional. Local servers usually need none.
+
+## Choosing a model in a chat
+
+The chat screen has a model picker. Each row names the model and how large a context it
+has — the amount of conversation it can hold at once, shown in thousands of tokens.
+
+Bigger is not automatically better. A smaller local model that answers in a second is
+often the better tool for a small job, and NovaClaw is deliberately built to get useful
+work out of small models.
+
+## Things you can change per model
+
+Model entries are data, not code, which is why a working assistant can repair them for
+you. Each entry carries the model's name, what it is capable of, its context limit, and
+the exact request body NovaClaw sends. If a provider changes its address or renames a
+model, that is an edit to a stored value — no reinstall, no config file to hand-edit.
+
+## If a model does not answer
+
+Check, in this order: is the server actually running; is the base URL right (including
+the `/v1`); does `/v1/models` list the name you typed. See the `troubleshooting` topic.

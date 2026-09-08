@@ -1,0 +1,44 @@
+# Permissions
+The five modes, what each one lets the assistant do, and how to change your mind.
+
+The assistant can edit files, run commands and reach the network. Permissions decide how
+much of that happens without asking you first. This is the setting worth understanding
+before any other.
+
+## The five modes
+
+Listed from most cautious to least. Each one can do everything the one above it can.
+
+- **plan** — reads and thinks, changes nothing. Use it to get a proposal you can read
+  before anything happens.
+- **ask** — asks you before every change: before editing, writing or creating a file,
+  before moving something to the Trash, and before running a shell command.
+- **surgical** — makes targeted edits to existing files rather than overwriting whole
+  files.
+- **bypass** — works without stopping to ask, inside the folder it was given.
+- **yolo** — no gate at all, including outside the project folder. Pick this only when
+  you know exactly what you are handing over.
+
+## Where it applies
+
+The mode is set per chat, from the chat screen. A helper chat can only be as permissive
+as its parent, never more — see the `sessions` topic.
+
+## When a request is refused
+
+A refusal is a plain statement, not a dead end. The assistant is told which action was
+blocked and is expected to carry on with what it *is* allowed to do, and to tell you what
+it could not finish. If you want to unblock it, change the mode or the rule and say so —
+it does not need to be restarted.
+
+## Rules
+
+Beyond the mode, individual rules can allow, deny or ask for a specific action on a
+specific target. Rules are read in order and the **last one that matches wins**, so a
+later rule is how you carve an exception out of an earlier blanket rule. If no rule
+matches at all, the answer is to ask you — nothing is granted by silence.
+
+## Trash, not deletion
+
+When the assistant removes a file it goes to the Trash app, where you can restore it. An
+accidental deletion is undoable.

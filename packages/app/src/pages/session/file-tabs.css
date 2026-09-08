@@ -1,0 +1,91 @@
+/**
+ * Two things `packages/ui/src/components/tabs.css` styled that were never the v1 Tabs component's
+ * own markup. They moved here when the `tabs` fork was retired (item 6.1, 2026-08-08) because the
+ * elements they style are authored in THIS package and outlive both forks.
+ *
+ * ⚠️ The drag preview is rendered into `document.body` by solid-dnd's `DragOverlay`
+ * (`<Portal mount={document.body}>`), so it was never a descendant of `[data-component="tabs"]`.
+ * Two consequences the old sheet's position hid:
+ *
+ *   1. Every `var(--tabs-*)` in those rules resolved to its FALLBACK, always — the custom
+ *      properties were declared on `[data-component="tabs"]`, which is not an ancestor. The
+ *      fallbacks are inlined below; nothing about the rendered preview changes.
+ *   2. The `.tab-fileicon-*` swap could not reach it either, and that WAS a live defect — see
+ *      below.
+ */
+
+[data-component="tabs-drag-preview"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  max-width: 320px;
+  padding-inline: 4px;
+  overflow: hidden;
+  color: var(--text-strong);
+  opacity: 0.6;
+}
+
+[data-component="tabs-drag-preview"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 24px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 6px;
+  background-color: var(--surface-base-active);
+}
+
+[data-component="tabs-drag-preview"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background-color: var(--text-strong);
+}
+
+[data-component="tabs-drag-preview"] > * {
+  position: relative;
+}
+
+/**
+ * The file-tab icon swap — monochrome at rest, full colour on hover/selection.
+ *
+ * 🔴 **This used to be scoped to `#review-panel … [data-slot="tabs-trigger"]`, and the default
+ * state lived only inside that scope.** `FileVisual` (`components/session/session-sortable-tab.tsx`)
+ * renders BOTH icons, absolutely stacked, and relied on that scope to hide one. The drag preview
+ * renders the same markup in a body portal, where no rule reached it — so both icons painted and
+ * the one that "won" was whichever came later in the DOM (the mono one), not whichever the design
+ * asked for. It looked like a working icon because something always drew on top.
+ *
+ * The base state is therefore declared on the markup itself, so a two-layer stack can never render
+ * as two layers again, and the reveal is the scoped part.
+ */
+
+.tab-fileicon-color,
+.tab-fileicon-mono {
+  pointer-events: none;
+}
+
+.tab-fileicon-color {
+  display: none;
+}
+
+.tab-fileicon-mono {
+  display: block;
+  color: currentColor;
+}
+
+[data-slot="tabs-v2-trigger"]:is([data-selected], :hover) .tab-fileicon-color,
+[data-component="tabs-drag-preview"] .tab-fileicon-color {
+  display: block;
+}
+
+[data-slot="tabs-v2-trigger"]:is([data-selected], :hover) .tab-fileicon-mono,
+[data-component="tabs-drag-preview"] .tab-fileicon-mono {
+  display: none;
+}

@@ -1,0 +1,41 @@
+# Tools
+What the assistant can actually do, and how it finds a capability it does not have loaded.
+
+A **tool** is an action the assistant can take rather than describe: read a file, run a
+command, search the web, remember something. Every tool call is visible in the chat, with
+its arguments and its result. Nothing runs off-screen.
+
+## The families
+
+- **Files** — read, write, edit, apply a patch, glob, grep, move to Trash, revert.
+- **Shell** — run a command, run JavaScript.
+- **Web** — search, fetch a page.
+- **Agents** — start a helper, wait for it, hand back a result, ask you a question, keep
+  a to-do list.
+- **Knowledge** — the memory (`kb`), skills, recipes, and this manual.
+- **Configuration** — change instance settings, adjust permissions.
+- **System** — check resource pressure, drive the desktop, message an account.
+
+## Not everything is loaded at once
+
+Loading a thousand tool descriptions into every request would waste the model's attention
+and your tokens. So the common tools are always present, and the rarer ones are held back
+and disclosed on demand: the assistant searches for a capability, gets the exact schema
+back, and then calls it. You do not have to manage this — it is the reason a large tool
+catalogue does not slow ordinary chats down.
+
+This manual works the same way. The assistant sees only the topic names until it opens a
+page.
+
+## Ad-hoc tools
+
+Some tools are not functions at all but **recipes** the assistant runs itself through the
+shell — an API call, a command line that took work to get right. These are listed by name
+in the assistant's instructions, and it fetches the full manual for one only when it is
+about to use it. It can also write a new one during a conversation and reuse it for the
+rest of the session. See the `recipes` topic.
+
+## Turning tools off
+
+Settings has a Tools section. Anything switched off there is not offered to the assistant
+at all, in any chat.

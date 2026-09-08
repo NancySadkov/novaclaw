@@ -1,0 +1,52 @@
+import { createContext, createMemo, Show, useContext, type ParentProps, type Accessor } from "solid-js"
+
+export function createSimpleContext<T, Props extends Record<string, any>>(
+  input: {
+    name: string
+    init: ((input: Props) => T) | (() => T)
+  } & (T extends { ready: unknown } ? { gate: boolean } : { gate?: boolean }),
+) {
+  const ctx = createContext<T>()
+
+  return {
+    provider: (props: ParentProps<Props>) => {
+      const init = input.init(props)
+      const gate = input.gate ?? true
+
+      if (!gate) {
+        return <ctx.Provider value={init}>{props.children}</ctx.Provider>
+      }
+
+      // Access init.ready inside the memo to make it reactive for getter properties
+      const isReady = createMemo(() => {
+        // @ts-expect-error
+        const ready = init.ready as Accessor<boolean> | boolean | undefined
+        return ready === undefined || (typeof ready === "function" ? ready() : ready)
+      })
+      return (
+        <Show when={isReady()}>
+          <ctx.Provider value={init}>{props.children}</ctx.Provider>
+        </Show>
+      )
+    },
+    use() {
+      const value = useContext(ctx)
+      if (!value) throw new Error(`${input.name} context must be used within a context provider`)
+      return value
+    },
+    /**
+     * The raw Context, so a TEST can supply a stub value without standing up the real `init`.
+     *
+     * 🔴 Its absence is why no test in this repo had ever RENDERED a context-dependent component,
+     * and that is a measured cost, not a theory: the 2026-08-23 named-agents review found eleven
+     * defects in two `.tsx` files, every one of them invisible to the three "ledgers" that reach
+     * those files by `readFileSync` + regex. `provider` calls the real `init`, so a component that
+     * wants a server connection, an SDK client and a live sync store could only be tested by
+     * building all three — which nobody did.
+     *
+     * ⚠️ Product code must never reach for this. `use()` is the contract; this exists so a smoke
+     * test can mount the component under stub values and assert what actually renders.
+     */
+    context: ctx,
+  }
+}

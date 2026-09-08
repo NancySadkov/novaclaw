@@ -1,0 +1,49 @@
+# When something goes wrong
+What NovaClaw repairs by itself, and what to check when it cannot.
+
+Most faults here are designed to be recoverable rather than fatal. Knowing which kind you
+are looking at saves the most time.
+
+## It fixes itself first
+
+If the engine behind the interface stops, it restarts and the window reconnects. You see a
+calm "connection lost — reconnecting" message, never a stack trace and never a white
+screen. Wait a few seconds before concluding anything is wrong.
+
+## The assistant is the repair tool
+
+Every operational setting — a provider's address, a model entry, an instance setting — is
+stored data, not compiled-in code. So as long as one model still answers, you can ask an
+assistant to fix the instance it is running inside. "The provider moved to a new address,
+update it" is a real instruction, not a figure of speech, and it takes effect without a
+restart.
+
+This is why it is worth keeping one small, reliable local model configured even if you
+usually use a bigger one: it is the model that can still repair things when the big one is
+unreachable.
+
+## The assistant answers nothing
+
+Check in this order:
+
+1. Is the model server running?
+2. Is the base URL right, including the `/v1` at the end?
+3. Does the server list the model name you configured?
+4. Try another model in the chat's model picker. If a second model works, the fault is the
+   first model's entry, not NovaClaw.
+
+## It refuses to do something
+
+That is usually permissions, not a bug. The assistant will say which action was blocked.
+See the `permissions` topic.
+
+## It will not start at all
+
+If the instance's database cannot be opened, NovaClaw stops and tells you which file and
+why, in plain language — and it does not move, rename or delete anything. That is
+deliberate: your chats are in that file, and every repair option stays open as long as
+nothing has touched it. Settings → Recovery holds reset and restore.
+
+## Something was deleted
+
+Look in Trash before assuming it is gone.

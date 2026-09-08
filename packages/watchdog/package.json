@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/watchdog",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "typecheck": "bun ../../script/tsgo.ts --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:"
+  }
+}

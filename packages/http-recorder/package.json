@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/http-recorder",
+  "description": "Record and replay Effect HTTP client traffic with deterministic cassettes",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://novaclaw.app.git",
+    "directory": "packages/http-recorder"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "bun test --timeout 30000 --only-failures",
+    "typecheck": "bun ../../script/tsgo.ts -b",
+    "build": "bun ./script/build.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./internal": "./src/internal.ts"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "effect": "catalog:",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-beta.83"
+  }
+}

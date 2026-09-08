@@ -1,0 +1,76 @@
+NovaClaw
+Copyright (c) 2025-2026 Nancy Sadkov. All rights reserved.
+
+NovaClaw is licensed under the Functional Source License, Version 1.1, with an
+Apache 2.0 Future License (FSL-1.1-ALv2). Free for any purpose that is not a
+Competing Use; each release additionally becomes available under the Apache
+License 2.0 two years after that release. See the LICENSE file for the full
+terms and for the additional permissions that apply to third-party apps,
+recipes, and output.
+
+The NovaClaw name and logo are not licensed with the code; see TRADEMARK.md.
+
+================================================================================
+Third-party components
+================================================================================
+
+NovaClaw is built on a fork of opencode, used under the terms of the MIT License:
+
+    opencode
+    Copyright (c) 2025 opencode
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/opencode-LICENSE-MIT.txt
+
+The typed SDK's fetch/SSE client runtime is a vendored copy of @hey-api/openapi-ts,
+used under the terms of the MIT License. It is no longer generated: the thirteen
+files under packages/sdk/js/src/v2/gen/{client,core}/ are maintained in place.
+
+    @hey-api/openapi-ts 0.90.4 (client and core runtime only)
+    Copyright (c) Hey API
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/hey-api-LICENSE-MIT.txt
+
+The terminal serialize addon (packages/app/src/addons/serialize.ts) is a port of
+xterm.js's addon-serialize, used under the terms of the MIT License:
+
+    xterm.js — @xterm/addon-serialize
+    Copyright (c) 2017-2019, The xterm.js authors
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/xterm-LICENSE-MIT.txt
+
+NovaClaw distributions embed the ripgrep search tool:
+
+    ripgrep 15.1.0
+    Copyright (c) 2015 Andrew Gallant
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/ripgrep-LICENSE-MIT.txt
+
+NovaClaw Windows distributions embed the w64devkit development environment:
+
+    w64devkit 2.9.0
+    Copyright Chris Wellons and contributors
+    Components are distributed under their respective open-source licenses
+    Notice and redistribution details: licenses/w64devkit-NOTICE.md
+    MinGW-w64 notices are retained at third-party/w64devkit/COPYING.MinGW-w64-runtime.txt
+    in a packaged installation; in this source repository the same file is at
+    packages/desktop/resources/third-party/w64devkit/ once the desktop prebuild
+    has staged it (bun run --cwd packages/desktop prebuild).
+
+NovaClaw Windows distributions embed the ImageMagick image toolkit:
+
+    ImageMagick 7.1.2-29 (Q16, x64)
+    Copyright (c) 1999 ImageMagick Studio LLC
+    Licensed under the ImageMagick License (a derivative of Apache-2.0)
+    Full license text: third-party/imagemagick/LICENSE.txt
+    Notice and redistribution details: licenses/imagemagick-NOTICE.md
+    Upstream notices for the libraries it links are retained at
+    third-party/imagemagick/NOTICE.txt
+    Both third-party/imagemagick paths are those of a packaged installation; in
+    this source repository they are under
+    packages/desktop/resources/third-party/imagemagick/ once the desktop prebuild
+    has staged them.
+
+NovaClaw also depends on numerous third-party open-source packages, each
+distributed under its own license. Refer to the individual package licenses
+under node_modules and to the dependency manifests (package.json / bun.lock)
+for the complete list and terms.

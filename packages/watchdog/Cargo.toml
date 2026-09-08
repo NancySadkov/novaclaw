@@ -1,0 +1,17 @@
+[package]
+name = "novaclaw-watchdog"
+version = "0.1.0"
+edition = "2021"
+# No dependencies, deliberately. A process that exists to be more reliable than the thing it
+# supervises should not carry a dependency tree it cannot audit, and everything below is std.
+
+[[bin]]
+name = "novaclaw-watchdog"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false      # symbols kept, same ruling as packages/host: a crash must be debuggable

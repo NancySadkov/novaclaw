@@ -1,0 +1,38 @@
+# Privacy
+What never leaves your machine, what can, and how to switch the second one off.
+
+NovaClaw separates two kinds of traffic, and the distinction is the whole answer.
+
+## Your data never leaves
+
+Chats, code, files, notes and the knowledge base stay on your machine. They are not
+uploaded, not sampled, not used to train anything. If you run a local model, a
+conversation can complete with the network unplugged — and there is an offline mode (an
+airgap) that enforces exactly that rather than trusting you to unplug it.
+
+If you choose to use a hosted model, then of course that provider sees what you send it.
+That is your decision, made by pointing NovaClaw at their address, and it is the only way
+your conversation reaches anyone.
+
+## What can leave, and only this
+
+So that NovaClaw looks after itself rather than handing you a pager, two things flow back
+to us by default:
+
+- **crash reports** — a signature of what broke: the fault's shape, where in our own code
+  it happened, the platform. Not your prompt, not your file names, not your paths, not
+  your messages, not your machine's name.
+- **update checks** — so fixes reach you without you hunting for them.
+
+Both are off in offline mode, unconditionally — offline overrides consent rather than
+asking about it. Both can be switched off permanently in Developer mode.
+
+The reasoning behind the default: most people would rather have a program that repairs
+itself than a checkbox they were made responsible for. If you disagree, the switch is
+there, and turning it off costs you nothing but the automatic fixes.
+
+## Seeing it for yourself
+
+The version and channel you are running are shown under Settings → About. Storage shows
+where on disk this instance keeps its files, so you can look at them, back them up, or
+delete them.

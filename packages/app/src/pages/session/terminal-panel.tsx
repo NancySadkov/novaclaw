@@ -1,0 +1,394 @@
+import { For, Show, createEffect, createMemo, on, onMount } from "solid-js"
+import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
+import { ResizeHandle } from "@novaclaw/ui/resize-handle"
+import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { TooltipKeybindV2 } from "@novaclaw/ui/v2/tooltip-v2"
+import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
+import type { DragEvent } from "@thisbeyond/solid-dnd"
+import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
+
+import { SortableTerminalTab } from "@/components/session"
+import { Terminal } from "@/components/terminal"
+import {
+  shouldCloneTerminal,
+  terminalConnectFailureMessage,
+  type TerminalConnectFailure,
+} from "@/components/terminal-connection"
+import { useCommand } from "@/context/command"
+import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
+import { useTerminal } from "@/context/terminal"
+import { useSDK } from "@/context/sdk"
+import { terminalTabLabel } from "@/pages/session/terminal-label"
+import { createSizing, focusTerminalById } from "@/pages/session/helpers"
+import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
+import { useSessionLayout } from "@/pages/session/session-layout"
+
+export function TerminalPanel() {
+  const layout = useLayout()
+  const terminal = useTerminal()
+  const sdk = useSDK()
+  const language = useLanguage()
+  const command = useCommand()
+  const { workspaceKey, view } = useSessionLayout()
+
+  const opened = createMemo(() => view().terminal.opened())
+  const size = createSizing()
+  const height = createMemo(() => layout.terminal.height())
+  const close = () => view().terminal.close()
+  let root: HTMLDivElement | undefined
+
+  const [store, setStore] = createStore({
+    autoCreated: false,
+    activeDraggable: undefined as string | undefined,
+    recovered: {} as Record<string, boolean>,
+    errors: {} as Record<string, string | undefined>,
+    view: typeof window === "undefined" ? 1000 : (window.visualViewport?.height ?? window.innerHeight),
+  })
+
+  const max = () => store.view * 0.6
+  const pane = () => Math.min(height(), max())
+
+  onMount(() => {
+    if (typeof window === "undefined") return
+
+    const sync = () => setStore("view", window.visualViewport?.height ?? window.innerHeight)
+    const port = window.visualViewport
+
+    sync()
+    makeEventListener(window, "resize", sync)
+    if (port) makeEventListener(port, "resize", sync)
+  })
+
+  createEffect(() => {
+    if (!opened()) {
+      setStore("autoCreated", false)
+      return
+    }
+
+    if (!terminal.ready() || terminal.all().length !== 0 || store.autoCreated) return
+    terminal.new()
+    setStore("autoCreated", true)
+  })
+
+  createEffect(
+    on(
+      () => terminal.all().length,
+      (count, prevCount) => {
+        if (prevCount === undefined || prevCount <= 0 || count !== 0) return
+        if (!opened()) return
+        close()
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [opened(), terminal.active()] as const,
+      ([next, id]) => {
+        if (!next || !id) return
+        focusTerminalById(id)
+      },
+    ),
+  )
+
+  createEffect(() => {
+    if (opened()) return
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement)) return
+    if (!root?.contains(active)) return
+    active.blur()
+  })
+
+  createEffect(() => {
+    const dir = sdk().directory
+    if (!dir) return
+    if (!terminal.ready()) return
+    language.locale()
+
+    setTerminalHandoff(
+      workspaceKey(),
+      terminal.all().map((pty) =>
+        terminalTabLabel({
+          title: pty.title,
+          titleNumber: pty.titleNumber,
+          t: language.t,
+        }),
+      ),
+    )
+  })
+
+  const handoff = createMemo(() => {
+    const dir = sdk().directory
+    if (!dir) return []
+    return getTerminalHandoff(workspaceKey()) ?? []
+  })
+
+  const all = terminal.all
+  const ids = createMemo(() => all().map((pty) => pty.id))
+
+  const recoverTerminal = (key: string, id: string, clone: (id: string) => Promise<void>) => {
+    if (store.recovered[key]) return
+    setStore("recovered", key, true)
+    void clone(id).catch((error) => {
+      setStore("recovered", key, false)
+      setStore(
+        "errors",
+        id,
+        terminalConnectFailureMessage(
+          { kind: "unavailable", error },
+          language.t("terminal.connectionLost.description"),
+        ),
+      )
+    })
+  }
+
+  const terminalRecoveryKey = (pty: { id: string; title: string; titleNumber: number }) => {
+    return String(pty.titleNumber || pty.title || pty.id)
+  }
+
+  const markTerminalConnected = (key: string, id: string, trim: (id: string) => void) => {
+    setStore("recovered", key, false)
+    setStore("errors", id, undefined)
+    trim(id)
+    if (!opened() || terminal.active() !== id) return
+    focusTerminalById(id)
+  }
+
+  const handleConnectFailure = (
+    key: string,
+    id: string,
+    failure: TerminalConnectFailure,
+    clone: (id: string) => Promise<void>,
+    disconnected: (id: string) => void,
+  ) => {
+    if (shouldCloneTerminal(failure)) {
+      recoverTerminal(key, id, clone)
+      return
+    }
+    disconnected(id)
+    setStore("errors", id, terminalConnectFailureMessage(failure, language.t("terminal.connectionLost.description")))
+  }
+
+  const retryTerminal = (id: string, retry: (id: string) => void) => {
+    setStore("errors", id, undefined)
+    retry(id)
+  }
+
+  const handleTerminalDragStart = (event: unknown) => {
+    const id = getDraggableId(event)
+    if (!id) return
+    setStore("activeDraggable", id)
+  }
+
+  const handleTerminalDragOver = (event: DragEvent) => {
+    const { draggable, droppable } = event
+    if (!draggable || !droppable) return
+
+    const terminals = terminal.all()
+    const fromIndex = terminals.findIndex((t) => t.id === draggable.id.toString())
+    const toIndex = terminals.findIndex((t) => t.id === droppable.id.toString())
+    if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+      terminal.move(draggable.id.toString(), toIndex)
+    }
+  }
+
+  const handleTerminalDragEnd = () => {
+    setStore("activeDraggable", undefined)
+
+    const activeId = terminal.active()
+    if (!activeId) return
+    if (terminal.active() !== activeId) return
+    focusTerminalById(activeId)
+  }
+
+  return (
+    <div
+      ref={root}
+      id="terminal-panel"
+      role="region"
+      aria-label={language.t("terminal.title")}
+      aria-hidden={!opened()}
+      inert={!opened()}
+      class="relative w-full shrink-0 bg-background-stronger"
+      classList={{
+        "transition-[height] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[height] motion-reduce:transition-none":
+          !size.active(),
+      }}
+      style={{ height: opened() ? `${pane()}px` : "0px" }}
+    >
+      <div class="hidden md:block" onPointerDown={() => size.start()}>
+        <ResizeHandle
+          classList={{ "-top-1": true }}
+          direction="vertical"
+          size={pane()}
+          min={100}
+          max={max()}
+          collapseThreshold={50}
+          onResize={(next) => {
+            size.touch()
+            layout.terminal.resize(next)
+          }}
+          onCollapse={close}
+        />
+      </div>
+      <div
+        class="absolute inset-x-0 top-0 flex flex-col overflow-hidden"
+        classList={{
+          "border-t border-border-weak-base": opened(),
+          "pointer-events-none": !opened(),
+        }}
+        style={{ height: `${pane()}px` }}
+      >
+        <Show
+          when={terminal.ready()}
+          fallback={
+            <div class="flex flex-col h-full pointer-events-none">
+              <div class="h-10 flex items-center gap-2 px-2 border-b border-border-weaker-base bg-background-stronger overflow-hidden">
+                <For each={handoff()}>
+                  {(title) => (
+                    <div class="px-2 py-1 rounded-md bg-surface-base text-14-regular text-text-weak truncate max-w-40">
+                      {title}
+                    </div>
+                  )}
+                </For>
+                <div class="flex-1" />
+                <div class="text-text-weak pr-2">
+                  {language.t("common.loading")}
+                  {language.t("common.loading.ellipsis")}
+                </div>
+              </div>
+              <div class="flex-1 flex items-center justify-center text-text-weak">{language.t("terminal.loading")}</div>
+            </div>
+          }
+        >
+          <DragDropProvider
+            onDragStart={handleTerminalDragStart}
+            onDragEnd={handleTerminalDragEnd}
+            onDragOver={handleTerminalDragOver}
+            collisionDetector={closestCenter}
+          >
+            <DragDropSensors />
+            <ConstrainDragYAxis />
+            <div class="flex flex-col h-full">
+              {/* v2 design system. ⚠️ v1's `variant="alt"` is deliberately NOT ported: this is the
+                  same tab strip as `pages/terminal.tsx`, which already took v2's default when it
+                  migrated — porting the alt sheet across would settle a brand question by copying
+                  the v1 app, which AGENTS.md forbids. */}
+              <TabsV2 value={terminal.active()} onChange={(id) => terminal.open(id)} class="!h-auto !flex-none">
+                <TabsV2.List class="h-10 border-b border-border-weaker-base">
+                  <SortableProvider ids={ids()}>
+                    <For each={all()}>{(pty) => <SortableTerminalTab terminal={pty} onClose={close} />}</For>
+                  </SortableProvider>
+                  <div class="h-full flex items-center justify-center">
+                    <TooltipKeybindV2
+                      title={language.t("command.terminal.new")}
+                      keys={command.keybindParts("terminal.new")}
+                      class="flex items-center"
+                    >
+                      <IconButtonV2
+                        icon={<IconV2 name="plus-small" size="large" />}
+                        variant="ghost-muted"
+                        onClick={terminal.new}
+                        aria-label={language.t("command.terminal.new")}
+                      />
+                    </TooltipKeybindV2>
+                  </div>
+                </TabsV2.List>
+              </TabsV2>
+              <div class="flex-1 min-h-0 relative">
+                <Show when={opened() && terminal.active()} keyed>
+                  {(id) => {
+                    const ops = terminal.bind()
+                    return (
+                      <Show when={all().find((pty) => pty.id === id)}>
+                        {(pty) => (
+                          <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
+                            <Show when={pty().status === "running" && pty().ptyID !== undefined && !store.errors[id]}>
+                              <Terminal
+                                pty={pty()}
+                                autoFocus={opened()}
+                                onConnect={() => {
+                                  ops.connected(id)
+                                  markTerminalConnected(terminalRecoveryKey(pty()), id, (target) => ops.trim(target))
+                                }}
+                                onCleanup={(update) => ops.update(update)}
+                                onConnectError={(failure) =>
+                                  handleConnectFailure(
+                                    terminalRecoveryKey(pty()),
+                                    id,
+                                    failure,
+                                    (target) => ops.clone(target, { confirmedGone: true }),
+                                    (target) => ops.disconnected(target),
+                                  )
+                                }
+                              />
+                            </Show>
+                            <Show when={pty().status === "starting"}>
+                              <div class="absolute inset-0 flex items-center justify-center text-text-weak">
+                                {language.t("terminal.loading")}
+                              </div>
+                            </Show>
+                            <Show when={pty().status === "disconnected" || pty().status === "exited"}>
+                              <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background-stronger px-6 text-center">
+                                <div class="text-14-medium text-text-strong">
+                                  {pty().status === "exited"
+                                    ? language.t("terminal.exited.title")
+                                    : language.t("terminal.connectionLost.title")}
+                                </div>
+                                <div class="max-w-md text-13-regular text-text-weak">
+                                  {pty().status === "exited"
+                                    ? language.t("terminal.exited.description", {
+                                        code: pty().exitCode ?? "unknown",
+                                      })
+                                    : (store.errors[id] ?? language.t("terminal.connectionLost.description"))}
+                                </div>
+                                <button
+                                  type="button"
+                                  class="rounded-md bg-surface-raised-base px-3 py-1.5 text-13-medium text-text-strong hover:bg-surface-raised-base-hover"
+                                  onClick={() =>
+                                    pty().status === "exited" || pty().ptyID === undefined
+                                      ? void ops.clone(id)
+                                      : retryTerminal(id, (target) => ops.retry(target))
+                                  }
+                                >
+                                  {pty().status === "exited" || pty().ptyID === undefined
+                                    ? language.t("terminal.exited.newShell")
+                                    : language.t("terminal.connectionLost.retry")}
+                                </button>
+                              </div>
+                            </Show>
+                          </div>
+                        )}
+                      </Show>
+                    )
+                  }}
+                </Show>
+              </div>
+            </div>
+            <DragOverlay>
+              <Show when={store.activeDraggable} keyed>
+                {(id) => (
+                  <Show when={all().find((pty) => pty.id === id)}>
+                    {(t) => (
+                      <div class="relative p-1 h-10 flex items-center bg-background-stronger text-14-regular">
+                        {terminalTabLabel({
+                          title: t().title,
+                          titleNumber: t().titleNumber,
+                          t: language.t,
+                        })}
+                      </div>
+                    )}
+                  </Show>
+                )}
+              </Show>
+            </DragOverlay>
+          </DragDropProvider>
+        </Show>
+      </div>
+    </div>
+  )
+}

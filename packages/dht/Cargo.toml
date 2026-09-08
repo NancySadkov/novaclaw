@@ -1,0 +1,29 @@
+[package]
+name = "novaclaw-dht"
+version = "0.1.0"
+edition = "2021"
+license = "SEE LICENSE IN ../../LICENSE"
+
+[dependencies]
+# The DIRECTORY arm: kademlia over TCP and nothing else. No QUIC, no gossip, no relay — the DHT
+# tells us WHERE to knock and the conversation stays on NovaClaw's own HTTP transport.
+#
+# ⚠️ `rsa` is a COMPATIBILITY surface, not a size knob. The long-lived public bootstrap peers have
+# RSA peer IDs, and without it every handshake fails with "Invalid public key: cargo feature `rsa`
+# is not enabled" — measured 2026-08-17, three runs reporting "0 connected" before the cause showed.
+# Any future trimming of this list must be tested against the LIVE network, never a local pair.
+libp2p = { version = "0.56", registry = "official-sparse", default-features = false, features = [
+  "kad", "tokio", "macros", "ed25519", "rsa", "identify", "ping", "noise", "yamux", "tcp", "dns",
+] }
+tokio = { version = "1", registry = "official-sparse", features = ["rt-multi-thread", "macros", "time", "io-std", "io-util"] }
+futures = { version = "0.3", registry = "official-sparse" }
+anyhow = { version = "1", registry = "official-sparse" }
+serde = { version = "1", registry = "official-sparse", features = ["derive"] }
+serde_json = { version = "1", registry = "official-sparse" }
+sha2 = { version = "0.10", registry = "official-sparse" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

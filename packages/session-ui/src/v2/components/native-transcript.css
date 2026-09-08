@@ -1,0 +1,665 @@
+/*
+ * F1e S4-v3 — native transcript renderer styles. Deliberately lightweight: this is the
+ * parallel A/B render behind a dev toggle, not yet the polished V1 look. Uses the v2
+ * design tokens so it reads correctly in the noble-purple theme.
+ */
+
+[data-component="native-transcript"] {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1rem;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--v2-text-text-base);
+  /* The app shell root is select-none (layout-new.tsx); conversation content must be
+     copyable, so selection is re-enabled for the whole transcript here (chrome like
+     the copy button and fold summaries opts back out below). */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* user — bubble stacks above its hover-revealed action row, both right-aligned */
+[data-slot="native-user"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+[data-slot="native-user-bubble"] {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--v2-background-bg-layer-02);
+  border: 1px solid var(--v2-border-border-muted);
+}
+/* P6: the sender badge on a remote/delegated turn. `tone` distinguishes an untrusted source. */
+[data-slot="native-user-origin"] {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin-bottom: 0.375rem;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-user-origin-label"] {
+  font-weight: 560;
+}
+[data-slot="native-user-origin"][data-tone="client"] [data-slot="native-user-origin-label"],
+[data-slot="native-user-origin"][data-tone="audience"] [data-slot="native-user-origin-label"] {
+  color: var(--v2-state-fg-warning);
+}
+[data-slot="native-user-origin-detail"] {
+  color: var(--v2-text-text-faint);
+}
+[data-slot="native-user-attachments"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+[data-slot="native-chip"] {
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.375rem;
+  font-size: var(--font-size-small);
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+}
+
+/* assistant */
+[data-slot="native-assistant"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-assistant-text"] {
+  color: var(--v2-text-text-base);
+}
+
+/* per-message actions (copy) — hover-revealed to stay out of the way */
+[data-slot="native-msg-actions"] {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  /* chrome, not content — keep it out of drag-selections of the conversation */
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-slot="native-assistant"]:hover [data-slot="native-msg-actions"],
+[data-slot="native-user"]:hover [data-slot="native-msg-actions"],
+[data-slot="native-msg-actions"]:focus-within {
+  opacity: 1;
+}
+[data-slot="native-copy"],
+[data-slot="native-revert"] {
+  padding: 0.125rem 0.375rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+[data-slot="native-copy"]:hover,
+[data-slot="native-revert"]:hover {
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+}
+
+/* WHEN the message was written. Quieter than the buttons beside it — it is a fact, not an action,
+   and it must not read as something to press. `align-self: center` because the buttons carry
+   padding and the bare text would otherwise sit a pixel high against them. */
+[data-slot="native-msg-time"] {
+  align-self: center;
+  padding: 0.125rem 0.125rem;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* in-flight "working" indicator (shown until the first token streams) */
+[data-slot="native-working"] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-working-dot"] {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--v2-text-text-muted);
+  animation: native-working-pulse 1s ease-in-out infinite;
+}
+
+/* the settled turn's work, folded away — the answer is what the reader came back for */
+[data-slot="native-turn"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* ⚠️ `display: flex` on <summary> DROPS the native disclosure triangle, which is why this fold had
+   no marker while Reasoning and Details did (owner, 2026-08-11). The rule is already written down
+   further into this file, on the reasoning-live block: "The flex lives on an inner span — flexing
+   <summary> itself would drop the native disclosure marker." Same fix here. */
+[data-slot="native-turn-work"] > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-faint);
+  width: fit-content;
+}
+[data-slot="native-turn-work-summary"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+[data-slot="native-turn-work"] > summary:hover {
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-turn-work-count"] {
+  font-variant-numeric: tabular-nums;
+}
+[data-slot="native-turn-work-body"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0 0.625rem;
+  padding-left: 1.125rem;
+  border-left: 1px solid var(--v2-border-border-muted);
+}
+
+[data-slot="native-turn-receipt"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-turn-receipt"] > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  user-select: none;
+}
+/* The generated-token estimate, styled like the elapsed counter beside it: both are figures about
+   the same running work, and one of them looking louder than the other would rank them. */
+[data-slot="native-turn-tokens"] {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+[data-slot="native-turn-summary"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.25rem;
+}
+[data-slot="native-turn-receipt"][data-live] > summary {
+  color: var(--v2-text-text-muted);
+}
+/*
+ * 🔴 A LIVE receipt sits in the same gutter as the reasoning fold above it.
+ *
+ * Owner screenshot, 2026-09-03: `Reasoning… ~525` carried the left rule and its 10px inset while
+ * `Writing the answer… 19.3s` sat outside both — two rows about ONE piece of work, at two different
+ * indents, reading as two unrelated things. The receipt renders as a sibling of the turn list rather
+ * than inside the message, which is where the offset comes from; matching the gutter is what makes
+ * them read as one block without restructuring a component whose fold logic has already crashed a
+ * shipped renderer once.
+ *
+ * ⚠️ LIVE only. A settled `Details` fold is not part of that group — it is the turn's own footer, and
+ * giving it a rule would draw a gutter down the transcript beside every finished turn.
+ */
+[data-slot="native-turn-receipt"][data-live] {
+  border-left: 2px solid var(--v2-border-border-muted);
+  padding-left: 0.625rem;
+}
+/* why a long stage is long — shown while the receipt is still folded */
+[data-slot="native-turn-note"] {
+  margin-left: 0.25rem;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+  max-width: 32rem;
+}
+[data-slot="native-turn-elapsed"] {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* The reasoning text, inside the working fold and above the stage list: what the model is thinking
+   comes before how long each stage took. Muted like the rest of the fold's body. */
+[data-slot="native-turn-reasoning"] {
+  margin-top: 0.375rem;
+  margin-bottom: 0.5rem;
+  color: var(--v2-text-text-muted);
+}
+/* The settled turn's reasoning folds, now held inside the Details receipt (owner, 2026-09-03).
+   Spaced like the phase list below so the fold reads as one list of things about this turn, not as
+   a transcript row that happens to be indented. */
+[data-slot="native-turn-reasoning-parts"] {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+[data-slot="native-turn-phases"] {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0 0.625rem;
+  padding-left: 1.125rem;
+  border-left: 1px solid var(--v2-border-border-muted);
+}
+[data-slot="native-turn-phases"] > li::marker {
+  color: var(--v2-text-text-faint);
+}
+[data-slot="native-turn-phases"] > li[data-current]::marker,
+[data-slot="native-turn-phases"] > li[data-kind="retry"]::marker {
+  color: var(--v2-state-fg-warning);
+}
+[data-slot="native-turn-phase"],
+[data-slot="native-turn-details"] > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 25rem;
+}
+[data-slot="native-turn-details"] {
+  display: grid;
+  gap: 0.125rem;
+  margin-top: 0.25rem;
+  padding-left: 0.75rem;
+  color: var(--v2-text-text-faint);
+  list-style: none;
+}
+@keyframes native-working-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="native-working-dot"] {
+    animation: none;
+  }
+}
+[data-slot="native-reasoning"],
+[data-slot="native-notice"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  border-left: 2px solid var(--v2-border-border-muted);
+  padding-left: 0.625rem;
+}
+[data-slot="native-reasoning"] > summary,
+[data-slot="native-notice"] > summary {
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  user-select: none;
+}
+[data-slot="native-reasoning-body"],
+[data-slot="native-notice-body"] {
+  margin-top: 0.375rem;
+}
+
+/* live reasoning: while the part streams, the summary shows a pulsing dot + growing counter
+   so a closed fold still signals "actively thinking" (and invites a mid-stream peek).
+   The flex lives on an inner span — flexing <summary> itself would drop the native
+   disclosure marker. */
+[data-slot="native-reasoning-live"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  vertical-align: baseline;
+}
+[data-slot="native-reasoning"][data-streaming] > summary {
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-reasoning-live-dot"] {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--v2-text-text-muted);
+  animation: native-working-pulse 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="native-reasoning-live-dot"] {
+    animation: none;
+  }
+}
+/* settled reasoning: the summary keeps a faint token count (real usage) next to "Reasoning" so the
+   thinking cost stays visible after the block collapses — same unit the Chats list shows. */
+[data-slot="native-reasoning-done"] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+[data-slot="native-reasoning-count"] {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* tool */
+[data-slot="native-tool"] {
+  margin: 0.125rem 0;
+}
+[data-slot="native-tool-io"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-tool-input"],
+[data-slot="native-tool-output"],
+[data-slot="native-shell-output"] {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 24rem;
+}
+[data-slot="native-command-stop"] {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+[data-slot="native-command-stop"] input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 0.375rem;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+}
+[data-slot="native-command-stop"] button {
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--v2-state-fg-danger) 18%, transparent);
+  color: var(--v2-state-fg-danger);
+}
+[data-slot="native-command-stop"] button:disabled {
+  opacity: 0.45;
+}
+
+/* tool: unified-diff body */
+[data-slot="native-tool-diff"] {
+  margin: 0;
+  padding: 0.375rem 0;
+  border-radius: 0.5rem;
+  background: var(--v2-background-bg-layer-01);
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 28rem;
+}
+[data-slot="native-tool-diff"] > [data-diff-line] {
+  padding: 0 0.625rem;
+}
+[data-diff-line="add"] {
+  background: color-mix(in oklab, var(--v2-state-fg-success, #3fb950) 16%, transparent);
+  color: var(--v2-state-fg-success, #3fb950);
+}
+[data-diff-line="del"] {
+  background: color-mix(in oklab, var(--v2-state-fg-danger) 14%, transparent);
+  color: var(--v2-state-fg-danger);
+}
+[data-diff-line="hunk"] {
+  color: var(--v2-text-text-faint);
+}
+[data-diff-line="meta"] {
+  color: var(--v2-text-text-faint);
+  opacity: 0.7;
+}
+[data-diff-line="ctx"] {
+  color: var(--v2-text-text-muted);
+}
+
+/* tool: todo checklist */
+[data-slot="native-todos"] {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+[data-slot="native-todo"] {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+[data-slot="native-todo-mark"] {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-todo"][data-status="completed"] [data-slot="native-todo-mark"] {
+  color: var(--v2-state-fg-success, #3fb950);
+}
+[data-slot="native-todo"][data-status="completed"] [data-slot="native-todo-content"] {
+  color: var(--v2-text-text-faint);
+  text-decoration: line-through;
+}
+[data-slot="native-todo"][data-status="in_progress"] [data-slot="native-todo-content"] {
+  color: var(--v2-text-text-base);
+  font-weight: 500;
+}
+
+/* shell */
+[data-slot="native-shell"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+[data-slot="native-shell-command"] {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-base);
+}
+
+/* queued (sent, not yet read) prompt — the transcript's read receipt */
+[data-slot="native-user"][data-queued="true"] [data-slot="native-user-bubble"] {
+  opacity: 0.72;
+}
+[data-slot="native-user-queued"] {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-user-queued-dot"] {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: native-user-queued-pulse 1.6s ease-in-out infinite;
+}
+@keyframes native-user-queued-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="native-user-queued-dot"] {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* interrupted divider */
+[data-slot="native-interrupted-divider"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--v2-state-fg-danger);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-interrupted-divider"]::before,
+[data-slot="native-interrupted-divider"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in oklab, var(--v2-state-fg-danger) 40%, transparent);
+}
+
+[data-slot="native-broken-reply"] {
+  margin-top: 8px;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+}
+
+[data-slot="native-broken-reply"] summary {
+  cursor: pointer;
+  user-select: text;
+}
+
+[data-slot="native-broken-reply"] > div {
+  margin-top: 5px;
+  padding-left: 14px;
+  user-select: text;
+}
+
+/* error */
+[data-slot="native-error"] {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--v2-state-fg-danger);
+  color: var(--v2-state-fg-danger);
+  font-size: var(--font-size-small);
+  user-select: text;
+}
+[data-slot="native-error-detail"] {
+  margin-top: 0.25rem;
+}
+[data-slot="native-error-details"] {
+  margin-top: 0.5rem;
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-error-details"] summary {
+  cursor: pointer;
+  user-select: text;
+}
+[data-slot="native-error-details"] pre {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 0.375rem;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+  font-family: var(--font-family-mono, monospace);
+  user-select: text;
+}
+[data-slot="native-error-actions"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+}
+[data-slot="native-error-actions"] button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid color-mix(in oklab, currentColor 38%, transparent);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  color: inherit;
+  background: transparent;
+}
+[data-slot="native-error-actions"] button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+[data-slot="native-provider-status"] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+
+[data-slot="native-permission-card"] {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.625rem 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid color-mix(in oklab, var(--v2-border-border-muted) 72%, var(--v2-border-border-focus));
+  border-radius: 0.75rem;
+  background: color-mix(in oklab, var(--v2-background-bg-layer-01) 92%, var(--v2-background-bg-accent));
+  color: var(--v2-text-text-base);
+}
+[data-slot="native-permission-card-icon"] {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--v2-background-bg-accent);
+  color: var(--v2-text-text-contrast);
+  font-weight: 700;
+}
+[data-slot="native-permission-card-body"] {
+  min-width: 0;
+}
+[data-slot="native-permission-card-title"] {
+  font-weight: 650;
+}
+[data-slot="native-permission-card-levels"] {
+  margin-top: 0.125rem;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-permission-card-reason"] {
+  margin: 0.5rem 0 0;
+  padding-left: 0.625rem;
+  border-left: 2px solid var(--v2-text-text-accent);
+  color: var(--v2-text-text-base);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-permission-card-ceiling"] {
+  margin-top: 0.5rem;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+
+/* compaction + switch markers */
+[data-slot="native-compaction-divider"],
+[data-slot="native-switch-marker"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-switch-marker"]::before,
+[data-slot="native-switch-marker"]::after,
+[data-slot="native-compaction-divider"]::before,
+[data-slot="native-compaction-divider"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--v2-border-border-muted);
+}

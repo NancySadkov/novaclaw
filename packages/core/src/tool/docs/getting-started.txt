@@ -1,0 +1,33 @@
+# Getting started
+What NovaClaw is, and the three things to do first.
+
+NovaClaw is an AI workspace that runs on your own machine. It talks to AI models you
+choose — usually ones running on your own hardware — and your chats, files and notes stay
+where they are. Nothing about your work is uploaded to us.
+
+The way to think about it: NovaClaw is an operating system whose programs are AI
+conversations. A chat is a running program. It can start helper chats, hand results back,
+and show up in a task list like any other process. Home is an app launcher, not a
+terminal.
+
+## Three things to do first
+
+1. **Connect a model.** Open Settings and add the address of an AI model. Any server that
+   speaks the common OpenAI-compatible API works — for example vLLM, SGLang, or NovaClaw's
+   bundled llama.cpp server. See the `models` topic.
+2. **Open Chats** — the large gold tile on the home screen — and say hello. If the reply
+   comes back, you are set up.
+3. **Look at the home screen.** Every tile is an app: Chats, Notes, Files, Recipes,
+   Search, Terminal, Trash, Settings, Help. Hover a tile for a one-line hint.
+
+## Getting around
+
+- The **NovaClaw logo** in the top-left corner is the Home button. It works from anywhere.
+- The **Help** tile reopens the first-run tour.
+- **Chats** keeps Recent and Active views, so you can see what is running right now.
+
+## When something needs explaining
+
+Ask in a chat. The assistant can read this manual — the same pages you are reading — and
+will explain any part of it at whatever level of detail you want. You never have to learn
+the jargon first.

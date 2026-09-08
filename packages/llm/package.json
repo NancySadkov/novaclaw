@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@novaclaw/llm",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "scripts": {
+    "setup:recording-env": "bun run script/setup-recording-env.ts",
+    "test": "bun test --timeout 30000 --only-failures",
+    "typecheck": "bun ../../script/tsgo.ts -b"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./route": "./src/route/index.ts",
+    "./protocols/anthropic-messages": "./src/protocols/anthropic-messages.ts",
+    "./protocols/openai-chat": "./src/protocols/openai-chat.ts",
+  "./protocols/openai-compatible-chat": "./src/protocols/openai-compatible-chat.ts",
+    "./protocols/openai-responses": "./src/protocols/openai-responses.ts"
+  },
+  "devDependencies": {
+    "@clack/prompts": "1.0.0-alpha.1",
+    "@effect/platform-node": "catalog:",
+    "@novaclaw/http-recorder": "workspace:*",
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  },
+  "dependencies": {
+    "@novaclaw/schema": "workspace:*",
+    "effect": "catalog:"
+  }
+}

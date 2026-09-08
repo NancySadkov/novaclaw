@@ -1,0 +1,36 @@
+# Recipes
+Instructions for making something, which an assistant cooks fresh whenever you need it.
+
+A **recipe** is a folder holding a `recipe.md` — a plain-language description of what to
+build — plus whatever files it needs. You do not ship the finished thing; you keep the
+instructions, and an assistant builds it on demand.
+
+## Why keep instructions instead of the result
+
+Programs rot. A working program from years ago fails today because a library moved or a
+compiler changed — the code is intact and the build is dead. The *intent* does not rot.
+"A hundred digits of pi, computed, not hardcoded" is as true now as it ever was, so an
+assistant can rebuild a working version against today's tools.
+
+The trade is honest: you get durability and you give up exact reproducibility. Two
+cookings of one recipe are not byte-identical. When you need a signed or audited artifact,
+keep the real source. When you want *a working thing that does X* — which is most of the
+time — the recipe is the better unit.
+
+## Why this matters if you do not program
+
+A recipe is something you can read, change and send to a friend. A build script is not.
+This is how someone who has never written code can author real software, and hand it on.
+
+## The Recipes app
+
+The home screen has a Recipes tile. The bundled set is chosen to exercise real capability
+— compiling code, driving a browser, long-horizon arithmetic — so running them tells you
+in one click whether *your* NovaClaw is genuinely working. It reads as a feature and
+doubles as a health check.
+
+## Writing one
+
+Ask an assistant. Describe the outcome you want, insist on the parts that matter (no
+hardcoded answers, use this file format, keep it offline) and leave the rest open. The
+tighter the intent and the looser the implementation, the longer the recipe stays good.

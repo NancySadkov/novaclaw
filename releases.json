@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "releases": [
+    {
+      "version": "0.1.72",
+      "released": "2026-09-08T07:15:19.807Z",
+      "supersedes": "0.1.71",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.72-source.7z",
+          "sha256": "bffd8c7e6b5b607a212c292609aa2f990c6d919553eee4b4f782e5642c51d7c0",
+          "bytes": 21897023
+        },
+        {
+          "name": "NovaClaw-0.1.72-windows-x64.7z",
+          "sha256": "33266575d773d414e3c5891f74f380a2384b86662b44b4c97f2e24e556b0d8c3",
+          "bytes": 202343097
+        },
+        {
+          "name": "w64devkit-2.9.0-source.tar",
+          "sha256": "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec",
+          "bytes": 233297920
+        }
+      ]
+    },
+    {
+      "version": "0.1.71",
+      "released": "2026-09-07T04:24:38.565Z",
+      "supersedes": "0.1.70",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.71-source.7z",
+          "sha256": "f8d349505c7cb47335b548cce6a0082822fb517d29a7aaec609d9fd1abe6ed23",
+          "bytes": 21891417
+        },
+        {
+          "name": "NovaClaw-0.1.71-windows-x64.7z",
+          "sha256": "4209de34ee109d7633b1b9edd29d83ec21fc57e551d31d8e29906f8f17b84bc4",
+          "bytes": 202339353
+        },
+        {
+          "name": "w64devkit-2.9.0-source.tar",
+          "sha256": "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec",
+          "bytes": 233297920
+        }
+      ]
+    },
+    {
+      "version": "0.1.70",
+      "released": "2026-09-06T23:44:33.570Z",
+      "supersedes": "0.1.69",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.70-source.7z",
+          "sha256": "ae17425af10809b3ab81590a405b5522f2e70f0676438db43c88b6454cfbc86b",
+          "bytes": 21875681
+        },
+        {
+          "name": "NovaClaw-0.1.70-windows-x64.7z",
+          "sha256": "72a3ea40d4e110a839f7b11382e07f9658258802464bccd20808b8c4f9e9dc9a",
+          "bytes": 202291974
+        },
+        {
+          "name": "w64devkit-2.9.0-source.tar",
+          "sha256": "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec",
+          "bytes": 233297920
+        }
+      ]
+    },
+    {
+      "version": "0.1.69",
+      "released": "2026-09-06T04:40:37.171Z",
+      "supersedes": "0.1.67",
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.69-sbom.cdx.json",
+          "sha256": "2666ad46c2368d2997d792e9070e61f4d63e1b4ce2616eda171adf267b2485ea",
+          "bytes": 364639
+        },
+        {
+          "name": "NovaClaw-0.1.69-windows-x64.7z",
+          "sha256": "c7c04dbda9855bc118f71d30d1cc04beed14ad0d2e0ae89d675782023ca76751",
+          "bytes": 202313265
+        }
+      ]
+    },
+    {
+      "version": "0.1.67",
+      "released": "2026-09-03T21:53:07.803Z",
+      "supersedes": null,
+      "artifacts": [
+        {
+          "name": "NovaClaw-0.1.67-source.7z",
+          "sha256": "7ebc5447b6f58fd96b25e32d1591746d4d53142733390329b4c3994690307285",
+          "bytes": 20251029
+        },
+        {
+          "name": "NovaClaw-0.1.67-windows-x64.7z",
+          "sha256": "24da4bc72218db915458146c972dda0d4f31f87ca6b549b4ea6ed08dc1fc867a",
+          "bytes": 190547408
+        },
+        {
+          "name": "w64devkit-2.9.0-source.tar",
+          "sha256": "170941e1239faf2affd1b70be827cbe93de07943236719e12b287a43c2a73eec",
+          "bytes": 233297920
+        }
+      ]
+    }
+  ]
+}

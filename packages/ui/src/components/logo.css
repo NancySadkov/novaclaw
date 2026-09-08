@@ -1,0 +1,2 @@
+/* The square glyph mark now ships as an image asset (logo.png); the inherited pixel-art mark and its
+   styles were removed. Only the wordmark <Logo> remains, which needs no dedicated CSS. */
