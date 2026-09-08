@@ -4,10 +4,13 @@ import { Event } from "./event"
 import { SessionEvent } from "./session-event"
 import { SessionRecordEvent } from "./session-record-event"
 
-export const SessionDurable = {
+export const SessionDurable: {
+  readonly definitions: ReadonlyMap<string, Event.Definition>
+  readonly schema: typeof SessionEvent.Durable
+} = {
   definitions: Event.durable(SessionEvent.DurableDefinitions),
   schema: SessionEvent.Durable,
-} as const
+}
 
 export const Durable = Event.durable([
   ...SessionRecordEvent.Definitions.filter((definition) => definition.durable !== undefined),

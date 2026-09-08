@@ -83,8 +83,8 @@ describe("public event manifest", () => {
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-      // 2026-09-05: removed three non-durable question.v2 events with the retired blocking sideband.
-    }).toEqual({ server: 92, all: 92, latest: 92, durable: 49 })
+      // 2026-09-08: durable compaction progress keeps its visible counter across navigation/restart.
+    }).toEqual({ server: 93, all: 93, latest: 93, durable: 50 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

@@ -689,6 +689,18 @@ export namespace Compaction {
   })
   export type Delta = typeof Delta.Type
 
+  /** Durable, bounded progress checkpoint so navigation/reload does not reset the visible count. */
+  export const Progress = Event.define({
+    type: "session.next.compaction.progress",
+    ...options,
+    schema: {
+      ...Base,
+      messageID: SessionMessage.ID,
+      generatedChars: NonNegativeInt,
+    },
+  })
+  export type Progress = typeof Progress.Type
+
   export const Ended = Event.define({
     type: "session.next.compaction.ended",
     ...compactionSettlementOptions,
@@ -700,6 +712,9 @@ export namespace Compaction {
       recent: Schema.String,
       prefixSeq: NonNegativeInt,
       prefixHash: Schema.String,
+      generatedChars: NonNegativeInt.pipe(optional),
+      /** Present when the pass ended without producing a semantic checkpoint. */
+      failure: Schema.String.pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type
@@ -762,6 +777,7 @@ export const DurableDefinitions = Event.inventory(
   Reasoning.Progress,
   Reasoning.Ended,
   Compaction.Started,
+  Compaction.Progress,
   Compaction.Ended,
   RevertEvent.Staged,
   RevertEvent.Cleared,
@@ -815,17 +831,38 @@ export const Definitions = Event.inventory(
   Tool.Failed,
   Compaction.Started,
   Compaction.Delta,
+  Compaction.Progress,
   Compaction.Ended,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
 )
 
-export const Durable = Schema.Union(DurableDefinitions, { mode: "oneOf" })
-  .pipe(Schema.toTaggedUnion("type"))
+// Keep the runtime union shallow enough for TypeScript to instantiate as this event vocabulary grows.
+// Each chunk retains the complete element union at the type level; the slicing only partitions the AST.
+type DurableDefinition = (typeof DurableDefinitions)[number]
+const durableHead = DurableDefinitions.slice(0, 24) as unknown as readonly [DurableDefinition, ...DurableDefinition[]]
+const durableTail = DurableDefinitions.slice(24) as unknown as readonly [DurableDefinition, ...DurableDefinition[]]
+const DurableHead = Schema.Union(durableHead, { mode: "oneOf" })
+const DurableTail = Schema.Union(durableTail, { mode: "oneOf" })
+export const Durable: Schema.toTaggedUnion<"type", readonly [typeof DurableHead, typeof DurableTail]> = Schema.Union(
+  [DurableHead, DurableTail],
+  { mode: "oneOf" },
+)
   .annotate({ identifier: "SessionDurableEvent" })
+  .pipe(Schema.toTaggedUnion("type"))
 export type DurableEvent = typeof Durable.Type
+/** Public wire view without the tagged-union helper's declaration-sized utility type. */
+export const DurableWire: Schema.Codec<DurableEvent, unknown> = Durable
 
-export const All = Schema.Union(Definitions, { mode: "oneOf" }).pipe(Schema.toTaggedUnion("type"))
+type Definition = (typeof Definitions)[number]
+const definitionHead = Definitions.slice(0, 28) as unknown as readonly [Definition, ...Definition[]]
+const definitionTail = Definitions.slice(28) as unknown as readonly [Definition, ...Definition[]]
+const DefinitionHead = Schema.Union(definitionHead, { mode: "oneOf" })
+const DefinitionTail = Schema.Union(definitionTail, { mode: "oneOf" })
+export const All: Schema.toTaggedUnion<"type", readonly [typeof DefinitionHead, typeof DefinitionTail]> = Schema.Union(
+  [DefinitionHead, DefinitionTail],
+  { mode: "oneOf" },
+).pipe(Schema.toTaggedUnion("type"))
 export type Event = typeof All.Type
 export type Type = Event["type"]

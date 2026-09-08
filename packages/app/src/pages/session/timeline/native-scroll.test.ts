@@ -23,12 +23,12 @@ test("a near-bottom move toward history cannot undo explicit user unpinning", ()
 })
 
 test("a delayed browser viewport move cannot revoke user intent", () => {
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 399, clientHeight: 600 }, true, true)).toBe(true)
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 0, clientHeight: 600 }, true, true)).toBe(true)
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 399, clientHeight: 600 })).toBe(true)
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 0, clientHeight: 600 })).toBe(true)
 })
 
-test("a scrollbar move after layout settles still revokes the pin", () => {
-  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 200, clientHeight: 600 }, true, false)).toBe(false)
+test("geometry alone cannot impersonate a scrollbar gesture", () => {
+  expect(nextPinned(true, { scrollHeight: 1000, scrollTop: 200, clientHeight: 600 })).toBe(true)
 })
 
 test("nextPinned keeps the current pin on a zero-height (headless) layout", () => {

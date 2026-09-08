@@ -154,8 +154,9 @@ const compactionEntry = (row: CompactionRow) => ({
     reason: row.reason,
     summary: row.summary,
     recent: row.recent,
+    generatedChars: row.summary.length,
     ...(row.metadata === null ? {} : { metadata: row.metadata }),
-    time: { created: DateTime.makeUnsafe(row.time_created) },
+    time: { created: DateTime.makeUnsafe(row.time_created), completed: DateTime.makeUnsafe(row.time_created) },
   }),
 })
 
@@ -171,6 +172,9 @@ const projectedEntries = Effect.fnUntraced(function* (
     decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
   )
   if (!compaction) return entries
+  // New compactions are first-class transcript rows from Started onward. The overlay table remains
+  // the semantic validity index, but must not manufacture a second UI row with the same id.
+  if (entries.some((entry) => entry.message.id === compaction.id)) return entries
   const overlay = compactionEntry(compaction)
   const before = entries.filter((entry) => entry.seq <= compaction.prefix_seq)
   const after = entries.filter((entry) => entry.seq > compaction.prefix_seq)

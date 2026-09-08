@@ -57,10 +57,9 @@ describe("SessionProjector", () => {
       path.split(".").reduce((value, key) => (value as Record<string, unknown>)[key], SessionEvent as unknown)
     const projected = new Set(paths.map((path) => (definitionAt(path) as { readonly type: string }).type))
 
-    // This is a durable lifecycle marker for the compaction overlay, not a live message/row update;
-    // Compaction.Ended owns the full projected value. Every other durable session event changes a
-    // projection and must be wired here, or it will appear live and disappear on the next reload.
-    const durableJournalOnly = new Set<string>([SessionEvent.Compaction.Started.type])
+    // Every durable session event changes a projection. A missing wire here means state can appear
+    // live and then disappear on navigation or restart.
+    const durableJournalOnly = new Set<string>()
     expect(
       SessionEvent.DurableDefinitions.filter(
         (definition) => !projected.has(definition.type) && !durableJournalOnly.has(definition.type),
@@ -484,14 +483,20 @@ describe("SessionProjector", () => {
           .all()
           .pipe(Effect.orDie),
       ).toEqual([])
+      yield* events.publish(SessionEvent.Compaction.Progress, {
+        sessionID,
+        messageID: compactionID,
+        timestamp: created,
+        generatedChars: 7,
+      })
       expect(
         yield* db
           .select({ id: SessionMessageTable.id })
           .from(SessionMessageTable)
-          .where(eq(SessionMessageTable.type, "compaction"))
+          .where(eq(SessionMessageTable.type, "compaction-status"))
           .all()
           .pipe(Effect.orDie),
-      ).toEqual([])
+      ).toEqual([{ id: compactionID }])
       yield* events.publish(SessionEvent.Compaction.Ended, {
         sessionID,
         messageID: compactionID,
@@ -501,6 +506,7 @@ describe("SessionProjector", () => {
         recent: "recent context",
         prefixSeq: 0,
         prefixHash: "0".repeat(64),
+        generatedChars: 12,
       })
 
       const rows = yield* db
@@ -520,6 +526,7 @@ describe("SessionProjector", () => {
         "synthetic",
         "permission-changed",
         "shell",
+        "compaction",
       ])
       expect(messages.find((message) => message.type === "permission-changed")).toMatchObject({
         previous: "bypass",
@@ -530,6 +537,11 @@ describe("SessionProjector", () => {
       expect(messages.find((message) => message.type === "shell")).toMatchObject({
         output: "/project",
         time: { completed: DateTime.makeUnsafe(1) },
+      })
+      expect(messages.find((message) => message.type === "compaction")).toMatchObject({
+        generatedChars: 12,
+        summary: "summary",
+        time: { created, completed: DateTime.makeUnsafe(1) },
       })
       expect(yield* db.select().from(SessionCompactionTable).get().pipe(Effect.orDie)).toMatchObject({
         summary: "summary",
@@ -579,6 +591,94 @@ describe("SessionProjector", () => {
       expect(
         yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, id)).get().pipe(Effect.orDie),
       ).toMatchObject({ type: "synthetic" })
+    }),
+  )
+
+  it.effect("backfills a successful pre-audit compaction with its measured start and completion", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* db
+        .insert(SessionTable)
+        .values({ id: sessionID, slug: "test", directory: "/project", title: "test", version: "test" })
+        .run()
+      const compactionID = SessionMessage.ID.create()
+      const started = yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(1_000),
+        reason: "auto",
+      })
+      yield* db.delete(SessionMessageTable).where(eq(SessionMessageTable.id, compactionID)).run().pipe(Effect.orDie)
+      yield* db
+        .insert(SessionCompactionTable)
+        .values({
+          id: compactionID,
+          session_id: sessionID,
+          seq: (started.durable?.seq ?? 0) + 1,
+          prefix_seq: 0,
+          prefix_hash: "0".repeat(64),
+          reason: "auto",
+          summary: "restored summary",
+          recent: "tail",
+          time_created: 4_500,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      yield* SessionProjector.backfillCompactionTranscript(db)
+      const restored = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.id, compactionID))
+        .get()
+        .pipe(Effect.orDie)
+      expect(restored?.seq).toBe(started.durable?.seq)
+      expect(
+        Schema.decodeUnknownSync(SessionMessage.Message)({
+          ...restored!.data,
+          id: restored!.id,
+          type: restored!.type,
+        }),
+      ).toMatchObject({
+        type: "compaction",
+        summary: "restored summary",
+        time: { created: DateTime.makeUnsafe(1_000), completed: DateTime.makeUnsafe(4_500) },
+      })
+    }),
+  )
+
+  it.effect("settles a compaction that was interrupted by process restart", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* db
+        .insert(SessionTable)
+        .values({ id: sessionID, slug: "test", directory: "/project", title: "test", version: "test" })
+        .run()
+      const compactionID = SessionMessage.ID.create()
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID,
+        messageID: compactionID,
+        timestamp: DateTime.makeUnsafe(1_000),
+        reason: "auto",
+      })
+
+      yield* SessionProjector.settleInterruptedCompactions(db, DateTime.makeUnsafe(3_500))
+      const row = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.id, compactionID))
+        .get()
+        .pipe(Effect.orDie)
+      expect(
+        Schema.decodeUnknownSync(SessionMessage.Message)({ ...row!.data, id: row!.id, type: row!.type }),
+      ).toMatchObject({
+        type: "compaction-status",
+        status: "failed",
+        failure: "process-restarted",
+        time: { created: DateTime.makeUnsafe(1_000), completed: DateTime.makeUnsafe(3_500) },
+      })
     }),
   )
 

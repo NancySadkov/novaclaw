@@ -20,19 +20,15 @@ export function isAtBottom(m: ScrollMetrics, tolerance = 1): boolean {
  * The next `pinned` state after a scroll event. A pin is USER INTENT, not geometry: browser scroll
  * anchoring, a fold collapsing, history reconciliation, and a route remount can all move
  * `scrollTop` and emit the same event as a wheel — sometimes several frames after the DOM mutation.
- * Therefore geometry may revoke a pin only after the DOM has stayed quiet for the layout ownership
- * window. Revocation otherwise belongs to the wheel/touch/key handlers in the controller below.
- * Once user intent has unpinned the view, proximity may not overwrite it: the reader re-pins only
- * on actually reaching the bottom (with one pixel of tolerance for fractional layout geometry).
+ * Therefore geometry may NEVER revoke an existing pin. Revocation belongs only to the
+ * wheel/touch/key/scrollbar handlers in the controller below; those are the seams that actually
+ * establish user intent. Once user intent has unpinned the view, proximity may not overwrite it:
+ * the reader re-pins only on actually reaching the bottom (with one pixel of tolerance for
+ * fractional layout geometry).
  */
-export function nextPinned(
-  current: boolean,
-  m: ScrollMetrics,
-  movedTowardHistory = false,
-  layoutPending = false,
-): boolean {
+export function nextPinned(current: boolean, m: ScrollMetrics): boolean {
   if (m.clientHeight === 0) return current
-  if (current) return layoutPending || !movedTowardHistory || isAtBottom(m)
+  if (current) return true
   return isAtBottom(m)
 }
 
@@ -55,26 +51,17 @@ export function createBottomPinController(input: {
   setPinned: (value: boolean) => void
 }) {
   let touchY: number | undefined
-  let lastScrollTop = input.scroller.scrollTop
-  // A scroll notification can trail the mutation that caused it by several frames. One RAF was
-  // too short: history reconciliation arrived seconds after navigation, briefly collapsed the DOM,
-  // then its delayed clamp revoked the pin after the frame flag had already cleared.
-  const LAYOUT_SETTLE_MS = 1_000
-  let layoutUntil = performance.now() + LAYOUT_SETTLE_MS
   let layoutFrame: number | undefined
   const stick = () => {
     if (!input.pinned()) return
     input.scroller.scrollTop = input.scroller.scrollHeight
-    lastScrollTop = input.scroller.scrollTop
   }
   const scrollToBottom = () => {
     input.setPinned(true)
     stick()
   }
   const onScroll = () => {
-    const top = input.scroller.scrollTop
-    const next = nextPinned(input.pinned(), input.scroller, top < lastScrollTop - 1, performance.now() < layoutUntil)
-    lastScrollTop = top
+    const next = nextPinned(input.pinned(), input.scroller)
     input.setPinned(next)
     if (next) stick()
   }
@@ -116,7 +103,6 @@ export function createBottomPinController(input: {
   // may already have clamped scrollTop while the old rows were absent. MutationObserver is the only
   // seam that sees that layout transaction before its deferred `scroll` event arrives.
   const mutationObserver = new MutationObserver(() => {
-    layoutUntil = performance.now() + LAYOUT_SETTLE_MS
     if (layoutFrame !== undefined) cancelAnimationFrame(layoutFrame)
     layoutFrame = requestAnimationFrame(() => {
       layoutFrame = undefined

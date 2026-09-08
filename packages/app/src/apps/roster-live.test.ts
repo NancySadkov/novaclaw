@@ -157,6 +157,21 @@ describe("an officer's live worker tree", () => {
     expect(workersOf(sessions, "root").map((row) => row.id)).toEqual(["worker", "nested"])
   })
 
+  test("removes settled, exited, failed, and interrupted branches from the current worker set", () => {
+    const state = new Map([["worker", { execution: "interrupted" as const }]])
+    expect(workersOf(sessions, "root", (id) => state.get(id) ?? {}).map((row) => row.id)).toEqual([])
+    expect(
+      workersOf(sessions, "root", (id) => (id === "nested" ? { execution: "settled" as const } : {})).map(
+        (row) => row.id,
+      ),
+    ).toEqual(["worker"])
+    expect(
+      workersOf(sessions, "root", (id) =>
+        id === "worker" ? { execution: "paused" as const } : { lifecycle: "idle" },
+      ).map((row) => row.id),
+    ).toEqual(["worker", "nested"])
+  })
+
   test("adds every thread's current generated-token rate", () => {
     const rates: Record<string, number> = { root: 2, worker: 3, nested: 4, fork: 5, elsewhere: 99 }
     expect(threadRate(sessions, "root", (id) => rates[id])).toBe(14)

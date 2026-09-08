@@ -307,7 +307,6 @@ const toolCarriesMedia = (tool: SessionMessage.AssistantTool): boolean => {
   return value !== undefined && carriesMedia(value)
 }
 
-
 // Decode a data: URI's payload to text (base64 or percent-encoded). Returns undefined
 // for any other URI scheme or a malformed data URI.
 /** A `file://` URI as a host path, or `undefined` for anything else. */
@@ -343,12 +342,7 @@ const ARCHIVE_DIGEST_CACHE_LIMIT = 16
 const archiveDigestCache = new Map<string, string>()
 
 const archiveDigestCacheKey = (file: FileAttachment): string =>
-  JSON.stringify([
-    createHash("sha256").update(file.uri).digest("hex"),
-    file.uri.length,
-    file.mime,
-    file.name ?? null,
-  ])
+  JSON.stringify([createHash("sha256").update(file.uri).digest("hex"), file.uri.length, file.mime, file.name ?? null])
 
 /** Clear the bounded archive lowering cache (used by lifecycle tests and controlled shutdowns). */
 export const resetArchiveDigestCache = (): void => {
@@ -641,6 +635,8 @@ ${message.recent}
           metadata: message.metadata,
         }),
       ]
+    case "compaction-status":
+      return []
   }
 }
 

@@ -18,6 +18,7 @@ import type {
   SessionMessageAssistantReasoning,
   SessionMessageAssistantTool,
   SessionMessageCompaction,
+  SessionMessageCompactionStatus,
   SessionMessagePermissionChanged,
   SessionMessageShell,
   SessionMessageSynthetic,
@@ -27,11 +28,13 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
+import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
+import { waitRow } from "./wait-row"
 import { Markdown } from "../../components/markdown"
 import {
   reasoningGoesInReceipt,
@@ -126,6 +129,7 @@ type TranscriptActions = {
   onStopCommand?: (reason: string) => void | Promise<void>
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
+const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
 
 /**
  * **THE transcript.** It consumes the flat native `SessionMessage` union (`@novaclaw/sdk/v2`)
@@ -155,8 +159,6 @@ export function NativeTranscript(props: {
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
   onStopCommand?: (reason: string) => void | Promise<void>
   status?: SessionStatus
-  /** Live compaction output, formatted as `~N tokens` by the host telemetry store. */
-  compactionTokens?: string
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -251,65 +253,66 @@ export function NativeTranscript(props: {
         settled: !busy(),
       })}
     >
-      <TranscriptActionsContext.Provider
-        value={() => ({
-          onRevert: props.onRevert,
-          onRetry: props.onRetry,
-          onChooseModel: props.onChooseModel,
-          onUnpinDevice: props.onUnpinDevice,
-          onStopCommand: props.onStopCommand,
-        })}
-      >
-        <div data-component="native-transcript" class={props.class}>
-          <For each={turns()}>
-            {(group, index) => (
-              <Turn
-                group={group}
-                developer={props.developer}
-                liveTiming={liveTiming() !== undefined}
-                busy={busy() && index() === turns().length - 1}
-              />
-            )}
-          </For>
-          {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
+      <TranscriptMessagesContext.Provider value={() => props.messages}>
+        <TranscriptActionsContext.Provider
+          value={() => ({
+            onRevert: props.onRevert,
+            onRetry: props.onRetry,
+            onChooseModel: props.onChooseModel,
+            onUnpinDevice: props.onUnpinDevice,
+            onStopCommand: props.onStopCommand,
+          })}
+        >
+          <div data-component="native-transcript" class={props.class}>
+            <For each={turns()}>
+              {(group, index) => (
+                <Turn
+                  group={group}
+                  developer={props.developer}
+                  liveTiming={liveTiming() !== undefined}
+                  busy={busy() && index() === turns().length - 1}
+                />
+              )}
+            </For>
+            {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
               the first prompt of a session while it waits for the runner. */}
-          <For each={unqueuedPending(props.pending, props.messages)}>
-            {(item) => <QueuedMessage id={item.id} text={item.text} />}
-          </For>
-          <Show
-            when={liveTiming()}
-            fallback={
-              <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
+            <For each={unqueuedPending(props.pending, props.messages)}>
+              {(item) => <QueuedMessage id={item.id} text={item.text} />}
+            </For>
+            <Show
+              when={liveTiming()}
+              fallback={
+                <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
+                  <div data-slot="native-provider-status" role="status" aria-live="polite">
+                    <span data-slot="native-working-dot" aria-hidden="true" />
+                    <span>{i18n.t("ui.transcript.working")}</span>
+                  </div>
+                </Show>
+              }
+            >
+              {(timing) => (
+                <TurnReceipt
+                  messageID={liveMessageID()}
+                  timing={timing()}
+                  live
+                  developer={props.developer}
+                  runStartedAt={runStartedAt()}
+                  tokens={liveTokens()}
+                  reasoning={liveReasoning()}
+                />
+              )}
+            </Show>
+            <Show when={props.status?.type === "retry" && props.status.message}>
+              {(message) => (
                 <div data-slot="native-provider-status" role="status" aria-live="polite">
                   <span data-slot="native-working-dot" aria-hidden="true" />
-                  <span>{i18n.t("ui.transcript.working")}</span>
+                  <span>{message()}</span>
                 </div>
-              </Show>
-            }
-          >
-            {(timing) => (
-              <TurnReceipt
-                messageID={liveMessageID()}
-                timing={timing()}
-                live
-                developer={props.developer}
-                runStartedAt={runStartedAt()}
-                tokens={liveTokens()}
-                compactionTokens={props.compactionTokens}
-                reasoning={liveReasoning()}
-              />
-            )}
-          </Show>
-          <Show when={props.status?.type === "retry" && props.status.message}>
-            {(message) => (
-              <div data-slot="native-provider-status" role="status" aria-live="polite">
-                <span data-slot="native-working-dot" aria-hidden="true" />
-                <span>{message()}</span>
-              </div>
-            )}
-          </Show>
-        </div>
-      </TranscriptActionsContext.Provider>
+              )}
+            </Show>
+          </div>
+        </TranscriptActionsContext.Provider>
+      </TranscriptMessagesContext.Provider>
     </ReasoningFoldContext.Provider>
   )
 }
@@ -499,6 +502,9 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
         }}
       </Match>
       <Match when={props.message.type === "compaction" && props.message}>
+        {(m) => <CompactionMessage message={m()} />}
+      </Match>
+      <Match when={props.message.type === "compaction-status" && props.message}>
         {(m) => <CompactionMessage message={m()} />}
       </Match>
       <Match when={props.message.type === "permission-changed" && props.message}>
@@ -825,8 +831,6 @@ function TurnReceipt(props: {
   runStartedAt?: number
   /** Approximate tokens generated so far, already formatted with its `~`. Live turns only. */
   tokens?: string
-  /** Approximate output produced specifically by the active compaction pass. */
-  compactionTokens?: string
   /**
    * The model's reasoning while this run is live, held INSIDE the working fold.
    *
@@ -885,9 +889,7 @@ function TurnReceipt(props: {
     const value = timing()
     if (!props.live || !value) return undefined
     const phase = currentPhase(value)
-    return phase
-      ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick()), props.compactionTokens)
-      : undefined
+    return phase ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick())) : undefined
   }
   return (
     <Show
@@ -1101,7 +1103,8 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const i18n = useI18n()
-  const meta = () => toolMeta(props.part, i18n)
+  const messages = useContext(TranscriptMessagesContext)
+  const meta = () => toolMeta(props.part, i18n, messages())
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
   const faultText = useFaultText()
@@ -1385,19 +1388,41 @@ function PermissionChangedMessage(props: { message: SessionMessagePermissionChan
   )
 }
 
-function CompactionMessage(props: { message: SessionMessageCompaction }) {
+function CompactionMessage(props: { message: SessionMessageCompaction | SessionMessageCompactionStatus }) {
   const i18n = useI18n()
+  const [now, setNow] = createSignal(Date.now())
+  const running = () => props.message.type === "compaction-status" && props.message.status === "running"
+  createEffect(() => {
+    if (!running()) return
+    const timer = setInterval(() => setNow(Date.now()), 250)
+    onCleanup(() => clearInterval(timer))
+  })
+  const elapsed = () => seconds(elapsedMs(props.message.time.created, props.message.time.completed, now()))
+  const label = () => {
+    if (running())
+      return i18n.t("ui.transcript.compacting", {
+        tokens: Token.estimateFromChars(props.message.generatedChars ?? 0),
+      })
+    if (props.message.type === "compaction-status")
+      return i18n.t("ui.transcript.compaction.failed", { time: elapsed() })
+    return i18n.t("ui.transcript.compacted.in", { time: elapsed() })
+  }
   return (
     <div data-slot="native-compaction">
-      <div data-slot="native-compaction-divider">
-        {i18n.t(props.message.reason === "manual" ? "ui.transcript.compacted.manual" : "ui.transcript.compacted")}
+      <div data-slot="native-compaction-divider" aria-live={running() ? "polite" : undefined}>
+        {label()}
       </div>
-      <details data-slot="native-notice">
-        <summary>{i18n.t("ui.transcript.summary")}</summary>
-        <div data-slot="native-notice-body">
-          <Markdown text={props.message.summary} cacheKey={`${props.message.id}:summary`} />
-        </div>
-      </details>
+      <Show when={props.message.type === "compaction" ? props.message.summary.trim() : ""}>
+        <details data-slot="native-notice">
+          <summary>{i18n.t("ui.transcript.summary")}</summary>
+          <div data-slot="native-notice-body">
+            <Markdown
+              text={props.message.type === "compaction" ? props.message.summary : ""}
+              cacheKey={`${props.message.id}:summary`}
+            />
+          </div>
+        </details>
+      </Show>
     </div>
   )
 }
@@ -1411,7 +1436,7 @@ interface ToolMeta {
 }
 
 /** Per-tool label/subtitle/args, ported from the V1 `getToolInfo` switch.*/
-function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
+function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n, messages: readonly SessionMessage[]): ToolMeta {
   const input = toolInput(part.state)
   switch (part.name) {
     case "read": {
@@ -1441,6 +1466,8 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n): ToolMeta {
       }
     case "spawn":
       return spawnRow(input, i18n.t)
+    case "wait":
+      return waitRow(input, messages, i18n.t)
     case "bash":
       return { title: i18n.t("ui.transcript.tool.bash"), subtitle: str(input.command) }
     // The file-mutating tools read as a finished action plus the file — "Edited pi.c" — and carry NO

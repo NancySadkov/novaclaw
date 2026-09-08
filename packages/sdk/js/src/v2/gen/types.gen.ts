@@ -58,6 +58,7 @@ export type Event =
   | EventSessionNextToolFailed
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
+  | EventSessionNextCompactionProgress
   | EventSessionNextCompactionEnded
   | EventSessionNextRevertStaged
   | EventSessionNextRevertCleared
@@ -896,6 +897,16 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.compaction.progress"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          generatedChars: number
+        }
+      }
+    | {
+        id: string
         type: "session.next.compaction.ended"
         properties: {
           timestamp: number
@@ -906,6 +917,8 @@ export type GlobalEvent = {
           recent: string
           prefixSeq: number
           prefixHash: string
+          generatedChars?: number
+          failure?: string
         }
       }
     | {
@@ -1271,6 +1284,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextToolSuccess
     | SyncEventSessionNextToolFailed
     | SyncEventSessionNextCompactionStarted
+    | SyncEventSessionNextCompactionProgress
     | SyncEventSessionNextCompactionEnded
     | SyncEventSessionNextRevertStaged
     | SyncEventSessionNextRevertCleared
@@ -1751,6 +1765,7 @@ export type SessionDurableEvent =
   | SessionNextReasoningProgress
   | SessionNextReasoningEnded
   | SessionNextCompactionStarted
+  | SessionNextCompactionProgress
   | SessionNextCompactionEnded
   | SessionNextRevertStaged
   | SessionNextRevertCleared
@@ -1914,6 +1929,7 @@ export type V2Event =
   | SessionNextToolFailed
   | SessionNextCompactionStarted
   | SessionNextCompactionDelta
+  | SessionNextCompactionProgress
   | SessionNextCompactionEnded
   | SessionNextRevertStaged
   | SessionNextRevertCleared
@@ -2548,18 +2564,37 @@ export type SessionMessageAssistant = {
 }
 
 export type SessionMessageCompaction = {
-  type: "compaction"
-  reason: "auto" | "manual"
-  summary: string
-  recent: string
   id: string
   metadata?: {
     [key: string]: unknown
   }
   time: {
     created: number
+    completed?: number
   }
   seq?: number
+  type: "compaction"
+  reason: "auto" | "manual"
+  summary: string
+  recent: string
+  generatedChars?: number
+}
+
+export type SessionMessageCompactionStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    completed?: number
+  }
+  seq?: number
+  type: "compaction-status"
+  reason: "auto" | "manual"
+  status: "running" | "failed"
+  generatedChars: number
+  failure?: string
 }
 
 export type SessionMessage =
@@ -2572,6 +2607,7 @@ export type SessionMessage =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
+  | SessionMessageCompactionStatus
 
 export type MessengerAccountStatus2 =
   | {
@@ -3478,6 +3514,23 @@ export type SyncEventSessionNextCompactionStarted = {
   }
 }
 
+export type SyncEventSessionNextCompactionProgress = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.compaction.progress.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      generatedChars: number
+    }
+  }
+}
+
 export type SyncEventSessionNextCompactionEnded = {
   type: "sync"
   id: string
@@ -3495,6 +3548,8 @@ export type SyncEventSessionNextCompactionEnded = {
       recent: string
       prefixSeq: number
       prefixHash: string
+      generatedChars?: number
+      failure?: string
     }
   }
 }
@@ -5498,6 +5553,26 @@ export type SessionNextCompactionStarted = {
   }
 }
 
+export type SessionNextCompactionProgress = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.compaction.progress"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    generatedChars: number
+  }
+}
+
 export type SessionNextCompactionEnded = {
   id: string
   metadata?: {
@@ -5519,6 +5594,8 @@ export type SessionNextCompactionEnded = {
     recent: string
     prefixSeq: number
     prefixHash: string
+    generatedChars?: number
+    failure?: string
   }
 }
 
@@ -7549,6 +7626,17 @@ export type EventSessionNextCompactionDelta = {
   }
 }
 
+export type EventSessionNextCompactionProgress = {
+  id: string
+  type: "session.next.compaction.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    generatedChars: number
+  }
+}
+
 export type EventSessionNextCompactionEnded = {
   id: string
   type: "session.next.compaction.ended"
@@ -7561,6 +7649,8 @@ export type EventSessionNextCompactionEnded = {
     recent: string
     prefixSeq: number
     prefixHash: string
+    generatedChars?: number
+    failure?: string
   }
 }
 

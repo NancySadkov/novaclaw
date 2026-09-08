@@ -294,7 +294,6 @@ export function NativeTimeline(props: {
             onUnpinDevice={props.onUnpinDevice}
             onStopCommand={props.onStopCommand}
             status={serverSync().session.data.session_status[props.sessionID]}
-            compactionTokens={`~${serverSync().session.data.session_live(props.sessionID)?.approxCompactionTokens ?? 0} tokens`}
           />
         </div>
       </div>

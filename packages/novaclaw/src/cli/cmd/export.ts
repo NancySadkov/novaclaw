@@ -146,6 +146,8 @@ export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Mes
         summary: redact("compaction-summary", msg.id, msg.summary),
         recent: redact("compaction-recent", msg.id, msg.recent),
       }
+    case "compaction-status":
+      return { ...msg, metadata }
     case "agent-switched":
     case "model-switched":
       return { ...msg, metadata }

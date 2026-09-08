@@ -478,6 +478,9 @@ export const make = (dependencies: Dependencies) => {
     readonly maintenance?: SessionScheduler.MaintenanceInput
   }) {
     const chunks: string[] = []
+    let generatedChars = 0
+    let checkpointChars = 0
+    let checkpointAt = Date.now()
     let failed = false
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
@@ -494,11 +497,24 @@ export const make = (dependencies: Dependencies) => {
         if (LLMEvent.is.providerError(event)) failed = true
         if (LLMEvent.is.textDelta(event)) {
           chunks.push(event.text)
-          return dependencies.events.publish(SessionEvent.Compaction.Delta, {
-            sessionID: input.sessionID,
-            messageID: input.messageID,
-            timestamp: deltaTimestamp,
-            text: event.text,
+          generatedChars += event.text.length
+          return Effect.gen(function* () {
+            yield* dependencies.events.publish(SessionEvent.Compaction.Delta, {
+              sessionID: input.sessionID,
+              messageID: input.messageID,
+              timestamp: deltaTimestamp,
+              text: event.text,
+            })
+            const now = Date.now()
+            if (generatedChars - checkpointChars < 512 && now - checkpointAt < 500) return
+            checkpointChars = generatedChars
+            checkpointAt = now
+            yield* dependencies.events.publish(SessionEvent.Compaction.Progress, {
+              sessionID: input.sessionID,
+              messageID: input.messageID,
+              timestamp: yield* DateTime.now,
+              generatedChars,
+            })
           })
         }
         if (event.type === "finish" || event.type === "step-finish") {
@@ -515,7 +531,7 @@ export const make = (dependencies: Dependencies) => {
     const completed = yield* dependencies.scheduler !== undefined && input.maintenance !== undefined
       ? SessionScheduler.runMaintenance(dependencies.scheduler, input.maintenance, generation, Effect.succeed(false))
       : generation
-    return { text: chunks.join(""), completed, failed, finish, reportedTokens } as const
+    return { text: chunks.join(""), completed, failed, finish, reportedTokens, generatedChars } as const
   })
   /**
    * A2-a — the CHEAP tier, ahead of everything the summarizer does.
@@ -643,11 +659,28 @@ export const make = (dependencies: Dependencies) => {
     // it reports mean two things. The trim announces itself where it matters instead: the marker
     // rides the prompt the model is sent, so it is visible in the request the tests pin.
     const messageID = SessionMessage.ID.create()
+    const startedAt = yield* DateTime.now
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
       messageID,
-      timestamp: yield* DateTime.now,
+      timestamp: startedAt,
       reason,
+    })
+
+    const fail = Effect.fnUntraced(function* (why: DeclineReason, generatedChars: number) {
+      yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
+        sessionID: input.sessionID,
+        messageID,
+        timestamp: yield* DateTime.now,
+        reason,
+        text: "",
+        recent: "",
+        prefixSeq: 0,
+        prefixHash: "",
+        failure: why,
+        generatedChars,
+      })
+      return decline(why)
     })
 
     // The chain is deliberately finite: one semantic summary followed, only if its token budget is
@@ -682,13 +715,14 @@ export const make = (dependencies: Dependencies) => {
       messageID,
       maintenance: input.maintenance,
     })
-    if (!first.completed || first.failed || !first.text.trim()) return decline("summarizer-unavailable")
+    if (!first.completed || first.failed || !first.text.trim())
+      return yield* fail("summarizer-unavailable", first.generatedChars)
     const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
     const firstClean = first.finish === "stop" && firstFits
     let summary = first.text
     if (!firstClean) {
       const budgetCut = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
-      if (!budgetCut) return decline("summary-unusable")
+      if (!budgetCut) return yield* fail("summary-unusable", first.generatedChars)
       yield* Log.event("session.compaction.summary.truncated", {
         "session.id": String(input.sessionID),
         "compaction.output.cap": summaryOutput,
@@ -699,7 +733,7 @@ export const make = (dependencies: Dependencies) => {
       // declared budget allows. An over-budget stop follows the same deterministic path.
       summary = trimSummaryHead(first.text, summaryOutput, true)
     }
-    if (!summary.trim()) return decline("summarizer-unavailable")
+    if (!summary.trim()) return yield* fail("summarizer-unavailable", first.generatedChars)
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
@@ -710,6 +744,7 @@ export const make = (dependencies: Dependencies) => {
       recent: selected.recent,
       prefixSeq,
       prefixHash: yield* dependencies.prefixHash(input.sessionID, prefixSeq),
+      generatedChars: first.generatedChars,
     })
     return true
   })

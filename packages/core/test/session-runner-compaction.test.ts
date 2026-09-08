@@ -591,9 +591,8 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     // Recovery itself fails. The user must be told about the OVERFLOW — the thing that actually blocked
     // their turn — not about the summariser, which is an implementation detail of the attempted fix.
     //
-    // ⭐ And no compaction may be recorded: a half-finished recovery that left a compaction behind
-    // would shrink the transcript without producing the summary that justified shrinking it, losing
-    // history to a step that failed.
+    // ⭐ And no semantic compaction may be recorded: the failed operational audit row remains visible,
+    // but it cannot replace history without the summary that justified shrinking it.
     const harness = makeRunnerHarness({
       turns: [
         fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
@@ -619,8 +618,9 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       (context as Array<{ type: string }>).some((message) => message.type === "compaction"),
       "a failed recovery must not leave a compaction behind",
     ).toBe(false)
-    expect(context.slice(-2)).toMatchObject([
+    expect(context.slice(-3)).toMatchObject([
       { type: "user", text: "Continue" },
+      { type: "compaction-status", status: "failed", failure: "summarizer-unavailable" },
       { type: "assistant", finish: "error", error: { message: "prompt too long" } },
     ])
   })

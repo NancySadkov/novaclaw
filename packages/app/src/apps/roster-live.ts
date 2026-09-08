@@ -138,9 +138,36 @@ export const threadOf = (sessions: readonly SessionLike[], rootID: string): read
   return out
 }
 
-/** Every spawned worker below one officer chat, including workers spawned by other workers. */
-export const workersOf = (sessions: readonly SessionLike[], rootID: string): readonly SessionLike[] =>
-  threadOf(sessions, rootID).filter((session) => session.id !== rootID && session.type === "sub-agent")
+/** Every worker that still belongs in the officer's current worker set, including nested workers. */
+export const workersOf = (
+  sessions: readonly SessionLike[],
+  rootID: string,
+  stateOf?: (sessionID: string) => { readonly lifecycle?: string; readonly execution?: ExecutionState },
+): readonly SessionLike[] => {
+  const thread = threadOf(sessions, rootID)
+  const byID = new Map(thread.map((session) => [session.id, session] as const))
+  const terminal = (sessionID: string) => {
+    const state = stateOf?.(sessionID)
+    return (
+      state?.lifecycle === "exited" ||
+      state?.execution === "settled" ||
+      state?.execution === "failed" ||
+      state?.execution === "interrupted"
+    )
+  }
+  return thread.filter((session) => {
+    if (session.id === rootID || session.type !== "sub-agent") return false
+    // A historical child stays in the transcript, but not in the CURRENT worker set. Interrupted
+    // and failed attempts cannot move without replacement; a settled/exited child has returned.
+    // Prune descendants with their terminal ancestor too, so a dead branch cannot leave orphans.
+    let current: SessionLike | undefined = session
+    while (current !== undefined && current.id !== rootID) {
+      if (terminal(current.id)) return false
+      current = current.parentID ? byID.get(current.parentID) : undefined
+    }
+    return current?.id === rootID
+  })
+}
 
 /** Live generated-token rate for an officer and every worker below that officer's chat. */
 export const threadRate = (

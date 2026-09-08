@@ -230,7 +230,7 @@ export const SessionHistoryQuery = Schema.Struct({
 })
 
 export class SessionHistoryResponse extends Schema.Class<SessionHistoryResponse>("SessionHistory")({
-  data: Schema.Array(SessionEvent.Durable),
+  data: Schema.Array(SessionEvent.DurableWire),
   hasMore: Schema.Boolean,
 }) {}
 
@@ -1066,7 +1066,7 @@ export const makeSessionGroups = <
           query: {
             after: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional),
           },
-          success: HttpApiSchema.StreamSse({ data: SessionEvent.Durable }),
+          success: HttpApiSchema.StreamSse({ data: SessionEvent.DurableWire }),
           error: SessionNotFoundError,
         })
           .middleware(sessionLocationMiddleware)

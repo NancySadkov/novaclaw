@@ -70,11 +70,7 @@ export const LONG_STAGE_MS = 10_000
  * or "almost done": a reassurance that carries no information is the thing this replaces, and a
  * guess about progress we cannot see would be describing a fault falsely.
  */
-export const longStageNote = (
-  phase: TurnPhaseTiming["phase"],
-  elapsed: number,
-  compactionTokens?: string,
-): string | undefined => {
+export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number): string | undefined => {
   if (elapsed < LONG_STAGE_MS) return undefined
   switch (phase) {
     case "scheduler-wait":
@@ -84,7 +80,10 @@ export const longStageNote = (
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":
-      return `Compacting the context ${compactionTokens ?? "~0 tokens"}`
+      // The compaction audit row owns live progress from Started onward and survives reload. A
+      // second phase note here duplicated it after ten seconds and was the transient row that
+      // disappeared on navigation.
+      return undefined
     case "context-load":
     case "context-fit":
       return "A long conversation takes longer to assemble."

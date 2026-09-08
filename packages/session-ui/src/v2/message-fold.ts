@@ -146,7 +146,7 @@ function mergeCheckpoint(current: string, offset: number, delta: string): string
 /**
  * Fold one `session.next.*` event into `messages` (the event's session array).
  * Non-transcript events (`prompt.admitted`, `moved`, `completed`,
- * `responder/mode.switched`, `compaction.started`/`delta`, `revert.*`) and non-`session.next`
+ * `responder/mode.switched`, `revert.*`) and non-`session.next`
  * events are no-ops here — they belong to the session-info / revert stores handled in later
  * F1e slices, exactly as the core updater routes them to the session row.
  */
@@ -398,16 +398,68 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       }
       break
     }
-    case "session.next.compaction.ended":
+    case "session.next.compaction.started":
       appendMessage(messages, {
         id: event.data.messageID,
-        type: "compaction",
+        type: "compaction-status",
         reason: event.data.reason,
-        summary: event.data.text,
-        recent: event.data.recent,
+        status: "running",
+        generatedChars: 0,
         time: { created: event.data.timestamp },
       })
       break
+    case "session.next.compaction.delta": {
+      const match = messages.findLast(
+        (message) => message.type === "compaction-status" && message.id === event.data.messageID,
+      )
+      if (match?.type === "compaction-status") match.generatedChars += event.data.text.length
+      break
+    }
+    case "session.next.compaction.progress": {
+      const match = messages.findLast(
+        (message) => message.type === "compaction-status" && message.id === event.data.messageID,
+      )
+      if (match?.type === "compaction-status") match.generatedChars = event.data.generatedChars
+      break
+    }
+    case "session.next.compaction.ended": {
+      const index = messages.findLastIndex(
+        (message) => message.type === "compaction-status" && message.id === event.data.messageID,
+      )
+      const match = index < 0 ? undefined : messages[index]
+      if (event.data.failure !== undefined) {
+        if (match?.type === "compaction-status") {
+          match.status = "failed"
+          match.failure = event.data.failure
+          match.generatedChars = event.data.generatedChars ?? 0
+          match.time.completed = event.data.timestamp
+        }
+        break
+      }
+      if (match?.type === "compaction-status") {
+        messages[index] = {
+          id: match.id,
+          type: "compaction",
+          metadata: match.metadata,
+          reason: event.data.reason,
+          summary: event.data.text,
+          recent: event.data.recent,
+          generatedChars: event.data.generatedChars ?? event.data.text.length,
+          time: { created: match.time.created, completed: event.data.timestamp },
+        }
+      } else {
+        appendMessage(messages, {
+          id: event.data.messageID,
+          type: "compaction",
+          reason: event.data.reason,
+          summary: event.data.text,
+          recent: event.data.recent,
+          generatedChars: event.data.generatedChars ?? event.data.text.length,
+          time: { created: event.data.timestamp, completed: event.data.timestamp },
+        })
+      }
+      break
+    }
     case "session.next.revert.committed": {
       // A committed revert truncates the transcript: the core deletes every message AFTER the
       // boundary (seq > boundary), keeping the boundary message itself. Message ids are ascending,

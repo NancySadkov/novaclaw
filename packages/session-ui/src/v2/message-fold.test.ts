@@ -442,21 +442,45 @@ describe("applySessionNextEvent", () => {
     }
   })
 
-  test("compaction.ended appends a compaction message", () => {
+  test("compaction stays visible from start through durable progress and completion", () => {
     const messages = fold(
       [],
-      ev("session.next.compaction.ended", {
+      ev("session.next.compaction.started", {
         timestamp: 1,
+        sessionID: "s",
+        messageID: "msg_c",
+        reason: "manual",
+      }),
+      ev("session.next.compaction.delta", {
+        timestamp: 2,
+        sessionID: "s",
+        messageID: "msg_c",
+        text: "1234",
+      }),
+      ev("session.next.compaction.progress", {
+        timestamp: 3,
+        sessionID: "s",
+        messageID: "msg_c",
+        generatedChars: 12,
+      }),
+      ev("session.next.compaction.ended", {
+        timestamp: 11,
         sessionID: "s",
         messageID: "msg_c",
         reason: "manual",
         text: "the summary",
         recent: "recent tail",
+        prefixSeq: 0,
+        prefixHash: "hash",
+        generatedChars: 20,
       }),
     )
+    expect(messages).toHaveLength(1)
     const compaction = messages[0]!
     expect(compaction.type).toBe("compaction")
     if (compaction.type === "compaction") {
+      expect(compaction.generatedChars).toBe(20)
+      expect(compaction.time).toEqual({ created: 1, completed: 11 })
       expect(compaction.summary).toBe("the summary")
       expect(compaction.recent).toBe("recent tail")
     }

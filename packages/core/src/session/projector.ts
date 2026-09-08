@@ -1,10 +1,11 @@
 export * as SessionProjector from "./projector"
 
-import { and, desc, eq, gt, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { AgentUsage } from "../agent/usage"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
+import { EventTable } from "../event/sql"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
@@ -214,8 +215,28 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
             .find((message): message is SessionMessage.Shell => message.type === "shell" && message.callID === callID)
         })
       },
+      getCompactionStatus(messageID) {
+        return Effect.gen(function* () {
+          const row = yield* db
+            .select()
+            .from(SessionMessageTable)
+            .where(
+              and(
+                eq(SessionMessageTable.id, messageID),
+                eq(SessionMessageTable.session_id, event.data.sessionID),
+                eq(SessionMessageTable.type, "compaction-status"),
+              ),
+            )
+            .get()
+            .pipe(Effect.orDie)
+          if (!row) return
+          const message = decodeRow(row)
+          return message.type === "compaction-status" ? message : undefined
+        })
+      },
       updateAssistant: updateMessage,
       updateShell: updateMessage,
+      updateCompaction: updateMessage,
       appendMessage,
     }
     yield* SessionMessageUpdater.update(adapter, event)
@@ -242,6 +263,97 @@ function insertMessage(db: DatabaseService, event: SessionEvent.Event, message: 
     .run()
     .pipe(Effect.orDie)
 }
+
+/**
+ * Upgrade successful pre-audit compactions into durable transcript rows.
+ *
+ * The overlay table is the eligibility set: a revert deletes overlays, so this repair cannot revive
+ * reverted history from the immutable event journal. Started supplies the real beginning/sequence;
+ * Ended's overlay row supplies the completion time and summary. `onConflictDoNothing` makes every
+ * boot idempotent and leaves native audit rows entirely alone.
+ */
+export const backfillCompactionTranscript = Effect.fn("SessionProjector.backfillCompactionTranscript")(function* (
+  db: DatabaseService,
+) {
+  const overlays = yield* db.select().from(SessionCompactionTable).all().pipe(Effect.orDie)
+  if (overlays.length === 0) return
+  const starts = yield* db
+    .select({ seq: EventTable.seq, data: EventTable.data })
+    .from(EventTable)
+    .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Compaction.Started.type, 1)))
+    .orderBy(asc(EventTable.seq))
+    .all()
+    .pipe(Effect.orDie)
+  const byMessage = new Map(
+    starts.flatMap((row) => {
+      const messageID = row.data.messageID
+      const timestamp = row.data.timestamp
+      return typeof messageID === "string" && typeof timestamp === "number"
+        ? [[messageID, { seq: row.seq, timestamp }] as const]
+        : []
+    }),
+  )
+  for (const row of overlays) {
+    const start = byMessage.get(row.id)
+    const created = DateTime.makeUnsafe(start?.timestamp ?? row.time_created)
+    const message = SessionMessage.Compaction.make({
+      id: row.id,
+      type: "compaction",
+      reason: row.reason,
+      summary: row.summary,
+      recent: row.recent,
+      generatedChars: row.summary.length,
+      ...(row.metadata === null ? {} : { metadata: row.metadata }),
+      time: { created, completed: DateTime.makeUnsafe(row.time_created) },
+    })
+    const encoded = encodeMessage(message)
+    const { id, type, seq: _seq, ...data } = encoded
+    yield* db
+      .insert(SessionMessageTable)
+      .values({
+        id: SessionMessage.ID.make(id),
+        session_id: row.session_id,
+        type,
+        seq: start?.seq ?? row.seq,
+        time_created: DateTime.toEpochMillis(created),
+        data,
+      })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+  }
+})
+
+/** A process restart cannot leave an operational row claiming work is still running. */
+export const settleInterruptedCompactions = Effect.fn("SessionProjector.settleInterruptedCompactions")(function* (
+  db: DatabaseService,
+  completedAt?: DateTime.Utc,
+) {
+  const completed = completedAt ?? (yield* DateTime.now)
+  const rows = yield* db
+    .select()
+    .from(SessionMessageTable)
+    .where(eq(SessionMessageTable.type, "compaction-status"))
+    .all()
+    .pipe(Effect.orDie)
+  for (const row of rows) {
+    const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
+    if (message.type !== "compaction-status" || message.status !== "running") continue
+    const encoded = encodeMessage({
+      ...message,
+      status: "failed",
+      failure: "process-restarted",
+      time: { ...message.time, completed },
+    })
+    const { id: _id, type, seq: _seq, ...data } = encoded
+    yield* db
+      .update(SessionMessageTable)
+      .set({ type, data })
+      .where(eq(SessionMessageTable.id, row.id))
+      .run()
+      .pipe(Effect.orDie)
+  }
+})
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -553,7 +665,6 @@ export const layer = Layer.effectDiscard(
         // "observed, and it was zero".
         // A/B: removing this line drops session-projector.test.ts to 10 pass / 1 fail.
         Effect.andThen(recordAgentMinute(db, event.data.sessionID, event.data.tokens, Date.now())),
-
       ),
     )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
@@ -588,24 +699,32 @@ export const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
+    yield* events.project(SessionEvent.Compaction.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Compaction.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Compaction.Ended, (event) => {
       if (event.durable === undefined) return Effect.die("Durable Session event is missing aggregate sequence")
-      return db
-        .insert(SessionCompactionTable)
-        .values({
-          id: event.data.messageID,
-          session_id: event.data.sessionID,
-          seq: event.durable.seq,
-          prefix_seq: event.data.prefixSeq,
-          prefix_hash: event.data.prefixHash,
-          reason: event.data.reason,
-          summary: event.data.text,
-          recent: event.data.recent,
-          metadata: event.metadata,
-          time_created: DateTime.toEpochMillis(event.data.timestamp),
-        })
-        .run()
-        .pipe(Effect.orDie)
+      const projection = run(db, event)
+      if (event.data.failure !== undefined) return projection
+      return projection.pipe(
+        Effect.andThen(
+          db
+            .insert(SessionCompactionTable)
+            .values({
+              id: event.data.messageID,
+              session_id: event.data.sessionID,
+              seq: event.durable.seq,
+              prefix_seq: event.data.prefixSeq,
+              prefix_hash: event.data.prefixHash,
+              reason: event.data.reason,
+              summary: event.data.text,
+              recent: event.data.recent,
+              metadata: event.metadata,
+              time_created: DateTime.toEpochMillis(event.data.timestamp),
+            })
+            .run()
+            .pipe(Effect.orDie),
+        ),
+      )
     })
     yield* events.project(SessionEvent.RevertEvent.Staged, (event) =>
       db
@@ -679,6 +798,8 @@ export const layer = Layer.effectDiscard(
         yield* SessionContextEpoch.reset(db, event.data.sessionID)
       }),
     )
+    yield* settleInterruptedCompactions(db)
+    yield* backfillCompactionTranscript(db)
   }),
 )
 

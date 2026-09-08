@@ -23820,6 +23820,9 @@
             "$ref": "#/components/schemas/EventSessionNextCompactionDelta"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextCompactionProgress"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
           },
           {
@@ -26675,6 +26678,43 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.next.compaction.progress"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "generatedChars": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID", "generatedChars"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["session.next.compaction.ended"]
                   },
                   "properties": {
@@ -26706,6 +26746,13 @@
                         "minimum": 0
                       },
                       "prefixHash": {
+                        "type": "string"
+                      },
+                      "generatedChars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "failure": {
                         "type": "string"
                       }
                     },
@@ -27995,6 +28042,9 @@
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextCompactionStarted"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextCompactionProgress"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextCompactionEnded"
@@ -29542,6 +29592,9 @@
             "$ref": "#/components/schemas/SessionNextCompactionStarted"
           },
           {
+            "$ref": "#/components/schemas/SessionNextCompactionProgress"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextCompactionEnded"
           },
           {
@@ -30012,6 +30065,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextCompactionDelta"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextCompactionProgress"
           },
           {
             "$ref": "#/components/schemas/SessionNextCompactionEnded"
@@ -31860,6 +31916,30 @@
       "SessionMessageCompaction": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msg_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "number"
+              },
+              "completed": {
+                "type": "number"
+              }
+            },
+            "required": ["created"],
+            "additionalProperties": false
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
           "type": {
             "type": "string",
             "enum": ["compaction"]
@@ -31874,6 +31954,17 @@
           "recent": {
             "type": "string"
           },
+          "generatedChars": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["id", "time", "type", "reason", "summary", "recent"],
+        "additionalProperties": false
+      },
+      "SessionMessageCompactionStatus": {
+        "type": "object",
+        "properties": {
           "id": {
             "type": "string",
             "pattern": "^msg_"
@@ -31886,6 +31977,9 @@
             "properties": {
               "created": {
                 "type": "number"
+              },
+              "completed": {
+                "type": "number"
               }
             },
             "required": ["created"],
@@ -31894,9 +31988,28 @@
           "seq": {
             "type": "integer",
             "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "enum": ["compaction-status"]
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["auto", "manual"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["running", "failed"]
+          },
+          "generatedChars": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failure": {
+            "type": "string"
           }
         },
-        "required": ["type", "reason", "summary", "recent", "id", "time"],
+        "required": ["id", "time", "type", "reason", "status", "generatedChars"],
         "additionalProperties": false
       },
       "SessionMessage": {
@@ -31927,6 +32040,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionMessageCompaction"
+          },
+          {
+            "$ref": "#/components/schemas/SessionMessageCompactionStatus"
           }
         ]
       },
@@ -34993,6 +35109,64 @@
         "required": ["type", "id", "syncEvent"],
         "additionalProperties": false
       },
+      "SyncEventSessionNextCompactionProgress": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.compaction.progress.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "generatedChars": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID", "generatedChars"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
       "SyncEventSessionNextCompactionEnded": {
         "type": "object",
         "properties": {
@@ -35050,6 +35224,13 @@
                     "minimum": 0
                   },
                   "prefixHash": {
+                    "type": "string"
+                  },
+                  "generatedChars": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failure": {
                     "type": "string"
                   }
                 },
@@ -40994,6 +41175,65 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionNextCompactionProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.compaction.progress"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "generatedChars": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "generatedChars"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "SessionNextCompactionEnded": {
         "type": "object",
         "properties": {
@@ -41056,6 +41296,13 @@
                 "minimum": 0
               },
               "prefixHash": {
+                "type": "string"
+              },
+              "generatedChars": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failure": {
                 "type": "string"
               }
             },
@@ -47341,6 +47588,43 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextCompactionProgress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.compaction.progress"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "generatedChars": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "generatedChars"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextCompactionEnded": {
         "type": "object",
         "properties": {
@@ -47381,6 +47665,13 @@
                 "minimum": 0
               },
               "prefixHash": {
+                "type": "string"
+              },
+              "generatedChars": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failure": {
                 "type": "string"
               }
             },

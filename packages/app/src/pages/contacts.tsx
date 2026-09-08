@@ -548,7 +548,12 @@ function ContactRow(props: {
   })
   const workers = createMemo(() => {
     const sessionID = live().sessionID
-    return sessionID === undefined ? [] : workersOf(props.sessions, sessionID)
+    return sessionID === undefined
+      ? []
+      : workersOf(props.sessions, sessionID, (workerID) => ({
+          lifecycle: sessionData().session_status[workerID]?.type,
+          execution: props.executions.get(workerID)?.state,
+        }))
   })
   const openWorkers = () => {
     const rows = workers()

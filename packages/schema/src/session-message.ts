@@ -451,12 +451,33 @@ export const Assistant = Schema.Struct({
 
 export interface Compaction extends Schema.Schema.Type<typeof Compaction> {}
 export const Compaction = Schema.Struct({
+  ...Base,
   type: Schema.Literal("compaction"),
   reason: Schema.Literals(["auto", "manual"]),
   summary: Schema.String,
   recent: Schema.String,
-  ...Base,
+  /** Exact streamed character count; the UI marks its token conversion as approximate. */
+  generatedChars: NonNegativeInt.pipe(optional),
+  time: Schema.Struct({
+    created: DateTimeUtcFromMillis,
+    completed: DateTimeUtcFromMillis.pipe(optional),
+  }),
 }).annotate({ identifier: "Session.Message.Compaction" })
+
+/** Operational audit row. It cannot be lowered as a semantic conversation checkpoint by type. */
+export interface CompactionStatus extends Schema.Schema.Type<typeof CompactionStatus> {}
+export const CompactionStatus = Schema.Struct({
+  ...Base,
+  type: Schema.Literal("compaction-status"),
+  reason: Schema.Literals(["auto", "manual"]),
+  status: Schema.Literals(["running", "failed"]),
+  generatedChars: NonNegativeInt,
+  failure: Schema.String.pipe(optional),
+  time: Schema.Struct({
+    created: DateTimeUtcFromMillis,
+    completed: DateTimeUtcFromMillis.pipe(optional),
+  }),
+}).annotate({ identifier: "Session.Message.CompactionStatus" })
 
 export const Message = Schema.Union([
   AgentSwitched,
@@ -468,6 +489,7 @@ export const Message = Schema.Union([
   Shell,
   Assistant,
   Compaction,
+  CompactionStatus,
 ])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "Session.Message" })
@@ -481,4 +503,5 @@ export type Message =
   | Shell
   | Assistant
   | Compaction
+  | CompactionStatus
 export type Type = Message["type"]

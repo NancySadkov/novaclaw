@@ -11,8 +11,12 @@ export interface Adapter {
   readonly getCurrentAssistant: () => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getAssistant: (messageID: SessionMessage.ID) => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getCurrentShell: (callID: string) => Effect.Effect<SessionMessage.Shell | undefined>
+  readonly getCompactionStatus: (
+    messageID: SessionMessage.ID,
+  ) => Effect.Effect<SessionMessage.CompactionStatus | undefined>
   readonly updateAssistant: (assistant: SessionMessage.Assistant) => Effect.Effect<void>
   readonly updateShell: (shell: SessionMessage.Shell) => Effect.Effect<void>
+  readonly updateCompaction: (compaction: SessionMessage.Message) => Effect.Effect<void>
   readonly appendMessage: (message: SessionMessage.Message) => Effect.Effect<void>
 }
 
@@ -23,6 +27,8 @@ export function memory(state: MemoryState): Adapter {
   const latestAssistantIndex = () => state.messages.findLastIndex((message) => message.type === "assistant")
   const activeShellIndex = (callID: string) =>
     state.messages.findLastIndex((message) => message.type === "shell" && message.callID === callID)
+  const compactionIndex = (messageID: SessionMessage.ID) =>
+    state.messages.findLastIndex((message) => message.type === "compaction-status" && message.id === messageID)
 
   return {
     getCurrentAssistant() {
@@ -49,6 +55,12 @@ export function memory(state: MemoryState): Adapter {
         return shell?.type === "shell" ? shell : undefined
       })
     },
+    getCompactionStatus(messageID) {
+      return Effect.sync(() => {
+        const message = state.messages[compactionIndex(messageID)]
+        return message?.type === "compaction-status" ? message : undefined
+      })
+    },
     updateAssistant(assistant) {
       return Effect.sync(() => {
         const index = assistantIndex(assistant.id)
@@ -67,6 +79,12 @@ export function memory(state: MemoryState): Adapter {
         state.messages[index] = shell
       })
     },
+    updateCompaction(compaction) {
+      return Effect.sync(() => {
+        const index = compactionIndex(compaction.id)
+        if (index >= 0) state.messages[index] = compaction
+      })
+    },
     appendMessage(message) {
       return Effect.sync(() => {
         state.messages.push(message)
@@ -80,6 +98,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
   type DraftTool = WritableDraft<SessionMessage.AssistantTool>
   type DraftText = WritableDraft<SessionMessage.AssistantText>
   type DraftReasoning = WritableDraft<SessionMessage.AssistantReasoning>
+  type DraftCompaction = WritableDraft<SessionMessage.CompactionStatus>
 
   const latestTool = (assistant: DraftAssistant | undefined, callID?: string) =>
     assistant?.content.findLast(
@@ -106,6 +125,12 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
     Effect.gen(function* () {
       const assistant = yield* adapter.getAssistant(messageID)
       if (assistant) yield* adapter.updateAssistant(produce(assistant, recipe))
+    })
+
+  const updateCompaction = (messageID: SessionMessage.ID, recipe: (draft: DraftCompaction) => void) =>
+    Effect.gen(function* () {
+      const compaction = yield* adapter.getCompactionStatus(messageID)
+      if (compaction) yield* adapter.updateCompaction(produce(compaction, recipe))
     })
 
   return Effect.gen(function* () {
@@ -448,11 +473,49 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           }
         })
       },
-      "session.next.compaction.started": () => Effect.void,
+      "session.next.compaction.started": (event) =>
+        adapter.appendMessage(
+          SessionMessage.CompactionStatus.make({
+            id: event.data.messageID,
+            type: "compaction-status",
+            metadata: event.metadata,
+            reason: event.data.reason,
+            status: "running",
+            generatedChars: 0,
+            time: { created: event.data.timestamp },
+          }),
+        ),
       "session.next.compaction.delta": () => Effect.void,
-      // Compaction is projected into its own derived-overlay table by SessionProjector. It must
-      // never become a transcript message: the transcript is the recomputable source of truth.
-      "session.next.compaction.ended": () => Effect.void,
+      "session.next.compaction.progress": (event) =>
+        updateCompaction(event.data.messageID, (draft) => {
+          draft.generatedChars = event.data.generatedChars
+        }),
+      "session.next.compaction.ended": (event) =>
+        Effect.gen(function* () {
+          const audit = yield* adapter.getCompactionStatus(event.data.messageID)
+          if (!audit) return
+          if (event.data.failure !== undefined) {
+            yield* updateCompaction(event.data.messageID, (draft) => {
+              draft.status = "failed"
+              draft.failure = event.data.failure
+              draft.generatedChars = event.data.generatedChars ?? 0
+              draft.time.completed = event.data.timestamp
+            })
+            return
+          }
+          yield* adapter.updateCompaction(
+            SessionMessage.Compaction.make({
+              id: audit.id,
+              type: "compaction",
+              metadata: audit.metadata,
+              reason: event.data.reason,
+              summary: event.data.text,
+              recent: event.data.recent,
+              generatedChars: event.data.generatedChars ?? event.data.text.length,
+              time: { created: audit.time.created, completed: event.data.timestamp },
+            }),
+          )
+        }),
       "session.next.revert.staged": () => Effect.void,
       "session.next.revert.cleared": () => Effect.void,
       "session.next.revert.committed": () => Effect.void,
