@@ -57,6 +57,12 @@ export const elapsedMs = (startedAt: unknown, completedAt: unknown, now: unknown
   return elapsed === undefined ? undefined : Math.max(0, elapsed)
 }
 
+/** A settled run's user-facing duration, normalized without ever leaking NaN or clock skew. */
+export const completedRunSeconds = (startedAt: unknown, completedAt: unknown): string | undefined => {
+  if (completedAt === undefined || completedAt === null) return undefined
+  return seconds(elapsedMs(startedAt, completedAt, completedAt))
+}
+
 /**
  * How long a stage may run before the receipt says something about it.
  *

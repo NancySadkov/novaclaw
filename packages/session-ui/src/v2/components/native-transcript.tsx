@@ -60,6 +60,7 @@ import { messageTime } from "../message-time"
 import { commandElapsed, shellActionTitle } from "../shell-card"
 import {
   attemptLabel,
+  completedRunSeconds,
   currentPhase,
   detailLabel,
   elapsedMs,
@@ -410,6 +411,11 @@ function Turn(props: {
         message.type === "assistant" ? total + message.content.filter((part) => part.type === "tool").length : total,
       0,
     )
+  const doneIn = () => {
+    const firstAssistant = body().find((message) => message.type === "assistant")
+    const startedAt = props.group.lead?.time.created ?? firstAssistant?.time.created
+    return completedRunSeconds(startedAt, closing()?.time.completed)
+  }
   return (
     <div data-slot="native-turn">
       <Show when={props.group.lead}>
@@ -431,7 +437,11 @@ function Turn(props: {
                 {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
                 the native triangle, which is what left this fold without one. */}
                 <span data-slot="native-turn-work-summary">
-                  <span data-slot="native-turn-work-label">{i18n.t("ui.transcript.done")}</span>
+                  <span data-slot="native-turn-work-label">
+                    <Show when={doneIn()} fallback={i18n.t("ui.transcript.done")}>
+                      {(time) => i18n.t("ui.transcript.doneIn", { time: time() })}
+                    </Show>
+                  </span>
                 </span>
               </summary>
               <div data-slot="native-turn-work-body">

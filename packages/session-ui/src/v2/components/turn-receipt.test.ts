@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   attemptLabel,
+  completedRunSeconds,
   currentPhase,
   elapsedMs,
   LONG_STAGE_MS,
@@ -62,6 +63,15 @@ describe("turn receipt", () => {
     expect(seconds(elapsedMs(new Date(start).toISOString(), start + 500, start + 9_000))).toBe("0.5s")
     expect(elapsedMs("not-a-time", start + 500, start + 9_000)).toBeUndefined()
     expect(seconds(Number.NaN)).toBeUndefined()
+  })
+
+  test("formats a completed run across timestamp carriers, correcting skew without NaN", () => {
+    const start = Date.UTC(2026, 8, 8, 10, 0, 0)
+    expect(completedRunSeconds({ epochMillis: start }, new Date(start + 12_540))).toBe("12.5s")
+    expect(completedRunSeconds(new Date(start).toISOString(), start - 500)).toBe("0.0s")
+    expect(completedRunSeconds("not-a-time", start + 500)).toBeUndefined()
+    expect(completedRunSeconds(start, Number.NaN)).toBeUndefined()
+    expect(completedRunSeconds(start, undefined)).toBeUndefined()
   })
 
   test("takes the newest server-owned open phase as the live label", () => {
