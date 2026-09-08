@@ -9,7 +9,9 @@ import {
   rosterState,
   rosterTask,
   terminalAttention,
+  threadRate,
   threadOf,
+  workersOf,
   type SessionLike,
 } from "./roster-live"
 
@@ -139,6 +141,26 @@ describe("what the colleague has spent", () => {
     ]
     // `root` is not a root session here, so the colleague has no chat — and the walk still returns.
     expect(threadOf(sessions, "root").map((item) => item.id)).toEqual(["root", "loop"])
+  })
+})
+
+describe("an officer's live worker tree", () => {
+  const sessions = [
+    session({ id: "root", agent: "theron" }),
+    session({ id: "worker", parentID: "root", type: "sub-agent", title: "Inspect logs" }),
+    session({ id: "nested", parentID: "worker", type: "sub-agent" }),
+    session({ id: "fork", parentID: "root", type: "interactive" }),
+    session({ id: "elsewhere", agent: "kallias" }),
+  ]
+
+  test("lists only spawned workers, transitively", () => {
+    expect(workersOf(sessions, "root").map((row) => row.id)).toEqual(["worker", "nested"])
+  })
+
+  test("adds every thread's current generated-token rate", () => {
+    const rates: Record<string, number> = { root: 2, worker: 3, nested: 4, fork: 5, elsewhere: 99 }
+    expect(threadRate(sessions, "root", (id) => rates[id])).toBe(14)
+    expect(threadRate(sessions, "missing", (id) => rates[id])).toBeUndefined()
   })
 })
 

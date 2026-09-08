@@ -165,4 +165,15 @@ describe("roster session time boundary", () => {
 
     expect(rows[0]?.time).toEqual({ created: 1_000, updated: 2_000, archived: 3_000 })
   })
+
+  test("preserves the spawned-worker type used by the officer roster", async () => {
+    const rows = await listSessions({
+      session: {
+        list: async () => ({
+          data: { data: [{ id: "worker", parentID: "root", type: "sub-agent", time: { created: 1 } }] },
+        }),
+      },
+    } as never)
+    expect(rows[0]?.type).toBe("sub-agent")
+  })
 })

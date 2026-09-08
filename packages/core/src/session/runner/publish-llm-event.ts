@@ -485,7 +485,30 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* endToolInput(event)
         return
       case "tool-call": {
-        if (!tools.has(event.id)) yield* startToolInput(event)
+        // Some providers stream tool input; others deliver the whole call atomically. The latter is
+        // still the model's first output. Without this mark the turn remains in provider-prefill
+        // while the command is already running, so every ordinary command looks like a fresh model
+        // pause until the entire tool step settles.
+        yield* recordFirstOutput()
+        const atomic = !tools.has(event.id)
+        if (atomic) {
+          yield* startToolInput(event)
+          // Atomic providers skip the tool-input stream entirely. Recreate its single delta here so
+          // live token telemetry counts generated file bodies/patches just as it does for streaming
+          // providers; the stored Tool.Called input remains the authoritative parsed value.
+          const delta = typeof event.input === "string" ? event.input : JSON.stringify(event.input)
+          if (delta.length > 0) {
+            yield* toolInput.append(event.id, delta)
+            const tool = tools.get(event.id)!
+            yield* events.publish(SessionEvent.Tool.Input.Delta, {
+              sessionID: input.sessionID,
+              timestamp: yield* timestamp,
+              assistantMessageID: tool.assistantMessageID,
+              callID: event.id,
+              delta,
+            })
+          }
+        }
         const tool = tools.get(event.id)!
         if (!tool.inputEnded) yield* endToolInput(event)
         if (tool.name !== event.name)

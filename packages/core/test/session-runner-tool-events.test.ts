@@ -19,6 +19,7 @@ const capture = () => {
     readonly checkpoint: "clear" | "mark" | "keep"
   }> = []
   let toolProtocolMarks = 0
+  let firstOutputs = 0
   const events = EventV2.Service.of({
     publish: (definition, data) =>
       Effect.sync(() => {
@@ -59,9 +60,14 @@ const capture = () => {
           toolProtocolMarks++
         }),
       toolSideEffects: { read: "read" },
+      onFirstOutput: () =>
+        Effect.sync(() => {
+          firstOutputs++
+        }),
     }),
     boundaries,
     toolProtocolMarks: () => toolProtocolMarks,
+    firstOutputs: () => firstOutputs,
   }
 }
 
@@ -83,6 +89,18 @@ const result = LLMEvent.toolResult({
       { type: "file", uri: `data:image/png;base64,${base64}`, mime: "image/png", name: "pixel.png" },
     ],
   },
+})
+
+test("an atomic tool call ends provider prefill before the command runs", async () => {
+  const { published, publisher, firstOutputs } = capture()
+  await Effect.runPromise(publisher.publish(call))
+  expect(firstOutputs()).toBe(1)
+  expect(published.find((event) => event.type === "session.next.tool.input.delta")?.data).toMatchObject({
+    callID: call.id,
+    delta: JSON.stringify(call.input),
+  })
+  await Effect.runPromise(publisher.publish(result))
+  expect(firstOutputs()).toBe(1)
 })
 
 test("local tool success serializes media base64 once and reconstructs from structured content", async () => {

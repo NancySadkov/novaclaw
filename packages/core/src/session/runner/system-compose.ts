@@ -533,16 +533,25 @@ export const agentIdentitySection = (profile: AgentIdentityProfile): string => {
 export const organizationSection = (input: {
   readonly agentID: string
   readonly officer: boolean
+  readonly worker?: boolean | undefined
   readonly superior?: { readonly id: string; readonly name?: string | undefined } | undefined
 }): string | undefined => {
+  const superior = input.superior?.name?.trim() || input.superior?.id || "Nova"
+  const id = input.superior?.id ?? "nova"
+  // A worker inherits its officer's profile and authority, but not the officer's place in the org
+  // chart. This branch MUST precede Nova's CEO branch: a worker Nova spawned is staff working for
+  // Nova, not a second CEO wearing the inherited profile.
+  if (input.worker)
+    return [
+      `You are a worker spawned by ${superior} (id \`${id}\`). ${superior} is your superior; report your result to them.`,
+      `If your work conflicts with another agent's work, pause the conflicting part and report it to ${superior}. Do not start an edit war, overwrite their work, or stop/kill their processes.`,
+    ].join("\n")
   if (input.agentID === "nova")
     return [
       "You are this instance's CEO and are accountable only to the user.",
       "You are responsible for resolving conflicts between officers. When their work overlaps — for example, two officers need to edit the same file — assign ownership or sequence the work so they do not fight, overwrite one another, or stop one another's processes.",
     ].join("\n")
   if (!input.officer) return undefined
-  const superior = input.superior?.name?.trim() || input.superior?.id || "Nova"
-  const id = input.superior?.id ?? "nova"
   return [
     `Your superior is ${superior} (id \`${id}\`). Nova is the instance's CEO and is ultimately accountable to the user.`,
     `If your work conflicts with another officer's work, pause the conflicting part and message ${superior} with the \`colleague\` tool. Do not start an edit war, overwrite their work, or stop/kill their processes; ask your superior to assign ownership or sequence the work.`,

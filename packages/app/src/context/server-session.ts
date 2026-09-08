@@ -284,19 +284,20 @@ export function createServerSession(
       )
         void resolve(eventID).catch(() => {})
     }
-    // Live-rate accumulation (Chats ps row): text/reasoning stream fragments are live-only
-    // events — count their chars toward the running agent's ~tokens/t-s badge. Nothing else
-    // folds them here, so short-circuit after noting.
-    if (event.type === "session.next.text.delta" || event.type === "session.next.reasoning.delta") {
-      const props = event.properties as { sessionID?: string; delta?: string }
-      if (typeof props.sessionID === "string" && typeof props.delta === "string") {
+    // Live-rate accumulation (Home + All Officers): every model-generated stream channel counts.
+    // Tool input is where a large file-writing call arrives; compaction is a separate model stream.
+    // `generatedDelta` owns that vocabulary so a future surface cannot accidentally count only the
+    // prose-shaped half again.
+    const generated = LiveRate.generatedDelta(event)
+    if (generated) {
+      if (event.type === "session.next.text.delta" || event.type === "session.next.reasoning.delta") {
         // The last phase of the boot timeline: the first generated character to
         // reach the renderer. Deliberately here rather than at a request or a status change — what
         // the measurement is for is time until the user SEES something, and only a delta proves that.
         // Repeats are dropped by the timeline itself, so this needs no guard of its own.
         reportBootPhase("first-chat-token")
-        noteLive(props.sessionID, props.delta.length)
       }
+      noteLive(generated.sessionID, generated.chars)
       return
     }
     // P2 (ui-arch-hardening): fold V2 CONTROL events into the cached record so open views stay

@@ -14,7 +14,9 @@ import {
   isRealUserMessage,
   pack,
   packRequest,
-  CATEGORY_RECLAMATION_BAND_TOKENS,
+  CATEGORY_RECLAMATION_MAX_BAND_TOKENS,
+  CATEGORY_RECLAMATION_MIN_BAND_TOKENS,
+  categoryReclamationBand,
   DEFAULT_CONTEXT_SIZE,
 } from "./context-pack"
 
@@ -419,10 +421,12 @@ describe("pack", () => {
     const usage = initial
       .filter((message) => message.role === "tool")
       .reduce((sum, message) => sum + estimateMessage(message), 0)
+    const toolCap = Math.floor(usage * 0.75)
+    const band = categoryReclamationBand(toolCap)
     const caps = {
       messages: 100_000,
       retrieval: 100_000,
-      tool_output: usage - (CATEGORY_RECLAMATION_BAND_TOKENS - 1),
+      tool_output: usage - (band - 1),
     }
     const before = pack(initial, 100_000, { historyCaps: caps })
     const after = pack([...initial, assistantCall("next"), toolResult("next", "read", "cross")], 100_000, {
@@ -446,6 +450,12 @@ describe("pack", () => {
         .filter((message) => message.role === "tool")
         .reduce((sum, message) => sum + estimateMessage(message), 0),
     ).toBeLessThanOrEqual(caps.tool_output)
+  })
+
+  test("reclamation hysteresis scales with long contexts without becoming unbounded", () => {
+    expect(categoryReclamationBand(1_000)).toBe(CATEGORY_RECLAMATION_MIN_BAND_TOKENS)
+    expect(categoryReclamationBand(104_857)).toBe(Math.floor(104_857 / 4))
+    expect(categoryReclamationBand(1_000_000)).toBe(CATEGORY_RECLAMATION_MAX_BAND_TOKENS)
   })
 
   test("zero and tiny category caps are pure and deterministic while protected anchors survive", () => {

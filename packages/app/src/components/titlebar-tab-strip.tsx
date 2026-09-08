@@ -100,7 +100,7 @@ function SessionTabSlot(props: {
       ref={sortable.ref}
       data-titlebar-tab-slot
       data-tab-key={props.id}
-      class="relative flex w-56 min-w-7 max-w-56 flex-shrink"
+      class="relative flex w-56 min-w-14 max-w-56 flex-shrink"
       classList={{ hidden: !session() }}
     >
       <TabNavItem
@@ -153,7 +153,7 @@ function DraftTabSlot(props: {
       ref={sortable.ref}
       data-titlebar-tab-slot
       data-tab-key={props.id}
-      class="relative flex w-56 min-w-7 max-w-56 flex-shrink"
+      class="relative flex w-56 min-w-14 max-w-56 flex-shrink"
     >
       <DraftTabItem
         ref={(el) => {
@@ -217,7 +217,7 @@ export function TitlebarTabStrip(props: {
   })
 
   return (
-    <div data-slot="titlebar-tabs" class="relative min-w-0">
+    <div data-slot="titlebar-tabs" class="relative min-w-0 flex-1 overflow-hidden">
       <div
         data-slot="titlebar-tabs-scroll"
         class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"

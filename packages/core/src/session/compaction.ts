@@ -18,6 +18,7 @@ import { FinishRecovery } from "./runner/finish-recovery"
 import { PromptEstimate } from "./runner/prompt-estimate"
 import { Flag } from "../flag/flag"
 import { SessionScheduler } from "./scheduler"
+import { PostfixPrompt } from "./runner/postfix-prompt"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -401,29 +402,27 @@ export const overflowRecentBudget = (input: {
   return Math.max(0, input.configuredRecentTokens - requiredReclaim)
 }
 
-/**
- * Stable-first on purpose. `SUMMARY_TEMPLATE` is invariant across compactions, so it precedes the
- * volatile instruction, previous summary, and transcript and can remain a reusable provider prefix.
- * The transcript is last and explicitly named by `<history>`; the delimiter is framing, not a trust
- * boundary, but it avoids directional prose whose meaning silently changes when the order changes.
- *
- * The committing compaction test pins both this order and the actual request sent to the model. Keep
- * the two together: a direct builder assertion alone would not prove that the runtime uses it.
- */
-export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
-  [
-    SUMMARY_TEMPLATE,
-    input.previousSummary
-      ? `Update the anchored summary in <previous-summary> using the conversation history in <history>.
+/** The operation appended AFTER its evidence. Never put this in `system`: a derived pass must retain
+ * the working request as its exact provider prefix, and a sequential model should encounter the
+ * current instruction after the events it is asked to interpret. */
+export const buildInstruction = (previousSummary?: string, evidence: "history" | "prefix" = "history") => {
+  const source = evidence === "prefix" ? "the conversation above" : "the conversation history in <history>"
+  return [
+    previousSummary
+      ? `Update the anchored summary in <previous-summary> using ${source}.
 Preserve still-true details, remove stale details, and merge in the new facts.
 <previous-summary>
-${input.previousSummary}
+${previousSummary}
 </previous-summary>`
-      : "Create a new anchored summary from the conversation history in <history>.",
-    `<history>
-${input.context.join("\n\n")}
-</history>`,
+      : `Create a new anchored summary from ${source}.`,
+    SUMMARY_TEMPLATE,
   ].join("\n\n")
+}
+
+/** Standalone fallback for callers that do not carry an assembled provider request. Evidence still
+ * precedes the operation, so even the cache-miss path keeps the sequential reading invariant. */
+export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
+  [`<history>\n${input.context.join("\n\n")}\n</history>`, buildInstruction(input.previousSummary)].join("\n\n")
 
 /**
  * Enforce the shared token estimate on every summary. Provider-reported visible usage is an
@@ -481,7 +480,8 @@ ${summary}
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
   const summarize = Effect.fn("SessionCompaction.summarize")(function* (input: {
-    readonly prompt: string
+    readonly request: LLMRequest
+    readonly preservesWorkingPrefix?: boolean
     readonly model: Model
     readonly outputTokens: number
     readonly timeoutMs?: number
@@ -492,12 +492,10 @@ export const make = (dependencies: Dependencies) => {
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
     const generation = ReasoningBudget.stream({
-      request: LLM.request({
-        model: input.model,
-        messages: [Message.user(input.prompt)],
-        tools: [],
-        generation: { maxTokens: input.outputTokens },
-      }),
+      request: input.request,
+      // The request already contains the working turn's reasoning envelope. Appending another
+      // system part here would move the divergence point to token zero and defeat postfix framing.
+      ...(input.preservesWorkingPrefix ? { preparedOpening: input.request } : {}),
       stream: (request) => dependencies.llm.stream(request),
       budget: COMPACTION_REASONING_BUDGET,
     }).pipe(
@@ -660,8 +658,28 @@ export const make = (dependencies: Dependencies) => {
     // The chain is deliberately finite: one ordinary summary, one request to trim that ACTUAL
     // output, then a deterministic oldest-first cut. A model cannot turn compaction into an
     // unbounded self-edit loop.
+    // When the runner supplied its assembled request, preserve that exact request at the front and
+    // append only the summarization operation. Direct compactor callers without provider history use
+    // the serialized history as their evidence prefix; the instruction is still last.
+    const cachedPrefixRequest =
+      input.request.messages.length > 0
+        ? PostfixPrompt.append(input.request, buildInstruction(carriedSummary, "prefix"), {
+            maxTokens: summaryOutput,
+            disableTools: true,
+          })
+        : undefined
+    const summaryRequest =
+      cachedPrefixRequest !== undefined && Token.estimateStructured(LLM.requestInput(cachedPrefixRequest)) <= promptCeiling
+        ? cachedPrefixRequest
+        : LLM.request({
+            model: input.model,
+            messages: [Message.user(summaryPrompt)],
+            tools: [],
+            generation: { maxTokens: summaryOutput },
+          })
     const first = yield* summarize({
-      prompt: summaryPrompt,
+      request: summaryRequest,
+      preservesWorkingPrefix: summaryRequest === cachedPrefixRequest,
       model: input.model,
       outputTokens: summaryOutput,
       timeoutMs: input.compactionTimeoutMs,
@@ -685,7 +703,12 @@ export const make = (dependencies: Dependencies) => {
       const second =
         Token.estimate(trimPrompt) <= context - summaryOutput
           ? yield* summarize({
-              prompt: trimPrompt,
+              request: LLM.request({
+                model: input.model,
+                messages: [Message.user(trimPrompt)],
+                tools: [],
+                generation: { maxTokens: summaryOutput },
+              }),
               model: input.model,
               outputTokens: summaryOutput,
               timeoutMs: input.compactionTimeoutMs,

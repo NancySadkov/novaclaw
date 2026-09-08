@@ -37,6 +37,38 @@ export interface LiveRateSnapshot {
   readonly tps: number
 }
 
+/**
+ * Every live event that carries MODEL-GENERATED characters.
+ *
+ * Keep this vocabulary beside the rate accumulator rather than at its SSE caller. Text and
+ * reasoning are only two presentations of model output: a large file write arrives as streamed
+ * tool input, and a summary produced during compaction arrives on its own channel. Omitting either
+ * makes the same model appear to stop while it is visibly doing useful work.
+ */
+export function generatedDelta(event: {
+  readonly type: string
+  readonly properties?: unknown
+}): { readonly sessionID: string; readonly chars: number } | undefined {
+  const properties = event.properties
+  if (properties === null || typeof properties !== "object") return undefined
+  const sessionID = "sessionID" in properties ? properties.sessionID : undefined
+  if (typeof sessionID !== "string") return undefined
+
+  if (
+    event.type === "session.next.text.delta" ||
+    event.type === "session.next.reasoning.delta" ||
+    event.type === "session.next.tool.input.delta"
+  ) {
+    const delta = "delta" in properties ? properties.delta : undefined
+    return typeof delta === "string" && delta.length > 0 ? { sessionID, chars: delta.length } : undefined
+  }
+  if (event.type === "session.next.compaction.delta") {
+    const text = "text" in properties ? properties.text : undefined
+    return typeof text === "string" && text.length > 0 ? { sessionID, chars: text.length } : undefined
+  }
+  return undefined
+}
+
 export function snapshot(state: LiveRateState, now: number): LiveRateSnapshot {
   const inWindow = state.samples.filter((sample) => now - sample.at <= WINDOW_MS)
   const windowChars = inWindow.reduce((total, sample) => total + sample.chars, 0)

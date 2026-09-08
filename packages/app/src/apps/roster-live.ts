@@ -16,6 +16,7 @@ export interface SessionLike {
   readonly id: string
   readonly parentID?: string | undefined
   readonly agent?: string | undefined
+  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | undefined
   readonly title?: string | undefined
   readonly tokens?:
     | { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
@@ -134,6 +135,21 @@ export const threadOf = (sessions: readonly SessionLike[], rootID: string): read
     }
   }
   return out
+}
+
+/** Every spawned worker below one officer chat, including workers spawned by other workers. */
+export const workersOf = (sessions: readonly SessionLike[], rootID: string): readonly SessionLike[] =>
+  threadOf(sessions, rootID).filter((session) => session.id !== rootID && session.type === "sub-agent")
+
+/** Live generated-token rate for an officer and every worker below that officer's chat. */
+export const threadRate = (
+  sessions: readonly SessionLike[],
+  rootID: string,
+  rateOf: (sessionID: string) => number | undefined,
+): number | undefined => {
+  let total = 0
+  for (const session of threadOf(sessions, rootID)) total += rateOf(session.id) ?? 0
+  return total > 0 ? total : undefined
 }
 
 export const liveFor = (sessions: readonly SessionLike[], agentID: string): RosterLive => {

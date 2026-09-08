@@ -22,9 +22,11 @@ import {
   ratePerMinute,
   rosterState,
   rosterTask,
+  threadRate,
   type RosterLive,
   type SessionLike,
   type UsageMinute,
+  workersOf,
 } from "@/apps/roster-live"
 import { messageTime } from "@novaclaw/session-ui/v2/message-time"
 import { compactTokens } from "@/pages/home-session-meta"
@@ -33,6 +35,7 @@ import { sessionHref } from "@/utils/session-route"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { sessionExecutions, type SessionExecutionInfo } from "@/utils/session-execution-api"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
@@ -489,6 +492,7 @@ function ContactRow(props: {
   onOpen: () => void
 }) {
   const language = useLanguage()
+  const dialog = useDialog()
   const rowSync = useServerSync()
   const live = createMemo<RosterLive>(() => liveFor(props.sessions, props.view.id))
   // ⚠️ `now` is a SIGNAL, not a literal read (review D5). `Date.now()` inside the memo is untracked,
@@ -536,9 +540,49 @@ function ContactRow(props: {
    */
   const perSecond = createMemo(() => {
     const sessionID = live().sessionID
-    const tps = sessionID ? sessionData().session_live(sessionID)?.tps : undefined
+    const tps = sessionID
+      ? threadRate(props.sessions, sessionID, (id) => sessionData().session_live(id)?.tps)
+      : undefined
     return tps && tps > 0 ? String(Math.round(tps)) : undefined
   })
+  const workers = createMemo(() => {
+    const sessionID = live().sessionID
+    return sessionID === undefined ? [] : workersOf(props.sessions, sessionID)
+  })
+  const openWorkers = () => {
+    const rows = workers()
+    if (rows.length === 0 || props.serverKey === undefined) return
+    void dialog.showScoped(() => (
+      <Dialog size="normal" fit>
+        <DialogHeader>
+          <DialogTitle>{language.t("contacts.workers.title", { name: props.view.name })}</DialogTitle>
+        </DialogHeader>
+        <DialogBody class="max-h-[70vh] overflow-y-auto p-2">
+          <For each={rows}>
+            {(worker, index) => (
+              <A
+                href={sessionHref(props.serverKey!, worker.id)}
+                onClick={() => dialog.close()}
+                class="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-v2-background-bg-layer-02"
+              >
+                <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-v2-background-bg-layer-03 text-xs">
+                  {index() + 1}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm">
+                    {worker.title?.trim() || language.t("contacts.workers.untitled", { number: String(index() + 1) })}
+                  </span>
+                  <span class="block truncate text-[11px] text-v2-text-text-faint">
+                    {language.t("contacts.workers.open")}
+                  </span>
+                </span>
+              </A>
+            )}
+          </For>
+        </DialogBody>
+      </Dialog>
+    ))
+  }
   // The transcript's own formatter, so a timestamp reads the same in both places. Ticked by `nowTick`
   // so "today" stops being today at midnight without a reload.
   const lastTouched = createMemo(() => {
@@ -660,6 +704,17 @@ function ContactRow(props: {
         <span class="shrink-0 text-[11px] tabular-nums text-v2-text-text-faint" title={language.t("contacts.spend")}>
           {compactTokens(live().tokens.generated)}
         </span>
+      </Show>
+      <Show when={workers().length > 0 && props.serverKey !== undefined}>
+        <button
+          type="button"
+          data-action="contacts-workers"
+          onClick={openWorkers}
+          class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+          title={language.t("contacts.workers.openAll", { name: props.view.name })}
+        >
+          {language.plural("contacts.workers.count", workers().length)}
+        </button>
       </Show>
       <button
         type="button"

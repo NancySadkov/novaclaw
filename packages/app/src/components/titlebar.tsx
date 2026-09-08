@@ -347,26 +347,18 @@ export function Titlebar() {
             />
 
             {/* Contacts owns the complete roster; the titlebar never grows a second task manager. */}
-            <Show when={location.pathname !== "/"}>
-              <TooltipV2 placement="bottom" value={language.t("nav.tasks.all")} class="shrink-0">
-                <IconButtonV2
-                  type="button"
-                  variant="ghost-muted"
-                  size="large"
-                  class="!w-9 shrink-0"
-                  data-component="titlebar-task-list"
-                  icon={<IconV2 name="bullet-list" />}
-                  onClick={() => navigate("/tasks")}
-                  aria-label={language.t("nav.tasks.all")}
-                />
-              </TooltipV2>
-            </Show>
-            {/* The spacer that pushes the right-hand actions to the edge and lets the tab strip
-                take the rest. It was briefly `#novaclaw-titlebar-center`, a portal host for a
-                "Search {project} ⌘K" box (added 2026-08-07, removed by the owner on 2026-08-11):
-                this row is the TAB STRIP, and a search field in it competes with the tabs for the
-                one row a person reads constantly. `file.open` keeps its palette entry and keybind. */}
-            <div class="flex min-w-0 flex-1" />
+            <TooltipV2 placement="bottom" value={language.t("nav.tasks.all")} class="shrink-0">
+              <IconButtonV2
+                type="button"
+                variant="ghost-muted"
+                size="large"
+                class="!w-9 shrink-0"
+                data-component="titlebar-task-list"
+                icon={<IconV2 name="bullet-list" />}
+                onClick={() => navigate("/tasks")}
+                aria-label={language.t("nav.tasks.all")}
+              />
+            </TooltipV2>
             <TitlebarV2Right />
           </div>
         )

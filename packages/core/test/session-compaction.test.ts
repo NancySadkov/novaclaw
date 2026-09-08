@@ -9,7 +9,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
-import { LLM, LLMEvent, Model, type LLMRequest } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, Model, SystemPart, type LLMRequest } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { Effect, Stream } from "effect"
 
@@ -329,25 +329,25 @@ test("overflow recovery measures the exact packed requests and resends at most o
   const runner = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
   const openingAt = runner.indexOf("const openingRequest = ProviderDispatch.openingRequest({")
   const estimateAt = runner.indexOf("const promptEstimate = PromptEstimate.resolve({", openingAt)
-  const compactionAt = runner.indexOf("compactIfNeeded({", estimateAt)
-  const prepareAt = runner.indexOf("ProviderDispatch.prepare({", compactionAt)
+  const prepareAt = runner.indexOf("ProviderDispatch.prepare({", estimateAt)
+  const compactionAt = runner.indexOf("compactIfNeeded({", prepareAt)
   const packedAt = runner.indexOf("const request = preparedDispatch.request")
   const measuredAt = runner.indexOf("const outboundPromptTokens = Math.ceil(", packedAt)
   const authorizeAt = runner.indexOf("OverflowRecoveryPolicy.authorizeRetry({", measuredAt)
   const providerAt = runner.indexOf("ProviderDispatch.stream({", authorizeAt)
   expect(openingAt).toBeGreaterThan(-1)
   expect(estimateAt).toBeGreaterThan(openingAt)
-  expect(compactionAt).toBeGreaterThan(estimateAt)
-  expect(prepareAt).toBeGreaterThan(compactionAt)
-  expect(packedAt).toBeGreaterThan(prepareAt)
+  expect(prepareAt).toBeGreaterThan(estimateAt)
+  expect(compactionAt).toBeGreaterThan(prepareAt)
+  expect(packedAt).toBeGreaterThan(compactionAt)
   expect(measuredAt).toBeGreaterThan(packedAt)
   expect(authorizeAt).toBeGreaterThan(measuredAt)
   expect(providerAt).toBeGreaterThan(authorizeAt)
   expect(runner.match(/ProviderDispatch\.openingRequest\(\{/g)).toHaveLength(1)
   expect(runner.slice(openingAt, estimateAt)).toContain("request: baseRequest")
-  expect(runner.slice(estimateAt, compactionAt)).toContain("request: openingRequest")
-  expect(runner.slice(compactionAt, prepareAt)).toContain("request: openingRequest")
+  expect(runner.slice(estimateAt, prepareAt)).toContain("request: openingRequest")
   expect(runner.slice(prepareAt, packedAt)).toContain("request: openingRequest")
+  expect(runner.slice(compactionAt, packedAt)).toContain("request: preparedDispatch.request")
   expect(runner.slice(measuredAt, authorizeAt)).toContain("PromptEstimate.whole(request")
   expect(runner.slice(providerAt)).toContain("preparedOpening: request")
   expect(runner.slice(authorizeAt, providerAt)).toContain("compressedPromptTokens: outboundPromptTokens")
@@ -387,7 +387,7 @@ test("one resolved route profile reaches every compaction and packing consumer",
   }
 
   expectProfileNear(runner, "const promptEstimate = PromptEstimate.resolve({", 500, false)
-  expectProfileNear(runner, "harness.compaction.compactIfNeeded({", 450)
+  expectProfileNear(runner, "harness.compaction.compactIfNeeded({", 500)
   expectProfileNear(runner, "const preparedDispatch = ProviderDispatch.prepare({", 800)
 
   // Strict mode builds two independently dispatched requests: each engine call, and the final
@@ -410,7 +410,7 @@ const summaryModel = Model.make({
   route: OpenAIChat.route.with({ limits: { context: 100_000, output: 32 } }),
 })
 
-const driveSummary = (attempts: readonly SummaryAttempt[]) => {
+const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) => {
   const requests: LLMRequest[] = []
   const published: { readonly type: string; readonly data: Record<string, unknown> }[] = []
   let index = 0
@@ -455,7 +455,7 @@ const driveSummary = (attempts: readonly SummaryAttempt[]) => {
           assistant("new answer"),
         ),
         model: summaryModel,
-        request: LLM.request({ model: summaryModel, messages: [], tools: [] }),
+        request: prefix ?? LLM.request({ model: summaryModel, messages: [], tools: [] }),
       },
       "manual",
     ),
@@ -468,31 +468,30 @@ const driveSummary = (attempts: readonly SummaryAttempt[]) => {
   return { compacted, requests, ended, userPrompt }
 }
 
-describe("stable compaction prompt", () => {
-  test("keeps the invariant template before volatile instructions and explicitly delimits history", () => {
+describe("postfix compaction prompt", () => {
+  test("puts evidence before the current instruction and output contract", () => {
     const context = ["[User]: alpha", "[Assistant]: beta"]
     const fresh = SessionCompaction.buildPrompt({ context })
     const updated = SessionCompaction.buildPrompt({ previousSummary: "## Goal\n- existing", context })
     const freshInstruction = "Create a new anchored summary"
     const updateInstruction = "Update the anchored summary"
 
-    expect(fresh).toStartWith("Output exactly the Markdown structure")
-    expect(updated).toStartWith("Output exactly the Markdown structure")
-    expect(fresh.slice(0, fresh.indexOf(freshInstruction))).toBe(updated.slice(0, updated.indexOf(updateInstruction)))
-    expect(fresh.indexOf("</template>")).toBeLessThan(fresh.indexOf(freshInstruction))
-    expect(fresh.indexOf(freshInstruction)).toBeLessThan(fresh.indexOf("<history>"))
+    expect(fresh).toStartWith(`<history>\n${context.join("\n\n")}\n</history>`)
+    expect(updated).toStartWith(`<history>\n${context.join("\n\n")}\n</history>`)
+    expect(fresh.indexOf("</history>")).toBeLessThan(fresh.indexOf(freshInstruction))
+    expect(fresh.indexOf(freshInstruction)).toBeLessThan(fresh.indexOf("<template>"))
     expect(fresh).toContain(
       "Preserve complete condition → action/result chains and all exact numbers, thresholds, exceptions, and later-checked facts.",
     )
     expect(fresh).toContain(
       "Put the actual later-checked fact and its values in Critical Context. Saying a fact was stored, exists, or should be preserved is not the fact and is invalid.",
     )
-    expect(updated.indexOf("</template>")).toBeLessThan(updated.indexOf(updateInstruction))
-    expect(updated.indexOf("<previous-summary>")).toBeLessThan(updated.indexOf("<history>"))
-    expect(fresh).toEndWith(`<history>\n${context.join("\n\n")}\n</history>`)
+    expect(updated.indexOf("</history>")).toBeLessThan(updated.indexOf(updateInstruction))
+    expect(updated.indexOf("<previous-summary>")).toBeLessThan(updated.indexOf("<template>"))
+    expect(fresh).toEndWith("- Do not mention the summary process or that context was compacted.")
   })
 
-  test("a committing compaction sends the stable-first, history-delimited prompt", () => {
+  test("a committing compaction sends a history-first, instruction-last prompt", () => {
     const summary = "## Goal\n- done"
     const run = driveSummary([{ text: summary, reason: "stop", outputTokens: 8 }])
 
@@ -500,11 +499,30 @@ describe("stable compaction prompt", () => {
     expect(run.requests).toHaveLength(1)
     expect(run.ended?.text).toBe(summary)
     const prompt = run.userPrompt(run.requests[0]!)
-    expect(prompt).toStartWith("Output exactly the Markdown structure")
-    expect(prompt.indexOf("</template>")).toBeLessThan(prompt.indexOf("Create a new anchored summary"))
-    expect(prompt.indexOf("Create a new anchored summary")).toBeLessThan(prompt.indexOf("<history>"))
+    expect(prompt).toStartWith("<history>")
+    expect(prompt.indexOf("</history>")).toBeLessThan(prompt.indexOf("Create a new anchored summary"))
+    expect(prompt.indexOf("Create a new anchored summary")).toBeLessThan(prompt.indexOf("<template>"))
     expect(prompt).toContain("[User]: old question")
-    expect(prompt).toEndWith("</history>")
+    expect(prompt).toEndWith("- Do not mention the summary process or that context was compacted.")
+  })
+
+  test("a committing compaction reuses the assembled working request and only appends its operation", () => {
+    const prefix = LLM.request({
+      model: summaryModel,
+      system: [SystemPart.make("officer identity")],
+      messages: [Message.user("first request"), Message.assistant("first answer")],
+      tools: [{ name: "read", description: "read", inputSchema: { type: "object" } }] as never,
+    })
+    const run = driveSummary([{ text: "## Goal\n- done", reason: "stop", outputTokens: 8 }], prefix)
+    const request = run.requests[0]!
+
+    expect(request.system).toEqual(prefix.system)
+    expect(request.tools).toEqual(prefix.tools)
+    expect(request.messages.slice(0, -1)).toEqual([...prefix.messages])
+    expect(run.userPrompt(request).split("\n").at(-1)).toBe(
+      "- Do not mention the summary process or that context was compacted.",
+    )
+    expect(run.userPrompt(request)).toContain("Create a new anchored summary")
   })
 })
 

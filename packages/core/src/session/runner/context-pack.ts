@@ -657,12 +657,30 @@ type HistoryCategory = "messages" | "retrieval" | "tool_output"
  * not rewrite the oldest packed prefix on every request. A raw overflow anywhere inside one band
  * selects the same reclamation target; only crossing a band boundary can advance the frontier.
  */
-export const CATEGORY_RECLAMATION_BAND_TOKENS = 4_096
+export const CATEGORY_RECLAMATION_MIN_BAND_TOKENS = 4_096
+export const CATEGORY_RECLAMATION_MAX_BAND_TOKENS = 32_768
+
+/**
+ * A quarter of the category share, bounded for small and very large windows.
+ *
+ * The old fixed 4K band looked coarse in a unit test but is tiny beside a 100K+ live history. On
+ * Geryon's 262K route it moved the oldest retained message every few turns; vLLM then lost the
+ * entire 120K prefix and first-token latency jumped from 4–8 seconds to 90–150 seconds. A relative
+ * band preserves the same 4K floor for small contexts and buys long-context sessions meaningful
+ * cache hysteresis without letting one eviction discard more than a quarter of its category.
+ * Measurement: `notes/reports/geryon-prefix-cache-frontier-2026-09-08.md`.
+ */
+export const categoryReclamationBand = (cap: number): number =>
+  Math.min(
+    CATEGORY_RECLAMATION_MAX_BAND_TOKENS,
+    Math.max(CATEGORY_RECLAMATION_MIN_BAND_TOKENS, Math.floor(Math.max(0, cap) / 4)),
+  )
 
 const reclamationFrontier = (used: number, cap: number): number => {
   const required = Math.max(0, used - Math.max(0, cap))
   if (required === 0) return 0
-  return Math.ceil(required / CATEGORY_RECLAMATION_BAND_TOKENS) * CATEGORY_RECLAMATION_BAND_TOKENS
+  const band = categoryReclamationBand(cap)
+  return Math.ceil(required / band) * band
 }
 
 const historyCategory = (message: Message): HistoryCategory => {

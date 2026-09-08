@@ -148,6 +148,13 @@ export const listSessions = async (sdk: {
         id,
         parentID: text("parentID"),
         agent: text("agent"),
+        type:
+          row["type"] === "interactive" ||
+          row["type"] === "sub-agent" ||
+          row["type"] === "auto-prompting" ||
+          row["type"] === "goal-oriented"
+            ? row["type"]
+            : undefined,
         title: text("title"),
         tokens: row["tokens"] as SessionLike["tokens"],
         time: {

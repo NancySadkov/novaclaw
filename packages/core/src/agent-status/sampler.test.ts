@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { lifecycleSession, shellCall } from "./sampler"
 
+const source = await Bun.file(new URL("./sampler.ts", import.meta.url)).text()
+
 describe("agent lifecycle sampler routing", () => {
   test("samples prompts, compactions, and terminal states", () => {
     expect(lifecycleSession({ type: "session.next.prompted", data: { sessionID: "s" } })).toBe("s")
@@ -36,5 +38,12 @@ describe("agent lifecycle sampler routing", () => {
       command: "bun test",
     })
     expect(shellCall({ type: "session.next.tool.called", data: { tool: "read" } })).toBeUndefined()
+  })
+
+  test("presentation labels are detached and command labels receive only the command", () => {
+    expect(source).toContain("fork(routeSample(sessionID, ++lifecycleRevision))")
+    expect(source).toContain("fork(labelCommand(command))")
+    expect(source).toContain("text: input.command")
+    expect(source).not.toContain("text: yield* store.context")
   })
 })

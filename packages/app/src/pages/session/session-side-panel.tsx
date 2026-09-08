@@ -61,7 +61,10 @@ export function SessionSidePanel(props: {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
-  const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
+  // Review/context is a modal and remains reachable at every width. Only the docked file tree is
+  // desktop-only; coupling both to `isDesktop()` made a narrow context-button click update hidden
+  // state with no dialog on screen.
+  const reviewOpen = createMemo(() => view().reviewPanel.opened())
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const open = createMemo(() => reviewOpen() || fileOpen())
   const reviewTab = createMemo(() => isDesktop())
@@ -209,7 +212,7 @@ export function SessionSidePanel(props: {
   })
 
   return (
-    <Show when={isDesktop() && !!params.id}>
+    <Show when={!!params.id && (isDesktop() || reviewOpen())}>
       {/*
         ⚠️ PORTALLED to <body>, and measured rather than assumed: with `position: fixed` alone the
         dialog rendered at x=1360 in a 1280 viewport — off screen. An ancestor here carries

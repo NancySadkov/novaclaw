@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Token } from "@novaclaw/core/util/token"
-import { createState, note, snapshot } from "./live-rate"
+import { createState, generatedDelta, note, snapshot } from "./live-rate"
 
 describe("live-rate (Chats ps telemetry)", () => {
   test("accumulates chars into ~tokens", () => {
@@ -39,5 +39,31 @@ describe("live-rate (Chats ps telemetry)", () => {
     note(state, -5, 1000)
     expect(state.chars).toBe(0)
     expect(snapshot(state, 2000).approxTokens).toBe(0)
+  })
+
+  test("counts every model-generated stream, including file writes and compaction", () => {
+    const sessionID = "ses_worker"
+    expect(generatedDelta({ type: "session.next.text.delta", properties: { sessionID, delta: "answer" } })).toEqual({
+      sessionID,
+      chars: 6,
+    })
+    expect(
+      generatedDelta({ type: "session.next.reasoning.delta", properties: { sessionID, delta: "thinking" } }),
+    ).toEqual({ sessionID, chars: 8 })
+    expect(
+      generatedDelta({ type: "session.next.tool.input.delta", properties: { sessionID, delta: "huge markdown" } }),
+    ).toEqual({ sessionID, chars: 13 })
+    expect(
+      generatedDelta({ type: "session.next.compaction.delta", properties: { sessionID, text: "summary" } }),
+    ).toEqual({ sessionID, chars: 7 })
+  })
+
+  test("does not mistake tool results or malformed events for model generation", () => {
+    expect(
+      generatedDelta({ type: "session.next.tool.progress", properties: { sessionID: "ses_worker", delta: "output" } }),
+    ).toBeUndefined()
+    expect(
+      generatedDelta({ type: "session.next.compaction.delta", properties: { sessionID: "ses_worker", delta: "wrong" } }),
+    ).toBeUndefined()
   })
 })

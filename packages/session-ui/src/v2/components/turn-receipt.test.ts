@@ -72,6 +72,9 @@ describe("turn receipt", () => {
     expect(longStageNote("provider-prefill", 0)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS - 1)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBeTruthy()
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBe(
+      "The agent is working on the request. Large images and files can take time.",
+    )
   })
 
   test("explains a long stage with a cause, and stays silent where it has none", () => {

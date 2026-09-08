@@ -152,8 +152,10 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(endedData?.text).toBe("## Goal\n- Manual summary")
     // Exactly ONE provider request: the summary. No turn followed it.
     expect(manualRequests, "a manual compact must not drain a turn as well").toHaveLength(1)
-    expect(userTexts(manualRequests[0]!)[0]).toContain("anchored summary")
-    expect(JSON.stringify(manualRequests[0]!.system)).toContain("reasoning budget")
+    expect(userTexts(manualRequests[0]!).at(-1)).toContain("anchored summary")
+    expect(userTexts(manualRequests[0]!).at(-1)).toEndWith(
+      "- Do not mention the summary process or that context was compacted.",
+    )
     expect(contextAfterCompact[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
     expect(afterRequests).toHaveLength(1)
     expectCurrentIdentity(afterRequests[0]!)
@@ -226,7 +228,7 @@ describe("SessionRunnerLLM — compaction", () => {
 
     // Round one: the summary request, then the real turn built from summary + retained recent turn.
     expect(firstRound).toHaveLength(2)
-    expect(userTexts(firstRound[0]!)[0]).toContain("## Goal")
+    expect(userTexts(firstRound[0]!).at(-1)).toContain("## Goal")
     expect(userTexts(firstRound[1]!)).toHaveLength(1)
     expect(userTexts(firstRound[1]!)[0]).toContain("<summary>\n## Goal\n- Preserve the task\n</summary>")
     expect(userTexts(firstRound[1]!)[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
@@ -241,10 +243,10 @@ describe("SessionRunnerLLM — compaction", () => {
     // Round two: the new summary prompt carries the OLD summary, so nothing established is lost.
     expect(secondRound).toHaveLength(2)
     expect(
-      userTexts(secondRound[0]!)[0],
+      userTexts(secondRound[0]!).at(-1),
       "an iterative compaction must build on the previous summary, not re-derive from scratch",
     ).toContain("<previous-summary>\n## Goal\n- Preserve the task\n</previous-summary>")
-    expect(userTexts(secondRound[0]!)[0]).toContain("Recent exact request")
+    expect(userTexts(secondRound[0]!).at(-1)).toContain("## Goal")
     expectCurrentIdentity(secondRound[1]!)
     expect(contextAfterSecond[0]).toMatchObject({
       type: "compaction",
@@ -494,7 +496,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     )
 
     expect(harness.requests).toHaveLength(3)
-    expect(userTexts(harness.requests[1]!)[0]).toContain("## Goal")
+    expect(userTexts(harness.requests[1]!).at(-1)).toContain("## Goal")
     expect(userTexts(harness.requests[2]!)[0]).toContain("<summary>\n## Goal\n- Recover overflow\n</summary>")
     expect(context).toMatchObject([
       { type: "compaction", summary: "## Goal\n- Recover overflow" },

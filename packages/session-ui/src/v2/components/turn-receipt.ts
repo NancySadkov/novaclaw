@@ -76,7 +76,7 @@ export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number):
     case "scheduler-wait":
       return "Another session is using this model — this one starts when a slot frees up."
     case "provider-prefill":
-      return "The model has the request and hasn't started answering yet. A busy or cold model can sit here."
+      return "The agent is working on the request. Large images and files can take time."
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":

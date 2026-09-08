@@ -1787,13 +1787,24 @@ export const layer = Layer.effect(
         personality: agent.info?.personality,
       })
       const roster = yield* agents.all()
-      const superior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
+      const parentAgent = session.parentID
+        ? yield* effective
+            .resolve(session.parentID)
+            .pipe(Effect.flatMap((parent) => agents.select(parent.agent as typeof session.agent)))
+        : undefined
+      const configuredSuperior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
+      const superior = parentAgent
+        ? { id: String(parentAgent.id), name: parentAgent.info?.name }
+        : configuredSuperior === undefined
+          ? undefined
+          : { id: String(configuredSuperior.id), name: configuredSuperior.name }
       const organization = SystemCompose.organizationSection({
         agentID: String(agent.id),
         officer: agent.info !== undefined && AgentV2.isColleague(agent.info),
+        worker: session.parentID !== undefined,
         ...(superior === undefined
           ? {}
-          : { superior: { id: String(superior.id), ...(superior.name === undefined ? {} : { name: superior.name }) } }),
+          : { superior: { id: superior.id, ...(superior.name === undefined ? {} : { name: superior.name }) } }),
       })
       /**
        * 🔴 WHO tells this turn where it is working — read ONCE, here, and consulted by every
@@ -2033,6 +2044,25 @@ export const layer = Layer.effect(
         imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("request-build")
+      // Prepare the provider request BEFORE a possible compaction so a derived summary can reuse
+      // the exact same packed prefix an ordinary turn would send. Passing the un-packed assembly
+      // here defeats cache reuse precisely on long chats, because its extra old messages diverge at
+      // the history frontier the provider has cached.
+      yield* timingStart("context-fit")
+      const preparedDispatch = ProviderDispatch.prepare({
+        request: openingRequest,
+        promptCacheKey,
+        contextSize: routeProfile.contextWindowTokens ?? model.route.defaults.limits?.context,
+        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
+        profile: ContextBudget.enabled(harness.context, config.contextBudget)
+          ? ContextBudget.resolve(harness.context, config.type)
+          : undefined,
+        memoryRecall: recallMessage,
+        promptCorrectionTokens: promptEstimate.correctionTokens,
+        promptMarginTokens: promptEstimate.marginTokens,
+        imagePatchPixels: routeProfile.imagePatchPixels,
+      })
+      yield* timingEnd("context-fit")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
       // simply under its threshold. Timing it is right; RECORDING it as a phase is not, because the
       // receipt then says "Compacting the conversation" over a conversation nobody compacted. The
@@ -2049,7 +2079,7 @@ export const layer = Layer.effect(
           sessionID: session.id,
           entries,
           model,
-          request: openingRequest,
+          request: preparedDispatch.request,
           promptEstimate,
           imagePatchPixels: routeProfile.imagePatchPixels,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
@@ -2097,21 +2127,6 @@ export const layer = Layer.effect(
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
       // The deterministic packer: what had to be dropped for the request to fit the window.
-      yield* timingStart("context-fit")
-      const preparedDispatch = ProviderDispatch.prepare({
-        request: openingRequest,
-        promptCacheKey,
-        contextSize: routeProfile.contextWindowTokens ?? model.route.defaults.limits?.context,
-        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
-        profile: ContextBudget.enabled(harness.context, config.contextBudget)
-          ? ContextBudget.resolve(harness.context, config.type)
-          : undefined,
-        memoryRecall: recallMessage,
-        promptCorrectionTokens: promptEstimate.correctionTokens,
-        promptMarginTokens: promptEstimate.marginTokens,
-        imagePatchPixels: routeProfile.imagePatchPixels,
-      })
-      yield* timingEnd("context-fit")
       const packed = preparedDispatch.packed
       if (packed.dropped > 0)
         yield* Log.event("session.context.pack.evicted", {

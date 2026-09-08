@@ -94,6 +94,16 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     expect(nova).toContain("accountable only to the user")
     expect(nova).toContain("resolving conflicts between officers")
     expect(SystemCompose.organizationSection({ agentID: "explore", officer: false })).toBeUndefined()
+
+    const worker = SystemCompose.organizationSection({
+      agentID: "nova",
+      officer: true,
+      worker: true,
+      superior: { id: "nova", name: "Nova" },
+    })!
+    expect(worker).toContain("worker spawned by Nova")
+    expect(worker).toContain("Nova is your superior")
+    expect(worker).not.toContain("accountable only to the user")
   })
 
   it("(a) is byte-identical to today when no pre-prompt is set", () => {
