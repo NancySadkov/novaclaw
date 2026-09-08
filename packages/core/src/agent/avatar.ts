@@ -8,6 +8,8 @@ import { Global } from "../global"
 // @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
 import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
 // @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
+import geryonPortraitFile from "../../../app/public/assets/agents/portraits/geryon.webp" with { type: "file" }
+// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
 import xeniaPortraitFile from "../../../app/public/assets/agents/portraits/xenia.webp" with { type: "file" }
 // @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
 import daedalusPortraitFile from "../../../app/public/assets/agents/portraits/daedalus.webp" with { type: "file" }
@@ -40,7 +42,7 @@ export type Portrait =
 const extensions = Object.values(TYPES)
 
 /**
- * The four faces that ship with the initial company. They enter through the SERVER-owned portrait
+ * The faces that ship with the initial company. They enter through the SERVER-owned portrait
  * resolver, just like an uploaded image, so the UI and a visual model receive the same bytes.
  *
  * These files remain part of the embedded web assets too, but the renderer never derives this path
@@ -50,6 +52,7 @@ const extensions = Object.values(TYPES)
  */
 const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
   nova: novaPortraitFile,
+  geryon: geryonPortraitFile,
   xenia: xeniaPortraitFile,
   daedalus: daedalusPortraitFile,
   myron: myronPortraitFile,
@@ -160,7 +163,10 @@ const removeUnreferencedBlobs = async (root: string, agentID: string, keepHash?:
   const entries = await fs.readdir(root).catch(() => [] as string[])
   await Promise.all(
     entries
-      .filter((entry) => entry.startsWith(prefix) && entry !== (keepHash && keepMime ? `${prefix}${keepHash}.${TYPES[keepMime]}` : ""))
+      .filter(
+        (entry) =>
+          entry.startsWith(prefix) && entry !== (keepHash && keepMime ? `${prefix}${keepHash}.${TYPES[keepMime]}` : ""),
+      )
       .map((entry) => fs.rm(path.join(root, entry), { force: true })),
   )
 }

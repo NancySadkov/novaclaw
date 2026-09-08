@@ -200,6 +200,8 @@ describe("AgentConfigDialog renders", () => {
     expect(dialogText()).toContain("agentConfig.governingLocked")
     expect(saveButton()).toBeUndefined()
     expect(document.querySelector("input:not([disabled]), textarea:not([disabled]), select:not([disabled])")).toBeNull()
+    expect(document.querySelector('[data-action="agent-clear-chat"]')).not.toBeNull()
+    expect(dialogText()).toContain("agentConfig.clearChat")
     expect(dialogText()).toContain("agentConfig.clone")
     expect(writes).toEqual([])
     expect(dialogText()).not.toContain("NOTHING was written")

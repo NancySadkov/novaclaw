@@ -650,9 +650,20 @@ export function AgentConfigDialog(props: {
               <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
             </div>
           </div>
-          {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
-              while `planClone` remains the enforcement seam for every caller. */}
-          <div class="border-t border-v2-border-border-muted px-4 py-2.5">
+          {/* Nova's charter is immutable; Nova's conversation is not. Clear therefore remains an
+              ordinary chat lifecycle action here, beside the deliberately instructive Clone door. */}
+          <div class="flex items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
+            <button
+              type="button"
+              data-action="agent-clear-chat"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={busy() !== undefined || props.agentID === undefined}
+              onClick={() => void clearChat()}
+            >
+              {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
+            </button>
+            {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
+                while `planClone` remains the enforcement seam for every caller. */}
             <button
               type="button"
               class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
@@ -1153,6 +1164,7 @@ export function AgentConfigDialog(props: {
         <div class="flex flex-wrap items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
           <button
             type="button"
+            data-action="agent-clear-chat"
             class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
             disabled={busy() !== undefined || props.agentID === undefined}
             onClick={() => void clearChat()}

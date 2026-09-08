@@ -35,6 +35,7 @@ import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
 import { waitRow } from "./wait-row"
+import { toolIcon } from "./tool-icon"
 import { Markdown } from "../../components/markdown"
 import {
   reasoningGoesInReceipt,
@@ -1143,7 +1144,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           defaultOpen={toolOpenDefault(foldMode().tool)}
           expandWhilePending={props.part.name === "bash"}
           trigger={{
-            icon: props.part.name === "bash" ? "terminal" : undefined,
+            icon: toolIcon(props.part.name),
             title:
               props.part.name === "bash" ? (props.part.title ?? shellActionTitle(shellCommand() ?? "")) : meta().title,
             subtitle: props.part.name === "bash" ? elapsed() : meta().subtitle,
@@ -1206,6 +1207,7 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
       status={props.part.state.status}
       defaultOpen
       trigger={{
+        icon: toolIcon(props.part.name),
         title: i18n.t("ui.transcript.todos"),
         subtitle: todos().length ? `${done()}/${todos().length}` : undefined,
       }}

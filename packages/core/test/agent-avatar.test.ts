@@ -49,7 +49,7 @@ describe("instance-owned agent portraits", () => {
 
   test("🔴 the initial colleagues' drawn faces come from the server-owned portrait resolver", async () => {
     const data = await root()
-    for (const id of ["nova", "xenia", "daedalus", "myron", "xenia-2"]) {
+    for (const id of ["nova", "geryon", "xenia", "daedalus", "myron", "xenia-2"]) {
       const portrait = await Avatar.portraitIn(data, id, undefined, id)
       expect(portrait.kind, id).toBe("image")
       if (portrait.kind !== "image") throw new Error(`${id} did not resolve to its shipped portrait`)
@@ -69,7 +69,11 @@ describe("instance-owned agent portraits", () => {
     const second = await Avatar.writeIn(data, "wren", Uint8Array.of(4, 5, 6), "image/jpeg")
     expect(first.hash).not.toBe(second.hash)
     expect((await fs.readdir(Avatar.rootIn(data))).filter((entry) => !entry.endsWith(".json"))).toHaveLength(1)
-    expect(await Avatar.readIn(data, "wren")).toEqual({ bytes: Uint8Array.of(4, 5, 6), mime: "image/jpeg", hash: second.hash })
+    expect(await Avatar.readIn(data, "wren")).toEqual({
+      bytes: Uint8Array.of(4, 5, 6),
+      mime: "image/jpeg",
+      hash: second.hash,
+    })
     await Avatar.removeIn(data, "wren")
     expect(await Avatar.readIn(data, "wren")).toBeUndefined()
   })
