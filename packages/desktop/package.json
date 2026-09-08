@@ -1,7 +1,7 @@
 {
   "name": "@novaclaw/desktop",
   "private": true,
-  "version": "0.1.72",
+  "version": "0.1.73",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "description": "NovaClaw — a local-first AI agent OS",
