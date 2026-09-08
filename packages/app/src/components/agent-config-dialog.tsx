@@ -1,6 +1,7 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { ControlScope } from "@/components/control-scope"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -28,6 +29,9 @@ import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
+
+const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
+const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -201,6 +205,14 @@ export function AgentConfigDialog(props: {
     const bound = agent()?.model
     return bound ? modelRef(bound) : ""
   }
+  const modelOptions = createMemo(() => [
+    { key: "inherit", value: "", label: language.t("agentConfig.modelInherit") },
+    ...models.list().map((item) => ({
+      key: modelRef({ providerID: item.provider.id, id: item.id }),
+      value: modelRef({ providerID: item.provider.id, id: item.id }),
+      label: item.name ?? item.id,
+    })),
+  ])
   const reasoningBudgetValue = () => {
     const chosen = reasoningBudget()
     if (chosen !== undefined) return chosen
@@ -229,6 +241,18 @@ export function AgentConfigDialog(props: {
     const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsTier"]
     return typeof declared === "string" ? declared : ""
   }
+  const needsTierOptions = createMemo(() => [
+    { key: "none", value: "", label: language.t("agentConfig.needsTierNone") },
+    ...TIER_CHOICES.map((tier) => ({ key: tier, value: tier, label: language.t(`agentConfig.tier.${tier}`) })),
+  ])
+  const superiorOptions = createMemo(() => [
+    { key: "nova", value: "", label: language.t("agentConfig.superiorNova") },
+    ...superiorCandidates(agents() ?? [], props.agentID ?? "").map((candidate) => ({
+      key: candidate.id,
+      value: candidate.id,
+      label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+    })),
+  ])
   /** Is the model bound above ALREADY beneath the floor chosen here? Shown live, in the dialog where
    *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
    *  for the model but the wrong place for the person setting this up. */
@@ -871,33 +895,16 @@ export function AgentConfigDialog(props: {
             {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
                 same colleague clever in one conversation and poor in the next, for reasons the user
                 could not see. A colleague has one mind. */}
-            <select
+            <SelectV2
               aria-label={language.t("agentConfig.mind")}
-              class="mt-2 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+              class="mt-2 w-full"
               disabled={governing()}
-              onChange={(event) => setModel(event.currentTarget.value)}
-            >
-              {/* ⚠️ `selected` per option, not `value` on the select — the SAME rule as the tier select
-                  below and the composer's owner picker, and this was the one place that broke it
-                  (review D2). Both halves of the race are live here: `agent()` is a resource, and
-                  `models.list()` chains to the provider catalog's cold start. Solid compiles
-                  `value={…}` to an effect that fires only when the VALUE changes, never when the
-                  option list grows — so the colleague's bound model read "Inherit the instance
-                  default" and the user confirmed a binding that was not the one in force. */}
-              <option value="" selected={modelValue() === ""}>
-                {language.t("agentConfig.modelInherit")}
-              </option>
-              <For each={models.list()}>
-                {(item) => {
-                  const ref = modelRef({ providerID: item.provider.id, id: item.id })
-                  return (
-                    <option value={ref} selected={modelValue() === ref}>
-                      {item.name ?? item.id}
-                    </option>
-                  )
-                }}
-              </For>
-            </select>
+              options={modelOptions()}
+              current={modelOptions().find((option) => option.value === modelValue()) ?? modelOptions()[0]}
+              value={(option) => option.key}
+              label={(option) => option.label}
+              onSelect={(option) => option && setModel(option.value)}
+            />
             <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
               {language.t("agentConfig.reasoningBudget")}
             </label>
@@ -932,49 +939,36 @@ export function AgentConfigDialog(props: {
             <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-tier">
               {language.t("agentConfig.needsTier")}
             </label>
-            <select
+            <SelectV2
               id="agent-needs-tier"
-              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+              class="mt-1 w-full"
               disabled={governing()}
-              onChange={(event) => setNeedsTier(event.currentTarget.value)}
-            >
-              {/* ⚠️ `selected` per option, not `value` on the select — the agent loads AFTER this
-                  element is created, and a browser keeps `selectedIndex` at 0 when that happens. */}
-              <option value="" selected={needsTierValue() === ""}>
-                {language.t("agentConfig.needsTierNone")}
-              </option>
-              <For each={TIER_CHOICES}>
-                {(tier) => (
-                  <option value={tier} selected={needsTierValue() === tier}>
-                    {language.t(`agentConfig.tier.${tier}`)}
-                  </option>
-                )}
-              </For>
-            </select>
+              options={needsTierOptions()}
+              current={needsTierOptions().find((option) => option.value === needsTierValue()) ?? needsTierOptions()[0]}
+              value={(option) => option.key}
+              label={(option) => option.label}
+              onSelect={(option) => option && setNeedsTier(option.value)}
+            />
             <Show when={belowFloor()}>
               <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
             </Show>
             <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
               {language.t("agentConfig.superior")}
             </label>
-            <select
+            <SelectV2
               id="agent-superior"
               aria-label={language.t("agentConfig.superior")}
-              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-              onChange={(event) => setSuperior(event.currentTarget.value)}
-            >
-              <option value="" selected={superiorValue() === "" || superiorValue() === GOVERNING_ID}>
-                {language.t("agentConfig.superiorNova")}
-              </option>
-              <For each={superiorCandidates(agents() ?? [], props.agentID ?? "")}>
-                {(candidate) => (
-                  <option value={candidate.id} selected={superiorValue() === candidate.id}>
-                    {candidate.name?.trim() || displayName(candidate.id)} ·{" "}
-                    {candidate.title ?? language.t("agentConfig.noTitle")}
-                  </option>
-                )}
-              </For>
-            </select>
+              class="mt-1 w-full"
+              options={superiorOptions()}
+              current={
+                superiorOptions().find((option) =>
+                  superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
+                ) ?? superiorOptions()[0]
+              }
+              value={(option) => option.key}
+              label={(option) => option.label}
+              onSelect={(option) => option && setSuperior(option.value)}
+            />
             <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
           </section>
 
@@ -988,42 +982,38 @@ export function AgentConfigDialog(props: {
                 it, and re-choosing per chat is a question asked again for a decision that never
                 changes. A chat can still differ — these are a LAYER, and the chat's own row wins. */}
             <div class="mt-2 flex flex-col gap-2">
-              <label class="flex items-center justify-between gap-2 text-xs">
+              <div class="flex items-center justify-between gap-2 text-xs">
                 <span>{language.t("agentConfig.posture")}</span>
-                <select
-                  class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-xs"
+                <SelectV2
+                  appearance="inline"
+                  aria-label={language.t("agentConfig.posture")}
                   disabled={governing()}
-                  onChange={(event) => setPosture(event.currentTarget.value === "chat")}
-                >
-                  <For each={["agent", "chat"] as const}>
-                    {(value) => (
-                      <option value={value} selected={(postureValue() ? "chat" : "agent") === value}>
-                        {language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")}
-                      </option>
-                    )}
-                  </For>
-                </select>
-              </label>
+                  options={POSTURE_CHOICES}
+                  current={postureValue() ? "chat" : "agent"}
+                  label={(value) =>
+                    language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")
+                  }
+                  onSelect={(value) => value && setPosture(value === "chat")}
+                />
+              </div>
               <p class="text-[11px] text-v2-text-text-faint">
                 {language.t(postureValue() ? "prompt.posture.chat.description" : "prompt.posture.agent.description")}
               </p>
 
-              <label class="flex items-center justify-between gap-2 text-xs">
+              <div class="flex items-center justify-between gap-2 text-xs">
                 <span>{language.t("prompt.permissionMode.title")}</span>
-                <select
-                  class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-xs"
+                <SelectV2
+                  appearance="inline"
+                  aria-label={language.t("prompt.permissionMode.title")}
                   disabled={governing()}
-                  onChange={(event) => setPermissionMode(event.currentTarget.value)}
-                >
-                  <For each={["plan", "bypass", "yolo"] as const}>
-                    {(mode) => (
-                      <option value={mode} selected={permissionModeValue() === mode}>
-                        {language.t(`prompt.permissionMode.${mode}`)}
-                      </option>
-                    )}
-                  </For>
-                </select>
-              </label>
+                  options={PERMISSION_MODE_CHOICES}
+                  current={
+                    PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ?? PERMISSION_MODE_CHOICES[1]
+                  }
+                  label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
+                  onSelect={(mode) => mode && setPermissionMode(mode)}
+                />
+              </div>
 
               <label class="flex items-start gap-2 text-xs">
                 <input

@@ -912,7 +912,7 @@ export const dict = {
   "session.info.tags.placeholder": "Add a tag and press Enter",
   // ⚠️ The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
   // label said "Enter opens its chat", which described typing that never happened. It is a button.
-  "home.newAgent.placeholder": "Start a new chat — opens ready to configure",
+  "home.newAgent.placeholder": "Ask anything...",
   "home.newAgent.notReady": "Still connecting to your workspace — try again in a moment.",
   "session.control.reverted":
     "{{control}} could not be changed on the server, so it has been put back. The chat is still running with the previous setting.",
@@ -2958,7 +2958,7 @@ export const dict = {
   "contacts.rate": "{{tokens}}/min",
   // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
   // longer than a label pushes the others off the row it exists to inform.
-  "contacts.noTask": "No task",
+  "contacts.noTask": "No job yet",
   // The tilde is load-bearing: a true rate needs each model'''s own tokenisation, so this is an
   // estimate that is about right across models rather than exact for one. It says the model and the
   // agent are alive and working — it is not a benchmark, and must not read like one.

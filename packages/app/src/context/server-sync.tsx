@@ -471,7 +471,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
 
     // Agent status is an instance component even though the event carries the session's location.
     // Notify subscribers before directory routing so Contacts updates whether that folder is open.
-    if ((event.type as string) === "agent.status.updated") {
+    if ((event.type as string) === "agent.status.updated" || (event.type as string) === "agent.status.removed") {
       for (const listener of agentStatusListeners) listener()
     }
 

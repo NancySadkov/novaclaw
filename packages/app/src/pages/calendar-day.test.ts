@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { calendarDay } from "./calendar"
+import { calendarDay } from "./calendar-day"
 import { parseSettingsNumber } from "../components/settings-v2/parts/number-field"
 
 describe("calendarDay", () => {

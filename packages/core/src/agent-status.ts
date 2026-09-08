@@ -44,6 +44,10 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/AgentStatus") {}
 
+/** Cycle-free removal seam for entity teardown paths that already own the database. */
+export const removeFrom = (db: Database.Interface["db"], agent: string): Effect.Effect<void> =>
+  db.delete(AgentStatusTable).where(eq(AgentStatusTable.agent, agent)).run().pipe(Effect.orDie, Effect.asVoid)
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -87,7 +91,7 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
       }),
       remove: Effect.fn("AgentStatus.remove")(function* (agent: string) {
-        yield* db.delete(AgentStatusTable).where(eq(AgentStatusTable.agent, agent)).run().pipe(Effect.orDie)
+        yield* removeFrom(db, agent)
       }),
     })
   }),

@@ -199,8 +199,7 @@ export const dict = {
   // Keyed 2026-09-03: the one surface a lay user reads carried ~45 raw English literals beside
   // a translator it already held. `native-transcript-literals.test.ts` keeps them from returning.
   "ui.transcript.done": "Done",
-  "ui.transcript.steps.one": "{{count}} step",
-  "ui.transcript.steps.other": "{{count}} steps",
+  "ui.transcript.doneIn": "Done in {{time}}",
   "ui.transcript.working": "Working…",
   "ui.transcript.details": "Details",
   "ui.transcript.queued": "Queued — the agent will read this when it finishes what it's doing",

@@ -180,7 +180,28 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
  * host subtree and onto `document.body`, so `host.querySelector` finds nothing and every assertion
  * would pass or fail for the wrong reason. Reading the document is what the user sees.
  */
-const selects = () => [...document.querySelectorAll("select")] as HTMLSelectElement[]
+const selects = () => [...document.querySelectorAll<HTMLElement>('[data-component="select-v2"]')]
+const selectText = (select: HTMLElement) =>
+  select.querySelector<HTMLElement>('[data-slot="select-v2-value-text"]')?.textContent ?? ""
+const openSelect = async (select: HTMLElement) => {
+  select.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
+const choose = async (select: HTMLElement, key: string) => {
+  await openSelect(select)
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.dataset.key === key)
+  expect(option, `option ${key} should be present`).toBeDefined()
+  option!.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  option!.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
 const saveButton = () =>
   [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
     | HTMLButtonElement
@@ -199,7 +220,11 @@ describe("AgentConfigDialog renders", () => {
 
     expect(dialogText()).toContain("agentConfig.governingLocked")
     expect(saveButton()).toBeUndefined()
-    expect(document.querySelector("input:not([disabled]), textarea:not([disabled]), select:not([disabled])")).toBeNull()
+    expect(
+      document.querySelector(
+        'input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])',
+      ),
+    ).toBeNull()
     expect(document.querySelector('[data-action="agent-clear-chat"]')).not.toBeNull()
     expect(dialogText()).toContain("agentConfig.clearChat")
     expect(dialogText()).toContain("agentConfig.clone")
@@ -219,11 +244,11 @@ describe("AgentConfigDialog renders", () => {
   test("D2 · the model select shows the colleague's BOUND model, not Inherit", async () => {
     mount({ agents: [AGENT] })
     await settle()
-    const model = selects()[0]!
+    const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
     // `spark/qwen3.8-27b` is what the agent is bound to. Under the old `value={…}` form this read
     // `""` — the Inherit option — whenever the options had not been created yet.
-    expect(model.value).toBe("spark/qwen3.8-27b")
-    expect(model.value).not.toBe("")
+    expect(selectText(model)).toBe("Qwen 3.8 27B")
+    expect(selectText(model)).not.toBe("agentConfig.modelInherit")
   })
 
   test("D2 · a model arriving AFTER first paint is still selected", async () => {
@@ -235,11 +260,12 @@ describe("AgentConfigDialog renders", () => {
     const [models, setModels] = createSignal<unknown[]>([])
     mount({ agents: [AGENT], models })
     await settle()
-    expect(selects()[0]!.value).toBe("")
+    const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
+    expect(selectText(model)).toBe("agentConfig.modelInherit")
 
     setModels(MODELS)
     await settle()
-    expect(selects()[0]!.value).toBe("spark/qwen3.8-27b")
+    expect(selectText(model)).toBe("Qwen 3.8 27B")
   })
 
   test("D3 · Save is disabled while the roster is still in flight", async () => {
@@ -290,14 +316,25 @@ describe("AgentConfigDialog renders", () => {
     const wren = { ...AGENT, id: "wren", name: "Wren" }
     mount({ agents: [AGENT, iris, wren], write: (patch) => writes.push(patch) })
     await settle()
-    const superior = document.querySelector("#agent-superior") as HTMLSelectElement
-    expect([...superior.options].map((option) => option.value)).not.toContain("iris")
+    const superior = document.querySelector<HTMLElement>("#agent-superior")!
+    await openSelect(superior)
+    const superiorKeys = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((option) =>
+      option.getAttribute("data-key"),
+    )
+    expect(superiorKeys).not.toContain("iris")
     const nova = { ...AGENT, id: "nova", name: "Nova" }
     // Nova is represented by the default option rather than a duplicate roster choice.
-    expect([...superior.options].filter((option) => option.value === "")).toHaveLength(1)
+    expect(superiorKeys.filter((key) => key === "nova")).toHaveLength(1)
     expect(nova.id).toBe("nova")
-    superior.value = "wren"
-    superior.dispatchEvent(new Event("change", { bubbles: true }))
+    const wrenOption = document.querySelector<HTMLElement>('[role="option"][data-key="wren"]')!
+    wrenOption.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await Promise.resolve()
+    wrenOption.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await settle()
     saveButton()!.click()
     await settle()
     expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.superior).toBe("wren")
@@ -313,12 +350,10 @@ test("returning a colleague to default model and no requirement deletes both ove
     remove: (paths) => removals.push(paths),
   })
   await settle()
-  const [model, tier] = selects()
-  expect(model!.getAttribute("aria-label")).toBe("agentConfig.mind")
-  for (const select of [model!, tier!]) {
-    select.value = ""
-    select.dispatchEvent(new Event("change", { bubbles: true }))
-  }
+  const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
+  const tier = document.querySelector<HTMLElement>("#agent-needs-tier")!
+  await choose(model, "inherit")
+  await choose(tier, "none")
   const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
   budget.value = ""
   budget.dispatchEvent(new Event("input", { bubbles: true }))

@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import path from "path"
 import { DateTime, Effect, Layer, Stream } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentStatus } from "@novaclaw/core/agent-status"
 import { asc, eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -39,7 +40,14 @@ const projects = Layer.succeed(
 )
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionStore.node, SessionV2.node]),
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      AgentStatus.node,
+      SessionProjector.node,
+      SessionStore.node,
+      SessionV2.node,
+    ]),
     [
       [ProjectV2.node, projects],
       [SessionExecution.node, SessionExecution.noopLayer],
@@ -854,6 +862,38 @@ describe("SessionV2.fork", () => {
 })
 
 describe("SessionV2.remove", () => {
+  it.effect("clears a colleague's job with its root chat, but not with a child worker", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const status = yield* AgentStatus.Service
+      const colleague = AgentV2.ID.make("theron")
+      const root = yield* session.create({ location, agent: colleague })
+      const child = yield* session.create({ location, agent: colleague, parentID: root.id })
+      yield* status.set({ agent: colleague, task: "reviewing the release", observed: 1_000 })
+
+      yield* session.remove(child.id)
+      expect((yield* status.get(colleague))?.task).toBe("reviewing the release")
+
+      yield* session.remove(root.id)
+      expect(yield* status.get(colleague)).toBeUndefined()
+    }),
+  )
+
+  it.effect("does not clear the current job when deleting an archived chat", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const status = yield* AgentStatus.Service
+      const colleague = AgentV2.ID.make("theron")
+      const history = yield* session.create({ location, agent: colleague })
+      yield* session.setArchived({ sessionID: history.id, time: 1_000 })
+      yield* status.set({ agent: colleague, task: "working in the current chat", observed: 1_000 })
+
+      yield* session.remove(history.id)
+
+      expect((yield* status.get(colleague))?.task).toBe("working in the current chat")
+    }),
+  )
+
   it.effect("removes the session row and purges its aggregate event log", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

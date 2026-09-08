@@ -4,6 +4,7 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import * as Timestamp from "@novaclaw/schema/time"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -944,34 +945,26 @@ export function MemoryGraphPage() {
             or to the household, and a view that hid that would be the last place still claiming the
             old model. Nova is included like anyone else — it is not a super-user of its colleagues'
             cabinets, it just has one of its own. */}
-        <label class="flex items-center gap-1.5 text-[11px] opacity-80" data-slot="memory-owner-picker">
+        <div class="flex items-center gap-1.5 text-[11px] opacity-80" data-slot="memory-owner-picker">
           <span class="opacity-70">{language.t("memoryGraph.page.whose")}</span>
-          <select
-            class="rounded bg-v2-background-bg-layer-01 px-1.5 py-1 text-[11px]"
-            value={owner()?.key ?? ""}
-            onChange={(event) => {
-              setOwnerKey(event.currentTarget.value)
+          <SelectV2
+            appearance="inline"
+            aria-label={language.t("memoryGraph.page.whose")}
+            options={owners()}
+            current={owner()}
+            value={(entry) => entry.key}
+            label={(entry) => entry.label}
+            valueClass="text-[11px]"
+            onSelect={(entry) => {
+              if (!entry) return
+              setOwnerKey(entry.key)
               // The URL follows the picker, so this view is linkable and the back button means
               // something. `replace` — switching whose cabinet you are reading is not a navigation
               // step a user wants to walk back through one colleague at a time.
-              setParams({ owner: event.currentTarget.value }, { replace: true })
+              setParams({ owner: entry.key }, { replace: true })
             }}
-          >
-            <For each={owners()}>
-              {(entry) => (
-                // ⚠️ `selected` per option, not only `value` on the select. The options arrive with
-                // the roster — AFTER the element is created — and a browser keeps `selectedIndex`
-                // at 0 when children appear later, so the control read "Nova" while the page drew
-                // somebody else's memories. Measured 2026-08-21 by following the link this slice
-                // adds: URL `owner=agent:lysander`, graph showing Lysander's three memories, picker
-                // saying Nova. A control that names the wrong owner is worse than no control.
-                <option value={entry.key} selected={entry.key === owner()?.key}>
-                  {entry.label}
-                </option>
-              )}
-            </For>
-          </select>
-        </label>
+          />
+        </div>
         <div class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]">
           <For
             each={

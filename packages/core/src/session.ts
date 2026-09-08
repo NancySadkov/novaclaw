@@ -25,6 +25,8 @@ import { SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
+import { AgentStatus } from "./agent-status"
+import { AgentStatusEvent } from "@novaclaw/schema/agent-status-event"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
@@ -825,15 +827,25 @@ export const removeSessionRecord = (
       // A concurrent removal already won the race for this child — fine, keep going.
       yield* removeSessionRecord(deps, child.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
     }
+    const location = Location.Ref.make({
+      directory: AbsolutePath.make(row.directory),
+      workspaceID: row.workspace_id ?? undefined,
+    })
+    // A colleague's current task is a component of its one live ROOT chat. Child workers share the
+    // officer id, so clearing one of them must not erase the officer's job; clearing the root must.
+    if (
+      row.parent_id === null &&
+      row.time_archived === null &&
+      row.agent &&
+      !AgentV2.POSTURE_IDS.has(AgentV2.ID.make(row.agent))
+    ) {
+      yield* AgentStatus.removeFrom(db, row.agent)
+      yield* events.publish(AgentStatusEvent.Removed, { agent: row.agent }, { location })
+    }
     yield* events.publish(
       SessionRecordEvent.Deleted,
       { sessionID, info: fromRow(row) },
-      {
-        location: Location.Ref.make({
-          directory: AbsolutePath.make(row.directory),
-          workspaceID: row.workspace_id ?? undefined,
-        }),
-      },
+      { location },
     )
     yield* events.remove(sessionID)
   })

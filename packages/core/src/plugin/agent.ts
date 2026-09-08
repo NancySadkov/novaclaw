@@ -320,7 +320,6 @@ export const Plugin = define({
         item.title = "Chief Executive"
         item.description =
           "Nova, the CEO. Talk to Nova about what you want done; Nova routes it to the colleague who owns that work, or hires one when nobody does."
-        item.avatar ??= "⭐"
         item.system ??= NOVA_SYSTEM
         item.memory ??= "own"
         item.mode = "primary"

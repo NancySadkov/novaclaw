@@ -162,9 +162,6 @@
 [data-slot="native-turn-work"] > summary:hover {
   color: var(--v2-text-text-muted);
 }
-[data-slot="native-turn-work-count"] {
-  font-variant-numeric: tabular-nums;
-}
 [data-slot="native-turn-work-body"] {
   display: flex;
   flex-direction: column;

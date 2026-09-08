@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   attemptLabel,
+  completedRunSeconds,
   currentPhase,
   elapsedMs,
   LONG_STAGE_MS,
@@ -62,6 +63,15 @@ describe("turn receipt", () => {
     expect(seconds(elapsedMs(new Date(start).toISOString(), start + 500, start + 9_000))).toBe("0.5s")
     expect(elapsedMs("not-a-time", start + 500, start + 9_000)).toBeUndefined()
     expect(seconds(Number.NaN)).toBeUndefined()
+  })
+
+  test("formats a completed run across timestamp carriers, correcting skew without NaN", () => {
+    const start = Date.UTC(2026, 8, 8, 10, 0, 0)
+    expect(completedRunSeconds({ epochMillis: start }, new Date(start + 12_540))).toBe("12.5s")
+    expect(completedRunSeconds(new Date(start).toISOString(), start - 500)).toBe("0.0s")
+    expect(completedRunSeconds("not-a-time", start + 500)).toBeUndefined()
+    expect(completedRunSeconds(start, Number.NaN)).toBeUndefined()
+    expect(completedRunSeconds(start, undefined)).toBeUndefined()
   })
 
   test("takes the newest server-owned open phase as the live label", () => {
@@ -126,15 +136,26 @@ describe("turn receipt", () => {
 
 describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
   // The case that unblocks the fold: 57% of tool-bearing turns end here.
-  test("names the step count and says plainly that no reply was written", () => {
-    expect(turnOutcome({ toolCount: 3 })).toBe("Ran 3 steps. The model ended here without writing a reply.")
-    expect(turnOutcome({ toolCount: 1 })).toBe("Ran 1 step. The model ended here without writing a reply.")
+  test("says plainly that no reply was written without exposing the internal step count", () => {
+    expect(turnOutcome({ toolCount: 3 })).toBe("The model ended here without writing a reply.")
+    expect(turnOutcome({ toolCount: 1 })).toBe("The model ended here without writing a reply.")
   })
 
   // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would
   // describe a fault that is not one — ruling 2, on the surface a user reads.
   test("a turn that ended on exit reads as finished, not as stopped short", () => {
-    expect(turnOutcome({ toolCount: 2, lastToolName: "exit" })).toBe("Finished after 2 steps.")
+    expect(turnOutcome({ toolCount: 2, lastTool: { name: "exit", result: undefined } })).toBe(
+      "Finished.",
+    )
+  })
+
+  test("an exit result is the answer, not cruft hidden behind a generic finish line", () => {
+    expect(
+      turnOutcome({
+        toolCount: 125,
+        lastTool: { name: "exit", result: "  Project accepted and complete.\n\n100 tests passed.  " },
+      }),
+    ).toBe("Project accepted and complete.\n\n100 tests passed.")
   })
 
   // No work means no fold, so there is nothing to stand in for — and a receipt that appeared over a

@@ -5,8 +5,8 @@ import type { HomeApp } from "@/apps/registry"
 // One home-screen app tile: a large rounded icon square + a label. Tap → app.open().
 // Three shapes share one visual language:
 //   • artwork tile (app.tile) — finished NOVA UI-kit art (purple tile, gold frame + pictogram);
-//     the PNG carries its own bevel, so no ring/sheen is painted over it and the shadow follows the
-//     artwork's alpha (drop-shadow) instead of the wrapper's rounding. All built-ins ship artwork.
+//     normally the PNG carries its own bevel, so no ring/sheen is painted over it. A transparent
+//     glyph-only asset declares `tileNeedsFrame`, and this renderer supplies that same frame.
 //   • gradient tile — 5rem gradient square, 40px white glyph; the fallback for contributed apps
 //     without artwork. The gradient derives from the app's accent hue; a top inner highlight +
 //     accent glow on hover give the glassmorphic depth. `--icon-base` is overridden to white
@@ -88,6 +88,10 @@ const RegularTile: Component<TileProps> = (props) => (
         // and no ring/sheen is painted on the wrapper (a second frame reads as a double border).
         "[filter:drop-shadow(0_8px_20px_rgba(3,1,8,0.55))] group-hover:[filter:drop-shadow(0_10px_26px_rgba(3,1,8,0.5))_drop-shadow(0_0_16px_var(--tile-glow))]":
           !!props.app.tile,
+        // One source of truth for the glyph-only artwork exception. The gold outer hairline and
+        // purple inset line are the same visual contract carried inside every finished tile PNG.
+        "overflow-hidden border-2 border-[#d7a73f] bg-[radial-gradient(circle_at_50%_30%,#3b2050_0%,#251132_62%,#160b20_100%)] shadow-[inset_0_0_0_2px_#160b20,inset_0_0_0_3px_#68417f]":
+          !!props.app.tileNeedsFrame,
         "shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15 group-hover:shadow-[0_10px_28px_var(--tile-glow),var(--v2-elevation-floating)] after:absolute after:inset-0 after:rounded-[inherit] after:bg-gradient-to-b after:from-white/20 after:via-white/0 after:to-black/10 after:pointer-events-none":
           !props.app.tile,
       }}
@@ -98,7 +102,13 @@ const RegularTile: Component<TileProps> = (props) => (
         fallback={<Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-10" />}
       >
         {(src) => (
-          <img src={src()} alt="" draggable={false} class="absolute inset-0 size-full object-contain select-none" />
+          <img
+            src={src()}
+            alt=""
+            draggable={false}
+            class="absolute inset-0 size-full object-contain select-none"
+            classList={{ "p-2.5": !!props.app.tileNeedsFrame }}
+          />
         )}
       </Show>
       <TileBadge app={props.app} />
