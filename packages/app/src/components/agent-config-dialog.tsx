@@ -20,7 +20,7 @@ import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
-import { worldMemoryClearScopeVerified, worldMemoryList } from "@/utils/memory-api"
+import { worldMemoryClearScopeVerified, worldMemoryList, GOVERNED_KINDS } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
@@ -110,7 +110,15 @@ export function AgentConfigDialog(props: {
       return current && id ? { cn: current, id, dir: sync().data.path?.directory ?? "" } : undefined
     },
     ({ cn, id, dir }) =>
-      worldMemoryList(cn.http, { directory: dir, scopes: [`agent:${id}`], limit: MEMORY_COUNT_CAP })
+      worldMemoryList(cn.http, {
+        directory: dir,
+        scopes: [`agent:${id}`],
+        // 🔴 THE SAME FILTER THE CABINET LIST APPLIES. Without it a cabinet holding only ingestion
+        // passages read as "200+ memories" beside a list page that correctly showed none — measured
+        // 2026-09-10: 2,116 rows, all `kind=passage`. A badge and its page answer one question.
+        kinds: [...GOVERNED_KINDS],
+        limit: MEMORY_COUNT_CAP,
+      })
         .then((rows) => rows.length)
         .catch(() => undefined),
   )
@@ -151,7 +159,12 @@ export function AgentConfigDialog(props: {
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
   const personalityValue = () => personality() ?? agent()?.personality ?? ""
-  const memoryValue = () => memory() ?? agent()?.memory ?? "own"
+  // A chat-mode colleague (posture `shortChat`) DEFAULTS off: the runner's own gate
+  // (`maintenance.ts` — `ShortChat.enabled(config.shortChat) || !stanceOf("memory", ...)`) never
+  // records a thing for it, so an ON toggle there would be a promise the stance cannot keep. Every
+  // other colleague defaults ON — one that cannot learn its work is not much of a colleague. A
+  // stored value always wins over this default, so nothing here rewrites an explicit choice.
+  const memoryValue = () => memory() ?? agent()?.memory ?? (postureValue() ? "none" : "own")
   const directoryValue = () => {
     const draft = directory()
     if (draft !== undefined) return draft.trim() === "" ? undefined : draft
@@ -898,55 +911,25 @@ export function AgentConfigDialog(props: {
               {language.t("agentConfig.memory")}
             </h3>
             <div class="mt-2 flex flex-col gap-1.5">
-              {/* Both halves, again — this is the surface where someone decides what a colleague keeps,
-                  so it is the last place that should describe only the private half. */}
+              {/* ONE switch, not a pair of radios: "persistent memory" and "throwaway" are the same
+                  switch seen from two sides, and the radios made the negative half read like a
+                  feature to shop for. The line under it says WHICH SIDE IS IN FORCE right now, in
+                  both halves — this is the surface where someone decides what a colleague keeps, so
+                  it is the last place that should describe only the private half. */}
               <label class="flex items-start gap-2 text-xs">
                 <input
-                  type="radio"
+                  type="checkbox"
                   class="mt-0.5"
                   checked={memoryValue() === "own"}
                   disabled={governing()}
-                  onChange={() => setMemory("own")}
+                  onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
                 />
-                <span>{language.t(memoryDisclosure("own").privateKey)}</span>
+                <span>{language.t("agentConfig.memoryRag")}</span>
               </label>
-              <label class="flex items-start gap-2 text-xs">
-                <input
-                  type="radio"
-                  class="mt-0.5"
-                  checked={memoryValue() === "none"}
-                  disabled={governing()}
-                  onChange={() => setMemory("none")}
-                />
-                <span>{language.t(memoryDisclosure("none").privateKey)}</span>
-              </label>
-
-              {/* 🔴 The DOOR into this colleague's own cabinet.
-                  Under the roster, "what does this colleague remember" is a question about a
-                  COLLEAGUE, so it is asked here — the same move that brought Tune into this dialog.
-                  Before it, the only way in was to open a global Memory app and find the name in a
-                  picker: the shape of the chat list the roster replaced.
-                  The count is live and says the honest thing when it is zero: a colleague that has
-                  remembered nothing yet is the ordinary state of a new hire, not an error. */}
-              <Show when={memoryValue() === "own"}>
-                <button
-                  type="button"
-                  class="mt-1 self-start text-xs text-v2-text-text-accent hover:underline"
-                  onClick={() => {
-                    const id = props.agentID
-                    if (id === undefined) return
-                    props.onDismiss()
-                    navigate(ownerRoute(id))
-                  }}
-                >
-                  {memoryCountLabel(remembered()) === undefined
-                    ? language.t("agentConfig.memoryOpen", { name: name() })
-                    : language.t("agentConfig.memoryOpenCount", {
-                        name: name(),
-                        count: memoryCountLabel(remembered())!,
-                      })}
-                </button>
-              </Show>
+              <p class="text-[11px] text-v2-text-text-faint">
+                {language.t(memoryDisclosure(memoryValue()).privateKey)}
+                <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
+              </p>
             </div>
           </section>
 
@@ -1247,6 +1230,30 @@ export function AgentConfigDialog(props: {
             onClick={() => void clone()}
           >
             {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+          </button>
+          {/* 🔴 The DOOR into this colleague's own cabinet — MOVED here from the memory section on
+              2026-09-10, so "what does it remember" sits with the other things you can DO about a
+              colleague, not under the stance that decides whether it can. Unconditional now: the
+              cabinet exists even when recording is off, and Clear Memory beside it never asked
+              permission either. The count is live and says the honest thing when it is zero. */}
+          <button
+            type="button"
+            data-action="agent-open-memory"
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={busy() !== undefined || props.agentID === undefined}
+            onClick={() => {
+              const id = props.agentID
+              if (id === undefined) return
+              props.onDismiss()
+              navigate(ownerRoute(id))
+            }}
+          >
+            {memoryCountLabel(remembered()) === undefined
+              ? language.t("agentConfig.memoryOpen", { name: name() })
+              : language.t("agentConfig.memoryOpenCount", {
+                  name: name(),
+                  count: memoryCountLabel(remembered())!,
+                })}
           </button>
           <Show when={!governing()}>
             {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read

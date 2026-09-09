@@ -261,6 +261,22 @@ export async function memoryProtection(
 }
 
 /** Read an officer-owned RAG component or the household's shared component. */
+/**
+ * WHAT COUNTS AS A MEMORY when a surface answers "what does X remember".
+ *
+ * 🔴 ONE CONSTANT FOR BOTH SURFACES. The cabinet list excluded `passage` and `source` (measured
+ * 2026-08-12: ingesting one rulebook put 302 raw chunks into the answer to "what do you remember");
+ * the Tune dialog's COUNT asked the same question with no `kinds` filter at all, so a cabinet holding
+ * only ingestion chunks read as "200+ memories" while its own list page said nothing. Measured
+ * 2026-09-10 on a live store: 2,116 rows, ALL `kind=passage`, count = 200+ (capped), list = 0.
+ * A count and a list over the same question may not disagree by construction — the disagreement
+ * itself becomes the claim the user reads. Anything that counts toward a "remembers" label or badge
+ * passes through this list; the sweep is every `worldMemoryList` caller whose result is SHOWN
+ * (the erase-verification callers count everything on purpose — they answer "is it gone", not
+ * "what is there", and must NOT gain this filter).
+ */
+export const GOVERNED_KINDS = ["entity", "episode", "claim"] as const
+
 export function worldMemoryList(
   server: ServerConnection.HttpBase,
   input: {

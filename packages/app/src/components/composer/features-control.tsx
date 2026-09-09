@@ -207,7 +207,12 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "askBeforeChanges",
   "surgicalEdits",
   "contextBudget",
-  "memory",
+  // `memory` is RETIRED from this list, not from the schema: the per-chat switch duplicated the
+  // agent's own "Persistent Agent Memory (RAG)" toggle one level down, and the two could disagree —
+  // an agent with memory on, tuned chat-by-chat off, read as "broken memory". The stance lives on
+  // the colleague (agent-config-dialog); a session that stored this feature BEFORE retirement keeps
+  // its stored value silently (same rule as `safeMode` above: no column is ripped out of shipped
+  // sessions), and every other chat inherits the agent's stance.
   "introspection",
   "quality",
   "affective",

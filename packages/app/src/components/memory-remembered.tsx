@@ -12,6 +12,7 @@ import {
   memoryNeverUsed,
   memoryUseful,
   worldMemoryList,
+  GOVERNED_KINDS,
   worldMemoryFeedback,
   worldMemoryInvalidate,
   worldMemoryClearScopeVerified,
@@ -146,7 +147,9 @@ export const MemoryRemembered: Component<{
         // 🔴 CLAIMS BELONG HERE. The claim is the store's first-class unit of memory since P1, and
         // this list asked for entities and episodes only — so the surface whose whole job is
         // answering "what do you remember" showed everything EXCEPT the governed facts.
-        kinds: ["entity", "episode", "claim"],
+        // 🔴 THE SAME FILTER THE COUNT USES. `GOVERNED_KINDS` is the one answer to "what counts as a
+        // memory"; the Tune badge and this list must never disagree by construction.
+        kinds: [...GOVERNED_KINDS],
         ...(scopes === undefined ? {} : { scopes }),
         ...(statuses === undefined ? {} : { statuses }),
       }

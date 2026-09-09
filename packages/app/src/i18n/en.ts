@@ -2783,6 +2783,7 @@ export const dict = {
   "agentConfig.portraitChoose": "Choose image",
   "agentConfig.portraitNone": "No image chosen",
   "agentConfig.memory": "What it remembers",
+  "agentConfig.memoryRag": "Persistent Agent Memory (RAG)",
   "agentConfig.mind": "Model it thinks with",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
   // Behind one Help button, and written about the MODEL rather than this dialog's fields: a help
