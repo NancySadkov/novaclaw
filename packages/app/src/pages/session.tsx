@@ -350,9 +350,6 @@ export default function Page() {
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
-  const executionAttention = createMemo(() =>
-    visibleExecutionAttention(executionAttempt(), params.id ? busy(params.id) : false),
-  )
   const executionOpen = createMemo(() => executionKeepsTurnOpen(executionAttempt()))
   /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
    *  incomplete case in particular must never read as "nothing happened". */
@@ -661,6 +658,9 @@ export default function Page() {
     revertToPrompt,
     rolled,
   } = revertController
+  const executionAttention = createMemo(() =>
+    visibleExecutionAttention(executionAttempt(), params.id ? busy(params.id) : false),
+  )
 
   const unpinDevice = async (sessionID: string) => {
     try {
