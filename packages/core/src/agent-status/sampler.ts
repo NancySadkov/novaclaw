@@ -6,15 +6,19 @@ import { Log } from "@novaclaw/schema/log"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { AgentV2 } from "../agent"
 import { AgentStatus } from "../agent-status"
+import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
 import { LocationServiceMap } from "../location-service-map"
 import { SessionScheduler } from "../session/scheduler"
+import { SessionPatch } from "../session/patch"
+import { SessionSchema } from "../session/schema"
 import { SessionStore } from "../session/store"
+import { SessionTitle } from "../session/title"
 import { llmClient } from "../effect/app-node-platform"
 import { AgentStatusDerive } from "./derive"
 import { cleanCommandLabel, SYSTEM as COMMAND_SYSTEM } from "./command-label"
-import { SYSTEM as WORKER_SYSTEM } from "./worker-label"
+import { fallbackWorkerLabel, SYSTEM as WORKER_SYSTEM } from "./worker-label"
 
 /**
  * The general lifecycle sampler for agent entity components.
@@ -91,10 +95,63 @@ export const workerCall = (event: { readonly type: string; readonly data: unknow
   }
 }
 
+/** A spawn receipt is the only tool settlement whose structured output owns a child session. */
+export const workerSuccess = (event: { readonly type: string; readonly data: unknown }) => {
+  if (event.type !== "session.next.tool.success") return undefined
+  const data = event.data as { sessionID?: unknown; callID?: unknown; structured?: { childID?: unknown } }
+  if (
+    typeof data.sessionID !== "string" ||
+    typeof data.callID !== "string" ||
+    typeof data.structured?.childID !== "string"
+  )
+    return undefined
+  return { sessionID: data.sessionID, callID: data.callID, childID: data.structured.childID }
+}
+
+/**
+ * Joins two independently arriving facts: the labeller's title and the spawn tool's child id.
+ * Keys include the parent session because provider call ids are not instance-global.
+ */
+export class WorkerLabelPairs {
+  private readonly labels = new Map<string, string>()
+  private readonly children = new Map<string, string>()
+
+  private key(sessionID: string, callID: string) {
+    return `${sessionID}\u0000${callID}`
+  }
+
+  private take(sessionID: string, callID: string) {
+    const key = this.key(sessionID, callID)
+    const title = this.labels.get(key)
+    const childID = this.children.get(key)
+    if (title === undefined || childID === undefined) return undefined
+    this.labels.delete(key)
+    this.children.delete(key)
+    return { childID, title }
+  }
+
+  label(sessionID: string, callID: string, title: string) {
+    this.labels.set(this.key(sessionID, callID), title)
+    return this.take(sessionID, callID)
+  }
+
+  child(sessionID: string, callID: string, childID: string) {
+    this.children.set(this.key(sessionID, callID), childID)
+    return this.take(sessionID, callID)
+  }
+
+  clear(sessionID: string, callID: string) {
+    const key = this.key(sessionID, callID)
+    this.labels.delete(key)
+    this.children.delete(key)
+  }
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const { db } = yield* Database.Service
     const status = yield* AgentStatus.Service
     const store = yield* SessionStore.Service
     const labeller = yield* AgentStatusDerive.makeLabeller()
@@ -103,6 +160,7 @@ export const layer = Layer.effect(
     const pendingByAgent = new Map<string, PendingSample>()
     const active = new Set<string>()
     const toolLabels = new Set<string>()
+    const workerLabels = new WorkerLabelPairs()
     let lifecycleRevision = 0
 
     const sample = (agent: string, sessionID: string, revision: number): Effect.Effect<void> =>
@@ -170,24 +228,37 @@ export const layer = Layer.effect(
         schedule(agent, sessionID, revision)
       }).pipe(Effect.catchCause(() => Effect.void))
 
+    const applyWorkerLabel = (binding: { readonly childID: string; readonly title: string }) =>
+      SessionPatch.patchSessionRecord({ db, events }, SessionSchema.ID.make(binding.childID), (info) =>
+        SessionTitle.isDefault(info.title)
+          ? SessionSchema.Info.make({
+              ...info,
+              title: binding.title,
+              time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
+            })
+          : undefined,
+      ).pipe(Effect.asVoid)
+
     const labelTool = (input: {
       readonly sessionID: string
       readonly assistantMessageID: string
       readonly callID: string
       readonly system: string
       readonly text: string
+      readonly worker: boolean
     }) =>
       Effect.gen(function* () {
         const session = yield* store.get(input.sessionID as never)
         if (!session) return
-        const raw = yield* labeller.short(input.sessionID, {
-          system: input.system,
-          text: input.text,
-          task: "tool-title",
-          reasoningBudget: 0,
-        })
-        if (!raw) return
-        const title = cleanCommandLabel(raw)
+        const raw = yield* labeller
+          .short(input.sessionID, {
+            system: input.system,
+            text: input.text,
+            task: "tool-title",
+            reasoningBudget: 0,
+          })
+          .pipe(Effect.orElseSucceed(() => ""))
+        const title = cleanCommandLabel(raw ?? "") ?? (input.worker ? fallbackWorkerLabel(input.text) : undefined)
         if (!title) return
         yield* events.publish(
           SessionEvent.Tool.Labelled,
@@ -200,28 +271,46 @@ export const layer = Layer.effect(
           },
           { location: session.location },
         )
+        if (input.worker) {
+          const binding = workerLabels.label(input.sessionID, input.callID, title)
+          if (binding) yield* applyWorkerLabel(binding)
+        }
       }).pipe(
         // This label is presentation-only and already has a deterministic fallback. A failed
         // maintenance sample must not turn into another ambient warning in the working chat.
         Effect.catchCause(() => Effect.void),
-        Effect.ensuring(Effect.sync(() => toolLabels.delete(input.callID))),
+        Effect.ensuring(Effect.sync(() => toolLabels.delete(`${input.sessionID}\u0000${input.callID}`))),
       )
 
     const unsubscribe = yield* events.listen((event) => {
       const sessionID = lifecycleSession(event)
       const command = shellCall(event)
       const worker = workerCall(event)
+      const success = workerSuccess(event)
+      const data = event.data as { sessionID?: unknown; callID?: unknown }
+      const failed =
+        event.type === "session.next.tool.failed" &&
+        typeof data.sessionID === "string" &&
+        typeof data.callID === "string"
+          ? { sessionID: data.sessionID, callID: data.callID }
+          : undefined
       return Effect.sync(() => {
         if (sessionID) fork(routeSample(sessionID, ++lifecycleRevision))
         const presentation = command
-          ? { ...command, system: COMMAND_SYSTEM, text: command.command }
+          ? { ...command, system: COMMAND_SYSTEM, text: command.command, worker: false }
           : worker
-            ? { ...worker, system: WORKER_SYSTEM, text: worker.prompt }
+            ? { ...worker, system: WORKER_SYSTEM, text: worker.prompt, worker: true }
             : undefined
-        if (presentation && !toolLabels.has(presentation.callID)) {
-          toolLabels.add(presentation.callID)
+        const presentationKey = presentation ? `${presentation.sessionID}\u0000${presentation.callID}` : undefined
+        if (presentation && presentationKey && !toolLabels.has(presentationKey)) {
+          toolLabels.add(presentationKey)
           fork(labelTool(presentation))
         }
+        if (success) {
+          const binding = workerLabels.child(success.sessionID, success.callID, success.childID)
+          if (binding) fork(applyWorkerLabel(binding))
+        }
+        if (failed) workerLabels.clear(failed.sessionID, failed.callID)
       })
     })
     yield* Effect.addFinalizer(() => unsubscribe)
@@ -232,5 +321,13 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [EventV2.node, AgentStatus.node, SessionStore.node, LocationServiceMap.node, SessionScheduler.node, llmClient],
+  deps: [
+    Database.node,
+    EventV2.node,
+    AgentStatus.node,
+    SessionStore.node,
+    LocationServiceMap.node,
+    SessionScheduler.node,
+    llmClient,
+  ],
 })

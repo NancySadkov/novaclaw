@@ -261,7 +261,7 @@ test("a heartbeat failure aborts an in-flight host RPC", async () => {
 test("interrupt aborts a queued host Effect without admitting or starting provider work", async () => {
   const scheduler = SessionScheduler.make()
   await Effect.runPromise(
-    scheduler.admit({ sessionID: "ses_device_blocker", deviceKey: "provider/model", sessionClass: "interactive" }),
+    scheduler.admit({ sessionID: "ses_device_blocker", deviceKey: "provider/model", sessionClass: "interactive-focused" }),
   )
   const messages: string[] = []
   const worker = spawn({

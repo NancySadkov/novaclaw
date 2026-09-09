@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
 import { Deferred, Duration, Effect, Exit, Fiber } from "effect"
-import { MAX_BATCH, make, runMaintenance } from "./scheduler"
+import { focusClass, hasHumanViewer, MAX_BATCH, make, runMaintenance } from "./scheduler"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 
@@ -11,12 +11,36 @@ afterEach(() => {
 })
 
 describe("session scheduler admission gate", () => {
+  test("only a chat with an attached human enters the immediate foreground lane", () => {
+    expect(hasHumanViewer({ viewers: [{ kind: "human" }] })).toBe(true)
+    expect(hasHumanViewer({ viewers: [{ kind: "agent" }, { kind: "peer" }] })).toBe(false)
+    expect(focusClass("interactive", true)).toBe("interactive-focused")
+    expect(focusClass("interactive-focused", false)).toBe("interactive")
+    expect(focusClass("sub-agent", false)).toBe("sub-agent")
+  })
+
+  test("an unattended interactive root shares bounded capacity instead of bypassing it", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "root-1", deviceKey: "d", sessionClass: "interactive", concurrency: 1 }))
+    let admitted = false
+    const second = Effect.runFork(
+      gate
+        .admit({ sessionID: "root-2", deviceKey: "d", sessionClass: "interactive", concurrency: 1 })
+        .pipe(Effect.map(() => (admitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(admitted).toBe(false)
+    await run(gate.release({ sessionID: "root-1", deviceKey: "d" }))
+    await run(Fiber.await(second))
+    expect(admitted).toBe(true)
+  })
+
   test("interactive admits immediately, even with batch saturated", async () => {
     const gate = make()
     await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))
     await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting" }))
     // batch full (MAX_BATCH) — interactive still goes straight through
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const [device] = await run(gate.snapshot())
     expect(device!.inFlightInteractive).toEqual(["ui"])
     expect(device!.inFlightBatch.length).toBe(MAX_BATCH)
@@ -24,7 +48,7 @@ describe("session scheduler admission gate", () => {
 
   test("batch waits while an interactive turn is generating; drains on release", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     let admitted = false
     const fiber = Effect.runFork(
       gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "sub-agent" }).pipe(
@@ -161,7 +185,7 @@ describe("session scheduler admission gate", () => {
 
   test("interrupting a waiting admit removes the waiter", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const fiber = Effect.runFork(gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "cron" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     await run(Fiber.interrupt(fiber))
@@ -171,7 +195,7 @@ describe("session scheduler admission gate", () => {
 
   test("evict interrupts a waiting admission; ordinary release still admits the next waiter", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const evicted = Effect.runFork(gate.admit({ sessionID: "evicted", deviceKey: "d", sessionClass: "cron" }))
     const survivor = Effect.runFork(gate.admit({ sessionID: "survivor", deviceKey: "d", sessionClass: "cron" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -210,7 +234,7 @@ describe("session scheduler admission gate", () => {
 
   test("devices are independent", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "spark", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "spark", sessionClass: "interactive-focused" }))
     // A batch turn on ANOTHER device is not blocked by spark's interactive turn.
     await run(gate.admit({ sessionID: "bg", deviceKey: "other", sessionClass: "auto-prompting" }))
     const devices = await run(gate.snapshot())
@@ -228,7 +252,7 @@ describe("interactive-idle maintenance", () => {
 
   test("decode maintenance waits for interactive generation and is visible as maintenance", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const hold = Deferred.makeUnsafe<void>()
     let started = false
     const fiber = Effect.runFork(
@@ -281,7 +305,7 @@ describe("interactive-idle maintenance", () => {
 
     // Interactive work is never queued behind already-running background work. Its admission
     // preempts the acquired maintenance effect and closes every further maintenance admission.
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused", concurrency: 2 }))
     await run(gate.release({ sessionID: "batch", deviceKey: "d" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     ;[device] = await run(gate.snapshot())
@@ -302,7 +326,7 @@ describe("interactive-idle maintenance", () => {
 
   test("evicting an owner interrupts its queued maintenance lease", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const queued = Effect.runFork(runMaintenance(gate, maintenance("gone", "status"), Effect.never, Effect.void))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await run(gate.snapshot()))[0]!.waitingMaintenance).toHaveLength(1)
@@ -383,13 +407,13 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
 
   test("an idle session's entry is dropped once its block outlives the TTL", async () => {
     const { gate, advance } = fake()
-    await run(gate.admit({ sessionID: "gone", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "gone", deviceKey: "d", sessionClass: "interactive-focused" }))
     await run(gate.release({ sessionID: "gone", deviceKey: "d" }))
     expect(ledgerHas(await run(gate.snapshot()), "gone")).toBe(true) // still inside the window
 
     advance(5_000)
     // any other traffic on the device sweeps — here the next session's admit
-    await run(gate.admit({ sessionID: "live", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "live", deviceKey: "d", sessionClass: "interactive-focused" }))
 
     const [device] = await run(gate.snapshot())
     expect(device!.ledger.map((entry) => entry.id)).toEqual(["live"])
@@ -397,15 +421,15 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
 
   test("NEGATIVE CONTROL: inside the TTL the entry AND its debt survive — no laundering by sleeping", async () => {
     const { gate, advance } = fake()
-    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive" }))
-    await run(gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive-focused" }))
+    await run(gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "interactive-focused" }))
     await run(gate.report({ sessionID: "hog", deviceKey: "d", costTokens: 500_000 }))
     await run(gate.release({ sessionID: "hog", deviceKey: "d" }))
     const indebted = (await run(gate.snapshot()))[0]!.ledger.find((entry) => entry.id === "hog")!.lag
     expect(indebted).toBeLessThan(0)
 
     advance(500) // a brief sleep — well inside the forgiveness window
-    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive-focused" }))
 
     const entry = (await run(gate.snapshot()))[0]!.ledger.find((e) => e.id === "hog")
     expect(entry).toBeDefined()
@@ -420,23 +444,23 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
     const lagOf = async (id: string) => (await run(gate.snapshot()))[0]!.ledger.find((entry) => entry.id === id)?.lag
     // A peer is REQUIRED to owe anything at all: with one entry, `charge` advances virtual time
     // and vruntime by the same amount, so a solo session sits exactly on its share (lag 0).
-    await run(gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "interactive" }))
-    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "interactive-focused" }))
+    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive-focused" }))
     await run(gate.report({ sessionID: "hog", deviceKey: "d", costTokens: 500_000 }))
     await run(gate.release({ sessionID: "hog", deviceKey: "d" }))
     expect(await lagOf("hog")).toBeLessThan(0)
 
     advance(5_000)
-    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "hog", deviceKey: "d", sessionClass: "interactive-focused" }))
 
     expect(await lagOf("hog")).toBe(0)
   })
 
   test("a turn in flight is never swept, however long it runs", async () => {
     const { gate, advance } = fake()
-    await run(gate.admit({ sessionID: "long", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "long", deviceKey: "d", sessionClass: "interactive-focused" }))
     advance(60_000)
-    await run(gate.admit({ sessionID: "other", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "other", deviceKey: "d", sessionClass: "interactive-focused" }))
     const [device] = await run(gate.snapshot())
     expect(ledgerHas([device!], "long")).toBe(true)
     expect(device!.inFlightInteractive).toContain("long")
@@ -468,7 +492,7 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
 
   test("a CANCELLED waiter's entry is swept (it never reaches release)", async () => {
     const { gate, advance } = fake()
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const fiber = Effect.runFork(gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "cron" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     await run(Fiber.interrupt(fiber))
@@ -511,7 +535,7 @@ describe("dispatch-slot release on interrupt (shared provider-dispatch compositi
         yield* gate.release(slot)
       }),
     )
-    const admitted = gate.admit({ ...slot, sessionClass: "interactive" as const }).pipe(Effect.andThen(generation))
+    const admitted = gate.admit({ ...slot, sessionClass: "interactive-focused" as const }).pipe(Effect.andThen(generation))
     return guarded ? admitted.pipe(Effect.ensuring(gate.release(slot))) : admitted
   }
 

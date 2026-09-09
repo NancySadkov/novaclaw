@@ -56,7 +56,7 @@ describe("best-of-N racing — N generations must count as N on the device", () 
     // batch turn was admitted while the other generations were still generating. So the assertion
     // is about the moment BETWEEN the first settlement and the last, which a final count cannot see.
     const scheduler = makeScheduler()
-    const base = baseSlot("ses_race", "interactive")
+    const base = baseSlot("ses_race", "interactive-focused")
     const latches = [Deferred.makeUnsafe<void>(), Deferred.makeUnsafe<void>(), Deferred.makeUnsafe<void>()]
     const racers = latches.map((held, i) => racer(scheduler, attemptSlot(base, i + 1), held))
     await tick()
@@ -88,7 +88,7 @@ describe("best-of-N racing — N generations must count as N on the device", () 
     // removed, and it is here so the claim above cannot pass for a reason that has nothing to do
     // with slot identity.
     const scheduler = makeScheduler()
-    const shared = baseSlot("ses_race", "interactive")
+    const shared = baseSlot("ses_race", "interactive-focused")
     const latches = [Deferred.makeUnsafe<void>(), Deferred.makeUnsafe<void>(), Deferred.makeUnsafe<void>()]
     const racers = latches.map((held) => racer(scheduler, shared, held))
     await tick()

@@ -193,6 +193,11 @@ export const layer = Layer.effect(
 
     const generateTitle = Effect.fn("SessionMaintenance.generateTitle")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
+      // Spawned workers have one title owner: the parallel worker labeller in AgentStatusSampler.
+      // Letting the ordinary chat auto-titler race it produced prompt summaries, code fences, and
+      // whichever label happened to settle first. The child stays on its creation default until
+      // the spawn call's generated label is joined to the child id and projected onto this row.
+      if (session.type === "sub-agent") return
       // A title the USER set is never overwritten — `isDefault` is the whole consent check here.
       if (!SessionTitle.isDefault(session.title)) return
       const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))

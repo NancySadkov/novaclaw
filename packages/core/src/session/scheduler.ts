@@ -2,10 +2,10 @@
  * The session scheduler (Tier-1 roadmap item; design: notes/reports/scheduler-synthesis-2026-07-03.md).
  *
  * V1 = the ADMISSION GATE at turn boundaries, per device (provider/model):
- *   - interactive sessions dispatch immediately (vLLM's continuous batching handles
- *     concurrency; their latency comes from never waiting client-side);
+ *   - the chat a human is currently viewing dispatches immediately (vLLM's continuous batching
+ *     handles concurrency; its latency comes from never waiting client-side);
  *   - batch-class sessions (sub-agent, auto-prompting, goal-oriented, cron) wait while
- *     ANY interactive turn is generating, and are capped at MAX_BATCH concurrent turns
+ *     the human-visible foreground turn is generating, and are capped at MAX_BATCH concurrent turns
  *     — "background agents run on idle device cycles", enforced at the only preemption
  *     point a non-preemptible turn has: before dispatch;
  *   - among waiting batch sessions the TG-EEVDF ledger picks (fair share by class
@@ -43,7 +43,16 @@ export type SessionClass = KernelEevdf.SessionClass
 export const isInteractive = (sessionClass: SessionClass) =>
   sessionClass === "interactive" || sessionClass === "interactive-focused"
 
-/** SessionConfig.type → scheduler class ("interactive" covers the focused split later). */
+/** Only an actually attached human gets the scheduler's immediate foreground lane. */
+export const isFocused = (sessionClass: SessionClass) => sessionClass === "interactive-focused"
+
+export const hasHumanViewer = (presence: { readonly viewers: readonly { readonly kind: string }[] }) =>
+  presence.viewers.some((viewer) => viewer.kind === "human")
+
+export const focusClass = (sessionClass: SessionClass, focused: boolean): SessionClass =>
+  focused ? "interactive-focused" : sessionClass === "interactive-focused" ? "interactive" : sessionClass
+
+/** SessionConfig.type → base scheduler class; the host promotes live human presence separately. */
 export function classForSessionType(type: string | undefined): SessionClass {
   switch (type) {
     case "sub-agent":
@@ -260,7 +269,7 @@ export const make = (options?: Options): Interface => {
         device.inFlightBatch.has(input.sessionID) ||
         device.inFlightMaintenance.has(input.sessionID)
       if (alreadyInFlight) return Effect.void
-      if (isInteractive(input.sessionClass)) {
+      if (isFocused(input.sessionClass)) {
         // Maintenance is deliberately interruptible. Continuous batching does not make a long
         // utility prefill free: on the Spark a compaction already in flight delayed a brand-new
         // interactive chat's first token by 150 seconds. Signal every acquired maintenance lease;

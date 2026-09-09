@@ -67,7 +67,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const session = yield* SessionV2.Service
       const scheduler = yield* SessionScheduler.Service
       const created = yield* session.create({ location, agent: rootAgent })
-      yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive" })
+      yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive-focused" })
       expect(ledgerHas(yield* scheduler.snapshot(), created.id)).toBe(true)
 
       yield* session.remove(created.id)
@@ -86,7 +86,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
       const created = yield* session.create({ location, agent: rootAgent })
-      yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive" })
+      yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive-focused" })
 
       // the pre-fix wiring: the seam called with {db, events} only
       yield* SessionV2.removeSessionRecord({ db, events }, created.id)
@@ -106,7 +106,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const grandchild = yield* session.create({ location, agent: rootAgent, parentID: child.id })
       // interactive, not batch: MAX_BATCH is 2, so a third batch admit would legitimately BLOCK
       for (const id of [parent.id, child.id, grandchild.id])
-        yield* scheduler.admit({ sessionID: id, deviceKey: "d", sessionClass: "interactive" })
+        yield* scheduler.admit({ sessionID: id, deviceKey: "d", sessionClass: "interactive-focused" })
 
       yield* session.remove(parent.id)
 

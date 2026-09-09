@@ -38,6 +38,7 @@ test("worker device admission remains globally visible and exit reclaim frees it
       scheduler,
       lease,
       message: request("device-admit", { sessionClass: "interactive" }),
+      focused: true,
     }),
   )
   expect(admitted.type).toBe("device-admitted")
@@ -116,7 +117,7 @@ test("an interactive arrival preempts worker-owned maintenance", async () => {
     }),
   )
   await Effect.runPromise(
-    scheduler.admit({ sessionID: "foreground", deviceKey: "provider/model", sessionClass: "interactive" }),
+    scheduler.admit({ sessionID: "foreground", deviceKey: "provider/model", sessionClass: "interactive-focused" }),
   )
   expect((await Effect.runPromise(Fiber.join(preempted))).type).toBe("device-maintenance-preempted")
 })
@@ -166,7 +167,7 @@ test("release/report are host-owned and invalid or stale requests fail closed", 
 test("evicting a queued worker admission produces no admitted reply", async () => {
   const scheduler = SessionScheduler.make()
   await Effect.runPromise(
-    scheduler.admit({ sessionID: "ses_blocker", deviceKey: "provider/model", sessionClass: "interactive" }),
+    scheduler.admit({ sessionID: "ses_blocker", deviceKey: "provider/model", sessionClass: "interactive-focused" }),
   )
   let reply: SessionWorkerDeviceBridge.Reply | undefined
   const pending = Effect.runFork(

@@ -62,6 +62,7 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
       opened: ["icon_001.svg", "icon_002.svg"],
       attempted: ["icon_001.svg", "icon_002.svg", "icon_003.svg"],
       barren: { barren: 1, lastOpened: 2 },
+      spawned: ["ses_spawned"],
       joined: ["ses_child"],
       restartRounds: 1,
       runawayNudgedAtCalls: 75,
@@ -73,6 +74,7 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
   expect(seen.request).toEqual({ asked: true, limit: 400, named: ["icons"] })
   expect(seen.opened).toEqual(["icon_001.svg", "icon_002.svg"])
   expect(seen.barren).toEqual({ barren: 1, lastOpened: 2 })
+  expect(seen.spawned).toEqual(["ses_spawned"])
   expect(seen.joined).toEqual(["ses_child"])
   expect(seen.restartRounds).toBe(1)
   expect(seen.runawayNudgedAtCalls).toBe(75)

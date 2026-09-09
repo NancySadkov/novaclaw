@@ -3,7 +3,7 @@ export * as SessionWorkerDeviceBridge from "./device-bridge"
 import { Effect } from "effect"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
-import type { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
@@ -47,6 +47,8 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
   readonly scheduler: SessionScheduler.Interface
   readonly lease: SessionExecutionAttempt.Lease
   readonly message: Request
+  /** Host-owned live UI fact; a worker may never claim foreground priority for itself. */
+  readonly focused?: boolean
 }) {
   if (!SessionWorkerProtocol.owns(input.lease, input.message))
     return rejected(input.message, "execution ownership changed")
@@ -57,7 +59,10 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
       yield* input.scheduler.admit({
         sessionID: input.lease.sessionID,
         deviceKey: input.message.deviceKey,
-        sessionClass: input.message.sessionClass,
+        sessionClass:
+          input.focused === undefined
+            ? input.message.sessionClass
+            : SessionScheduler.focusClass(input.message.sessionClass, input.focused),
         ...(input.message.priority === undefined ? {} : { priority: input.message.priority }),
         ...(input.message.concurrency === undefined ? {} : { concurrency: input.message.concurrency }),
         ...(input.message.locality === undefined ? {} : { locality: input.message.locality }),

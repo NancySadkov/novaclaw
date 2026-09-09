@@ -77,6 +77,32 @@ describe("session-worker admission", () => {
     expect(order).toEqual(["interactive", "batch"])
   })
 
+  test("opening a queued chat promotes it ahead of older background work", async () => {
+    const gate = await run(SessionWorkerAdmission.make({ capacity: 1 }))
+    const release = Deferred.makeUnsafe<void>()
+    const entered = Deferred.makeUnsafe<void>()
+    const order: string[] = []
+    const holder = Effect.runFork(
+      gate.run(
+        batch("holder"),
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+        }),
+      ),
+    )
+    await run(Deferred.await(entered))
+    const older = Effect.runFork(gate.run(batch("older"), Effect.sync(() => order.push("older"))))
+    const opened = Effect.runFork(gate.run(batch("opened"), Effect.sync(() => order.push("opened"))))
+    gate.reprioritize("opened", "interactive")
+
+    expect(gate.snapshot().waitingInteractive).toEqual(["opened"])
+    await run(Deferred.succeed(release, undefined))
+    await run(Fiber.join(holder))
+    await Promise.all([run(Fiber.join(older)), run(Fiber.join(opened))])
+    expect(order).toEqual(["opened", "older"])
+  })
+
   test("an interrupted waiter leaks no permit", async () => {
     const gate = await run(SessionWorkerAdmission.make({ capacity: 2 }))
     const holdersRelease = Deferred.makeUnsafe<void>()

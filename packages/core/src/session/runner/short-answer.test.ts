@@ -11,7 +11,7 @@ const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 describe("ShortAnswer interactive-idle admission", () => {
   test("the provider stream cannot start while an interactive turn holds the same device", async () => {
     const scheduler = make()
-    await run(scheduler.admit({ sessionID: "ui", deviceKey: "device", sessionClass: "interactive" }))
+    await run(scheduler.admit({ sessionID: "ui", deviceKey: "device", sessionClass: "interactive-focused" }))
     let requests = 0
     const answer = Effect.runFork(
       generate({

@@ -60,7 +60,7 @@ describe("the parent/child deadlock — a join must not hold the device against 
           events,
           scheduler: gate,
           sessionID: "parent" as never,
-          slot: slotFor("parent", "interactive"),
+          slot: slotFor("parent", "interactive-focused"),
           maxAttempts: 1,
           hasOutput: () => false,
           attempt: Effect.void,
@@ -94,7 +94,7 @@ describe("the parent/child deadlock — a join must not hold the device against 
           events,
           scheduler: gate,
           sessionID: "parent" as never,
-          slot: slotFor("parent", "interactive"),
+          slot: slotFor("parent", "interactive-focused"),
           maxAttempts: 1,
           hasOutput: () => false,
           attempt: Effect.void,
@@ -114,14 +114,14 @@ describe("the parent/child deadlock — a join must not hold the device against 
 describe("release is idempotent — the in-band call and the net must not fight", () => {
   test("releasing twice frees the device exactly once and never underflows", async () => {
     const gate = make()
-    await run(gate.admit(slotFor("ui", "interactive")))
-    await run(gate.release(slotFor("ui", "interactive")))
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     const [device] = await run(gate.snapshot())
     expect(device?.inFlightInteractive ?? []).toEqual([])
     // A second release must not free somebody ELSE's slot by decrementing a counter.
-    await run(gate.admit(slotFor("other", "interactive")))
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("other", "interactive-focused")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     const [after] = await run(gate.snapshot())
     expect(after?.inFlightInteractive).toEqual(["other"])
   })
@@ -136,7 +136,7 @@ describe("the failure and interrupt paths — where the net is the ONLY release"
         events,
         scheduler: gate,
         sessionID: "boom" as never,
-        slot: slotFor("boom", "interactive"),
+        slot: slotFor("boom", "interactive-focused"),
         maxAttempts: 1,
         hasOutput: () => false,
         attempt: Effect.fail("provider exploded" as never),
@@ -153,7 +153,7 @@ describe("the failure and interrupt paths — where the net is the ONLY release"
         events,
         scheduler: gate,
         sessionID: "cancelled" as never,
-        slot: slotFor("cancelled", "interactive"),
+        slot: slotFor("cancelled", "interactive-focused"),
         maxAttempts: 1,
         hasOutput: () => false,
         attempt: Effect.never,
@@ -169,12 +169,12 @@ describe("the failure and interrupt paths — where the net is the ONLY release"
     // 🔴 A cancelled waiter never reaches `release`. If its entry survived, the device would count a
     // phantom and later admissions would queue behind a session that no longer exists.
     const gate = make()
-    await run(gate.admit(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
     const queued = forkTracked(gate.admit(slotFor("bg", "sub-agent")))
     await tick()
     expect(queued.state.done).toBe(false)
     await run(Fiber.interrupt(queued.fiber))
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     const [device] = await run(gate.snapshot())
     expect(device?.waiting ?? []).toEqual([])
     // The device still works for the next arrival.
@@ -187,11 +187,11 @@ describe("the failure and interrupt paths — where the net is the ONLY release"
 describe("lost wakeups and ordering", () => {
   test("a waiter queued BEFORE the release is woken BY it — no lost wakeup", async () => {
     const gate = make()
-    await run(gate.admit(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
     const queued = forkTracked(gate.admit(slotFor("bg", "sub-agent")))
     await tick()
     expect(queued.state.done).toBe(false)
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     await tick()
     // The classic condition-variable bug: signal delivered while nobody is listening, waiter sleeps
     // forever. The drain must happen on release, not on the next arrival.
@@ -200,12 +200,12 @@ describe("lost wakeups and ordering", () => {
 
   test("many batch turns racing one release respect the capacity cap", async () => {
     const gate = make()
-    await run(gate.admit(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
     const racers = Array.from({ length: MAX_BATCH + 4 }, (_, i) =>
       Effect.runFork(gate.admit(slotFor(`bg${i}`, "sub-agent"))),
     )
     await tick()
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     await tick()
     const [device] = await run(gate.snapshot())
     // Over-admission is the hazard a race produces here: several waiters see capacity at once and
@@ -219,7 +219,7 @@ describe("lost wakeups and ordering", () => {
     // Priority inversion in the other direction: a person waiting on saturated background work.
     const gate = make()
     for (let i = 0; i < MAX_BATCH; i++) await run(gate.admit(slotFor(`bg${i}`, "sub-agent")))
-    const ui = forkTracked(gate.admit(slotFor("ui", "interactive")))
+    const ui = forkTracked(gate.admit(slotFor("ui", "interactive-focused")))
     await tick()
     expect(ui.state.done).toBe(true)
   })
@@ -230,9 +230,9 @@ describe("re-entrancy — the same session admitted twice", () => {
     // A retry that re-enters `admit` must not leave a second phantom holder that no single release
     // can clear — the shape that would make one turn hold the device forever.
     const gate = make()
-    await run(gate.admit(slotFor("ui", "interactive")))
-    await run(gate.admit(slotFor("ui", "interactive")))
-    await run(gate.release(slotFor("ui", "interactive")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
+    await run(gate.admit(slotFor("ui", "interactive-focused")))
+    await run(gate.release(slotFor("ui", "interactive-focused")))
     const [device] = await run(gate.snapshot())
     expect(device?.inFlightInteractive ?? []).toEqual([])
     // …and a batch session can now get in, which is the consequence that actually matters.

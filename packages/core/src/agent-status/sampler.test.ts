@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { lifecycleSession, shellCall, workerCall } from "./sampler"
+import { lifecycleSession, shellCall, workerCall, workerSuccess, WorkerLabelPairs } from "./sampler"
 
 const source = await Bun.file(new URL("./sampler.ts", import.meta.url)).text()
 
@@ -71,6 +71,38 @@ describe("agent lifecycle sampler routing", () => {
       })?.prompt,
     ).toBe("Review the legacy worker path")
     expect(workerCall({ type: "session.next.tool.called", data: { tool: "read" } })).toBeUndefined()
+  })
+
+  test("recognises only a settled spawn receipt with a child id", () => {
+    expect(
+      workerSuccess({
+        type: "session.next.tool.success",
+        data: { sessionID: "parent", callID: "call", structured: { childID: "child" } },
+      }),
+    ).toEqual({ sessionID: "parent", callID: "call", childID: "child" })
+    expect(
+      workerSuccess({ type: "session.next.tool.success", data: { sessionID: "parent", callID: "call", structured: {} } }),
+    ).toBeUndefined()
+    expect(
+      workerSuccess({
+        type: "session.next.tool.failed",
+        data: { sessionID: "parent", callID: "call", structured: { childID: "child" } },
+      }),
+    ).toBeUndefined()
+  })
+
+  test("joins worker labels and child receipts in either order without cross-session collisions", () => {
+    const pairs = new WorkerLabelPairs()
+    expect(pairs.label("parent-a", "same-call", "Audit battle scene")).toBeUndefined()
+    expect(pairs.child("parent-b", "same-call", "child-b")).toBeUndefined()
+    expect(pairs.child("parent-a", "same-call", "child-a")).toEqual({
+      childID: "child-a",
+      title: "Audit battle scene",
+    })
+    expect(pairs.label("parent-b", "same-call", "Review combat pacing")).toEqual({
+      childID: "child-b",
+      title: "Review combat pacing",
+    })
   })
 
   test("presentation labels are detached and receive only their own tool input", () => {

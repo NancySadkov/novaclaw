@@ -20,6 +20,30 @@ import { runBounded } from "./fixture/bounded"
  */
 
 describe("SessionRunnerLLM — auto-title", () => {
+  test("a worker is titled only by the spawn labeller, never by its own first answer", async () => {
+    const harness = makeRunnerHarness({ turns: [completeTurn("answer", "```javascript")] })
+
+    const result = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.setTitle({ sessionID: HARNESS_SESSION, title: "New session" })
+        yield* session.switchType({ sessionID: HARNESS_SESSION, type: "sub-agent" })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Research the battle system" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return (yield* session.get(HARNESS_SESSION)).title
+      }),
+      "a sub-agent leaves its title to the spawn labeller",
+    )
+
+    expect(result).toBe("New session")
+    expect(harness.titleRequests).toEqual([])
+  })
+
   test("auto-titles a reasoning model through the shared token-budget controller", async () => {
     // A reasoning model can spend its whole title budget thinking and emit no title at all. The shared
     // budget controller cuts the oversized reasoning at a checkpoint and CONTINUES the completion

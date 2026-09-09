@@ -26,6 +26,7 @@ import * as SessionScratchFolder from "./scratch-folder"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInterruptNotice } from "@novaclaw/core/session/interrupt-notice"
+import { SessionPresence } from "@novaclaw/core/session/presence"
 import { SessionStore } from "@novaclaw/core/session/store"
 import os from "node:os"
 import { SessionWorkerCommand } from "./command"
@@ -150,6 +151,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2.Service
     const attempts = yield* SessionExecutionAttempt.Service
     const scheduler = yield* SessionScheduler.Service
+    const presence = yield* SessionPresence.Service
     const database = yield* Database.Service
     // Staffing the roster is a HOST act (see the hand-off below): the store is the durable truth and
     // the live roster is this process's snapshot, so both are resolved here, once, at layer build —
@@ -174,6 +176,20 @@ export const layer = Layer.effect(
     // session state and no resident process; once admitted, the permit covers the worker's complete
     // drain and is released on success, failure, or interruption by `workerAdmission.run`.
     const workerAdmission = yield* SessionWorkerAdmission.make()
+    const unsubscribePresence = yield* events.listen((event) => {
+      if (event.type !== SessionPresence.Event.Updated.type) return Effect.void
+      const data = event.data as {
+        sessionID: string
+        presence: { viewers: readonly { kind: string }[] }
+      }
+      return Effect.sync(() =>
+        workerAdmission.reprioritize(
+          data.sessionID,
+          SessionScheduler.hasHumanViewer(data.presence) ? "interactive" : "batch",
+        ),
+      )
+    })
+    yield* Effect.addFinalizer(() => unsubscribePresence)
 
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
@@ -229,12 +245,11 @@ export const layer = Layer.effect(
         }
         const session = effective === stored.location.directory ? stored : ((yield* store.get(sessionID)) ?? stored)
 
+        const currentPresence = yield* presence.get(sessionID)
         return yield* workerAdmission.run(
           {
             sessionID: String(sessionID),
-            priority: SessionScheduler.isInteractive(SessionScheduler.classForSessionType(session.type))
-              ? "interactive"
-              : "batch",
+            priority: SessionScheduler.hasHumanViewer(currentPresence) ? "interactive" : "batch",
           },
           Effect.gen(function* () {
             const located = locations.get(session.location)
@@ -285,7 +300,19 @@ export const layer = Layer.effect(
                     signal,
                   }),
                 onDeviceRequest: (message, signal) =>
-                  Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
+                  Effect.runPromise(
+                    presence.get(sessionID).pipe(
+                      Effect.flatMap((snapshot) =>
+                        SessionWorkerDeviceBridge.handle({
+                          scheduler,
+                          lease,
+                          message,
+                          focused: SessionScheduler.hasHumanViewer(snapshot),
+                        }),
+                      ),
+                    ),
+                    { signal },
+                  ),
                 onInteractionRequest: (message, signal) =>
                   runLocated(
                     Effect.gen(function* () {
@@ -541,6 +568,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     SessionExecutionAttempt.node,
     SessionScheduler.node,
+    SessionPresence.node,
     Database.node,
     AgentConfigStore.node,
     Memory.node,

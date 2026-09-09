@@ -101,8 +101,18 @@ export const make = (options?: { readonly fleetBytes?: number; readonly capacity
         drain()
       })
 
+    /** Reclassify a queued session when a human opens or leaves its chat. */
+    const reprioritize = (sessionID: string, priority: Input["priority"]) => {
+      for (let index = 0; index < waiting.length; index++) {
+        const waiter = waiting[index]!
+        if (waiter.input.sessionID !== sessionID || waiter.input.priority === priority) continue
+        waiting[index] = { ...waiter, input: { ...waiter.input, priority } }
+      }
+    }
+
     return {
       capacity: limit,
+      reprioritize,
       run: <A, E, R>(input: Input, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
         Effect.uninterruptibleMask((restore) =>
           restore(acquire(input)).pipe(

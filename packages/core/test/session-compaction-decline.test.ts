@@ -382,7 +382,7 @@ describe("the Geryon sleep-recovery regression", () => {
     // same device. Foreground admission must abort the maintenance decode rather than merely put a
     // second request beside it on an already-starved model server.
     const admittedAt = Date.now()
-    await Effect.runPromise(scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive" }))
+    await Effect.runPromise(scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive-focused" }))
     const compacted = await Promise.race([
       Effect.runPromise(Fiber.join(hung)),
       Bun.sleep(1_000).then(() => {
