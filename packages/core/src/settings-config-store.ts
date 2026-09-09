@@ -17,7 +17,7 @@ export interface Interface {
   readonly serverPassword: () => Effect.Effect<string | undefined>
   readonly set: (key: string, value: unknown) => Effect.Effect<void>
   readonly update: (
-    key: "provider_capability" | "provider_route_profile",
+    key: "provider_capability" | "provider_route_profile" | "provider_recovery",
     change: (current: unknown) => unknown,
   ) => Effect.Effect<void>
   readonly remove: (key: string) => Effect.Effect<void>

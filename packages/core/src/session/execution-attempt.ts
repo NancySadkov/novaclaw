@@ -81,7 +81,7 @@ export interface Interface {
     failure?: { readonly classification: string; readonly detail?: string },
   ) => Effect.Effect<Settlement>
   /** Classifies a live worker loss against its durable side-effect boundary, increments the
-   * circuit-breaker budget, and records recovering/paused atomically. A fenced lease returns
+   * retry-backoff counter, and records recovery atomically. A fenced lease returns
    * undefined and cannot influence the replacement owner. */
   readonly recoverFailure: (
     lease: Lease,
@@ -89,7 +89,7 @@ export interface Interface {
   ) => Effect.Effect<SessionRecoveryDecision.Decision | undefined>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<ReadonlyArray<Info>>
-  /** Records fresh operator authority and resets the automatic-recovery circuit breaker. */
+  /** Records fresh operator authority and resets the automatic-recovery counter. */
   readonly authorizeRetry: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   readonly owns: (lease: Lease) => Effect.Effect<boolean>
   readonly recoverStale: (before: number) => Effect.Effect<ReadonlyArray<Recovered>>
@@ -590,10 +590,9 @@ export const layer = Layer.effect(
                 /**
                  * ⚠️ **A user stop is not a failure, and must not spend the budget.** This used to read
                  * `state === "settled" ? 0 : +1`, so every deliberate interrupt incremented — and with
-                 * `FAILURE_LIMIT` at 3, three cancellations of a healthy session with no successful turn
-                 * between them left the budget exhausted, so the NEXT genuine fault paused the session
-                 * reporting `repeated-failure`. That is ruling 2 on the recovery report: the user's own
-                 * stops described as failures.
+                 * three cancellations of a healthy session with no successful turn between them made
+                 * the NEXT genuine fault wait behind an inflated recovery delay. That is ruling 2 on
+                 * the recovery report: the user's own stops described as failures.
                  *
                  * `interrupted` leaves the count UNCHANGED rather than resetting it. Resetting would let
                  * a stop erase a real failure history — two genuine losses followed by one cancellation
@@ -667,7 +666,7 @@ export const layer = Layer.effect(
                 const updated = yield* tx
                   .update(SessionExecutionTable)
                   .set({
-                    state: decision.automatic ? "recovering" : "paused",
+                    state: "recovering",
                     failure_class: failure.classification,
                     failure_detail: failure.detail?.slice(0, 2_000) ?? decision.reason,
                     failure_count: failureCount,
@@ -737,14 +736,12 @@ export const layer = Layer.effect(
                   const updated = yield* tx
                     .update(SessionExecutionTable)
                     .set({
-                      state: decision.automatic ? "interrupted" : "paused",
+                      state: "interrupted",
                       failure_class: decision.reason,
                       failure_detail:
                         decision.reason === "outcome-unknown"
                           ? "A tool was dispatched without a durable result; inspect its target before retrying"
-                          : decision.reason === "repeated-failure"
-                            ? "This session reached its recovery limit and was paused"
-                            : "Execution heartbeat expired before settlement",
+                          : "The previous process stopped before settlement; recovery will continue automatically",
                       failure_count: failureCount,
                       time_updated: now,
                     })

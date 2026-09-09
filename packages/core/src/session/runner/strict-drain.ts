@@ -208,7 +208,7 @@ export const make = (dependencies: Dependencies) => {
     // prompt is ONE `Message.user`, so there is nothing to evict and `dropped` is always 0. So the same
     // number goes to the engine, which budgets the workspace render where it is BUILT.
     const contextTokens = model.route.defaults.limits?.context
-    const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
+    const maxProviderAttempts = ProviderRetry.maxAttempts()
     const scheduledDevice = selected.device
     const routeProfile = yield* routeProfiles
       .resolve(

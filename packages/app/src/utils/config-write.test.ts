@@ -209,11 +209,10 @@ describe("reportedWrite hands back a verdict instead of swallowing one", () => {
 })
 
 describe("the silent-write ledger", () => {
-  test("General's four immediate controls and Recovery's resume control all use the reported door", () => {
+  test("General's four immediate controls use the reported door", () => {
     const general = stripComments(readFileSync(resolve(APP_SRC, "components/settings-v2/general.tsx"), "utf8"))
     const recovery = stripComments(readFileSync(resolve(APP_SRC, "components/settings-v2/recovery.tsx"), "utf8"))
     expect(general.match(/writeConfig\s*\(/g)).toHaveLength(4)
-    expect(recovery.match(/writeConfig\s*\(/g)).toHaveLength(1)
     expect(general).not.toMatch(/updateConfig\s*\(/)
     expect(recovery).not.toMatch(/updateConfig\s*\(/)
   })

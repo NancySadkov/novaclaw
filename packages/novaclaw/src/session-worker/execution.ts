@@ -1,6 +1,6 @@
 export * as SessionExecutionWorker from "./execution"
 
-import { Cause, DateTime, Effect, Exit, Layer } from "effect"
+import { Cause, DateTime, Duration, Effect, Exit, Layer } from "effect"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -81,8 +81,6 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
       return `session worker was killed by signal ${outcome.signal}`
     case "start-timeout":
       return "session worker did not report ready before its startup deadline"
-    case "heartbeat-timeout":
-      return "session worker stopped sending heartbeats"
     case "stale-message":
       return "session worker sent a message for a superseded execution"
     // Neither of these two reaches a failure notice — the caller returns on both before rendering —
@@ -111,13 +109,9 @@ export const workerMemoryLimitBytes = (workerPath: string, totalBytes = os.total
     ? Math.max(defaultMemoryLimitBytes(totalBytes), 3 * GIB)
     : defaultMemoryLimitBytes(totalBytes)
 
-export const pausedNotice = (reason: "outcome-unknown" | "repeated-failure", detail: string) => {
-  const guidance =
-    reason === "outcome-unknown"
-      ? "Nova did not replay the unfinished tool because its side effect may already have happened. Inspect the target, then explicitly retry if needed."
-      : "Nova paused this session after repeated worker failures. You can retry, choose another model, or leave this chat stopped; other chats are unaffected."
-  return `⚠️ This session was isolated after its worker stopped. ${guidance}\n\nTechnical detail: ${detail}`
-}
+/** Infinite worker recovery, paced so a broken executable cannot become a restart fork bomb. */
+export const workerRetryDelayMs = (failureCount: number) =>
+  Math.min(600_000, 2_000 * 2 ** Math.min(18, Math.max(0, failureCount - 1)))
 
 /**
  * Told to the USER, in the transcript, when a session's working folder has gone and it is now running
@@ -182,11 +176,20 @@ export const layer = Layer.effect(
         sessionID: string
         presence: { viewers: readonly { kind: string }[] }
       }
-      return Effect.sync(() =>
-        workerAdmission.reprioritize(
-          data.sessionID,
-          SessionScheduler.hasHumanViewer(data.presence) ? "interactive" : "batch",
+      return store.get(SessionSchema.ID.make(data.sessionID)).pipe(
+        Effect.flatMap((session) =>
+          Effect.sync(() =>
+            workerAdmission.reprioritize(
+              data.sessionID,
+              session?.agent === "nova"
+                ? "governing"
+                : SessionScheduler.hasHumanViewer(data.presence)
+                  ? "interactive"
+                  : "batch",
+            ),
+          ),
         ),
+        Effect.ignore,
       )
     })
     yield* Effect.addFinalizer(() => unsubscribePresence)
@@ -249,7 +252,12 @@ export const layer = Layer.effect(
         return yield* workerAdmission.run(
           {
             sessionID: String(sessionID),
-            priority: SessionScheduler.hasHumanViewer(currentPresence) ? "interactive" : "batch",
+            priority:
+              session.agent === "nova"
+                ? "governing"
+                : SessionScheduler.hasHumanViewer(currentPresence)
+                  ? "interactive"
+                  : "batch",
           },
           Effect.gen(function* () {
             const located = locations.get(session.location)
@@ -307,7 +315,7 @@ export const layer = Layer.effect(
                           scheduler,
                           lease,
                           message,
-                          focused: SessionScheduler.hasHumanViewer(snapshot),
+                          focused: SessionScheduler.hasForegroundPriority(session.agent, snapshot),
                         }),
                       ),
                     ),
@@ -498,30 +506,14 @@ export const layer = Layer.effect(
                 classification: outcome.type === "failed" ? outcome.classification : outcome.type,
                 detail,
               })
-              if (!decision?.automatic) {
-                yield* events
-                  .publish(
-                    SessionEvent.Synthetic,
-                    {
-                      sessionID,
-                      messageID: SessionMessage.ID.create(),
-                      timestamp: yield* DateTime.now,
-                      text: pausedNotice(
-                        decision?.reason === "outcome-unknown" ? "outcome-unknown" : "repeated-failure",
-                        detail,
-                      ),
-                    },
-                    { location },
-                  )
-                  .pipe(Effect.ignore)
-                yield* publishSettledStatus
-                return yield* Effect.die(new Error(detail))
-              }
+              if (!decision) return
               const info = yield* attempts.get(sessionID)
+              const failureCount = info?.failureCount ?? 1
+              const retryDelay = workerRetryDelayMs(failureCount)
               yield* publishStatus({
                 type: "retry",
-                attempt: info?.failureCount ?? 1,
-                next: 0,
+                attempt: failureCount,
+                next: Date.now() + retryDelay,
                 message:
                   decision.action === "continue"
                     ? "The session worker stopped after a safe checkpoint. Continuing in a fresh worker…"
@@ -529,6 +521,7 @@ export const layer = Layer.effect(
                       ? "The session worker stopped during a read-only tool. Retrying safely in a fresh worker…"
                       : "The session worker stopped before a side effect. Retrying in a fresh worker…",
               })
+              yield* Effect.sleep(Duration.millis(retryDelay))
             }
           }),
         )

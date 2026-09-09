@@ -57,7 +57,6 @@ import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
-import { ConfigHarnessDrives } from "./config/harness-drives"
 import { SettingsConfigStore } from "./settings-config-store"
 import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
@@ -298,15 +297,12 @@ export class PromptConflictError extends Schema.TaggedErrorClass<PromptConflictE
  * colleague's live chat is the answer to "then where should this have gone", and every caller that
  * can retry can retry there.
  */
-export class SessionArchivedError extends Schema.TaggedErrorClass<SessionArchivedError>()(
-  "Session.ArchivedError",
-  {
-    sessionID: SessionSchema.ID,
-    /** The colleague's live chat, when it has one. Absent for a retired colleague — then there is
-     *  genuinely nowhere for this to go, and saying so is the honest answer. */
-    successorID: Schema.optional(SessionSchema.ID),
-  },
-) {}
+export class SessionArchivedError extends Schema.TaggedErrorClass<SessionArchivedError>()("Session.ArchivedError", {
+  sessionID: SessionSchema.ID,
+  /** The colleague's live chat, when it has one. Absent for a retired colleague — then there is
+   *  genuinely nowhere for this to go, and saying so is the honest answer. */
+  successorID: Schema.optional(SessionSchema.ID),
+}) {}
 
 export const MessageNotFoundError = SessionRevert.MessageNotFoundError
 export type MessageNotFoundError = SessionRevert.MessageNotFoundError
@@ -842,11 +838,7 @@ export const removeSessionRecord = (
       yield* AgentStatus.removeFrom(db, row.agent)
       yield* events.publish(AgentStatusEvent.Removed, { agent: row.agent }, { location })
     }
-    yield* events.publish(
-      SessionRecordEvent.Deleted,
-      { sessionID, info: fromRow(row) },
-      { location },
-    )
+    yield* events.publish(SessionRecordEvent.Deleted, { sessionID, info: fromRow(row) }, { location })
     yield* events.remove(sessionID)
   })
 
@@ -879,45 +871,11 @@ export const layer = Layer.effect(
     // unfinished: abandoned execution leases, and queued prompts nothing in memory will promote.
     // Here rather than in an executor because there are two of them (worker in production, local
     // in core) and only one had ever swept — see `session/boot-recovery.ts`.
-    /**
-     * 🔴 **The INSTANCE settings store, not `Config` — and the typechecker is what said so.**
-     *
-     * The first version read `Config.Service`, which failed to compile: `Config.node` is a
-     * LOCATION node and this is a GLOBAL one. That is not a lint, it is the architecture answering a
-     * question I had not asked — *which location's config governs a sweep over every session?* There
-     * is no answer, because the sweep is not in a location.
-     *
-     * `harness_drives` is an INSTANCE setting: it lives in the settings store, which is global, and
-     * a project's `novaclaw.json` has no business turning crash-resume off for the whole box (and
-     * could not, under principle 13's narrow-only rule). So the global store is both the thing that
-     * compiles and the thing that is correct.
-     */
-    const recoverySettings = yield* SettingsConfigStore.Service
     yield* SessionBootRecovery.start({
       db,
       store,
       attempts,
       execution,
-      /**
-       * `harness_drives.resumeInterrupted`, read THROUGH to the store each time a sweep recovers
-       * something (ruling 3). ⚠️ Fails OPEN — an unreadable config resumes, because the whole point
-       * of this switch is that work is not silently lost, and a config read that failed is exactly
-       * the moment to prefer the safe direction.
-       */
-      resumeInterrupted: () =>
-        // ⚠️ `recoverySettings` is resolved at LAYER scope (above), not inside this thunk. Resolving
-        // the tag here leaks `SettingsConfigStore.Service` into the Effect's requirement channel, and
-        // `start` types the callback as `Effect<boolean>` with no requirements — so it must be in hand.
-        // It is also the pattern `session/join.ts` records a revert for: resolving a service inside a
-        // per-request closure is what broke the drain there.
-        recoverySettings.all().pipe(
-          Effect.map((all) => {
-            // The resolver schema-checks this unknown store value. A hand-edited or half-migrated row
-            // falls through to ON — the safe direction, since the point is that work is not silently lost.
-            return ConfigHarnessDrives.resolve(all["harness_drives"]).resumeInterrupted
-          }),
-          Effect.orElseSucceed(() => true),
-        ),
     })
     /**
      * 🔴 **…and DISCHARGE the memory tombstones the previous process could not.**

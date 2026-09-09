@@ -1399,7 +1399,13 @@ export const layer = Layer.effect(
               imageLimit: yield* models.imageLimit(modelSession),
             }
           : SessionRunnerModel.perTurnFacts(ran)
-      const maxProviderAttempts = ProviderRetry.maxAttempts(facts.retryAttempts)
+      // A route gets one quick reconnect before its circuit opens. Once a durable recovery row
+      // exists, each deadline admits exactly one probe so the exponential cadence remains 4 s,
+      // 8 s, 16 s … rather than sneaking an extra 2 s request into every interval.
+      const maxProviderAttempts =
+        facts.ref !== undefined && (yield* models.providerRecoveryFailures(facts.ref)) > 0
+          ? 1
+          : ProviderRetry.maxAttempts()
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
       const modelRef = facts.ref
@@ -2819,7 +2825,12 @@ export const layer = Layer.effect(
           // file every failure where nothing ever looks for it — the tracker would count forever and
           // the fallback would never fire. It happens to agree for `spark-holo/holo3.1`, which is
           // exactly why this survived being driven.
-          const ranOn = modelRef ?? { providerID: String(model.provider), id: String(model.id) }
+          const ranOn =
+            modelRef ??
+            ModelV2.Ref.make({
+              providerID: ProviderV2.ID.make(String(model.provider)),
+              id: ModelV2.ID.make(String(model.id)),
+            })
           // ⚠️ **`hasAssistantFailed`, and the two obvious predicates are both WRONG here** — the
           // integration test caught each in turn. `llmFailure` alone misses a provider that streams
           // its fault as a `providerError` EVENT (the ordinary shape for an OpenAI-compatible
@@ -2832,6 +2843,12 @@ export const layer = Layer.effect(
           // epilogue: the endpoint plainly served, and demoting a colleague's model for a damaged
           // `[DONE]` would move it off something that works.
           const turnFailed = publisher.hasAssistantFailed() && !handledResponseFailure
+          // Replaying a failed pre-action turn on a substitute is safe. Replaying after a tool call
+          // is not: the call may already have changed a file or sent a message, even if the provider
+          // connection died before acknowledging the result.
+          const reroutableProviderFailure =
+            turnFailed && !sawToolCall && !(stream._tag === "Failure" && Cause.hasInterrupts(stream.cause))
+          let providerFailureRecorded = false
           if (turnFailed) {
             // 🔴 An endpoint saying it does not HAVE this model is not a flaky turn, and counting it
             // as one is why a dead pin kept failing. The threshold exists because a transport blip is
@@ -2911,9 +2928,14 @@ export const layer = Layer.effect(
                   "model.used": healed ? `${replacementRef!.providerID}/${replacementRef!.id}` : "none",
                 })
               }
-            } else ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
+            } else {
+              const failedAt = yield* Clock.currentTimeMillis
+              ModelHealth.failed(ranOn, failedAt)
+              providerFailureRecorded = yield* models.providerFailed(ranOn, failedAt)
+            }
           } else if (!publisher.hasAssistantFailed()) {
             ModelHealth.succeeded(ranOn)
+            yield* models.providerSucceeded(ranOn)
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)
@@ -3014,7 +3036,15 @@ export const layer = Layer.effect(
                 true,
               ),
             )
-          if (stream._tag === "Failure" && !handledResponseFailure) return yield* Effect.failCause(stream.cause)
+          // A durable provider failure is now a routing fact, not the end of the drain. Its recovery
+          // row was stored above; return it to the outer loop so the same user turn can resolve a
+          // capability-compatible substitute. Failures with no durable verdict still propagate.
+          if (
+            stream._tag === "Failure" &&
+            !handledResponseFailure &&
+            !(reroutableProviderFailure && providerFailureRecorded)
+          )
+            return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
           // F2: the settled provider finish reason travels out with the turn. It is the only
@@ -3034,6 +3064,7 @@ export const layer = Layer.effect(
             finish: stepSettlement?.finish,
             brokenResponse,
             emptyResponse,
+            providerFailed: reroutableProviderFailure && providerFailureRecorded ? ranOn : undefined,
             maxProviderAttempts,
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
             model,
@@ -3115,6 +3146,8 @@ export const layer = Layer.effect(
         readonly brokenResponse: boolean
         /** This provider turn emitted no assistant output before its durable failure row was added. */
         readonly emptyResponse: boolean
+        /** Failed before useful output; the drain may immediately resolve a compatible substitute. */
+        readonly providerFailed: ModelV2.Ref | undefined
         readonly maxProviderAttempts: number
         readonly offeredTools: readonly string[]
         /** The exact route and scheduler placement this turn used; finish audit must judge like-for-like. */
@@ -3598,6 +3631,13 @@ export const layer = Layer.effect(
           }
           step = result.step + 1
           promotion = "steer"
+          // The failed route's durable recovery row was written before `runTurn` returned. Resolve
+          // the next turn immediately: while that route is inside its backoff window, model
+          // resolution chooses a healthy substitute with matching declared capabilities.
+          if (result.providerFailed) {
+            needsContinuation = true
+            continue
+          }
           // exit(result) landed during this turn → stop the run NOW: no tool-call continuation,
           // no steer re-arm, no nudge machinery (post-exit, harness steers used to resurrect the
           // "finished" agent — owner-hit 2026-07-22 on a story-writing goal session). Input that
@@ -3619,33 +3659,21 @@ export const layer = Layer.effect(
           // so its content and completed tool results ground the model without replaying actions.
           if (result.brokenResponse) {
             brokenResponseAttempts++
-            if (brokenResponseAttempts < result.maxProviderAttempts) {
-              const delay = ProviderRetry.retryDelayMs(brokenResponseAttempts)
-              yield* events
-                .publish(SessionStatusEvent.Status, {
-                  sessionID: input.sessionID,
-                  status: {
-                    type: "retry",
-                    attempt: brokenResponseAttempts + 1,
-                    message: "The model reply ended early. NovaClaw kept the usable part and is reconnecting…",
-                    next: Date.now() + delay,
-                  },
-                })
-                .pipe(Effect.ignore)
-              yield* Effect.sleep(Duration.millis(delay))
-              needsContinuation = true
-              continue
-            }
+            const delay = ProviderRetry.retryDelayMs(brokenResponseAttempts)
             yield* events
-              .publish(SessionEvent.Synthetic, {
+              .publish(SessionStatusEvent.Status, {
                 sessionID: input.sessionID,
-                messageID: SessionMessage.ID.create(),
-                timestamp: yield* DateTime.now,
-                text: `The model connection ended early ${result.maxProviderAttempts} times. NovaClaw kept every usable part and stopped reconnecting for now. You can try again, reduce the response length, or check the model server's logs and timeout settings.`,
+                status: {
+                  type: "retry",
+                  attempt: brokenResponseAttempts + 1,
+                  message: "The model reply ended early. NovaClaw kept the usable part and is reconnecting…",
+                  next: Date.now() + delay,
+                },
               })
               .pipe(Effect.ignore)
-            needsContinuation = false
-            break
+            yield* Effect.sleep(Duration.millis(delay))
+            needsContinuation = true
+            continue
           }
           brokenResponseAttempts = 0
           // F2 — the provider stopped this turn at its OUTPUT-TOKEN LIMIT (finish=length) and the
@@ -4100,9 +4128,10 @@ export const layer = Layer.effect(
               }
               childrenSpawned.set(input.sessionID, spawned)
               yield* flushDriveState(input.sessionID)
-              const directKids = harness.drives.children && spawned.size > 0
-                ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
-                : []
+              const directKids =
+                harness.drives.children && spawned.size > 0
+                  ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+                  : []
               // Intersect the transcript-derived ids with the durable parent relation: neither a
               // malformed tool result nor a child from another parent can become this task's debt.
               const kids = directKids.filter((id) => spawned.has(id))

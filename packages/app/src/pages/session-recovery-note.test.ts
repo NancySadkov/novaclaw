@@ -25,7 +25,7 @@ describe("what the recovery banner says about the workspace", () => {
    */
   test("zero-and-incomplete never reads as 'nothing happened'", () => {
     const note = recoveryChangesNote({ files: 0, complete: false })
-    expect(note).toBe("Nova was still recording what changed, so some work may have happened.")
+    expect(note).toBe("Change tracking had not finished. Check the files before repeating an action.")
     expect(note).not.toContain("No files changed")
   })
 

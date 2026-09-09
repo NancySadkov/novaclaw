@@ -1,6 +1,6 @@
 export * as SessionBootRecovery from "./boot-recovery"
 
-import { and, eq, isNotNull } from "drizzle-orm"
+import { and, eq, isNotNull, isNull, ne, or } from "drizzle-orm"
 import { Clock, Duration, Effect, Schedule, Semaphore } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "../database/database"
@@ -19,8 +19,8 @@ import type { SessionStore } from "./store"
  * process restart — a crash, a binary replacement, an ordinary quit — strands both:
  *
  *   1. **A lease left mid-flight.** `session_execution` rows sit in `starting`/`busy`/`recovering`
- *      with a heartbeat that stopped. Only `recoverStale` reclassifies them into the interrupted /
- *      paused states the recovery UI reads, and until it runs the session reports *busy* forever
+ *      with a heartbeat that stopped. Only `recoverStale` reclassifies them for automatic recovery,
+ *      and until it runs the session reports *busy* forever
  *      for a turn no process is running.
  *   2. **Queued input nobody will promote.** `session_input` rows with `promoted_seq IS NULL` are
  *      already-accepted prompts. The coordinator that promotes them lives in
@@ -86,7 +86,7 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
  * 🔴 **THE VERDICT WAS COMPUTED AND THROWN AWAY.**
  *
  * `recoverStale` classifies every abandoned execution through `SessionRecoveryDecision.decide` and
- * stores the answer as `interrupted` (safe to resume) or `paused` (a human must look). It returns
+ * stores it as `interrupted` for automatic recovery. It returns
  * that decision to its caller. **Nothing ever acted on it** — the sweep logged a count and stopped,
  * so a run interrupted mid-turn sat `interrupted` forever.
  *
@@ -99,29 +99,44 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
  * Measured 2026-08-29: a serve hung under three sessions, the supervisor restarted it in a second,
  * `session.recovered: 3` was logged — and the device went idle. Three runs lost, silently.
  *
- * ⭐ **This adds no policy.** Every safety question was already answered by `decide`: a session past
- * `FAILURE_LIMIT` is `paused` (the circuit breaker against a run that keeps killing the instance),
- * while one whose tool was dispatched with an unknown outcome is resumed through an inspection
- * steer instead of replaying the tool. Only `automatic` decisions are woken here.
+ * A process loss has no authority to stop a user's work. An uncertain tool outcome is resumed
+ * through an inspection steer instead of replaying the tool, and repeated failures are paced by the
+ * worker executor rather than converted into a terminal session state.
  */
+const descendantsFirst = Effect.fn("SessionBootRecovery.descendantsFirst")(function* (input: {
+  readonly sessionIDs: readonly SessionSchema.ID[]
+  readonly parentOf?: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.ID | undefined, unknown>
+}) {
+  const ordered = [...input.sessionIDs]
+  if (!input.parentOf) return ordered
+
+  const parents = new Map<SessionSchema.ID, SessionSchema.ID | undefined>()
+  for (const sessionID of ordered)
+    parents.set(sessionID, yield* input.parentOf(sessionID).pipe(Effect.catchCause(() => Effect.succeed(undefined))))
+  const recoveredIDs = new Set(ordered)
+  const depth = (id: SessionSchema.ID, visiting = new Set<SessionSchema.ID>()): number => {
+    if (visiting.has(id)) return 0
+    const parent = parents.get(id)
+    if (parent === undefined || !recoveredIDs.has(parent)) return 0
+    return 1 + depth(parent, new Set([...visiting, id]))
+  }
+  // Recovery joins each drain. Descendants must therefore run before a parent that can be blocked
+  // in wait(child), or the single recovery lane deadlocks before it ever reaches that child.
+  return ordered.sort((a, b) => depth(b) - depth(a))
+})
+
 export const resumeInterrupted = (input: {
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
-  /** Disposable worker chats stay interrupted; their officer creates a fresh worker if needed. */
-  readonly shouldResume?: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, unknown>
+  readonly parentOf?: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.ID | undefined, unknown>
 }) =>
   Effect.gen(function* () {
-    // ⚠️ The filter is the whole safety argument, so it reads off `decision.automatic` rather than
-    // re-deriving anything. A second opinion here would be a second policy, and the one that exists
-    // is the one the durable state was written from.
-    const policySafe = input.recovered.filter((entry) => entry.decision.automatic)
-    const resumable: SessionExecutionAttempt.Recovered[] = []
-    for (const entry of policySafe) {
-      const shouldResume = input.shouldResume
-        ? yield* input.shouldResume(entry.sessionID).pipe(Effect.catchCause(() => Effect.succeed(true)))
-        : true
-      if (shouldResume) resumable.push(entry)
-    }
+    // Spawned workers are included: leaving one interrupted strands its parent's durable wait and
+    // loses delegated work. Recovery reconstructs the worker from persisted state instead.
+    const resumable = yield* descendantsFirst({
+      sessionIDs: input.recovered.map((entry) => entry.sessionID),
+      parentOf: input.parentOf,
+    })
     if (resumable.length === 0) return 0
     yield* Log.event("session.interrupted.resumed", {
       "session.resumed": resumable.length,
@@ -134,7 +149,7 @@ export const resumeInterrupted = (input: {
     // prefill and decoded at 0.24 t/s; the next uncontended turn reached first output in 0.99 s.
     // Recovery is background adoption, not three people asking at once. Join each drain before
     // adopting the next so startup cannot manufacture unbounded interactive concurrency.
-    for (const entry of resumable) yield* input.resume(entry.sessionID).pipe(Effect.catchCause(() => Effect.void))
+    for (const sessionID of resumable) yield* input.resume(sessionID).pipe(Effect.catchCause(() => Effect.void))
     return resumable.length
   })
 
@@ -204,7 +219,31 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
     .where(and(eq(SessionExecutionTable.state, "settled"), isNotNull(SessionExecutionTable.provider_recovery)))
     .all()
     .pipe(Effect.orDie)
-  const sessions = [...new Set([...pending, ...strandedRecovery.map((row) => row.sessionID)])]
+  // Builds before perpetual recovery classified process loss as `interrupted` and then abandoned
+  // the row. Adopt those durable turns too. `interrupt` is the authority-bearing state written by
+  // an explicit user/Nova stop, and must remain stopped. Include NULL for older rows.
+  const strandedInterrupted = yield* input.db
+    .select({ sessionID: SessionExecutionTable.session_id })
+    .from(SessionExecutionTable)
+    .where(
+      and(
+        eq(SessionExecutionTable.state, "interrupted"),
+        or(isNull(SessionExecutionTable.failure_class), ne(SessionExecutionTable.failure_class, "interrupt")),
+      ),
+    )
+    .all()
+    .pipe(Effect.orDie)
+  const sessions = yield* descendantsFirst({
+    sessionIDs: [
+      ...new Set([
+        ...pending,
+        ...strandedRecovery.map((row) => row.sessionID),
+        ...strandedInterrupted.map((row) => row.sessionID),
+      ]),
+    ],
+    parentOf: (sessionID) =>
+      input.store.get(sessionID).pipe(Effect.map((session) => session?.parentID as SessionSchema.ID | undefined)),
+  })
   if (sessions.length === 0) return 0
   let woken = 0
   let handedOff = 0
@@ -244,15 +283,6 @@ export const start = (input: {
   readonly store: SessionStore.Interface
   readonly attempts: SessionExecutionAttempt.Interface
   readonly execution: SessionExecution.Interface
-  /**
-   * Whether a run interrupted mid-turn is resumed — `harness_drives.resumeInterrupted`, default ON.
-   *
-   * ⚠️ Read as a THUNK, not a boolean, so the switch is consulted when a sweep actually recovers
-   * something rather than once at layer construction. Ruling 3: *a settings change is not a reboot*,
-   * and the re-sweeps run across a 70-second boot window during which an operator may well be
-   * turning this off precisely because a run is misbehaving.
-   */
-  readonly resumeInterrupted?: () => Effect.Effect<boolean>
 }) =>
   Effect.gen(function* () {
     // Both durable-work scans share one lane. Two separately serial loops would still run one
@@ -261,24 +291,14 @@ export const start = (input: {
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
         Effect.gen(function* () {
-          const enabled = input.resumeInterrupted === undefined ? true : yield* input.resumeInterrupted()
-          if (!enabled) return
           yield* recoveryLane.withPermits(1)(
             resumeInterrupted({
               recovered,
               resume: input.execution.resume,
-              // Spawned workers are disposable attempts owned by their superior. Resurrecting
-              // their old contexts duplicates uncertain work and, in the measured restart, sent
-              // two 80k prompts beside Geryon. Leave them interrupted; the freshly recovered
-              // officer sees that result and may spawn a new worker from current filesystem state.
-              shouldResume: (sessionID) =>
-                input.store.get(sessionID).pipe(
-                  Effect.map(
-                    (session) =>
-                      session === undefined || (session.parentID === undefined && session.type !== "sub-agent"),
-                  ),
-                  Effect.catchCause(() => Effect.succeed(true)),
-                ),
+              parentOf: (sessionID) =>
+                input.store
+                  .get(sessionID)
+                  .pipe(Effect.map((session) => session?.parentID as SessionSchema.ID | undefined)),
             }),
           )
         }),

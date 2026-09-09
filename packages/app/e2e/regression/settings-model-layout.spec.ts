@@ -51,13 +51,11 @@ test("VR-002 · a long model row contains every control and its failure text", a
   expect(verdict).toEqual({ noHorizontalScroll: true, allInside: true, unclippedTitle: true })
 })
 
-test("VR-003 · Configure keeps usable columns and one scroller under long probe text", async ({ page }) => {
+test("VR-003 · Configure keeps usable columns and one scroller", async ({ page }) => {
   const fixture = page.locator('[data-component="settings-v2-list"]').filter({ hasText: longModelID })
   await fixture.getByRole("button", { name: "Configure", exact: true }).click()
   const dialog = page.locator(".model-config-dialog")
   await expect(dialog).toBeVisible()
-  await dialog.locator('[data-action="tool-channel-test"]').click()
-  await expect(dialog).toContainText(longFailure)
 
   const verdict = await dialog.evaluate((node) => {
     const rows = [...node.querySelectorAll('[data-component="settings-v2-row"]')]
@@ -78,18 +76,9 @@ test("VR-003 · Configure keeps usable columns and one scroller under long probe
       },
       smallestLabel: Math.min(...titleWidths),
       scrollOwners: scrollOwners.length,
-      errorInside: (() => {
-        const error = node.querySelector("[data-tool-channel-error]")!.getBoundingClientRect()
-        const row = node
-          .querySelector("[data-tool-channel-error]")!
-          .closest('[data-component="settings-v2-row"]')!
-          .getBoundingClientRect()
-        return error.left >= row.left - 1 && error.right <= row.right + 1
-      })(),
     }
   })
   expect(verdict.noHorizontalScroll, JSON.stringify(verdict.widths)).toBe(true)
   expect(verdict.smallestLabel).toBeGreaterThanOrEqual(120)
   expect(verdict.scrollOwners).toBe(1)
-  expect(verdict.errorInside).toBe(true)
 })

@@ -29,12 +29,13 @@ export const capacity = (fleetBytes = WorkerBudget.fleetLimitBytes()): number =>
 
 export interface Input {
   readonly sessionID: string
-  readonly priority: "interactive" | "batch"
+  readonly priority: "governing" | "interactive" | "batch"
 }
 
 export interface Snapshot {
   readonly capacity: number
   readonly active: readonly string[]
+  readonly waitingGoverning: readonly string[]
   readonly waitingInteractive: readonly string[]
   readonly waitingBatch: readonly string[]
 }
@@ -51,9 +52,10 @@ interface Waiter {
 
 /**
  * One process gate for one instance. Sessions queue before process creation, and the permit covers a
- * worker's complete life. Interactive sessions jump ahead of queued background work (without
- * preempting a process that is already running), preserving the scheduler's user-latency policy at
- * this earlier resource boundary too.
+ * worker's complete life. Nova's governing work jumps ahead of an opened interactive chat, which
+ * jumps ahead of background work (without preempting a process that is already running). This keeps
+ * the control plane able to contain runaway delegation while preserving user latency at this earlier
+ * resource boundary too.
  */
 export const make = (options?: { readonly fleetBytes?: number; readonly capacity?: number }) =>
   Effect.sync(() => {
@@ -63,6 +65,8 @@ export const make = (options?: { readonly fleetBytes?: number; readonly capacity
     let sequence = 0
 
     const nextIndex = () => {
+      const governing = waiting.findIndex((waiter) => waiter.input.priority === "governing")
+      if (governing >= 0) return governing
       const interactive = waiting.findIndex((waiter) => waiter.input.priority === "interactive")
       return interactive >= 0 ? interactive : 0
     }
@@ -122,6 +126,9 @@ export const make = (options?: { readonly fleetBytes?: number; readonly capacity
       snapshot: (): Snapshot => ({
         capacity: limit,
         active: [...active.values()].map((lease) => lease.sessionID),
+        waitingGoverning: waiting
+          .filter((waiter) => waiter.input.priority === "governing")
+          .map((waiter) => waiter.input.sessionID),
         waitingInteractive: waiting
           .filter((waiter) => waiter.input.priority === "interactive")
           .map((waiter) => waiter.input.sessionID),

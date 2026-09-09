@@ -38,6 +38,9 @@ function merge(target: any, patch: any): any {
 }
 function mount(failRemoval = false, inheritedLimits = false) {
   let config: any = {
+    devices: {
+      local: { endpoints: ["http://localhost:8000"], concurrency: 4, locality: "local" },
+    },
     providers: {
       local: {
         api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://localhost:8000/v1" },
@@ -62,8 +65,13 @@ function mount(failRemoval = false, inheritedLimits = false) {
     data: store,
     updateConfig: async (patch: any) => {
       // The real schema drops obsolete fields and the store merges nested patches.
-      const decoded = Schema.decodeUnknownSync(ConfigProvider.Info)(patch.providers.local)
-      config = merge(config, { providers: { local: decoded } })
+      const decoded = patch.providers?.local
+        ? Schema.decodeUnknownSync(ConfigProvider.Info)(patch.providers.local)
+        : undefined
+      config = merge(config, {
+        ...(decoded === undefined ? {} : { providers: { local: decoded } }),
+        ...(patch.devices === undefined ? {} : { devices: patch.devices }),
+      })
       setStore("config", reconcile(structuredClone(config)))
     },
     removeConfig: async (paths: string[][]) => {
@@ -118,7 +126,7 @@ function mount(failRemoval = false, inheritedLimits = false) {
     ),
     host,
   )
-  return () => config.providers.local.models.test
+  return Object.assign(() => config.providers.local.models.test, { config: () => config })
 }
 test("model edits survive the wire schema, merge store and reopening; defaults delete overrides", async () => {
   const saved = mount()
@@ -157,7 +165,7 @@ test("a refused default deletion keeps the form open and reports failure", async
   expect(document.body.textContent).toContain("deletion refused")
 })
 
-test("unrelated model edits preserve inherited limits and connection recovery", async () => {
+test("unrelated model edits preserve inherited limits and retire connection-attempt overrides", async () => {
   const saved = mount(false, true)
   click(button("Configure test"))
   await settle()
@@ -166,16 +174,19 @@ test("unrelated model edits preserve inherited limits and connection recovery", 
   await settle()
   expect(saved().limit).toEqual({})
   expect(saved().retry).toBeUndefined()
+})
+
+test("device concurrency round-trips through the endpoint's Device entry", async () => {
+  const saved = mount()
   click(button("Configure test"))
   await settle()
-  fill("Connection attempts", "5")
+  expect(field("Device concurrency").value).toBe("4")
+  fill("Device concurrency", "6")
   click(button("Save"))
   await settle()
-  expect(saved().retry).toEqual({ attempts: 5 })
-  click(button("Configure test"))
-  await settle()
-  fill("Connection attempts", "")
-  click(button("Save"))
-  await settle()
-  expect(saved().retry).toBeUndefined()
+  expect(saved.config().devices.local).toEqual({
+    endpoints: ["http://localhost:8000"],
+    concurrency: 6,
+    locality: "local",
+  })
 })

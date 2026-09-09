@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { failureDetail, pausedNotice } from "../../src/session-worker/execution"
+import { failureDetail } from "../../src/session-worker/execution"
 import type * as SessionWorkerSupervisor from "../../src/session-worker/supervisor"
 
 /**
@@ -18,7 +18,6 @@ const outcomes: readonly SessionWorkerSupervisor.Outcome[] = [
   { type: "settled" },
   { type: "failed", classification: "worker-start", detail: "spawn ENOENT" },
   { type: "start-timeout" },
-  { type: "heartbeat-timeout" },
   { type: "memory-limit", rssBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024 },
   { type: "protocol-error", detail: "worker message is not valid JSON" },
   { type: "stale-message" },
@@ -39,10 +38,6 @@ test("a worker that exits non-zero and one killed by a signal say WHICH, and do 
   // A different code is a different sentence — otherwise "names the code" is decoration.
   expect(failureDetail({ type: "exited", code: 1 })).not.toBe(exited)
   expect(failureDetail({ type: "signaled", signal: "SIGTERM" })).not.toBe(signaled)
-
-  // And it survives the trip to the person, which is the only place it is ever read.
-  expect(pausedNotice("repeated-failure", exited)).toContain("Technical detail:")
-  expect(pausedNotice("repeated-failure", exited)).toContain("42")
 })
 
 test("control: the arms that already carried their own detail are unchanged", () => {

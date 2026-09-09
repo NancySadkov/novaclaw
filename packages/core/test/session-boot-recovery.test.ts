@@ -324,6 +324,70 @@ describe("which sessions the sweep hands back", () => {
     }),
   )
 
+  it.live("adopts old process-loss interruptions child-first but preserves explicit stops", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const store = yield* SessionStoreService.Service
+
+      const officer = yield* session.create({ location, agent: rootAgent })
+      const worker = yield* session.create({ location, parentID: officer.id })
+      const explicitlyStopped = yield* session.create({ location, agent: rootAgent })
+      yield* db
+        .insert(SessionExecutionTable)
+        .values([
+          {
+            session_id: officer.id,
+            attempt_id: "old-officer-attempt",
+            generation: 1,
+            owner_id: "dead-host",
+            state: "interrupted",
+            phase: "provider",
+            failure_count: 1,
+            failure_class: "before-side-effect",
+            heartbeat_at: 1234,
+            started_at: 1234,
+            time_updated: 1234,
+          },
+          {
+            session_id: worker.id,
+            attempt_id: "old-worker-attempt",
+            generation: 1,
+            owner_id: "dead-host",
+            state: "interrupted",
+            phase: "provider",
+            failure_count: 1,
+            failure_class: "before-side-effect",
+            heartbeat_at: 1234,
+            started_at: 1234,
+            time_updated: 1234,
+          },
+          {
+            session_id: explicitlyStopped.id,
+            attempt_id: "explicit-stop-attempt",
+            generation: 1,
+            owner_id: "old-host",
+            state: "interrupted",
+            phase: "drain",
+            failure_count: 0,
+            failure_class: "interrupt",
+            heartbeat_at: 1234,
+            started_at: 1234,
+            time_updated: 1234,
+          },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+
+      const { woken, wake } = record()
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, resume: wake })
+
+      expect(woken).toEqual([worker.id, officer.id])
+      expect(woken).not.toContain(explicitlyStopped.id)
+    }),
+  )
+
   it.live("a session under operator control is left alone until control comes back", () =>
     Effect.gen(function* () {
       const location = yield* workspace

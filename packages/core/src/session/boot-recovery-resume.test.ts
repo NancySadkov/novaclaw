@@ -9,8 +9,8 @@ import type { SessionSchema } from "./schema"
 //
 // 🔴 The answer was that `recoverStale` computed a recovery decision for every abandoned execution
 // and nothing acted on it. These tests pin the acting — and above all pin WHICH runs are resumed,
-// because the filter is the entire safety argument. An unknown tool outcome is resumed through an
-// inspection steer rather than replayed; only a run that repeatedly kills the instance is paused.
+// including delegated workers. An unknown tool outcome is resumed through an inspection steer
+// rather than replayed.
 
 const id = (name: string) => name as SessionSchema.ID
 
@@ -22,11 +22,6 @@ const entry = (name: string, decision: SessionRecoveryDecision.Decision): Sessio
 /** The real policy's own verdicts, not hand-written booleans — so a change to `decide` reaches here. */
 const verdicts = {
   beforeSideEffect: SessionRecoveryDecision.decide({ phase: "provider", checkpointed: false, failureCount: 1 }),
-  repeatedFailure: SessionRecoveryDecision.decide({
-    phase: "provider",
-    checkpointed: false,
-    failureCount: SessionRecoveryDecision.FAILURE_LIMIT,
-  }),
   outcomeUnknown: SessionRecoveryDecision.decide({
     phase: "tool",
     checkpointed: false,
@@ -92,30 +87,37 @@ describe("resumeInterrupted", () => {
     expect(count).toBe(2)
   })
 
-  test("leaves old worker sessions interrupted for the officer to replace", async () => {
-    const resumed: string[] = []
-    const count = await Effect.runPromise(
+  test("resumes spawned workers instead of stranding their parent's durable wait", async () => {
+    const { woken, count } = await run([
+      entry("ses_officer", verdicts.beforeSideEffect),
+      entry("ses_worker", verdicts.beforeSideEffect),
+    ])
+    expect(woken).toEqual(["ses_officer", "ses_worker"])
+    expect(count).toBe(2)
+  })
+
+  test("resumes descendants before an officer that may be waiting for them", async () => {
+    const order: string[] = []
+    const parents = new Map([
+      ["ses_officer", undefined],
+      ["ses_worker", "ses_officer"],
+      ["ses_grandchild", "ses_worker"],
+    ])
+    await Effect.runPromise(
       SessionBootRecovery.resumeInterrupted({
         recovered: [
           entry("ses_officer", verdicts.beforeSideEffect),
-          entry("ses_old_worker", verdicts.beforeSideEffect),
+          entry("ses_worker", verdicts.beforeSideEffect),
+          entry("ses_grandchild", verdicts.beforeSideEffect),
         ],
-        shouldResume: (sessionID) => Effect.succeed(sessionID === id("ses_officer")),
-        resume: (sessionID) => Effect.sync(() => void resumed.push(sessionID)),
+        parentOf: (sessionID) => Effect.succeed(parents.get(sessionID) as SessionSchema.ID | undefined),
+        resume: (sessionID) =>
+          Effect.sync(() => {
+            order.push(sessionID)
+          }),
       }),
     )
-    expect(resumed).toEqual(["ses_officer"])
-    expect(count).toBe(1)
-  })
-
-  // 🔴 THE CIRCUIT BREAKER. A run that keeps killing the instance is exactly the run most likely to
-  // be interrupted again, so auto-resume without this bound is a crash-loop generator. The policy
-  // already opens the breaker at FAILURE_LIMIT; this asserts the resume respects it.
-  test("does NOT wake a run the breaker paused after repeated failures", async () => {
-    expect(verdicts.repeatedFailure.automatic).toBe(false)
-    const { woken, count } = await run([entry("ses_looper", verdicts.repeatedFailure)])
-    expect(woken).toEqual([])
-    expect(count).toBe(0)
+    expect(order).toEqual(["ses_grandchild", "ses_worker", "ses_officer"])
   })
 
   // 🔴 THE SIDE-EFFECT HAZARD. A write tool that was dispatched without a durable result may or may
@@ -127,12 +129,9 @@ describe("resumeInterrupted", () => {
     expect(woken).toEqual(["ses_uncertain"])
   })
 
-  // ⚠️ MIXED is the realistic sweep, and the one where a sloppy filter shows: two safe runs must be
-  // resumed WITHOUT dragging the unsafe one along.
-  test("resumes only the safe runs from a mixed sweep", async () => {
+  test("resumes every recoverable boundary from a mixed sweep", async () => {
     const { woken, count } = await run([
       entry("ses_ok1", verdicts.beforeSideEffect),
-      entry("ses_paused", verdicts.repeatedFailure),
       entry("ses_ok2", verdicts.beforeSideEffect),
       entry("ses_uncertain", verdicts.outcomeUnknown),
     ])
@@ -146,16 +145,7 @@ describe("resumeInterrupted", () => {
     expect(count).toBe(0)
   })
 
-  /**
-   * 🔴 THE RATCHET ON THE POLICY ITSELF.
-   *
-   * This module's safety rests entirely on `decide` setting `automatic: false` for the two dangerous
-   * shapes. If a later edit ever made either of them automatic, every test above would still pass —
-   * they assert the filter, and the filter would be faithfully passing through a now-wrong verdict.
-   * So the verdicts are asserted directly.
-   */
-  test("the policy pauses crash loops but resumes unknown effects through inspection", () => {
-    expect(verdicts.repeatedFailure).toMatchObject({ action: "pause", automatic: false })
+  test("the policy resumes unknown effects through inspection", () => {
     expect(verdicts.outcomeUnknown).toMatchObject({ action: "inspect", automatic: true })
     expect(verdicts.beforeSideEffect.automatic).toBe(true)
   })

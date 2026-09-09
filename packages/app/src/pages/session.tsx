@@ -1014,11 +1014,15 @@ export default function Page() {
             <div class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-state-border-warning bg-v2-state-bg-warning px-3 py-2 text-xs text-v2-text-text-muted">
               <span class="min-w-0 flex-1">
                 <strong class="text-v2-text-text-base">
-                  {attempt().state === "recovering" ? "This chat is recovering." : "This chat is paused safely."}
+                  {attempt().state === "recovering"
+                    ? "This chat is recovering automatically."
+                    : attempt().state === "interrupted"
+                      ? "This chat was stopped."
+                      : "This chat needs attention."}
                 </strong>{" "}
                 {attempt().failureDetail ??
                   attempt().failureClass ??
-                  "Execution stopped before Nova could confirm the outcome."}{" "}
+                  "The previous worker stopped before it could confirm the outcome."}{" "}
                 {/*
                   What already happened to the workspace, because that — not the failure class — is
                   what decides whether retrying is safe. `complete: false` means the recording was

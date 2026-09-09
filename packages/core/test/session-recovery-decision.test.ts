@@ -64,12 +64,13 @@ describe("SessionRecoveryDecision", () => {
       ).toEqual({ action: "inspect", reason: "outcome-unknown", automatic: true })
   })
 
-  test("opens the per-session circuit breaker at the failure limit", () => {
+  test("process loss never acquires authority to stop a session", () => {
     for (const phase of ["drain", "provider", "tool", "maintenance"] as const)
       expect(SessionRecoveryDecision.decide({ phase, checkpointed: true, failureCount: 3 })).toEqual({
-        action: "pause",
-        reason: "repeated-failure",
-        automatic: false,
+        action: phase === "provider" ? "continue" : phase === "tool" ? "continue" : "retry",
+        reason:
+          phase === "provider" ? "partial-provider-output" : phase === "tool" ? "settled-tool" : "before-side-effect",
+        automatic: true,
       })
   })
 

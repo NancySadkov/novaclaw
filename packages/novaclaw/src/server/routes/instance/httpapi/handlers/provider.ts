@@ -629,7 +629,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const savedModel = ctx.payload.modelID
         ? yield* Catalog.Service.use((c) =>
             c.model.get(ctx.params.providerID, ModelV2.ID.make(ctx.payload.modelID!)),
-          ).pipe(Effect.provide(scope), Effect.orElseSucceed(() => undefined))
+          ).pipe(
+            Effect.provide(scope),
+            Effect.orElseSucceed(() => undefined),
+          )
         : undefined
       // The endpoint URL lives on `api.url`; extra settings/apiKey are under api.settings and
       // request.body. Flatten them into the shape this probe reads (baseURL, apiKey).
@@ -699,13 +702,13 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const configuredIDUnlisted = ctx.payload.modelID !== undefined && !found
       const window = found ? modelContextWindow(found) : sharedContextWindow(data)
       // A listing proves routing/auth only. Exercise the actual generation route as well, using the
-      // configured upstream model id and bounded per-model retry count. This deliberately bypasses
+      // configured upstream model id. This deliberately bypasses
       // the agent harness: Settings must remain able to diagnose a model that cannot run the harness.
       let completionLatencyMs: number | undefined
       let completionAttempts: number | undefined
       if (ctx.payload.modelID) {
         const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
-        const attempts = Math.max(1, Math.min(5, Math.trunc(savedModel?.retry?.attempts ?? 1)))
+        const attempts = 1
         let completion: CompletionProbe | undefined
         for (let attempt = 1; attempt <= attempts; attempt++) {
           completionAttempts = attempt

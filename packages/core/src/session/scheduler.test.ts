@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
 import { Deferred, Duration, Effect, Exit, Fiber } from "effect"
-import { focusClass, hasHumanViewer, MAX_BATCH, make, runMaintenance } from "./scheduler"
+import { focusClass, hasForegroundPriority, hasHumanViewer, MAX_BATCH, make, runMaintenance } from "./scheduler"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 
@@ -17,6 +17,13 @@ describe("session scheduler admission gate", () => {
     expect(focusClass("interactive", true)).toBe("interactive-focused")
     expect(focusClass("interactive-focused", false)).toBe("interactive")
     expect(focusClass("sub-agent", false)).toBe("sub-agent")
+  })
+
+  test("Nova stays foreground on Home; Home gives no other tab priority", () => {
+    const home = { viewers: [] }
+    expect(hasForegroundPriority("nova", home)).toBe(true)
+    expect(hasForegroundPriority("theron", home)).toBe(false)
+    expect(hasForegroundPriority("theron", { viewers: [{ kind: "human" }] })).toBe(true)
   })
 
   test("an unattended interactive root shares bounded capacity instead of bypassing it", async () => {
@@ -535,7 +542,9 @@ describe("dispatch-slot release on interrupt (shared provider-dispatch compositi
         yield* gate.release(slot)
       }),
     )
-    const admitted = gate.admit({ ...slot, sessionClass: "interactive-focused" as const }).pipe(Effect.andThen(generation))
+    const admitted = gate
+      .admit({ ...slot, sessionClass: "interactive-focused" as const })
+      .pipe(Effect.andThen(generation))
     return guarded ? admitted.pipe(Effect.ensuring(gate.release(slot))) : admitted
   }
 

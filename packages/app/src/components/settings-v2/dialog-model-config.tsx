@@ -3,7 +3,7 @@ import type {
   ConfigV2Provider as ProviderConfig,
   ProviderApi,
 } from "@novaclaw/sdk/v2/client"
-import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, type JSX, Show, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -17,10 +17,7 @@ import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
-import { providerProbe } from "@/utils/fs-api"
 import type { ServerConnection } from "@/context/server"
-import { errorMessage } from "@/pages/layout/helpers"
-import * as ToolChannel from "./tool-channel"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { PresetFieldV2 } from "./parts/preset-field"
@@ -31,6 +28,38 @@ import { SettingsExplainV2 } from "./explain"
 // Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+type DeviceConfig = {
+  readonly endpoints: readonly string[]
+  readonly concurrency?: number
+  readonly locality?: "local" | "lan" | "remote"
+}
+
+const endpointOrigin = (url: string): string | undefined => {
+  try {
+    return new URL(url).origin.toLowerCase()
+  } catch {
+    return undefined
+  }
+}
+
+/** The device row already governing this provider endpoint, if one exists. */
+export const deviceForEndpoint = (devices: Readonly<Record<string, DeviceConfig>>, url: string) => {
+  const wanted = endpointOrigin(url)
+  if (wanted === undefined) return undefined
+  for (const id of Object.keys(devices).sort()) {
+    const device = devices[id]!
+    if (device.endpoints.some((endpoint) => endpointOrigin(endpoint) === wanted)) return { id, device }
+  }
+  return undefined
+}
+
+/** A stable human-legible id for the first Device entry a provider creates. */
+export const availableDeviceID = (providerID: string, devices: Readonly<Record<string, DeviceConfig>>) => {
+  const stem = `${providerID.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "model"}-device`
+  if (devices[stem] === undefined) return stem
+  for (let suffix = 2; ; suffix++) if (devices[`${stem}-${suffix}`] === undefined) return `${stem}-${suffix}`
+}
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
 // NOT under `options`/`limit` — see reasoning-budget.ts. Read/written directly by this dialog.
@@ -88,56 +117,11 @@ export const DialogModelConfig: Component<{
   const providerCfg = (): ProviderConfig => serverSync().data.config?.providers?.[props.providerID] ?? {}
   const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}
 
-  /**
-   * The tool channel in force, and who decided it.
-   *
-   * Read from the SAME config the runner resolves against — the measurement under
-   * `provider_capability`, the operator's answer under this model's `request.body`. Nothing is
-   * recomputed here: staleness is checked server-side when a model resolves, and a second
-   * implementation would be free to disagree with what is actually in force.
-   */
-  const channelStatus = () =>
-    ToolChannel.status(
-      serverSync().data.config as ToolChannel.ConfigLike | undefined,
-      props.providerID,
-      props.modelID,
-      // Where this model points NOW — the same value the form edits, so a URL the user just changed
-      // is compared against, not the stale saved one.
-      form.apiPath || providerCfg().api?.url || props.providerApi.url,
-    )
-
-  const [testing, setTesting] = createSignal(false)
-  const [testError, setTestError] = createSignal<string>()
-
-  /**
-   * Measure this endpoint and record the verdict.
-   *
-   * ⚠️ Three generations, so it is only ever this button. The server writes the result, so the panel
-   * re-reads it from config rather than holding a second copy that could disagree with the runner.
-   */
-  const testChannel = async () => {
-    setTesting(true)
-    setTestError(undefined)
-    try {
-      const result = await providerProbe(props.http, {
-        directory: props.directory,
-        providerID: props.providerID,
-        modelID: props.modelID,
-        capabilities: true,
-      })
-      // A probe that answers `status: ok` with no capabilities negotiated something it could not
-      // measure at all — reported rather than shown as a silent no-op.
-      if (result.capabilities === undefined)
-        setTestError(result.detail ?? language.t("settings.models.config.toolChannel.testFailed"))
-      await serverSync().refetchConfig?.()
-    } catch (error) {
-      setTestError(errorMessage(error, language.t("settings.models.config.toolChannel.testFailed")))
-    } finally {
-      setTesting(false)
-    }
-  }
-
   const init = savedModel()
+
+  const initialDevices =
+    (serverSync().data.config as { devices?: Record<string, DeviceConfig> } | undefined)?.devices ?? {}
+  const initialDevice = deviceForEndpoint(initialDevices, providerCfg().api?.url ?? props.providerApi.url ?? "")
 
   const d = props.defaults ?? {}
   const nstr = (v: unknown) => (typeof v === "number" ? String(v) : "")
@@ -187,7 +171,7 @@ export const DialogModelConfig: Component<{
       const value = bodyEffort(init)
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
-    retryAttempts: nstr(init.retry?.attempts),
+    deviceConcurrency: nstr(initialDevice?.device.concurrency),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
     prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
@@ -225,17 +209,16 @@ export const DialogModelConfig: Component<{
     if (form.thinkingEffort) body.reasoning_effort = form.thinkingEffort
     else delete body.reasoning_effort
 
+    // Connection recovery is a kernel policy, not a model tuning knob. Strip legacy per-model
+    // attempt counts whenever this row is saved so old config cannot silently retain the retired UI.
+    const { retry: _retiredRetry, ...savedWithoutRetry } = saved
     const model: ModelConfig = {
-      ...saved,
+      ...savedWithoutRetry,
       name: form.modelName.trim() || props.modelName,
       api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID },
       limit,
       capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
-      retry:
-        num(form.retryAttempts) === undefined
-          ? undefined
-          : { attempts: Math.min(10, Math.max(1, Math.floor(num(form.retryAttempts)!))) },
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
@@ -266,6 +249,35 @@ export const DialogModelConfig: Component<{
       stored: storedApiKey(),
       next: form.apiKey.trim(),
     })
+    const devices = (serverSync().data.config as { devices?: Record<string, DeviceConfig> } | undefined)?.devices ?? {}
+    const bound = deviceForEndpoint(devices, providerCfg().api?.url ?? props.providerApi.url ?? "")
+    const concurrency = num(form.deviceConcurrency)
+    const deviceID = bound?.id ?? (concurrency === undefined ? undefined : availableDeviceID(props.providerID, devices))
+    const endpoint = endpointOrigin(apiPath)
+    const previousEndpoint = endpointOrigin(providerCfg().api?.url ?? props.providerApi.url ?? "")
+    const devicePatch =
+      deviceID === undefined
+        ? undefined
+        : {
+            [deviceID]: {
+              ...(bound?.device ?? {}),
+              endpoints:
+                endpoint === undefined
+                  ? (bound?.device.endpoints ?? [])
+                  : bound === undefined
+                    ? [endpoint]
+                    : [
+                        ...new Set(
+                          bound.device.endpoints.map((item) =>
+                            previousEndpoint !== undefined && endpointOrigin(item) === previousEndpoint
+                              ? endpoint
+                              : item,
+                          ),
+                        ),
+                      ],
+              ...(concurrency === undefined ? {} : { concurrency: Math.max(1, Math.floor(concurrency)) }),
+            },
+          }
     const patch = {
       providers: {
         [props.providerID]: {
@@ -276,14 +288,16 @@ export const DialogModelConfig: Component<{
           models: { ...(provider.models ?? {}), [props.modelID]: model },
         },
       },
+      ...(devicePatch === undefined ? {} : { devices: devicePatch }),
     }
     try {
-      await serverSync().updateConfig(patch)
+      await serverSync().updateConfig(patch as never)
       // PATCH merges objects: omission alone keeps the old override. Remove only fields this form
       // owns, after the new values have been accepted; a failed deletion keeps the dialog open.
       const base = ["providers", props.providerID, "models", props.modelID]
       await serverSync().removeConfig([
-        ...(model.retry === undefined ? [[...base, "retry"]] : []),
+        [...base, "retry"],
+        ...(deviceID !== undefined && concurrency === undefined ? [["devices", deviceID, "concurrency"]] : []),
         ...[...SAMPLING, "thinkingBudget", "reasoning_effort"]
           .filter((key) => body[key] === undefined)
           .map((key) => [...base, "request", "body", key]),
@@ -353,9 +367,9 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (
-    key: "identity" | "corrections" | "sampling" | "limits" | "reliability" | "capabilities" | "modalities",
-  ) => <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
+  const section = (key: "identity" | "corrections" | "sampling" | "capabilities") => (
+    <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
+  )
 
   return (
     <Dialog size="content">
@@ -477,6 +491,19 @@ export const DialogModelConfig: Component<{
                 aria-label={language.t("settings.models.config.modelName.name")}
               />
             </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.deviceConcurrency.name")}
+              description={language.t("settings.models.config.deviceConcurrency.desc")}
+            >
+              <TextInputV2
+                class="w-24 max-w-full"
+                value={form.deviceConcurrency}
+                onInput={(event) => setForm("deviceConcurrency", event.currentTarget.value)}
+                inputmode="numeric"
+                aria-label={language.t("settings.models.config.deviceConcurrency.name")}
+                placeholder={language.t("settings.models.config.defaultPlaceholder")}
+              />
+            </SettingsRowV2>
           </SettingsListV2>
 
           {section("corrections")}
@@ -501,8 +528,16 @@ export const DialogModelConfig: Component<{
             <For each={SAMPLING}>{(k) => paramRow(k)}</For>
           </SettingsListV2>
 
-          {section("limits")}
+          {section("capabilities")}
           <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.tool_call.name")}
+              description={language.t("settings.models.config.tool_call.desc")}
+            >
+              <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
+            </SettingsRowV2>
+            {modalityRow("in")}
+            {modalityRow("out")}
             {paramRow("context")}
             {paramRow("maxTokens")}
             {/* Only for a model that declares image input — a picture cap on a text-only model is a
@@ -542,104 +577,6 @@ export const DialogModelConfig: Component<{
                 onSelect={(option) => setForm("thinkingEffort", option ?? "")}
               />
             </SettingsRowV2>
-          </SettingsListV2>
-
-          {section("reliability")}
-          <SettingsListV2>{paramRow("retryAttempts")}</SettingsListV2>
-
-          {section("capabilities")}
-          <SettingsListV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.tool_call.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.tool_call.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.tool_call.name")}>
-                    {language.t("settings.models.config.tool_call.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
-            </SettingsRowV2>
-            {/*
-              WHICH tool channel this model runs on, and WHO decided. When it is wrong the agent
-              silently cannot act and the chat reads as a model refusing — so the decider is named
-              here, next to the way to change it. Testing costs three generations, so it is a button
-              and never something opening this dialog does.
-            */}
-            <SettingsRowV2
-              title={language.t("settings.models.config.toolChannel.name")}
-              description={language.t(`settings.models.config.toolChannel.${channelStatus().channel}`)}
-            >
-              <div class="flex flex-col items-end gap-1" data-tool-channel={channelStatus().channel}>
-                <span class="text-[12px] text-v2-text-text-muted" data-tool-channel-source>
-                  {language.t(`settings.models.config.toolChannel.source.${channelStatus().source}`)}
-                </span>
-                <Show when={channelStatus().rationale}>
-                  {(why) => (
-                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-why>
-                      {why()}
-                    </span>
-                  )}
-                </Show>
-                {/*
-                  An override that contradicts a measurement is the most confusing state this screen
-                  can be in — "I tested it and it still does the other thing". Both are shown, with
-                  the winner named above.
-                */}
-                <Show when={channelStatus().overriddenMeasurement}>
-                  {(over) => (
-                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-override>
-                      {language.t("settings.models.config.toolChannel.overridden", { channel: over().channel })}
-                    </span>
-                  )}
-                </Show>
-                <Show when={channelStatus().movedFrom}>
-                  {(from) => (
-                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-moved>
-                      {language.t("settings.models.config.toolChannel.moved", { from: from() })}
-                    </span>
-                  )}
-                </Show>
-                <Show when={channelStatus().inconclusive}>
-                  {(verdict) => (
-                    <span
-                      class="text-[11px] leading-4 text-right text-v2-text-text-faint"
-                      data-tool-channel-inconclusive
-                    >
-                      {language.t(`settings.models.config.toolChannel.inconclusive.${verdict()}`)}
-                    </span>
-                  )}
-                </Show>
-                <button
-                  type="button"
-                  data-action="tool-channel-test"
-                  class="text-[12px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-base disabled:opacity-50"
-                  disabled={testing()}
-                  onClick={() => void testChannel()}
-                >
-                  {language.t(
-                    testing()
-                      ? "settings.models.config.toolChannel.testing"
-                      : "settings.models.config.toolChannel.test",
-                  )}
-                </button>
-                <Show when={testError()}>
-                  {(message) => (
-                    <span class="text-[11px] leading-4 text-right text-v2-text-text-faint" data-tool-channel-error>
-                      {message()}
-                    </span>
-                  )}
-                </Show>
-              </div>
-            </SettingsRowV2>
-          </SettingsListV2>
-
-          {section("modalities")}
-          <SettingsListV2>
-            {modalityRow("in")}
-            {modalityRow("out")}
           </SettingsListV2>
         </div>
 

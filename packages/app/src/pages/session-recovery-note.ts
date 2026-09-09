@@ -29,7 +29,7 @@ export const recoveryChangesNote = (summary: ChangesSummaryLike | undefined): st
   const plural = files === 1 ? "" : "s"
   if (summary.complete === false)
     return files === 0
-      ? "Nova was still recording what changed, so some work may have happened."
+      ? "Change tracking had not finished. Check the files before repeating an action."
       : `At least ${files} file${plural} changed — the recording did not finish, so there may be more.`
   return files === 0 ? "No files changed." : `${files} file${plural} changed.`
 }

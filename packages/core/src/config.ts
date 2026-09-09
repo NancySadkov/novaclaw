@@ -723,6 +723,19 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "providers.<id>.models.<m>.request.body.toolChannel. `fingerprint` records what was measured " +
         "so a moved endpoint discards the verdict instead of acting on it.",
     }),
+  provider_recovery: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      failures: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+      next: Schema.Finite,
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Automatic model reconnect state keyed provider/model. Failures back off from two seconds to ten minutes; " +
+        "a successful reconnect removes the row and resets the cadence.",
+    }),
   devices: Schema.Record(Schema.String, ConfigDevice.Info)
     .pipe(Schema.optional)
     .annotate({

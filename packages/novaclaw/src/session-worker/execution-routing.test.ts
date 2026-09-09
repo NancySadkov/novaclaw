@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { defaultMemoryLimitBytes, folderSubstitutedNotice, pausedNotice, workerMemoryLimitBytes } from "./execution"
+import {
+  defaultMemoryLimitBytes,
+  folderSubstitutedNotice,
+  workerMemoryLimitBytes,
+  workerRetryDelayMs,
+} from "./execution"
 
 test("the production HTTP graph routes admitted drains through the worker executor", () => {
   const source = readFileSync(
@@ -22,15 +27,10 @@ test("worker memory ceiling scales by host tier and stays bounded", () => {
   expect(workerMemoryLimitBytes("session-worker-node.ts", 8 * gib)).toBe(3 * gib)
 })
 
-test("paused sessions explain uncertainty and preserve selectable technical detail", () => {
-  const uncertain = pausedNotice("outcome-unknown", "worker exited 42")
-  expect(uncertain).toContain("did not replay")
-  expect(uncertain).toContain("Inspect the target")
-  expect(uncertain).toContain("Technical detail: worker exited 42")
-
-  const repeated = pausedNotice("repeated-failure", "heartbeat timeout")
-  expect(repeated).toContain("other chats are unaffected")
-  expect(repeated).toContain("choose another model")
+test("worker recovery starts at two seconds and doubles to a ten-minute ceiling", () => {
+  expect([1, 2, 3, 4].map(workerRetryDelayMs)).toEqual([2_000, 4_000, 8_000, 16_000])
+  expect(workerRetryDelayMs(20)).toBe(600_000)
+  expect(workerRetryDelayMs(200)).toBe(600_000)
 })
 
 test("the folder-substitution notice names BOTH folders and says work continues", () => {

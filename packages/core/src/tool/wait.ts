@@ -36,12 +36,10 @@ import { SessionJoin } from "../session/join"
  *
  * 🔴 **The criterion is NOT "did something go wrong" — it is *will anything move this child without
  * a human?*** Those are different questions, and reading the first one is what put `paused` on the
- * live side of this predicate for as long as it existed. A paused attempt is written precisely when
- * `SessionRecoveryDecision.decide` returns `automatic: false` (the circuit breaker after
- * `FAILURE_LIMIT`, or a tool dispatched with an unknown outcome), `SessionBootRecovery` resumes only
- * the `automatic` half, and `recoverStale` never even selects `paused`. Nothing in the recovery
- * machinery leaves that state; only `authorizeRetry` — an operator action — does. So a parent told
- * *"it may still be working"* about a paused child waits ten minutes a lap, forever.
+ * live side of this predicate for as long as it existed. Current process-loss recovery never writes
+ * `paused`, but an older database can still contain that state. Nothing automatically leaves such a
+ * legacy row; only `authorizeRetry` — an operator action — does. So a parent told *"it may still be
+ * working"* about a paused child waits ten minutes a lap, forever.
  */
 /**
  * ⭐ **The classification is EXHAUSTIVE over `SessionExecutionAttempt.State`, by construction.** A

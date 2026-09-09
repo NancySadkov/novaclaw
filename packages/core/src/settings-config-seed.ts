@@ -88,6 +88,9 @@ export const SETTINGS_KEYS = [
   "provider_capability",
   "provider_media_limit",
   "provider_route_profile",
+  // Machine-written reconnect circuit shared by fresh session workers. A successful request clears
+  // its row; failures retain their exponential backoff across processes and app restarts.
+  "provider_recovery",
   // Per-skill invocation choices — the skill-invocation controls. A settings key
   // rather than a per-subsystem store: it is a sparse map of user DECISIONS, not a resource the
   // skill loader materialises, and `command/list.ts` reads it through `config.entries()` on every

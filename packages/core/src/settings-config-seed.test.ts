@@ -91,13 +91,16 @@ const VALID: Record<string, unknown> = {
       servedBy: "process-a",
     },
   },
+  provider_recovery: {
+    "spark-holo/holo3.1": { failures: 2, next: 20_000 },
+  },
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   persona: {},
   user_profile: { enabled: true, name: "Nancy" },
   introspection: {},
   // All live switches present, so the row exercises the whole block rather than its defaults.
-  harness_drives: { reground: true, children: true, imageShortcut: true, resumeInterrupted: true },
+  harness_drives: { reground: true, children: true, imageShortcut: true },
   adhoc_tools: [],
   affective: {},
   strict: {},

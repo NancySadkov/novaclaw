@@ -159,6 +159,8 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Bounded measurements that make prompt packing conservative for one exact model/server route.
   // A wrong row can only spend extra context or be deleted to restore defaults; it grants nothing.
   provider_route_profile: "operational",
+  // Machine-written circuit state; it changes only scheduling/retry timing and grants nothing.
+  provider_recovery: "operational",
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.

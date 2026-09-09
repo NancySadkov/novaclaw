@@ -96,14 +96,30 @@ test("a real worker settles through the fenced lifecycle protocol", async () => 
   expect(await worker.result).toEqual({ type: "settled" })
 })
 
+test("a heartbeat receipt write failure cannot terminate useful work", async () => {
+  const worker = spawn({
+    command: [process.execPath, fixture, "settle"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    onHeartbeat: async () => {
+      throw new Error("database briefly busy")
+    },
+  })
+  expect(await worker.result).toEqual({ type: "settled" })
+})
+
 test("a worker that never becomes ready is killed at the startup deadline", async () => {
   const worker = run("unready")
   expect(await worker.result).toEqual({ type: "start-timeout" })
 }, 15_000)
 
-test("a silent live worker is tree-killed after its heartbeat deadline", async () => {
+test("a silent live worker remains alive until an explicit interrupt", async () => {
   const worker = run("silent")
-  expect(await worker.result).toEqual({ type: "heartbeat-timeout" })
+  await Bun.sleep(700)
+  expect(activeWorkerCount()).toBe(1)
+  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
 })
 
 test("a stale worker identity is rejected and tree-killed", async () => {
@@ -233,7 +249,7 @@ test("worker cleanup has a deadline", async () => {
   expect(Date.now() - started).toBeLessThan(4_000)
 })
 
-test("a heartbeat failure aborts an in-flight host RPC", async () => {
+test("an explicit interrupt aborts an in-flight host RPC", async () => {
   let aborted = false
   const worker = spawn({
     command: [process.execPath, fixture, "device"],
@@ -254,14 +270,19 @@ test("a heartbeat failure aborts an in-flight host RPC", async () => {
         )
       }),
   })
-  expect(await worker.result).toEqual({ type: "heartbeat-timeout" })
+  await Bun.sleep(700)
+  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
   expect(aborted).toBe(true)
 })
 
 test("interrupt aborts a queued host Effect without admitting or starting provider work", async () => {
   const scheduler = SessionScheduler.make()
   await Effect.runPromise(
-    scheduler.admit({ sessionID: "ses_device_blocker", deviceKey: "provider/model", sessionClass: "interactive-focused" }),
+    scheduler.admit({
+      sessionID: "ses_device_blocker",
+      deviceKey: "provider/model",
+      sessionClass: "interactive-focused",
+    }),
   )
   const messages: string[] = []
   const worker = spawn({
@@ -543,7 +564,7 @@ test("the standard worker keeps execution checkpoints and heartbeats host-owned"
   expect(heartbeats).toBeGreaterThan(0)
 })
 
-test("a CPU-wedged session cannot delay an unrelated session or retain an idle worker", async () => {
+test("a CPU-wedged session cannot delay an unrelated session and only explicit stop reaps it", async () => {
   const wedged = spawn({
     command: [process.execPath, fixture, "busy"],
     lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_wedged"), attemptID: "exe_wedged" },
@@ -565,7 +586,7 @@ test("a CPU-wedged session cannot delay an unrelated session or retain an idle w
   // The healthy peer must complete independently; allow Bun's WSL-on-NTFS loader overhead while
   // remaining far below the wedged worker's unbounded lifetime.
   expect(Date.now() - started).toBeLessThan(4_000)
-  expect(await wedged.result).toEqual({ type: "heartbeat-timeout" })
+  expect(await wedged.interrupt()).toEqual({ type: "interrupted" })
   expect(activeWorkerCount()).toBe(0)
 })
 

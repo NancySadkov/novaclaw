@@ -38,13 +38,7 @@ export const SAMPLING = [
   "presence_penalty",
   "frequency_penalty",
 ] as const
-export type FieldKey =
-  | (typeof SAMPLING)[number]
-  | "context"
-  | "maxTokens"
-  | "images"
-  | "thinkingBudget"
-  | "retryAttempts"
+export type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "images" | "thinkingBudget"
 
 // Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
 // is a literal unit label (context/output are token counts, not intensities). The number is the value.
@@ -65,10 +59,6 @@ type PresetWord =
   | "gentle"
   | "moderate"
   | "disabled"
-  | "once"
-  | "quickRecovery"
-  | "patientRecovery"
-  | "persistentRecovery"
   | "briefThought"
   | "thoroughThought"
   | "exhaustiveThought"
@@ -175,15 +165,6 @@ export const PRESETS: Record<FieldKey, RawPreset[]> = {
     { word: "balanced", num: 6144 },
     { word: "thoroughThought", num: 16384 },
     { word: "exhaustiveThought", num: 32768 },
-  ],
-  // ⚠️ NAMED, not bare counts — principle 12(c), and it arrived from the other line of work while
-  // this table was being lifted out of `dialog-model-config.tsx`. "3 attempts" asks the reader to
-  // know what three buys them; "quickRecovery" says it.
-  retryAttempts: [
-    { word: "once", num: 1 },
-    { word: "quickRecovery", num: 3 },
-    { word: "patientRecovery", num: 5 },
-    { word: "persistentRecovery", num: 10 },
   ],
 }
 

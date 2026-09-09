@@ -13,7 +13,6 @@ const CASES = [
   ["offline", { offline: true }],
   ["virtual-fs", { virtualFs: true }],
   ["telemetry", { telemetry: { enabled: false } }],
-  ["resume", { recovery: { resume_interrupted: false } }],
 ] as const
 
 let dispose: (() => void) | undefined

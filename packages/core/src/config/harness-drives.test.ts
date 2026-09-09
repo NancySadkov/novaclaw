@@ -18,7 +18,6 @@ describe("resolve", () => {
       set: false,
       children: true,
       imageShortcut: true,
-      resumeInterrupted: true,
     })
   })
 
@@ -28,7 +27,6 @@ describe("resolve", () => {
       set: false,
       children: true,
       imageShortcut: true,
-      resumeInterrupted: true,
     })
   })
 
@@ -38,9 +36,8 @@ describe("resolve", () => {
       set: false,
       children: true,
       imageShortcut: true,
-      resumeInterrupted: true,
     } as const
-    for (const malformed of [null, [], { resumeInterrupted: 0 }, { resumeInterrupted: "false" }, { reground: 1 }]) {
+    for (const malformed of [null, [], { reground: 1 }]) {
       expect(ConfigHarnessDrives.resolve(malformed)).toEqual(enabled)
     }
   })
@@ -51,7 +48,6 @@ describe("resolve", () => {
       set: false,
       children: true,
       imageShortcut: true,
-      resumeInterrupted: true,
     })
   })
 
@@ -61,7 +57,6 @@ describe("resolve", () => {
       set: false,
       children: true,
       imageShortcut: true,
-      resumeInterrupted: true,
     })
   })
 
@@ -72,7 +67,6 @@ describe("resolve", () => {
       set: false,
       children: false,
       imageShortcut: true,
-      resumeInterrupted: true,
     })
   })
 
@@ -83,14 +77,12 @@ describe("resolve", () => {
         set: true,
         children: false,
         imageShortcut: false,
-        resumeInterrupted: false,
       }),
     ).toEqual({
       reground: false,
       set: false,
       children: false,
       imageShortcut: false,
-      resumeInterrupted: false,
     })
   })
 })

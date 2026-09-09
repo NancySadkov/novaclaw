@@ -38,7 +38,10 @@ export function probeLabel(result: ProbeResult, t: Translator): string {
           : ` · ${t("settings.models.probe.window")} ${Math.round(result.window / 1024)}k`
       const attempts =
         result.completionAttempts && result.completionAttempts > 1 ? ` · ${result.completionAttempts} attempts` : ""
-      return `${t("settings.models.probe.ok")}${latency}${window}${attempts}${detail}`
+      const tools = result.capabilities
+        ? ` · ${t(`settings.models.probe.tools.${result.capabilities.choice}` as never)}`
+        : ""
+      return `${t("settings.models.probe.ok")}${latency}${window}${attempts}${tools}${detail}`
     }
     case "unreachable":
       return `${t("settings.models.probe.unreachable")}${detail}`
@@ -91,6 +94,9 @@ export const SettingsModelsV2: Component = () => {
       directory: d,
       providerID: key.providerID,
       modelID: key.modelID,
+      // The ordinary Test owns endpoint capability negotiation too. Keeping a second tool-channel
+      // test inside Configure made the same health check look like two unrelated chores.
+      capabilities: true,
     }).catch((error): ProbeResult => ({ status: "error", detail: String(error).slice(0, 120) }))
     setProbes((prev) => ({ ...prev, [id]: result }))
   }

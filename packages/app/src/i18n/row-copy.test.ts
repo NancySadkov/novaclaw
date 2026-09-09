@@ -46,7 +46,6 @@ const SPLIT_DESC = [
   "settings.models.config.apiKey",
   "settings.models.config.providerName",
   "settings.models.config.prePrompt",
-  "settings.models.config.tool_call",
   "settings.models.config.thinkingBudget",
 ]
 
@@ -111,10 +110,12 @@ describe("settings row copy stays scannable", () => {
       .filter((f) => typeof f === "string" && f.endsWith(".tsx"))
     const rendered = new Set<string>()
     for (const f of files)
-      for (const m of fs.readFileSync(path.join(COMPONENTS_SRC, f), "utf8").matchAll(/language\.t\("([^"{}]+\.more)"\)/g))
+      for (const m of fs
+        .readFileSync(path.join(COMPONENTS_SRC, f), "utf8")
+        .matchAll(/language\.t\("([^"{}]+\.more)"\)/g))
         rendered.add(m[1]!)
     const englishMore = Object.keys(t).filter((key) => key.endsWith(".more"))
-    expect(englishMore.length).toBeGreaterThan(30)
+    expect(englishMore.length).toBeGreaterThan(20)
     const unreachable = englishMore.filter((key) => !rendered.has(key))
     expect(unreachable).toEqual([])
   })

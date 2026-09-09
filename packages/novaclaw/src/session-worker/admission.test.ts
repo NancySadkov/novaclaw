@@ -5,6 +5,7 @@ import { SessionWorkerAdmission } from "./admission"
 const run = Effect.runPromise
 const batch = (sessionID: string) => ({ sessionID, priority: "batch" as const })
 const interactive = (sessionID: string) => ({ sessionID, priority: "interactive" as const })
+const governing = (sessionID: string) => ({ sessionID, priority: "governing" as const })
 
 describe("session-worker admission", () => {
   test("derives process capacity from the canonical fleet byte ceiling", () => {
@@ -92,8 +93,18 @@ describe("session-worker admission", () => {
       ),
     )
     await run(Deferred.await(entered))
-    const older = Effect.runFork(gate.run(batch("older"), Effect.sync(() => order.push("older"))))
-    const opened = Effect.runFork(gate.run(batch("opened"), Effect.sync(() => order.push("opened"))))
+    const older = Effect.runFork(
+      gate.run(
+        batch("older"),
+        Effect.sync(() => order.push("older")),
+      ),
+    )
+    const opened = Effect.runFork(
+      gate.run(
+        batch("opened"),
+        Effect.sync(() => order.push("opened")),
+      ),
+    )
     gate.reprioritize("opened", "interactive")
 
     expect(gate.snapshot().waitingInteractive).toEqual(["opened"])
@@ -101,6 +112,47 @@ describe("session-worker admission", () => {
     await run(Fiber.join(holder))
     await Promise.all([run(Fiber.join(older)), run(Fiber.join(opened))])
     expect(order).toEqual(["opened", "older"])
+  })
+
+  test("Nova jumps ahead of an opened chat and background work", async () => {
+    const gate = await run(SessionWorkerAdmission.make({ capacity: 1 }))
+    const release = Deferred.makeUnsafe<void>()
+    const entered = Deferred.makeUnsafe<void>()
+    const order: string[] = []
+    const holder = Effect.runFork(
+      gate.run(
+        batch("holder"),
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+        }),
+      ),
+    )
+    await run(Deferred.await(entered))
+    const background = Effect.runFork(
+      gate.run(
+        batch("background"),
+        Effect.sync(() => order.push("background")),
+      ),
+    )
+    const opened = Effect.runFork(
+      gate.run(
+        interactive("opened"),
+        Effect.sync(() => order.push("opened")),
+      ),
+    )
+    const nova = Effect.runFork(
+      gate.run(
+        governing("nova"),
+        Effect.sync(() => order.push("nova")),
+      ),
+    )
+
+    expect(gate.snapshot().waitingGoverning).toEqual(["nova"])
+    await run(Deferred.succeed(release, undefined))
+    await run(Fiber.join(holder))
+    await Promise.all([run(Fiber.join(background)), run(Fiber.join(opened)), run(Fiber.join(nova))])
+    expect(order).toEqual(["nova", "opened", "background"])
   })
 
   test("an interrupted waiter leaks no permit", async () => {

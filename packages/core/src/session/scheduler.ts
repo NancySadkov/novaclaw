@@ -2,8 +2,8 @@
  * The session scheduler (Tier-1 roadmap item; design: notes/reports/scheduler-synthesis-2026-07-03.md).
  *
  * V1 = the ADMISSION GATE at turn boundaries, per device (provider/model):
- *   - the chat a human is currently viewing dispatches immediately (vLLM's continuous batching
- *     handles concurrency; its latency comes from never waiting client-side);
+ *   - Nova always owns the governing lane; on a chat screen the human-visible chat is next, while
+ *     Home grants no ordinary chat foreground priority (vLLM still continuously batches them);
  *   - batch-class sessions (sub-agent, auto-prompting, goal-oriented, cron) wait while
  *     the human-visible foreground turn is generating, and are capped at MAX_BATCH concurrent turns
  *     — "background agents run on idle device cycles", enforced at the only preemption
@@ -43,11 +43,17 @@ export type SessionClass = KernelEevdf.SessionClass
 export const isInteractive = (sessionClass: SessionClass) =>
   sessionClass === "interactive" || sessionClass === "interactive-focused"
 
-/** Only an actually attached human gets the scheduler's immediate foreground lane. */
+/** Only an actually attached human makes an ordinary chat focused; Nova is handled separately. */
 export const isFocused = (sessionClass: SessionClass) => sessionClass === "interactive-focused"
 
 export const hasHumanViewer = (presence: { readonly viewers: readonly { readonly kind: string }[] }) =>
   presence.viewers.some((viewer) => viewer.kind === "human")
+
+/** Nova always owns the governing lane; another chat owns it only while a human is viewing it. */
+export const hasForegroundPriority = (
+  agent: string | undefined,
+  presence: { readonly viewers: readonly { readonly kind: string }[] },
+) => agent === "nova" || hasHumanViewer(presence)
 
 export const focusClass = (sessionClass: SessionClass, focused: boolean): SessionClass =>
   focused ? "interactive-focused" : sessionClass === "interactive-focused" ? "interactive" : sessionClass

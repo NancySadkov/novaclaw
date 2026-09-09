@@ -7,9 +7,9 @@
 //     (5xx), and RateLimit (429, honoring retry-after).
 //   - InvalidProviderOutput is retryable only before useful output. Once output exists,
 //     the runner accepts the partial turn as broken and starts a continuation request.
-//   - A bounded, per-model attempt cap — the default fails a dead endpoint quickly, while the
-//     explicit maximum can bridge a server restart lasting several minutes. The configured value
-//     is clamped here.
+//   - One reconnect after two seconds before the failed route is handed to the durable recovery
+//     circuit. That circuit routes traffic elsewhere and probes this route again on an exponential
+//     2 s…10 min cadence; a turn never sits on a dead endpoint for minutes.
 //   - The runner additionally only replays attempts that failed before durable assistant
 //     output, so a retry can never duplicate partially-streamed text or tool actions.
 //
@@ -17,20 +17,18 @@
 
 import { LLMError } from "@novaclaw/llm"
 
-/** Total provider attempts per turn (1 original + 2 retries). */
-export const DEFAULT_PROVIDER_ATTEMPTS = 3
-export const MAX_PROVIDER_ATTEMPTS = 10
+/** One original request and one quick reconnect before traffic is rerouted. */
+export const DEFAULT_PROVIDER_ATTEMPTS = 2
 
-/** Resolve a user-authored attempt count without allowing zero, infinity, or retry storms. */
-export function maxAttempts(configured: number | undefined): number {
-  if (configured === undefined || !Number.isFinite(configured)) return DEFAULT_PROVIDER_ATTEMPTS
-  return Math.min(MAX_PROVIDER_ATTEMPTS, Math.max(1, Math.floor(configured)))
+/** Recovery is a kernel invariant, not a user-authored per-model knob. */
+export function maxAttempts(): number {
+  return DEFAULT_PROVIDER_ATTEMPTS
 }
 
 /** Ceiling for a provider-supplied retry-after, so a hostile header can't stall a turn. */
-export const MAX_RETRY_DELAY_MS = 30_000
+export const MAX_RETRY_DELAY_MS = 10 * 60_000
 
-const BACKOFF_MS = [1_000, 3_000, 9_000, 30_000]
+const BASE_RETRY_DELAY_MS = 2_000
 
 /**
  * True when retrying the SAME request can plausibly succeed. `Transport` is retryable
@@ -68,7 +66,7 @@ export function isBrokenResponse(error: unknown): error is LLMError {
 export function retryDelayMs(attempt: number, retryAfterMs?: number): number {
   if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs >= 0)
     return Math.min(retryAfterMs, MAX_RETRY_DELAY_MS)
-  return BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length) - 1] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
+  return Math.min(MAX_RETRY_DELAY_MS, BASE_RETRY_DELAY_MS * 2 ** Math.min(30, Math.max(0, Math.floor(attempt) - 1)))
 }
 
 /** Calm, user-facing status while the bounded automatic retry sleeps. */

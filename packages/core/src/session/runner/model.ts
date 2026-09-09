@@ -4,12 +4,13 @@ import { makeLocationNode } from "../../effect/app-node"
 import { splitModelSampling } from "./sampling-split"
 import { withRepetitionFloor } from "./repetition-floor"
 import { ModelHealth } from "./model-health"
+import { ProviderRecovery } from "./provider-recovery"
 import { type Model } from "@novaclaw/llm"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@novaclaw/llm/protocols/openai-responses"
 import { Auth, type AnyRoute } from "@novaclaw/llm/route"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Log } from "@novaclaw/schema/log"
 import { Catalog } from "../../catalog"
@@ -187,6 +188,12 @@ export interface Interface {
     model: { readonly providerID: string; readonly id: string },
     servedBy: string,
   ) => Effect.Effect<void>
+  /** Persist a failed route's reconnect deadline across fresh session workers; true when durable. */
+  readonly providerFailed: (model: ModelV2.Ref, at: number) => Effect.Effect<boolean>
+  /** Zero for a normal route; positive means this request is a single recovery probe. */
+  readonly providerRecoveryFailures: (model: ModelV2.Ref) => Effect.Effect<number>
+  /** A successful reconnect clears that route's backoff counter. */
+  readonly providerSucceeded: (model: ModelV2.Ref) => Effect.Effect<void>
   /**
    * The instance's DEFAULT model, resolved without a session.
    *
@@ -388,6 +395,10 @@ export const layerWith = (
   /** ⚠️ Added LAST for the reason above. A seam with no store simply remembers nothing. */
   learnedImageLimit: Interface["learnedImageLimit"] = () => Effect.succeed(undefined),
   rememberImageLimit: Interface["rememberImageLimit"] = () => Effect.void,
+  /** ⚠️ Added LAST. Test seams without the shared recovery store remain inert. */
+  providerFailed: Interface["providerFailed"] = () => Effect.succeed(false),
+  providerSucceeded: Interface["providerSucceeded"] = () => Effect.void,
+  providerRecoveryFailures: Interface["providerRecoveryFailures"] = () => Effect.succeed(0),
 ) =>
   Layer.succeed(
     Service,
@@ -417,6 +428,9 @@ export const layerWith = (
       ref,
       device,
       observeServing,
+      providerFailed,
+      providerSucceeded,
+      providerRecoveryFailures,
     }),
   )
 
@@ -833,6 +847,30 @@ export const locationLayer = Layer.effect(
           .forgetIfMoved(model.providerID, model.id, servedBy)
           .pipe(Effect.catchCause(() => Effect.succeed(false)))
       }),
+      providerFailed: Effect.fn("SessionRunnerModel.providerFailed")(function* (model, at) {
+        return yield* settings
+          .update("provider_recovery", (current) =>
+            ProviderRecovery.exhausted(ProviderRecovery.decode(current), model, at),
+          )
+          .pipe(
+            Effect.as(true),
+            Effect.catchCause(() => Effect.succeed(false)),
+          )
+      }),
+      providerRecoveryFailures: Effect.fn("SessionRunnerModel.providerRecoveryFailures")(function* (model) {
+        return yield* settings.all().pipe(
+          Effect.map(
+            (config) =>
+              ProviderRecovery.decode(config["provider_recovery"])[ProviderRecovery.key(model)]?.failures ?? 0,
+          ),
+          Effect.catchCause(() => Effect.succeed(0)),
+        )
+      }),
+      providerSucceeded: Effect.fn("SessionRunnerModel.providerSucceeded")(function* (model) {
+        yield* settings
+          .update("provider_recovery", (current) => ProviderRecovery.succeeded(ProviderRecovery.decode(current), model))
+          .pipe(Effect.ignore)
+      }),
       /**
        * The route for a turn, AND the catalog entry it was built from.
        *
@@ -1060,13 +1098,13 @@ export const locationLayer = Layer.effect(
       // 🔴 The SECOND half of the owner's rule: *"or gives errors"*. A model that resolves cleanly
       // and then fails every request is the commoner fault — a local server that died, a key that
       // expired — and the block above cannot see it, because there is nothing wrong with the
-      // catalog entry. `ModelHealth` watches the turns themselves and answers "is this endpoint
-      // serving right now"; two exhausted-retry failures inside ten minutes is the bar, so a
-      // restarting local server does not demote anybody (see that module's threshold note).
+      // catalog entry. The durable recovery ledger crosses session-worker process boundaries. It
+      // routes around a failed endpoint until its next probe window, rather than forgetting every
+      // failure when the worker exits.
       //
-      // ⚠️ Never routes onto a model that is ALSO sick, and never away from the default onto
-      // nothing: if the default is the thing failing, staying put and reporting its real error
-      // beats bouncing between two dead endpoints and reporting neither.
+      // ⚠️ Never routes normal traffic onto a route that is ALSO sick. If none is healthy, the
+      // durable deadlines select the earliest compatible recovery probe instead of terminating or
+      // bouncing blindly between dead endpoints.
       // ⚠️ **NO `session.model` GUARD, and it had one until it was driven.** The block above needs
       // `session.model` because it reports what the user ASKED for and there is nothing else to
       // name. This one does not: the question is whether the model this turn is about to use is
@@ -1079,21 +1117,29 @@ export const locationLayer = Layer.effect(
       // model chip was removed on 2026-08-22 that is very nearly every session. Measured live the
       // same day: holo3.1's endpoint went down, four turns failed with `Transport` in one process,
       // and the fallback never fired once.
-      // ⚠️ An EXPLICIT choice is never rerouted (owner, 2026-09-02: *"when the user explicitly picks
-      // a specific model, we still present the user with an error asking if they want to switch to
-      // another model"*). The self-healing invariant below is about the model nobody chose — a
-      // colleague running on the default. Silently moving a user off the model they named is
-      // answering a question nobody asked, which is the same rule the availability arm above already
-      // states for `--model does/not-exist`.
-      if (selected && options?.requested !== true) {
+      // A model id that never existed is still reported above. A route that existed and then became
+      // unavailable is different: work continues on a capability-compatible substitute even when
+      // the original turn named that model explicitly, and returns when its reconnect probe succeeds.
+      if (selected) {
         const at = yield* Clock.currentTimeMillis
-        if (ModelHealth.sick(selected, at)) {
+        const recovery = ProviderRecovery.decode((yield* settings.all())["provider_recovery"])
+        const selectedRecovery = recovery[ProviderRecovery.key(selected)]
+        const unavailable = ProviderRecovery.unavailable(recovery, selected, at)
+        // Once a durable row exists it owns recovery timing. The old process-local health hint must
+        // not suppress a probe whose durable deadline has arrived.
+        const routeSick = (entry: ModelV2.Info) => {
+          const row = recovery[ProviderRecovery.key(entry)]
+          return ProviderRecovery.unavailable(recovery, entry, at) || (row === undefined && ModelHealth.sick(entry, at))
+        }
+        if (routeSick(selected)) {
+          const required = selected.capabilities
+          const available = yield* catalog.model.available()
           const healthy = healthyAlternative({
             selected,
             fallback: yield* catalog.model.default(),
-            available: yield* catalog.model.available(),
-            supported,
-            sick: (entry) => ModelHealth.sick(entry, at),
+            available,
+            supported: (entry) => supported(entry) && ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
+            sick: routeSick,
             same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
           })
           if (healthy) {
@@ -1105,6 +1151,24 @@ export const locationLayer = Layer.effect(
                 "model.reason": "unhealthy",
               })
             selected = healthy
+          } else if (unavailable) {
+            // No healthy substitute is not a terminal state. Wait without occupying a device slot,
+            // then probe whichever compatible route becomes eligible first. Repeated failures move
+            // that route's durable deadline 2 s, 4 s, 8 s … up to ten minutes, forever.
+            const compatible = [selected, ...available].filter(
+              (entry, index, all) =>
+                supported(entry) &&
+                ProviderRecovery.capabilitiesMatch(required, entry.capabilities) &&
+                all.findIndex((other) => `${other.providerID}/${other.id}` === `${entry.providerID}/${entry.id}`) ===
+                  index,
+            )
+            const probe = ProviderRecovery.earliest(recovery, compatible)
+            // `selectedRecovery` makes this branch reachable only with at least the selected row;
+            // retain an explicit error for malformed state rather than spinning with no deadline.
+            if (probe === undefined || selectedRecovery === undefined)
+              return yield* new ModelUnavailableError({ providerID: selected.providerID, modelID: selected.id })
+            yield* Effect.sleep(Duration.millis(Math.max(0, probe.next - at)))
+            selected = probe.model
           }
         }
       }

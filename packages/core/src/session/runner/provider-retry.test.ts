@@ -1,8 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "effect"
-import { ConfigProvider } from "../../config/provider"
-import { ModelV2 } from "../../model"
-import { ProviderV2 } from "../../provider"
 import {
   LLMError,
   AuthenticationReason,
@@ -15,7 +11,6 @@ import {
 } from "@novaclaw/llm"
 import {
   DEFAULT_PROVIDER_ATTEMPTS,
-  MAX_PROVIDER_ATTEMPTS,
   MAX_RETRY_DELAY_MS,
   isTransientProviderFailure,
   isRetryableBeforeOutput,
@@ -67,25 +62,18 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
 
 describe("retryDelayMs", () => {
   test("escalating backoff per attempt", () => {
-    expect(retryDelayMs(1)).toBe(1_000)
-    expect(retryDelayMs(2)).toBe(3_000)
-    expect(retryDelayMs(3)).toBe(9_000)
-    expect(retryDelayMs(4)).toBe(30_000)
-    expect(retryDelayMs(99)).toBe(30_000)
+    expect(retryDelayMs(1)).toBe(2_000)
+    expect(retryDelayMs(2)).toBe(4_000)
+    expect(retryDelayMs(3)).toBe(8_000)
+    expect(retryDelayMs(4)).toBe(16_000)
+    expect(retryDelayMs(99)).toBe(10 * 60_000)
   })
   test("provider retry-after wins when present", () => expect(retryDelayMs(1, 2_500)).toBe(2_500))
   test("retry-after is capped so a hostile header cannot stall the turn", () =>
     expect(retryDelayMs(1, 10 * 60 * 1000)).toBe(MAX_RETRY_DELAY_MS))
   test("nonsense retry-after falls back to backoff", () => {
-    expect(retryDelayMs(2, Number.NaN)).toBe(3_000)
-    expect(retryDelayMs(2, -5)).toBe(3_000)
-  })
-  test("the ten-attempt posture bridges a roughly three-minute server restart", () => {
-    const sleepWindow = Array.from({ length: MAX_PROVIDER_ATTEMPTS - 1 }, (_, index) => retryDelayMs(index + 1)).reduce(
-      (total, delay) => total + delay,
-      0,
-    )
-    expect(sleepWindow).toBe(193_000)
+    expect(retryDelayMs(2, Number.NaN)).toBe(4_000)
+    expect(retryDelayMs(2, -5)).toBe(4_000)
   })
 })
 
@@ -110,20 +98,8 @@ describe("visible retry status", () => {
 // `session.next.retried` event, and both went when the event's last dark consumer was removed — nothing
 // rendered a retry, so nothing needed its status code. Do not restore this block without a surface.
 
-describe("cap", () => {
-  test("defaults to three and clamps per-model settings to 1–10", () => {
-    expect(maxAttempts(undefined)).toBe(DEFAULT_PROVIDER_ATTEMPTS)
-    expect(maxAttempts(Number.NaN)).toBe(DEFAULT_PROVIDER_ATTEMPTS)
-    expect(maxAttempts(0)).toBe(1)
-    expect(maxAttempts(5.9)).toBe(5)
-    expect(maxAttempts(99)).toBe(MAX_PROVIDER_ATTEMPTS)
-  })
-
-  test("the per-model setting survives config decode and new catalog models default to three", () => {
-    const decoded = Schema.decodeUnknownSync(ConfigProvider.Info)({
-      models: { deepseek: { retry: { attempts: 5 } } },
-    })
-    expect(decoded.models?.deepseek?.retry?.attempts).toBe(5)
-    expect(ModelV2.Info.empty(ProviderV2.ID.make("provider"), ModelV2.ID.make("model")).retry?.attempts).toBe(3)
+describe("fixed handoff", () => {
+  test("uses one quick reconnect before the durable circuit routes around the endpoint", () => {
+    expect(maxAttempts()).toBe(DEFAULT_PROVIDER_ATTEMPTS)
   })
 })

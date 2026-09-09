@@ -93,8 +93,7 @@ describe("deadChildMessage — a dead child must not read as a slow one", () => 
   /**
    * 🔴 **A PAUSED child is parked, not slow.** `SessionExecutionAttempt.recoverStale` writes
    * `paused` exactly when `SessionRecoveryDecision.decide` returns `automatic: false`, and
-   * `SessionBootRecovery.resumeInterrupted` filters on `decision.automatic` — so the only thing that
-   * leaves `paused` is `authorizeRetry`, an operator action. Telling the parent "it may still be
+   * A legacy `paused` row can only leave through `authorizeRetry`, an operator action. Telling the parent "it may still be
    * working" is a ten-minute wait loop with no end.
    */
   test("a PAUSED child is terminal, and says so in its own words", () => {

@@ -13,7 +13,6 @@ export type Outcome =
   | { readonly type: "settled" }
   | { readonly type: "failed"; readonly classification: string; readonly detail?: string }
   | { readonly type: "start-timeout" }
-  | { readonly type: "heartbeat-timeout" }
   | { readonly type: "memory-limit"; readonly rssBytes: number; readonly limitBytes: number }
   | { readonly type: "protocol-error"; readonly detail: string }
   | { readonly type: "stale-message" }
@@ -29,6 +28,7 @@ export interface Input {
   readonly force: boolean
   readonly env?: Record<string, string | undefined>
   readonly startupTimeoutMs?: number
+  /** @deprecated Heartbeat silence is observable but never authority to terminate a worker. */
   readonly heartbeatTimeoutMs?: number
   readonly interruptGraceMs?: number
   readonly cleanupTimeoutMs?: number
@@ -116,7 +116,6 @@ export interface Handle {
 }
 
 const STARTUP_TIMEOUT_MS = 15_000
-const HEARTBEAT_TIMEOUT_MS = 15_000
 const INTERRUPT_GRACE_MS = 2_000
 const CLEANUP_TIMEOUT_MS = 2_000
 const MONITOR_INTERVAL_MS = 100
@@ -271,7 +270,6 @@ export function spawn(input: Input): Handle {
   activePIDs.add(childPID)
   installReaper()
   const startedAt = Date.now()
-  let lastHeartbeat = startedAt
   let ready = false
   let done = false
   let interruptRequested = false
@@ -365,14 +363,12 @@ export function spawn(input: Input): Handle {
     switch (message.type) {
       case "ready":
         ready = true
-        lastHeartbeat = Date.now()
         return
       case "heartbeat":
         if (!ready) {
           finish({ type: "protocol-error", detail: "heartbeat arrived before ready" })
           return
         }
-        lastHeartbeat = Date.now()
         if (
           message.rssBytes !== undefined &&
           input.memoryLimitBytes !== undefined &&
@@ -381,10 +377,10 @@ export function spawn(input: Input): Handle {
           finish({ type: "memory-limit", rssBytes: message.rssBytes, limitBytes: input.memoryLimitBytes })
           return
         }
-        if (input.onHeartbeat)
-          void input
-            .onHeartbeat(message, lifetime.signal)
-            .catch(() => finish({ type: "protocol-error", detail: "failed to persist worker heartbeat" }))
+        // A heartbeat is evidence of life, never authority to end it. A transient database write
+        // failure is retried naturally by the next heartbeat; killing useful work because its
+        // liveness receipt could not be recorded inverted the purpose of the mechanism.
+        if (input.onHeartbeat) void input.onHeartbeat(message, lifetime.signal).catch(() => undefined)
         return
       case "settled":
         finish({ type: "settled" })
@@ -650,14 +646,12 @@ export function spawn(input: Input): Handle {
   })
 
   const startupTimeoutMs = input.startupTimeoutMs ?? STARTUP_TIMEOUT_MS
-  const heartbeatTimeoutMs = input.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS
   monitor = setInterval(
     () => {
       const now = Date.now()
       if (!ready && now - startedAt > startupTimeoutMs) finish({ type: "start-timeout" })
-      else if (ready && now - lastHeartbeat > heartbeatTimeoutMs) finish({ type: "heartbeat-timeout" })
     },
-    Math.min(MONITOR_INTERVAL_MS, startupTimeoutMs, heartbeatTimeoutMs),
+    Math.min(MONITOR_INTERVAL_MS, startupTimeoutMs),
   )
   monitor.unref?.()
 

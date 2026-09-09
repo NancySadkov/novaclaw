@@ -13,6 +13,7 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { FileAttachment } from "@novaclaw/core/session/prompt"
 import { ModelHealth } from "@novaclaw/core/session/runner/model-health"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
 import { unreadableTurnAttachments } from "@novaclaw/core/session/runner/to-llm-message"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
@@ -133,7 +134,9 @@ const seedCatalog = (catalog: Catalog.Interface) =>
     })
     editor.model.update(SCRIBE, TEXT, (model) => {
       model.name = "Text"
-      model.capabilities = { tools: true, input: ["text"], output: ["text"] }
+      // A fallback must cover the unavailable model's architectural capabilities. This substitute
+      // retains vision while changing every other per-turn fact exercised below.
+      model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
       model.tier = "micro"
       model.prePrompt = "SCRIBE PRE-PROMPT"
       model.retry = { attempts: 2 }
@@ -160,6 +163,7 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             yield* Reference.Service
             const catalog = yield* Catalog.Service
             const models = yield* SessionRunnerModel.Service
+            const settings = yield* SettingsConfigStore.Service
             yield* seedCatalog(catalog)
 
             // Non-vacuity: both models really are in this location's catalog, so a later
@@ -176,25 +180,23 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             // A vision model may be shown the screenshot — the gate lets it through.
             expect(unreadableTurnAttachments([screenshot], healthyFacts.capabilities)).toEqual([])
 
-            // ── The endpoint dies: two exhausted-retry failures inside ten minutes. ──────────────
+            // ── The endpoint dies: its cross-worker reconnect circuit opens. ────────────────────
             const at = Date.now()
-            ModelHealth.failed(SICK, at)
-            ModelHealth.failed(SICK, at)
-            expect(ModelHealth.sick(SICK, at)).toBe(true)
+            yield* settings.update("provider_recovery", (current) =>
+              ProviderRecovery.failed(ProviderRecovery.decode(current), SICK, at),
+            )
 
             const demoted = yield* models.resolveWithDevice(session)
             expect(named(demoted.ran)).toBe("scribe/text")
+            expect(named((yield* models.resolveWithDevice(session, { requested: true })).ran)).toBe("scribe/text")
             const facts = SessionRunnerModel.perTurnFacts(demoted.ran!)
 
-            // 🔴 THE CONSEQUENCE, through the production predicate. Before the fix the capability
-            // answer was still the SICK model's `["text","image"]`, this returned `[]`, and the
-            // screenshot was lowered as a real media part into a text-only request.
-            expect(unreadableTurnAttachments([screenshot], facts.capabilities).map((file) => file.name)).toEqual([
-              "screenshot.png",
-            ])
+            // The substitute matches the unavailable model's vision requirement, so rerouting does
+            // not silently discard the user's screenshot.
+            expect(unreadableTurnAttachments([screenshot], facts.capabilities)).toEqual([])
 
             // Every fact, each with a value only the SUBSTITUTE has.
-            expect(facts.capabilities?.input).toEqual(["text"])
+            expect(facts.capabilities?.input).toEqual(["text", "image"])
             expect(facts.ref).toEqual({ providerID: SCRIBE, id: TEXT })
             expect(facts.tier).toBe("micro")
             expect(facts.prePrompt).toBe("SCRIBE PRE-PROMPT")

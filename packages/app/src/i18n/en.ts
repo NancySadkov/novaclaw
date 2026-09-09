@@ -1374,17 +1374,6 @@ export const dict = {
   // The heading over the three undo rungs. It exists because this tab now has TWO parts — the health
   // report first, then the ways back — and an unlabelled list under a report would read as more of
   // the report. ENGLISH-ONLY like its neighbours; translate properly or leave it out.
-  // The after-a-crash behaviour switch. Plain language and no jargon: a person opening this tab is
-  // worried, and "resumeInterrupted" / "execution lease" mean nothing to them (principle 12c).
-  "settings.recovery.section.afterCrash": "After a crash",
-  "settings.recovery.row.resumeInterrupted.title": "Pick work back up",
-  "settings.recovery.row.resumeInterrupted.description":
-    "If Nova is interrupted mid-task — a crash, a restart, a power cut — carry on where it left off.",
-  "settings.recovery.row.resumeInterrupted.description.more":
-    "Nova never blindly repeats unfinished actions. If it cannot be sure whether a file or external action finished, " +
-    "the officer first inspects what is actually there, then continues. Anything that has already failed several " +
-    "times in a row still waits for you. Turn this off if you would " +
-    "rather decide every restart yourself; nothing is lost either way, it simply waits.",
   "settings.recovery.section.restore": "Ways back",
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
   "settings.recovery.row.resetUi.description": "Reset how NovaClaw looks and is laid out back to the defaults.",
@@ -2058,6 +2047,10 @@ export const dict = {
   "settings.models.probe.noUrl": "No server address saved",
   "settings.models.probe.error": "Error",
   "settings.models.probe.window": "window",
+  "settings.models.probe.tools.native": "tools native",
+  "settings.models.probe.tools.prompted": "tools prompted",
+  "settings.models.probe.tools.chat-only": "no working tools",
+  "settings.models.probe.tools.unknown": "tools inconclusive",
   // Capability tier — a rough size class NovaClaw uses to decide how much to scaffold a model
   // (and, later, to note in the system prompt). "Guess" = let NovaClaw probe and estimate it.
   "settings.models.tier.label": "Tier",
@@ -2098,7 +2091,7 @@ export const dict = {
   "settings.models.config.description":
     "Set how this model runs. Leave a field blank to use the model's or provider's own default.",
   "settings.models.config.defaultPlaceholder": "default",
-  "settings.models.config.section.identity": "Identity and connection",
+  "settings.models.config.section.identity": "Provider",
   "settings.models.config.providerName.name": "Connection name (optional)",
   "settings.models.config.providerName.desc": "A concise name shown in Nova.",
   "settings.models.config.providerName.desc.more": "Leave it blank to identify this connection by its serving URL.",
@@ -2118,11 +2111,10 @@ export const dict = {
   "settings.models.config.modelID.desc": "The exact model identifier Nova sends to the API.",
   "settings.models.config.modelName.name": "Model name",
   "settings.models.config.modelName.desc": "The friendly name shown in Nova.",
+  "settings.models.config.deviceConcurrency.name": "Device concurrency",
+  "settings.models.config.deviceConcurrency.desc": "Parallel background requests Nova schedules here.",
   "settings.models.config.section.sampling": "Sampling",
-  "settings.models.config.section.limits": "Limits",
-  "settings.models.config.section.reliability": "Connection recovery",
   "settings.models.config.section.capabilities": "Capabilities",
-  "settings.models.config.section.modalities": "What it handles",
   "settings.models.config.section.corrections": "Behaviour corrections",
   "settings.models.config.prePrompt.name": "Model-specific corrections",
   "settings.models.config.prePrompt.desc": "A short note added to every chat with this model.",
@@ -2174,32 +2166,8 @@ export const dict = {
   "settings.models.config.thinkingEffort.value.high": "High",
   "settings.models.config.thinkingEffort.value.xhigh": "Very high",
   "settings.models.config.thinkingEffort.value.max": "Max",
-  "settings.models.config.retryAttempts.name": "Connection attempts",
-  "settings.models.config.retryAttempts.desc":
-    "How patiently NovaClaw reconnects when this model sends no reply or an incomplete reply. Persistent keeps trying for about three minutes.",
   "settings.models.config.tool_call.name": "Tool use",
   "settings.models.config.tool_call.desc": "Let the model use NovaClaw's tools.",
-  "settings.models.config.tool_call.desc.more":
-    "Read and edit files, run commands, search. Turn off for models that can't.",
-  "settings.models.config.toolChannel.name": "How tools are offered",
-  "settings.models.config.toolChannel.native":
-    "This model is handed tools through the endpoint's own tool channel — the usual way, and the one that works when it works.",
-  "settings.models.config.toolChannel.prompted":
-    "This model's endpoint can't carry tool calls properly, so the tools are described in the prompt instead and the calls are read back out of its reply.",
-  "settings.models.config.toolChannel.source.default": "Not tested — using the usual way",
-  "settings.models.config.toolChannel.source.measured": "Chosen by testing this endpoint",
-  "settings.models.config.toolChannel.source.configured": "Set by you, in this model's settings",
-  "settings.models.config.toolChannel.overridden":
-    "Testing said {{channel}}. Your setting is being used instead — clear it to go back to the tested answer.",
-  "settings.models.config.toolChannel.inconclusive.chat-only":
-    "Testing found no working way to offer tools here at all, so the usual way is still being used. Expect the agent to answer rather than act.",
-  "settings.models.config.toolChannel.inconclusive.unknown":
-    "The last test couldn't reach a conclusion, so the usual way is still being used. Try again when the endpoint is up.",
-  "settings.models.config.toolChannel.moved":
-    "This model's address changed since it was tested (it was {{from}}), so the old result no longer applies. Test again.",
-  "settings.models.config.toolChannel.test": "Test what this endpoint can do",
-  "settings.models.config.toolChannel.testing": "Testing — this asks the model a few questions…",
-  "settings.models.config.toolChannel.testFailed": "The test couldn't finish. The endpoint may be down.",
   "settings.models.config.modalities.in.name": "Accepts",
   "settings.models.config.modalities.in.desc": "What you can send this model.",
   "settings.models.config.modalities.out.name": "Produces",
@@ -2226,10 +2194,6 @@ export const dict = {
   "settings.models.config.preset.light": "Light",
   "settings.models.config.preset.moderate": "Moderate",
   "settings.models.config.preset.strong": "Strong",
-  "settings.models.config.preset.once": "Try once",
-  "settings.models.config.preset.quickRecovery": "Quick recovery",
-  "settings.models.config.preset.patientRecovery": "Patient recovery",
-  "settings.models.config.preset.persistentRecovery": "Persistent recovery",
   "settings.models.config.toast.saved": "Model settings saved",
   "settings.models.config.toast.failed": "Couldn't save model settings",
   "settings.models.new.open": "Add models",

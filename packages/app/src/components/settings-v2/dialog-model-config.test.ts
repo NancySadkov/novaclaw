@@ -10,9 +10,7 @@ const caller = fs.readFileSync(path.join(import.meta.dir, "models.tsx"), "utf8")
 /** ⚠️ The preset TABLE now lives here, not in the dialog: it was lifted into a shared module so the
  *  Affective settings tab could sell temperature the same way. The recovery test below scans this
  *  file, because scanning the dialog would silently pass on a file that no longer holds the table. */
-const presets = fs.readFileSync(path.join(import.meta.dir, "parts", "preset-value.ts"), "utf8")
-
-describe("Model Configure — identity and connection", () => {
+describe("Model Configure — Provider", () => {
   test("shows the connection name, resolved API path, wire model ID, and friendly name", () => {
     expect(source).toContain('apiPath: providerCfg().api?.url ?? props.providerApi.url ?? ""')
     expect(source).toContain("providerName: customProviderName()")
@@ -65,24 +63,33 @@ describe("Model Configure — identity and connection", () => {
     expect(en["settings.models.config.providerName.desc.more"]).toContain("serving URL")
   })
 
-  test("has human labels for all identity fields", () => {
-    for (const key of ["providerName", "apiPath", "modelID", "modelName"])
+  test("has human labels for all provider fields", () => {
+    for (const key of ["providerName", "apiPath", "modelID", "modelName", "deviceConcurrency"])
       for (const suffix of ["name", "desc"]) expect(`settings.models.config.${key}.${suffix}` in en).toBe(true)
+  })
+
+  test("stores concurrency on the Device governing the provider endpoint", () => {
+    expect(source).toContain("deviceForEndpoint(initialDevices")
+    expect(source).toContain("availableDeviceID(props.providerID, devices)")
+    expect(source).toContain("concurrency: Math.max(1, Math.floor(concurrency))")
+    expect(en["settings.models.config.section.identity"]).toBe("Provider")
   })
 })
 
-describe("Model Configure — recovery", () => {
-  test("offers named recovery postures and explains the longest outage window", () => {
-    for (const [word, attempts] of [
-      ["once", 1],
-      ["quickRecovery", 3],
-      ["patientRecovery", 5],
-      ["persistentRecovery", 10],
-    ] as const) {
-      expect(presets).toContain(`{ word: "${word}", num: ${attempts} }`)
-      expect(`settings.models.config.preset.${word}` in en).toBe(true)
-    }
-    expect(en["settings.models.config.retryAttempts.desc"]).toContain("about three minutes")
+describe("Model Configure — compact capability taxonomy", () => {
+  test("puts modalities and limits in Capabilities and has no recovery or tool-channel section", () => {
+    expect(source).toContain('{section("capabilities")}')
+    expect(source).not.toContain('{section("limits")}')
+    expect(source).not.toContain('{section("modalities")}')
+    expect(source).not.toContain('{section("reliability")}')
+    expect(source).not.toContain('data-action="tool-channel-test"')
+    expect(source).not.toContain('paramRow("retryAttempts")')
+  })
+
+  test("the ordinary model Test negotiates and reports tool use", () => {
+    expect(caller).toContain("capabilities: true")
+    expect(caller).toContain("result.capabilities.choice")
+    expect(en["settings.models.probe.tools.native"]).toBe("tools native")
   })
 })
 

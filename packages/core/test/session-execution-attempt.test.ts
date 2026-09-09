@@ -216,11 +216,11 @@ describe("SessionExecutionAttempt", () => {
 
       const repeated = yield* attempts.start(sessionID, "worker-3")
       expect(yield* attempts.recoverFailure(repeated, { classification: "start-timeout" })).toEqual({
-        action: "pause",
-        reason: "repeated-failure",
-        automatic: false,
+        action: "retry",
+        reason: "before-side-effect",
+        automatic: true,
       })
-      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "paused", failureCount: 3 })
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering", failureCount: 3 })
 
       const replacement = yield* attempts.start(sessionID, "worker-4")
       expect(yield* attempts.recoverFailure(repeated, { classification: "late-stale" })).toBeUndefined()
@@ -293,9 +293,8 @@ describe("SessionExecutionAttempt", () => {
   /**
    * `cancellation` — the crash matrix's second pinned gap
    * (`session-recovery-matrix.test.ts`). A user stopping a turn mid-tool is NOT a loss, and the
-   * difference is the failure budget: a loss increments it and eventually opens the per-session
-   * circuit breaker, so treating stops as losses would let three ordinary cancellations pause a
-   * session the user never broke.
+   * difference is the failure counter: a loss increments it and lengthens recovery backoff, so
+   * treating stops as losses would make ordinary cancellations delay later recovery.
    *
    * `execution/local.ts:102` already routes an interrupt to `settle(…, "interrupted")` rather than
    * `recoverFailure`, which is the correct half. Nothing pinned it, so nothing would notice if a
@@ -328,9 +327,7 @@ describe("SessionExecutionAttempt", () => {
       const after = yield* attempts.get(sessionID)
       // One durable terminal state, and it is the one that names what happened.
       expect(after?.state).toBe("interrupted")
-      // ⚠️ THE assertion. Three stops must not pause a session: `FAILURE_LIMIT` is 3, so a stop that
-      // spent the budget would open the breaker on the third cancellation of a perfectly healthy
-      // session, and the report would call it repeated failure.
+      // A deliberate stop must not lengthen recovery for a later involuntary process loss.
       expect(after?.failureCount, "a user stop must not spend the failure budget").toBe(0)
 
       const row = yield* db
@@ -344,9 +341,8 @@ describe("SessionExecutionAttempt", () => {
       expect(row?.provider_recovery, "a user stop must not be recovered as process loss").toBeNull()
 
       // ⚠️ THE negative control, and the reason this test is not just the assertion above. The fix
-      // narrows WHICH states charge the budget, so a version that simply stopped counting would
-      // pass everything above while quietly disabling the circuit breaker. A real failure must
-      // still cost — otherwise a genuinely broken session retries forever.
+      // narrows WHICH states charge the counter, so a version that simply stopped counting would
+      // pass everything above while quietly disabling retry pacing. A real failure still costs.
       const failing = SessionSchema.ID.make("ses_cancel_control")
       yield* makeSession(failing)
       const failLease = yield* attempts.start(failing, "host-a")

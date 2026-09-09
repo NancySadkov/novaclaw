@@ -2,16 +2,13 @@ export * as SessionRecoveryDecision from "./recovery-decision"
 
 import type { SessionExecutionAttempt } from "./execution-attempt"
 
-export const FAILURE_LIMIT = 3
-
-export type Action = "retry" | "continue" | "inspect" | "pause"
+export type Action = "retry" | "continue" | "inspect"
 export type Reason =
   | "before-side-effect"
   | "partial-provider-output"
   | "settled-tool"
   | "replay-safe-tool"
   | "outcome-unknown"
-  | "repeated-failure"
 
 export interface Decision {
   readonly action: Action
@@ -19,10 +16,9 @@ export interface Decision {
   readonly automatic: boolean
 }
 
-/** Pure recovery policy over the durable boundary. The caller supplies the failure count INCLUDING
- * the loss being classified. An uncertain tool is never replayed: the replacement turn receives a
- * grounded inspection steer and continues from the durable transcript. Only the circuit breaker
- * suppresses automatic recovery, so one process loss cannot silently end the user's task. */
+/** Pure recovery policy over the durable boundary. An uncertain tool is never replayed: the
+ * replacement turn receives a grounded inspection steer and continues from the durable transcript.
+ * Process loss never has authority to stop a session; the executor paces repeated recovery. */
 export function decide(input: {
   readonly phase: SessionExecutionAttempt.Phase
   readonly checkpointed: boolean
@@ -30,8 +26,6 @@ export function decide(input: {
   readonly toolSideEffect?: SessionExecutionAttempt.ToolSideEffect
   readonly toolState?: "dispatched" | "settled"
 }): Decision {
-  if (input.failureCount >= FAILURE_LIMIT) return { action: "pause", reason: "repeated-failure", automatic: false }
-
   if (input.phase === "tool") {
     // A read has no side effect to duplicate. Every other unsettled call CONTINUES through a fresh
     // model turn which is explicitly told to inspect actual state first; it does not replay the old
