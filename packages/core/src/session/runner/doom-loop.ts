@@ -169,6 +169,16 @@ export const EMPTY_TURN_RECOVERY =
   "Your last turn ended with no reply and no tool call. If you meant to call a tool and it did not " +
   "run, issue it again now as a proper tool call. Otherwise finish with a short, verified summary."
 
+/**
+ * The same stall recovery for a Pure Chat (`shortChat`) session, worded WITHOUT tools. A shortChat
+ * turn has no tool horizon at all (`ShortChat.offered` withdraws every name), so the tool clause
+ * above points at a mechanism the model cannot have — the fault it names cannot be the one it saw.
+ * The recovery itself stays: an empty turn is a provider-plane stall (a thinking model whose reply
+ * landed entirely in the reasoning channel), and the user is owed the answer either way.
+ */
+export const EMPTY_TURN_RECOVERY_CHAT =
+  "Your last turn ended with no reply at all. Answer the user's message now, in plain text."
+
 // After two CONSECUTIVE empty turns the re-prompt isn't working — surface a user-facing diagnostic
 // naming the server-side fix, because the fault is almost certainly the model server's config.
 export const EMPTY_TURN_DIAGNOSTIC =

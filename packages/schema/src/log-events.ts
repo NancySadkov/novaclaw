@@ -2180,6 +2180,10 @@ export const EVENTS = {
       "session.id": "correlate",
       "session.finish.empty": "flag",
       "session.finish.announced": "flag",
+      // Was this turn OFFERED any tool? The tool-call recoveries (announced, textual) are gated on
+      // it — a Pure Chat turn has none, and a nudge to call a tool it was never given is the
+      // Xenia defect. Logged so a run can tell "detector said no" from "gate withheld the nudge".
+      "session.finish.tools": "flag",
       "session.finish.calls": "count",
     },
     content: "correlated",

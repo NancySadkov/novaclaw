@@ -110,6 +110,7 @@ import {
   shouldReground,
   ANNOUNCED_TOOL_RECOVERY,
   EMPTY_TURN_RECOVERY,
+  EMPTY_TURN_RECOVERY_CHAT,
   EMPTY_TURN_DIAGNOSTIC,
   REGROUND_NUDGE,
 } from "./doom-loop"
@@ -3560,7 +3561,13 @@ export const layer = Layer.effect(
       // QE-A: quality mode with NO provisioned commands is inert — steer ONCE per session
       // to run the provisioner (deterministic manifest scan → verify → write project config).
       // Once-per-session, so the drain-entry view is the right one to judge it on.
+      // ⚠️ The sibling gate `qualityOn` applies below (`!ShortChat.enabled`) was missing HERE, so a
+      // Pure Chat session on an instance with quality enabled was steered to run the provisioner —
+      // a tool call it can never make (`ShortChat.offered` withdraws every name; the permission
+      // floor denies every action). Same class as the announced-tool nudge Xenia hit: an agentic
+      // intervention fired at a session with no tool horizon.
       if (
+        !ShortChat.enabled(handoff.shortChat) &&
         (handoff.quality ?? entryHarness.quality.enabled) &&
         !Object.values(entryHarness.quality.commands).some(Boolean) &&
         !provisionNudged.has(input.sessionID)
@@ -3790,11 +3797,24 @@ export const layer = Layer.effect(
             // cannot reconstruct that absence. An empty first response remains a provider failure;
             // there is no completed work for a completion auditor to judge.
             const finishEmpty = (result.emptyResponse && finishCalls > 0) || isEmptyAssistantTurn(context)
-            const finishAnnounced = announcedToolButCalledNone(context)
+            // 🔴 A "go call that tool" recovery PRESUMES the model was GIVEN tools this turn. Pure
+            // Chat (`shortChat`) materializes none — `ShortChat.offered` withdraws every name — so
+            // `offeredTools` is the provider-local fact that no tool-call recovery has anything to
+            // point at. Measured on Xenia: an ordinary chat reply ending "Let me check that."
+            // matched the announce heuristic and was steered to issue a tool call she cannot have —
+            // the same class as the QE-A provision nudge, an agentic intervention aimed at a
+            // session with no tool horizon. The fact gates this arm AND the textual-call recovery
+            // below (whose json-fence / tag / repeat / prose cues fire without consulting the
+            // offered list). A tool-bearing agent's ordinary turn always materializes tools, so
+            // this changes nothing for it; the step-capped turn (`isLastStep`) materializes none,
+            // and a model given no tools this turn cannot be nudged to call one.
+            const toolHorizon = result.offeredTools.length > 0
+            const finishAnnounced = toolHorizon && announcedToolButCalledNone(context)
             yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
               "session.finish.empty": finishEmpty,
               "session.finish.announced": finishAnnounced,
+              "session.finish.tools": toolHorizon,
               "session.finish.calls": finishCalls,
             })
             if (finishEmpty) {
@@ -3824,7 +3844,11 @@ export const layer = Layer.effect(
                   db,
                   events,
                   input.sessionID,
-                  finishCalls > 0 ? FinishAudit.nudge(audit) : EMPTY_TURN_RECOVERY,
+                  finishCalls > 0
+                    ? FinishAudit.nudge(audit)
+                    : ShortChat.enabled(handoff.shortChat)
+                      ? EMPTY_TURN_RECOVERY_CHAT
+                      : EMPTY_TURN_RECOVERY,
                 )
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
@@ -3864,7 +3888,11 @@ export const layer = Layer.effect(
               // invented adhoc-tool JSON, a repeated <thinking> block) and the run reporting SUCCESS having
               // done nothing — fatal for an unattended scheduled agent. Steer once; never execute what it
               // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
-              if (!textualNudged) {
+              if (!textualNudged && toolHorizon) {
+                // ⚠️ `toolHorizon`: `detect` consults the offered list only for the fenced-tool cue —
+                // the json-fence, literal-tag, repeated-block and prose cues fire on a session with
+                // ZERO tools offered, and the recovery message then demands "Issue the call
+                // properly now" of a model that has no calls to issue. Same gate as the announced arm.
                 // Use the exact names this provider turn received. Re-materializing here would lose
                 // the turn's agent permissions and model route, and could nudge the model to call a
                 // tool that its own horizon never contained.
