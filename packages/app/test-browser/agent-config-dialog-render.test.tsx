@@ -239,6 +239,18 @@ describe("AgentConfigDialog renders", () => {
     expect(dialogText()).toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
     expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
+    expect(document.querySelector('[data-action="agent-clear-memory"]')).not.toBeNull()
+  })
+
+  test("portrait selection is a readable button with its filename separate", async () => {
+    mount({ agents: [AGENT] })
+    await settle()
+    const input = document.querySelector<HTMLInputElement>("#agent-portrait-file")
+    const label = document.querySelector<HTMLLabelElement>('label[for="agent-portrait-file"]')
+    expect(input).not.toBeNull()
+    expect(input!.classList.contains("sr-only")).toBe(true)
+    expect(label?.textContent).toContain("agentConfig.portraitChoose")
+    expect(dialogText()).toContain("agentConfig.portraitNone")
   })
 
   test("D2 · the model select shows the colleague's BOUND model, not Inherit", async () => {

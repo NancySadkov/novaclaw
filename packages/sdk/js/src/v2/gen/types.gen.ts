@@ -13057,6 +13057,247 @@ export type V2MemoryFeedbackResponses = {
 
 export type V2MemoryFeedbackResponse = V2MemoryFeedbackResponses[keyof V2MemoryFeedbackResponses]
 
+export type V2WorldMemoryListData = {
+  body: {
+    scopes?: Array<string>
+    kinds?: Array<string>
+    statuses?: Array<string>
+    includeInvalid?: boolean
+    limit?: number
+    offset?: number
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/list"
+}
+
+export type V2WorldMemoryListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryListError = V2WorldMemoryListErrors[keyof V2WorldMemoryListErrors]
+
+export type V2WorldMemoryListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    kind: string
+    text: string
+    name: string | null
+    scope: string
+    source: string | null
+    confidence: number | null
+    relation: string
+    status: string
+    subject: string | null
+    predicate: string | null
+    conflictKey: string | null
+    supersededBy: string | null
+    evidence: string | null
+    evidenceKind: string | null
+  }>
+}
+
+export type V2WorldMemoryListResponse = V2WorldMemoryListResponses[keyof V2WorldMemoryListResponses]
+
+export type V2WorldMemoryGraphData = {
+  body: {
+    scopes?: Array<string>
+    limit?: number
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/graph"
+}
+
+export type V2WorldMemoryGraphErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryGraphError = V2WorldMemoryGraphErrors[keyof V2WorldMemoryGraphErrors]
+
+export type V2WorldMemoryGraphResponses = {
+  /**
+   * Success
+   */
+  200: {
+    nodes: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string | null
+      scope: string
+      source: string | null
+      confidence: number | null
+      relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
+    }>
+    edges: Array<{
+      from: string
+      to: string
+      type: string
+    }>
+    slice: {
+      partial: boolean
+      total: number
+      returned: number
+      omitted: number
+      reason: "complete" | "connected-first" | "scan-capped"
+    }
+  }
+}
+
+export type V2WorldMemoryGraphResponse = V2WorldMemoryGraphResponses[keyof V2WorldMemoryGraphResponses]
+
+export type V2WorldMemoryClearScopeData = {
+  body: {
+    scope: string
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/clear-scope"
+}
+
+export type V2WorldMemoryClearScopeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryClearScopeError = V2WorldMemoryClearScopeErrors[keyof V2WorldMemoryClearScopeErrors]
+
+export type V2WorldMemoryClearScopeResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2WorldMemoryClearScopeResponse = V2WorldMemoryClearScopeResponses[keyof V2WorldMemoryClearScopeResponses]
+
+export type V2WorldMemoryInvalidateData = {
+  body: {
+    id: string
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/invalidate"
+}
+
+export type V2WorldMemoryInvalidateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryInvalidateError = V2WorldMemoryInvalidateErrors[keyof V2WorldMemoryInvalidateErrors]
+
+export type V2WorldMemoryInvalidateResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2WorldMemoryInvalidateResponse = V2WorldMemoryInvalidateResponses[keyof V2WorldMemoryInvalidateResponses]
+
+export type V2WorldMemoryClaimStatusData = {
+  body: {
+    id: string
+    status: "active" | "archived" | "needs_review"
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/claim/status"
+}
+
+export type V2WorldMemoryClaimStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryClaimStatusError = V2WorldMemoryClaimStatusErrors[keyof V2WorldMemoryClaimStatusErrors]
+
+export type V2WorldMemoryClaimStatusResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2WorldMemoryClaimStatusResponse =
+  V2WorldMemoryClaimStatusResponses[keyof V2WorldMemoryClaimStatusResponses]
+
+export type V2WorldMemoryFeedbackData = {
+  body: {
+    id: string
+    useful: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/feedback"
+}
+
+export type V2WorldMemoryFeedbackErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryFeedbackError = V2WorldMemoryFeedbackErrors[keyof V2WorldMemoryFeedbackErrors]
+
+export type V2WorldMemoryFeedbackResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2WorldMemoryFeedbackResponse = V2WorldMemoryFeedbackResponses[keyof V2WorldMemoryFeedbackResponses]
+
 export type V2WorldMemoryEraseData = {
   body?: never
   path?: never

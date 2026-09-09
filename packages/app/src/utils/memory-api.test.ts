@@ -1,7 +1,15 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import type { ServerConnection } from "@/context/server"
 import { InstanceFetchError } from "@/utils/instance-fetch"
-import { memoryClearScopeVerified, memoryEraseVerified, memoryExport, memoryProtection } from "@/utils/memory-api"
+import {
+  memoryClearScopeVerified,
+  memoryEraseVerified,
+  memoryExport,
+  memoryProtection,
+  worldMemoryClearScopeVerified,
+  worldMemoryGraph,
+  worldMemoryList,
+} from "@/utils/memory-api"
 
 const server: ServerConnection.HttpBase = { url: "http://instance.test:4096" }
 const realFetch = globalThis.fetch
@@ -69,6 +77,56 @@ describe("scoped clear propagation", () => {
       memoryClearScopeVerified(server, { directory: "C:/work", scope: "session:chat" }),
     ).rejects.toBeInstanceOf(InstanceFetchError)
   })
+
+  test("an officer clear uses the world model and verifies the exact cabinet is empty", async () => {
+    answer = (path, body) => {
+      if (path === "/api/world-memory/clear-scope" && (body as { scope?: string }).scope === "agent:daedalus")
+        return Response.json(true)
+      if (path === "/api/world-memory/list") return Response.json([])
+      return Response.json({ message: "wrong request" }, { status: 500 })
+    }
+
+    await expect(
+      worldMemoryClearScopeVerified(server, { directory: "C:/work", scope: "agent:daedalus" }),
+    ).resolves.toBeUndefined()
+    expect(seen).toEqual([
+      { path: "/api/world-memory/clear-scope", body: { scope: "agent:daedalus" } },
+      {
+        path: "/api/world-memory/list",
+        body: { scopes: ["agent:daedalus"], includeInvalid: true, limit: 1 },
+      },
+    ])
+  })
+
+  test("an officer clear is not reported successful while a memory remains", async () => {
+    answer = (path) =>
+      path === "/api/world-memory/clear-scope" ? Response.json(true) : Response.json([{ id: "mem_survivor" }])
+    await expect(
+      worldMemoryClearScopeVerified(server, { directory: "C:/work", scope: "agent:daedalus" }),
+    ).rejects.toThrow("still contains memories")
+  })
+})
+
+test("officer list and map reads use the automatic world model contract", async () => {
+  answer = () => Response.json([])
+  await worldMemoryList(server, { directory: "C:/work", scopes: ["agent:daedalus"], limit: 200 })
+  answer = () =>
+    Response.json({
+      nodes: [],
+      edges: [],
+      slice: { partial: false, total: 0, returned: 0, omitted: 0, reason: "complete" },
+    })
+  await worldMemoryGraph(server, { directory: "C:/work", scopes: ["agent:daedalus"], limit: 600 })
+  expect(seen).toEqual([
+    {
+      path: "/api/world-memory/list",
+      body: { scopes: ["agent:daedalus"], limit: 200 },
+    },
+    {
+      path: "/api/world-memory/graph",
+      body: { scopes: ["agent:daedalus"], limit: 600 },
+    },
+  ])
 })
 
 test("protection reads batch every id without treating a truncated answer as unprotected", async () => {

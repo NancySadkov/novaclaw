@@ -17,9 +17,13 @@ import type { Diagnosis, DiagnosisSignal } from "@/utils/resource-api"
  * Both end at the same calm sentence, and neither may end at the empty cabinet.
  */
 export const MEMORY_SIGNAL = "memory"
+export const WORLD_MEMORY_SIGNAL = "world-memory"
 
 export const memorySignal = (diagnosis: Diagnosis | undefined): DiagnosisSignal | undefined =>
   diagnosis?.signals.find((signal) => signal.id === MEMORY_SIGNAL)
+
+export const worldMemorySignal = (diagnosis: Diagnosis | undefined): DiagnosisSignal | undefined =>
+  diagnosis?.signals.find((signal) => signal.id === WORLD_MEMORY_SIGNAL)
 
 /**
  * `true` only when the board says PROBLEM.
@@ -31,9 +35,19 @@ export const memorySignal = (diagnosis: Diagnosis | undefined): DiagnosisSignal 
 export const memoryUnavailable = (diagnosis: Diagnosis | undefined): boolean =>
   memorySignal(diagnosis)?.status === "problem"
 
+export const worldMemoryUnavailable = (diagnosis: Diagnosis | undefined): boolean =>
+  worldMemorySignal(diagnosis)?.status === "problem"
+
 /** The engine's own words for why, when the board carried them. */
 export const memoryFaultDetail = (diagnosis: Diagnosis | undefined): string | undefined => {
   const signal = memorySignal(diagnosis)
+  if (signal?.status !== "problem") return undefined
+  const detail = signal.detail?.trim()
+  return detail && detail.length > 0 ? detail : undefined
+}
+
+export const worldMemoryFaultDetail = (diagnosis: Diagnosis | undefined): string | undefined => {
+  const signal = worldMemorySignal(diagnosis)
   if (signal?.status !== "problem") return undefined
   const detail = signal.detail?.trim()
   return detail && detail.length > 0 ? detail : undefined

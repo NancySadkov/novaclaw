@@ -121,6 +121,74 @@ export const MemoryHandler = handlerLayer(
             }),
           )
           .handle(
+            "world-memory.list",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              return yield* asBadRequest(
+                worldMemory.list({
+                  ...(ctx.payload.scopes === undefined ? {} : { scopes: ctx.payload.scopes }),
+                  ...(ctx.payload.kinds === undefined ? {} : { kinds: ctx.payload.kinds as never }),
+                  ...(ctx.payload.statuses === undefined ? {} : { statuses: ctx.payload.statuses as never }),
+                  ...(ctx.payload.includeInvalid === undefined ? {} : { includeInvalid: ctx.payload.includeInvalid }),
+                  ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
+                  ...(ctx.payload.offset === undefined ? {} : { offset: ctx.payload.offset }),
+                }),
+              )
+            }),
+          )
+          .handle(
+            "world-memory.graph",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              return yield* asBadRequest(
+                worldMemory.graph({
+                  ...(ctx.payload.scopes === undefined ? {} : { scopes: ctx.payload.scopes }),
+                  ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
+                }),
+              )
+            }),
+          )
+          .handle(
+            "world-memory.clearScope",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              yield* asBadRequest(worldMemory.clearScope(ctx.payload.scope))
+              return true
+            }),
+          )
+          .handle(
+            "world-memory.invalidate",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              yield* asBadRequest(worldMemory.invalidate(ctx.payload.id, MemoryAccess.owner()))
+              return true
+            }),
+          )
+          .handle(
+            "world-memory.claim.status",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              return yield* asBadRequest(
+                worldMemory.setClaimStatus(ctx.payload.id, ctx.payload.status, MemoryAccess.owner()),
+              )
+            }),
+          )
+          .handle(
+            "world-memory.feedback",
+            Effect.fn(function* (ctx) {
+              const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+              const row = (yield* asBadRequest(worldMemory.byIds([ctx.payload.id])))[0]
+              if (!row) return yield* Effect.fail(new InvalidRequestError({ message: "That memory is unavailable" }))
+              yield* MemoryAccessLedger.feedback(db, {
+                id: ctx.payload.id,
+                useful: ctx.payload.useful,
+                at: Date.now(),
+                scope: row.scope,
+              }).pipe(Effect.mapError(() => new InvalidRequestError({ message: "Could not save memory protection" })))
+              return true
+            }),
+          )
+          .handle(
             "world-memory.erase",
             Effect.fn(function* () {
               const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)

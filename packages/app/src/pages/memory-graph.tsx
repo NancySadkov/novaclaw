@@ -9,8 +9,8 @@ import * as Timestamp from "@novaclaw/schema/time"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import {
-  memoryClaimStatus,
-  memoryGraph,
+  worldMemoryClaimStatus,
+  worldMemoryGraph,
   memoryUsageDetail,
   type MemoryGraph,
   type MemoryRow,
@@ -19,7 +19,7 @@ import {
 } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { showToast } from "@/utils/toast"
-import { memoryFaultDetail, memoryUnavailable } from "@/utils/memory-health"
+import { worldMemoryFaultDetail, worldMemoryUnavailable } from "@/utils/memory-health"
 import {
   defaultFilter,
   describeScope,
@@ -263,7 +263,7 @@ export function MemoryGraphPage() {
     const next = row.status === "archived" ? "active" : "archived"
     setLifecycleBusy(id)
     try {
-      const moved = await memoryClaimStatus(cn.http, { directory: directory(), id, status: next })
+      const moved = await worldMemoryClaimStatus(cn.http, { directory: directory(), id, status: next })
       if (!moved)
         showToast({
           variant: "error",
@@ -311,7 +311,7 @@ export function MemoryGraphPage() {
       return cn && scopes ? { cn, dir: directory(), scopes, t: tick() } : undefined
     },
     ({ cn, dir, scopes }): Promise<GraphLoad> =>
-      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes })
+      worldMemoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes })
         .then((graph) => ({ status: "ready", graph }) as const)
         .catch((error) => ({ status: "unavailable", fault: graphFault(error) }) as const),
   )
@@ -360,8 +360,8 @@ export function MemoryGraphPage() {
   const fault = (): GraphFault | undefined => {
     const transport = transportFault()
     if (transport) return transport
-    if (!memoryUnavailable(health())) return undefined
-    const detail = memoryFaultDetail(health())
+    if (!worldMemoryUnavailable(health())) return undefined
+    const detail = worldMemoryFaultDetail(health())
     return { reason: detail ?? "The memory engine is not running on this instance.", retryable: true }
   }
   /** One user action, two refreshes: re-ask the engine, then re-read the board it feeds. */

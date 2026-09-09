@@ -20,7 +20,7 @@ import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
-import { memoryList } from "@/utils/memory-api"
+import { worldMemoryClearScopeVerified, worldMemoryList } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
@@ -110,7 +110,7 @@ export function AgentConfigDialog(props: {
       return current && id ? { cn: current, id, dir: sync().data.path?.directory ?? "" } : undefined
     },
     ({ cn, id, dir }) =>
-      memoryList(cn.http, { directory: dir, scopes: [`agent:${id}`], limit: MEMORY_COUNT_CAP })
+      worldMemoryList(cn.http, { directory: dir, scopes: [`agent:${id}`], limit: MEMORY_COUNT_CAP })
         .then((rows) => rows.length)
         .catch(() => undefined),
   )
@@ -287,7 +287,7 @@ export function AgentConfigDialog(props: {
     avatarFile() !== undefined ||
     avatarRemoved()
 
-  const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | "pause" | undefined>()
+  const [busy, setBusy] = createSignal<"clone" | "clear" | "clear-memory" | "retire" | "pause" | undefined>()
 
   const sdk = () => ctx()?.sdk.client.v2
 
@@ -449,6 +449,39 @@ export function AgentConfigDialog(props: {
       }
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  /** Clear the colleague's private filing cabinet, without touching its identity, brief or chat. */
+  const clearMemory = async () => {
+    const id = props.agentID
+    const current = conn()
+    if (id === undefined || current === undefined) return
+    if (
+      !(await confirm({
+        title: language.t("agentConfig.memoryClear.confirm.title", { name: name() }),
+        description: language.t("agentConfig.memoryClear.confirm.description", { name: name() }),
+        confirmLabel: language.t("agentConfig.memoryClear.confirm.action"),
+        destructive: true,
+      }))
+    )
+      return
+    setBusy("clear-memory")
+    try {
+      await worldMemoryClearScopeVerified(current.http, {
+        directory: sync().data.path?.directory ?? "",
+        scope: `agent:${id}`,
+      })
+      showToast({ variant: "success", title: language.t("agentConfig.memoryClear.done", { name: name() }) })
+      props.onChanged?.()
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("agentConfig.memoryClear.failed", { name: name() }),
+        description: String(error),
+      })
     } finally {
       setBusy(undefined)
     }
@@ -692,6 +725,17 @@ export function AgentConfigDialog(props: {
             >
               {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
             </button>
+            <button
+              type="button"
+              data-action="agent-clear-memory"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={busy() !== undefined || props.agentID === undefined}
+              onClick={() => void clearMemory()}
+            >
+              {busy() === "clear-memory"
+                ? language.t("agentConfig.memoryClearing")
+                : language.t("agentConfig.clearMemory")}
+            </button>
             {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
                 while `planClone` remains the enforcement seam for every caller. */}
             <button
@@ -808,20 +852,32 @@ export function AgentConfigDialog(props: {
               </label>
               {/* Why this is a profile field and not something you type into the chat. */}
             </Show>
-            <label class="mt-3 block text-xs text-v2-text-text-muted">
+            <div class="mt-3 text-xs text-v2-text-text-muted">
               {language.t("agentConfig.portrait")}
               <span class="mt-1 block text-[11px] text-v2-text-text-faint">
                 {language.t("agentConfig.portraitHint")}
               </span>
-              <input
-                class="mt-2 block w-full text-xs"
-                type="file"
-                accept={[...AGENT_AVATAR_TYPES].join(",")}
-                onChange={(event) => {
-                  setAvatarFile(event.currentTarget.files?.[0])
-                  setAvatarRemoved(false)
-                }}
-              />
+              <div class="mt-2 flex min-w-0 items-center gap-2">
+                <label
+                  for="agent-portrait-file"
+                  class="inline-flex shrink-0 cursor-pointer items-center rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
+                >
+                  {language.t("agentConfig.portraitChoose")}
+                </label>
+                <span class="min-w-0 truncate text-xs text-v2-text-text-faint">
+                  {avatarFile()?.name ?? language.t("agentConfig.portraitNone")}
+                </span>
+                <input
+                  id="agent-portrait-file"
+                  class="sr-only"
+                  type="file"
+                  accept={[...AGENT_AVATAR_TYPES].join(",")}
+                  onChange={(event) => {
+                    setAvatarFile(event.currentTarget.files?.[0])
+                    setAvatarRemoved(false)
+                  }}
+                />
+              </div>
               <Show when={isAgentPortraitURL(agent()?.avatar) || avatarFile() !== undefined}>
                 <button
                   type="button"
@@ -834,7 +890,7 @@ export function AgentConfigDialog(props: {
                   {language.t("agentConfig.portraitRemove")}
                 </button>
               </Show>
-            </label>
+            </div>
           </section>
 
           <section class="mt-5">
@@ -1172,6 +1228,17 @@ export function AgentConfigDialog(props: {
             onClick={() => void clearChat()}
           >
             {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
+          </button>
+          <button
+            type="button"
+            data-action="agent-clear-memory"
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={busy() !== undefined || props.agentID === undefined}
+            onClick={() => void clearMemory()}
+          >
+            {busy() === "clear-memory"
+              ? language.t("agentConfig.memoryClearing")
+              : language.t("agentConfig.clearMemory")}
           </button>
           <button
             type="button"

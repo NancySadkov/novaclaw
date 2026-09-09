@@ -958,13 +958,25 @@ function ImportPanel(props: {
 
       <section class={CARD} data-slot="recipe-import-archive">
         <h2 class={LABEL}>{language.t("recipes.page.completeRecipeFolder")}</h2>
-        <input
-          class="mt-2 block w-full text-sm text-v2-text-text-muted"
-          type="file"
-          accept=".zip,application/zip"
-          data-action="recipe-import-archive-file"
-          onChange={(event) => props.onFile(event.currentTarget.files?.[0])}
-        />
+        <div class="mt-2 flex min-w-0 items-center gap-2">
+          <label
+            for="recipe-import-archive-file"
+            class="inline-flex shrink-0 cursor-pointer items-center rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-sm font-medium text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
+          >
+            Choose archive
+          </label>
+          <span class="min-w-0 truncate text-sm text-v2-text-text-muted">
+            {props.file?.name ?? "No archive chosen"}
+          </span>
+          <input
+            id="recipe-import-archive-file"
+            class="sr-only"
+            type="file"
+            accept=".zip,application/zip"
+            data-action="recipe-import-archive-file"
+            onChange={(event) => props.onFile(event.currentTarget.files?.[0])}
+          />
+        </div>
         <p class="mt-1 text-xs text-v2-text-text-faint">
           Up to {MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB compressed. NovaClaw checks paths, file count, expanded size
           and checksums before the folder appears.

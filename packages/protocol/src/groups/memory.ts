@@ -43,6 +43,28 @@ const MemoryRow = Schema.Struct({
   evidenceKind: Schema.NullOr(Schema.String),
 })
 
+const MemoryEdge = Schema.Struct({ from: Schema.String, to: Schema.String, type: Schema.String })
+const MemoryGraph = Schema.Struct({
+  nodes: Schema.Array(MemoryRow),
+  edges: Schema.Array(MemoryEdge),
+  slice: Schema.Struct({
+    partial: Schema.Boolean,
+    total: Schema.Finite,
+    returned: Schema.Finite,
+    omitted: Schema.Finite,
+    reason: Schema.Literals(["complete", "connected-first", "scan-capped"]),
+  }),
+})
+
+const WorldMemoryFilter = Schema.Struct({
+  scopes: Schema.optional(Schema.Array(Schema.String)),
+  kinds: Schema.optional(Schema.Array(Schema.String)),
+  statuses: Schema.optional(Schema.Array(Schema.String)),
+  includeInvalid: Schema.optional(Schema.Boolean),
+  limit: Schema.optional(Schema.Finite),
+  offset: Schema.optional(Schema.Finite),
+})
+
 const UsageCounts = Schema.Struct({
   accesses: Schema.Finite,
   uses: Schema.Finite,
@@ -367,7 +389,8 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
       OpenApi.annotations({
         identifier: "v2.memory.protection",
         summary: "Read memory protection",
-        description: "Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.",
+        description:
+          "Complete protection state for up to 500 requested memories. A store failure is an error, never an unprotected result.",
       }),
     ),
   )
@@ -401,6 +424,87 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
     }),
   )
   .add(
+    HttpApiEndpoint.post("world-memory.list", "/api/world-memory/list", {
+      payload: WorldMemoryFilter,
+      success: Schema.Array(MemoryRow),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.list",
+        summary: "List agent memories",
+        description: "List the automatic memories held by agents and chats, filtered by cabinet scope.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.graph", "/api/world-memory/graph", {
+      payload: Schema.Struct({
+        scopes: Schema.optional(Schema.Array(Schema.String)),
+        limit: Schema.optional(Schema.Finite),
+      }),
+      success: MemoryGraph,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.graph",
+        summary: "Map agent memories",
+        description: "Return a bounded graph slice from the automatic agent world model.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.clearScope", "/api/world-memory/clear-scope", {
+      payload: Schema.Struct({ scope: Schema.String }),
+      success: Schema.Boolean,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.clearScope",
+        summary: "Clear one agent memory cabinet",
+        description: "Delete every automatic memory and usage record in exactly one agent or chat scope.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.invalidate", "/api/world-memory/invalidate", {
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Boolean,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.invalidate",
+        summary: "Forget one agent memory",
+        description: "Invalidate one automatic agent memory while retaining its history.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.claim.status", "/api/world-memory/claim/status", {
+      payload: Schema.Struct({ id: Schema.String, status: Schema.Literals(PERSON_CLAIM_STATUSES) }),
+      success: Schema.Boolean,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.claim.status",
+        summary: "Change an agent-memory claim",
+        description: "Archive, restore, or flag a claim in the automatic agent world model.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.feedback", "/api/world-memory/feedback", {
+      payload: Schema.Struct({ id: Schema.String, useful: Schema.Boolean }),
+      success: Schema.Boolean,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.feedback",
+        summary: "Protect an agent memory",
+        description: "Vouch for an automatic agent memory, or retract that protection.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("world-memory.erase", "/api/world-memory/erase", {
       success: Schema.Finite,
       error: InvalidRequestError,
@@ -408,8 +512,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
       OpenApi.annotations({
         identifier: "v2.world-memory.erase",
         summary: "Erase agent memory",
-        description:
-          "Delete the automatic session and agent world model. This does not erase the explicit/source KB.",
+        description: "Delete the automatic session and agent world model. This does not erase the explicit/source KB.",
       }),
     ),
   )

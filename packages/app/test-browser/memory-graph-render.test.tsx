@@ -145,7 +145,7 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
 
 /**
- * What the diagnosis board reports about the memory engine — the seam a test drives to model an
+ * What the diagnosis board reports about the agent-memory engine — the seam a test drives to model an
  * instance whose engine is down. `undefined` is a healthy board with no memory signal at all.
  */
 let memoryBoardStatus: "ok" | "problem" | "unknown" | undefined
@@ -179,8 +179,8 @@ const sideAnswer = (url: string): unknown => {
           ? []
           : [
               {
-                id: "memory",
-                label: "Memory",
+                id: "world-memory",
+                label: "Agent memory",
                 status: memoryBoardStatus,
                 ...(memoryBoardDetail === undefined ? {} : { detail: memoryBoardDetail }),
               },

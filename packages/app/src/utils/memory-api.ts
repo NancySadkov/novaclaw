@@ -339,6 +339,75 @@ export function memoryGraph(
   })
 }
 
+/** Read an officer's automatic world model. This is distinct from the curated/source KB above. */
+export function worldMemoryList(
+  server: ServerConnection.HttpBase,
+  input: {
+    directory: string
+    scopes?: readonly string[]
+    kinds?: readonly string[]
+    statuses?: readonly string[]
+    includeInvalid?: boolean
+    limit?: number
+    offset?: number
+  },
+) {
+  const { directory, ...payload } = input
+  return call<MemoryRow[]>(server, "POST", "api/world-memory/list", directory, payload)
+}
+
+export function worldMemoryGraph(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scopes?: readonly string[]; limit?: number },
+) {
+  const { directory, ...payload } = input
+  return call<MemoryGraph>(server, "POST", "api/world-memory/graph", directory, payload)
+}
+
+async function worldMemoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
+  return call<boolean>(server, "POST", "api/world-memory/clear-scope", input.directory, { scope: input.scope })
+}
+
+/** Clear one officer cabinet and prove that even invalidated rows are gone. */
+export async function worldMemoryClearScopeVerified(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scope: string },
+) {
+  const cleared = await worldMemoryClearScope(server, input)
+  if (!cleared) throw new Error(`Agent memory scope ${input.scope} was not cleared`)
+  const remaining = await worldMemoryList(server, {
+    directory: input.directory,
+    scopes: [input.scope],
+    includeInvalid: true,
+    limit: 1,
+  })
+  if (remaining.length > 0) throw new Error(`Agent memory scope ${input.scope} still contains memories`)
+}
+
+export function worldMemoryInvalidate(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
+  return call<boolean>(server, "POST", "api/world-memory/invalidate", input.directory, { id: input.id })
+}
+
+export function worldMemoryClaimStatus(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; status: PersonClaimStatus },
+) {
+  return call<boolean>(server, "POST", "api/world-memory/claim/status", input.directory, {
+    id: input.id,
+    status: input.status,
+  })
+}
+
+export function worldMemoryFeedback(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; useful: boolean },
+) {
+  return call<boolean>(server, "POST", "api/world-memory/feedback", input.directory, {
+    id: input.id,
+    useful: input.useful,
+  })
+}
+
 export function memorySearch(
   server: ServerConnection.HttpBase,
   input: { directory: string; query: string; k?: number; scopes?: readonly string[]; kinds?: readonly string[] },

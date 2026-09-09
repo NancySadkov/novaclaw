@@ -28,14 +28,15 @@ function mount(accept = true, scoped = true) {
   const [owner, setOwner] = createSignal(scoped ? { label: "Daedalus", scopes: ["agent:daedalus"] } : undefined)
   globalThis.fetch = (async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-    if (url.pathname.endsWith("memory/clearScope")) {
+    if (url.pathname.endsWith("memory/clearScope") || url.pathname.endsWith("world-memory/clear-scope")) {
       const { scope } = JSON.parse(String(init?.body))
       clears.push(scope)
       if (accept) scopes.delete(scope)
       return Response.json(accept)
     }
     if (url.pathname.endsWith("memory/list")) {
-      const asked = url.searchParams.get("scopes")?.split(",") ?? [...scopes]
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      const asked = body?.scopes ?? url.searchParams.get("scopes")?.split(",") ?? [...scopes]
       queries.push(asked)
       return Response.json(asked.filter((scope) => scopes.has(scope)).map((scope) => ({
         id: scope, scope, kind: "entity", text: `${scope} record`, status: "active", relation: "staged",

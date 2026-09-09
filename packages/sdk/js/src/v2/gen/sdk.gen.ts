@@ -693,7 +693,166 @@ class ApiV2Memory extends NovaClawApiClient {
   }
 }
 
+class ApiV2WorldMemoryClaim extends NovaClawApiClient {
+  /**
+   * Change an agent-memory claim
+   *
+   * Archive, restore, or flag a claim in the automatic agent world model.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      status: "active" | "archived" | "needs_review"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], status: parameters?.["status"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryClaimStatusResponses,
+      T.V2WorldMemoryClaimStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/claim/status",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiV2WorldMemory extends NovaClawApiClient {
+  /**
+   * List agent memories
+   *
+   * List the automatic memories held by agents and chats, filtered by cabinet scope.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      kinds?: Array<string>
+      statuses?: Array<string>
+      includeInvalid?: boolean
+      limit?: number
+      offset?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      scopes: parameters?.["scopes"],
+      kinds: parameters?.["kinds"],
+      statuses: parameters?.["statuses"],
+      includeInvalid: parameters?.["includeInvalid"],
+      limit: parameters?.["limit"],
+      offset: parameters?.["offset"],
+    }
+    return (options?.client ?? this.client).post<T.V2WorldMemoryListResponses, T.V2WorldMemoryListErrors, ThrowOnError>(
+      {
+        url: "/api/world-memory/list",
+        ...options,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+
+  /**
+   * Map agent memories
+   *
+   * Return a bounded graph slice from the automatic agent world model.
+   */
+  public graph<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryGraphResponses,
+      T.V2WorldMemoryGraphErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/graph",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Clear one agent memory cabinet
+   *
+   * Delete every automatic memory and usage record in exactly one agent or chat scope.
+   */
+  public clearScope<ThrowOnError extends boolean = false>(
+    parameters: {
+      scope: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scope: parameters?.["scope"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryClearScopeResponses,
+      T.V2WorldMemoryClearScopeErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/clear-scope",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Forget one agent memory
+   *
+   * Invalidate one automatic agent memory while retaining its history.
+   */
+  public invalidate<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryInvalidateResponses,
+      T.V2WorldMemoryInvalidateErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/invalidate",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Protect an agent memory
+   *
+   * Vouch for an automatic agent memory, or retract that protection.
+   */
+  public feedback<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      useful: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryFeedbackResponses,
+      T.V2WorldMemoryFeedbackErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/feedback",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
   /**
    * Erase agent memory
    *
@@ -732,6 +891,11 @@ class ApiV2WorldMemory extends NovaClawApiClient {
       body,
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
+  }
+
+  private _claim?: ApiV2WorldMemoryClaim
+  get claim(): ApiV2WorldMemoryClaim {
+    return (this._claim ??= new ApiV2WorldMemoryClaim({ client: this.client }))
   }
 }
 

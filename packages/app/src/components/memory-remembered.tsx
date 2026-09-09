@@ -16,10 +16,14 @@ import {
   memoryNeverUsed,
   memoryStats,
   memoryUseful,
+  worldMemoryList,
+  worldMemoryFeedback,
+  worldMemoryInvalidate,
+  worldMemoryClearScopeVerified,
   type MemoryRow,
 } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
-import { memoryUnavailable } from "@/utils/memory-health"
+import { memoryUnavailable, worldMemoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
 import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from "@/utils/memory-lens"
 import type { MemoryOwner } from "@/apps/memory-owner"
@@ -195,13 +199,14 @@ export const MemoryRemembered: Component<{
         const rows = answer.groups.flatMap((group) => group.items) as readonly MemoryRow[]
         return { rows, forgotten: EMPTY_IDS }
       }
-      const rows = await memoryList(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
+      const list = props.owner ? worldMemoryList : memoryList
+      const rows = await list(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
       // 🔴 THE SECOND READ EXISTS BECAUSE THE WIRE CARRIES NO VALIDITY FIELD. Measured on a live
       // instance: a forgotten row comes back from `includeInvalid` still reading `status: "active"`,
       // so the only way to know which rows those were is to ask the same question again without it
       // and take the difference. It runs ONLY under History — a lens somebody deliberately opened.
       if (!includeInvalid) return { rows, forgotten: EMPTY_IDS }
-      const valid = await memoryList(cn.http, query).catch(() => rows)
+      const valid = await list(cn.http, query).catch(() => rows)
       return { rows, forgotten: forgottenIDs(rows, valid) }
     },
   )
@@ -216,7 +221,9 @@ export const MemoryRemembered: Component<{
     () => {
       const cn = conn()
       const rows = memories()
-      return cn !== undefined && rows !== undefined ? { cn, dir: directory(), settled: rows.rows.length } : undefined
+      return cn !== undefined && rows !== undefined && props.owner === undefined
+        ? { cn, dir: directory(), settled: rows.rows.length }
+        : undefined
     },
     ({ cn, dir }) => memoryStats(cn.http, { directory: dir }).catch(() => undefined),
   )
@@ -289,7 +296,7 @@ export const MemoryRemembered: Component<{
   // ⚠️ The SHARED predicate (`utils/memory-health.ts`), not a local copy. The Graph tab asks the same
   // question, and two surfaces of one cabinet disagreeing about whether it is broken is exactly the
   // fault this component was written to stop showing.
-  const unavailable = () => memoryUnavailable(health())
+  const unavailable = () => (props.owner ? worldMemoryUnavailable(health()) : memoryUnavailable(health()))
 
   const [retrying, setRetrying] = createSignal(false)
   const retry = async () => {
@@ -333,7 +340,8 @@ export const MemoryRemembered: Component<{
     })
     if (!proceed) return
     try {
-      await memoryClearScopeVerified(cn.http, { directory: directory(), scope: target.scope })
+      const clear = props.owner ? worldMemoryClearScopeVerified : memoryClearScopeVerified
+      await clear(cn.http, { directory: directory(), scope: target.scope })
     } catch (error) {
       showToast({
         variant: "error",
@@ -365,7 +373,8 @@ export const MemoryRemembered: Component<{
     const dir = directory()
     setSavingProtection((ids) => new Set([...ids, row.id]))
     try {
-      if (!(await memoryFeedback(cn.http, { directory: dir, id: row.id, useful: next })))
+      const feedback = props.owner ? worldMemoryFeedback : memoryFeedback
+      if (!(await feedback(cn.http, { directory: dir, id: row.id, useful: next })))
         throw new Error("Memory protection was not saved")
       const saved = await memoryProtection(cn.http, { directory: dir, ids: [row.id] })
       if (saved.get(row.id) !== next) throw new Error("Memory protection was not saved")
@@ -396,7 +405,8 @@ export const MemoryRemembered: Component<{
       destructive: true,
     })
     if (!proceed) return
-    await memoryInvalidate(cn.http, { directory: directory(), id: row.id }).catch((error: unknown) =>
+    const invalidate = props.owner ? worldMemoryInvalidate : memoryInvalidate
+    await invalidate(cn.http, { directory: directory(), id: row.id }).catch((error: unknown) =>
       showToast({
         variant: "error",
         title: language.t("settings.memory.toast.failed"),

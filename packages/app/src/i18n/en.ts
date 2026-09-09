@@ -2775,7 +2775,9 @@ export const dict = {
   "contacts.pausedHint": "Set aside. Keeps its chat, its memories and its name, but will not act until resumed.",
   "agentConfig.back": "Back",
   "agentConfig.clearChat": "Clear chat",
+  "agentConfig.clearMemory": "Clear memory",
   "agentConfig.clearing": "Clearing…",
+  "agentConfig.memoryClearing": "Clearing memory…",
   "agentConfig.clearedTitle": "Chat cleared — the next one starts fresh",
   "agentConfig.clearNothing": "There is no chat to clear yet",
   "agentConfig.clearFailed": "Could not clear this chat",
@@ -2786,6 +2788,12 @@ export const dict = {
   "agentConfig.clear.confirm.description":
     "These messages are deleted and a fresh chat opens in their place. {{name}} stays on your roster and keeps its brief and its memories — only the messages go.",
   "agentConfig.clear.confirm.action": "Clear chat",
+  "agentConfig.memoryClear.confirm.title": "Clear {{name}}'s memory?",
+  "agentConfig.memoryClear.confirm.description":
+    "Everything {{name}} has learned automatically is permanently erased. Their chat, brief and portrait stay. This cannot be undone.",
+  "agentConfig.memoryClear.confirm.action": "Clear memory",
+  "agentConfig.memoryClear.done": "{{name}}'s memory was cleared",
+  "agentConfig.memoryClear.failed": "Could not clear {{name}}'s memory",
   "agentConfig.clone": "Clone",
   "agentConfig.cloning": "Cloning…",
   "agentConfig.clonedTitle": "Hired {{name}} — same brief, its own memory",
@@ -2824,6 +2832,8 @@ export const dict = {
   "agentConfig.portraitHint":
     "Stored on this NovaClaw and shown to the model when it looks at its colleagues. PNG, JPEG, GIF or WebP, up to 5 MB.",
   "agentConfig.portraitRemove": "Remove uploaded portrait",
+  "agentConfig.portraitChoose": "Choose image",
+  "agentConfig.portraitNone": "No image chosen",
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "Model it thinks with",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
