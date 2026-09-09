@@ -69,6 +69,7 @@ export type Event =
   | EventServerInstanceDisposed
   | EventAppRegistered
   | EventAgentStatusUpdated
+  | EventAgentStatusRemoved
   | EventMemoryClaimRecorded
   | EventMemoryItemRecorded
   | EventMemoryClaimStatus
@@ -991,6 +992,13 @@ export type GlobalEvent = {
           agent: string
           task: string
           observed: number
+        }
+      }
+    | {
+        id: string
+        type: "agent.status.removed"
+        properties: {
+          agent: string
         }
       }
     | {
@@ -1940,6 +1948,7 @@ export type V2Event =
   | ServerInstanceDisposed
   | AppRegistered
   | AgentStatusUpdated
+  | AgentStatusRemoved
   | MemoryClaimRecorded
   | MemoryItemRecorded
   | MemoryClaimStatus
@@ -4211,7 +4220,6 @@ export type ConfigInfo = {
     reground?: boolean
     children?: boolean
     imageShortcut?: boolean
-    resumeInterrupted?: boolean
   }
   adhoc_tools?: Array<{
     /**
@@ -4355,6 +4363,12 @@ export type ConfigInfo = {
       fingerprint: string
       endpoint?: string
       servedBy?: string
+    }
+  }
+  provider_recovery?: {
+    [key: string]: {
+      failures: number
+      next: number
     }
   }
   devices?: {
@@ -6448,6 +6462,23 @@ export type AgentStatusUpdated = {
   }
 }
 
+export type AgentStatusRemoved = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "agent.status.removed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    agent: string
+  }
+}
+
 export type MemoryClaimRecorded = {
   id: string
   metadata?: {
@@ -7776,6 +7807,14 @@ export type EventAgentStatusUpdated = {
     agent: string
     task: string
     observed: number
+  }
+}
+
+export type EventAgentStatusRemoved = {
+  id: string
+  type: "agent.status.removed"
+  properties: {
+    agent: string
   }
 }
 

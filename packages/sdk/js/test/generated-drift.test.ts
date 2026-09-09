@@ -308,7 +308,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // event schema now also has the expected `SyncEventSessionNextToolLabelled` replay envelope.
 // 2026-09-08: the user-facing Nudge config adds exactly one public schema, `ConfigV2Nudge`, and
 // removes none. Its name maps without a collision suffix; the ConfigInfo shape gains the list.
-const SCHEMA_NAME_FINGERPRINT = "dc257d861e7705552629903efefedc8df8aec8b7b8c10a77a66d1506ce51c4b0"
+const SCHEMA_NAME_FINGERPRINT = "9526a84b6f7377c6c07e5e27d9a990713d691b0c6d24fb234ec80fea020f011d"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

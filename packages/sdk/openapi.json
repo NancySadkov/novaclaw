@@ -23853,6 +23853,9 @@
             "$ref": "#/components/schemas/EventAgentStatusUpdated"
           },
           {
+            "$ref": "#/components/schemas/EventAgentStatusRemoved"
+          },
+          {
             "$ref": "#/components/schemas/EventMemoryClaimRecorded"
           },
           {
@@ -27036,6 +27039,31 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["agent.status.removed"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "agent": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["agent"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["memory.claim.recorded"]
                   },
                   "properties": {
@@ -30098,6 +30126,9 @@
           },
           {
             "$ref": "#/components/schemas/AgentStatusUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/AgentStatusRemoved"
           },
           {
             "$ref": "#/components/schemas/MemoryClaimRecorded"
@@ -37217,9 +37248,6 @@
               },
               "imageShortcut": {
                 "type": "boolean"
-              },
-              "resumeInterrupted": {
-                "type": "boolean"
               }
             },
             "additionalProperties": false
@@ -37631,6 +37659,23 @@
                 }
               },
               "required": ["choice", "measuredAt", "fingerprint"],
+              "additionalProperties": false
+            }
+          },
+          "provider_recovery": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "failures": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "next": {
+                  "type": "number"
+                }
+              },
+              "required": ["failures", "next"],
               "additionalProperties": false
             }
           },
@@ -43977,6 +44022,53 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "AgentStatusRemoved": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["agent.status.removed"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string"
+              }
+            },
+            "required": ["agent"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "MemoryClaimRecorded": {
         "type": "object",
         "properties": {
@@ -48077,6 +48169,31 @@
               }
             },
             "required": ["agent", "task", "observed"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventAgentStatusRemoved": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["agent.status.removed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string"
+              }
+            },
+            "required": ["agent"],
             "additionalProperties": false
           }
         },

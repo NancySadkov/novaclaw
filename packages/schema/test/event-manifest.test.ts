@@ -84,7 +84,8 @@ describe("public event manifest", () => {
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
       // 2026-09-08: durable compaction progress keeps its visible counter across navigation/restart.
-    }).toEqual({ server: 93, all: 93, latest: 93, durable: 50 })
+      // 2026-09-09: agent.status.removed closes worker-list cleanup over the public stream.
+    }).toEqual({ server: 94, all: 94, latest: 94, durable: 50 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
