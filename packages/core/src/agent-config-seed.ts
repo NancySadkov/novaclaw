@@ -31,7 +31,7 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   readonly id: string
   readonly name: string
   readonly title: string
-  readonly brief: string
+  readonly brief?: string
   /**
    * The pure local Chat stance (`ConfigAgent.shortChat`): no project access, memory, tools, or
    * harness-authored system prompt.
@@ -53,13 +53,8 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     // already existed: no project access, no memory, and no tools. Seeding it here rather than building a second
     // "simple agent" mechanism beside it.
     //
-    // ⚠️ The brief is SHORT on purpose: it is the entire system prompt for this posture.
     title: "Companion",
     shortChat: true,
-    brief:
-      "You are here to talk — questions, plans, decisions, or nothing in particular. " +
-      "Speak plainly and warmly, like a well-read friend rather than a manual. Never assume technical " +
-      "knowledge, and never make somebody feel small for not having it.",
   },
   {
     id: "daedalus",
@@ -155,7 +150,7 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             title: officer.title,
             // No `avatar`: each of these ships a portrait, and the renderer shows it exactly when the
             // row carries no glyph of its own. A seeded glyph here would hide the face (2026-09-03).
-            system: officer.brief,
+            ...(officer.brief === undefined ? {} : { system: officer.brief }),
             ...(officer.personality === undefined ? {} : { personality: officer.personality }),
             description: `${officer.name}, ${officer.title}.`,
             // A chat stance carries no memory: recall is the other half of what makes a companion

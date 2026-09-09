@@ -1839,7 +1839,10 @@ export const layer = Layer.effect(
       // organization, project, model pre-prompt, or upgrade instructions.
       const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
         ? {
-            agentSystem: agent.info?.system,
+            // A pure-chat officer has exactly the instructions visible in its Personality field.
+            // Ignoring the legacy `system` column here makes an empty field an actually empty
+            // system prompt, including for existing instances seeded before that invariant landed.
+            agentSystem: agent.info?.personality,
           }
         : {
             persona: harness.persona,

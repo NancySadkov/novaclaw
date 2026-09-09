@@ -9,8 +9,95 @@ const governing = (sessionID: string) => ({ sessionID, priority: "governing" as 
 
 describe("session-worker admission", () => {
   test("derives process capacity from the canonical fleet byte ceiling", () => {
-    expect(SessionWorkerAdmission.capacity(5 * SessionWorkerAdmission.RESERVATION_BYTES)).toBe(5)
-    expect(SessionWorkerAdmission.capacity(SessionWorkerAdmission.RESERVATION_BYTES)).toBe(2)
+    expect(
+      SessionWorkerAdmission.capacity(
+        5 * SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,
+        SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,
+      ),
+    ).toBe(5)
+    expect(
+      SessionWorkerAdmission.capacity(
+        SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,
+        SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,
+      ),
+    ).toBe(2)
+    expect(
+      SessionWorkerAdmission.capacity(
+        8 * SessionWorkerAdmission.PACKAGED_RESERVATION_BYTES,
+        SessionWorkerAdmission.PACKAGED_RESERVATION_BYTES,
+      ),
+    ).toBe(8)
+    expect(SessionWorkerAdmission.reservationBytes("session-worker.ts")).toBe(
+      SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,
+    )
+    expect(SessionWorkerAdmission.reservationBytes("novaclaw-session-worker.js")).toBe(
+      SessionWorkerAdmission.PACKAGED_RESERVATION_BYTES,
+    )
+  })
+
+  test("background work cannot consume the opened-chat and Nova lanes", async () => {
+    const gate = await run(SessionWorkerAdmission.make({ capacity: 8 }))
+    const release = Deferred.makeUnsafe<void>()
+    const backgroundEntered = Deferred.makeUnsafe<void>()
+    const controlsEntered = Deferred.makeUnsafe<void>()
+    let backgrounds = 0
+    let controls = 0
+    const hold = (input: ReturnType<typeof batch> | ReturnType<typeof interactive> | ReturnType<typeof governing>) =>
+      gate.run(
+        input,
+        Effect.gen(function* () {
+          if (input.priority === "batch" && ++backgrounds === 6) Deferred.doneUnsafe(backgroundEntered, Effect.void)
+          if (input.priority !== "batch" && ++controls === 2) Deferred.doneUnsafe(controlsEntered, Effect.void)
+          yield* Deferred.await(release)
+        }),
+      )
+
+    const fibers = Array.from({ length: 6 }, (_, index) => Effect.runFork(hold(batch(`batch-${index}`))))
+    await run(Deferred.await(backgroundEntered))
+    const queued = Effect.runFork(hold(batch("queued")))
+    expect(gate.snapshot().waitingBatch).toEqual(["queued"])
+
+    const opened = Effect.runFork(hold(interactive("opened")))
+    const nova = Effect.runFork(hold(governing("nova")))
+    await run(Deferred.await(controlsEntered))
+    expect(gate.snapshot().active).toHaveLength(8)
+    expect(gate.snapshot().active).toContain("opened")
+    expect(gate.snapshot().active).toContain("nova")
+    expect(gate.snapshot().waitingBatch).toEqual(["queued"])
+
+    await run(Deferred.succeed(release, undefined))
+    await Promise.all([...fibers, queued, opened, nova].map((fiber) => run(Fiber.join(fiber))))
+  })
+
+  test("opening an active background session immediately frees its batch share", async () => {
+    const gate = await run(SessionWorkerAdmission.make({ capacity: 4 }))
+    const release = Deferred.makeUnsafe<void>()
+    const twoEntered = Deferred.makeUnsafe<void>()
+    const thirdEntered = Deferred.makeUnsafe<void>()
+    let entered = 0
+    const worker = (id: string) =>
+      gate.run(
+        batch(id),
+        Effect.gen(function* () {
+          entered++
+          if (entered === 2) Deferred.doneUnsafe(twoEntered, Effect.void)
+          if (id === "third") Deferred.doneUnsafe(thirdEntered, Effect.void)
+          yield* Deferred.await(release)
+        }),
+      )
+    const first = Effect.runFork(worker("first"))
+    const second = Effect.runFork(worker("second"))
+    await run(Deferred.await(twoEntered))
+    const third = Effect.runFork(worker("third"))
+    expect(gate.snapshot().waitingBatch).toEqual(["third"])
+
+    gate.reprioritize("first", "interactive")
+    await run(Deferred.await(thirdEntered))
+    expect(gate.snapshot().active).toHaveLength(3)
+    expect(gate.snapshot().waitingBatch).toEqual([])
+
+    await run(Deferred.succeed(release, undefined))
+    await Promise.all([first, second, third].map((fiber) => run(Fiber.join(fiber))))
   })
 
   test("never admits more resident workers than reserved capacity", async () => {

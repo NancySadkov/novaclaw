@@ -88,6 +88,8 @@ describe("the companion is a chat", () => {
   test("🔴 Xenia ships in the fast chat stance, with no memory", () => {
     const xenia = SEED_SOURCE.slice(SEED_SOURCE.indexOf('id: "xenia"'), SEED_SOURCE.indexOf('id: "daedalus"'))
     expect(xenia).toContain("shortChat: true")
+    expect(xenia).not.toContain("brief:")
+    expect(xenia).not.toContain("personality:")
   })
 
   test("the WORKING colleagues are untouched — this stance is Xenia's alone", () => {
@@ -113,5 +115,9 @@ describe("the companion is a chat", () => {
     // tools with which to do that.
     const xenia = SEED_SOURCE.slice(SEED_SOURCE.indexOf('name: "Xenia"'), SEED_SOURCE.indexOf('id: "daedalus"'))
     expect(xenia).not.toContain("hand it over")
+  })
+
+  test("an absent brief stays absent instead of becoming a hidden system prompt", () => {
+    expect(SEED_SOURCE).toContain("...(officer.brief === undefined ? {} : { system: officer.brief })")
   })
 })

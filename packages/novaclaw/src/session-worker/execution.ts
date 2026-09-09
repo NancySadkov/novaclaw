@@ -169,7 +169,9 @@ export const layer = Layer.effect(
     // Process admission is deliberately OUTSIDE the worker. A child queued here consumes durable
     // session state and no resident process; once admitted, the permit covers the worker's complete
     // drain and is released on success, failure, or interruption by `workerAdmission.run`.
-    const workerAdmission = yield* SessionWorkerAdmission.make()
+    const workerAdmission = yield* SessionWorkerAdmission.make({
+      reservationBytes: SessionWorkerAdmission.reservationBytes(command.workerPath),
+    })
     const unsubscribePresence = yield* events.listen((event) => {
       if (event.type !== SessionPresence.Event.Updated.type) return Effect.void
       const data = event.data as {
