@@ -11,10 +11,9 @@ import { testEffect } from "./lib/effect"
  * THE REGISTRY BETWEEN THE CONFIG DOOR AND THE RETIREMENT.
  *
  * 🔴 Written because I copied `agent/reassignment.ts`'s shape for `AgentRemoval` — including its
- * `catchCause`-not-`ignore` claim — and did NOT copy its test. That test is what caught the claim
- * being false the first time it was made: `Effect.ignore` discharges the ERROR channel and lets a
- * DEFECT through, so a listener with a null deref in it still propagates out of a config write that
- * has already committed and surfaces as a 500 on a removal that worked.
+ * `catchCause`-not-`ignore` claim — and did NOT copy its test. Retirement now runs before the
+ * identity row is removed: a defect must propagate so a failed worker barrier keeps the officer
+ * addressable and the operation retryable.
  *
  * The wiring ledger (`novaclaw/test/agent-removal-wiring.test.ts`) says the product registers a
  * listener. These say what the registry does once it has one.
@@ -52,29 +51,18 @@ describe("the registry between the config door and the retirement", () => {
     }),
   )
 
-  // 🔴 A DEFECT, not merely a failure — this is the assertion that caught the same claim being wrong
-  // in the reassignment module. `Effect.ignore` would let this through and turn a committed removal
-  // into a 500.
-  it.effect("a listener that DIES does not stop the others, or the write", () =>
+  it.effect("a listener defect propagates and prevents the identity-removal phase", () =>
     Effect.gen(function* () {
       const seen: string[] = []
-      yield* Effect.scoped(
+      const result = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* AgentRemoval.register(() => Effect.die("retirement exploded"))
           yield* AgentRemoval.register((id) => Effect.sync(() => void seen.push(id)))
-          yield* AgentRemoval.announce("theron")
+          return yield* AgentRemoval.announce("theron").pipe(Effect.exit)
         }),
       )
-      // The surviving listener still ran, and `announce` itself succeeded — the config row is already
-      // gone by the time this fires, so failing here would report a removal that worked as broken.
-      expect(seen).toEqual(["theron"])
+      expect(result._tag).toBe("Failure")
+      expect(seen).toEqual([])
     }),
   )
-
-  // ⚠️ There is deliberately no "a listener that FAILS" case, and the attempt to write one is what
-  // established why: `register` takes `(agentID: string) => Effect.Effect<void>`, i.e. an error
-  // channel of `never`, so a listener CANNOT fail — the typecheck refuses the cast. Only a DEFECT can
-  // escape it, which is exactly why `announce` needs `catchCause` and why `Effect.ignore` is the
-  // wrong tool: `ignore` discharges the channel that is already empty and lets through the one that
-  // is not.
 })

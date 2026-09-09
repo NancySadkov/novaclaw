@@ -8,8 +8,6 @@ import {
   toolTargetKey,
   detectFailureStreak,
   failureStreakMessage,
-  detectRunaway,
-  runawayMessage,
   toolCallsSinceLastUser,
   isEmptyAssistantTurn,
   lastAssistantText,
@@ -17,7 +15,6 @@ import {
   shouldReground,
   FAILURE_STREAK_THRESHOLD,
   patchTarget,
-  RUNAWAY_THRESHOLD,
   REGROUND_TOOL_CALLS,
   REGROUND_NUDGE,
 } from "./doom-loop"
@@ -189,18 +186,13 @@ describe("failureStreakMessage", () => {
   })
 })
 
-describe("detectRunaway", () => {
-  test("trips at the threshold with >=", () => {
-    expect(detectRunaway(RUNAWAY_THRESHOLD - 1)).toBe(false)
-    expect(detectRunaway(RUNAWAY_THRESHOLD)).toBe(true)
-    expect(detectRunaway(RUNAWAY_THRESHOLD + 3)).toBe(true)
-  })
-
-  test("message is self-assessment, never a bare 'stop'", () => {
-    const msg = runawayMessage(80)
-    expect(msg).toContain("80")
-    expect(msg.toLowerCase()).toContain("if you're still making real progress")
-    expect(msg.toLowerCase()).not.toMatch(/^stop\b/)
+describe("long-horizon work", () => {
+  test("a thousand distinct successful calls are progress, never a loop", () => {
+    const calls = Array.from({ length: 1_000 }, (_, index) =>
+      fail("read", JSON.stringify({ path: `file-${index}.ts` }), false),
+    )
+    expect(detectDoomLoop(calls)).toBeUndefined()
+    expect(detectFailureStreak(calls)).toBeUndefined()
   })
 })
 
@@ -219,7 +211,7 @@ describe("toolCallsSinceLastUser", () => {
 
   test("a harness steer does NOT reset the window (the A2 regression)", () => {
     // Without the steer-prefix check, the doom-loop's own nudge would wipe the very streak
-    // it fired for — the streak/runaway counters must survive harness interjections.
+    // it fired for — the failure streak must survive harness interjections.
     const context = [
       userMsg("do the thing"),
       assistantMsg([toolPart("bash", { command: "make" }, true)]),
@@ -324,30 +316,5 @@ describe("isEmptyAssistantTurn", () => {
 
   test("no assistant message at all is not an empty turn", () => {
     expect(isEmptyAssistantTurn([userMsg("go")])).toBe(false)
-  })
-})
-
-describe("the runaway budget grows with harness-driven work", () => {
-  // 🔴 Measured 2026-08-20: "describe the first 100 png files" made 96 legitimate calls, tripped the
-  // 75-call detector, and the nudge — self-assessment, "if you're stuck, tell the user where things
-  // stand" — invited the model to wrap up at ~78 of 100. A detector built to break REPETITION was
-  // ending honest bulk work. The runner raises the threshold by exactly what it asked for.
-  const STEER_BATCH = 10
-  const budget = (rounds: number) => RUNAWAY_THRESHOLD + rounds * STEER_BATCH
-
-  test("with no drive in progress the threshold is unchanged", () => {
-    expect(detectRunaway(RUNAWAY_THRESHOLD, budget(0))).toBe(true)
-    expect(detectRunaway(RUNAWAY_THRESHOLD - 1, budget(0))).toBe(false)
-  })
-
-  test("the measured run no longer trips it", () => {
-    // 96 calls after 5 rounds of steering: the harness asked for 50 of those files itself.
-    expect(detectRunaway(96, budget(5))).toBe(false)
-  })
-
-  test("a genuine loop is still caught, however long the drive has run", () => {
-    // ⚠️ The clause that keeps this honest: the budget grows by what was REQUESTED, so a model
-    // spinning far past it still trips.
-    expect(detectRunaway(500, budget(5))).toBe(true)
   })
 })

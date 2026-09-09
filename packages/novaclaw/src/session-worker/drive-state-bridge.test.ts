@@ -65,7 +65,6 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
       spawned: ["ses_spawned"],
       joined: ["ses_child"],
       restartRounds: 1,
-      runawayNudgedAtCalls: 75,
       compactionRetryAt: 123_456,
     }),
   )
@@ -77,7 +76,6 @@ test("🔴 facts saved by one drain's worker are loaded by the next drain's work
   expect(seen.spawned).toEqual(["ses_spawned"])
   expect(seen.joined).toEqual(["ses_child"])
   expect(seen.restartRounds).toBe(1)
-  expect(seen.runawayNudgedAtCalls).toBe(75)
   expect(seen.compactionRetryAt).toBe(123_456)
   expect(requests).toEqual(["save", "load"])
 })

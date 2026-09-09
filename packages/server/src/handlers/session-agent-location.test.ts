@@ -351,7 +351,9 @@ describe("a new chat lands in the colleague's own folder", () => {
       }),
     )
 
-    expect(norm(landed.assigned)).toBe(norm(AgentWorkspace.folderFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT })))
+    expect(norm(landed.assigned)).toBe(
+      norm(AgentWorkspace.folderFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT })),
+    )
     expect(norm(landed.unassigned)).toBe(norm(AgentWorkspace.folderFor({ agentID: UNASSIGNED, directory: undefined })))
   })
 

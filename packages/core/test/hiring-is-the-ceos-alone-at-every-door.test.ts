@@ -136,6 +136,7 @@ describe("who may organize reporting lines", () => {
   test("retiring a superior clears each direct report's override before removing it", async () => {
     const writes: Array<{ id: string; layers: ConfigAgent.Info[] }> = []
     const removed: string[] = []
+    const order: string[] = []
     const handoff = ColleagueHandoff.fromParts({
       db: undefined as never,
       events: undefined as never,
@@ -148,11 +149,15 @@ describe("who may organize reporting lines", () => {
             theron: [ConfigAgent.Info.make({ name: "Theron", mode: "primary" })],
           }),
         setLayers: (id: string, layers: ConfigAgent.Info[]) => Effect.sync(() => writes.push({ id, layers })),
-        removeAgent: (id: string) => Effect.sync(() => removed.push(id)),
+        removeAgent: (id: string) =>
+          Effect.sync(() => {
+            order.push("identity")
+            removed.push(id)
+          }),
       } as never,
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
-      forget: () => Effect.void,
+      forget: () => Effect.sync(() => void order.push("workers")),
     })
 
     expect(await Effect.runPromise(handoff.retire("theron"))).toBe(true)
@@ -160,5 +165,28 @@ describe("who may organize reporting lines", () => {
     expect(writes[0]?.id).toBe("iris")
     expect(writes[0]?.layers[0]?.superior).toBeUndefined()
     expect(removed).toEqual(["theron"])
+    expect(order).toEqual(["workers", "identity"])
+  })
+
+  test("a failed worker barrier keeps the officer identity", async () => {
+    const removed: string[] = []
+    const handoff = ColleagueHandoff.fromParts({
+      db: undefined as never,
+      events: undefined as never,
+      session: () => Effect.succeed({ agent: "nova" }),
+      wake: () => Effect.succeed(true),
+      store: {
+        agents: () => Effect.succeed({ theron: [ConfigAgent.Info.make({ name: "Theron", mode: "primary" })] }),
+        setLayers: () => Effect.void,
+        removeAgent: (id: string) => Effect.sync(() => removed.push(id)),
+      } as never,
+      refresh: Effect.void,
+      takenNames: Effect.succeed([]),
+      forget: () => Effect.die("worker purge failed"),
+    })
+
+    const result = await Effect.runPromise(handoff.retire("theron").pipe(Effect.exit))
+    expect(result._tag).toBe("Failure")
+    expect(removed).toEqual([])
   })
 })

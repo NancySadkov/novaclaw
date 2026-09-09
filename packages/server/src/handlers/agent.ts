@@ -165,7 +165,6 @@ export const AgentHandler = handlerLayer(
               field: "agentID",
             })
           const store = yield* AgentConfigStore.Service
-          yield* store.removeAgent(ctx.params.agentID)
           // ...and the dangling default is pruned WITH it, in the same request. This is the part
           // that matters: `default_agent` is settable but not clearable through `PATCH /config`, so
           // a default left pointing at a deleted agent could never be repaired by an agent. It also
@@ -186,6 +185,9 @@ export const AgentHandler = handlerLayer(
             agent: ctx.params.agentID,
             at: Date.now(),
           })
+          // Identity is removed LAST. If the required worker-tree barrier fails, the officer stays
+          // addressable and retirement can be retried instead of leaving unowned live processes.
+          yield* store.removeAgent(ctx.params.agentID)
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
           // 🔴 …and the LIVE snapshot is re-materialised, or the delete is durable but invisible.

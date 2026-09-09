@@ -65,9 +65,8 @@ export const cabinetOf = (agent: string): string | undefined => MemoryAccess.age
  * Erase everything keyed on a retired colleague's id.
  *
  * ⚠️ **Best-effort on the memory half, and LOUD about it.** An unreachable embedder must not turn a
- * retirement into a failed request — the role is already gone from the store by the time we get
- * here, so failing now would leave the user with a colleague that is half-retired and no way to
- * finish the job. But best-effort means the ACT survives, not that nobody is told: the failure is
+ * retirement into a failed request — memory is recoverable residue, unlike a live worker. But
+ * best-effort means the ACT survives, not that nobody is told: the failure is
  * logged with the scope that still holds rows, which is the one thing an operator needs to clean up
  * by hand. (`Effect.ignore` here was the mistake `session.compaction.archive.failed` documents.)
  */
@@ -85,7 +84,7 @@ export const cabinetOf = (agent: string): string | undefined => MemoryAccess.age
  * {@link everything} reports any that nothing registered: a cleaner that was never wired is a fact
  * about this instance, not a silence.
  */
-export const CLEANERS = ["schedules", "default-agent", "workspace", "status"] as const
+export const CLEANERS = ["workers", "schedules", "default-agent", "workspace", "status"] as const
 
 export type CleanerName = (typeof CLEANERS)[number]
 
@@ -172,16 +171,22 @@ export const everything = (input: {
     // ⚠️ Keyed on THIS retirement's own `db`, so a second instance in the same process neither
     // contributes a cleaner nor is reported as having wired one.
     const wired = new Set(registered(input.db))
-    for (const entry of cleaners.entries(input.db))
-      yield* entry.clear(input.agent).pipe(
-        Effect.catchCause((cause) =>
-          Log.event("agent.retire.cleaner.failed", {
-            "agent.id": input.agent,
-            "agent.cleaner": entry.name,
-            "agent.fault": Log.fault(cause),
-          }),
-        ),
-      )
+    for (const entry of cleaners.entries(input.db)) {
+      // Workers are live owned processes, not residue. Their removal is the retirement barrier:
+      // if it cannot be proved complete, the officer identity must remain so the user (or Nova) can
+      // retry. Every other cleaner is recoverable housekeeping and therefore remains best-effort.
+      if (entry.name === "workers") yield* entry.clear(input.agent)
+      else
+        yield* entry.clear(input.agent).pipe(
+          Effect.catchCause((cause) =>
+            Log.event("agent.retire.cleaner.failed", {
+              "agent.id": input.agent,
+              "agent.cleaner": entry.name,
+              "agent.fault": Log.fault(cause),
+            }),
+          ),
+        )
+    }
     // ⚠️ A DECLARED cleaner that nothing registered is reported too. `AgentRemoval`'s own listener
     // ships inert if its node is left out of the instance graph — everything still compiles and
     // passes — so "nobody registered" has to be a line in the log rather than a silence.

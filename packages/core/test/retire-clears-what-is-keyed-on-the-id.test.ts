@@ -33,7 +33,7 @@ describe("the declared cleaner list", () => {
   test("🔴 names every subsystem that keys rows on an agent id", () => {
     // The list is the checklist. Adding a subsystem that stores anything under an agent id means
     // adding it here, and then the missing-registration report names it until it is wired.
-    expect([...AgentRetire.CLEANERS]).toEqual(["schedules", "default-agent", "workspace", "status"])
+    expect([...AgentRetire.CLEANERS]).toEqual(["workers", "schedules", "default-agent", "workspace", "status"])
   })
 
   test("a cleaner registers for the life of a scope, and unregisters after", async () => {
@@ -69,6 +69,7 @@ describe("the declared cleaner list", () => {
       Effect.scoped(
         Effect.gen(function* () {
           yield* AgentRetire.registerCleaner("schedules", () => Effect.die(new Error("store is down")))
+          yield* AgentRetire.registerCleaner("workers", () => Effect.void)
           yield* AgentRetire.registerCleaner("default-agent", (id) => Effect.sync(() => void ran.push(`default:${id}`)))
           yield* AgentRetire.registerCleaner("workspace", (id) => Effect.sync(() => void ran.push(`workspace:${id}`)))
           yield* AgentRetire.everything({

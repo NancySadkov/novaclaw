@@ -509,8 +509,10 @@ export const fromParts = (input: {
       const { superior: _retired, ...rest } = current
       yield* input.store.setLayers(id, [Schema.decodeUnknownSync(ConfigAgent.Info)(rest)])
     }
-    yield* input.store.removeAgent(colleague)
+    // Revoke the owned process tree before dropping its identity. If that barrier fails, the
+    // officer remains addressable and Nova can retry instead of creating orphan workers.
     yield* input.forget(colleague)
+    yield* input.store.removeAgent(colleague)
     yield* input.refresh
     return true
   }),

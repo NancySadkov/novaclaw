@@ -38,15 +38,15 @@ const verdicts = {
 const run = async (recovered: readonly SessionExecutionAttempt.Recovered[]) => {
   const woken: string[] = []
   const count = await Effect.runPromise(
-    SessionBootRecovery.resumeInterrupted({
+    SessionBootRecovery.adoptRecovered({
       recovered,
-      resume: (sessionID) => Effect.sync(() => void woken.push(sessionID)),
+      adopt: (sessionID) => Effect.sync(() => void woken.push(sessionID)),
     }),
   )
   return { woken, count }
 }
 
-describe("resumeInterrupted", () => {
+describe("adoptRecovered", () => {
   // ⭐ THE MEASURED CASE: three sessions interrupted by a server hang, all safely resumable.
   test("wakes every run the policy judged automatically recoverable", async () => {
     const { woken, count } = await run([
@@ -58,28 +58,23 @@ describe("resumeInterrupted", () => {
     expect(count).toBe(3)
   })
 
-  test("joins each recovered run before starting the next", async () => {
+  test("hands every recovered run to detached adoption without imposing a completion order", async () => {
     const order: string[] = []
     await Effect.runPromise(
-      SessionBootRecovery.resumeInterrupted({
+      SessionBootRecovery.adoptRecovered({
         recovered: [entry("ses_a", verdicts.beforeSideEffect), entry("ses_b", verdicts.beforeSideEffect)],
-        resume: (sessionID) =>
-          Effect.gen(function* () {
-            order.push(`start:${sessionID}`)
-            yield* Effect.sleep(10)
-            order.push(`end:${sessionID}`)
-          }),
+        adopt: (sessionID) => Effect.sync(() => void order.push(`adopt:${sessionID}`)),
       }),
     )
-    expect(order).toEqual(["start:ses_a", "end:ses_a", "start:ses_b", "end:ses_b"])
+    expect(order).toEqual(["adopt:ses_a", "adopt:ses_b"])
   })
 
   test("one failed recovery does not strand the remaining runs", async () => {
     const resumed: string[] = []
     const count = await Effect.runPromise(
-      SessionBootRecovery.resumeInterrupted({
+      SessionBootRecovery.adoptRecovered({
         recovered: [entry("ses_bad", verdicts.beforeSideEffect), entry("ses_ok", verdicts.beforeSideEffect)],
-        resume: (sessionID) =>
+        adopt: (sessionID) =>
           sessionID === id("ses_bad") ? Effect.fail("worker failed") : Effect.sync(() => void resumed.push(sessionID)),
       }),
     )
@@ -104,14 +99,14 @@ describe("resumeInterrupted", () => {
       ["ses_grandchild", "ses_worker"],
     ])
     await Effect.runPromise(
-      SessionBootRecovery.resumeInterrupted({
+      SessionBootRecovery.adoptRecovered({
         recovered: [
           entry("ses_officer", verdicts.beforeSideEffect),
           entry("ses_worker", verdicts.beforeSideEffect),
           entry("ses_grandchild", verdicts.beforeSideEffect),
         ],
         parentOf: (sessionID) => Effect.succeed(parents.get(sessionID) as SessionSchema.ID | undefined),
-        resume: (sessionID) =>
+        adopt: (sessionID) =>
           Effect.sync(() => {
             order.push(sessionID)
           }),

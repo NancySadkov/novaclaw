@@ -1,6 +1,6 @@
 export * as SessionBootRecovery from "./boot-recovery"
 
-import { and, eq, isNotNull, isNull, ne, or } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm"
 import { Clock, Duration, Effect, Schedule, Semaphore } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "../database/database"
@@ -86,7 +86,7 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
  * 🔴 **THE VERDICT WAS COMPUTED AND THROWN AWAY.**
  *
  * `recoverStale` classifies every abandoned execution through `SessionRecoveryDecision.decide` and
- * stores it as `interrupted` for automatic recovery. It returns
+ * stores it as `recovering` for automatic recovery. It returns
  * that decision to its caller. **Nothing ever acted on it** — the sweep logged a count and stopped,
  * so a run interrupted mid-turn sat `interrupted` forever.
  *
@@ -120,14 +120,14 @@ const descendantsFirst = Effect.fn("SessionBootRecovery.descendantsFirst")(funct
     if (parent === undefined || !recoveredIDs.has(parent)) return 0
     return 1 + depth(parent, new Set([...visiting, id]))
   }
-  // Recovery joins each drain. Descendants must therefore run before a parent that can be blocked
-  // in wait(child), or the single recovery lane deadlocks before it ever reaches that child.
+  // Preserve dependency order at admission too: descendants should be visible to the scheduler
+  // before an officer that may immediately resume a durable wait(child).
   return ordered.sort((a, b) => depth(b) - depth(a))
 })
 
-export const resumeInterrupted = (input: {
+export const adoptRecovered = (input: {
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
+  readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
   readonly parentOf?: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.ID | undefined, unknown>
 }) =>
   Effect.gen(function* () {
@@ -142,14 +142,11 @@ export const resumeInterrupted = (input: {
       "session.resumed": resumable.length,
       "session.paused": input.recovered.length - resumable.length,
     })
-    // A restart can recover many root chats at once. `wake` only starts an in-memory coordinator and
-    // returns, so looping over it fan-outs every recovered chat before the device scheduler sees a
-    // single provider request. Three large recovered prompts plus one fresh Xenia prompt saturated
-    // the Spark in the measured 0.1.72 regression: her 391-token request spent 57.5 s in provider
-    // prefill and decoded at 0.24 t/s; the next uncontended turn reached first output in 0.99 s.
-    // Recovery is background adoption, not three people asking at once. Join each drain before
-    // adopting the next so startup cannot manufacture unbounded interactive concurrency.
-    for (const sessionID of resumable) yield* input.resume(sessionID).pipe(Effect.catchCause(() => Effect.void))
+    // Adoption is detached but forced: every durable turn reaches the device scheduler immediately,
+    // where configured device concurrency and EEVDF fairness own pacing. Joining here made one
+    // long-running child a global boot lock: its parent and every unrelated recovered officer could
+    // remain visibly idle for hours despite durable unfinished work.
+    for (const sessionID of resumable) yield* input.adopt(sessionID).pipe(Effect.catchCause(() => Effect.void))
     return resumable.length
   })
 
@@ -207,7 +204,7 @@ export const recoverStaleLeases = (
 export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedInput")(function* (input: {
   readonly db: Database.Interface["db"]
   readonly store: SessionStore.Interface
-  readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
+  readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
 }) {
   const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
   // A replacement drain used to read the provider-recovery latch only AFTER its first empty-queue
@@ -227,7 +224,7 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
     .from(SessionExecutionTable)
     .where(
       and(
-        eq(SessionExecutionTable.state, "interrupted"),
+        inArray(SessionExecutionTable.state, ["paused", "failed", "interrupted", "recovering"]),
         or(isNull(SessionExecutionTable.failure_class), ne(SessionExecutionTable.failure_class, "interrupt")),
       ),
     )
@@ -263,7 +260,7 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
     }
     // This is the sibling boot-time fan-out source. Pending prompts are durable, so joining each
     // drain bounds adoption without losing work.
-    yield* input.resume(sessionID).pipe(Effect.catchCause(() => Effect.void))
+    yield* input.adopt(sessionID).pipe(Effect.catchCause(() => Effect.void))
     woken++
   }
   yield* Log.event("session.input.abandoned.resumed", {
@@ -285,16 +282,16 @@ export const start = (input: {
   readonly execution: SessionExecution.Interface
 }) =>
   Effect.gen(function* () {
-    // Both durable-work scans share one lane. Two separately serial loops would still run one
-    // recovered chat from each arm at the same time.
+    // Both durable-work scans share one short adoption lane so the same session cannot be claimed
+    // twice. Adoption itself never joins a drain; device scheduling owns concurrency afterwards.
     const recoveryLane = yield* Semaphore.make(1)
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
         Effect.gen(function* () {
           yield* recoveryLane.withPermits(1)(
-            resumeInterrupted({
+            adoptRecovered({
               recovered,
-              resume: input.execution.resume,
+              adopt: input.execution.adopt,
               parentOf: (sessionID) =>
                 input.store
                   .get(sessionID)
@@ -306,7 +303,7 @@ export const start = (input: {
     )
     yield* Effect.forkScoped(
       recoveryLane
-        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, resume: input.execution.resume }))
+        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt: input.execution.adopt }))
         .pipe(Effect.ignore),
     )
   })

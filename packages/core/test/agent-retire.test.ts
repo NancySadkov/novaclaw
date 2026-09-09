@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
+import { AgentRemoval } from "@novaclaw/core/agent/removal"
 import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -61,6 +62,59 @@ const remember = (memory: MemoryClient.Interface, scope: string, text: string) =
 const AT = 1_787_000_000_000
 
 describe("retiring a colleague", () => {
+  it.effect("interrupts the officer and deletes its complete worker tree plus detached ghosts", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const eventBus = yield* events
+      const root = SessionSchema.ID.make("ses_ghost_root")
+      const child = SessionSchema.ID.make("ses_ghost_worker")
+      const grandchild = SessionSchema.ID.make("ses_ghost_grandchild")
+      const orphan = SessionSchema.ID.make("ses_ghost_orphan")
+      yield* openChat(db, { id: root, agent: "ghost" })
+      const workerRows: Array<{ id: SessionSchema.ID; parent_id: SessionSchema.ID; agent: string }> = [
+        { id: child, parent_id: root, agent: "ghost" },
+        // Parentage owns the process even if a corrupt/stale row disagrees about the agent id.
+        { id: grandchild, parent_id: child, agent: "somebody-else" },
+        { id: orphan, parent_id: SessionSchema.ID.make("ses_missing_parent"), agent: "ghost" },
+      ]
+      for (const row of workerRows)
+        yield* db
+          .insert(SessionTable)
+          .values({
+            ...row,
+            slug: row.id,
+            directory: process.cwd(),
+            title: "worker",
+            version: "test",
+            time_created: 1,
+            time_updated: 1,
+          })
+          .run()
+          .pipe(Effect.orDie)
+
+      const interrupted: string[] = []
+      const evicted: string[] = []
+      yield* AgentRemoval.removeWorkers({
+        db,
+        events: eventBus,
+        execution: {
+          interrupt: (id: SessionSchema.ID) => Effect.sync(() => void interrupted.push(id)),
+        } as never,
+        scheduler: { evict: (id: SessionSchema.ID) => Effect.sync(() => void evicted.push(id)) } as never,
+        memory: MemoryClient.stub(),
+        agent: "ghost",
+      })
+
+      const remaining = yield* db.select({ id: SessionTable.id }).from(SessionTable).all().pipe(Effect.orDie)
+      expect(remaining.map((row) => row.id)).toEqual([root])
+      expect(interrupted).toContain(root)
+      expect(interrupted).toContain(child)
+      expect(interrupted).toContain(grandchild)
+      expect(interrupted).toContain(orphan)
+      expect(evicted).toContain(root)
+    }),
+  )
+
   it.effect("SETS ASIDE the cabinet rather than destroying it", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

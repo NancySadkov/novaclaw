@@ -526,6 +526,7 @@ test("the standard worker keeps execution checkpoints and heartbeats host-owned"
     providerSettled: () => Effect.void,
     providerRecovery: () => Effect.succeed(undefined),
     settle: () => Effect.succeed("committed" as const),
+    requestInterrupt: () => Effect.void,
     recoverFailure: () => Effect.succeed(undefined),
     get: () => Effect.succeed(undefined),
     list: () => Effect.succeed([]),

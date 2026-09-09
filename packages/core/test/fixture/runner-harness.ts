@@ -747,6 +747,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       return SessionExecution.Service.of({
         active: coordinator.active,
         resume: coordinator.run,
+        adopt: coordinator.adopt,
         wake: coordinator.wake,
         interrupt: coordinator.interrupt,
       })

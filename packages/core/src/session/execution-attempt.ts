@@ -75,11 +75,11 @@ export interface Interface {
    * collapsing to the last would let a receipt claim one process served a turn another did.
    */
   readonly servedBy: (lease: Lease, fingerprint: string) => Effect.Effect<void>
-  readonly settle: (
-    lease: Lease,
-    state: "settled" | "failed" | "interrupted",
-    failure?: { readonly classification: string; readonly detail?: string },
-  ) => Effect.Effect<Settlement>
+  /** Completes one successful drain. Failure and stop states are deliberately separate APIs. */
+  readonly settle: (lease: Lease) => Effect.Effect<Settlement>
+  /** Records the only non-successful terminal transition before the process fiber is interrupted.
+   * Process shutdown never calls this, so it remains distinguishable and recoverable. */
+  readonly requestInterrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /** Classifies a live worker loss against its durable side-effect boundary, increments the
    * retry-backoff counter, and records recovery atomically. A fenced lease returns
    * undefined and cannot influence the replacement owner. */
@@ -571,7 +571,7 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         return row?.recovery ? { ...row.recovery, startedAt: DateTime.makeUnsafe(row.recovery.startedAt) } : undefined
       }),
-      settle: Effect.fn("SessionExecutionAttempt.settle")(function* (lease, state, failure) {
+      settle: Effect.fn("SessionExecutionAttempt.settle")(function* (lease) {
         const now = Date.now()
         const fence = and(
           eq(SessionExecutionTable.session_id, lease.sessionID),
@@ -582,30 +582,12 @@ export const layer = Layer.effect(
           .transaction((tx) =>
             Effect.gen(function* () {
               const values = {
-                state,
+                state: "settled" as const,
                 heartbeat_at: now,
-                checkpoint_at: state === "settled" ? now : undefined,
-                failure_class: failure?.classification ?? null,
-                failure_detail: failure?.detail?.slice(0, 2_000) ?? null,
-                /**
-                 * ⚠️ **A user stop is not a failure, and must not spend the budget.** This used to read
-                 * `state === "settled" ? 0 : +1`, so every deliberate interrupt incremented — and with
-                 * three cancellations of a healthy session with no successful turn between them made
-                 * the NEXT genuine fault wait behind an inflated recovery delay. That is ruling 2 on
-                 * the recovery report: the user's own stops described as failures.
-                 *
-                 * `interrupted` leaves the count UNCHANGED rather than resetting it. Resetting would let
-                 * a stop erase a real failure history — two genuine losses followed by one cancellation
-                 * would look like a healthy session, which is the same defect pointing the other way.
-                 *
-                 * ⚠️ This is the `settle` path only. `recoverFailure` also lands rows in `interrupted`
-                 * when it decides an automatic retry, and there the increment is CORRECT — that state
-                 * came from a loss. It does its own counting inside its transaction and does not reach
-                 * here.
-                 */
-                ...(state === "interrupted"
-                  ? { provider_recovery: null }
-                  : { failure_count: state === "settled" ? 0 : sql`${SessionExecutionTable.failure_count} + 1` }),
+                checkpoint_at: now,
+                failure_class: null,
+                failure_detail: null,
+                failure_count: 0,
                 time_updated: now,
               }
               const committed = yield* tx
@@ -614,12 +596,10 @@ export const layer = Layer.effect(
                 // A provider latch is a durable obligation, not advisory metadata. A successful
                 // terminal state while it exists is illegal at the storage boundary, regardless of
                 // what any runner's cached queue snapshot claims.
-                .where(state === "settled" ? and(fence, isNull(SessionExecutionTable.provider_recovery)) : fence)
+                .where(and(fence, isNull(SessionExecutionTable.provider_recovery)))
                 .returning({ sessionID: SessionExecutionTable.session_id })
                 .get()
               if (committed) return "committed" as const
-              if (state !== "settled") return "superseded" as const
-
               const pending = yield* tx
                 .update(SessionExecutionTable)
                 .set({ state: "recovering", heartbeat_at: now, time_updated: now })
@@ -629,6 +609,27 @@ export const layer = Layer.effect(
               return pending ? ("recovery-pending" as const) : ("superseded" as const)
             }),
           )
+          .pipe(Effect.orDie)
+      }),
+      requestInterrupt: Effect.fn("SessionExecutionAttempt.requestInterrupt")(function* (sessionID) {
+        const now = Date.now()
+        yield* db
+          .update(SessionExecutionTable)
+          .set({
+            state: "interrupted",
+            heartbeat_at: now,
+            failure_class: "interrupt",
+            failure_detail: null,
+            provider_recovery: null,
+            time_updated: now,
+          })
+          .where(
+            and(
+              eq(SessionExecutionTable.session_id, sessionID),
+              inArray(SessionExecutionTable.state, ["starting", "busy", "recovering"]),
+            ),
+          )
+          .run()
           .pipe(Effect.orDie)
       }),
       recoverFailure: Effect.fn("SessionExecutionAttempt.recoverFailure")(function* (lease, failure) {
@@ -695,7 +696,7 @@ export const layer = Layer.effect(
         yield* db
           .update(SessionExecutionTable)
           .set({
-            state: "interrupted",
+            state: "recovering",
             failure_class: null,
             failure_detail: null,
             failure_count: 0,
@@ -736,7 +737,7 @@ export const layer = Layer.effect(
                   const updated = yield* tx
                     .update(SessionExecutionTable)
                     .set({
-                      state: "interrupted",
+                      state: "recovering",
                       failure_class: decision.reason,
                       failure_detail:
                         decision.reason === "outcome-unknown"

@@ -463,18 +463,28 @@ export const layer = Layer.effect(
                   Effect.onInterrupt(() =>
                     Effect.promise(() => spawned.value.interrupt()).pipe(
                       Effect.andThen(
-                        SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }),
+                        Effect.gen(function* () {
+                          const current = yield* attempts.get(sessionID)
+                          // A closing server scope is recoverable process loss. Only the public
+                          // interrupt door writes the authority marker that permits a terminal stop.
+                          if (
+                            current?.attemptID !== lease.attemptID ||
+                            current.generation !== lease.generation ||
+                            current.failureClass !== "interrupt"
+                          )
+                            return
+                          yield* SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located })
+                          yield* noteInterrupted
+                          yield* publishSettledStatus
+                        }),
                       ),
-                      Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
-                      Effect.andThen(noteInterrupted),
-                      Effect.andThen(publishSettledStatus),
                     ),
                   ),
                 )
               }
 
               if (outcome.type === "settled") {
-                const settlement = yield* attempts.settle(lease, "settled")
+                const settlement = yield* attempts.settle(lease)
                 if (settlement === "recovery-pending") {
                   yield* Log.event("session.settlement.refused.recovery", { "session.id": sessionID })
                   // Settlement is a compare-and-transition operation: a durable provider obligation
@@ -487,10 +497,16 @@ export const layer = Layer.effect(
                 return
               }
               if (outcome.type === "interrupted") {
-                yield* SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located })
-                yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
-                yield* noteInterrupted
-                yield* publishSettledStatus
+                const current = yield* attempts.get(sessionID)
+                if (
+                  current?.attemptID === lease.attemptID &&
+                  current.generation === lease.generation &&
+                  current.failureClass === "interrupt"
+                ) {
+                  yield* SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located })
+                  yield* noteInterrupted
+                  yield* publishSettledStatus
+                }
                 return
               }
 
@@ -532,6 +548,7 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         if (visited.has(sessionID)) return
         visited.add(sessionID)
+        yield* attempts.requestInterrupt(sessionID)
         yield* coordinator.interrupt(sessionID)
         const children = yield* store.children(sessionID)
         yield* Effect.forEach(children, (childID) => interruptBranch(childID, visited), { concurrency: "unbounded" })
@@ -540,6 +557,7 @@ export const layer = Layer.effect(
     return SessionExecution.Service.of({
       active: coordinator.active,
       resume: coordinator.run,
+      adopt: coordinator.adopt,
       wake: coordinator.wake,
       interrupt: (sessionID) => interruptBranch(sessionID, new Set()),
     })

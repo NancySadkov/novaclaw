@@ -80,25 +80,25 @@ describe("SessionExecutionAttempt", () => {
       expect(checkpointed).toMatchObject({ phase: "provider" })
       expect(checkpointed?.checkpointAt).toBeNumber()
 
-      yield* attempts.settle(first, "settled")
+      yield* attempts.settle(first)
       expect((yield* attempts.get(sessionID))?.state).toBe("busy")
-      yield* attempts.settle(second, "failed", { classification: "runner-failure", detail: "boom" })
+      yield* attempts.recoverFailure(second, { classification: "runner-failure", detail: "boom" })
       expect(yield* attempts.get(sessionID)).toMatchObject({
-        state: "failed",
+        state: "recovering",
         failureClass: "runner-failure",
         failureDetail: "boom",
         failureCount: 1,
       })
-      expect(yield* attempts.list()).toEqual([expect.objectContaining({ sessionID, state: "failed" })])
+      expect(yield* attempts.list()).toEqual([expect.objectContaining({ sessionID, state: "recovering" })])
       yield* attempts.authorizeRetry(sessionID)
       expect(yield* attempts.get(sessionID)).toMatchObject({
-        state: "interrupted",
+        state: "recovering",
         failureCount: 0,
       })
     }),
   )
 
-  it.effect("marks an expired heartbeat interrupted and resets the failure budget after success", () =>
+  it.effect("marks an expired heartbeat recovering and resets the failure budget after success", () =>
     Effect.gen(function* () {
       const sessionID = SessionSchema.ID.make("ses_execution_recover")
       yield* makeSession(sessionID)
@@ -120,13 +120,13 @@ describe("SessionExecutionAttempt", () => {
       ])
       expect(yield* attempts.get(sessionID)).toMatchObject({
         attemptID: stale.attemptID,
-        state: "interrupted",
+        state: "recovering",
         failureClass: "before-side-effect",
         failureCount: 1,
       })
 
       const recovered = yield* attempts.start(sessionID, "new-host")
-      yield* attempts.settle(recovered, "settled")
+      yield* attempts.settle(recovered)
       expect(yield* attempts.get(sessionID)).toMatchObject({ state: "settled", failureCount: 0 })
     }),
   )
@@ -153,7 +153,7 @@ describe("SessionExecutionAttempt", () => {
         },
       ])
       expect(yield* attempts.get(sessionID)).toMatchObject({
-        state: "interrupted",
+        state: "recovering",
         phase: "tool",
         failureClass: "outcome-unknown",
         failureCount: 1,
@@ -180,13 +180,13 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.providerRecovery(first)).toEqual({ ...recovery, toolProtocol: true })
 
       const replacement = yield* attempts.start(sessionID, "host-b")
-      expect(yield* attempts.settle(replacement, "settled")).toBe("recovery-pending")
+      expect(yield* attempts.settle(replacement)).toBe("recovery-pending")
       expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering" })
       yield* attempts.providerSettled(first, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toEqual({ ...recovery, toolProtocol: true })
       yield* attempts.providerSettled(replacement, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toBeUndefined()
-      expect(yield* attempts.settle(replacement, "settled")).toBe("committed")
+      expect(yield* attempts.settle(replacement)).toBe("committed")
       expect(yield* attempts.get(sessionID)).toMatchObject({ state: "settled" })
     }),
   )
@@ -296,7 +296,7 @@ describe("SessionExecutionAttempt", () => {
    * difference is the failure counter: a loss increments it and lengthens recovery backoff, so
    * treating stops as losses would make ordinary cancellations delay later recovery.
    *
-   * `execution/local.ts:102` already routes an interrupt to `settle(…, "interrupted")` rather than
+   * `execution/local.ts` already routes an interrupt to `interrupt()` rather than
    * `recoverFailure`, which is the correct half. Nothing pinned it, so nothing would notice if a
    * future refactor routed a stop through the failure path — the session would simply start pausing
    * itself, and the cause would look like flakiness.
@@ -322,7 +322,7 @@ describe("SessionExecutionAttempt", () => {
       }
       yield* attempts.providerStarted(lease, recovery)
 
-      yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
+      yield* attempts.requestInterrupt(sessionID)
 
       const after = yield* attempts.get(sessionID)
       // One durable terminal state, and it is the one that names what happened.
@@ -346,7 +346,7 @@ describe("SessionExecutionAttempt", () => {
       const failing = SessionSchema.ID.make("ses_cancel_control")
       yield* makeSession(failing)
       const failLease = yield* attempts.start(failing, "host-a")
-      yield* attempts.settle(failLease, "failed", { classification: "runner-failure" })
+      yield* attempts.recoverFailure(failLease, { classification: "runner-failure" })
       expect((yield* attempts.get(failing))?.failureCount, "a real failure must still cost").toBe(1)
     }),
   )

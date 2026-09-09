@@ -91,7 +91,7 @@ const SessionCatalogHandler = handlerLayer(
                 listed,
                 (item) =>
                   effective.resolve(item.id).pipe(
-                  Effect.map((config) => ({
+                    Effect.map((config) => ({
                       ...item,
                       ...(config.agent === undefined ? {} : { agent: AgentV2.ID.make(config.agent) }),
                       ...(config.model === undefined
@@ -105,7 +105,7 @@ const SessionCatalogHandler = handlerLayer(
                                 : { variant: ModelV2.VariantID.make(config.model.variant) }),
                             }),
                           }),
-                  })),
+                    })),
                   ),
                 { concurrency: 4 },
               )
@@ -381,9 +381,9 @@ const SessionCatalogHandler = handlerLayer(
                   .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
               if (ctx.payload.archived !== undefined)
                 if (ctx.payload.archived === null) {
-                  const current = yield* session.get(ctx.params.sessionID).pipe(
-                    Effect.catchTag("Session.NotFoundError", notFound),
-                  )
+                  const current = yield* session
+                    .get(ctx.params.sessionID)
+                    .pipe(Effect.catchTag("Session.NotFoundError", notFound))
                   const agent = current.agent
                   if (agent === undefined || AgentV2.POSTURE_IDS.has(agent))
                     return yield* new InvalidRequestError({

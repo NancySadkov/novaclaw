@@ -20,7 +20,6 @@ describe("SessionDriveState", () => {
     const state = SessionDriveState.make()
     const snapshot = {
       ...SessionDriveState.empty,
-      runawayNudgedAtCalls: 75,
       compactionRetryAt: 123_456,
     }
     await Effect.runPromise(state.withSession("ses_recovery", state.save("ses_recovery", snapshot)))
@@ -41,7 +40,6 @@ describe("SessionDriveState", () => {
       joined: ["child"],
       spawned: [],
       restartRounds: 2,
-      runawayNudgedAtCalls: 0,
     })
   })
 

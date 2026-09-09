@@ -11,6 +11,8 @@ export interface Coordinator<Key, E> {
   readonly active: Effect.Effect<ReadonlySet<Key>>
   /** Starts execution while idle or joins the active execution. */
   readonly run: (key: Key) => Effect.Effect<void, E>
+  /** Adopts durable work in a detached forced drain; recovery must not join one task before starting the next. */
+  readonly adopt: (key: Key) => Effect.Effect<void>
   /** Registers one coalesced follow-up after newly recorded work. */
   readonly wake: (key: Key) => Effect.Effect<void>
   /** Stops active execution and waits for its cleanup. */
@@ -94,6 +96,14 @@ export const make = <Key, E>(options: {
         start(key, next, false)
       })
 
+    const adopt = (key: Key) =>
+      Effect.sync(() => {
+        if (active.has(key)) return
+        const next = makeEntry()
+        active.set(key, next)
+        start(key, next, true)
+      })
+
     const interrupt = (key: Key): Effect.Effect<void> =>
       Effect.suspend(() => {
         const entry = active.get(key)
@@ -103,7 +113,7 @@ export const make = <Key, E>(options: {
         return Fiber.interrupt(entry.owner)
       })
 
-    return { active: Effect.sync(() => new Set(active.keys())), run, wake, interrupt }
+    return { active: Effect.sync(() => new Set(active.keys())), run, adopt, wake, interrupt }
   })
 
 // ── The wake seam (B1, 2026-07-28) ─────────────────────────────────────────────────────────────

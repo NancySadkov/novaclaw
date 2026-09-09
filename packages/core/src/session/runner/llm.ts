@@ -103,9 +103,6 @@ import {
   redirectMessage,
   detectFailureStreak,
   failureStreakMessage,
-  detectRunaway,
-  RUNAWAY_THRESHOLD,
-  runawayMessage,
   toolCallsSinceLastUser,
   announcedToolButCalledNone,
   isEmptyAssistantTurn,
@@ -947,7 +944,6 @@ export const layer = Layer.effect(
      * before it can ever reach its bound.
      */
     const childRestartRounds = new Map<string, number>()
-    const runawayNudgedAtCalls = new Map<string, number>()
     const compactionRetryAt = new Map<string, number>()
     const sessionMapRetention = SessionMapRetention.make([
       setRequests,
@@ -958,7 +954,6 @@ export const layer = Layer.effect(
       childrenSpawned,
       childrenTask,
       childRestartRounds,
-      runawayNudgedAtCalls,
       compactionRetryAt,
     ])
     /** Fill the controller caches for one session from the store, at the start of a run. */
@@ -976,7 +971,6 @@ export const layer = Layer.effect(
           if (snapshot.childTask !== undefined) childrenTask.set(sessionID, snapshot.childTask)
           else childrenTask.delete(sessionID)
           childRestartRounds.set(sessionID, snapshot.restartRounds)
-          runawayNudgedAtCalls.set(sessionID, snapshot.runawayNudgedAtCalls)
           if (snapshot.compactionRetryAt !== undefined) compactionRetryAt.set(sessionID, snapshot.compactionRetryAt)
           else compactionRetryAt.delete(sessionID)
         }),
@@ -994,7 +988,6 @@ export const layer = Layer.effect(
         ...(childrenTask.get(sessionID) === undefined ? {} : { childTask: childrenTask.get(sessionID)! }),
         spawned: [...(childrenSpawned.get(sessionID) ?? [])],
         restartRounds: childRestartRounds.get(sessionID) ?? 0,
-        runawayNudgedAtCalls: runawayNudgedAtCalls.get(sessionID) ?? 0,
         ...(compactionRetryAt.get(sessionID) === undefined
           ? {}
           : { compactionRetryAt: compactionRetryAt.get(sessionID)! }),
@@ -3529,10 +3522,9 @@ export const layer = Layer.effect(
       }
       // 1E: track which repeated-call loops we have already redirected this drain, so a
       // persistent loop is nudged once (not every turn). 1N/A2 adds a per-target failure-streak
-      // latch + a once-per-drain runaway latch; 1N/A3 a consecutive-empty-turn counter.
+      // latch; 1N/A3 adds a consecutive-empty-turn counter.
       const nudged = new Set<string>()
       const nudgedTargets = new Set<string>()
-      let runawayNudgeWatermark = runawayNudgedAtCalls.get(input.sessionID) ?? 0
       let consecutiveEmpty = 0
       let regrounded = false
       /** How many times this drain has steered the turn back to the rest of a set. Bounded by
@@ -3693,13 +3685,6 @@ export const layer = Layer.effect(
           }
           const context = yield* getContext(input.sessionID)
           const callsSinceLastUser = toolCallsSinceLastUser(context)
-          // A new real-user turn resets the call span to zero. Until then the watermark survives
-          // worker replacement, so waking a laptop cannot emit the same 75-call warning again.
-          if (callsSinceLastUser.length < runawayNudgeWatermark) {
-            runawayNudgeWatermark = 0
-            runawayNudgedAtCalls.set(input.sessionID, 0)
-            yield* flushDriveState(input.sessionID)
-          }
           // 🔴 LATCH THE REQUEST HERE — on every turn, not at the finish branch.
           //
           // Measured run 16: the latch lived only in the set-completion branch, which runs when a
@@ -3741,9 +3726,9 @@ export const layer = Layer.effect(
               nudged.add(key)
               yield* SessionInput.steer(db, events, input.sessionID, redirectMessage(looping))
             }
-            // 1N/A2: target-keyed failure streak + runaway self-check over the tool calls made
-            // since the last user message. Catches the loops the byte-identical detector misses
-            // (small models always reword) and the plausible non-failing re-read/re-grep runaway.
+            // 1N/A2: target-keyed failure streak over the tool calls made since the last user
+            // message. Catches failed loops the byte-identical detector misses when a small model
+            // rewords the same broken attempt.
             const streak = detectFailureStreak(callsSinceLastUser)
             if (streak && !nudgedTargets.has(streak.target)) {
               nudgedTargets.add(streak.target)
@@ -3754,16 +3739,6 @@ export const layer = Layer.effect(
                 count: streak.count,
               })
               yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
-            }
-            if (runawayNudgeWatermark === 0 && detectRunaway(callsSinceLastUser.length, RUNAWAY_THRESHOLD)) {
-              runawayNudgeWatermark = callsSinceLastUser.length
-              runawayNudgedAtCalls.set(input.sessionID, runawayNudgeWatermark)
-              yield* flushDriveState(input.sessionID)
-              yield* Log.event("session.doom.runaway.detected", {
-                "session.id": input.sessionID,
-                "session.tool.calls": callsSinceLastUser.length,
-              })
-              yield* SessionInput.steer(db, events, input.sessionID, runawayMessage(callsSinceLastUser.length))
             }
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
@@ -4269,59 +4244,6 @@ export const layer = Layer.effect(
             yield* SessionInput.steer(db, events, input.sessionID, decision.message)
             shouldRun = true
             promotion = "steer"
-          } else if (decision.kind === "cap") {
-            yield* Log.event("session.drive.cap.reached", {
-              "session.id": input.sessionID,
-              rounds: driveState.rounds,
-            })
-            yield* Effect.gen(function* () {
-              yield* events.publish(SessionEvent.Synthetic, {
-                sessionID: input.sessionID,
-                messageID: SessionMessage.ID.create(),
-                timestamp: yield* DateTime.now,
-                text: decision.notice,
-              })
-            }).pipe(Effect.ignore)
-          } else if (decision.kind === "settle") {
-            // 🔴 A spawned child that answered and stopped WITHOUT calling `exit`. Its parent may be
-            // blocked on `wait`, and before this it stayed blocked for the whole timeout while the
-            // child's answer sat in its transcript (measured 2026-08-20: five children, five hangs,
-            // five discarded answers). The join is made TOTAL here — `exit` is a cooperative act by
-            // a model, and a primitive that only completes when the model remembers a tool call is
-            // not a primitive.
-            //
-            // The result is the child's OWN last words, which is what a supervisor would have read
-            // anyway. An empty transcript still completes: the parent gets an honest "it produced
-            // nothing" instead of a two-minute wait for the same answer.
-            const timestamp = yield* DateTime.now
-            // `lastAssistantText` reads a MESSAGE LIST, not a session id — the child's own transcript
-            // is the only place its answer exists, since it never called `exit` to record one.
-            const settled = yield* getContext(input.sessionID).pipe(Effect.catch(() => Effect.succeed([])))
-            const said = lastAssistantText(settled).trim()
-            yield* Log.event("session.drive.settle", {
-              "session.id": input.sessionID,
-              "session.settled.chars": said.length,
-            })
-            yield* events.publish(SessionEvent.Completed, {
-              sessionID: input.sessionID,
-              timestamp,
-              result: said.length > 0 ? said : "(the helper session ended without an answer)",
-            })
-            yield* events.publish(SessionStatusEvent.Status, {
-              sessionID: input.sessionID,
-              status: { type: "exited" },
-            })
-          } else if (decision.kind === "complete") {
-            const timestamp = yield* DateTime.now
-            yield* events.publish(SessionEvent.Completed, {
-              sessionID: input.sessionID,
-              timestamp,
-              result: decision.result,
-            })
-            yield* events.publish(SessionStatusEvent.Status, {
-              sessionID: input.sessionID,
-              status: { type: "exited" },
-            })
           }
         }
       }

@@ -114,3 +114,24 @@ describe("a session has exactly one door into existence", () => {
     expect(seam).toContain("AgentV2.POSTURE_IDS.has(input.agent)")
   })
 })
+
+describe("a session has exactly one completion door and one explicit-stop boundary", () => {
+  test("only exit(result) publishes durable completion", () => {
+    expect(sitesMatching(/\.publish\(\s*SessionEvent\.Completed/)).toEqual(["core/src/tool/exit.ts"])
+  })
+
+  test("only the two concrete executors may record explicit stop authority", () => {
+    expect(sitesMatching(/\.requestInterrupt\(/)).toEqual([
+      "core/src/session/execution/local.ts",
+      "novaclaw/src/session-worker/execution.ts",
+    ])
+  })
+
+  test("the autonomous drive contains no count or wall-clock completion authority", () => {
+    const drive = code(readFileSync(path.join(coreSrc, "session", "runner", "drive.ts"), "utf8"))
+    expect(drive).not.toContain("MAX_DRIVE_")
+    expect(drive).not.toContain('kind: "complete"')
+    expect(drive).not.toContain('kind: "settle"')
+    expect(drive).not.toContain('kind: "cap"')
+  })
+})

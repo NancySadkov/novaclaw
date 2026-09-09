@@ -332,9 +332,9 @@ const LAYERED_ARMS = [
         // quietly retired the governing agent, and the roster kept a Nova whose history had been
         // filed away underneath it.
         removeEntity: (name) =>
-          agents
-            .removeAgent(name)
-            .pipe(Effect.andThen(AgentV2.isProtected(name) ? Effect.void : AgentRemoval.announce(name))),
+          AgentV2.isProtected(name)
+            ? agents.removeAgent(name)
+            : AgentRemoval.announce(name).pipe(Effect.andThen(agents.removeAgent(name))),
       }
     }),
     ...agentCodec,

@@ -1,22 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { SessionDrive } from "@novaclaw/core/session/runner/drive"
 
-/**
- * A spawned child must complete its join even when it never calls `exit` (owner, 2026-08-20:
- * *"they should be bulletproof, since we never know how agents are going to invoke them"*).
- *
- * Measured that day: five children spawned, five answered and stopped without `exit`, five parents
- * left blocked on `wait` for the full two-minute timeout — and each child's answer was sitting in
- * its own transcript the whole time. `exit` is a cooperative act by a model; a primitive that only
- * completes when the model remembers a tool call is not a primitive.
- */
+/** A child that forgets `exit` is recovered by another turn, never completed by inference. */
 
 const now = 1_000
 const fresh = () => SessionDrive.initialState(now)
 
-describe("a sub-agent settles at drain-end without exit", () => {
-  test("a sub-agent that never exited is SETTLED, not stopped", () => {
-    expect(SessionDrive.decide({ type: "sub-agent" }, fresh(), now)).toEqual({ kind: "settle" })
+describe("a sub-agent runs until explicit exit", () => {
+  test("a sub-agent that never exited keeps driving", () => {
+    const decision = SessionDrive.decide({ type: "sub-agent" }, fresh(), now)
+    expect(decision.kind).toBe("continue")
+    if (decision.kind !== "continue") throw new Error("expected continue")
+    expect(decision.message).toContain("parent remains waiting")
+    expect(decision.message).toContain("`exit`")
   })
 
   test("a sub-agent that DID exit is left alone — one completion per session", () => {
@@ -35,12 +31,12 @@ describe("a sub-agent settles at drain-end without exit", () => {
     expect(SessionDrive.decide(undefined, fresh(), now)).toEqual({ kind: "stop" })
   })
 
-  test("the driven types keep driving — settle must not swallow the self-drive", () => {
+  test("every autonomous type keeps driving regardless of elapsed rounds", () => {
     expect(SessionDrive.decide({ type: "auto-prompting" }, fresh(), now).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, fresh(), now).kind).toBe("continue")
-    // …and their caps still fire rather than settling.
-    const spent = { rounds: SessionDrive.MAX_DRIVE_ROUNDS, startedAt: now }
-    expect(SessionDrive.decide({ type: "auto-prompting" }, spent, now).kind).toBe("cap")
+    const spent = { rounds: Number.MAX_SAFE_INTEGER, startedAt: 0 }
+    expect(SessionDrive.decide({ type: "auto-prompting" }, spent, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
+    expect(SessionDrive.decide({ type: "sub-agent" }, spent, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
   })
 
   test("an unknown thread type is stopped, not settled", () => {

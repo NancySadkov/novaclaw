@@ -163,7 +163,7 @@ describe("session tool", () => {
             kind: "observation",
           })
           expect(textOf(observation)).toContain('"stale":false')
-          yield* attempts.settle(lease, "settled")
+          yield* attempts.settle(lease)
           const settledObservation = yield* call(registry, sessionID, {
             op: "read",
             sessionID: targetID,
@@ -425,12 +425,7 @@ describe("session tool", () => {
               .pipe(Effect.orDie),
           ).toEqual({ agent: "officer" })
           expect(
-            yield* db
-              .select()
-              .from(EventTable)
-              .where(eq(EventTable.aggregate_id, sessionID))
-              .all()
-              .pipe(Effect.orDie),
+            yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, sessionID)).all().pipe(Effect.orDie),
           ).toEqual([])
         }),
       ),

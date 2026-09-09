@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
-import { Context, Deferred, Effect, Layer } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import type { LayerMap } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -11,6 +12,7 @@ import type { LocationError, LocationServices } from "@novaclaw/core/location-se
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionRecoveryDecision } from "@novaclaw/core/session/recovery-decision"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { SessionRunner } from "@novaclaw/core/session/runner/index"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -34,6 +36,8 @@ type Captured = { type: string; status: { type: string }; directory: string | un
 const harness = (input: {
   run: (setResult: (value: string) => void, sessionID: SessionSchema.ID) => Effect.Effect<void, never>
   settle?: SessionExecutionAttempt.Interface["settle"]
+  recoverFailure?: SessionExecutionAttempt.Interface["recoverFailure"]
+  owns?: SessionExecutionAttempt.Interface["owns"]
   children?: Readonly<Record<string, ReadonlyArray<SessionSchema.ID>>>
 }) =>
   Effect.gen(function* () {
@@ -69,11 +73,12 @@ const harness = (input: {
         servedBy: () => Effect.void,
         providerRecovery: () => Effect.succeed(undefined),
         settle: input.settle ?? (() => Effect.succeed("committed" as const)),
-        recoverFailure: () => Effect.succeed(undefined),
-        get: () => Effect.succeed(undefined),
+        requestInterrupt: () => Effect.void,
+        recoverFailure: input.recoverFailure ?? (() => Effect.succeed(undefined)),
+        get: () => Effect.succeed({ failureCount: 1 } as SessionExecutionAttempt.Info),
         list: () => Effect.succeed([]),
         authorizeRetry: () => Effect.void,
-        owns: () => Effect.succeed(true),
+        owns: input.owns ?? (() => Effect.succeed(true)),
         recoverStale: () => Effect.succeed([]),
       }),
     )
@@ -140,12 +145,43 @@ describe("SessionExecutionLocal status lifecycle", () => {
     ),
   )
 
-  it.effect("still settles to idle when the drain dies", () =>
+  it.effect(
+    "a runner defect recovers instead of becoming a terminal failure",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          let runs = 0
+          let recoveries = 0
+          const h = yield* harness({
+            run: () => (++runs === 1 ? Effect.die("boom") : Effect.void),
+            recoverFailure: () =>
+              Effect.sync(() => {
+                recoveries++
+                return SessionRecoveryDecision.decide({ phase: "provider", checkpointed: false, failureCount: 1 })
+              }),
+          })
+          const run = yield* h.exec.resume(sessionID).pipe(Effect.forkChild)
+          yield* Effect.yieldNow
+          yield* TestClock.adjust(Duration.seconds(2))
+          yield* Fiber.join(run)
+          expect(runs).toBe(2)
+          expect(recoveries).toBe(1)
+          expect(h.captured.map((c) => c.status.type)).toEqual(["busy", "retry", "idle"])
+        }),
+      ),
+    10_000,
+  )
+
+  it.effect("a superseded failure cannot publish idle over its replacement", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const h = yield* harness({ run: () => Effect.die("boom") as Effect.Effect<void, never> })
-        yield* h.exec.resume(sessionID).pipe(Effect.exit)
-        expect(h.captured.map((c) => c.status.type)).toEqual(["busy", "idle"])
+        const h = yield* harness({
+          run: () => Effect.die("boom"),
+          recoverFailure: () => Effect.succeed(undefined),
+          owns: () => Effect.succeed(false),
+        })
+        yield* h.exec.resume(sessionID)
+        expect(h.captured.map((c) => c.status.type)).toEqual(["busy"])
       }),
     ),
   )

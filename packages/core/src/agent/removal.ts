@@ -1,7 +1,7 @@
 export * as AgentRemoval from "./removal"
 
 import { Effect, Layer } from "effect"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { FileSystem } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentStatus } from "../agent-status"
@@ -13,8 +13,15 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { Memory } from "../kb-graph/memory"
+import type { MemoryClient } from "../kb-graph/memory-client"
 import { WorldMemory } from "../kb-graph/world-memory"
 import { AgentRetire } from "./retire"
+import { removeSessionRecord } from "../session"
+import { SessionExecution } from "../session/execution"
+import { SessionMemoryCleanup } from "../session/memory-cleanup"
+import { SessionScheduler } from "../session/scheduler"
+import { SessionSchema } from "../session/schema"
+import { SessionTable } from "../session/sql"
 
 // RETIRING A COLLEAGUE THAT WAS REMOVED THROUGH THE CONFIG DOOR.
 //
@@ -61,21 +68,86 @@ export const register = (notify: (agentID: string) => Effect.Effect<void>) => li
 export const registered = (graph?: GraphRegistry.Graph): number => listeners.entries(graph).length
 
 /**
- * Announce that a colleague's config row is gone.
+ * Announce that a colleague's config row is about to go.
  *
- * ⚠️ `catchCause`, not `ignore`: a listener with a defect in it must not propagate out of a config
- * write that has already committed and surface as a 500 on a removal that worked. `Effect.ignore`
- * discharges the error channel and lets a defect through — the same correction
- * `agent/reassignment.ts` records after a test caught the claim being false there.
+ * A listener defect propagates deliberately. Retirement runs BEFORE the identity row is removed, so
+ * failure means "the officer still exists; retry" instead of "the officer vanished but its live
+ * processes did not". This is the transaction boundary across the config and session stores.
  */
 export const announce = (agentID: string): Effect.Effect<void> =>
   // ⚠️ `listeners.visible`, not every listener in the process: the announcement reaches the graph
   // that made it and no other.
   Effect.flatMap(listeners.visible, (live) =>
-    Effect.forEach(live, (listener) => listener.notify(agentID).pipe(Effect.catchCause(() => Effect.void)), {
-      discard: true,
-    }),
+    Effect.forEach(live, (listener) => listener.notify(agentID), { discard: true }),
   )
+
+/**
+ * Stop an officer and permanently remove every worker it owns, including descendants and workers
+ * whose parent row was already lost. The roots are retained as archived history by AgentRetire.
+ *
+ * The root is interrupted before enumeration. That closes the spawn race at its source; recursive
+ * removal then interrupts each child before enumerating that child's descendants, so a worker that
+ * was already mid-spawn cannot strand a late grandchild outside the snapshot.
+ */
+export const removeWorkers = (input: {
+  readonly db: Database.Interface["db"]
+  readonly events: EventV2.Interface
+  readonly execution: SessionExecution.Interface
+  readonly scheduler: SessionScheduler.Interface
+  readonly memory: MemoryClient.Interface
+  readonly worldMemory?: MemoryClient.Interface
+  readonly agent: string
+}): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const roots = yield* input.db
+      .select({ id: SessionTable.id })
+      .from(SessionTable)
+      .where(and(eq(SessionTable.agent, input.agent), isNull(SessionTable.parent_id)))
+      .all()
+      .pipe(Effect.orDie)
+
+    for (const root of roots) {
+      yield* Effect.uninterruptible(input.execution.interrupt(root.id))
+      yield* input.scheduler.evict(root.id)
+      const children = yield* input.db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.parent_id, root.id))
+        .all()
+        .pipe(Effect.orDie)
+      for (const child of children)
+        yield* removeSessionRecord(
+          {
+            db: input.db,
+            events: input.events,
+            interrupt: (id) => Effect.uninterruptible(input.execution.interrupt(id)),
+            evict: (id) => input.scheduler.evict(id),
+          },
+          child.id,
+        ).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+    }
+
+    const owned = yield* input.db
+      .select({ id: SessionTable.id, parentID: SessionTable.parent_id })
+      .from(SessionTable)
+      .where(eq(SessionTable.agent, input.agent))
+      .all()
+      .pipe(Effect.orDie)
+    for (const worker of owned) {
+      if (worker.parentID === null) continue
+      yield* removeSessionRecord(
+        {
+          db: input.db,
+          events: input.events,
+          interrupt: (id) => Effect.uninterruptible(input.execution.interrupt(id)),
+          evict: (id) => input.scheduler.evict(id),
+        },
+        SessionSchema.ID.make(worker.id),
+      ).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+    }
+
+    yield* SessionMemoryCleanup.sweep(input.db, input.memory, input.worldMemory).pipe(Effect.ignore)
+  })
 
 /**
  * The scoped registration an instance graph makes.
@@ -93,11 +165,16 @@ export const node = makeGlobalNode({
       const events = yield* EventV2.Service
       const memory = Memory.client(yield* Memory.node.service)
       const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+      const execution = yield* SessionExecution.Service
+      const scheduler = yield* SessionScheduler.Service
       // 🔴 The subsystems that key rows on an agent id, registered where their stores are reachable.
       // Declared in `AgentRetire.CLEANERS`, so one that is never wired is REPORTED rather than
       // silently skipped — which is the failure mode this whole list exists to answer.
       const store = yield* AgentConfigStore.Service
       const fs = yield* FileSystem.FileSystem
+      yield* AgentRetire.registerCleaner("workers", (agentID) =>
+        removeWorkers({ db, events, execution, scheduler, memory, worldMemory, agent: agentID }),
+      )
       yield* AgentRetire.registerCleaner("schedules", (agentID) =>
         // A retired colleague's tasks must stop firing. Left behind they do not merely linger: the
         // scheduler hands an unrunnable owner's task to NOVA, so a retirement would quietly turn
@@ -153,6 +230,8 @@ export const node = makeGlobalNode({
     AppNodePlatform.filesystem,
     Database.node,
     EventV2.node,
+    SessionExecution.node,
+    SessionScheduler.node,
     Memory.node,
     WorldMemory.node,
   ],

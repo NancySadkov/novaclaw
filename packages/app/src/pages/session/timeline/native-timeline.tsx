@@ -35,6 +35,8 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
  */
 export function NativeTimeline(props: {
   sessionID: string
+  /** Durable unfinished work; survives the gap between process boot and live-status recovery. */
+  executionOpen?: boolean
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
@@ -284,6 +286,7 @@ export function NativeTimeline(props: {
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}
+            executionOpen={props.executionOpen}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}
             developer={expertise.level() === "developer"}

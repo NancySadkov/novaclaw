@@ -73,6 +73,7 @@ import { presenceHandoffNotice, presenceView } from "./session/session-presence"
 import { createSessionPresence } from "./session/session-presence-controller"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
+import { executionKeepsTurnOpen, visibleExecutionAttention } from "./session/session-execution-attention"
 
 type VcsMode = "git" | "branch"
 
@@ -349,6 +350,10 @@ export default function Page() {
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
+  const executionAttention = createMemo(() =>
+    visibleExecutionAttention(executionAttempt(), params.id ? busy(params.id) : false),
+  )
+  const executionOpen = createMemo(() => executionKeepsTurnOpen(executionAttempt()))
   /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
    *  incomplete case in particular must never read as "nothing happened". */
   const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))
@@ -1008,7 +1013,7 @@ export default function Page() {
     <div class="relative size-full overflow-hidden flex flex-col">
       {sessionSync() ?? ""}
       <SessionHeader />
-      <Show when={executionAttempt()}>
+      <Show when={executionAttention()}>
         {(attempt) => (
           <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>
             <div class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-state-border-warning bg-v2-state-bg-warning px-3 py-2 text-xs text-v2-text-text-muted">
@@ -1147,6 +1152,7 @@ export default function Page() {
                       >
                         <NativeTimeline
                           sessionID={_id}
+                          executionOpen={executionOpen()}
                           setController={(controller) => (timelineController = controller)}
                           directory={sdk().directory}
                           onRevert={revertToPrompt}

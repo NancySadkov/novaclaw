@@ -45,7 +45,7 @@ import {
   toolOpenDefault,
   type ReasoningFoldMode,
 } from "../reasoning-fold"
-import { turnOutcome } from "./turn-receipt"
+import { turnIsRunning, turnOutcome } from "./turn-receipt"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import {
@@ -163,6 +163,8 @@ export function NativeTranscript(props: {
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
   onStopCommand?: (reason: string) => void | Promise<void>
   status?: SessionStatus
+  /** Durable execution says this turn still has an owner obligation, even while live status reconnects. */
+  executionOpen?: boolean
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -191,7 +193,7 @@ export function NativeTranscript(props: {
       groupTurns(visible(), (message) => message.type === "user" && !isSteerText(message.text)),
     ),
   )
-  const busy = createMemo(() => props.status?.type === "busy" || props.status?.type === "retry")
+  const busy = createMemo(() => turnIsRunning(props.status?.type, props.executionOpen))
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
   const liveMessageID = createMemo(() => {
     const open = visible().find((message) => message.type === "assistant" && !message.time.completed)

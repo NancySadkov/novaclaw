@@ -11,6 +11,7 @@ import {
   RETIRED_PHASES,
   seconds,
   turnOutcome,
+  turnIsRunning,
   type TurnTiming,
 } from "./turn-receipt"
 
@@ -134,6 +135,16 @@ describe("turn receipt", () => {
   })
 })
 
+describe("durable turn activity", () => {
+  test("a recovered turn stays open while live status reconnects", () => {
+    expect(turnIsRunning(undefined, true)).toBe(true)
+    expect(turnIsRunning("idle", true)).toBe(true)
+    expect(turnIsRunning("busy", false)).toBe(true)
+    expect(turnIsRunning("retry", false)).toBe(true)
+    expect(turnIsRunning("idle", false)).toBe(false)
+  })
+})
+
 describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
   // The case that unblocks the fold: 57% of tool-bearing turns end here.
   test("says plainly that no reply was written without exposing the internal step count", () => {
@@ -144,9 +155,7 @@ describe("turnOutcome — the stand-in when a settled turn wrote no prose", () =
   // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would
   // describe a fault that is not one — ruling 2, on the surface a user reads.
   test("a turn that ended on exit reads as finished, not as stopped short", () => {
-    expect(turnOutcome({ toolCount: 2, lastTool: { name: "exit", result: undefined } })).toBe(
-      "Finished.",
-    )
+    expect(turnOutcome({ toolCount: 2, lastTool: { name: "exit", result: undefined } })).toBe("Finished.")
   })
 
   test("an exit result is the answer, not cruft hidden behind a generic finish line", () => {

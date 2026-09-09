@@ -53,8 +53,6 @@ export interface Snapshot {
   readonly spawned: ReadonlyArray<string>
   /** Times the session was steered back to unaccounted children — `childRestartRounds`. */
   readonly restartRounds: number
-  /** Tool-call count at which the broad runaway warning fired for this durable user-task span. */
-  readonly runawayNudgedAtCalls: number
   /** Automatic compaction backoff after a summary model failed to answer. */
   readonly compactionRetryAt?: number
 }
@@ -65,7 +63,6 @@ export const empty: Snapshot = {
   joined: [],
   spawned: [],
   restartRounds: 0,
-  runawayNudgedAtCalls: 0,
 }
 
 const stringArray = (value: unknown): value is ReadonlyArray<string> =>
@@ -86,11 +83,6 @@ export const decode = (raw: unknown): Snapshot | undefined => {
   if (!stringArray(spawned)) return undefined
   if (value.childTask !== undefined && typeof value.childTask !== "string") return undefined
   if (typeof value.restartRounds !== "number") return undefined
-  // Older persisted controller snapshots predate the runaway latch. Preserve their set-drive and
-  // join state while defaulting only the new watermark; a harness upgrade must not erase unrelated
-  // recovery state merely because it learned one more field.
-  const runawayNudgedAtCalls = value.runawayNudgedAtCalls === undefined ? 0 : value.runawayNudgedAtCalls
-  if (typeof runawayNudgedAtCalls !== "number" || !Number.isFinite(runawayNudgedAtCalls)) return undefined
   if (value.compactionRetryAt !== undefined && typeof value.compactionRetryAt !== "number") return undefined
   let request: Snapshot["request"]
   if (value.request !== undefined) {
@@ -120,7 +112,6 @@ export const decode = (raw: unknown): Snapshot | undefined => {
     ...(value.childTask === undefined ? {} : { childTask: value.childTask }),
     spawned,
     restartRounds: value.restartRounds,
-    runawayNudgedAtCalls,
     ...(value.compactionRetryAt === undefined ? {} : { compactionRetryAt: value.compactionRetryAt }),
   }
 }

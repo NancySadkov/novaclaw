@@ -40,9 +40,9 @@ export function redirectMessage(call: ToolCallRef, threshold: number = DOOM_LOOP
 
 // 1N / codehamr A2 — the exact-repeat detector above is defeated by ANY cosmetic rewording between
 // retries (a regenerated file body, a reworded command), and small models *always* reword. The two
-// detectors below catch what it can't: a failure STREAK keyed on tool+target (not full args), and a
-// runaway iteration count. Both are pure and unit-tested; the runner feeds them the tool calls made
-// since the last user message ("a new user message is a new goal") and steers the message on a trip.
+// detector below catches what it can't: a failure STREAK keyed on tool+target (not full args).
+// It is pure and unit-tested; the runner feeds it the tool calls made since the last user message
+// ("a new user message is a new goal") and steers the message on a trip.
 
 // Generous on purpose — honest trial-and-error is allowed. 3 consecutive same-target failures is a
 // loop, not exploration.
@@ -55,8 +55,6 @@ export const FAILURE_STREAK_THRESHOLD = 3
 
 // Honest large builds ran ~60 tool calls in a turn; 75 catches plausible non-failing loops
 // (re-read/re-grep forever) the failure streak can't see, without tripping real work.
-export const RUNAWAY_THRESHOLD = 75
-
 export interface FailedCallRef extends ToolCallRef {
   // A tool call is a FAILURE for streak purposes when its result errored. Parse-error sentinels and
   // unknown-tool results MUST be classified as failures by the caller "or the nudge never fires on
@@ -162,18 +160,6 @@ export function failureStreakMessage(streak: FailureStreak): string {
 // The runaway nudge is deliberately SELF-ASSESSMENT, never "stop" — telling a small model to stop
 // mid-task is the premature-completion failure we otherwise fight. `>=` (a multi-call round can jump
 // the counter). Latched once per turn by the caller.
-export function detectRunaway(toolCallCount: number, threshold: number = RUNAWAY_THRESHOLD): boolean {
-  return toolCallCount >= threshold
-}
-
-export function runawayMessage(toolCallCount: number): string {
-  return (
-    `${toolCallCount} tool calls so far this turn without finishing. If you're still making real progress, ` +
-    `keep going. If you're repeating a step that can't work here, stop chasing it (that loop burns the turn); ` +
-    `verify another way. If you're stuck or unsure you're converging, tell the user where things stand.`
-  )
-}
-
 // 1N / codehamr A3 — a turn ending with NO text AND no tool call is a silent dead stop, typically a
 // thinking model whose tool call streamed into the reasoning channel and was dropped by the server's
 // parser. Inject ONE synthetic re-prompt (latched per turn, re-armed by the runner whenever genuine
@@ -284,8 +270,8 @@ export const shouldReground = (
 ): boolean => toolCallCount >= threshold && finalText !== "" && !containsUnverified(finalText)
 
 // 1N/A2 — tool calls made since the last REAL user message, each classified failed/ok from its
-// projected state. Scoping to "since the last user message" gives the failure streak + runaway
-// detectors their per-goal reset ("a new user message is a new goal") for free. Crucially, harness
+// projected state. Scoping to "since the last user message" gives the failure-streak detector its
+// per-goal reset ("a new user message is a new goal") for free. Crucially, harness
 // steers ALSO project as user-type messages (`session.next.prompted` → `SessionMessage.User`) — they
 // must NOT reset the window, or the doom-loop's own nudge / an introspection interjection would wipe
 // the very streak it was fired for. Steers are recognizable by the A1 provenance prefix — asked here

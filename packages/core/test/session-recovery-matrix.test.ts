@@ -89,7 +89,7 @@ const MATRIX: readonly Point[] = [
       ["session-runner-recovery", "durably fails pending tool input left by a prior process before continuing"],
       [
         "session-execution-attempt",
-        "marks an expired heartbeat interrupted and resets the failure budget after success",
+        "marks an expired heartbeat recovering and resets the failure budget after success",
       ],
     ],
   },

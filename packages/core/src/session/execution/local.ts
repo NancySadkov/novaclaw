@@ -12,6 +12,7 @@ import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { SessionExecutionAttempt } from "../execution-attempt"
 import { Log } from "@novaclaw/schema/log"
+import { ProviderRetry } from "../runner/provider-retry"
 
 const HEARTBEAT_INTERVAL = Duration.seconds(5)
 
@@ -85,12 +86,35 @@ export const layer = Layer.effect(
                     : Log.event("session.drain.failed", { "session.id": sessionID, "session.cause": Log.fault(cause) }),
                 ),
               )
-            const drain: () => ReturnType<typeof runOnce> = () =>
+            const recoveringRun: () => Effect.Effect<void, SessionRunner.RunError> = () =>
               runOnce().pipe(
+                Effect.catchCause((cause) => {
+                  if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+                  return Effect.gen(function* () {
+                    const decision = yield* attempts.recoverFailure(lease, {
+                      classification: "runner-failure",
+                      detail: Cause.pretty(cause),
+                    })
+                    if (!decision) return
+                    const failureCount = (yield* attempts.get(sessionID))?.failureCount ?? 1
+                    const retryDelay = ProviderRetry.retryDelayMs(failureCount)
+                    yield* publishStatus({
+                      type: "retry",
+                      attempt: failureCount,
+                      next: Date.now() + retryDelay,
+                      message: "The session runner stopped unexpectedly. Continuing automatically…",
+                    })
+                    yield* Effect.sleep(Duration.millis(retryDelay))
+                    return yield* recoveringRun()
+                  })
+                }),
+              )
+            const drain: () => Effect.Effect<void, SessionRunner.RunError> = () =>
+              recoveringRun().pipe(
                 Effect.onExit((exit) =>
                   Exit.isSuccess(exit)
                     ? attempts
-                        .settle(lease, "settled")
+                        .settle(lease)
                         .pipe(
                           Effect.flatMap((settlement) =>
                             settlement === "recovery-pending"
@@ -100,18 +124,21 @@ export const layer = Layer.effect(
                               : Effect.void,
                           ),
                         )
-                    : Cause.hasInterrupts(exit.cause)
-                      ? // The ledger already recorded this (`state: "interrupted"`), and a ledger row
-                        // is not a message — which is why the transcript showed the prompt and then
-                        // nothing at all. `noteInterrupted` is the transcript's half.
-                        SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located }).pipe(
-                          Effect.andThen(attempts.settle(lease, "interrupted", { classification: "interrupt" })),
-                          Effect.andThen(noteInterrupted),
-                        )
-                      : attempts.settle(lease, "failed", {
-                          classification: "runner-failure",
-                          detail: Cause.pretty(exit.cause),
-                        }),
+                    : Cause.hasInterruptsOnly(exit.cause)
+                      ? Effect.gen(function* () {
+                          const current = yield* attempts.get(sessionID)
+                          // Scope shutdown is process loss, not stop authority. Leave its lease stale
+                          // for boot recovery; only the public interrupt door records this marker.
+                          if (
+                            current?.attemptID !== lease.attemptID ||
+                            current.generation !== lease.generation ||
+                            current.failureClass !== "interrupt"
+                          )
+                            return
+                          yield* SessionInterruptNotice.settleProvider({ events, attempts, lease, sessionID, located })
+                          yield* noteInterrupted
+                        })
+                      : Effect.void,
                 ),
               )
             return yield* drain().pipe(
@@ -120,6 +147,9 @@ export const layer = Layer.effect(
               // can be followed by live timing, and "skip idle" leaves that later `busy` uncorrected.
               Effect.ensuring(
                 Effect.gen(function* () {
+                  // A replacement generation owns the public status once this lease is fenced.
+                  // Publishing idle here would make live recovered work look finished.
+                  if (!(yield* attempts.owns(lease))) return
                   const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
                   yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
                 }),
@@ -136,6 +166,7 @@ export const layer = Layer.effect(
         visited.add(sessionID)
         // Stop the parent before discovering children. Taking the child snapshot first leaves a race
         // where an in-flight parent can spawn another worker after the snapshot and orphan it.
+        yield* attempts.requestInterrupt(sessionID)
         yield* coordinator.interrupt(sessionID)
         const children = yield* store.children(sessionID)
         yield* Effect.forEach(children, (childID) => interruptBranch(childID, visited), {
@@ -148,6 +179,7 @@ export const layer = Layer.effect(
       active: coordinator.active,
       interrupt: interruptTree,
       resume: coordinator.run,
+      adopt: coordinator.adopt,
       wake: coordinator.wake,
     })
   }),

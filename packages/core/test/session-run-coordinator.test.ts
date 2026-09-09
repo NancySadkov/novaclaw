@@ -66,6 +66,32 @@ describe("SessionRunCoordinator", () => {
     ),
   )
 
+  it.effect("adopts every forced recovery without joining the first long-running drain", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const secondStarted = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const forces: boolean[] = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: (key, force) =>
+            Effect.sync(() => forces.push(force)).pipe(
+              Effect.andThen(Deferred.succeed(key === "first" ? firstStarted : secondStarted, undefined)),
+              Effect.andThen(Deferred.await(gate)),
+            ),
+        })
+
+        yield* coordinator.adopt("first")
+        yield* coordinator.adopt("second")
+        yield* Deferred.await(firstStarted)
+        yield* Deferred.await(secondStarted)
+        expect(new Set(yield* coordinator.active)).toEqual(new Set(["first", "second"]))
+        expect(forces).toEqual([true, true])
+        yield* Deferred.succeed(gate, undefined)
+      }),
+    ),
+  )
+
   it.effect("snapshots only active executions", () =>
     Effect.scoped(
       Effect.gen(function* () {

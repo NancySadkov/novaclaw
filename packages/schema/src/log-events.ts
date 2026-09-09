@@ -2123,13 +2123,6 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  "session.doom.runaway.detected": {
-    level: "info",
-    message: "doom-loop runaway self-check",
-    attributes: { "session.id": "correlate", "session.tool.calls": "count" },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
   "session.doom.streak.detected": {
     level: "info",
     message: "doom-loop failure streak",
@@ -2164,13 +2157,6 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/execution/local.ts",
   },
-  "session.drive.cap.reached": {
-    level: "warn",
-    message: "self-drive cap reached",
-    attributes: { "session.id": "correlate", rounds: "count" },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
   "session.drive.continue": {
     level: "info",
     message: "self-drive continuation",
@@ -2178,9 +2164,6 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
-  // A spawned child settled at drain-end WITHOUT calling `exit`, so the harness completed the join
-  // on its behalf with its own last words. INFO rather than warn: the model answering instead of
-  // calling a tool is ordinary, and the whole point of the settle is that it is not a fault.
   // The harness steered a turn back to the rest of a set it had enumerated itself. INFO: a model
   // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
   // The set-completion check RAN — with the numbers behind its verdict. Distinct from `.continue`,
@@ -2274,13 +2257,6 @@ export const EVENTS = {
     level: "info",
     message: "steered back to unaccounted children",
     attributes: { "session.id": "correlate", "session.children.unaccounted": "count" },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
-  "session.drive.settle": {
-    level: "info",
-    message: "sub-agent settled without exit",
-    attributes: { "session.id": "correlate", "session.settled.chars": "count" },
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },

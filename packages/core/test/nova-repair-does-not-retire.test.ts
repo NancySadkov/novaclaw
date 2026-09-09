@@ -91,4 +91,21 @@ describe("removing an agent's config row", () => {
       expect(seen).toEqual(["theron"])
     }),
   )
+
+  it.effect("keeps the officer row when its retirement barrier defects", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      yield* store.setLayers("theron", [{ system: "a real colleague" } as never])
+
+      const result = yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* AgentRemoval.register(() => Effect.die("worker purge failed"))
+          return yield* ConfigStoreWrite.remove([["agents", "theron"]]).pipe(Effect.exit)
+        }),
+      )
+
+      expect(result._tag).toBe("Failure")
+      expect((yield* store.agents())["theron"]).toBeDefined()
+    }),
+  )
 })

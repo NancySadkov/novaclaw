@@ -119,7 +119,8 @@ export const STEER_BATCH = 10
  * How many times the harness will steer one request.
  *
  * ⚠️ A bound, not a target. This is an automatic drive — the user asked once and the harness keeps
- * going — so it must have a visible ceiling for the same reason `MAX_DRIVE_ROUNDS` does.
+ * going — so this one bounded inventory helper has a visible ceiling. It does not settle or stop
+ * the session; the autonomous drive remains alive until explicit `exit()`.
  *
  * 🔴 Raised 20 → 40 on 2026-08-20, against a measurement rather than a feeling: asked for 100 icons
  * the drive reached **71** and stopped at the ceiling, because the model opens ~3–4 files per steer
