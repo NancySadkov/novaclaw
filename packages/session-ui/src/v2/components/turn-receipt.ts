@@ -79,14 +79,22 @@ export const LONG_STAGE_MS = 10_000
  * or "almost done": a reassurance that carries no information is the thing this replaces, and a
  * guess about progress we cannot see would be describing a fault falsely.
  */
-export const longStageNote = (phase: TurnPhaseTiming["phase"], elapsed: number | undefined): string | undefined => {
+export const longStageNote = (
+  phase: TurnPhaseTiming["phase"],
+  elapsed: number | undefined,
+  context?: { imageAttachments?: number },
+): string | undefined => {
   if (elapsed === undefined) return undefined
   if (elapsed < LONG_STAGE_MS) return undefined
   switch (phase) {
     case "scheduler-wait":
       return "Another session is using this model — this one starts when a slot frees up."
     case "provider-prefill":
-      return "The agent is working on the request. Large images and files can take time."
+      if (context?.imageAttachments === 1)
+        return "The visual model is reading the attached image. Large images can take time."
+      if ((context?.imageAttachments ?? 0) > 1)
+        return "The visual model is reading the attached images. Large images can take time."
+      return "Waiting for the model provider to respond."
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":

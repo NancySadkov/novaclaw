@@ -135,6 +135,12 @@ type TranscriptActions = {
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
 
+/** Images on the latest real prompt explain a long provider-prefill without blaming the endpoint. */
+function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): number {
+  const prompt = messages.findLast((message) => message.type === "user" && !isSteerText(message.text))
+  return prompt?.type === "user" ? (prompt.files?.filter((file) => file.mime.startsWith("image/")).length ?? 0) : 0
+}
+
 /**
  * **THE transcript.** It consumes the flat native `SessionMessage` union (`@novaclaw/sdk/v2`)
  * from the native store (`createNativeMessageStore`), so there is no `parentID` grouping and no
@@ -887,6 +893,7 @@ function TurnReceipt(props: {
   reasoningTokens?: number
 }) {
   const i18n = useI18n()
+  const messages = useContext(TranscriptMessagesContext)
   const timing = () => props.timing
   // One live line, one label. The transcript's own status row, this receipt's fallback and the
   // phase label are three places that can claim "the turn is live"; they must not do it in two
@@ -912,7 +919,11 @@ function TurnReceipt(props: {
     const value = timing()
     if (!props.live || !value) return undefined
     const phase = currentPhase(value)
-    return phase ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick())) : undefined
+    return phase
+      ? longStageNote(phase.phase, elapsedMs(phase.startedAt, phase.completedAt, tick()), {
+          imageAttachments: imageAttachmentsForCurrentRun(messages()),
+        })
+      : undefined
   }
   return (
     <Show

@@ -92,7 +92,13 @@ describe("turn receipt", () => {
     expect(longStageNote("provider-prefill", LONG_STAGE_MS - 1)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBeTruthy()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBe(
-      "The agent is working on the request. Large images and files can take time.",
+      "Waiting for the model provider to respond.",
+    )
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS, { imageAttachments: 1 })).toBe(
+      "The visual model is reading the attached image. Large images can take time.",
+    )
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS, { imageAttachments: 2 })).toBe(
+      "The visual model is reading the attached images. Large images can take time.",
     )
   })
 
