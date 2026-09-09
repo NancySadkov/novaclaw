@@ -13,6 +13,8 @@ export type ComposerAgentOption = {
   readonly folder: string
   /** True when `folder` is the colleague's own scratch rather than a project the user chose. */
   readonly ownScratch: boolean
+  /** A pure Chat colleague has no project component or project affordance. */
+  readonly shortChat: boolean
 }
 
 export type ComposerAgentControlState = {
@@ -67,3 +69,6 @@ export type ComposerAgentControlState = {
  */
 export const selectedOption = (state: ComposerAgentControlState): ComposerAgentOption | undefined =>
   state.options.find((option) => option.id === state.selectedID) ?? state.options[0]
+
+/** The project affordance is structurally absent for a pure Chat officer. */
+export const canPickProject = (state: ComposerAgentControlState): boolean => selectedOption(state)?.shortChat === false

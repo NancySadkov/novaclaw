@@ -1,16 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { selectedOption, type ComposerAgentControlState } from "./agent-option"
+import { canPickProject, selectedOption, type ComposerAgentControlState } from "./agent-option"
 
 // WHO the prompt is for (owner, 2026-08-21: an agent selector in the prompt area, instead of a
 // folder selector). The rendering is a `<select>`; what needs a test is which colleague it resolves
 // to, because "nothing selected" and "the first one" are different facts and the chip must not
 // silently address the wrong desk.
 
-const option = (id: string, folder = `/scratch/${id}`, ownScratch = true) => ({
+const option = (id: string, folder = `/scratch/${id}`, ownScratch = true, shortChat = false) => ({
   id,
   name: id[0]!.toUpperCase() + id.slice(1),
   folder,
   ownScratch,
+  shortChat,
 })
 
 const state = (over: Partial<ComposerAgentControlState>): ComposerAgentControlState => ({
@@ -57,5 +58,12 @@ describe("the chip's two shapes", () => {
     const bar = state({})
     expect(bar.readOnly).toBeUndefined()
     expect(selectedOption(bar)?.id).toBe("nova")
+  })
+
+  test("carries the selected colleague's pure Chat posture beside its folder projection", () => {
+    const chat = state({ options: [option("xenia", "/scratch/xenia", true, true)] })
+    expect(selectedOption(chat)?.shortChat).toBe(true)
+    expect(canPickProject(chat)).toBe(false)
+    expect(canPickProject(state({ selectedID: "theron" }))).toBe(true)
   })
 })

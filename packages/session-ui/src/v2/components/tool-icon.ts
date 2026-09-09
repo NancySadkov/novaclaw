@@ -47,7 +47,6 @@ const ICONS: Readonly<Record<string, IconName>> = {
   tool_manual: "help",
   tool_search: "magnifying-glass-menu",
   trash: "trash",
-  upgrade_chat: "arrow-up",
   wait: "status",
   webfetch: "link",
   websearch: "magnifying-glass",

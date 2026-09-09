@@ -76,7 +76,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * bookkeeper works on the books, and you assign it there once.
    *
    * Absent = the colleague's own scratch folder (`Scratch.forAgent`), so every officer always has a
-   * real place to work without the user having to choose one.
+   * real place to work without the user having to choose one. Ignored while `shortChat` is true:
+   * pure Chat has no project component.
    *
    * ⚠️ Changing it MESSAGES the colleague (`AgentWorkspace.reassignmentNotice`): an agent told
    * nothing would go on describing the project it was moved off, and a stale mental model is worse
@@ -112,7 +113,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
     attempts: Schema.Finite.pipe(Schema.optional),
     wallMinutes: Schema.Finite.pipe(Schema.optional),
   }).pipe(Schema.optional),
-  /** The Chat/Agent posture: `true` = the fast local Chat stance, no project access or memory. */
+  /** The Chat/Agent posture: `true` = pure Chat, with no project, memory, tools, or harness prompt. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
   /**
    * Whether this colleague gets the finish re-grounding nudge after a substantial, confident turn.

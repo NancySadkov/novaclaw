@@ -37,7 +37,6 @@ const CORE_TOOLS = [
   "tool-manual",
   "tool_search",
   "trash",
-  "upgrade_chat",
   "wait",
   "webfetch",
   "websearch",

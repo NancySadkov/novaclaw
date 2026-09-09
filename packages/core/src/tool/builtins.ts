@@ -42,7 +42,6 @@ import { ExitTool } from "./exit"
 import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
 import * as WriteHexTool from "./deferred/write-hex.gen"
-import { UpgradeChatTool } from "./upgrade-chat"
 
 export const node = makeLocationNode({
   name: "built-in-tools",
@@ -88,6 +87,5 @@ export const node = makeLocationNode({
     CommunityTool.node,
     ExitTool.node,
     WaitTool.node,
-    UpgradeChatTool.node,
   ],
 })

@@ -554,7 +554,13 @@ export function AgentConfigDialog(props: {
             memory: memoryValue(),
             // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
             // optional, so an empty string is how a UI says "unset" through a merge patch.
-            ...(directory() === undefined ? {} : { directory: directory()!.trim() }),
+            // A pure Chat role has no project component. Clear an old assignment even when this
+            // save changed another field, so a stale hidden folder cannot spring back later.
+            ...(postureValue()
+              ? { directory: "" }
+              : directory() === undefined
+                ? {}
+                : { directory: directory()!.trim() }),
             ...(posture() === undefined ? {} : { shortChat: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
@@ -993,7 +999,11 @@ export function AgentConfigDialog(props: {
                   label={(value) =>
                     language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")
                   }
-                  onSelect={(value) => value && setPosture(value === "chat")}
+                  onSelect={(value) => {
+                    if (!value) return
+                    setPosture(value === "chat")
+                    if (value === "chat") setDirectory("")
+                  }}
                 />
               </div>
               <p class="text-[11px] text-v2-text-text-faint">
@@ -1039,37 +1049,38 @@ export function AgentConfigDialog(props: {
             </div>
           </section>
 
-          <section class="mt-5">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.folder")}
-            </h3>
-            {/* 🔴 The colleague's PROJECT, and it lives here rather than in the prompt area (owner,
+          <Show when={!postureValue()}>
+            <section class="mt-5">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.folder")}
+              </h3>
+              {/* 🔴 The colleague's PROJECT, and it lives here rather than in the prompt area (owner,
                 2026-08-21). Asking which folder a chat runs in made "where does this work happen" a
                 per-conversation question and left a named officer with no project of its own; under the
                 roster it is part of the job — you assign the bookkeeper to the books once. */}
-            <div class="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
-                disabled={governing()}
-                onClick={() => pickFolder()}
-              >
-                <Icon name="folder" class="size-3.5 shrink-0" />
-                <span class="truncate">{folderLabel()}</span>
-              </button>
-              <Show when={directoryValue() !== undefined}>
-                {/* Back to its own workspace — the one way out of a project, and it is a change like any
-                    other: the colleague is told (`AgentReassignment`). */}
+              <div class="mt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                  onClick={() => setDirectory("")}
+                  class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
+                  disabled={governing()}
+                  onClick={() => pickFolder()}
                 >
-                  {language.t("agentConfig.folderOwn")}
+                  <Icon name="folder" class="size-3.5 shrink-0" />
+                  <span class="truncate">{folderLabel()}</span>
                 </button>
-              </Show>
-            </div>
-            {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
+                <Show when={directoryValue() !== undefined}>
+                  {/* Back to its own workspace — the one way out of a project, and it is a change like any
+                    other: the colleague is told (`AgentReassignment`). */}
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                    onClick={() => setDirectory("")}
+                  >
+                    {language.t("agentConfig.folderOwn")}
+                  </button>
+                </Show>
+              </div>
+              {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
                 ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
                 even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
                 `SystemCompose.workspaceSection` tells the colleague about it — so the notes, drafts and
@@ -1079,36 +1090,37 @@ export function AgentConfigDialog(props: {
                 way: when there is no project it IS the working folder, and when there is one it is the
                 place the colleague keeps everything that is not the project's. Hiding it in the second
                 case would hide exactly the files the user has no other route to. */}
-            <Show when={workspacePath()}>
-              {(path) => (
-                /**
-                 * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
-                 * browse link "also closes the Tune for some reason").
-                 *
-                 * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
-                 * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
-                 * way back. The vision settles which half to fix: Files is THE file surface, an app in
-                 * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
-                 * a second file browser living inside this dialog would be the wrong answer to a
-                 * question the launcher already answers.
-                 *
-                 * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
-                 * the user takes — Tune, then Files — instead of a dialog that evaporates behind
-                 * them, which is the same rule the Back button in this header exists for: the gesture
-                 * out of a panel is "return", and an unannounced one is a dead end wearing a link.
-                 */
-                <a
-                  data-action="browse-workspace"
-                  href={`/files?path=${encodeURIComponent(path())}`}
-                  onClick={() => props.onDismiss()}
-                  class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
-                >
-                  <Icon name="folder" class="size-3 shrink-0" />
-                  {language.t("agentConfig.browseWorkspace", { name: name() })}
-                </a>
-              )}
-            </Show>
-          </section>
+              <Show when={workspacePath()}>
+                {(path) => (
+                  /**
+                   * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
+                   * browse link "also closes the Tune for some reason").
+                   *
+                   * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
+                   * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
+                   * way back. The vision settles which half to fix: Files is THE file surface, an app in
+                   * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
+                   * a second file browser living inside this dialog would be the wrong answer to a
+                   * question the launcher already answers.
+                   *
+                   * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
+                   * the user takes — Tune, then Files — instead of a dialog that evaporates behind
+                   * them, which is the same rule the Back button in this header exists for: the gesture
+                   * out of a panel is "return", and an unannounced one is a dead end wearing a link.
+                   */
+                  <a
+                    data-action="browse-workspace"
+                    href={`/files?path=${encodeURIComponent(path())}`}
+                    onClick={() => props.onDismiss()}
+                    class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
+                  >
+                    <Icon name="folder" class="size-3 shrink-0" />
+                    {language.t("agentConfig.browseWorkspace", { name: name() })}
+                  </a>
+                )}
+              </Show>
+            </section>
+          </Show>
 
           <section class="mt-5">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">

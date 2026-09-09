@@ -108,6 +108,8 @@ const ASSIGNED_PROJECT = "C:/tmp/session-agent-location/books"
 const ASSIGNED = "daedalus"
 /** The colleague nobody has pointed anywhere — the ordinary state of a fresh hire. */
 const UNASSIGNED = "myron"
+/** A pure Chat row carrying a stale folder left by an older configuration. */
+const PURE_CHAT = "xenia"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The environment. Identical to `session-create-features.test.ts` except for `AgentV2.node`: that
@@ -220,6 +222,12 @@ const seedRoster = Effect.gen(function* () {
     editor.update(AgentV2.ID.make(UNASSIGNED), (agent) => {
       agent.name = "Myron"
       agent.mode = "primary"
+    })
+    editor.update(AgentV2.ID.make(PURE_CHAT), (agent) => {
+      agent.name = "Xenia"
+      agent.mode = "primary"
+      agent.directory = ASSIGNED_PROJECT
+      agent.shortChat = true
     })
   })
 })
@@ -358,6 +366,12 @@ describe("a new chat lands in the colleague's own folder", () => {
       fs.existsSync(Scratch.forAgent(UNASSIGNED)),
       "the colleague's own workspace was named on the row and never created — the first tool call lands in a folder that is not there",
     ).toBe(true)
+  })
+
+  test("a pure Chat officer ignores a stale project assignment", async () => {
+    const landed = await withCreate((create) => createFrom(create, { agent: PURE_CHAT }))
+    expect(norm(landed.stored)).toBe(norm(Scratch.forAgent(PURE_CHAT)))
+    expect(norm(landed.stored)).not.toBe(norm(ASSIGNED_PROJECT))
   })
 
   /**

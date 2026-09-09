@@ -11,7 +11,7 @@ import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import type { ComposerAgentControlState } from "./agent-option"
+import { canPickProject, type ComposerAgentControlState } from "./agent-option"
 import { GOVERNING_ID } from "@/apps/contacts"
 
 export type ComposerControlsRowState = {
@@ -94,7 +94,10 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
           state={{
             ...props.state.agent,
             onOpenConfig: tune.open,
-            onPickProject: props.state.features.agent === GOVERNING_ID ? undefined : pickProject,
+            onPickProject:
+              props.state.features.agent === GOVERNING_ID || !canPickProject(props.state.agent)
+                ? undefined
+                : pickProject,
             modeSuffix: tune.modeSuffix,
             unattended: tune.unattended,
           }}

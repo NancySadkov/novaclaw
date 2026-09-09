@@ -44,7 +44,7 @@ const EXTERNAL = ["external_directory_read", "external_directory_write"] as cons
 const NETWORK = ["webfetch", "websearch"] as const
 
 /** The session's own state and the instance's own numbers. No filesystem, no network. */
-const SESSION = ["todowrite", "resource_status", "chat_upgrade"] as const
+const SESSION = ["todowrite", "resource_status"] as const
 
 // ⚠️ `doom_loop` is NOT here, and its absence is the point. `config/permission.ts` declares the key
 // and the Settings → Permissions tab ships a translated row for it in eighteen locales, but nothing

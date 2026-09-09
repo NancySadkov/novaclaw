@@ -80,7 +80,8 @@ export function createPromptInputController(input: {
     const id = (sessionView.record() as { agent?: string } | undefined)?.agent
     if (!id) return undefined
     const row = (rosterAgents() ?? []).find((agent) => agent.id === id)
-    const configured = row?.config?.["directory"]
+    const shortChat = row?.config?.["shortChat"] === true
+    const configured = shortChat ? undefined : row?.config?.["directory"]
     const folder = typeof configured === "string" && configured.trim() !== "" ? configured : undefined
     return {
       id,
@@ -88,6 +89,7 @@ export function createPromptInputController(input: {
       ...(row?.avatar ? { avatar: row.avatar } : {}),
       folder: folder ?? language.t("agentConfig.folderScratch"),
       ownScratch: folder === undefined,
+      shortChat,
     }
   })
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))

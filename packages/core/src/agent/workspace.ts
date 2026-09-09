@@ -28,18 +28,22 @@ import { applySteerProvenance } from "../session/steer-provenance"
 // conversation did not, and the way to start work on the new folder is to clear the chat. Making the
 // chat follow the colleague is filed in `notes/named-agents.md`.
 
-/** Where a colleague works: its configured folder, or its own scratch when it has none. */
+/** Where a colleague works: pure Chat always uses its private scratch; an Agent may use a project. */
 export const folderFor = (input: {
   readonly agentID: string
   readonly directory: string | undefined
+  readonly shortChat?: boolean | undefined
 }): string => {
-  const configured = input.directory?.trim()
+  const configured = input.shortChat ? undefined : input.directory?.trim()
   return configured ? configured : Scratch.forAgent(input.agentID)
 }
 
 /** Is this colleague working in its own scratch rather than a project the user chose? */
-export const isOwnScratch = (input: { readonly agentID: string; readonly directory: string | undefined }): boolean =>
-  folderFor(input) === Scratch.forAgent(input.agentID)
+export const isOwnScratch = (input: {
+  readonly agentID: string
+  readonly directory: string | undefined
+  readonly shortChat?: boolean | undefined
+}): boolean => folderFor(input) === Scratch.forAgent(input.agentID)
 
 /**
  * Did the folder actually change? Compared as TRIMMED strings, with "unset" and "the scratch path
@@ -89,13 +93,13 @@ export const reassignmentNotice = (input: {
   applySteerProvenance(
     input.ownScratch
       ? `Your assignment changed: you are no longer on ${input.from}, and your folder is your own ` +
-        `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
-        `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
-        `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
-        `it matters, and wait for the next thing you are asked.`
+          `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
+          `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
+          `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
+          `it matters, and wait for the next thing you are asked.`
       : `Your assignment changed: your folder is now ${input.to}, not ${input.from}. Your previous ` +
-        `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
-        `project's files are the ones you will find here. Anything you were part-way through in the ` +
-        `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
-        `are asked.`,
+          `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
+          `project's files are the ones you will find here. Anything you were part-way through in the ` +
+          `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
+          `are asked.`,
   )

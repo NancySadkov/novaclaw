@@ -1841,35 +1841,12 @@ export const layer = Layer.effect(
           ? {}
           : { superior: { id: superior.id, ...(superior.name === undefined ? {} : { name: superior.name }) } }),
       })
-      /**
-       * 🔴 WHO tells this turn where it is working — read ONCE, here, and consulted by every
-       * mechanism that could deliver it. Before this, the cadence decided `!strict && !shortChat` on
-       * its own and `<env>` omitted the folder on its own, each deferring to the other, and two
-       * postures were served by neither: Fast Chat, and a Strict session whose message routed to
-       * CHAT and fell through to this very assembly. `ProjectGrounding.HORIZON` has no "nobody" to
-       * return, and it does not take `strict` — reaching this code IS being a chat request, and a
-       * chat request always owns its own horizon.
-       */
-      const folderHorizon = ProjectGrounding.horizonFor({ shortChat: ShortChat.enabled(config.shortChat) })
-      // 🔴 ONE assembly, two configurations — so both postures are measurable in the same vocabulary.
+      // A pure Chat is deliberately a bare model conversation. The only system text it receives is
+      // the brief the user wrote in this officer's settings: no Nova persona, identity wrapper,
+      // organization, project, model pre-prompt, or upgrade instructions.
       const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
         ? {
-            ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }),
-            agentIdentity,
             agentSystem: agent.info?.system,
-            organization,
-            // The horizon for this posture, because nothing else in a Fast Chat request carries it:
-            // there is no `<env>` (the context load short-circuits above) and no cadence. One line,
-            // no listing — see `system-compose.ts` for why the listing would be dead weight under a
-            // ruleset that denies every tool but `upgrade_chat`.
-            workingFolder:
-              folderHorizon === "system-line"
-                ? SystemCompose.workingFolderSection({
-                    directory: location.directory,
-                    scratch: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
-                  })
-                : undefined,
-            base: ShortChat.GUIDANCE,
           }
         : {
             persona: harness.persona,
@@ -1952,15 +1929,13 @@ export const layer = Layer.effect(
         return yield* refusal
       }
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
-      const groundingEnabled = folderHorizon === "cadence"
+      const groundingEnabled = !ShortChat.enabled(config.shortChat)
       const groundingDecision = ProjectGrounding.decide(
         {
-          // DERIVED from the ownership table, never a second independent reading of the two mode
-          // flags. That second reading is what let this mechanism and `<env>` both stand down.
           enabled: groundingEnabled,
           directory: location.directory,
           ...(latestCompactionID === undefined ? {} : { compactionID: latestCompactionID }),
-          // A fast-chat request cannot be due for cadence grounding. Do not serialize its whole
+          // A pure Chat request cannot be due for cadence grounding. Do not serialize its whole
           // transcript just to feed a decision that returns immediately when disabled.
           contextTokens: groundingEnabled
             ? RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] }).estimatedTokens

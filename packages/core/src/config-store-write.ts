@@ -926,8 +926,11 @@ const agentFolders = (names: readonly string[]): Effect.Effect<Map<string, strin
       const layers = stored[name] ?? []
       // LAST layer wins, matching the fold every other reader uses: a later layer overriding an
       // earlier one is what layering means.
-      const directory = layers.reduce<string | undefined>((carry, layer) => layer.directory ?? carry, undefined)
-      folders.set(name, AgentWorkspace.folderFor({ agentID: name, directory }))
+      const declared = AgentConfigStore.fold(layers)
+      folders.set(
+        name,
+        AgentWorkspace.folderFor({ agentID: name, directory: declared?.directory, shortChat: declared?.shortChat }),
+      )
     }
     return folders
   })

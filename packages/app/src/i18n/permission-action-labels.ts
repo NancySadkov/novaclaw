@@ -27,7 +27,6 @@ import type { TranslationKey } from "@/context/language"
  */
 export const ACTION_LABEL_KEY = {
   bash: "settings.permissions.tool.bash.title",
-  chat_upgrade: "settings.permissions.tool.chat_upgrade.title",
   colleague: "settings.permissions.tool.colleague.title",
   community_ask: "settings.permissions.tool.community_ask.title",
   community_say: "settings.permissions.tool.community_say.title",

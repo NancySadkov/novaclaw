@@ -19,6 +19,12 @@ describe("the folder a colleague works on", () => {
     expect(AgentWorkspace.folderFor({ agentID: "theron", directory: "D:/books" })).toBe("D:/books")
   })
 
+  test("pure Chat ignores even a stale configured project", () => {
+    expect(AgentWorkspace.folderFor({ agentID: "theron", directory: "D:/books", shortChat: true })).toBe(
+      Scratch.forAgent("theron"),
+    )
+  })
+
   test("blank and whitespace are NOT a folder", () => {
     // A cleared text field arrives as "" or " ", and treating either as a working directory would
     // point a colleague at the process's cwd — somewhere nobody chose.
@@ -51,9 +57,9 @@ describe("whether a transcript has model output", () => {
   test("a new chat, a user-only chat, and an empty assistant turn are not output", () => {
     expect(AgentWorkspace.hasModelOutput([])).toBe(false)
     expect(AgentWorkspace.hasModelOutput([message({ type: "user", text: "hello" })])).toBe(false)
-    expect(
-      AgentWorkspace.hasModelOutput([message({ type: "assistant", content: [{ type: "text", text: "" }] })]),
-    ).toBe(false)
+    expect(AgentWorkspace.hasModelOutput([message({ type: "assistant", content: [{ type: "text", text: "" }] })])).toBe(
+      false,
+    )
   })
 
   test("text, reasoning, and an actual tool call count as model output", () => {

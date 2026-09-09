@@ -4,61 +4,6 @@ import fs from "node:fs/promises"
 
 export const TOKEN_INTERVAL = 64 * 1024
 
-/**
- * 🔴 **WHO tells the model where it is working — for a CHAT request.** One table, and there is
- * deliberately no `"none"` member: a posture cannot map to *nobody*, which is the entire reason this
- * type exists rather than a boolean.
- *
- * **The defect it closes, measured 2026-09-02.** The cadence below was gated
- * `!strict && !shortChat`, and `system-context/builtins.ts` left the working folder out of `<env>`
- * *"deliberately"* because the cadence was meant to own it. Two mechanisms each correctly deferring
- * to the other is how a horizon goes missing, and it went missing TWICE:
- *
- *  · **Fast Chat.** The assigned folder's path never appeared anywhere in the request, its contents
- *    never appeared, the cadence message never appeared. A colleague with a project assigned to it
- *    was a colleague that had never been told about the project — the folder is one of its
- *    components (AGENTS.md's ECS lens), and a component the entity cannot name is the MIRROR TEST's
- *    costume wearing a different hat. Fast Chat also loads no system context at all, so there was not
- *    even an `<env>` block the line could have been forgotten from.
- *  · **A Strict session answering conversationally.** `strict-drain.ts` routes each message, and a
- *    CHAT verdict falls THROUGH to this same assembly with `strict.enabled` still true — so the
- *    cadence stood down for a step prompt that never ran. Found by sweeping the class rather than the
- *    symptom, and it is why `strict` is no longer an input here at all.
- *
- * 🔴 **So the owner is a property of the REQUEST, not of the session's mode.** A chat request always
- * has a horizon owner; the jh step prompt has its own, on its own path, and never consults this. The
- * old shape let each mechanism answer *"should I fire?"* on its own and left nobody answering *"did
- * anyone?"* — the same two-caps-in-two-modules shape AGENTS.md's step 3 names.
- *
- * ⚠️ **Removing `strict` from the gate is measured, not argued.** Poisoning the ownership so a Strict
- * session resolved to the ORDINARY owner changed nothing observable in a Strict run: the step-engine
- * path never reaches this assembly, so the flag was inert there and live in exactly one place — the
- * fall-through above. Both are pinned in `test/session-runner-colleague-folder.test.ts`.
- *
- * ⚠️ **The step prompt's own limit, recorded at the seam rather than left to be discovered.** Strict's
- * horizon is the jh *"# Working directory (the ACTUAL files on disk …)"* block, which inlines the
- * folder's files and never states its absolute PATH. Deliberately still open: that block is rendered
- * by `jh/engine.ts`, whose `listFiles` dependency has no notion of a path at all, and its prompt shape
- * is validated by measured conversion on the model floor — changing it is a measurement, not an edit.
- * It is a different defect in kind from the two above: Strict is told what is in the folder and merely
- * not where, while these two were told nothing.
- */
-export type Horizon = "cadence" | "system-line"
-
-/** The postures a CHAT request can run in. Exhaustive: `HORIZON` stops compiling if it stops being. */
-export type Posture = "ordinary" | "fast-chat"
-
-export const postureOf = (input: { readonly shortChat: boolean }): Posture =>
-  input.shortChat ? "fast-chat" : "ordinary"
-
-export const HORIZON: Readonly<Record<Posture, Horizon>> = {
-  ordinary: "cadence",
-  "fast-chat": "system-line",
-}
-
-/** The one read every delivery mechanism gates on, so no two of them can both defer. */
-export const horizonFor = (input: { readonly shortChat: boolean }): Horizon => HORIZON[postureOf(input)]
-
 export interface State {
   readonly directory: string
   readonly compactionID?: string

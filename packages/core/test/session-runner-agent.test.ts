@@ -10,7 +10,6 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { ShortChat } from "@novaclaw/core/session/runner/short-chat"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { LLMEvent } from "@novaclaw/llm"
 import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
@@ -136,12 +135,11 @@ describe("SessionRunnerLLM — agent system prompt", () => {
 
     const short = systems[2]!
     const shortText = short.join("\n")
-    expect(shortText.split("Aster")).toHaveLength(2)
-    expect(shortText.split("Brisk identity marker.")).toHaveLength(2)
+    expect(shortText).not.toContain("Aster")
+    expect(shortText).not.toContain("Brisk identity marker.")
     expect(shortText).not.toContain("Iris")
     expect(shortText).not.toContain("Calm identity marker.")
-    expect(short).toContain("Review standing job brief.")
-    expect(short).toContain(ShortChat.GUIDANCE)
+    expect(short).toEqual(["Review standing job brief."])
   })
 
   test("includes the effective default agent system before durable context", async () => {

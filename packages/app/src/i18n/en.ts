@@ -2677,8 +2677,6 @@ export const dict = {
   "settings.permissions.tool.wait.description": "Wait for something it started in the background to finish",
   "settings.permissions.tool.resource_status.title": "Resource Status",
   "settings.permissions.tool.resource_status.description": "Read this machine's memory, disk and model load",
-  "settings.permissions.tool.chat_upgrade.title": "Upgrade the Chat",
-  "settings.permissions.tool.chat_upgrade.description": "Ask to turn a quick chat into a full session with tools",
   "settings.permissions.tool.kb.title": "Knowledge Base",
   "settings.permissions.tool.kb.description": "Read and write the knowledge base",
   "settings.permissions.tool.recipe.title": "Recipes",

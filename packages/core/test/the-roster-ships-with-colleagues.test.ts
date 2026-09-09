@@ -81,9 +81,8 @@ describe("the colleagues that ship", () => {
  * the way. It shipped as an ordinary officer: `memory: "own"` and the full tool surface, so that turn
  * spent itself recalling a memory graph and reading files before saying anything.
  *
- * The stance it needed already existed. `ConfigAgent.shortChat` is documented as "the fast local Chat
- * stance, no project access or memory", and `ShortChat.permissionRules` hard-denies every action but
- * `upgrade_chat`. The fix was to seed it, not to build a second simple-agent mechanism beside it.
+ * The stance it needed already existed. `ConfigAgent.shortChat` is the pure local Chat stance: no
+ * project access, memory, tools, or harness-authored system prompt.
  */
 describe("the companion is a chat", () => {
   test("🔴 Xenia ships in the fast chat stance, with no memory", () => {
@@ -110,9 +109,8 @@ describe("the companion is a chat", () => {
   })
 
   test("the brief does not instruct a move the permission floor denies", () => {
-    // It used to end by offering to hand work to the colleague who owns it. Under this stance the
-    // only available move is `upgrade_chat`, and `ShortChat.GUIDANCE` already says so in the words
-    // the tool needs — a persona arguing with its own harness is a prompt that cannot be obeyed.
+    // It used to end by offering to hand work to the colleague who owns it, but pure Chat has no
+    // tools with which to do that.
     const xenia = SEED_SOURCE.slice(SEED_SOURCE.indexOf('name: "Xenia"'), SEED_SOURCE.indexOf('id: "daedalus"'))
     expect(xenia).not.toContain("hand it over")
   })

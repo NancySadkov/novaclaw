@@ -84,9 +84,6 @@ const residentTools = [
   "tool_call",
   "tool_manual",
   "tool_search",
-  // Resident because Short Chat has no discovery horizon: this is its sole consent-bound escape.
-  // The runner hides it from Full Agent, so only Chat pays its provider-prefix cost.
-  "upgrade_chat",
   "wait",
   "webfetch",
   "websearch",
@@ -295,8 +292,7 @@ describe("LocationServiceMap", () => {
           // cheaper ambiguous field, not resident or deferred.
           expect(residentBytes).toBeLessThan(34_700) // observed 34,506 on 2026-08-24 (99.4% of 34,700)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
-          expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
-          expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)
+          expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
           // provider, and the first location's catalog transform never leaked into it.
           yield* settings.remove("experimental")

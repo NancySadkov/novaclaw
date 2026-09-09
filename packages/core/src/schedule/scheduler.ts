@@ -240,9 +240,11 @@ export const layer = Layer.effect(
         const declared = AgentConfigStore.fold((yield* roster.agents())[agentID] ?? [])
         if (declared === undefined) return undefined
         const directory = (declared as unknown as Record<string, unknown>)["directory"]
+        const shortChat = (declared as unknown as Record<string, unknown>)["shortChat"]
         return AgentWorkspace.folderFor({
           agentID,
           directory: typeof directory === "string" ? directory : undefined,
+          shortChat: shortChat === true,
         })
       }),
       // Same store, same fold, same FIRE-time read as `folderOf` above — pausing writes config

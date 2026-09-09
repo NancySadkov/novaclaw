@@ -171,7 +171,9 @@ export function NewAgentBar() {
   // server, so the two can never disagree about a colleague the client has not re-read.
   const agentOptions = createMemo(() =>
     roster(agents() ?? []).map((view) => {
-      const configured = (agents() ?? []).find((row: AgentLike) => row.id === view.id)?.config?.["directory"]
+      const row = (agents() ?? []).find((item: AgentLike) => item.id === view.id)
+      const shortChat = row?.config?.["shortChat"] === true
+      const configured = shortChat ? undefined : row?.config?.["directory"]
       const folder = typeof configured === "string" && configured.trim() !== "" ? configured : undefined
       return {
         id: view.id,
@@ -179,6 +181,7 @@ export function NewAgentBar() {
         avatar: view.avatar,
         folder: folder ?? language.t("agentConfig.folderScratch"),
         ownScratch: folder === undefined,
+        shortChat,
       }
     }),
   )
@@ -199,7 +202,7 @@ export function NewAgentBar() {
   const chosenFolder = () => {
     const id = chosenAgent() ?? defaultOfficerID()
     const row = (agents() ?? []).find((entry: AgentLike) => entry.id === id)
-    const configured = row?.config?.["directory"]
+    const configured = row?.config?.["shortChat"] === true ? undefined : row?.config?.["directory"]
     if (typeof configured === "string" && configured.trim() !== "") return configured
     // ⚠️ Then the colleague's OWN workspace, read off the roster row rather than joined here:
     // `Scratch.forAgent` lives in `core` behind `node:path` + `Global.Path.data`, so the client

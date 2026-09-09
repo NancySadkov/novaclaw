@@ -33,8 +33,8 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   readonly title: string
   readonly brief: string
   /**
-   * The fast local Chat stance (`ConfigAgent.shortChat`): no project access, no memory, and one
-   * tool — `upgrade_chat`. Everything else is hard-denied by `ShortChat.permissionRules`.
+   * The pure local Chat stance (`ConfigAgent.shortChat`): no project access, memory, tools, or
+   * harness-authored system prompt.
    */
   readonly shortChat?: boolean
   readonly personality?: string
@@ -50,15 +50,10 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     // 🔴 The COMPANION is a chat, not an agent (owner, 2026-09-02). This is the colleague a user
     // opens to talk to the model itself — to see how it answers — so it must not spend that turn
     // recalling a memory graph and reading files first. `shortChat` is exactly that stance and it
-    // already existed: no project access, no memory, one tool (`upgrade_chat`), everything else
-    // hard-denied by `ShortChat.permissionRules`. Seeding it here rather than building a second
+    // already existed: no project access, no memory, and no tools. Seeding it here rather than building a second
     // "simple agent" mechanism beside it.
     //
-    // ⚠️ The brief is SHORT on purpose, and shorter than it was. It used to end by offering to hand
-    // work to the colleague who owns it — an instruction this stance cannot carry out, because the
-    // only move available is `upgrade_chat`, and `ShortChat.GUIDANCE` already states that in the
-    // words the tool needs. A persona telling the model to do something the permission floor denies
-    // is a prompt arguing with its own harness.
+    // ⚠️ The brief is SHORT on purpose: it is the entire system prompt for this posture.
     title: "Companion",
     shortChat: true,
     brief:

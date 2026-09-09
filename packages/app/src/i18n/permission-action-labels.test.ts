@@ -17,7 +17,7 @@ import { ACTION_LABEL_KEY } from "./permission-action-labels"
  * Both directions rotted while nobody was looking, which is why both are checked here:
  *
  * · **Actions with no label.** Twenty-two of thirty-five — every capability, delegation and social
- *   action, plus `trash`, `js`, `computer`, `wait`, `resource_status` and `chat_upgrade`. The
+ *   action, plus `trash`, `js`, `computer`, `wait` and `resource_status`. The
  *   labelled thirteen were the original file tools; everything added since arrived unlabelled,
  *   because nothing rendered the labels and so nothing missed them.
  * · **Labels with no action.** Four — `glob`, `grep` and `list`, retired from the permission schema
