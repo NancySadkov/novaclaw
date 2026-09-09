@@ -86,7 +86,7 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "components/agent-config-dialog.tsx": 1,
     "components/dialog-select-directory-v2.tsx": 2,
     "components/dialog-select-server.tsx": 1,
-    "components/memory-remembered.tsx": 3,
+    "components/memory-remembered.tsx": 2,
     "components/project-indicator.tsx": 2,
     "components/prompt-input.tsx": 1,
     "components/settings-v2/appearance.tsx": 1,

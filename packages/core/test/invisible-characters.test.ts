@@ -20,7 +20,7 @@ import path from "node:path"
  *
  * Both failures are silent, and both read as "clean".
  *
- * The three carriers were `core/src/tool/kb.ts` — whose NUL sat inside `raw.includes("\x00")`, so the
+ * One carrier was the retired memory tool — whose NUL sat inside `raw.includes("\x00")`, so the
  * BINARY-FILE DETECTOR was itself a binary file — `llm/src/protocols/utils/tool-recovery.ts`, and
  * `app/src/constants/links.test.ts`. The last is why this guard is repo-wide instead of one more
  * local one: its five NULs were written by THIS project two rounds ago, while a guard that already
@@ -383,7 +383,6 @@ const REPAIRED: ReadonlyArray<readonly [string, string]> = [
   // The separator must survive AS AN ESCAPE. Deleting it would pass the sweep while silently
   // reintroducing the key collision the NUL was there to prevent: `${a}${b}` collides, `${a}\x00${b}`
   // does not. This is the other direction of the ratchet.
-  ["packages/core/src/tool/kb.ts", "\\x00"],
   ["packages/llm/src/protocols/utils/tool-recovery.ts", "\\x00"],
   ["packages/app/src/constants/links.test.ts", "\\x00"],
   // The exclusion matcher cache keys on its patterns joined by NUL. Same separator, same reason:
@@ -407,7 +406,6 @@ describe("the sweep", () => {
     // another package, and a `*.test.ts`. Name the shapes so neither can be lost again.
     const names = new Set(sources.map((file) => file.name))
     for (const name of [
-      "packages/core/src/tool/kb.ts",
       "packages/llm/src/protocols/utils/tool-recovery.ts",
       "packages/app/src/constants/links.test.ts",
       "packages/core/src/messenger/pace.ts",

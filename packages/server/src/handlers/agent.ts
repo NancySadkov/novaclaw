@@ -6,7 +6,7 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Scratch } from "@novaclaw/core/scratch"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Effect } from "effect"
@@ -181,7 +181,7 @@ export const AgentHandler = handlerLayer(
           yield* AgentRetire.everything({
             db,
             events: yield* EventV2.Service,
-            memory: Memory.client(yield* Memory.node.service),
+            memory: WorldMemory.client(yield* WorldMemory.node.service),
             agent: ctx.params.agentID,
             at: Date.now(),
           })

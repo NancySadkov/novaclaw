@@ -8,7 +8,6 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
@@ -50,7 +49,6 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
-  readonly memory: MemoryClient.Interface
   readonly worldMemory: MemoryClient.Interface
   readonly localModel: LocalModelManager.Interface
   readonly driveState: SessionDriveState.Interface
@@ -384,8 +382,8 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    *
    * Every other service in this file crosses because its EFFECT must be visible to the host. Memory
    * crosses because its STORE must be the host's — which is the same rule one level down. Measured:
-   * `replacements()` swapped seven services and not `Memory.node`, so a worker built a real second
-   * WASM engine on `<instance data>/memory/graph` while the host's lazy engine opened the moment
+   * `replacements()` once omitted the memory node, so a worker built a real second
+   * WASM engine while the host's lazy engine opened the moment
    * anything host-side read memory during a live turn. `memory.ts`'s header claimed single-writer
    * throughout; generation snapshots then made two writers destructive rather than merely redundant,
    * because `publish()` picks `max(existing) + 1` and each writer prunes to KEEP=2 without knowing
@@ -402,12 +400,11 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    * path that was already going to open a WASM engine.
    */
   const memoryOp = <A>(
-    store: "kb" | "world",
     op: SessionWorkerProtocol.MemoryOp,
     args: ReadonlyArray<unknown>,
   ): Effect.Effect<A, MemoryClient.MemoryError> =>
     Effect.tryPromise({
-      try: () => (store === "kb" ? capabilities.memory(op, args) : capabilities.worldMemory(op, args)),
+      try: () => capabilities.worldMemory(op, args),
       catch: (cause) => new MemoryClient.MemoryError({ reason: String(cause).slice(0, 300) }),
     }).pipe(
       Effect.flatMap((reply) =>
@@ -421,37 +418,36 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ),
     )
 
-  const makeMemory = (store: "kb" | "world"): MemoryClient.Interface => ({
+  const makeMemory = (): MemoryClient.Interface => ({
     // `health` never fails by contract, so an unreachable host reads as "memory is not available"
     // rather than taking a turn down — the same stance the lazy client takes when the engine is off.
-    health: () => memoryOp<boolean>(store, "health", []).pipe(Effect.orElseSucceed(() => false)),
-    addMemory: (input) => memoryOp<void>(store, "addMemory", [input]),
-    addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>(store, "addEdge", [input, access]),
-    search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>(store, "search", [input]),
+    health: () => memoryOp<boolean>("health", []).pipe(Effect.orElseSucceed(() => false)),
+    addMemory: (input) => memoryOp<void>("addMemory", [input]),
+    addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>("addEdge", [input, access]),
+    search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>("search", [input]),
     neighbors: (id, access, opts) =>
-      memoryOp<ReadonlyArray<MemoryClient.Neighbor>>(store, "neighbors", [id, access, opts]),
-    get: (id, access) => memoryOp<MemoryClient.MemoryRow | null>(store, "get", [id, access]),
+      memoryOp<ReadonlyArray<MemoryClient.Neighbor>>("neighbors", [id, access, opts]),
+    get: (id, access) => memoryOp<MemoryClient.MemoryRow | null>("get", [id, access]),
     path: (from, to, access, maxHops) =>
-      memoryOp<MemoryClient.PathResult | null>(store, "path", [from, to, access, maxHops]),
-    invalidate: (id, access, at) => memoryOp<void>(store, "invalidate", [id, access, at]),
-    purge: (id, access) => memoryOp<void>(store, "purge", [id, access]),
-    addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>(store, "addClaim", [input, access]),
-    claimHistory: (id, access) => memoryOp<MemoryClient.ClaimHistory | null>(store, "claimHistory", [id, access]),
-    reviewEvidence: (locator, access) => memoryOp<number>(store, "reviewEvidence", [locator, access]),
-    setClaimStatus: (id, status, access) => memoryOp<boolean>(store, "setClaimStatus", [id, status, access]),
-    moveScope: (from, to) => memoryOp<void>(store, "moveScope", [from, to]),
-    clearScope: (scope) => memoryOp<void>(store, "clearScope", [scope]),
-    eraseAll: () => memoryOp<number>(store, "eraseAll", []),
-    discardLegacyGlobalExtracts: () => memoryOp<number>(store, "discardLegacyGlobalExtracts", []),
-    stats: () => memoryOp<MemoryClient.Stats>(store, "stats", []),
-    list: (input) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>(store, "list", [input]),
-    candidates: (input) => memoryOp<ReadonlyArray<MemoryClient.CandidateRow>>(store, "candidates", [input]),
-    byIds: (ids) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>(store, "byIds", [ids]),
-    graph: (input) => memoryOp<MemoryClient.MemoryGraph>(store, "graph", [input]),
+      memoryOp<MemoryClient.PathResult | null>("path", [from, to, access, maxHops]),
+    invalidate: (id, access, at) => memoryOp<void>("invalidate", [id, access, at]),
+    purge: (id, access) => memoryOp<void>("purge", [id, access]),
+    addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>("addClaim", [input, access]),
+    claimHistory: (id, access) => memoryOp<MemoryClient.ClaimHistory | null>("claimHistory", [id, access]),
+    reviewEvidence: (locator, access) => memoryOp<number>("reviewEvidence", [locator, access]),
+    setClaimStatus: (id, status, access) => memoryOp<boolean>("setClaimStatus", [id, status, access]),
+    moveScope: (from, to) => memoryOp<void>("moveScope", [from, to]),
+    clearScope: (scope) => memoryOp<void>("clearScope", [scope]),
+    eraseAll: () => memoryOp<number>("eraseAll", []),
+    discardLegacyGlobalExtracts: () => memoryOp<number>("discardLegacyGlobalExtracts", []),
+    stats: () => memoryOp<MemoryClient.Stats>("stats", []),
+    list: (input) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("list", [input]),
+    candidates: (input) => memoryOp<ReadonlyArray<MemoryClient.CandidateRow>>("candidates", [input]),
+    byIds: (ids) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("byIds", [ids]),
+    graph: (input) => memoryOp<MemoryClient.MemoryGraph>("graph", [input]),
   })
 
-  const memory = makeMemory("kb")
-  const worldMemory = makeMemory("world")
+  const worldMemory = makeMemory()
 
   /**
    * 🔴 **THE MANAGED LOCAL MODEL HAS ONE RUNTIME, AND FROM HERE IT IS THE HOST'S.**
@@ -552,7 +548,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     unpin: () => Effect.void,
   }
 
-  return { events, permission, scheduler, spawner, join, colleague, memory, worldMemory, localModel, driveState }
+  return { events, permission, scheduler, spawner, join, colleague, worldMemory, localModel, driveState }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -595,35 +591,18 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
       }),
     ],
     /**
-     * 🔴 **`Memory.node`, replaced the same way the other seven are — this is the single-writer fix.**
+     * 🔴 **`WorldMemory.node`, replaced like the other host services — the single-writer fix.**
      *
-     * It is rebuilt rather than pointed at, because `Memory.node` is a CAPABILITY node: consumers
+     * It is rebuilt rather than pointed at, because `WorldMemory.node` is a CAPABILITY node: consumers
      * hold `Capability<MemoryClient.Interface>` and resolve it per call, and a replacement has to
      * have the same shape or the deferral disappears along with the engine. So the proxying client
      * goes into a service node and that node is wrapped in the same `LayerNode.capability` with the
-     * same name — which is also what keeps `capabilities()` reporting one `memory` capability rather
-     * than two.
+     * same name — which is also what keeps `capabilities()` reporting one RAG capability.
      *
      * ⚠️ `repair` is deliberately the SAME hint as the real node's. A worker whose memory is
      * unavailable is a worker whose HOST memory is unavailable, and pointing a reader at a different
      * knob depending on which process noticed would be a lie about where the problem is.
      */
-    [
-      Memory.node,
-      LayerNode.capability(
-        makeGlobalNode({
-          service: MemoryClient.Service,
-          layer: Layer.succeed(MemoryClient.Service, services.memory),
-          deps: [],
-        }),
-        {
-          name: "memory",
-          service: MemoryClient.Service,
-          timeout: "30 seconds",
-          repair: ["runtime_flags.NOVACLAW_KB_MEMORY"],
-        },
-      ),
-    ],
     [
       WorldMemory.node,
       LayerNode.capability(

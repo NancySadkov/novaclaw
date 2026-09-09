@@ -28,7 +28,6 @@ import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { AgentV2 } from "@novaclaw/core/agent"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { ModelV2 } from "@novaclaw/core/model"
 import { Config } from "@novaclaw/core/config"
@@ -780,12 +779,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // through a dependency is not resolvable from `seed`, and `seed` is where the memory store has
       // to be tidied. Same node object, so the graph builds one store either way (`LayerNode` memoizes
       // on identity).
-      Memory.node,
-      // The runner's automatic recall/extraction is a separate graph from the explicit KB. Expose it
-      // to the seed so the shared test home cannot leak compacted chats or extracted facts between
-      // harnesses either.
       WorldMemory.node,
-      // Exposed for the same reason as `Memory.node` above and with the same effect: the runner
+      // Exposed for the same reason as the memory node above and with the same effect: the runner
       // already pulls it in transitively, and `LayerNode` memoizes on identity, so listing it builds
       // one scheduler either way. A claim about WHEN the device slot is charged and released has to
       // reach the service the runner is actually calling.
@@ -859,18 +854,12 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     // as **nova**, so compaction's archived passages sat in `agent:nova` and were never touched. The
     // leak this whole comment describes therefore still happened, silently, for four days. A list of
     // scopes kept by hand beside a value that decides them is the same defect twice; ask the store.
-    const memory = Memory.client(yield* Memory.node.service)
-    const resident = yield* memory
-      .list({ limit: 500 })
-      .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
     const world = WorldMemory.client(yield* WorldMemory.node.service)
     const worldResident = yield* world
       .list({ limit: 500 })
       .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
     const searched = (scope: string) =>
       scope === "global" || scope === `session:${HARNESS_SESSION}` || scope.startsWith("agent:")
-    for (const scope of new Set(resident.map((m) => m.scope).filter(searched)))
-      yield* memory.clearScope(scope).pipe(Effect.ignore)
     for (const scope of new Set(worldResident.map((m) => m.scope).filter(searched)))
       yield* world.clearScope(scope).pipe(Effect.ignore)
   })

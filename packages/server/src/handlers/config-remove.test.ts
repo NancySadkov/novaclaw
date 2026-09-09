@@ -7,7 +7,7 @@ import { ConfigCommand } from "@novaclaw/core/config/command"
 import { ConfigReference } from "@novaclaw/core/config/reference"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { Effect, Layer, Schema } from "effect"
@@ -48,8 +48,8 @@ const database = Database.layerFromPath(":memory:")
 // belongs — on the routes — while still exercising the real call: `AgentRetire.everything` runs
 // against a live in-memory engine here, not against a mock of itself.
 const memoryStub = MemoryClient.stub()
-const memory = Layer.succeed(Memory.node.service, {
-  name: "memory",
+const memory = Layer.succeed(WorldMemory.node.service, {
+  name: "world-memory",
   get: Effect.succeed({ ok: true as const, value: memoryStub }),
   status: Effect.succeed({ state: "ready" as const, since: 0 }),
   retry: Effect.succeed({ state: "ready" as const, since: 0 }),

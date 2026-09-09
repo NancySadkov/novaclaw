@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { DatabasePath } from "@novaclaw/core/database/db-path"
 import { Global } from "@novaclaw/core/global"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { LocalModel } from "@novaclaw/schema/local-model"
 import type { Pressure } from "./pressure"
 import { Pressure as PressureProbe } from "./pressure"
@@ -46,7 +46,7 @@ async function databaseSize(filename: string): Promise<number> {
 
 export async function collect(input: { readonly pressure: Pressure.Report; readonly localModel: LocalModel.Status }) {
   const db = DatabasePath.path()
-  const vectorPath = path.join(Global.Path.data, "memory", "graph")
+  const vectorPath = path.join(Global.Path.data, "memory", "world")
   const modelsPath = path.join(Global.Path.data, "local-models")
   const runtimePath = path.join(Global.Path.bin, "llama.cpp")
   const downloadPath = path.join(Global.Path.cache, "local-models")
@@ -60,7 +60,7 @@ export async function collect(input: { readonly pressure: Pressure.Report; reado
     treeSize(logPath),
     PressureProbe.processMemory(input.localModel.pid),
   ])
-  const vector = Memory.runtimeStatus()
+  const vector = WorldMemory.runtimeStatus()
   const ram: UsageItem[] = [
     {
       id: "novaclaw",
@@ -78,8 +78,8 @@ export async function collect(input: { readonly pressure: Pressure.Report; reado
         "SQLite runs inside the NovaClaw server. The operating system reports only the combined server RAM, so a separate number would be misleading.",
     },
     {
-      id: "vector-kb",
-      label: "Vector knowledge base",
+      id: "agent-memory",
+      label: "Agent memory",
       ...(vector.stage === "not-loaded" ? { bytes: 0 } : {}),
       state: vector.stage,
       detail:

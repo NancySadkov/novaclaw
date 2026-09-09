@@ -14,7 +14,6 @@ import { MessengerApiError, messengerDrivers, messengerUpdateAccount } from "@/u
 import { createSchedule, listSchedules, removeSchedule, updateSchedule } from "@/utils/calendar-api"
 import { adhocDiscard, fsWrite, switchFeature } from "@/utils/fs-api"
 import { discoverInstances } from "@/utils/instance-discovery"
-import { memoryList } from "@/utils/memory-api"
 import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive, runRecipe } from "@/utils/recipe-api"
 import { registryRows } from "@/utils/registry-api"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
@@ -269,8 +268,8 @@ describe("instanceFetch", () => {
 
   test("`directory` travels as a query param by default and as a header when asked", async () => {
     const query = recording()
-    await instanceFetch(server, { route: "memory/stats", directory: "/tmp/p", fetch: query.fetch })
-    expect(query.seen.url).toBe("http://instance.test:4096/memory/stats?directory=%2Ftmp%2Fp")
+    await instanceFetch(server, { route: "api/world-memory/list", directory: "/tmp/p", fetch: query.fetch })
+    expect(query.seen.url).toBe("http://instance.test:4096/api/world-memory/list?directory=%2Ftmp%2Fp")
     expect((query.seen.init?.headers as Record<string, string>)["x-novaclaw-directory"]).toBeUndefined()
 
     const header = recording()
@@ -546,14 +545,6 @@ describe("every collapsed client still puts the same request on the wire", () =>
     })
     expect(sent.url).toBe("http://instance.test:4096/adhoc/session/ses%201/a%20b?directory=%2Fw")
     expect(sent.method).toBe("DELETE")
-  })
-
-  test("memory-api -> /memory/list keeps directory and drops only the ABSENT filters", async () => {
-    const sent = await wire(() => memoryList(server, { directory: "/w", scopes: ["user", "project"], limit: 50 }), {
-      status: 200,
-      body: [],
-    })
-    expect(sent.url).toBe("http://instance.test:4096/memory/list?directory=%2Fw&scopes=user%2Cproject&limit=50")
   })
 
   test("registry-api -> /registry/rows keeps table and paging", async () => {

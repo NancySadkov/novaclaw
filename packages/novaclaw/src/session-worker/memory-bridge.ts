@@ -15,7 +15,6 @@ const identity = (message: Request) => ({
   attemptID: message.attemptID,
   generation: message.generation,
   requestID: message.requestID,
-  store: message.store,
 })
 
 const ok = (message: Request, value: unknown): Reply => ({
@@ -70,7 +69,7 @@ const decodeAccess = (raw: unknown): MemoryAccess.MemoryAccess | undefined => {
 /**
  * Run ONE memory operation on the host's engine and answer the worker.
  *
- * 🔴 **This is what makes `memory.ts`'s single-writer header true.** The worker's `Memory.node`
+ * 🔴 **This is what makes the RAG graph single-writer.** The worker's `WorldMemory.node`
  * replacement turns every op into a `memory-request`; this is the other end. The store it reaches is
  * the one `layerFromConfig` provides, which means the OBSERVED one — so a claim written from inside
  * a turn publishes its `memory.*` event and writes its access-ledger row on the host, through the

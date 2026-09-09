@@ -13,7 +13,7 @@ import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { location } from "../fixture/location"
@@ -78,7 +78,7 @@ const itWithMcpHealth = testEffect(
 let memoryRefuses = true
 let memoryBuilds = 0
 const memoryInner = Layer.effect(
-  MemoryClient.Service,
+  WorldMemory.Service,
   Effect.sync(() => {
     memoryBuilds++
     if (memoryRefuses) throw new Error("forced ambient memory defect")
@@ -86,10 +86,10 @@ const memoryInner = Layer.effect(
   }),
 )
 const itWithCapability = testEffect(
-  AppNodeBuilder.build(LayerNode.group([builtInsNode, Memory.node, CapabilityRegistry.node]), [
+  AppNodeBuilder.build(LayerNode.group([builtInsNode, WorldMemory.node, CapabilityRegistry.node]), [
     [Location.node, locationLayer],
     [Global.node, Global.layerWith({ config: "/global" })],
-    [Memory.serviceNode, memoryInner],
+    [WorldMemory.serviceNode, memoryInner],
   ]),
 )
 
@@ -175,24 +175,24 @@ describe("SystemContextBuiltIns", () => {
       memoryBuilds = 0
       const contexts = yield* SystemContextRegistry.Service
       const capabilities = yield* CapabilityRegistry.Service
-      const memory = Memory.client(yield* Memory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const initialized = yield* SystemContext.initialize(yield* contexts.load())
 
-      expect(initialized.baseline).not.toContain('Capability "memory"')
+      expect(initialized.baseline).not.toContain('Capability "world-memory"')
       expect(memoryBuilds).toBe(0)
 
       expect(yield* memory.health()).toBe(false)
       const broken = yield* SystemContext.reconcile(yield* contexts.load(), initialized.snapshot)
       expect(broken).toMatchObject({ _tag: "Updated" })
       if (broken._tag !== "Updated") return
-      expect(broken.text).toContain('  Capability "memory" is unavailable:')
+      expect(broken.text).toContain('  Capability "world-memory" is unavailable:')
 
       memoryRefuses = false
-      expect(yield* capabilities.retry("memory")).toMatchObject({ state: "ready" })
+      expect(yield* capabilities.retry("world-memory")).toMatchObject({ state: "ready" })
       const recovered = yield* SystemContext.reconcile(yield* contexts.load(), broken.snapshot)
       expect(recovered).toMatchObject({ _tag: "Updated" })
       if (recovered._tag !== "Updated") return
-      expect(recovered.text).toContain('  No longer applies: Capability "memory" is unavailable:')
+      expect(recovered.text).toContain('  No longer applies: Capability "world-memory" is unavailable:')
       expect(memoryBuilds).toBe(2)
     }),
   )

@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 
 describe("capability registry", () => {
@@ -11,35 +11,35 @@ describe("capability registry", () => {
     let refuse = true
     let builds = 0
     const inner = Layer.effect(
-      MemoryClient.Service,
+      WorldMemory.Service,
       Effect.sync(() => {
         builds++
         if (refuse) throw new Error("forced registry defect")
         return MemoryClient.stub()
       }),
     )
-    const graph = AppNodeBuilder.build(LayerNode.group([CapabilityRegistry.node, Memory.node]), [
-      [Memory.serviceNode, inner],
+    const graph = AppNodeBuilder.build(LayerNode.group([CapabilityRegistry.node, WorldMemory.node]), [
+      [WorldMemory.serviceNode, inner],
     ])
     const program = Effect.gen(function* () {
       const registry = yield* CapabilityRegistry.Service
-      const memory = Memory.client(yield* Memory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
 
-      expect(yield* registry.inspect()).toEqual([{ name: "memory", status: { state: "idle" } }])
+      expect(yield* registry.inspect()).toEqual([{ name: "world-memory", status: { state: "idle" } }])
       expect(yield* registry.lines()).toEqual([])
       expect(builds).toBe(0)
 
       expect(yield* memory.health()).toBe(false)
       expect(yield* registry.inspect()).toMatchObject([
-        { name: "memory", status: { state: "unavailable", reason: { kind: "failed" }, attempts: 1 } },
+        { name: "world-memory", status: { state: "unavailable", reason: { kind: "failed" }, attempts: 1 } },
       ])
       expect(yield* registry.lines()).toEqual([
-        expect.stringContaining('Capability "memory" is unavailable: memory is unavailable'),
+        expect.stringContaining('Capability "world-memory" is unavailable: world-memory is unavailable'),
       ])
       expect(builds).toBe(1)
 
       refuse = false
-      expect(yield* registry.retry("memory")).toMatchObject({ state: "ready" })
+      expect(yield* registry.retry("world-memory")).toMatchObject({ state: "ready" })
       expect(yield* registry.lines()).toEqual([])
       expect(yield* memory.health()).toBe(true)
       expect(builds).toBe(2)

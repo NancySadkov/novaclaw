@@ -704,7 +704,6 @@ const NO_EXTERNAL = [
   "deferred/computer.gen.ts",
   "deferred/configure.gen.ts",
   "deferred/db-registry.gen.ts",
-  "deferred/kb.gen.ts",
   "deferred/log.gen.ts",
   "deferred/messenger.gen.ts",
   "deferred/permission.gen.ts",

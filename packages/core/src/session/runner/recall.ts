@@ -265,7 +265,7 @@ export const formatRecall = (pack: RecallPack): string | undefined => {
   const omission =
     pack.omitted > 0
       ? `\n(${pack.omitted} further relevant ${pack.omitted === 1 ? "memory" : "memories"} did not fit this ` +
-        `turn's memory budget — ask with the kb tool if you need more.)`
+        `turn's memory budget.)`
       : ""
   return (
     "Relevant things you remember (from earlier in this chat and from other chats). Use them if " +

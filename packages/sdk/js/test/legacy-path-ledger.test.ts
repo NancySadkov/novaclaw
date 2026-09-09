@@ -131,17 +131,6 @@ export const LEGACY_PATHS: readonly string[] = [
   "/mcp/{name}/connect",
   "/mcp/{name}/disconnect",
   // /memory — 11
-  "/memory/clearScope",
-  "/memory/graph",
-  "/memory/ingest",
-  "/memory/invalidate",
-  "/memory/list",
-  "/memory/neighbors",
-  "/memory/path",
-  "/memory/purge",
-  "/memory/remember",
-  "/memory/search",
-  "/memory/stats",
   // /path — 1
   "/path",
   // /provider — 3
@@ -170,8 +159,8 @@ export const LEGACY_PATHS: readonly string[] = [
 ]
 
 /**
- * Legacy OPERATIONS (method + path), measured 2026-09-03: GET 28, POST 33, DELETE 3, PUT 2,
- * PATCH 2 — 68 in total.
+ * Legacy OPERATIONS (method + path), measured 2026-09-09: GET 25, POST 25, DELETE 3, PUT 2,
+ * PATCH 2 — 57 in total.
  *
  * ⚠️ This header has been wrong twice, the same way both times: the pin moved and the prose did
  * not. It read "measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3, PATCH 2" (sum 100) against a
@@ -185,7 +174,7 @@ export const LEGACY_PATHS: readonly string[] = [
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 68
+const LEGACY_OPERATION_COUNT = 57
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -256,12 +245,12 @@ describe("the sweep", () => {
     // If the prefix test ever broke so that everything read as `/api/*`, the growth check below
     // would compare two empty sets and pass. Both halves are asserted large so it cannot.
     expect(API_PATHS.length, "no /api/* paths found — has API_PREFIX drifted?").toBeGreaterThan(50)
-    expect(SPEC_LEGACY_PATHS.length, "no legacy paths found — has API_PREFIX drifted?").toBeGreaterThan(50)
+    expect(SPEC_LEGACY_PATHS.length, "no legacy paths found — has API_PREFIX drifted?").toBeGreaterThan(40)
     expect(API_PATHS.length + SPEC_LEGACY_PATHS.length).toBe(ALL_PATHS.length)
   })
 
   test("the ledger itself is a real list, with no duplicate lines", () => {
-    expect(LEGACY_PATHS.length).toBeGreaterThan(50)
+    expect(LEGACY_PATHS.length).toBeGreaterThan(40)
     expect(new Set(LEGACY_PATHS).size, "LEGACY_PATHS contains a duplicate path").toBe(LEGACY_PATHS.length)
   })
 
@@ -308,11 +297,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(60)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(49)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(60)
+    ).toBe(49)
     expect(
       legacyOperations(DOCUMENT).length,
       [

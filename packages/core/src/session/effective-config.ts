@@ -8,6 +8,7 @@ import { ProjectFileCache } from "../project-file-cache"
 import {
   EFFECTIVE_CONFIG_DEFAULTS,
   agentOf,
+  ownerAgentOf,
   resolveConfig,
   sessionConfigChain,
   type EffectiveConfig,
@@ -73,6 +74,8 @@ export interface Resolution {
    * reports authorship.
    */
   readonly agent?: { readonly id: string; readonly applied: readonly string[] }
+  /** The root officer that owns durable components; workers proxy this officer's RAG cabinet. */
+  readonly memoryOwnerAgent?: string
 }
 
 /**
@@ -214,6 +217,7 @@ export const layer = Layer.effect(
       // separately cost a second walk on every resolution and pushed `core` past the gate's kill.
       const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
       const agentID = agentOf(chain)
+      const memoryOwnerAgent = ownerAgentOf(chain)
       const colleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
       const projectFault = ProjectFileCache.fault(found)
       const folded = ProjectDefaults.fold(
@@ -248,6 +252,7 @@ export const layer = Layer.effect(
         // so reporting from it said no colleague was involved while the colleague's own model, floor
         // and posture were in force.
         ...(agentID === undefined ? {} : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague) } }),
+        ...(memoryOwnerAgent === undefined ? {} : { memoryOwnerAgent }),
       } satisfies Resolution
     })
 

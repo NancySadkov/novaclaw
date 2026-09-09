@@ -83,11 +83,6 @@ export interface MemoryGraph {
   readonly slice?: GraphSlice
 }
 
-export interface MemoryStats {
-  readonly total: number
-  readonly valid: number
-}
-
 export type PathResult = { readonly ids: readonly string[]; readonly hops: number } | null
 
 const call = <T>(
@@ -99,15 +94,6 @@ const call = <T>(
   query?: Record<string, string | undefined>,
 ): Promise<T> => instanceFetch<T>(server, { method, route, directory, body, query })
 
-const csv = (values: readonly string[] | undefined): string | undefined =>
-  values && values.length ? values.join(",") : undefined
-
-// --- reads (all degrade server-side; callers still .catch for transport faults) ---
-
-export function memoryStats(server: ServerConnection.HttpBase, input: { directory: string }) {
-  return call<MemoryStats>(server, "GET", "memory/stats", input.directory)
-}
-
 /**
  * Erase every memory in every scope, for every agent including Nova. Returns how many went.
  *
@@ -115,69 +101,25 @@ export function memoryStats(server: ServerConnection.HttpBase, input: { director
  * helper that asked would put a dialog inside a fetch wrapper, and the next caller would either get a
  * surprise modal or route around it.
  */
-export function memoryErase(server: ServerConnection.HttpBase, input: { directory: string }) {
-  // ⚠️ `api/memory/erase`, not `memory/erase`: the rest of this file talks to the LEGACY `/memory/*`
-  // surface, which ruling 11 freezes — new endpoints go on the one contract under `/api/*`, and
-  // `sdk/js/test/legacy-path-ledger.test.ts` turns red if one is added beside its old neighbours.
-  return call<number>(server, "POST", "api/memory/erase", input.directory)
+export function worldMemoryErase(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<number>(server, "POST", "api/world-memory/erase", input.directory)
+}
+
+export async function worldMemoryEraseVerified(server: ServerConnection.HttpBase, input: { directory: string }) {
+  const erased = await worldMemoryErase(server, input)
+  const remaining = await worldMemoryList(server, { ...input, includeInvalid: true, limit: 1 })
+  if (remaining.length > 0) throw new Error("Agent memory erase left rows in the store")
+  return erased
 }
 
 /**
  * Fetch the complete backup view. Pagination is exhausted by the server so this result is atomic at
  * the HTTP boundary: a page fault rejects instead of handing the caller a plausible partial array.
  */
-export function memoryExport(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; includeInvalid?: boolean },
-) {
-  return call<MemoryRow[]>(server, "POST", "api/memory/export", input.directory, {
-    ...(input.includeInvalid === undefined ? {} : { includeInvalid: input.includeInvalid }),
-  })
-}
-
 /**
  * Erase and then prove the authoritative store is empty. A successful count with rows left behind
  * is not a successful clear, and a failed verification must not become a success toast.
  */
-export async function memoryEraseVerified(server: ServerConnection.HttpBase, input: { directory: string }) {
-  const erased = await memoryErase(server, input)
-  const remaining = await memoryExport(server, { ...input, includeInvalid: true })
-  if (remaining.length > 0) throw new Error(`Memory erase left ${remaining.length} rows in the store`)
-  return erased
-}
-
-export function memoryList(
-  server: ServerConnection.HttpBase,
-  input: {
-    directory: string
-    scopes?: readonly string[]
-    kinds?: readonly string[]
-    /**
-     * THE LIFECYCLE LENS — a status set the SERVER filters by.
-     *
-     * ⚠️ **Unset means EVERY status, history included**, which is the opposite of the default a
-     * reader expects and is why it is spelled out here rather than left to the endpoint's docs. The
-     * surfaces that want current truth pass it explicitly (`utils/memory-lens.ts`); a caller
-     * that omits it is asking for the whole record and gets it.
-     */
-    statuses?: readonly string[]
-    includeInvalid?: boolean
-    limit?: number
-    offset?: number
-  },
-) {
-  const scopes = csv(input.scopes)
-  const kinds = csv(input.kinds)
-  return call<MemoryRow[]>(server, "GET", "memory/list", input.directory, undefined, {
-    scopes,
-    kinds,
-    statuses: csv(input.statuses),
-    includeInvalid: input.includeInvalid ? "1" : undefined,
-    limit: input.limit === undefined ? undefined : String(input.limit),
-    offset: input.offset === undefined ? undefined : String(input.offset),
-  })
-}
-
 /**
  * The access ledger's verdict on one memory (P3). Optional on an item: a row nothing has ever
  * touched has no counters, and inventing zeroes would make "never recalled" and "recalled and
@@ -293,16 +235,6 @@ export function memoryUsageDetail(server: ServerConnection.HttpBase, input: { di
  * is excluded from the forgetting pass outright — so the only two states that matter are "somebody
  * vouched" and "nobody did".
  */
-export function memoryFeedback(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; id: string; useful: boolean },
-) {
-  return call<boolean>(server, "POST", "api/memory/feedback", input.directory, {
-    id: input.id,
-    useful: input.useful,
-  })
-}
-
 /** Explicit, complete answers for the requested ids; a capped useful list cannot answer this. */
 export async function memoryProtection(
   server: ServerConnection.HttpBase,
@@ -328,18 +260,7 @@ export async function memoryProtection(
   return result
 }
 
-export function memoryGraph(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; scopes?: readonly string[]; limit?: number },
-) {
-  const scopes = csv(input.scopes)
-  return call<MemoryGraph>(server, "GET", "memory/graph", input.directory, undefined, {
-    scopes,
-    limit: input.limit === undefined ? undefined : String(input.limit),
-  })
-}
-
-/** Read an officer's automatic world model. This is distinct from the curated/source KB above. */
+/** Read an officer-owned RAG component or the household's shared component. */
 export function worldMemoryList(
   server: ServerConnection.HttpBase,
   input: {
@@ -408,85 +329,6 @@ export function worldMemoryFeedback(
   })
 }
 
-export function memorySearch(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; query: string; k?: number; scopes?: readonly string[]; kinds?: readonly string[] },
-) {
-  return call<SearchHit[]>(server, "POST", "memory/search", input.directory, {
-    query: input.query,
-    ...(input.k !== undefined ? { k: input.k } : {}),
-    ...(input.scopes ? { scopes: input.scopes } : {}),
-    ...(input.kinds ? { kinds: input.kinds } : {}),
-  })
-}
-
-export function memoryNeighbors(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; id: string; k?: number },
-) {
-  return call<Neighbor[]>(server, "POST", "memory/neighbors", input.directory, {
-    id: input.id,
-    ...(input.k !== undefined ? { k: input.k } : {}),
-  })
-}
-
-export function memoryPath(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; from: string; to: string; maxHops?: number },
-) {
-  return call<PathResult>(server, "POST", "memory/path", input.directory, {
-    from: input.from,
-    to: input.to,
-    ...(input.maxHops !== undefined ? { maxHops: input.maxHops } : {}),
-  })
-}
-
-// --- writes (surface a 400 on a MemoryError → the caller toasts) ---
-
-export function memoryRemember(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; text: string; name?: string; scope: string; kind?: string },
-) {
-  return call<{ id: string }>(server, "POST", "memory/remember", input.directory, {
-    text: input.text,
-    ...(input.name !== undefined ? { name: input.name } : {}),
-    scope: input.scope,
-    ...(input.kind !== undefined ? { kind: input.kind } : {}),
-  })
-}
-
-export function memoryInvalidate(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
-  return call<boolean>(server, "POST", "memory/invalidate", input.directory, { id: input.id })
-}
-
-export function memoryPurge(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
-  return call<boolean>(server, "POST", "memory/purge", input.directory, { id: input.id })
-}
-
-export function memoryIngest(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; text: string; name: string; scope?: string },
-) {
-  return call<{ stored: number; passages: number }>(server, "POST", "memory/ingest", input.directory, {
-    text: input.text,
-    name: input.name,
-    ...(input.scope === undefined ? {} : { scope: input.scope }),
-  })
-}
-
-function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
-  return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
-}
-
-/** A scoped clear answers true only after the store commits it; false is therefore a failed clear. */
-export async function memoryClearScopeVerified(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; scope: string },
-) {
-  const cleared = await memoryClearScope(server, input)
-  if (!cleared) throw new Error(`Memory scope ${input.scope} was not cleared`)
-}
-
 // --- the claim lifecycle, on the ONE contract (`/api/*`) ---
 
 /** The statuses a PERSON controls. `superseded` is the lifecycle's own and is not settable. */
@@ -499,16 +341,6 @@ export type PersonClaimStatus = "active" | "archived" | "needs_review"
  * was already in that state — and a caller that drew a lifecycle change on `false` would be showing
  * the user something that did not happen.
  */
-export function memoryClaimStatus(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; id: string; status: PersonClaimStatus },
-) {
-  return call<boolean>(server, "POST", "api/memory/claim/status", input.directory, {
-    id: input.id,
-    status: input.status,
-  })
-}
-
 export interface ClaimEvidence {
   readonly kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
   readonly locator: string

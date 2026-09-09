@@ -1113,34 +1113,6 @@ export const EVENTS = {
     content: "none",
     file: "packages/server/src/handlers/memory.ts",
   },
-  "kb.memory.forget.done": {
-    level: "info",
-    message: "forgot the least valuable staged memories in a scope",
-    attributes: {
-      "memory.scope": "id",
-      "memory.forgotten": "count",
-      "memory.protected": "count",
-    },
-    content: "none",
-    file: "packages/core/src/kb-graph/memory.ts",
-  },
-  /**
-   * The pre-roster leak, cleaned up once at boot.
-   *
-   * 🔴 Auto-extraction used to write to `session:<id>` and a consolidation pass promoted those rows
-   * into `global`, so one colleague's automatically-learned facts became readable by every other.
-   * Owner's ruling: discard rather than migrate. WARN, not info: rows leaving a user's store is
-   * something they should be able to find afterwards, and the count is the whole record of what went.
-   */
-  "kb.memory.legacy.discarded": {
-    level: "warn",
-    message: "discarded pre-roster memories that had leaked into the shared pile",
-    attributes: {
-      "memory.rows": "count",
-    },
-    content: "none",
-    file: "packages/core/src/kb-graph/memory.ts",
-  },
   /**
    * A colleague's configured model could not serve the turn, so it ran on the instance default.
    *
@@ -1269,49 +1241,13 @@ export const EVENTS = {
     file: "packages/novaclaw/src/project/instance-store.ts",
   },
 
-  // ── kb ────────────────────────────────────────────────────────────────────────────────────────
-  /**
-   * An absorption pass FINISHED, with what it produced.
-   *
-   * ⚠️ A success line, not just a failure one. This work is detached from the request that started
-   * it, so without this a pass that ran and extracted NOTHING is indistinguishable from one that
-   * never started — which is exactly the ambiguity that cost a debugging round on 2026-08-12.
-   */
-  "kb.absorb.run.done": {
-    level: "info",
-    message: "absorbed a document",
-    attributes: { "kb.passages": "count", "kb.entities": "count" },
-    // Two counts carry nothing of the user's — the redaction guard caught this declared as "user".
-    content: "none",
-    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/memory.ts",
-  },
-  /** The whole absorption pass could not start or run — the passages are stored regardless. */
-  "kb.absorb.run.failed": {
-    level: "warn",
-    message: "could not absorb a document:",
-    attributes: { "kb.cause": "fault" },
-    content: "user",
-    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/memory.ts",
-  },
-  /**
-   * One passage could not be absorbed. Best-effort BY DESIGN: this runs detached from the request
-   * that started it, so nobody is watching to retry, and abandoning the remaining passages because
-   * one failed would lose a whole document to a single bad chunk.
-   */
-  "kb.absorb.passage.failed": {
-    level: "warn",
-    message: "could not absorb a passage:",
-    attributes: { "kb.cause": "fault" },
-    content: "user",
-    file: "packages/core/src/kb-graph/absorb.ts",
-  },
   /** The optional in-process graph could not open; memory stays safely degraded. */
   "kb.memory.open.failed": {
     level: "warn",
     message: "kb-memory failed to open:",
     attributes: { "kb.cause": "fault" },
     content: "user",
-    file: "packages/core/src/kb-graph/memory.ts",
+    file: "packages/core/src/kb-graph/world-memory.ts",
   },
 
   // ── location ──────────────────────────────────────────────────────────────────────────────────

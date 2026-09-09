@@ -43,20 +43,7 @@ export interface Capabilities {
   readonly colleague: (
     input: SessionWorkerProtocol.ColleagueRequestInput,
   ) => Promise<Extract<Reply, { readonly type: "colleague-result" }>>
-  /**
-   * One memory operation, performed by the HOST's single engine.
-   *
-   * ⚠️ No scope field to forge here either, but for a different reason than `spawnChild` and
-   * `colleague`: the access set IS an argument, because the `kb` tool builds it from the session it
-   * runs in and the host cannot re-derive that. What the host does instead is REFUSE a malformed one
-   * — see `memory-bridge.ts`, where `scopes: undefined` means every scope and a field lost in
-   * transit would silently widen the caller's reach.
-   */
-  readonly memory: (
-    op: SessionWorkerProtocol.MemoryOp,
-    args: ReadonlyArray<unknown>,
-  ) => Promise<Extract<Reply, { readonly type: "memory-result" }>>
-  /** The same RPC surface, routed to the host's separate automatic world-model graph. */
+  /** One RAG operation, proxied to the host's single officer-owned graph. */
   readonly worldMemory: (
     op: SessionWorkerProtocol.MemoryOp,
     args: ReadonlyArray<unknown>,
@@ -238,23 +225,10 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       if (reply.type !== "spawn-result") throw new Error(`unexpected ${reply.type} reply to spawn`)
       return reply
     },
-    memory: async (op, args) => {
-      const reply = await input.client.request({
-        ...identity,
-        type: "memory-request",
-        store: "kb",
-        requestID: requestID(),
-        op,
-        args,
-      })
-      if (reply.type !== "memory-result") throw new Error(`unexpected ${reply.type} reply to memory-request`)
-      return reply
-    },
     worldMemory: async (op, args) => {
       const reply = await input.client.request({
         ...identity,
         type: "memory-request",
-        store: "world",
         requestID: requestID(),
         op,
         args,

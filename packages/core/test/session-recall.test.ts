@@ -148,7 +148,6 @@ describe("the bounded context pack", () => {
     const block = SessionRecall.formatRecall(pack)!
     // A model handed a silently truncated list answers with the confidence of a complete recall.
     expect(block).toContain("2 further relevant memories did not fit")
-    expect(block).toContain("kb tool")
   })
 
   test("a superseded claim never reaches the protected tier", () => {

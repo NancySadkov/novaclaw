@@ -5,7 +5,6 @@ import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Log } from "@novaclaw/schema/log"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { MemoryApi, handlerLayer } from "../handler-api"
@@ -107,7 +106,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.erase",
             Effect.fn(function* () {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const erased = yield* eraseAllMemory(memory)
               yield* Log.event("kb.memory.erased", { "memory.rows": erased })
               return erased
@@ -116,7 +115,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.export",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               return yield* exportAllMemory(memory, ctx.payload.includeInvalid)
             }),
           )
@@ -222,7 +221,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.claim.status",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const changed = yield* asBadRequest(
                 memory.setClaimStatus(ctx.payload.id, ctx.payload.status, MemoryAccess.owner()),
               )
@@ -232,15 +231,13 @@ export const MemoryHandler = handlerLayer(
           /**
            * 🔴 RECORD A GOVERNED CLAIM — the first HTTP path in the instance that reaches `addClaim`.
            *
-           * `POST /memory/remember` writes a plain node through `addMemory`: no subject, no predicate,
-           * no conflict key, so nothing it creates can ever be corrected and nothing outside a model turn
-           * could cause a supersession. That is why the P2 gate had never been met: a correction was not
-           * merely unobserved, it was unreachable.
+           * Plain `addMemory` writes have no subject, predicate or conflict key. This governed path
+           * makes corrections reachable to API clients as well as the session runner.
            */
           .handle(
             "memory.claim.add",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const result = yield* asBadRequest(
                 memory.addClaim(
                   {
@@ -287,7 +284,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.usage.neverUsed",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const limit = bounded(ctx.payload.limit, 50, 500)
               const scan = Math.max(limit, Math.min(ctx.payload.scan ?? 2000, 20000))
               const candidates = yield* memory
@@ -310,7 +307,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.usage.useful",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const usage = yield* MemoryAccessLedger.usefulMemories(db, bounded(ctx.payload.limit, 50, 500))
               return { items: yield* withUsage(memory, usage) }
             }),
@@ -318,7 +315,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.usage.corrections",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               const groups = yield* MemoryAccessLedger.correctionProne(db, {
                 ...(ctx.payload.minCorrected === undefined ? {} : { minCorrected: ctx.payload.minCorrected }),
                 ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
@@ -357,7 +354,7 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.feedback",
             Effect.fn(function* (ctx) {
-              const memory = Memory.client(yield* Memory.node.service)
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
               // The scope rides along so a cleared cabinet can drop its ledger rows with it.
               const row = (yield* asBadRequest(memory.byIds([ctx.payload.id])))[0]
               if (!row) return yield* Effect.fail(new InvalidRequestError({ message: "That memory is unavailable" }))

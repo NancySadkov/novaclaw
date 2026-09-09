@@ -7,7 +7,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
 import { MemoryAccessTable } from "@novaclaw/core/kb-graph/access-ledger.sql"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { WasmMemory } from "@novaclaw/core/kb-graph/wasm-engine"
 import { testEffect } from "./lib/effect"
 
@@ -102,7 +102,7 @@ describe("the forgetting pass", () => {
       yield* MemoryAccessLedger.feedback(db, { id: "oldest", useful: true, at: 2_000, scope: "global" })
 
       // Drive the same helper as the background loop with its minimum supported test horizon.
-      yield* Memory.forgetEverywhere(engine, db, silentBus, 50, 1_000)
+      yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 50, 1_000)
 
       expect(yield* MemoryAccessLedger.accessesFor(db, "oldest")).toEqual([])
       expect(yield* MemoryAccessLedger.accessesFor(db, "newest")).toHaveLength(1)
@@ -123,7 +123,7 @@ describe("the forgetting pass", () => {
       // The WHOLE pass, not a hand-rolled loop: what has to be true is that the background fiber
       // discovers each cabinet and caps it on its own, and a test that re-implemented the discovery
       // would pass against a `memory.ts` that had stopped doing it.
-      yield* Memory.forgetEverywhere(engine, db, silentBus, 3)
+      yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 3)
 
       expect((yield* Effect.promise(() => stagedIn(engine, "agent:loud"))).length).toBe(3)
       // 🔴 Under one cap across `agent:%` the quiet colleague's two memories would have been the
@@ -150,7 +150,7 @@ describe("the forgetting pass", () => {
       })
       yield* MemoryAccessLedger.markUsed(db, { recallID: "rcl_pass", ids: ["useful"], at: Date.now() })
 
-      yield* Memory.forgetOverCap(engine, db, silentBus, "agent:nova", 2)
+      yield* WorldMemory.forgetOverCap(engine, db, silentBus, "agent:nova", 2)
 
       const left = yield* Effect.promise(() => stagedIn(engine, "agent:nova"))
       expect(left).toHaveLength(2)
@@ -170,7 +170,7 @@ describe("the forgetting pass", () => {
       // `auto-extract` — every signal in the policy points at it.
       yield* MemoryAccessLedger.feedback(db, { id: "vouched", useful: true, at: Date.now(), scope: "agent:nova" })
 
-      yield* Memory.forgetOverCap(engine, db, silentBus, "agent:nova", 2)
+      yield* WorldMemory.forgetOverCap(engine, db, silentBus, "agent:nova", 2)
 
       expect(yield* Effect.promise(() => stagedIn(engine, "agent:nova"))).toContain("vouched")
     }),
@@ -181,7 +181,7 @@ describe("the forgetting pass", () => {
       const { db } = yield* Database.Service
       const engine = yield* Effect.promise(() => open())
       yield* Effect.promise(() => fill(engine, "agent:nova", ["a", "b"]))
-      yield* Memory.forgetOverCap(engine, db, silentBus, "agent:nova", 5)
+      yield* WorldMemory.forgetOverCap(engine, db, silentBus, "agent:nova", 5)
       expect((yield* Effect.promise(() => stagedIn(engine, "agent:nova"))).length).toBe(2)
     }),
   )

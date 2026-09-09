@@ -92,7 +92,7 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(gate).toBeLessThan(body.indexOf(".stream("))
     // Resolved through the ONE entry point, which is where the folder layer and the ceiling are
     // applied — a bare chain walk here would see neither.
-    expect(body).toContain("effective.resolve(session.id)")
+    expect(body).toContain("effective.resolution(session.id)")
   })
 
   test("both decode stages enter the interactive-idle scheduler tier", () => {

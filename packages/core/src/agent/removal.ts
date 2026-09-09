@@ -12,7 +12,6 @@ import * as AppNodePlatform from "../effect/app-node-platform"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
-import { Memory } from "../kb-graph/memory"
 import type { MemoryClient } from "../kb-graph/memory-client"
 import { WorldMemory } from "../kb-graph/world-memory"
 import { AgentRetire } from "./retire"
@@ -95,7 +94,6 @@ export const removeWorkers = (input: {
   readonly execution: SessionExecution.Interface
   readonly scheduler: SessionScheduler.Interface
   readonly memory: MemoryClient.Interface
-  readonly worldMemory?: MemoryClient.Interface
   readonly agent: string
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
@@ -146,7 +144,7 @@ export const removeWorkers = (input: {
       ).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
     }
 
-    yield* SessionMemoryCleanup.sweep(input.db, input.memory, input.worldMemory).pipe(Effect.ignore)
+    yield* SessionMemoryCleanup.sweep(input.db, input.memory).pipe(Effect.ignore)
   })
 
 /**
@@ -163,8 +161,7 @@ export const node = makeGlobalNode({
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
-      const memory = Memory.client(yield* Memory.node.service)
-      const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const execution = yield* SessionExecution.Service
       const scheduler = yield* SessionScheduler.Service
       // 🔴 The subsystems that key rows on an agent id, registered where their stores are reachable.
@@ -173,7 +170,7 @@ export const node = makeGlobalNode({
       const store = yield* AgentConfigStore.Service
       const fs = yield* FileSystem.FileSystem
       yield* AgentRetire.registerCleaner("workers", (agentID) =>
-        removeWorkers({ db, events, execution, scheduler, memory, worldMemory, agent: agentID }),
+        removeWorkers({ db, events, execution, scheduler, memory, agent: agentID }),
       )
       yield* AgentRetire.registerCleaner("schedules", (agentID) =>
         // A retired colleague's tasks must stop firing. Left behind they do not merely linger: the
@@ -220,7 +217,7 @@ export const node = makeGlobalNode({
         status.remove(agentID),
       )
       yield* register((agentID) =>
-        AgentRetire.everything({ db, events, memory, worldMemory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
+        AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
     }),
   ),
@@ -232,7 +229,6 @@ export const node = makeGlobalNode({
     EventV2.node,
     SessionExecution.node,
     SessionScheduler.node,
-    Memory.node,
     WorldMemory.node,
   ],
 })

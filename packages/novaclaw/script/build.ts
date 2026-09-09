@@ -179,9 +179,14 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
           ? "Compiled server did not serve the embedded UI"
           : "Compiled server did not serve the API landing page",
       )
-    const memory = await fetchSmoke(`${url}/memory/stats`).then((response) => response.json())
-    if (memory.total !== 0 || memory.valid !== 0)
-      throw new Error("Compiled server memory smoke returned unexpected data")
+    const memory = await fetch(`${url}/api/world-memory/list`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 1 }),
+      signal: AbortSignal.timeout(10_000),
+    }).then((response) => response.json())
+    if (!Array.isArray(memory) || memory.length !== 0)
+      throw new Error("Compiled server RAG smoke returned unexpected data")
   } finally {
     // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
     await Shell.killTree(server.pid).catch(() => undefined)

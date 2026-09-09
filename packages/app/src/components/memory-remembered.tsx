@@ -7,14 +7,9 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
-  memoryClearScopeVerified,
-  memoryInvalidate,
-  memoryList,
   memoryCorrectionProne,
-  memoryFeedback,
   memoryProtection,
   memoryNeverUsed,
-  memoryStats,
   memoryUseful,
   worldMemoryList,
   worldMemoryFeedback,
@@ -23,7 +18,7 @@ import {
   type MemoryRow,
 } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
-import { memoryUnavailable, worldMemoryUnavailable } from "@/utils/memory-health"
+import { worldMemoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
 import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from "@/utils/memory-lens"
 import type { MemoryOwner } from "@/apps/memory-owner"
@@ -65,11 +60,10 @@ export const MemoryRemembered: Component<{
   /** Bumped by a caller that has just changed the set, to force a re-read. */
   revision?: number
   /**
-   * WHOSE memory to list (AGENTS.md — the structural metaphor). Absent = everything this instance
-   * holds, which is what the in-session panel wants; the Memory app passes one colleague's cabinet
-   * or the household's shared facts, because "what do you know about me" now has a subject.
+   * WHOSE memory component to list. A component is reached through its owner entity; there is no
+   * free-floating all-memory view.
    */
-  owner?: Pick<MemoryOwner, "scopes" | "label">
+  owner: Pick<MemoryOwner, "scopes" | "label">
   /**
    * The SHARED filter (`utils/memory-filter.ts`). Absent = show everything this list fetched, which is
    * what the in-session panel wants; the Memory app passes the one its header owns, so a query typed
@@ -116,7 +110,7 @@ export const MemoryRemembered: Component<{
   /**
    * WHICH LIFECYCLE LENS this list reads through (`utils/memory-lens.ts`).
    *
-   * ⚠️ An absent filter means `Current`, never "everything". `/memory/list` with no `statuses`
+   * ⚠️ An absent filter means `Current`, never "everything". The world-memory list with no `statuses`
    * returns every status INCLUDING history, so a caller that said nothing would quietly start
    * showing corrected and archived claims beside current ones — the one distinction the claim
    * lifecycle exists to draw.
@@ -130,7 +124,7 @@ export const MemoryRemembered: Component<{
         ? {
             cn,
             dir: directory(),
-            scopes: props.owner?.scopes,
+            scopes: props.owner.scopes,
             // The lens is IN the key: changing it asks the server a different question, rather
             // than being a different way of hiding the same answer.
             statuses: lens().statuses,
@@ -199,14 +193,13 @@ export const MemoryRemembered: Component<{
         const rows = answer.groups.flatMap((group) => group.items) as readonly MemoryRow[]
         return { rows, forgotten: EMPTY_IDS }
       }
-      const list = props.owner ? worldMemoryList : memoryList
-      const rows = await list(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
+      const rows = await worldMemoryList(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
       // 🔴 THE SECOND READ EXISTS BECAUSE THE WIRE CARRIES NO VALIDITY FIELD. Measured on a live
       // instance: a forgotten row comes back from `includeInvalid` still reading `status: "active"`,
       // so the only way to know which rows those were is to ask the same question again without it
       // and take the difference. It runs ONLY under History — a lens somebody deliberately opened.
       if (!includeInvalid) return { rows, forgotten: EMPTY_IDS }
-      const valid = await list(cn.http, query).catch(() => rows)
+      const valid = await worldMemoryList(cn.http, query).catch(() => rows)
       return { rows, forgotten: forgottenIDs(rows, valid) }
     },
   )
@@ -217,17 +210,6 @@ export const MemoryRemembered: Component<{
    * ⚠️ Filtering silently would be worse than the wall it replaces: a user who ingested a document
    * would see one entity and have no way to know 302 source passages are held behind it.
    */
-  const [totals] = createResource(
-    () => {
-      const cn = conn()
-      const rows = memories()
-      return cn !== undefined && rows !== undefined && props.owner === undefined
-        ? { cn, dir: directory(), settled: rows.rows.length }
-        : undefined
-    },
-    ({ cn, dir }) => memoryStats(cn.http, { directory: dir }).catch(() => undefined),
-  )
-
   const loadedRows = () => memories()?.rows ?? []
   /** Which of the loaded rows were FORGOTTEN — only ever non-empty under History. */
   const forgotten = (): ReadonlySet<string> => memories()?.forgotten ?? EMPTY_IDS
@@ -255,7 +237,7 @@ export const MemoryRemembered: Component<{
     return rows
   })
   const count = () => visibleRows().length
-  const notListed = () => Math.max(0, (totals()?.total ?? 0) - loadedRows().length)
+  const notListed = () => 0
   /**
    * What the search actually covered, when it covered less than the store holds.
    *
@@ -264,10 +246,10 @@ export const MemoryRemembered: Component<{
    */
   const scopeNote = () =>
     props.filter && isNarrowed(props.filter)
-      ? describeScope({ loaded: loadedRows().length, total: totals()?.total })
+      ? describeScope({ loaded: loadedRows().length, total: undefined })
       : undefined
 
-  createEffect(() => props.onCounts?.({ visible: count(), loaded: loadedRows().length, total: totals()?.total }))
+  createEffect(() => props.onCounts?.({ visible: count(), loaded: loadedRows().length, total: undefined }))
 
   /**
    * 🔴 Is the store BROKEN, or merely empty?
@@ -296,7 +278,7 @@ export const MemoryRemembered: Component<{
   // ⚠️ The SHARED predicate (`utils/memory-health.ts`), not a local copy. The Graph tab asks the same
   // question, and two surfaces of one cabinet disagreeing about whether it is broken is exactly the
   // fault this component was written to stop showing.
-  const unavailable = () => (props.owner ? worldMemoryUnavailable(health()) : memoryUnavailable(health()))
+  const unavailable = () => worldMemoryUnavailable(health())
 
   const [retrying, setRetrying] = createSignal(false)
   const retry = async () => {
@@ -322,12 +304,7 @@ export const MemoryRemembered: Component<{
   // Reads and batch writes derive their scope from the same owner. A label and an unrelated
   // hard-coded scope let a colleague's Clear control erase the household's shared memories.
   const clearTargets = createMemo(() =>
-    props.owner
-      ? props.owner.scopes.map((scope) => ({ scope, label: props.owner!.label }))
-      : [
-          { scope: "global", label: language.t("memory.clearScope.shared") },
-          ...(sessionScope() ? [{ scope: sessionScope()!, label: language.t("settings.memory.scope.chat") }] : []),
-        ],
+    props.owner.scopes.map((scope) => ({ scope, label: props.owner.label })),
   )
   const forgetScope = async (target: { scope: string; label: string }) => {
     const cn = conn()
@@ -340,8 +317,7 @@ export const MemoryRemembered: Component<{
     })
     if (!proceed) return
     try {
-      const clear = props.owner ? worldMemoryClearScopeVerified : memoryClearScopeVerified
-      await clear(cn.http, { directory: directory(), scope: target.scope })
+      await worldMemoryClearScopeVerified(cn.http, { directory: directory(), scope: target.scope })
     } catch (error) {
       showToast({
         variant: "error",
@@ -373,8 +349,7 @@ export const MemoryRemembered: Component<{
     const dir = directory()
     setSavingProtection((ids) => new Set([...ids, row.id]))
     try {
-      const feedback = props.owner ? worldMemoryFeedback : memoryFeedback
-      if (!(await feedback(cn.http, { directory: dir, id: row.id, useful: next })))
+      if (!(await worldMemoryFeedback(cn.http, { directory: dir, id: row.id, useful: next })))
         throw new Error("Memory protection was not saved")
       const saved = await memoryProtection(cn.http, { directory: dir, ids: [row.id] })
       if (saved.get(row.id) !== next) throw new Error("Memory protection was not saved")
@@ -405,8 +380,7 @@ export const MemoryRemembered: Component<{
       destructive: true,
     })
     if (!proceed) return
-    const invalidate = props.owner ? worldMemoryInvalidate : memoryInvalidate
-    await invalidate(cn.http, { directory: directory(), id: row.id }).catch((error: unknown) =>
+    await worldMemoryInvalidate(cn.http, { directory: directory(), id: row.id }).catch((error: unknown) =>
       showToast({
         variant: "error",
         title: language.t("settings.memory.toast.failed"),

@@ -25,7 +25,9 @@ function mount(accept = true, scoped = true) {
   const scopes = new Set(["global", "agent:daedalus", "agent:myron"])
   const clears: string[] = []
   const queries: string[][] = []
-  const [owner, setOwner] = createSignal(scoped ? { label: "Daedalus", scopes: ["agent:daedalus"] } : undefined)
+  const [owner, setOwner] = createSignal(
+    scoped ? { label: "Daedalus", scopes: ["agent:daedalus"] } : { label: "Shared with everyone", scopes: ["global"] },
+  )
   globalThis.fetch = (async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
     if (url.pathname.endsWith("memory/clearScope") || url.pathname.endsWith("world-memory/clear-scope")) {
@@ -96,7 +98,7 @@ test("cancel and a refused scoped clear keep the cabinet intact", async () => {
   expect(document.body.textContent).toContain("agent:daedalus record")
 })
 
-test("the unscoped settings list names its shared-memory action explicitly", async () => {
+test("the shared ECS component names its owner explicitly", async () => {
   const rig = mount(true, false)
   await settle()
   button("Clear memory: Shared with everyone").click()

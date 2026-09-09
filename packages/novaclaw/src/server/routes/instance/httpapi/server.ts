@@ -63,7 +63,6 @@ import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { LocalModelRuntime } from "@/local-model/runtime"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { SessionDriveState } from "@novaclaw/core/session/runner/drive-state"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
@@ -121,7 +120,6 @@ import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { registryHandlers } from "./handlers/registry"
-import { memoryHandlers } from "./handlers/memory"
 import { mcpHandlers } from "./handlers/mcp"
 import { policyHandlers } from "./handlers/policy"
 import { providerHandlers } from "./handlers/provider"
@@ -193,7 +191,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     fileHandlers,
     instanceHandlers,
     registryHandlers,
-    memoryHandlers,
     mcpHandlers,
     policyHandlers,
     providerHandlers,
@@ -345,7 +342,6 @@ const app = LayerNode.group([
   // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
   // (a second build would clobber the same on-disk snapshot). The capability handle is cheap at boot;
   // its client and consolidation fiber start only on the first memory operation.
-  Memory.node,
   // Automatic session/agent recall has its own graph, settings and retention. Keep the capability
   // beside the explicit KB so HTTP export/erase and worker execution resolve the same instance store.
   WorldMemory.node,

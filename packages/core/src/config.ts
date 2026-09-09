@@ -395,7 +395,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   memory: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({
       description:
-        "Remember things across chats (graph memory / KB-G). Default ON; OFF = the runtime flows stand down (no auto-recall, auto-extraction, `kb` tool, or consolidation) — a privacy switch. The engine still needs the NOVACLAW_KB_MEMORY env to run at all",
+        "Remember things across chats. Default ON; OFF = recall, learning, and background retention stand down. The sole RAG engine can also be disabled with NOVACLAW_WORLD_MEMORY on constrained hosts",
     }),
     rerank: ConfigAnnotation.depends(
       Schema.Boolean.pipe(Schema.optional).annotate({

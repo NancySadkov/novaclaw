@@ -93,8 +93,6 @@ const QueryParameterSchemas: Record<string, OpenApiSchema> = {
   "GET /api/session/{sessionID}/history after": { type: "number" },
   "GET /api/session/{sessionID}/event after": { type: "number" },
   "GET /api/fs/find limit": { type: "number" },
-  "GET /memory/list limit": { type: "number" },
-  "GET /memory/graph limit": { type: "number" },
   "GET /registry/rows limit": { type: "number" },
 }
 

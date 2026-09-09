@@ -340,7 +340,7 @@ describe("the steer predicate is the only form", () => {
     // ⚠️ THE GENERAL CHECK NOW LIVES IN `test/invisible-characters.test.ts` — use that one. This
     // check is kept because the ledger scan below is the thing it protects, but it did NOT stop the
     // defect recurring: it sees only `src/session/**`, and `walk` above skips `*.test.ts`. Three
-    // more files picked up the same idiom where it cannot look (`src/tool/kb.ts`,
+    // more files picked up the same idiom where it could not look (a now-retired memory tool,
     // `llm/src/protocols/utils/tool-recovery.ts`, and `app/src/constants/links.test.ts`, whose five
     // NULs this project added while this test was green). The repo-wide guard crosses package
     // boundaries, includes tests, and covers the wider class — homoglyphs and zero-width characters

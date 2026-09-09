@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { testEffect } from "./lib/effect"
 
@@ -74,15 +74,15 @@ const until = <A>(read: Effect.Effect<A, MemoryClient.MemoryError>, done: (value
   })
 
 const runWithMemory = <A>(
-  config: Omit<Memory.MemoryConfig, "enabled" | "dbDir" | "dim">,
+  config: Omit<WorldMemory.Config, "enabled" | "dbDir" | "dim">,
   program: (memory: MemoryClient.Interface) => Effect.Effect<A, MemoryClient.MemoryError>,
 ) =>
   Effect.gen(function* () {
     const bus = recorder()
     dir = mkdtempSync(join(tmpdir(), "kb-forget-loop-"))
-    const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "graph"), ...config })
+    const layer = WorldMemory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "graph"), ...config })
     const value = yield* Effect.gen(function* () {
-      const memory = yield* MemoryClient.Service
+      const memory = yield* WorldMemory.Service
       // The engine is LAZY, so the first operation is what opens it; the loop's own `engine` is
       // `undefined` until then and the pass is a no-op. Waiting for health here is not politeness,
       // it is the precondition the loop has.
@@ -119,9 +119,9 @@ describe("the background loop actually forgets", () => {
         const bus = recorder()
         dir = mkdtempSync(join(tmpdir(), "kb-absent-cleanup-"))
         const graph = join(dir, "graph")
-        const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: graph })
+        const layer = WorldMemory.layerFromConfig({ enabled: true, dim: 8, dbDir: graph })
         yield* Effect.gen(function* () {
-          const memory = yield* MemoryClient.Service
+          const memory = yield* WorldMemory.Service
           yield* memory.clearScope("session:already-gone")
           yield* memory.moveScope("agent:already-gone", "retired:already-gone")
         }).pipe(Effect.provide(layer.pipe(Layer.provide(bus.layer))), Effect.scoped)
@@ -137,7 +137,7 @@ describe("the background loop actually forgets", () => {
     "🔴 a household pile written past its cap is evicted BY THE LOOP, with nobody asking",
     () =>
       Effect.gen(function* () {
-        const outcome = yield* runWithMemory({ consolidateEveryMs: 250, globalStagedCap: 3 }, (memory) =>
+        const outcome = yield* runWithMemory({ retainEveryMs: 250, stagedCap: 3 }, (memory) =>
           Effect.gen(function* () {
             yield* fill(memory, "global", ["g1", "g2", "g3", "g4", "g5", "g6"])
             // ⚠️ All six ARRIVED — asserted against the store INCLUDING invalid rows, because at a
@@ -166,7 +166,7 @@ describe("the background loop actually forgets", () => {
     "a pile INSIDE its cap is left alone — the control, so the eviction above means something",
     () =>
       Effect.gen(function* () {
-        const outcome = yield* runWithMemory({ consolidateEveryMs: 250, globalStagedCap: 50 }, (memory) =>
+        const outcome = yield* runWithMemory({ retainEveryMs: 250, stagedCap: 50 }, (memory) =>
           Effect.gen(function* () {
             yield* fill(memory, "global", ["g1", "g2", "g3", "g4", "g5", "g6"])
             // Long enough for several passes to have run and decided to do nothing. Without this the
@@ -185,7 +185,7 @@ describe("the background loop actually forgets", () => {
     "🔴 each COLLEAGUE's cabinet is capped on its own — one talkative officer cannot spend another's",
     () =>
       Effect.gen(function* () {
-        const outcome = yield* runWithMemory({ consolidateEveryMs: 250, globalStagedCap: 3 }, (memory) =>
+        const outcome = yield* runWithMemory({ retainEveryMs: 250, stagedCap: 3 }, (memory) =>
           Effect.gen(function* () {
             yield* fill(memory, "agent:loud", ["l1", "l2", "l3", "l4", "l5", "l6"])
             yield* fill(memory, "agent:quiet", ["q1", "q2"])

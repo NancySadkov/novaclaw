@@ -136,10 +136,10 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     const short = systems[2]!
     const shortText = short.join("\n")
     expect(shortText).not.toContain("Aster")
-    expect(shortText).not.toContain("Brisk identity marker.")
+    expect(shortText).toContain("Brisk identity marker.")
     expect(shortText).not.toContain("Iris")
     expect(shortText).not.toContain("Calm identity marker.")
-    expect(short).toEqual(["Review standing job brief."])
+    expect(short).toEqual(["Brisk identity marker."])
   })
 
   test("includes the effective default agent system before durable context", async () => {

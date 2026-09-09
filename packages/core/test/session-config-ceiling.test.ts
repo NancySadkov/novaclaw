@@ -79,10 +79,9 @@ describe("the memory ceiling", () => {
     // now has one home, and the next one added will be the one that forgets.
     // Its own definition, its own caller, and the engine's capability gate — which asks a different
     // question (may a global engine work at all) and has no session to clamp. Both the explicit
-    // KB and the separate world-model engine enforce that privacy switch on their maintenance loops.
+    // The sole world-memory engine enforces that privacy switch on its maintenance loop.
     const allowed = new Set([
       "kb-graph/memory-setting.ts",
-      "kb-graph/memory.ts",
       "kb-graph/world-memory.ts",
       "session/effective-config.ts",
     ])

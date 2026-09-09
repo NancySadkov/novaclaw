@@ -2,7 +2,6 @@ import { A, useSearchParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
-import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import * as Timestamp from "@novaclaw/schema/time"
@@ -52,8 +51,8 @@ import { hubLabel, isHub, projectGraph, type ProjectedNode } from "./memory-grap
 import { instanceGlobalDirectory } from "@/utils/routing-directory"
 
 // The Memory graph viewer (the advanced, node-link surface for
-// path-tracing) — renders the graph memory as an interactive node-link diagram over /memory/graph +
-// /memory/neighbors. ⚠️ It is NOT gated: this header claimed "a Developer-mode page (the home tile is
+// path-tracing) — renders the graph memory as an interactive node-link diagram over the world-memory
+// graph and neighbor endpoints. ⚠️ It is NOT gated: this header claimed "a Developer-mode page (the home tile is
 // minLevel-gated)" until 2026-08-19, but the owner moved the tile to Normal on 2026-08-12 — "what
 // NovaClaw remembers about you is not an expert topic" (`apps/builtins.tsx`). The tile carries no
 // `minLevel`, so `app-routes.test.ts` asks nothing of this page, correctly. Dependency-free
@@ -787,7 +786,7 @@ export function MemoryGraphPage() {
    * LIST first. "What do you know about me" is answered in sentences; the graph answers "how does
    * it connect", which is the second question. Opening on the graph led with the harder view.
    */
-  const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
+  const [appView, setAppView] = createSignal<"list" | "graph">("list")
 
   /**
    * OPEN ONE MEMORY IN THE INSPECTOR — the one act the list, the feed and the map all perform.
@@ -971,10 +970,6 @@ export function MemoryGraphPage() {
               [
                 { id: "list", label: "Remembered" },
                 { id: "graph", label: "Graph" },
-                // Everything that used to be Settings → Memory. The app is where a person asks
-                // "what do you know about me", so it is where they should be able to answer
-                // "and stop knowing it" — including the on/off switch and the import/export.
-                { id: "settings", label: "Settings" },
               ] as const
             }
           >
@@ -998,10 +993,8 @@ export function MemoryGraphPage() {
         </div>
 
         {/* SEARCH, on both views. It sits in the shared header rather than inside either one, because
-            it IS shared — the same query narrows the list and picks out the marks. A copy per view is
-            how the two would drift apart. Hidden on Settings, which has nothing to search. */}
-        <Show when={appView() !== "settings"}>
-          <label class="flex items-center gap-1.5" data-slot="memory-search">
+            it IS shared — the same query narrows the list and picks out the marks. */}
+        <label class="flex items-center gap-1.5" data-slot="memory-search">
             <input
               type="search"
               value={filter().query}
@@ -1049,12 +1042,11 @@ export function MemoryGraphPage() {
           <span class="max-w-56 truncate text-[11px] opacity-50" data-slot="memory-lens-hint" title={lens().hint}>
             {lens().hint}
           </span>
-        </Show>
 
         {/* FOCUS, stated. A view silently showing a neighborhood instead of a cabinet is the same
             class of lie as the empty one — true of what is on screen, wrong as an answer. So it says
             what it is showing and offers the way out in the same breath (principle 12(d)). */}
-        <Show when={appView() !== "settings" ? focusLabel() : undefined}>
+        <Show when={focusLabel()}>
           {(label) => (
             <span
               class="flex items-center gap-1 rounded bg-v2-background-bg-layer-02 px-1.5 py-0.5 text-[11px]"
@@ -1188,28 +1180,23 @@ export function MemoryGraphPage() {
           <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
-            <MemoryRemembered
-              owner={owner()}
-              filter={filter()}
-              revision={listRevision()}
-              onCounts={setListCounts}
-              restrictTo={focusIDs()}
-              restrictLabel={focusLabel()}
-              onClearRestrict={() => setSelected(undefined)}
-              onInspect={inspect}
-            />
+            <Show when={owner()} keyed>
+              {(memoryOwner) => (
+                <MemoryRemembered
+                  owner={memoryOwner}
+                  filter={filter()}
+                  revision={listRevision()}
+                  onCounts={setListCounts}
+                  restrictTo={focusIDs()}
+                  restrictLabel={focusLabel()}
+                  onClearRestrict={() => setSelected(undefined)}
+                  onInspect={inspect}
+                />
+              )}
+            </Show>
           </div>
         </Show>
 
-        {/* The retired Settings → Memory tab, hosted here verbatim (`embedded` drops its tab header).
-          Same component the dialog used, so consent, embedding, the judge model, export/import and
-          document ingest all keep working exactly as they did — this MOVED the surface, it did not
-          reimplement it. */}
-        <Show when={appView() === "settings"}>
-          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-slot="memory-app-settings">
-            <SettingsMemoryV2 embedded />
-          </div>
-        </Show>
 
         {/* ⚠️ `ref={attachCanvas}` on the CANVAS wrapper, not on the svg: the svg is inside the `Show`
           and is torn down and rebuilt as the state changes, so an observer bound to it would be
@@ -1840,18 +1827,15 @@ export function MemoryGraphPage() {
           </Show>
         </div>
 
-        {/* The activity rail. Not on Settings — that tab is about switches, and a live feed beside a
-          consent toggle is decoration rather than information. */}
-        <Show when={appView() !== "settings"}>
-          <MemoryActivityFeedRail
-            entries={live().entries}
-            streamStatus={activity.streamStatus()}
-            reconciling={activity.reconciling()}
-            reducedMotion={activity.reducedMotion()}
-            skipped={live().skipped}
-            onSelect={inspect}
-          />
-        </Show>
+        {/* The activity rail belongs to both views of the same live RAG. */}
+        <MemoryActivityFeedRail
+          entries={live().entries}
+          streamStatus={activity.streamStatus()}
+          reconciling={activity.reconciling()}
+          reducedMotion={activity.reducedMotion()}
+          skipped={live().skipped}
+          onSelect={inspect}
+        />
       </div>
     </div>
   )

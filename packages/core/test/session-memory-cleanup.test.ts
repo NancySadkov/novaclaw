@@ -6,7 +6,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -55,7 +55,7 @@ const it = testEffect(
       SessionV2.node,
       // ⚠️ Declared HERE too because these tests reach the client directly. The session node already
       // depends on it, so existing harnesses resolve it unchanged — verified across 54 of their tests.
-      Memory.node,
+      WorldMemory.node,
     ]),
     [
       [ProjectV2.node, projects],
@@ -109,7 +109,7 @@ describe("deleting a chat takes its memories", () => {
   it.effect("🔴 a session-scoped memory is gone once the chat is deleted", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const memory = Memory.client(yield* Memory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const created = yield* session.create({ location, agent: rootAgent })
       yield* memory.addMemory({ id: "m1", kind: "entity", text: "a private note", scope: `session:${created.id}` })
       yield* memory.addMemory({ id: "keep", kind: "entity", text: "a shared note", scope: "global" })
@@ -127,7 +127,7 @@ describe("deleting a chat takes its memories", () => {
   it.effect("⚠️ another chat's memories are untouched", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const memory = Memory.client(yield* Memory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const doomed = yield* session.create({ location, agent: rootAgent })
       const survivor = yield* session.create({ location, agent: rootAgent })
       yield* memory.addMemory({ id: "gone", kind: "entity", text: "x", scope: `session:${doomed.id}` })
@@ -142,7 +142,7 @@ describe("deleting a chat takes its memories", () => {
   it.effect("every chat in a deleted TREE loses its memories, not just the root", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const memory = Memory.client(yield* Memory.node.service)
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const parent = yield* session.create({ location, agent: rootAgent })
       const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
       for (const id of [parent.id, child.id])

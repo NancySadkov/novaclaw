@@ -263,16 +263,16 @@ const reportArchiveFailure =
 
 const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(function* (input: {
   readonly entries: readonly SessionCompaction.Entry[]
-  readonly agent: AgentV2.Selection
+  readonly memoryOwner: AgentV2.Selection
   readonly memory: MemoryClient.Interface
   readonly session: { readonly id: SessionSchema.ID; readonly title?: string | undefined }
 }) {
-  const agentID = input.agent.id
+  const agentID = input.memoryOwner.id
   if (!agentID) return
   if (
     !SessionCompactionArchive.shouldArchive({
-      memory: input.agent.info?.memory,
-      archiveChats: input.agent.info?.archiveChats,
+      memory: input.memoryOwner.info?.memory,
+      archiveChats: input.memoryOwner.info?.archiveChats,
     })
   )
     return
@@ -295,7 +295,7 @@ const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(fun
         // The colleague's OWN cabinet — not `global`. An archived conversation is the most personal
         // thing a colleague holds, and putting it in the household scope would hand every other
         // agent a transcript of work they were not part of.
-        scope: `agent:${agentID}`,
+        scope: SessionRecall.rememberScope({ sessionID: input.session.id, agentID }),
         relation: "staged",
         source: "chat-archive",
         ...(embedding === undefined ? {} : { embedding }),
@@ -356,8 +356,7 @@ export const layer = Layer.effect(
     const offline = yield* Offline.Service
     const scheduler = yield* SessionScheduler.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
-    // Recall, stale-read correction, and compaction archives use the hot world model. The explicit
-    // `kb` tool is the separate durable/source KB and reaches `Memory.node` directly.
+    // Recall, stale-read correction, and compaction archives use the instance's sole RAG graph.
     const memory = WorldMemory.client(yield* WorldMemory.node.service)
     const maintenance = yield* SessionMaintenance.Service
     const components = yield* SessionComponentRegistry.Service
@@ -1127,8 +1126,13 @@ export const layer = Layer.effect(
       // carries into `runTurnAttempt`, so it is the value the in-turn readers (affective/shortChat,
       // the context budget) see. A folder layer folded at some readers and not others is a switch
       // that is half on — the hazard `project-defaults.ts` exists to prevent.
-      const config = yield* tap(effective.resolve(session.id))
+      const resolution = yield* tap(effective.resolution(session.id))
+      const config = resolution.config
       const agent = yield* tap(agents.select(config.agent as typeof session.agent))
+      const memoryOwner =
+        resolution.memoryOwnerAgent === undefined || resolution.memoryOwnerAgent === agent.id
+          ? agent
+          : yield* tap(agents.select(resolution.memoryOwnerAgent as typeof session.agent))
       const initialized = yield* SessionContextEpoch.initialize(
         db,
         loadSystemContext(agent, session.id, ShortChat.enabled(config.shortChat)),
@@ -1181,6 +1185,8 @@ export const layer = Layer.effect(
       return {
         session,
         config,
+        memoryOwnerAgent: resolution.memoryOwnerAgent,
+        memoryOwner,
         agent,
         system,
         modelSession,
@@ -1291,7 +1297,19 @@ export const layer = Layer.effect(
       const prepared = yield* prepareTurn(sessionID, { promotion, onFailure: surfacePreTurnFailure })
       // The session moved to another location while this drain was queued — not ours to run.
       if (prepared === undefined) return yield* Effect.interrupt
-      const { session, config, agent, system, modelSession, model, ran, scheduledDevice, entries } = prepared
+      const {
+        session,
+        config,
+        memoryOwnerAgent,
+        memoryOwner,
+        agent,
+        system,
+        modelSession,
+        model,
+        ran,
+        scheduledDevice,
+        entries,
+      } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
@@ -1562,8 +1580,8 @@ export const layer = Layer.effect(
       // embedding and searching for a probe that must receive nothing is pure cost.
       const memoryScopes = SessionRecall.recallScopes({
         sessionID: session.id,
-        agentID: agent.id,
-        memory: agent.info?.memory,
+        agentID: memoryOwnerAgent,
+        memory: memoryOwner.info?.memory,
       })
       if (
         recallQuery !== undefined &&
@@ -1875,8 +1893,8 @@ export const layer = Layer.effect(
             // construction — while the session-level switch can turn recall off for a colleague that
             // normally remembers, which is a different sentence and not this one.
             memoryStance: SystemCompose.memoryStanceSection({
-              memory: prepared.agent.info?.memory,
-              archiveChats: prepared.agent.info?.archiveChats,
+              memory: prepared.memoryOwner.info?.memory,
+              archiveChats: prepared.memoryOwner.info?.archiveChats,
             }),
             // 🔴 Both flags read from the tools this turn ACTUALLY received, never from the registry
             // or the ruleset — a section naming a tool the turn cannot call is a false description.
@@ -2116,7 +2134,7 @@ export const layer = Layer.effect(
       // turn a successful compaction into a failed turn — the summary is already committed, and the
       // transcript rows are still in the database either way.
       if (compacted)
-        yield* archiveCompactedChat({ entries, agent, memory, session }).pipe(
+        yield* archiveCompactedChat({ entries, memoryOwner, memory, session }).pipe(
           // Best-effort means the TURN survives, not that nobody is told. `Effect.ignore` here made
           // an empty archive indistinguishable from an archive that was never attempted — which is
           // exactly the question a person debugging one would be asking.
@@ -3318,10 +3336,10 @@ export const layer = Layer.effect(
       if (compacted)
         yield* archiveCompactedChat({
           entries,
-          agent: yield* agents.select(prepared.config.agent as typeof session.agent),
+          memoryOwner: prepared.memoryOwner,
           memory,
           session,
-        }).pipe(reportArchiveFailure(session.id, prepared.config.agent))
+        }).pipe(reportArchiveFailure(session.id, prepared.memoryOwnerAgent))
       if (compacted) {
         const latest = yield* SessionHistory.latestCompaction(db, session.id)
         if (latest) yield* deliverNudges(session.id, prepared.config.agent, { type: "compaction", id: latest.id })

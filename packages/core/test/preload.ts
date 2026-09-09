@@ -23,7 +23,7 @@ process.env.NOVACLAW_DISABLE_MODELS_FETCH = "true"
  * That variable isolates the SQLite database and nothing else. Everything resolved through
  * `Global.Path.*` still landed in the developer's REAL instance home, and at least one subsystem reads
  * it on the hot path: the memory graph opens `join(Global.Path.data, "memory", "graph")`
- * (`kb-graph/memory.ts`), so the session runner's auto-recall pulled the developer's actual saved
+ * (the world-memory graph), so the session runner's auto-recall pulled the developer's actual saved
  * memories into a test's system prompt.
  *
  * Found 2026-08-05 when a steering claim failed with eleven lines of the owner's personal notes

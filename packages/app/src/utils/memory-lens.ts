@@ -8,9 +8,9 @@
  * it teaches the user a false model of what the app can do, which is the exact opposite of
  * principle 8.
  *
- * ⚠️ **A lens is a STATUS SET, not a client-side guess.** `/memory/list` filters by `statuses`
+ * ⚠️ **A lens is a STATUS SET, not a client-side guess.** `/api/world-memory/list` filters by `statuses`
  * server-side, so the list asks for what it will show rather than fetching everything and hiding
- * the rest. The Map still receives every status (`/memory/graph` has no such parameter, and that is
+ * the rest. The Map still receives every status (`/api/world-memory/graph` has no such parameter, and that is
  * right — retiring is a thing the map should SHOW happening, not a reason to delete a node), so the
  * same lens dims there instead of filtering. That asymmetry is the one this page already lives by:
  * the list answers "what do you remember", the map answers "how does it connect".
@@ -27,7 +27,7 @@ export interface Lens {
   readonly label: string
   /**
    * The status set to ask the server for. `undefined` = every status, history included — which is
-   * what `/memory/list` does with an absent `statuses`, so History is the parameter's own default
+   * what `/api/world-memory/list` does with an absent `statuses`, so History is the parameter's own default
    * rather than a set this file has to keep in step with core's enum.
    */
   readonly statuses: readonly string[] | undefined

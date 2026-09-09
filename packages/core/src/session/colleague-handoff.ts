@@ -10,7 +10,6 @@ import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
 import { Identifier } from "../id/id"
 import { EventV2 } from "../event"
-import { Memory } from "../kb-graph/memory"
 import { WorldMemory } from "../kb-graph/world-memory"
 import { makeLocationNode } from "../effect/app-node"
 import { ColleagueNote } from "./colleague-note"
@@ -768,8 +767,7 @@ export const layer = Layer.effect(
     // build time; `fromParts` is for the per-request handler that cannot.
     const store = yield* AgentConfigStore.Service
     const agents = yield* AgentV2.Service
-    const memory = Memory.client(yield* Memory.node.service)
-    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+    const memory = WorldMemory.client(yield* WorldMemory.node.service)
     return Service.of(
       fromParts({
         db,
@@ -780,7 +778,7 @@ export const layer = Layer.effect(
         refresh: agents.reload(),
         roster: agents.all(),
         forget: (colleague) =>
-          AgentRetire.everything({ db, events, memory, worldMemory, agent: colleague, at: Date.now() }),
+          AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
         // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,
         // read where it already lives.
         paused: (colleague) =>
@@ -801,7 +799,6 @@ export const node = makeLocationNode({
     SessionRunCoordinator.wakeNode,
     AgentConfigStore.node,
     AgentV2.node,
-    Memory.node,
     WorldMemory.node,
   ],
 })

@@ -7,7 +7,7 @@ import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { Global } from "@novaclaw/core/global"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { buildLocationServiceMap, locationServices } from "@novaclaw/core/location-services"
@@ -77,13 +77,13 @@ const observedGlobals = () => {
   const probes = {
     database: probe(Database.Service.key),
     global: probe(Global.Service.key),
-    memory: probe(Memory.node.service.key),
+    memory: probe(WorldMemory.node.service.key),
     scheduler: probe(SessionScheduler.Service.key),
   }
   const replacements = [
     [Database.node, observe(Database.Service, Database.node.implementation as never, probes.database)],
     [Global.node, observe(Global.Service, Global.node.implementation as never, probes.global)],
-    [Memory.node, observe(Memory.node.service, Memory.node.implementation as never, probes.memory)],
+    [WorldMemory.node, observe(WorldMemory.node.service, WorldMemory.node.implementation as never, probes.memory)],
     [
       SessionScheduler.node,
       observe(SessionScheduler.Service, SessionScheduler.node.implementation as never, probes.scheduler),
@@ -168,7 +168,7 @@ describe("location services global identity", () => {
     for (const key of [
       Database.Service.key,
       Global.Service.key,
-      Memory.node.service.key,
+      WorldMemory.node.service.key,
       SessionScheduler.Service.key,
     ]) {
       // A node that stops being `global`-tagged would be rebuilt per location by construction, and

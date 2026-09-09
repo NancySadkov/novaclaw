@@ -62,7 +62,7 @@ export interface ArchivePassage {
  * The passages to write for one compaction cycle.
  *
  * ⚠️ **Re-ingesting the same text is HARMLESS and expected.** The id is derived from the label and
- * the text (`KbChunk.passageID`), and the engine dedupes by primary key — measured in `tool/kb.ts`.
+ * the text (`KbChunk.passageID`), and the engine dedupes by primary key.
  * That is what lets this run on every compaction without tracking which messages were already
  * archived: the overlap between two cycles collapses into the same rows rather than accumulating a
  * second copy of the same afternoon.

@@ -243,18 +243,16 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
      * 🔴 **RECORD A GOVERNED CLAIM — the write that carries an IDENTITY, and therefore the only write
      * that can correct anything.**
      *
-     * Before this, every HTTP path into the store was `POST /memory/remember`, which calls
-     * `addMemory` — a plain node with no subject, no predicate and no conflict key. So a claim with
-     * an identity could be created by exactly one thing in the whole instance, the model's `kb` tool
-     * inside a turn, and a supersession could not be caused from outside one at all. That made the
+     * Plain `addMemory` writes have no subject, predicate or conflict key. This endpoint gives a
+     * governed claim an identity, so API clients can cause and observe supersession. That made the
      * P2 gate — *one real recall, one write and one correction each visible in an open Memory app,
      * whatever agent or transport caused them* — unmeetable by construction rather than unmet by
      * accident.
      *
      * ⚠️ **`scope` defaults to `global`, and the ACCESS is the owner's** — the same stance every
      * other endpoint in the Memory app's surface takes. This is the human at their own instance; a
-     * model reaches `addClaim` through the `kb` tool, which builds its access from the session it is
-     * running in and can never construct this one.
+     * model-facing runner builds its access from the session it is running in and cannot construct
+     * this one.
      *
      * ⚠️ The result is the lifecycle's OWN `ClaimResult`, unflattened. `identified: false` means the
      * harness refused the conflict identity, so this claim corrects nothing by design; `deduped`

@@ -45,7 +45,7 @@ describe("retiring through the SHARED implementation", () => {
     removed.length = 0
     return Effect.runPromise(parts().retire("theron")).then((ok) => {
       expect(ok).toBe(true)
-      expect(removed).toEqual(["theron", "forgot:theron"])
+      expect(removed).toEqual(["forgot:theron", "theron"])
     })
   })
 

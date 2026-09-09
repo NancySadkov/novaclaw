@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { describeRuntimeStatus } from "@novaclaw/core/kb-graph/memory"
+import { describeRuntimeStatus } from "@novaclaw/core/kb-graph/world-memory"
 
 /**
  * `WasmMemory.publishBlocked` is set on every failed checkpoint and cleared on the next success.

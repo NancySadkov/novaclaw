@@ -85,10 +85,6 @@ export interface Input {
       }
     >
   >
-  readonly onMemoryRequest?: (
-    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
-    signal: AbortSignal,
-  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "memory-result" }>>
   readonly onWorldMemoryRequest?: (
     message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
     signal: AbortSignal,
@@ -518,14 +514,13 @@ export function spawn(input: Input): Handle {
           finish({ type: "protocol-error", detail: "memory request arrived before ready" })
           return
         }
-        const request = message.store === "world" ? input.onWorldMemoryRequest : input.onMemoryRequest
+        const request = input.onWorldMemoryRequest
         if (!request) {
           // A host with no memory bridge answers "rejected", which the worker turns into an ordinary
           // `MemoryError` — the same degradation a disabled engine produces. It must never be silence.
           send({
             version: SessionWorkerProtocol.VERSION,
             type: "memory-result",
-            store: message.store,
             sessionID: input.lease.sessionID,
             attemptID: input.lease.attemptID,
             generation: input.lease.generation,

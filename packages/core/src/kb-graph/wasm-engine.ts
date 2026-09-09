@@ -1318,7 +1318,7 @@ export class WasmMemory {
      * THE EXACT LEG — "exact identifiers stay reachable when semantic similarity is weak".
      *
      * 🔴 Both fuzzy legs are bad at exactly this and in opposite ways: a vector index has no useful
-     * neighbourhood for `clm_9f2a…` or `packages/core/src/tool/kb.ts`, and FTS tokenizes a path into
+     * neighbourhood for `clm_9f2a…` or `packages/core/src/kb-graph/world-memory.ts`, and FTS tokenizes a path into
      * common words that match half the store. So an identifier-shaped token in the query is looked up
      * by EQUALITY — by primary key when it is one of our ids, and against `name`/`evidence` otherwise.
      *

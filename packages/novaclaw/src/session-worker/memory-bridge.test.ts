@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Cause, Effect, Exit } from "effect"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -14,8 +14,8 @@ import type { SessionWorkerCapabilities } from "./capabilities"
 /**
  * ─── ONE WRITER ON THE MEMORY GRAPH ──────────────────────────────────────────────────────────────
  *
- * 🔴 `session-worker/services.ts` replaced seven host-owned services and not `Memory.node`, so a
- * session worker built a REAL second WASM engine on `<instance data>/memory/graph`. The host's engine
+ * 🔴 `session-worker/services.ts` once omitted the memory-node replacement, so a session worker
+ * built a REAL second WASM engine. The host's engine
  * is lazy, so the two only coexisted when something host-side touched memory during a live turn —
  * which is exactly what the Memory app does, and exactly the case nothing tested. With generation
  * snapshots in the store that stopped being merely redundant: `publish()` picks `max(existing) + 1`,
@@ -39,7 +39,7 @@ const base = {
   generation: lease.generation,
 }
 const request = (op: string, args: readonly unknown[], overrides: Record<string, unknown> = {}) =>
-  ({ ...base, type: "memory-request", store: "kb", requestID: "rpc_mem_1", op, args, ...overrides }) as never
+  ({ ...base, type: "memory-request", requestID: "rpc_mem_1", op, args, ...overrides }) as never
 
 const run = (memory: MemoryClient.Interface, message: ReturnType<typeof request>) =>
   Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }))
@@ -49,35 +49,34 @@ const run = (memory: MemoryClient.Interface, message: ReturnType<typeof request>
 test("🔴 the worker's compiled graph declares a memory capability that is NOT the real engine layer", () => {
   const capabilities = SessionWorkerServices.replacements({} as SessionWorkerCapabilities.Capabilities)
   const declared = LayerNode.capabilities(SessionWorkerRunnerLayer.root, capabilities)
-  const memory = declared.find((node) => node.capabilityName === "memory")
-  // Present: a worker that could not reach memory at all would break auto-recall, the `kb` tool and
+  const memory = declared.find((node) => node.capabilityName === "world-memory")
+  // Present: a worker that could not reach memory at all would break auto-recall
   // auto-extraction, which is a different bug wearing this one's fix.
   expect(memory).toBeDefined()
   // 🔴 And it is not `Memory.serviceNode`, which is the node whose layer calls `WasmMemory.open`.
   // This is the whole property, stated against the graph the worker actually compiles rather than
   // against the source of `replacements()`.
-  expect(memory?.inner).not.toBe(Memory.serviceNode)
+  expect(memory?.inner).not.toBe(WorldMemory.serviceNode)
 })
 
 test("the check can still see the defect it exists for — a control, so the green above means something", () => {
   // The same computation WITHOUT the memory replacement must find the real engine layer. Without
   // this, a `capabilities()` that silently returned nothing would leave the test above green forever.
   const withoutMemory = SessionWorkerServices.replacements({} as SessionWorkerCapabilities.Capabilities).filter(
-    ([source]) => source !== Memory.node,
+    ([source]) => source !== WorldMemory.node,
   )
   const declared = LayerNode.capabilities(SessionWorkerRunnerLayer.root, withoutMemory)
-  expect(declared.find((node) => node.capabilityName === "memory")?.inner).toBe(Memory.serviceNode)
+  expect(declared.find((node) => node.capabilityName === "world-memory")?.inner).toBe(WorldMemory.serviceNode)
 })
 
 test("a worker memory op becomes one RPC, and the host's refusal comes back as an ordinary MemoryError", async () => {
   const asked: Array<{ op: string; args: readonly unknown[] }> = []
   const services = SessionWorkerServices.make({
-    memory: async (op: string, args: readonly unknown[]) => {
+    worldMemory: async (op: string, args: readonly unknown[]) => {
       asked.push({ op, args })
       return {
         ...base,
         type: "memory-result",
-        store: "kb",
         requestID: "rpc_mem_1",
         outcome: "failed",
         reason: "engine is closed",
@@ -85,7 +84,7 @@ test("a worker memory op becomes one RPC, and the host's refusal comes back as a
     },
   } as unknown as SessionWorkerCapabilities.Capabilities)
 
-  const failure = await Effect.runPromiseExit(services.memory.search({ query: "mittens", scopes: ["global"] }))
+  const failure = await Effect.runPromiseExit(services.worldMemory.search({ query: "mittens", scopes: ["global"] }))
   expect(Exit.isFailure(failure)).toBe(true)
   expect(asked).toHaveLength(1)
   expect(asked[0]?.op).toBe("search")
@@ -98,11 +97,11 @@ test("a worker memory op becomes one RPC, and the host's refusal comes back as a
 
 test("health answers false when the RPC itself cannot be made, rather than failing the turn", async () => {
   const services = SessionWorkerServices.make({
-    memory: async () => {
+    worldMemory: async () => {
       throw new Error("transport closed")
     },
   } as unknown as SessionWorkerCapabilities.Capabilities)
-  expect(await Effect.runPromise(services.memory.health())).toBe(false)
+  expect(await Effect.runPromise(services.worldMemory.health())).toBe(false)
 })
 
 // ─── the host's side: the bridge dispatches onto the one store ───────────────────────────────────

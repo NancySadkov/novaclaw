@@ -16,7 +16,6 @@ import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { EventV2 } from "./event"
-import { Memory } from "./kb-graph/memory"
 import { WorldMemory } from "./kb-graph/world-memory"
 import { SessionMemoryCleanup } from "./session/memory-cleanup"
 import { Database } from "./database/database"
@@ -856,8 +855,7 @@ export const layer = Layer.effect(
     const locations = yield* LocationServiceMap.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
     // The same seam `session/runner/maintenance.ts` uses to reach memory from the session side.
-    const memory = Memory.client(yield* Memory.node.service)
-    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+    const memory = WorldMemory.client(yield* WorldMemory.node.service)
     // B1 — publish this instance's wake to the cycle-free producers of session work. `spawn` runs
     // inside a LOCATION graph and cannot reach `SessionExecution` (unbound + it depends on
     // `LocationServiceMap`, which builds that very graph — see run-coordinator.ts's wake-seam
@@ -895,7 +893,7 @@ export const layer = Layer.effect(
      * still exists is RETRACTED, never applied), and leaves a row it could not clear for next time —
      * so running it here can only move the outstanding set toward zero.
      */
-    yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory, worldMemory).pipe(Effect.ignore))
+    yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore))
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -939,11 +937,11 @@ export const layer = Layer.effect(
          * failed here must not fail the deletion, which the user has already been told succeeded —
          * the tombstone survives and the next sweep takes it.
          *
-         * ⚠️ `Memory.client(...)` is a PROXY over a lazily-opened engine, so this neither opens the
+         * ⚠️ `WorldMemory.client(...)` is a PROXY over a lazily-opened engine, so this neither opens the
          * store nor makes memory a hard dependency of deleting a chat. With memory disabled the sweep
          * defers every row forever, which is correct: there is no store holding anything to clear.
          */
-        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory, worldMemory).pipe(Effect.ignore)),
+        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore)),
       )
 
     const result = Service.of({
@@ -1803,7 +1801,6 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionProjector.node,
     SessionCompactionRequest.node,
-    Memory.node,
     WorldMemory.node,
     // For the boot-recovery resume switch — an INSTANCE setting, so the global store rather than the
     // location-scoped `Config`. See the note at `recoverySettings`.

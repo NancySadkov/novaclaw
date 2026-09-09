@@ -47,7 +47,6 @@ const RAW_NUMBER_BOXES: Record<string, number> = {
 /** Timer schedules in a file that never registers an `onCleanup`. Measured the same day. */
 const UNOWNED_TIMERS: Record<string, number> = {
   "identity.tsx": 2,
-  "memory.tsx": 1,
 }
 
 function panels(): { name: string; text: string }[] {

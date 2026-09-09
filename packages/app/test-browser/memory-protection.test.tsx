@@ -31,16 +31,15 @@ function fixture(initial: boolean) {
       return readFails
         ? Response.json({ message: "unavailable" }, { status: 503 })
         : Response.json([{ id: "one", protected: stored }])
-    if (url.includes("/api/memory/feedback")) {
+    if (url.includes("/api/world-memory/feedback")) {
       const next = JSON.parse(String(init?.body)).useful
       writes.push(next)
       if (!writeFails) stored = next
       return Response.json(!writeFails)
     }
-    if (url.includes("/memory/list"))
+    if (url.includes("/api/world-memory/list"))
       return Response.json([{ id: "one", scope: "global", kind: "entity", text: "One fact", status: "active" }])
-    if (url.includes("/memory/stats")) return Response.json({ total: 1, valid: 1 })
-    return Response.json({ signals: [{ id: "memory", status: "ok" }] })
+    return Response.json({ signals: [{ id: "world-memory", status: "ok" }] })
   }) as typeof fetch
   const cn = { url: "http://memory.test", http: { url: "http://memory.test" } }
   const mount = () => {
@@ -55,7 +54,7 @@ function fixture(initial: boolean) {
             <ServerContext.Provider value={{ current: cn } as never}>
               <ServerSyncContext.Provider value={(() => ({ data: { path: { directory: "/tmp/test" } } })) as never}>
                 <DialogProvider>
-                  <MemoryRemembered />
+                  <MemoryRemembered owner={{ scopes: ["global"], label: "Shared" }} />
                 </DialogProvider>
               </ServerSyncContext.Provider>
             </ServerContext.Provider>

@@ -6,6 +6,7 @@ import {
   attendedRoot,
   moreRestrictive,
   narrowRootType,
+  ownerAgentOf,
   resolveConfig,
   agentOf,
   sessionConfigChain,
@@ -726,5 +727,18 @@ describe("agentOf — the agent in force, not the one on the row", () => {
       worker: { id: "worker", parentID: "officer", agent: "   " },
     }
     expect(agentFor(sessions, "worker")).toBe("marshal")
+  })
+})
+
+describe("ownerAgentOf — workers proxy their officer's durable components", () => {
+  test("a specialist worker still owns no private RAG cabinet", () => {
+    const chain: SessionConfig[] = [{ agent: "daedalus" }, { agent: "code-reviewer" }]
+    expect(ownerAgentOf(chain)).toBe("daedalus")
+    expect(agentOf(chain)).toBe("code-reviewer")
+  })
+
+  test("nested and resumed workers retain the root officer owner", () => {
+    const chain: SessionConfig[] = [{ agent: "daedalus" }, {}, { agent: "investigator" }, {}]
+    expect(ownerAgentOf(chain)).toBe("daedalus")
   })
 })

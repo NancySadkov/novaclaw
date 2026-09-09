@@ -96,7 +96,6 @@ const deferredCoreTools = [
   "community",
   "computer",
   "configure",
-  "kb",
   // DEFERRED, and the ratchet below is why: a log reader is reached AFTER something failed, so its
   // schema has no claim on every turn's prefix (`` 3g, `tool/log.ts`).
   "log",

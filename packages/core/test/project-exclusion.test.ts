@@ -537,18 +537,13 @@ describe("project exclusions — the refusal is legible", () => {
     // The structural half: legibility is inherited only for tools that use the shared absorber, so
     // a new one that does not is caught HERE rather than by a user reading "Unable to read x".
     //
-    // 🔴 **The ledger is EMPTY, and `kb.ts` was its last entry** (closed 2026-08-18, `todo/
-    // projects.md`). It had inherited the ENFORCEMENT for free — the gate is one seam down, in
-    // `LocationMutation.resolve` — while its own absorber emitted `Couldn't ingest "vault/prod.env"
-    // — ProjectExclusion.ExcludedError: Refused by a project exclusion: …`, i.e. an internal tag
-    // wedged in front of the user's own sentence. Measured, then fixed, and pinned from the other
-    // side by the exclusion case in `tool-kb.test.ts`. A new entry here is a REGRESSION, not a
-    // ledger row: the fix is three lines in the offending tool's `mapError`.
+    // The ledger is empty. A new entry here is a regression, not a ledger row: the fix belongs in
+    // the offending tool's error mapping.
     const { scanned, offenders } = sweepTools()
     // The sweep has to have looked at something, or `toEqual([])` is a tautology that a renamed
     // directory would satisfy forever.
     expect(scanned.length).toBeGreaterThan(5)
-    expect(scanned).toContain("kb.ts")
+    expect(scanned).toContain("read.ts")
     expect(offenders).toEqual([])
   })
 

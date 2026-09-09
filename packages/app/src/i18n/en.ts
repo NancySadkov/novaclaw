@@ -2388,46 +2388,6 @@ export const dict = {
     "Anything worth knowing: your role, expertise, the projects you work on, how you like answers.",
   "settings.profile.about.placeholder":
     "e.g. systems programmer building a local-LLM agent OS; prefers concise, direct answers",
-  "settings.memory.title": "Memory",
-  "settings.memory.description":
-    "What NovaClaw remembers about you and your work. It learns as you chat — nothing to set up. Your memory stays on this device.",
-  "settings.memory.enabled.title": "Remember across chats",
-  "settings.memory.enabled.description": "Let NovaClaw learn and recall things about you and your work as you chat.",
-  "settings.memory.enabled.description.more":
-    "Turn off to stop all recall and saving — what's already stored stays until you clear it.",
-  "settings.memory.io.hint":
-    "Export a backup to keep or move to another instance, restore one here, or clear everything for a fresh start.",
-  "settings.memory.export.action": "Export",
-  "settings.memory.export.toast": "Memory backup download started",
-  "settings.memory.export.empty": "Nothing to back up yet",
-  "settings.memory.import.action": "Import",
-  "settings.memory.ingest.action": "Add document",
-  "settings.memory.ingest.toast": "Added {{count}} passages from {{name}} to memory",
-  "settings.memory.ingest.already": "{{name}} is already in memory",
-  "settings.memory.import.toast": "Restored {{count}} memories",
-  "settings.memory.import.empty": "That backup has no memories",
-  "settings.memory.import.none": "Nothing could be restored",
-  "settings.memory.import.invalid.title": "That doesn’t look like a memory backup",
-  "settings.memory.import.invalid.description": "Pick a memory backup file exported from NovaClaw.",
-  "settings.memory.import.invalid.version": "This backup is from a newer version of NovaClaw. Update to import it.",
-  "settings.memory.import.confirm.title": "Restore memory?",
-  "settings.memory.import.confirm.description":
-    "Add {{count}} remembered things back into NovaClaw. Your existing memories are kept.",
-  "settings.memory.import.confirm.action": "Restore",
-  "settings.memory.clearAll.action": "Clear all",
-  "settings.memory.clearAll.confirm.title": "Clear all memory?",
-  "settings.memory.clearAll.confirm.description":
-    "NovaClaw will forget everything it has learned, across every chat. A complete backup download starts first so you can restore it. This can’t be undone.",
-  "settings.memory.clearAll.confirm.action": "Clear everything",
-  "settings.memory.clearAll.empty": "There was nothing to clear",
-  "settings.memory.clearAll.toast": "Cleared {{count}} memories",
-  "settings.memory.clearAll.toastBackup": "Cleared {{count}} memories. Backup download started",
-  "settings.memory.clearChat.action": "Clear this chat",
-  "settings.memory.clearChat.confirm.title": "Clear this chat’s memory?",
-  "settings.memory.clearChat.confirm.description":
-    "Forget what NovaClaw learned in this chat. Memory from other chats, and everything it remembers for good, are kept.",
-  "settings.memory.clearChat.confirm.action": "Clear this chat",
-  "settings.memory.clearChat.toast": "This chat’s memory was cleared",
   "settings.memory.list.title": "Remembered ({{count}})",
   "settings.memory.list.titleEmpty": "Remembered",
   "settings.memory.list.sourceHidden":
@@ -2444,16 +2404,6 @@ export const dict = {
   "settings.memory.scope.global": "Always",
   "settings.memory.scope.chat": "This chat",
   "settings.memory.scope.otherChat": "Another chat",
-  "settings.memory.embedding.title": "Semantic search (advanced)",
-  "settings.memory.embedding.description":
-    "Point NovaClaw at a local embedding model and memory search also matches by MEANING, not just wording — it can find “favourite programming language” when you ask about a “coding tongue”. Leave blank to match on keywords only.",
-  "settings.memory.embedding.url.title": "Embedding server",
-  "settings.memory.embedding.url.description":
-    "Address of an OpenAI-compatible embeddings server on your machine or network. Stays local.",
-  "settings.memory.embedding.model.title": "Embedding model",
-  "settings.memory.embedding.model.description": "The model id that server serves.",
-  "settings.memory.embedding.none": "Not set — keyword matching only",
-  "settings.memory.embedding.typed": "Type it myself…",
   "settings.memory.forget.action": "Forget this",
   // The confirm that replaced the expertise gate on forgetting (owner, 2026-08-20: the Memory
   // app "has no way to remove memories" — the control existed and their level hid it). The
@@ -2677,8 +2627,6 @@ export const dict = {
   "settings.permissions.tool.wait.description": "Wait for something it started in the background to finish",
   "settings.permissions.tool.resource_status.title": "Resource Status",
   "settings.permissions.tool.resource_status.description": "Read this machine's memory, disk and model load",
-  "settings.permissions.tool.kb.title": "Knowledge Base",
-  "settings.permissions.tool.kb.description": "Read and write the knowledge base",
   "settings.permissions.tool.recipe.title": "Recipes",
   "settings.permissions.tool.recipe.description": "List and cook a recipe folder's instructions",
   "settings.permissions.tool.revert.title": "Undo Changes",

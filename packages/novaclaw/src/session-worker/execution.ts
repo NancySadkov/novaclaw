@@ -11,7 +11,6 @@ import { Log } from "@novaclaw/schema/log"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { Location } from "@novaclaw/core/location"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
@@ -152,10 +151,9 @@ export const layer = Layer.effect(
     // never inside the per-request handler, which is the trap `SessionJoin` warns about above.
     const agentConfig = yield* AgentConfigStore.Service
     // Retiring a colleague clears its cabinet, so this seam needs a memory client too. Resolved at
-    // layer build like everything else here — `Memory.client` wraps a CAPABILITY that acquires per
+    // layer build like everything else here — `WorldMemory.client` wraps a CAPABILITY that acquires per
     // call, so holding it costs nothing when memory is disabled and never blocks the handler.
-    const memory = Memory.client(yield* Memory.node.service)
-    const worldMemory = WorldMemory.client(yield* WorldMemory.node.service)
+    const memory = WorldMemory.client(yield* WorldMemory.node.service)
     // The ONE managed local-model runtime. A worker's `LocalModelManager.node` is replaced by an RPC
     // client that lands here, so `ensure` in a turn starts (or finds) the host's llama.cpp child
     // instead of a second one on the same port. Resolved at layer build like memory, and for the
@@ -374,7 +372,6 @@ export const layer = Layer.effect(
                               db: database.db,
                               events,
                               memory,
-                              worldMemory,
                               agent: colleague,
                               at: Date.now(),
                             }),
@@ -387,20 +384,15 @@ export const layer = Layer.effect(
                   ),
                 /**
                  * 🔴 The host's engine is THE engine. `memory` above is the client this layer resolved
-                 * once at build; the worker's `Memory.node` replacement turns every op inside the turn
+                 * once at build; the worker's `WorldMemory.node` replacement turns every op inside the turn
                  * into one of these, so there is exactly one WASM store on the graph directory.
                  *
                  * ⚠️ NOT inside `runLocated`, unlike the interaction bridge — `MemoryClient` is a GLOBAL
                  * node, and resolving it per request would be the trap `SessionJoin` names above. It is
                  * also why this needs no location: the graph is one per instance, never one per folder.
                  */
-                onMemoryRequest: (message, signal) =>
-                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
-                // Keep the lifetime signal visibly at this handler seam; the structural test counts
-                // these explicit bindings so a new bridge cannot silently become uninterruptible.
-                // prettier-ignore
                 onWorldMemoryRequest: (message, signal) =>
-                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory: worldMemory, lease, message }), { signal }),
+                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
                 onLocalModelRequest: (message, signal) =>
                   Effect.runPromise(SessionWorkerLocalModelBridge.handle({ manager: localModels, lease, message }), {
                     signal,
@@ -584,7 +576,6 @@ export const node = makeGlobalNode({
     SessionPresence.node,
     Database.node,
     AgentConfigStore.node,
-    Memory.node,
     WorldMemory.node,
     // The manager the server graph builds, named here so this layer resolves the runtime client and
     // never core's inert default (whose `ensure` is a no-op that would leave every worker modelless).

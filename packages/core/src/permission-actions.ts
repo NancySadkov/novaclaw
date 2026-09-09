@@ -53,7 +53,7 @@ const SESSION = ["todowrite", "resource_status"] as const
 // user to write a rule that can never fire. Filed rather than quietly listed.
 
 /** Durable or privileged surfaces: memory, skills, recipes, quality commands, new tools, apps. */
-const CAPABILITY = ["kb", "skill", "recipe", "revert", "provision", "define_tool", "register-app"] as const
+const CAPABILITY = ["skill", "recipe", "revert", "provision", "define_tool", "register-app"] as const
 
 /** Delegation: staffing sub-agents and handing work to a colleague. */
 const DELEGATION = ["spawn", "colleague"] as const

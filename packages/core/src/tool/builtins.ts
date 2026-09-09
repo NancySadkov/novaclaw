@@ -11,7 +11,6 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { JsTool } from "./js"
-import * as KbTool from "./deferred/kb.gen"
 import * as DbRegistryTool from "./deferred/db-registry.gen"
 import * as LogTool from "./deferred/log.gen"
 import * as MessengerTool from "./deferred/messenger.gen"
@@ -56,7 +55,6 @@ export const node = makeLocationNode({
     GlobTool.node,
     GrepTool.node,
     JsTool.node,
-    KbTool.node,
     LogTool.node,
     DbRegistryTool.node,
     MessengerTool.node,

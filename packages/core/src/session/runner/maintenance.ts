@@ -279,7 +279,8 @@ export const layer = Layer.effect(
     // gated on the engine being live so a disabled/still-opening memory costs no model call.
     const extractMemory = Effect.fn("SessionMaintenance.extractMemory")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
-      const config = yield* effective.resolve(session.id)
+      const resolution = yield* effective.resolution(session.id)
+      const config = resolution.config
       if (!SessionExtract.allowsDurableMemory(config.type)) return
       // `memory` already carries the instance ceiling (`session/effective-config.ts`).
       if (ShortChat.enabled(config.shortChat) || !stanceOf("memory", config.memory)) return
@@ -353,24 +354,15 @@ export const layer = Layer.effect(
       // This was `session:${sessionID}`, hardcoded, and it broke the filing-cabinet promise — "a
       // D&D companion's recall never reaches the trading desk".
       //
-      // ⚠️ **It was a LEAK, not a loss, and the first version of this comment said the wrong one.**
-      // The obvious reading is that a session-scoped fact dies when the user clears the chat. It did
-      // not: `kb-graph/memory.ts` runs a consolidation pass every five minutes that promotes exactly
-      // `source = 'auto-extract'` memories in `session:` scopes into `global`
-      // (`wasm-engine.ts` → `consolidate`). So everything a colleague learned WITHOUT being asked
-      // became readable by EVERY colleague within about five minutes, and showed up in the Memory
-      // app under "shared" rather than under the officer who learned it. Explicit `kb remember`
-      // facts were unaffected — they already went to `agent:<id>` (`tool/kb.ts` → `scopeForWrite`) —
-      // so the partition held for what a user watched being written and failed for what it did not.
-      //
-      // Filing them in the officer's cabinet fixes it by construction: `consolidate` only picks up
-      // `session:` scopes, so nothing promotes them, and recall reads `agent:<id>` anyway.
+      // Filing the fact in the root officer's cabinet makes a worker's RAG component a proxy. A
+      // specialist execution identity and a restart-resumed descendant still read and write the
+      // same durable owner; no short-lived worker cabinet can diverge.
       //
       // ⚠️ `SessionRecall.rememberScope` is the rule, and it already existed — written for exactly
       // this ("an officer's durable facts belong to the officer"), tested, and never called by
       // anything. Using it rather than re-deriving the fallback keeps ONE answer to "where does a
       // remember go when nobody said": the officer's cabinet, or this chat when there is no officer.
-      const scope = SessionRecall.rememberScope({ sessionID, agentID: config.agent })
+      const scope = SessionRecall.rememberScope({ sessionID, agentID: resolution.memoryOwnerAgent })
       const rawExtraction = chunks.join("")
       // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
       // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.

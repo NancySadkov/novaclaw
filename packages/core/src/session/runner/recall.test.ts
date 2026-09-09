@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
 import { SessionRecall } from "./recall"
+import { ownerAgentOf, type SessionConfig } from "../config-resolve"
 
 // The roster's load-bearing promise (AGENTS.md — the structural metaphor): an agent's memory is its
 // own. These pin the SCOPE SET, which is the only place that promise is expressible — a UI label
@@ -59,6 +61,15 @@ describe("recallScopes", () => {
 //
 // These cases are the whole reason the function exists; they were green while nothing called it.
 describe("rememberScope", () => {
+  it("a worker's RAG scopes are proxies for its root officer, even with a specialist persona", () => {
+    const chain: SessionConfig[] = [{ agent: "daedalus" }, { agent: "review-specialist" }]
+    const owner = ownerAgentOf(chain)
+    const scopes = SessionRecall.recallScopes({ sessionID: "ses_worker", agentID: owner, memory: "own" })
+    expect(scopes).toContain("agent:daedalus")
+    expect(scopes).not.toContain("agent:review-specialist")
+    expect(SessionRecall.rememberScope({ sessionID: "ses_worker", agentID: owner })).toBe("agent:daedalus")
+  })
+
   it("🔴 an officer's automatically-learned facts outlive the chat they were learned in", () => {
     // The property the hardcoded scope broke: written to the CABINET, so a cleared chat — a new
     // session id — still recalls them, because `recallScopes` searches `agent:<id>` too.
@@ -69,7 +80,7 @@ describe("rememberScope", () => {
   })
 
   it("🔴 the officer's cabinet is NOT the scope consolidation promotes out of", () => {
-    // The actual pre-2026-08-22 defect, and it was a LEAK rather than a loss. `kb-graph/memory.ts`
+    // The actual pre-2026-08-22 defect, and it was a LEAK rather than a loss. The old memory engine
     // promotes `source = 'auto-extract'` memories in `session:` scopes into `global` every five
     // minutes, so everything a colleague learned without being asked became readable by EVERY
     // colleague — the filing-cabinet promise inverted, on exactly the memories a user never watches
@@ -97,5 +108,15 @@ describe("rememberScope", () => {
   it("falls back to the session when nothing owns the fact", () => {
     expect(SessionRecall.rememberScope({ sessionID: "ses_1", agentID: undefined })).toBe("session:ses_1")
     expect(SessionRecall.rememberScope({ sessionID: "ses_1", agentID: "" })).toBe("session:ses_1")
+  })
+
+  it("all runner-owned durable writes go through the resolved memory owner", () => {
+    const writers = ["llm.ts", "maintenance.ts"].map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+    const source = writers.join("\n")
+
+    // This was the recurrence seam: interpolating an effective worker persona directly creates a
+    // second cabinet. Writers must accept the root-owner resolution and use the one scope helper.
+    expect(source).not.toMatch(/scope:\s*`agent:/)
+    expect(source.match(/SessionRecall\.rememberScope\(/g)).toHaveLength(2)
   })
 })

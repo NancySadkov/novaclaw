@@ -54,15 +54,11 @@ export const Flag = {
   // every phase P0-P8 — was dark for every real user, while the plan's §5 owner directive is
   // "default-on out-of-the-box". The USER's switch is `memory.enabled` (default ON, a privacy
   // control); this one only exists so a constrained host can say no.
-  NOVACLAW_KB_MEMORY: truthyUnlessDisabled("NOVACLAW_KB_MEMORY"),
-  NOVACLAW_KB_MEMORY_DIM: env("NOVACLAW_KB_MEMORY_DIM"),
   // The automatic session/agent world model has its own capability switch and dimension. It
   // defaults on independently so a deliberate KB capability outage does not also erase the
   // runner's horizon; the shared user privacy stance still gates what a session writes or reads.
   NOVACLAW_WORLD_MEMORY: truthyUnlessDisabled("NOVACLAW_WORLD_MEMORY"),
   NOVACLAW_WORLD_MEMORY_DIM: env("NOVACLAW_WORLD_MEMORY_DIM"),
-  /** Reasoning budget for document absorption. A KNOB so the value can be MEASURED, not guessed. */
-  NOVACLAW_KB_ABSORB_BUDGET: env("NOVACLAW_KB_ABSORB_BUDGET"),
   /** Reasoning budget for the compaction summary. A KNOB for the same reason: 2,048 is a first
    *  value and the sweep that would defend it has not been run. */
   NOVACLAW_COMPACTION_BUDGET: env("NOVACLAW_COMPACTION_BUDGET"),

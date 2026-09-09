@@ -369,12 +369,12 @@ test("production worker handlers thread the supervisor lifetime signal into ever
     "onPublishEvent",
     "onDeviceRequest",
     "onInteractionRequest",
-    "onMemoryRequest",
+    "onWorldMemoryRequest",
     "onExecutionRequest",
   ]) {
     expect(source).toContain(`${handler}: (message, signal) =>`)
   }
-  expect(source.match(/\{ signal \}/g)?.length).toBeGreaterThanOrEqual(6)
+  expect(source.match(/\{ signal \}/g)?.length).toBeGreaterThanOrEqual(5)
 })
 
 test("permission assertions execute in host-owned services", async () => {

@@ -1,12 +1,5 @@
-/**
- * The hot per-session world model.
- *
- * This is intentionally a second graph, not a mode on the explicit KB graph. Automatic recall,
- * extraction, and compacted-chat archives have different ownership and retention semantics from
- * user-curated/source memories. Keeping a separate engine and directory makes that distinction
- * structural: a KB export or purge cannot accidentally become the runner's working world, and the
- * world model cannot promote itself into the household KB.
- */
+/** The instance's sole RAG graph. Officer cabinets are ECS components addressed by `agent:<id>`;
+ * descendant worker sessions proxy the root officer's cabinet and never own a durable one. */
 export * as WorldMemory from "./world-memory"
 
 import { Context, Effect, Layer } from "effect"
@@ -19,11 +12,12 @@ import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
-import { Memory } from "./memory"
 import { MemoryAccessLedger } from "./access-ledger"
 import { MemoryClient } from "./memory-client"
 import { MemoryObserved } from "./memory-observed"
 import { MemorySetting } from "./memory-setting"
+import { MemoryEvent } from "@novaclaw/schema/memory-event"
+import { MemoryPrunePolicy } from "./prune-policy"
 import { GraphSnapshot } from "./snapshot"
 import { WasmMemory } from "./wasm-engine"
 
@@ -47,10 +41,65 @@ export interface RuntimeStatus {
 export class Service extends Context.Service<Service, MemoryClient.Interface>()("@novaclaw/v2/WorldMemory") {}
 
 let currentRuntimeStatus: RuntimeStatus = { stage: "not-loaded" }
-export const runtimeStatus = (): RuntimeStatus => currentRuntimeStatus
+let publishBlockedRead: () => string | undefined = () => undefined
+
+export const describeRuntimeStatus = (status: RuntimeStatus, publishBlocked: string | undefined): RuntimeStatus => {
+  if (status.stage !== "ready" || publishBlocked === undefined) return status
+  const blocked = `durable writes blocked: ${publishBlocked}`
+  return { stage: "ready", detail: status.detail === undefined ? blocked : `${status.detail}; ${blocked}` }
+}
+export const runtimeStatus = (): RuntimeStatus => describeRuntimeStatus(currentRuntimeStatus, publishBlockedRead())
 
 const DEFAULT_STAGED_CAP = 2_000
 const DEFAULT_RETAIN_EVERY_MS = 5 * 60_000
+
+/** Bound one ECS-owned cabinet using the recall ledger, never another agent's activity. */
+export const forgetOverCap = (
+  live: WasmMemory,
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  scope: string,
+  cap: number,
+) =>
+  Effect.gen(function* () {
+    const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
+    const excess = count - Math.max(0, Math.floor(cap))
+    if (excess <= 0) return
+    const candidates = yield* Effect.tryPromise(() =>
+      live.candidates({
+        scopes: [scope],
+        relation: "staged",
+        order: "oldest",
+        limit: Math.min(Math.max(excess * 4, 500), 20_000),
+      }),
+    ).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MemoryClient.CandidateRow>))
+    const usage = yield* MemoryAccessLedger.usageFor(
+      db,
+      candidates.map((row) => row.id),
+    )
+    const choice = MemoryPrunePolicy.choose({ candidates, usage, excess, now: Date.now() })
+    for (const id of choice.victims) {
+      yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(Effect.ignore)
+      yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
+    }
+  })
+
+export const forgetEverywhere = (
+  live: WasmMemory,
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  cap: number,
+  rawAccessKeep = MemoryAccessLedger.RAW_ROW_HORIZON,
+) =>
+  Effect.gen(function* () {
+    const scopes = [
+      ...(yield* Effect.tryPromise(() => live.stagedScopes("session:")).pipe(Effect.orElseSucceed(() => []))),
+      ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(Effect.orElseSucceed(() => []))),
+      "global",
+    ]
+    for (const scope of new Set(scopes)) yield* forgetOverCap(live, db, events, scope, cap)
+    yield* MemoryAccessLedger.trim(db, rawAccessKeep).pipe(Effect.ignore)
+  })
 
 export const configFromFlags = (): Config => ({
   enabled: Flag.NOVACLAW_WORLD_MEMORY,
@@ -73,6 +122,7 @@ export const layerFromConfig = (
 
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "world")
       currentRuntimeStatus = { stage: "not-loaded" }
+      publishBlockedRead = () => undefined
       let engine: WasmMemory | undefined
       let opening: Promise<MemoryClient.Interface> | undefined
       const open = () => {
@@ -82,6 +132,7 @@ export const layerFromConfig = (
         opening = WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
           .then((opened) => {
             engine = opened
+            publishBlockedRead = () => opened.publishBlocked
             currentRuntimeStatus =
               opened.recovery.skipped.length === 0
                 ? { stage: "ready" }
@@ -157,12 +208,7 @@ export const layerFromConfig = (
             // The user privacy switch gates retention too. A separate graph must not become a
             // loophole where automatic world memories keep being rewritten after memory is off.
             if (!live || !MemorySetting.memoryEnabled()) continue
-            const scopes = yield* Effect.tryPromise(async () => [
-              ...(await live.stagedScopes("session:").catch(() => [])),
-              ...(await live.stagedScopes("agent:").catch(() => [])),
-            ])
-            for (const scope of new Set(scopes)) yield* Memory.forgetOverCap(live, ledger, events, scope, cap)
-            yield* MemoryAccessLedger.trim(ledger).pipe(Effect.ignore)
+            yield* forgetEverywhere(live, ledger, events, cap)
           }
         }),
       )

@@ -625,6 +625,22 @@ export const agentOf = (chain: readonly SessionConfig[]): string | undefined => 
   return undefined
 }
 
+/**
+ * The officer whose durable components a session belongs to.
+ *
+ * Execution identity is nearest-declaration-wins (`agentOf`), because a worker may deliberately use
+ * a narrower specialist persona. Component ownership is different: a descendant is still a thread
+ * of the root officer, so its RAG cabinet must remain a proxy for that officer's cabinet. Reading
+ * the first declaration makes that ownership stable across nested workers and worker recovery.
+ */
+export const ownerAgentOf = (chain: readonly SessionConfig[]): string | undefined => {
+  for (const layer of chain) {
+    const declared = layer.agent
+    if (declared !== undefined && declared !== null && String(declared).trim() !== "") return String(declared)
+  }
+  return undefined
+}
+
 export const resolveSessionConfig = <E, R>(
   defaults: EffectiveConfig,
   sessionID: string,

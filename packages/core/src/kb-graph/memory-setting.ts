@@ -1,11 +1,9 @@
 export * as MemorySetting from "./memory-setting"
 
-// The lay Memory ON/OFF privacy switch. Two independent gates decide
-// whether memory does anything:
-//   • NOVACLAW_KB_MEMORY / NOVACLAW_WORLD_MEMORY (env) — CAPABILITY: does each engine open at all (a
-//     constrained host / airgap can leave either one off). Owned by the corresponding node.
+// The lay Memory ON/OFF privacy switch. Two gates decide whether memory does anything:
+//   • NOVACLAW_WORLD_MEMORY (env) — CAPABILITY: can the sole RAG engine open at all.
 //   • memory.enabled (setting)  — the USER's privacy choice, DEFAULT ON. When off, the RUNTIME flows
-//     stand down (auto-recall, auto-extraction, the `kb` tool, background consolidation) so nothing is
+//     stand down (auto-recall, auto-extraction, background retention) so nothing is
 //     recalled, recorded, or persisted — but the MANAGEMENT surface (the /memory viewer + export/clear)
 //     stays live so the user can still see and clear what's already stored.
 //

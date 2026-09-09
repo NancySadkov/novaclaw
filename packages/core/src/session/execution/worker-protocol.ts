@@ -195,8 +195,6 @@ export const SpawnResultMessage = Schema.Struct({
 export const MemoryResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("memory-result"),
-  /** Which host-owned graph answered; the worker has two memory capabilities. */
-  store: Schema.Literals(["kb", "world"]),
   requestID: Schema.String,
   outcome: Schema.Literals(["ok", "failed", "rejected"]),
   /** The op's return value, already JSON. Absent for `void` returns and for every non-ok outcome. */
@@ -460,9 +458,9 @@ export const SpawnChild = Schema.Struct({
 /**
  * 🔴 **THE GRAPH HAS ONE WRITER, AND THIS IS HOW A WORKER REACHES IT.**
  *
- * `kb-graph/memory.ts`'s header has always claimed *one engine per instance = the single writer*.
- * It was not true: `session-worker/services.ts` swapped seven host-owned services for proxying stubs
- * and not this one, so a worker built a SECOND WASM engine on the same graph directory. The host's
+ * World memory is one ECS component owned by the instance and reached through its entity. Before
+ * this bridge, `session-worker/services.ts` swapped host-owned services for proxying stubs but not
+ * this one, so a worker built a SECOND WASM engine on the same graph directory. The host's
  * engine is lazy, so the two only coexisted when something host-side touched memory during a live
  * turn — which is exactly what the Memory app does. Generation snapshots made that worse rather than
  * merely redundant: `publish()` picks `max(existing) + 1`, so two writers can compute the same index
@@ -514,8 +512,6 @@ export type MemoryOp = (typeof MEMORY_OPS)[number]
 export const MemoryRequest = Schema.Struct({
   ...Identity,
   type: Schema.Literal("memory-request"),
-  /** Explicit/source KB versus automatic session/agent world model. */
-  store: Schema.Literals(["kb", "world"]),
   requestID: Schema.String,
   op: Schema.Literals(MEMORY_OPS),
   /** The op's arguments, positionally, exactly as `MemoryClient.Interface` declares them. */

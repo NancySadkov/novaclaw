@@ -2,7 +2,7 @@ import { For, Show, createMemo, createResource, createSignal, type Component } f
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useConfirm } from "@/components/dialog-confirm"
-import { memoryEraseVerified } from "@/utils/memory-api"
+import { worldMemoryEraseVerified } from "@/utils/memory-api"
 import { showToast } from "@/utils/toast"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
@@ -170,7 +170,7 @@ export const NovaHealthBoard: Component = () => {
       return
     setErasing(true)
     try {
-      const erased = await memoryEraseVerified(conn.http, { directory: confinementDir() })
+      const erased = await worldMemoryEraseVerified(conn.http, { directory: confinementDir() })
       showToast({
         variant: "success",
         title:

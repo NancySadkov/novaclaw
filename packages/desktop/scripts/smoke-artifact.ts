@@ -981,17 +981,16 @@ async function run() {
     check(false, "pty-create", "scratchDir was unavailable, so the packaged PTY runtime could not be exercised")
   }
 
-  // ── 5. memory (the kb graph) is actually up ────────────────────────────────────────────────────
+  // ── 5. the sole RAG graph is actually up ──────────────────────────────────────────────────────
   try {
-    const res = await request(credentials, "GET", "/memory/stats")
-    const stats = res.json as { total?: unknown; valid?: unknown } | undefined
+    const res = await request(credentials, "POST", "/api/world-memory/list", { limit: 1 })
     check(
-      res.status === 200 && typeof stats?.total === "number" && typeof stats?.valid === "number",
+      res.status === 200 && Array.isArray(res.json),
       "memory-enabled",
-      `GET /memory/stats answered ${res.status}: ${res.text.slice(0, 200)}`,
+      `POST /api/world-memory/list answered ${res.status}: ${res.text.slice(0, 200)}`,
     )
   } catch (error) {
-    check(false, "memory-enabled", `GET /memory/stats failed: ${String(error)}`)
+    check(false, "memory-enabled", `POST /api/world-memory/list failed: ${String(error)}`)
   }
 
   // A healthy sidecar does not imply a usable app. This caught a real packaged build where

@@ -116,8 +116,6 @@ export const everything = (input: {
   readonly db: Database.Interface["db"]
   readonly events: EventV2.Interface
   readonly memory: MemoryClient.Interface
-  /** Automatic recall/extraction graph, when the caller owns that separate store too. */
-  readonly worldMemory?: MemoryClient.Interface
   readonly agent: string
   /** When the retirement happened, in epoch millis — it names the set-aside scope. Passed in rather
    *  than read from the clock so a caller can make the name deterministic in a test. */
@@ -153,17 +151,6 @@ export const everything = (input: {
         }),
       ),
     )
-    if (input.worldMemory !== undefined)
-      yield* input.worldMemory.moveScope(scope, setAside).pipe(
-        Effect.catch((error) =>
-          Log.event("kb.scope.clear.failed", {
-            "agent.id": input.agent,
-            "kb.scope": scope,
-            "kb.fault": Log.fault(error),
-          }),
-        ),
-      )
-
     // 🔴 …and every OTHER subsystem that keys something on this id. Each runs independently and each
     // failure is REPORTED, never fatal: a schedule that could not be cleared must not stop the
     // memory cabinet being set aside, and half a retirement with no account of which half is the

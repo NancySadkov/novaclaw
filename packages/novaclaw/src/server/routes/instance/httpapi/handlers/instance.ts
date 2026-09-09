@@ -18,7 +18,6 @@ import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { OsPlaces } from "@/server/os-places"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
-import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
 import { DatabaseHealth } from "@novaclaw/core/database/health"
@@ -251,7 +250,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           // build", and it does — the open failure is caught inside and yields a degraded client —
           // so it reads `ready` against a provably broken store. Measured 2026-08-12.
           // A plain read of the last transition: inspecting must not open the graph.
-          const memory = Memory.runtimeStatus()
           const worldMemory = WorldMemory.runtimeStatus()
 
           // A scan failure is an unknown credential state, never a healthy result.
@@ -292,10 +290,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             ),
             NovaHealth.fromPressure(pressure),
             NovaHealth.fromDatabase(database),
-            NovaHealth.fromMemory({
-              stage: memory.stage,
-              ...(memory.detail === undefined ? {} : { detail: memory.detail }),
-            }),
             NovaHealth.fromWorldMemory({
               stage: worldMemory.stage,
               ...(worldMemory.detail === undefined ? {} : { detail: worldMemory.detail }),
