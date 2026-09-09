@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { Database } from "@novaclaw/core/database/database"
+import { EventV2 } from "@novaclaw/core/event"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionV2 } from "@novaclaw/core/session"
-import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { UnjoinedChildren } from "@novaclaw/core/session/runner/unjoined-children"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
@@ -30,8 +34,19 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
 /** The 1N provenance prefix every harness steer carries. */
 const STEER_PREFIX = "[Automated NovaClaw check"
 
-const runWithChildren = async (children: { exited: boolean }[], label: string, drives?: { children?: boolean }) => {
-  const harness = makeRunnerHarness({ turns: [completeTurn("text-1", "All done — every slice is covered.")] })
+const runWithChildren = async (
+  children: { exited: boolean }[],
+  label: string,
+  drives?: { children?: boolean },
+  scope: "current" | "stale" = "current",
+) => {
+  // Keep answering each harness steer so the child supervisor, rather than the empty-turn guard,
+  // owns when this fixture stops. Four replies cover the initial turn plus the three-round ceiling.
+  const harness = makeRunnerHarness({
+    turns: Array.from({ length: UnjoinedChildren.MAX_RESTART_ROUNDS + 1 }, (_, index) =>
+      completeTurn(`text-${index}`, "All done — every slice is covered."),
+    ),
+  })
   if (drives !== undefined) harness.controls.harnessDrives = drives
   let transcript: { type: string; text?: string }[] = []
 
@@ -46,6 +61,51 @@ const runWithChildren = async (children: { exited: boolean }[], label: string, d
       // resolves a project from `input.location.directory`, which this deliberately partial graph
       // does not supply, so it fails inside `projects.resolve` before a row is ever written.
       const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const at = DateTime.makeUnsafe(1)
+      const recordUser = (id: string, text: string) =>
+        events.publish(SessionEvent.MessageRecorded, {
+          sessionID: HARNESS_SESSION,
+          timestamp: at,
+          message: SessionMessage.User.make({
+            id: SessionMessage.ID.make(id),
+            type: "user",
+            text,
+            time: { created: at },
+          }),
+        })
+      // The spawn trail is model-visible durable evidence that THESE children belong to this task.
+      // A parent_id alone only proves which chat created them, not which of that chat's many tasks.
+      const recordSpawns = events.publish(SessionEvent.MessageRecorded, {
+        sessionID: HARNESS_SESSION,
+        timestamp: at,
+        message: SessionMessage.Assistant.make({
+          id: SessionMessage.ID.make("msg_spawn_trail"),
+          type: "assistant",
+          agent: "build",
+          model: {
+            id: ModelV2.ID.make("harness-model"),
+            providerID: ProviderV2.ID.make("harness"),
+          },
+          content: children.map((_, index) =>
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: `call_spawn_${index}`,
+              name: "spawn",
+              state: {
+                status: "completed",
+                input: { prompt: `describe icons ${index * 10 + 1}-${index * 10 + 10}` },
+                content: [],
+                structured: { childID: `ses_child_${index}` },
+              },
+              time: { created: at, ran: at, completed: at },
+            }),
+          ),
+          time: { created: at, completed: at },
+        }),
+      })
+
+      yield* recordUser("msg_task_1", "Merge what the children found.")
       for (const [index, child] of children.entries()) {
         yield* db
           .insert(SessionTable)
@@ -68,12 +128,11 @@ const runWithChildren = async (children: { exited: boolean }[], label: string, d
           .run()
           .pipe(Effect.orDie)
       }
+      yield* recordSpawns
+      // Same durable chat, new user task: the prior task's child inventory must not leak across this
+      // boundary even though every child row still points at the same parent session.
+      if (scope === "stale") yield* recordUser("msg_task_2", "Answer this unrelated question.")
       const session = yield* SessionV2.Service
-      yield* session.prompt({
-        sessionID: HARNESS_SESSION,
-        prompt: Prompt.make({ text: "Merge what the children found." }),
-        resume: false,
-      })
       yield* session.resume(HARNESS_SESSION)
       transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
     }),
@@ -157,5 +216,16 @@ describe("the runner asks the fan-out supervisor", () => {
       transcript.some((message) => message.type === "assistant"),
       "the drain must reach finish, or the silence above proves nothing",
     ).toBe(true)
+  })
+
+  test("children from an earlier user task do not nudge an unrelated answer", async () => {
+    const { transcript, steers } = await runWithChildren(
+      [{ exited: false }, { exited: true }],
+      "stale children",
+      undefined,
+      "stale",
+    )
+    expect(steers).toHaveLength(0)
+    expect(transcript.some((message) => message.type === "assistant")).toBe(true)
   })
 })

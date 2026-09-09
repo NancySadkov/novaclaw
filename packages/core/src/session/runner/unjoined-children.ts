@@ -16,10 +16,12 @@ export * as UnjoinedChildren from "./unjoined-children"
  * fully holds, performed by the very turn that already believes it is done.
  *
  * ⭐ **The harness enumerates GROUND TRUTH here, so it CHECKS rather than asks** — the principle
- * `unfinished-set.ts` applies to files, applied to children. `SessionStore.children` is a durable
- * list of every child this session created and each child's row carries its `exit(result)`; the
- * parent's terminal `wait` results say which it actually joined. The difference is computed, never
- * believed.
+ * `unfinished-set.ts` applies to files, applied to children. Successful `spawn` outputs identify the
+ * children created for the CURRENT user task; each child's durable row confirms the parent relation
+ * and carries its `exit(result)`; terminal `wait` results say which the parent actually joined. The
+ * difference is computed, never believed. Scoping by spawn output is load-bearing: a colleague chat
+ * survives many user tasks, so `SessionStore.children` alone is an all-history inventory that would
+ * revive yesterday's workers in today's answer.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * 🔴 **THE DIVISION OF LABOUR WITH `tool/wait.ts`, and why this module does NOT judge liveness.**
@@ -100,7 +102,8 @@ export interface Verdict {
  * DEAD, because the parent was then told in as many words to re-issue that slice. What does not
  * count is never having asked.
  *
- * @param children every child of this session, from `SessionStore.children`.
+ * @param children children spawned by the current user task, intersected with
+ *   `SessionStore.children` to confirm their durable parent relation.
  * @param joined ids the parent called `wait` on and got an answer for, accumulated across the whole
  *   request for the same reason `setOpened` is — one turn's window is not the request.
  */

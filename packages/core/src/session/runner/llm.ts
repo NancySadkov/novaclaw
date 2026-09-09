@@ -142,7 +142,7 @@ import { SessionMapRetention } from "./session-map-retention"
 import { SessionDriveState } from "./drive-state"
 import { RecoveryJoin } from "./recovery-join"
 import { CompactionBackoff } from "./compaction-backoff"
-import { applySteerProvenance, lastRealUserText } from "../steer-provenance"
+import { applySteerProvenance, lastRealUserIndex, lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
 import { ColleagueBound } from "../colleague-bound"
@@ -918,7 +918,8 @@ export const layer = Layer.effect(
      */
     const setBarrenBySession = new Map<string, { barren: number; lastOpened: number }>()
     /**
-     * Every CHILD this session has joined — the ids it called `wait` on and got an answer for.
+     * Every CHILD this session has joined in the CURRENT real-user task — the ids it called `wait`
+     * on and got an answer for.
      *
      * 🔴 Session-scoped for the reason the three maps above it are, and it is not a style choice: a
      * `wait` call sits in the transcript window, compaction rewrites that window, and a drain-local
@@ -926,10 +927,18 @@ export const layer = Layer.effect(
      * children it already read. The measured version of this trap cost the set drive three separate
      * corrections (`setRequests`, `setOpened`, `setBarrenBySession` all carry the same note).
      *
-     * ⚠️ Accumulate-only, exactly like `setOpened`: a join is something the session HAS DONE, and no
-     * later read of a shrunken window may take it back.
+     * ⚠️ Accumulate-only WITHIN ONE TASK, exactly like `setOpened`: a join is something the session
+     * has done and no later read of a shrunken window may take it back. A new real user message resets
+     * it alongside `childrenSpawned`; otherwise a durable colleague chat would inherit old work.
      */
     const childrenJoined = new Map<string, Set<string>>()
+    /**
+     * Children spawned for the CURRENT real-user task, never every child this durable chat has ever
+     * owned. The task id resets the set when a new user message arrives; the set itself survives
+     * harness steers and compaction drains through `SessionDriveState`.
+     */
+    const childrenSpawned = new Map<string, Set<string>>()
+    const childrenTask = new Map<string, string>()
     /**
      * How many times this session has been steered back to its unaccounted children. Bounded by
      * `UnjoinedChildren.MAX_RESTART_ROUNDS` — a restart can itself spawn a child that fails, so this
@@ -946,6 +955,8 @@ export const layer = Layer.effect(
       setAttempted,
       setBarrenBySession,
       childrenJoined,
+      childrenSpawned,
+      childrenTask,
       childRestartRounds,
       runawayNudgedAtCalls,
       compactionRetryAt,
@@ -961,6 +972,9 @@ export const layer = Layer.effect(
           if (snapshot.barren) setBarrenBySession.set(sessionID, { ...snapshot.barren })
           else setBarrenBySession.delete(sessionID)
           childrenJoined.set(sessionID, new Set(snapshot.joined))
+          childrenSpawned.set(sessionID, new Set(snapshot.spawned))
+          if (snapshot.childTask !== undefined) childrenTask.set(sessionID, snapshot.childTask)
+          else childrenTask.delete(sessionID)
           childRestartRounds.set(sessionID, snapshot.restartRounds)
           runawayNudgedAtCalls.set(sessionID, snapshot.runawayNudgedAtCalls)
           if (snapshot.compactionRetryAt !== undefined) compactionRetryAt.set(sessionID, snapshot.compactionRetryAt)
@@ -977,6 +991,8 @@ export const layer = Layer.effect(
         attempted: [...(setAttempted.get(sessionID) ?? [])],
         ...(barren === undefined ? {} : { barren: { ...barren } }),
         joined: [...(childrenJoined.get(sessionID) ?? [])],
+        ...(childrenTask.get(sessionID) === undefined ? {} : { childTask: childrenTask.get(sessionID)! }),
+        spawned: [...(childrenSpawned.get(sessionID) ?? [])],
         restartRounds: childRestartRounds.get(sessionID) ?? 0,
         runawayNudgedAtCalls: runawayNudgedAtCalls.get(sessionID) ?? 0,
         ...(compactionRetryAt.get(sessionID) === undefined
@@ -4045,16 +4061,51 @@ export const layer = Layer.effect(
                * the arithmetic gap first, then let reground check what is left.
                *
                * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
-               * evidence that this session delegated is that it has children — one indexed
-               * `WHERE parent_id = ?` — and reading the user's prompt for a cue is the substring hazard
-               * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
-               * empty query and skips everything below.
+               * evidence that this task delegated is its successful `spawn` outputs, retained across
+               * drains and confirmed against one indexed `WHERE parent_id = ?` query. Reading the
+               * user's prompt for a cue is the substring hazard `unfinished-set.ts` paid 835,145
+               * tokens to learn. A task with no spawned children skips the supervisor.
                */
               // ⚠️ Gated BEFORE the query for the same reason: `off` must not pay for an indexed read
               // it will throw away.
-              const kids = harness.drives.children
+              // A colleague's root session is a durable chat, so `store.children(session)` is an
+              // all-history inventory. The supervisor is request-scoped: only successful `spawn`
+              // results after the latest REAL user message create an obligation for this answer.
+              // Accumulate those ids into host state because compaction can later remove the tool
+              // call from the runner window while the same request is still active.
+              const userIndex = lastRealUserIndex(context)
+              const currentChildTask = userIndex < 0 ? undefined : context[userIndex]?.id
+              const priorChildTask = childrenTask.get(input.sessionID)
+              if (currentChildTask !== undefined && currentChildTask !== priorChildTask) {
+                childrenTask.set(input.sessionID, currentChildTask)
+                childrenSpawned.set(input.sessionID, new Set())
+                childrenJoined.set(input.sessionID, new Set())
+                childRestartRounds.set(input.sessionID, 0)
+              }
+              const spawned = childrenSpawned.get(input.sessionID) ?? new Set<string>()
+              // With no task anchor and no retained state (for example, a restart after compaction),
+              // silence is safer than attaching an arbitrary historical spawn trail to this answer.
+              if (currentChildTask !== undefined || priorChildTask !== undefined) {
+                for (const call of callsSinceLastUser) {
+                  if (call.name !== SpawnTool.name || call.failed) continue
+                  const childID =
+                    typeof call.structured === "object" &&
+                    call.structured !== null &&
+                    "childID" in call.structured &&
+                    typeof call.structured.childID === "string"
+                      ? call.structured.childID
+                      : undefined
+                  if (childID !== undefined) spawned.add(childID)
+                }
+              }
+              childrenSpawned.set(input.sessionID, spawned)
+              yield* flushDriveState(input.sessionID)
+              const directKids = harness.drives.children && spawned.size > 0
                 ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
                 : []
+              // Intersect the transcript-derived ids with the durable parent relation: neither a
+              // malformed tool result nor a child from another parent can become this task's debt.
+              const kids = directKids.filter((id) => spawned.has(id))
               if (kids.length > 0) {
                 // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
                 // `childrenJoined`. `wait` carries the child id in its input and a terminal marker in

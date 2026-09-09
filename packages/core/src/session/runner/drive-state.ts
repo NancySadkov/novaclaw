@@ -43,6 +43,14 @@ export interface Snapshot {
   readonly barren?: { readonly barren: number; readonly lastOpened: number }
   /** Children this session has joined — `childrenJoined`. */
   readonly joined: ReadonlyArray<string>
+  /**
+   * The real user message whose fan-out facts below belong to. A colleague chat is durable across
+   * many user tasks, while an unfinished-child obligation is not: a new request must not inherit
+   * children from the previous one.
+   */
+  readonly childTask?: string
+  /** Child ids returned by successful `spawn` calls in `childTask`, accumulated across drains. */
+  readonly spawned: ReadonlyArray<string>
   /** Times the session was steered back to unaccounted children — `childRestartRounds`. */
   readonly restartRounds: number
   /** Tool-call count at which the broad runaway warning fired for this durable user-task span. */
@@ -51,7 +59,14 @@ export interface Snapshot {
   readonly compactionRetryAt?: number
 }
 
-export const empty: Snapshot = { opened: [], attempted: [], joined: [], restartRounds: 0, runawayNudgedAtCalls: 0 }
+export const empty: Snapshot = {
+  opened: [],
+  attempted: [],
+  joined: [],
+  spawned: [],
+  restartRounds: 0,
+  runawayNudgedAtCalls: 0,
+}
 
 const stringArray = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
@@ -64,6 +79,12 @@ export const decode = (raw: unknown): Snapshot | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined
   const value = raw as Record<string, unknown>
   if (!stringArray(value.opened) || !stringArray(value.attempted) || !stringArray(value.joined)) return undefined
+  // Snapshots written before request-scoped fan-out tracking had neither field. Defaulting to an
+  // empty set is fail-closed: it may omit one recovery nudge after an upgrade, but can never revive
+  // every historical child in a long-lived colleague chat.
+  const spawned = value.spawned === undefined ? [] : value.spawned
+  if (!stringArray(spawned)) return undefined
+  if (value.childTask !== undefined && typeof value.childTask !== "string") return undefined
   if (typeof value.restartRounds !== "number") return undefined
   // Older persisted controller snapshots predate the runaway latch. Preserve their set-drive and
   // join state while defaulting only the new watermark; a harness upgrade must not erase unrelated
@@ -96,6 +117,8 @@ export const decode = (raw: unknown): Snapshot | undefined => {
     attempted: value.attempted,
     ...(barren === undefined ? {} : { barren }),
     joined: value.joined,
+    ...(value.childTask === undefined ? {} : { childTask: value.childTask }),
+    spawned,
     restartRounds: value.restartRounds,
     runawayNudgedAtCalls,
     ...(value.compactionRetryAt === undefined ? {} : { compactionRetryAt: value.compactionRetryAt }),

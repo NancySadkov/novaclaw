@@ -1,7 +1,7 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `counts` = tests Bun reported completed per run unit; `failing` = failures PINNED as known, by name. All three are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Counts seeded from the 2026-09-04 fast tier after the worker framing and dependency-ledger fixes.",
   "reasons": {
-    "core": "9 as of 2026-09-05: eight Windows PTY cases and one symlink watcher case. Commit 323345771 re-enabled the two offline file-fixture npm cases, but left the old eleven-skip pin. Core count measured 7474 in two shards, plus two verified archived-identity tests; five question tests removed, with additions from the concurrent avatar, memory, telemetry and session work. Three durability and bundled-avatar regressions were added on 2026-09-07, followed by two recovery-obligation state-machine regressions.",
+    "core": "9 as of 2026-09-05: eight Windows PTY cases and one symlink watcher case. Commit 323345771 re-enabled the two offline file-fixture npm cases, but left the old eleven-skip pin. Core count measured 7474 in two shards, plus two verified archived-identity tests; five question tests removed, with additions from the concurrent avatar, memory, telemetry and session work. Three durability and bundled-avatar regressions were added on 2026-09-07, followed by two recovery-obligation state-machine regressions and two request-scoped child-supervisor regressions on 2026-09-09.",
     "llm": "28 as of 2026-09-01, lowered from 29. The refactor sweep deleted the unused provider surface and its tests (`test/exports.test.ts`, `test/provider/cloudflare.test.ts`, `test/provider/openrouter.test.ts` and others); one of those files carried a skipped test, so the skip left with the file it lived in. A skip count that drops because tests were REMOVED is a ratchet working, not a regression — but it is lowered deliberately and in the same commit, never left to drift.",
     "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true.",
     "novaclaw test/*": "Full release tier measured 780 on 2026-09-06, plus the metadata queue, stale-generation event-fence, and large image worker-transport regressions. Separate CLI/MCP leaves are excluded from this aggregate by the runner and counted under their own unit names."
@@ -38,7 +38,7 @@
     "sdk-js": 46,
     "session-ui": 211,
     "ui": 66,
-    "core": 7467,
+    "core": 7469,
     "app:unit": 2072,
     "app:browser": 267,
     "desktop": 226,
