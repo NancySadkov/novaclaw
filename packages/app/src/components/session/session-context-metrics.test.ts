@@ -28,6 +28,8 @@ const assistant = (
   } as unknown as SessionMessage
 }
 
+const withContext = (message: SessionMessage, context: unknown) => ({ ...message, context }) as SessionMessage
+
 const user = (id: string) => {
   return {
     id,
@@ -55,6 +57,57 @@ describe("getSessionContext", () => {
     expect(ctx?.usage).toBe(50)
     expect(ctx?.providerLabel).toBe("OpenAI")
     expect(ctx?.modelLabel).toBe("GPT-4.1")
+  })
+
+  test("uses one provider request for context pressure, not aggregated reasoning phases", () => {
+    const message = withContext(assistant("a1", { input: 352_505, output: 515, reasoning: 80, read: 0, write: 0 }, 0), {
+      window: 262_144,
+      estimatedTokens: 137_539,
+      droppedMessages: 162,
+      elidedOutputs: 0,
+      findings: [],
+      promptAnchor: { reportedTokens: 117_451 },
+    })
+
+    const ctx = getSessionContext([message], [], model)
+
+    expect(ctx?.input).toBe(117_451)
+    expect(ctx?.total).toBe(118_046)
+    expect(ctx?.limit).toBe(262_144)
+    expect(ctx?.usage).toBe(45)
+  })
+
+  test("falls back to the packed request estimate when provider usage is absent", () => {
+    const message = withContext(assistant("a1", { input: 300_000, output: 40, reasoning: 10, read: 0, write: 0 }, 0), {
+      window: 200_000,
+      estimatedTokens: 80_000,
+      droppedMessages: 0,
+      elidedOutputs: 0,
+      findings: [],
+    })
+
+    const ctx = getSessionContext([message], [], model)
+
+    expect(ctx?.input).toBe(80_000)
+    expect(ctx?.total).toBe(80_050)
+    expect(ctx?.limit).toBe(200_000)
+    expect(ctx?.usage).toBe(40)
+  })
+
+  test("keeps the newest context receipt even when its provider usage is wholly absent", () => {
+    const older = assistant("older", { input: 25_000, output: 10, reasoning: 0, read: 0, write: 0 }, 0)
+    const newest = withContext(assistant("newest", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0), {
+      window: 100_000,
+      estimatedTokens: 60_000,
+      droppedMessages: 0,
+      elidedOutputs: 0,
+      findings: [],
+    })
+
+    const ctx = getSessionContext([older, newest], [], model)
+
+    expect(ctx?.message.id).toBe("newest")
+    expect(ctx?.total).toBe(60_000)
   })
 
   test("preserves fallback labels and null usage when model metadata is missing", () => {

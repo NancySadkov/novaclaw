@@ -260,9 +260,15 @@ describe("finish re-grounding (2E/A7)", () => {
     expect(shouldReground("Done.", REGROUND_TOOL_CALLS - 1)).toBe(false)
   })
 
+  test("an explicit unfinished-work admission outranks the tool-call threshold", () => {
+    expect(shouldReground("The switch isn't built yet; this is still uncommitted.", 1)).toBe(true)
+    expect(shouldReground("What I'm about to build is the settings toggle.", 0)).toBe(true)
+  })
+
   test("the honesty exemption: an admitted unverified gap stands", () => {
     expect(shouldReground("It should work. unverified: browser runtime — no browser here.", 20)).toBe(false)
     expect(shouldReground("UNVERIFIED: could not run the tests", 20)).toBe(false)
+    expect(shouldReground("Still unfinished. unverified: the dependency is unavailable.", 1)).toBe(false)
   })
 
   test("no text (the A3 empty case) is not re-ground territory", () => {

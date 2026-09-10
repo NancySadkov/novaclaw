@@ -36,12 +36,12 @@ import { Schema } from "effect"
 export const Info = Schema.Struct({
   /**
    * The finish re-grounding nudge (`doom-loop.ts` `REGROUND_NUDGE`): when a substantial turn ends
-   * with a confident, caveat-free summary, one re-prompt walks the model through its own acceptance
-   * criteria.
+   * with a confident, caveat-free summary — or explicitly admits work remains — one re-prompt walks
+   * the model through its own acceptance criteria.
    */
   reground: Schema.optional(Schema.Boolean).annotate({
     description:
-      "Re-prompt a confident-sounding finish to walk its own acceptance criteria before stopping (default: true). " +
+      "Re-prompt a substantial confident finish or an explicit unfinished-work admission to walk its own acceptance criteria before stopping (default: true). " +
       "Turning this off removes the harness's last check on an over-confident summary — it exists for " +
       "measuring the model unaided, not as a preference.",
   }),

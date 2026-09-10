@@ -10,10 +10,9 @@ import path from "node:path"
  * 1 of 6. It is not the image budget — the folder listing reached the model, the cap is now known in
  * advance, and eviction never happened. The turn simply stopped.
  *
- * ⚠️ **Nothing in the harness could catch it.** `shouldReground` is the backstop for a finished turn,
- * and it requires `REGROUND_TOOL_CALLS = 8` tool calls before it will nudge — it exists for a LONG
- * turn ending over-confidently. A turn that quits after one call is the opposite shape and fell
- * through every check.
+ * ⚠️ **Nothing in the harness could catch it.** `shouldReground` catches a long confident turn and
+ * now catches a reply that explicitly admits work remains. This failure did neither: it confidently
+ * presented one item as the answer after one call, so it still needs the harness's enumerated set.
  *
  * ⭐ This is the jh thesis applied literally: the harness owns decomposition and per-step
  * verification, the model proposes one atomic action. The harness enumerated the folder itself (the

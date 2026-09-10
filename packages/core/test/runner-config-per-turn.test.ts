@@ -366,7 +366,7 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
       "runner/llm.ts no longer compiles the live tool-routing table for the turn",
     ).toBe(true)
     expect(
-      source.includes("PermissionV2.horizonLayers({\n              agent: agent.info?.permissions,"),
+      /PermissionV2\.horizonLayers\(\{\s*agent:\s*agent\.info\?\.permissions,/.test(source),
       "runner/llm.ts no longer hands agent permissions (as the first horizon layer) to the same materialization as routing",
     ).toBe(true)
     expect(

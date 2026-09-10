@@ -4001,10 +4001,10 @@ export const layer = Layer.effect(
               }
               // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
               // 2026-08-20: "please describe each glyph here" opened 1 of 6 images and ended. Checked
-              // BEFORE `shouldReground` because that backstop needs 8 tool calls and this failure has
-              // one — and because naming the unopened files is a stronger instruction than asking the
-              // model to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause
-              // is a case that must not fire.
+              // BEFORE `shouldReground` because a one-call partial answer need not SAY it is unfinished,
+              // and because naming the unopened files is a stronger instruction than asking the model
+              // to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause is a
+              // case that must not fire.
               // ⚠️ Ordered so an ordinary turn does NO work: the user's wording and the turn's own
               // tool calls are both in memory, and the folder is only read once both say a set was
               // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
