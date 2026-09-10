@@ -116,8 +116,10 @@ describe("a session has exactly one door into existence", () => {
 })
 
 describe("a session has exactly one completion door and one explicit-stop boundary", () => {
-  test("only exit(result) publishes durable completion", () => {
-    expect(sitesMatching(/\.publish\(\s*SessionEvent\.Completed/)).toEqual(["core/src/tool/exit.ts"])
+  test("only the runner publishes completion after reviewing exit(result)", () => {
+    expect(sitesMatching(/\.publish\(\s*SessionEvent\.Completed/)).toEqual(["core/src/session/runner/llm.ts"])
+    const exit = code(readFileSync(path.join(coreSrc, "tool", "exit.ts"), "utf8"))
+    expect(exit).not.toContain("SessionEvent.Completed")
   })
 
   test("only the two concrete executors may record explicit stop authority", () => {

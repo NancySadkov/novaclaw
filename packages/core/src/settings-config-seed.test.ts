@@ -100,7 +100,7 @@ const VALID: Record<string, unknown> = {
   user_profile: { enabled: true, name: "Nancy" },
   introspection: {},
   // All live switches present, so the row exercises the whole block rather than its defaults.
-  harness_drives: { reground: true, children: true, imageShortcut: true },
+  harness_drives: { children: true, imageShortcut: true },
   adhoc_tools: [],
   affective: {},
   strict: {},

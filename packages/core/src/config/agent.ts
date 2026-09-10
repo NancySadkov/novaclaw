@@ -116,12 +116,6 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   }).pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = pure Chat, with no project, memory, tools, or harness prompt. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
-  /**
-   * Whether this colleague gets the finish re-grounding nudge after a substantial, confident turn.
-   * Absent = inherit the instance harness default (ON). This is per colleague because the nudge is
-   * part of how that officer works, while the instance setting remains the fleet-wide fallback.
-   */
-  reground: Schema.Boolean.pipe(Schema.optional),
   /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
   nudges: ConfigNudge.List.pipe(Schema.optional),
   /** Absent/true inherits instance nudges; false opts this officer out without affecting its own nudges. */

@@ -2127,7 +2127,7 @@ export const EVENTS = {
   },
   "session.finish.audit": {
     level: "info",
-    message: "silent finish completion audit",
+    message: "exit request completion audit",
     attributes: {
       "session.id": "correlate",
       "session.finish.audit.yes": "flag",
@@ -2138,7 +2138,7 @@ export const EVENTS = {
   },
   "session.finish.audit.failed": {
     level: "warn",
-    message: "silent finish completion audit failed",
+    message: "exit request completion audit failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
@@ -2225,13 +2225,6 @@ export const EVENTS = {
     level: "warn",
     message: "finish recovery: truncated twice — pausing the drain",
     attributes: { "session.id": "correlate", step: "count" },
-    content: "correlated",
-    file: "packages/core/src/session/runner/llm.ts",
-  },
-  "session.finish.reground": {
-    level: "info",
-    message: "finish re-grounding nudge",
-    attributes: { "session.id": "correlate" },
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },

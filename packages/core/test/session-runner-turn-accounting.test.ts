@@ -272,7 +272,9 @@ describe("the tool-output summarizer against a model that ignores `enable_thinki
     // …and it arrived through the controller, not through a second bare attempt: exactly two requests,
     // the second CONTINUING the first rather than restarting it.
     expect(harness.toolSummaryRequests).toHaveLength(2)
-    expect(JSON.stringify(harness.toolSummaryRequests[0]?.messages)).toContain("reasoning budget of about 128 tokens")
+    expect(JSON.stringify(harness.toolSummaryRequests[0]?.messages)).not.toContain(
+      "reasoning budget of about 128 tokens",
+    )
     expect(
       harness.toolSummaryRequests[1]?.http?.body?.["continue_final_message"],
       "a continuation, not a retry — otherwise the budget is a retry loop wearing a budget's name",

@@ -3,30 +3,17 @@ export * as ConfigHarnessDrives from "./harness-drives"
 import { Schema } from "effect"
 
 /**
- * The HARNESS DRIVES — the automatic continuations the harness applies to a turn that thinks it is
- * finished. Live drives default ON; this block exists so each can be turned OFF independently.
+ * The HARNESS DRIVES — bounded interventions for concrete failures. Live drives default ON; this
+ * block exists so each can be turned OFF independently for measurement.
  *
  * 🔴 **Why a switch exists at all: without one, "can the model do this alone?" is unanswerable.**
- * Every earlier batch-file measurement was taken with at least one drive live, because
- * `session.finish.reground` fires in every
- * session and is not gated on anything a prompt can change. So the programme's own baseline is a
- * measurement of the model PLUS a harness that marched it, and no arm the rig can select separates
- * them. A measurement taken under a mitigation measures the mitigation.
+ * A measurement taken under a mitigation measures the mitigation, so each remaining
+ * failure-specific intervention has an explicit switch.
  *
  * ⭐ **The precedent is `thinkingBudget`**, whose comment in `schema/session-feature.ts` says it
  * exists *"so a budget change can be A/B'd in one chat without touching the instance default"*.
  * Same argument, one layer up: a harness feature you cannot switch off is a harness feature nobody
  * can measure.
- *
- * ⚠️ **INSTANCE DEFAULT, with a per-agent re-ground override.** The per-session feature
- * family (`schema/session-feature.ts`) carries a contract this does not need: a DB column, a
- * migration, and a composer control — *"a switch the kernel accepts while no surface offers it is
- * the ruling-2 shape safe mode itself was caught in."* These are operator/developer switches for a
- * measurement, so they ride the settings store like `provider_capability` and `tool_routing` do.
- * Re-grounding alone also has a colleague-level stance because an officer may opt out without
- * changing its peers (`ConfigAgent.Info.reground` → `SessionEffectiveConfig`).
- * **If a per-session stance is ever wanted, promote it through the full nine-step chain rather
- * than widening this block** — half a feature in each place is how two answers to one question start.
  *
  * ⚠️ **Turning a live drive off makes the product WORSE, on purpose.** These are not preferences: each
  * exists because a measured failure needed it, and both are documented at their call sites. The
@@ -34,17 +21,6 @@ import { Schema } from "effect"
  * *work by default — a setting is an override, not a doorway.*
  */
 export const Info = Schema.Struct({
-  /**
-   * The finish re-grounding nudge (`doom-loop.ts` `REGROUND_NUDGE`): when a substantial turn ends
-   * with a confident, caveat-free summary — or explicitly admits work remains — one re-prompt walks
-   * the model through its own acceptance criteria.
-   */
-  reground: Schema.optional(Schema.Boolean).annotate({
-    description:
-      "Re-prompt a substantial confident finish or an explicit unfinished-work admission to walk its own acceptance criteria before stopping (default: true). " +
-      "Turning this off removes the harness's last check on an over-confident summary — it exists for " +
-      "measuring the model unaided, not as a preference.",
-  }),
   /**
    * The FAN-OUT supervisor (`unjoined-children.ts`): when a turn finishes with children it spawned
    * but never joined, the harness names them and refuses the silent merge.
@@ -71,7 +47,6 @@ export type Info = typeof Info.Type
 
 /** Every live drive resolved to a plain boolean, defaults applied. */
 export interface Resolved {
-  readonly reground: boolean
   /** Retired. Kept as a false literal until old set-controller state is removed. */
   readonly set: false
   readonly children: boolean
@@ -87,7 +62,6 @@ export interface Resolved {
 export const resolve = (value: unknown): Resolved => {
   const info = Schema.is(Info)(value) ? value : undefined
   return {
-    reground: info?.reground ?? true,
     // Old settings may still carry `set: true`; it must not resurrect the retired file-list drive.
     set: false,
     children: info?.children ?? true,

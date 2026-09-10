@@ -60,7 +60,6 @@ describe("who declared what", () => {
       permissionMode: "plan",
       shortChat: true,
       strict: { enabled: true },
-      reground: false,
       reasoningBudget: 0,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
@@ -103,14 +102,8 @@ describe("a colleague's standing choices", () => {
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, undefined)).toEqual({ ...EFFECTIVE_CONFIG_DEFAULTS })
   })
 
-  test("only the five WORK choices are declarable", () => {
-    expect([...AgentDefaults.DECLARABLE].sort()).toEqual([
-      "permissionMode",
-      "reasoningBudget",
-      "reground",
-      "shortChat",
-      "strict",
-    ])
+  test("only the four WORK choices are declarable", () => {
+    expect([...AgentDefaults.DECLARABLE].sort()).toEqual(["permissionMode", "reasoningBudget", "shortChat", "strict"])
     const folded = AgentDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
       agent({ thinkingBudget: false, memory: false, permissionMode: "plan" }),
@@ -122,12 +115,6 @@ describe("a colleague's standing choices", () => {
   test("declaredBy reports what the colleague actually set", () => {
     expect(AgentDefaults.declaredBy(agent({ strict: { enabled: true }, title: "Bookkeeper" }))).toEqual(["strict"])
     expect(AgentDefaults.declaredBy(undefined)).toEqual([])
-  })
-
-  test("two colleagues can hold opposite re-ground stances", () => {
-    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reground: true })).reground).toBe(true)
-    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reground: false })).reground).toBe(false)
-    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({})).reground).toBeUndefined()
   })
 
   test("reasoning budget inherits from the model unless the officer overrides it, including zero", () => {

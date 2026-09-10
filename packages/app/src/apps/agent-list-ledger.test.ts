@@ -68,7 +68,6 @@ describe("every field the wire schema declares is accounted for", () => {
       steps: 4,
       archiveChats: true,
       shortChat: true,
-      reground: false,
       needsTier: "mid",
       reasoningBudget: 0,
       permissionMode: "build",

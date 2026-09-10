@@ -14,7 +14,7 @@ import { ShortChat } from "../src/session/runner/short-chat"
 // the announced-tool arm and the textual-call arm on `toolHorizon` (the provider-local fact of what
 // THIS turn was offered), the QE-A provision nudge and the empty-turn wording on the shortChat
 // stance. The rest of the nudge machinery is unreachable for a tool-less session by construction
-// (doom-loop/failure-streak/reground/children all key on tool calls; the set drive is retired; the
+// (doom-loop/failure-streak/children all key on tool calls; the set drive is retired; the
 // self-drive already breaks on shortChat) — the premises of THAT claim are pinned behaviorally
 // below, and the gates themselves by source assertion, the same rung `agent-pure-chat-boundary.test.ts`
 // uses: a ratchet that fails on the next instance, not a comment hoping the next author reads.

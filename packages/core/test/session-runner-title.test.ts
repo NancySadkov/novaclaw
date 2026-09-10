@@ -55,7 +55,7 @@ describe("SessionRunnerLLM — auto-title", () => {
     // rather than accepting an empty result — so the session still gets a name.
     //
     // ⭐ Two assertions carry the claim beyond "a title appeared". The first title request must state
-    // the reasoning budget in a tail harness message, and the second must set `continue_final_message`,
+    // the first request is unchanged, and the second must set `continue_final_message`,
     // which is what makes the second call a continuation of the first rather than a fresh attempt.
     // Without that flag the model would restart its thinking and could overrun again — the controller
     // would be a retry loop wearing a budget's name.
@@ -97,7 +97,7 @@ describe("SessionRunnerLLM — auto-title", () => {
 
     expect(title).toBe("Parser failure investigation")
     expect(harness.titleRequests, "the controller took a second, continuing call").toHaveLength(2)
-    expect(JSON.stringify(harness.titleRequests[0]?.messages)).toContain("reasoning budget of about 128 tokens")
+    expect(JSON.stringify(harness.titleRequests[0]?.messages)).not.toContain("reasoning budget of about 128 tokens")
     expect(
       harness.titleRequests[1]?.http?.body?.["continue_final_message"],
       "the second call CONTINUES the first — otherwise the controller is just a retry loop",

@@ -97,8 +97,7 @@ export const prepare = (input: PrepareInput) => {
 interface StreamInput {
   readonly llm: LLMClientShape
   readonly request: LLMRequest
-  /** The already-enveloped and packed opening request. The controller consumes this exact request
-   * instead of attaching its opening system line again. */
+  /** The already-packed opening request. The controller consumes this exact request. */
   readonly preparedOpening?: LLMRequest
   readonly enabled: boolean
   readonly budget: number
@@ -109,12 +108,12 @@ interface StreamInput {
     readonly usage: Usage | undefined
     /** Serving-process provenance from the provider's own finish event, when it reports one. */
     readonly providerMetadata: Readonly<Record<string, unknown>> | undefined
-    /** Base/opening requests share the next ordinary turn's controller envelope. */
+    /** Whether this ordinary opening request can become a durable usage anchor. */
     readonly anchorable: boolean
   }) => Effect.Effect<void>
 }
 
-/** Exact first provider request, including the optional reasoning-controller envelope. */
+/** Exact first provider request. Healthy turns receive no controller-authored message. */
 export const openingRequest = (input: Pick<StreamInput, "request" | "enabled" | "budget">): LLMRequest =>
   input.enabled && input.budget > 0 && thinkingEnabled(input.request)
     ? ReasoningBudget.openingRequest({ request: input.request, budget: input.budget })

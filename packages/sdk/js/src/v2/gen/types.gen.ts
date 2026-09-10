@@ -3733,7 +3733,6 @@ export type ConfigV2Agent = {
     wallMinutes?: number
   }
   shortChat?: boolean
-  reground?: boolean
   nudges?: Array<ConfigV2Nudge>
   globalNudges?: boolean
   reasoningBudget?: number
@@ -4249,7 +4248,6 @@ export type ConfigInfo = {
     generateInterjection?: boolean
   }
   harness_drives?: {
-    reground?: boolean
     children?: boolean
     imageShortcut?: boolean
   }
@@ -4593,7 +4591,6 @@ export type AgentV2Info = {
     wallMinutes?: number
   }
   shortChat?: boolean
-  reground?: boolean
   reasoningBudget?: number
   mode: "subagent" | "primary" | "all"
   hidden: boolean

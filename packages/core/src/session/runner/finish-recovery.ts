@@ -94,7 +94,7 @@ export type Decision =
  *   later, unrelated request unable to recover, and nothing would ever clear it.
  * · **per drain** re-arms on any new input — the user answering the notice IS the new drain — while
  *   staying bounded within a single autonomous stretch, which is the only place a loop can run away
- *   unattended. It matches `SessionDrive`'s rounds cap and the `nudged`/`regrounded`/`textualNudged`
+ *   unattended. It matches `SessionDrive`'s rounds cap and the `nudged`/`textualNudged`
  *   latches exactly.
  */
 export const initialState = (): State => ({ recoveries: 0 })

@@ -35200,9 +35200,6 @@
           "shortChat": {
             "type": "boolean"
           },
-          "reground": {
-            "type": "boolean"
-          },
           "nudges": {
             "type": "array",
             "items": {
@@ -36729,9 +36726,6 @@
           "harness_drives": {
             "type": "object",
             "properties": {
-              "reground": {
-                "type": "boolean"
-              },
               "children": {
                 "type": "boolean"
               },
@@ -37695,9 +37689,6 @@
             "additionalProperties": false
           },
           "shortChat": {
-            "type": "boolean"
-          },
-          "reground": {
             "type": "boolean"
           },
           "reasoningBudget": {

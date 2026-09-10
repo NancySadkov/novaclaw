@@ -460,8 +460,6 @@ export interface EffectiveConfig {
   readonly contextBudget?: boolean
   readonly memory?: boolean
   readonly shortChat?: boolean
-  /** Agent-level finish re-grounding stance; absent = use the instance harness default. */
-  readonly reground?: boolean
   /** Officer-level reasoning ceiling; absent = use the resolved model's own budget. */
   readonly reasoningBudget?: number
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */

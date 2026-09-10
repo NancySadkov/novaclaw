@@ -6,58 +6,86 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
-const toolTurn = (): LLMEvent[] => [
+const exitTurn = (result: string): LLMEvent[] => [
   LLMEvent.stepStart({ index: 0 }),
-  LLMEvent.toolCall({ id: "call-1", name: "echo", input: { text: "worked" } }),
+  LLMEvent.toolCall({ id: "exit-call", name: "exit", input: { result } }),
   LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
   LLMEvent.finish({ reason: "tool-calls" }),
 ]
 
-const silentTurn = (): LLMEvent[] => [
-  LLMEvent.stepStart({ index: 0 }),
-  LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-  LLMEvent.finish({ reason: "stop" }),
-]
-
 const runAudit = async (answer: "YES" | "NO") => {
   const harness = makeRunnerHarness({
-    turns: [toolTurn(), silentTurn(), completeTurn("recovered", "Recovered response")],
+    withExitTool: true,
+    turns: [exitTurn("implemented and verified"), completeTurn("continued", "Continued after rejection")],
     utilityTurns: [completeTurn("audit", answer)],
   })
   let transcript: { type: string; text?: string }[] = []
+  let result: unknown
   await drive(
     harness,
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       yield* session.prompt({
         sessionID: HARNESS_SESSION,
-        prompt: Prompt.make({ text: "Do the work and report back." }),
+        prompt: Prompt.make({ text: "Do the work, then exit." }),
         resume: false,
       })
       yield* session.resume(HARNESS_SESSION)
       transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
+      result = (yield* session.get(HARNESS_SESSION)).result
     }),
-    `silent finish audit ${answer}`,
+    `exit completion audit ${answer}`,
   )
-  return { harness, transcript }
+  return { harness, transcript, result }
 }
 
-describe("silent tool-bearing finishes are audited before the run settles", () => {
-  test("NO resumes concrete work", async () => {
-    const { harness, transcript } = await runAudit("NO")
+describe("exit requests are reviewed before completion", () => {
+  test("YES publishes the durable result without another interactive turn", async () => {
+    const { harness, result } = await runAudit("YES")
     expect(harness.utilityRequests).toHaveLength(1)
     expect(JSON.stringify(harness.utilityRequests[0]?.messages)).toContain("actually complete")
-    expect(transcript.some((message) => message.type === "user" && message.text?.includes(FinishAudit.CONTINUE_NUDGE)))
-      .toBe(true)
-    expect(transcript.some((message) => message.type === "assistant" && JSON.stringify(message).includes("Recovered response")))
-      .toBe(true)
+    expect(harness.requests).toHaveLength(1)
+    expect(result).toBe("implemented and verified")
   })
 
-  test("YES forces the missing user-facing reply", async () => {
-    const { transcript } = await runAudit("YES")
-    expect(transcript.some((message) => message.type === "user" && message.text?.includes(FinishAudit.REPLY_NUDGE)))
-      .toBe(true)
-    expect(transcript.some((message) => message.type === "assistant" && JSON.stringify(message).includes("Recovered response")))
-      .toBe(true)
+  test("NO is the completion path's sole automatic continuation steer", async () => {
+    const { harness, transcript, result } = await runAudit("NO")
+    expect(harness.utilityRequests).toHaveLength(1)
+    expect(result).toBeUndefined()
+    expect(
+      transcript.some((message) => message.type === "user" && message.text?.includes(FinishAudit.CONTINUE_NUDGE)),
+    ).toBe(true)
+    expect(
+      transcript.some(
+        (message) => message.type === "assistant" && JSON.stringify(message).includes("Continued after rejection"),
+      ),
+    ).toBe(true)
+  })
+
+  test("a healthy turn without exit is neither reviewed nor steered", async () => {
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("ordinary", "Work is still in progress; I have not requested completion.")],
+    })
+    let transcript: { type: string; text?: string }[] = []
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Begin the work." }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
+      }),
+      "healthy turn without completion audit",
+    )
+
+    expect(harness.requests).toHaveLength(1)
+    expect(harness.utilityRequests).toHaveLength(0)
+    expect(transcript.some((message) => message.type === "user" && message.text?.includes("Automated steer"))).toBe(
+      false,
+    )
   })
 })

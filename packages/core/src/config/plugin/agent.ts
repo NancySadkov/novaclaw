@@ -160,7 +160,6 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.permissionMode !== undefined) agent.permissionMode = item.permissionMode
     if (item.strict !== undefined) agent.strict = item.strict
     if (item.shortChat !== undefined) agent.shortChat = item.shortChat
-    if (item.reground !== undefined) agent.reground = item.reground
     if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden

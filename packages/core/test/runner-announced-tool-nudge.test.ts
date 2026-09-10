@@ -18,7 +18,7 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  * name). `short-chat-no-tool-nudges.test.ts` pins the premise and the source gates; THIS file is the
  * behaviour under the real drain, because a gate nobody can watch fire is a gate that can rot.
  *
- * ⚠️ **BOTH DIRECTIONS, like `runner-reground-drive.test.ts`.** The ON case is the control: it proves
+ * ⚠️ **BOTH DIRECTIONS.** The ON case is the control: it proves
  * this turn shape CAN trigger the nudge at all. Without it, the shortChat silence would be
  * indistinguishable from a broken detector, and "fixed" would mean "disabled for everyone".
  *
@@ -68,8 +68,7 @@ const runShape = async (label: string, pureChat: boolean) => {
     label,
   )
   return transcript.filter(
-    (message) =>
-      message.type === "user" && (message.text ?? "").includes(ANNOUNCED_TOOL_RECOVERY.slice(0, 40)),
+    (message) => message.type === "user" && (message.text ?? "").includes(ANNOUNCED_TOOL_RECOVERY.slice(0, 40)),
   )
 }
 

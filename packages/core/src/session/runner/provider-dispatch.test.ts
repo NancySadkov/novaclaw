@@ -115,7 +115,7 @@ describe("ProviderDispatch", () => {
     expect(retained.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
-  test("a budgeted second turn reuses its opening anchor and packs the controller line before dispatch", async () => {
+  test("a budgeted second turn reuses its opening anchor without adding a controller line", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const budget = 64
     const contextSize = 10_000
@@ -157,7 +157,6 @@ describe("ProviderDispatch", () => {
     const anchoredTranscript = [
       { type: "assistant", context: { promptAnchor: anchor } },
     ] as unknown as readonly SessionMessage.Message[]
-    const controllerLine = firstOpening.messages.at(-1)!
     const plainSystem = firstBase.system
     const openingSystem = firstOpening.system
     const controllerTokens =
@@ -170,6 +169,8 @@ describe("ProviderDispatch", () => {
     const plainHistoryBudget = ContextPack.budget({ ...packingInput, system: plainSystem })
     const openingHistoryBudget = ContextPack.budget({ ...packingInput, system: openingSystem }) - controllerTokens
     expect(openingSystem).toEqual(plainSystem)
+    expect(controllerTokens).toBe(0)
+    expect(openingHistoryBudget).toBe(plainHistoryBudget)
 
     let filler = ""
     let secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
@@ -177,7 +178,7 @@ describe("ProviderDispatch", () => {
       filler += "x"
       secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
     }
-    expect(ContextPack.estimateMessages(secondMessages)).toBeLessThanOrEqual(plainHistoryBudget)
+    expect(ContextPack.estimateMessages(secondMessages)).toBeGreaterThan(plainHistoryBudget)
 
     const secondBase = LLM.request({ model, system: plainSystem, messages: secondMessages })
     const secondOpening = ProviderDispatch.openingRequest({ request: secondBase, enabled: true, budget })
@@ -204,8 +205,9 @@ describe("ProviderDispatch", () => {
       promptCorrectionTokens: secondEstimate.correctionTokens,
       promptMarginTokens: secondEstimate.marginTokens,
     })
-    expect(plainPacked.packed.dropped).toBe(0)
+    expect(plainPacked.packed.dropped).toBe(1)
     expect(openingPacked.packed.dropped).toBe(1)
+    expect(openingPacked.request).toEqual(plainPacked.request)
 
     const dispatched: LLMRequest[] = []
     const llm = {
@@ -227,7 +229,7 @@ describe("ProviderDispatch", () => {
       }).pipe(Stream.runDrain),
     )
     expect(dispatched).toEqual([openingPacked.request])
-    expect(JSON.stringify(dispatched[0]!.messages)).toContain(`reasoning budget of about ${budget} tokens`)
+    expect(JSON.stringify(dispatched[0]!.messages)).not.toContain(`reasoning budget of about ${budget} tokens`)
   })
 
   test("routes an enabled completion through the reasoning controller", async () => {
@@ -267,7 +269,7 @@ describe("ProviderDispatch", () => {
     )
     expect(requests).toHaveLength(1)
     expect(requests[0]).toEqual(opening)
-    expect(JSON.stringify(requests[0]!.messages.at(-1))).toContain("reasoning budget of about 64 tokens")
+    expect(requests[0]!.messages).toEqual(baseRequest.messages)
     expect(observed).toHaveLength(1)
     expect(observed[0]!.request).toBe(requests[0])
     expect(observed[0]!.usage).toEqual(usage)

@@ -107,12 +107,10 @@ import {
   announcedToolButCalledNone,
   isEmptyAssistantTurn,
   lastAssistantText,
-  shouldReground,
   ANNOUNCED_TOOL_RECOVERY,
   EMPTY_TURN_RECOVERY,
   EMPTY_TURN_RECOVERY_CHAT,
   EMPTY_TURN_DIAGNOSTIC,
-  REGROUND_NUDGE,
 } from "./doom-loop"
 import { TextualCall } from "./textual-call"
 import { Introspection } from "./introspection"
@@ -742,13 +740,14 @@ export const layer = Layer.effect(
       return replacement === undefined ? settlement : { ...settlement, ...replacement }
     })
 
-    const auditSilentFinish = Effect.fn("SessionRunner.auditSilentFinish")(function* (
+    const auditExit = Effect.fn("SessionRunner.auditExit")(function* (
       sessionID: SessionSchema.ID,
       model: Parameters<typeof LLM.request>[0]["model"],
       device: SessionRunnerModel.ScheduledDevice,
       context: readonly SessionMessage.Message[],
+      request: FinishAudit.ExitRequest,
     ) {
-      const evidence = FinishAudit.excerpt(context)
+      const evidence = FinishAudit.excerpt(context, request)
       if (evidence === undefined) return "unknown" as const
       const reply = yield* ShortAnswer.generate({
         model,
@@ -2062,15 +2061,12 @@ export const layer = Layer.effect(
         providerID: ProviderV2.ID.make(model.provider),
         ...(modelSession.model?.variant === undefined ? {} : { variant: modelSession.model.variant }),
       }
-      // The controller envelope is part of tokenizer identity: a budgeted opening request carries a
-      // stable controller tail message, while a plain request does not. A change falls back for one turn.
       const thinkingBudget = config.reasoningBudget ?? model.route.defaults.limits?.thinkingBudget ?? 0
       const budgetEnforced =
         stanceOf("thinkingBudget", config.thinkingBudget) &&
         (config.reasoningBudget !== undefined || !ShortChat.enabled(config.shortChat))
-      // Build checkpoint 1 ONCE, before any consumer measures capacity. Prompt estimation,
-      // compaction, packing and provider dispatch must all see the same controller tail message;
-      // otherwise the final append can overflow a pack that was correct for a smaller request.
+      // Build the opening request once so prompt estimation, compaction, packing and provider
+      // dispatch all see exactly the same bytes.
       const openingRequest = ProviderDispatch.openingRequest({
         request: baseRequest,
         enabled: budgetEnforced && !isLastStep,
@@ -2303,8 +2299,8 @@ export const layer = Layer.effect(
                   ...promptScope,
                   ...(servedBy === undefined ? {} : { servedBy }),
                 }
-                // Re-resolve the exact outbound request: packing and the reasoning envelope can make
-                // it differ from the pre-pack opening request. Only a compatible durable anchor is eligible for the
+                // Re-resolve the exact outbound request: packing can make it differ from the pre-pack
+                // opening request. Only a compatible durable anchor is eligible for the
                 // residual series; whole-request fallbacks continue feeding the separate bias ratio.
                 const providerEstimate = PromptEstimate.resolve({
                   request: providerRequest,
@@ -3622,7 +3618,6 @@ export const layer = Layer.effect(
       const nudged = new Set<string>()
       const nudgedTargets = new Set<string>()
       let consecutiveEmpty = 0
-      let regrounded = false
       /** How many times this drain has steered the turn back to the rest of a set. Bounded by
        *  `UnfinishedSet.MAX_STEER_ROUNDS` — an automatic drive needs a visible ceiling, exactly as
        *  the self-drive's own round cap does. */
@@ -3748,7 +3743,7 @@ export const layer = Layer.effect(
           // F2 — the provider stopped this turn at its OUTPUT-TOKEN LIMIT (finish=length) and the
           // drain is not already continuing: the answer is truncated, not finished. This runs
           // BEFORE the heuristic nudge chain below and short-circuits it on purpose — those
-          // branches (empty-turn recovery, textual-call, finish re-grounding) are guesses about
+          // branches (empty-turn recovery and textual-call) are guesses about
           // *why* a turn ended, and here the provider has told us; re-grounding a guillotined
           // sentence or diagnosing a reasoning-only truncation as a lost tool call would both be
           // the wrong advice. The steer rides `SessionInput.steer`, so it carries the 1N provenance
@@ -3787,6 +3782,48 @@ export const layer = Layer.effect(
           }
           const context = yield* getContext(input.sessionID)
           const callsSinceLastUser = toolCallsSinceLastUser(context)
+          // `exit` requests completion; it does not grant it. Review immediately after the tool has
+          // settled, before the ordinary tool-result continuation can start another provider turn.
+          // This is the sole healthy-path automatic steer: YES publishes the one durable completion
+          // event, NO sends the reviewer-grounded continuation, and an unavailable/ambiguous reviewer
+          // leaves the session open without inventing a verdict.
+          const exitRequest = FinishAudit.exitRequest(context)
+          if (exitRequest !== undefined) {
+            const audit = yield* auditExit(
+              input.sessionID,
+              result.model,
+              result.scheduledDevice,
+              context,
+              exitRequest,
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Log.event("session.finish.audit.failed", {
+                  "session.id": input.sessionID,
+                  "session.cause": Log.fault(cause),
+                }).pipe(Effect.as("unknown" as const)),
+              ),
+            )
+            yield* Log.event("session.finish.audit", {
+              "session.id": input.sessionID,
+              "session.finish.audit.yes": audit === "yes",
+              "session.finish.audit.no": audit === "no",
+            })
+            if (audit === "yes") {
+              yield* events.publish(SessionEvent.Completed, {
+                sessionID: input.sessionID,
+                timestamp: yield* DateTime.now,
+                result: exitRequest.result,
+              })
+              exitedMidDrain = true
+              yield* Log.event("session.drain.exit", { "session.id": input.sessionID, step })
+              break
+            }
+            if (audit === "no") {
+              yield* SessionInput.steer(db, events, input.sessionID, FinishAudit.CONTINUE_NUDGE)
+              needsContinuation = true
+              continue
+            }
+          }
           // 🔴 LATCH THE REQUEST HERE — on every turn, not at the finish branch.
           //
           // Measured run 16: the latch lived only in the set-completion branch, which runs when a
@@ -3916,31 +3953,12 @@ export const layer = Layer.effect(
               // isn't working, so stop and surface the server-side fix instead of looping silently.
               consecutiveEmpty++
               if (consecutiveEmpty === 1) {
-                let audit: FinishAudit.Verdict = "unknown"
-                if (finishCalls > 0)
-                  audit = yield* auditSilentFinish(input.sessionID, result.model, result.scheduledDevice, context).pipe(
-                    Effect.catchCause((cause) =>
-                      Log.event("session.finish.audit.failed", {
-                        "session.id": input.sessionID,
-                        "session.cause": Log.fault(cause),
-                      }).pipe(Effect.as("unknown" as const)),
-                    ),
-                  )
-                yield* Log.event("session.finish.audit", {
-                  "session.id": input.sessionID,
-                  "session.finish.audit.yes": audit === "yes",
-                  "session.finish.audit.no": audit === "no",
-                })
                 yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
                 yield* SessionInput.steer(
                   db,
                   events,
                   input.sessionID,
-                  finishCalls > 0
-                    ? FinishAudit.nudge(audit)
-                    : ShortChat.enabled(handoff.shortChat)
-                      ? EMPTY_TURN_RECOVERY_CHAT
-                      : EMPTY_TURN_RECOVERY,
+                  ShortChat.enabled(handoff.shortChat) ? EMPTY_TURN_RECOVERY_CHAT : EMPTY_TURN_RECOVERY,
                 )
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
@@ -3969,10 +3987,6 @@ export const layer = Layer.effect(
               yield* SessionInput.steer(db, events, input.sessionID, ANNOUNCED_TOOL_RECOVERY)
             } else {
               consecutiveEmpty = 0
-              // 2E/A7: finish re-grounding — a substantial turn ending with a clean, confident
-              // summary gets ONE "walk your acceptance criteria" re-prompt. Suppressed when the
-              // finish already admits an `unverified:` gap (the honesty exemption — re-prompting
-              // an honest caveat has been seen to regress it into a confident "it works").
               const finalText = lastAssistantText(context)
               // The SILENT-NO-OP guard (notes/osint/silent-noop-bug.md): this branch means the turn ended
               // with text and NO tool call, which the runner otherwise settles as a finished answer. Three
@@ -4001,7 +4015,7 @@ export const layer = Layer.effect(
               }
               // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
               // 2026-08-20: "please describe each glyph here" opened 1 of 6 images and ended. Checked
-              // BEFORE `shouldReground` because a one-call partial answer need not SAY it is unfinished,
+              // before the generic silent-response handling because a one-call partial answer need not SAY it is unfinished,
               // and because naming the unopened files is a stronger instruction than asking the model
               // to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause is a
               // case that must not fire.
@@ -4156,10 +4170,8 @@ export const layer = Layer.effect(
                * nine successes are what hide the tenth: a merge of nine slices of ten has no ragged
                * edge to notice.
                *
-               * ⚠️ **Placed BEFORE the reground, deliberately.** Reground asks the model to walk its
-               * acceptance criteria; a model missing a whole slice will walk them against the nine it
-               * has and conclude it is done — the reground would be answered honestly and wrongly. Close
-               * the arithmetic gap first, then let reground check what is left.
+               * A model missing a whole slice cannot honestly claim the delegated whole; the child
+               * arithmetic is completion evidence, not an inferred confidence signal.
                *
                * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
                * evidence that this task delegated is its successful `spawn` outputs, retained across
@@ -4283,19 +4295,6 @@ export const layer = Layer.effect(
                   )
                   needsContinuation = true
                 }
-              }
-              // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
-              // every session in BOTH of the rig's arms — the cue gates the set drive and never this
-              // one — so every batch-file measurement before this switch was taken with at
-              // least one mitigation live. This switch is what lets that baseline finally be taken.
-              if (
-                (handoff.reground ?? harness.drives.reground) &&
-                !regrounded &&
-                shouldReground(finalText, callsSinceLastUser.length)
-              ) {
-                regrounded = true
-                yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
-                yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
               }
               // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
               // only when the drain actually wrote something. A failure steers; the pending

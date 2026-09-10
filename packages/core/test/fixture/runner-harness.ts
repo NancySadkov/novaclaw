@@ -24,6 +24,7 @@ import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { ExitTool } from "@novaclaw/core/tool/exit"
 import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
@@ -119,6 +120,8 @@ export interface RunnerScript {
    * happen to count today, and will not once `openedThisTurn` stops ignoring `call.failed`.
    */
   withReadTool?: boolean
+  /** Register the production exit-request tool for completion-review claims. */
+  withExitTool?: boolean
   /** Events the out-of-band auto-title probe gets. Default: an empty stream, i.e. no title. */
   titleTurns?: LLMEvent[][]
   /** Events the out-of-band post-drain maintenance probes get. Default: an empty stream. */
@@ -358,7 +361,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * absent case is the one that would silently disable the product if `resolve` ever got its sign
      * wrong.
      */
-    harnessDrives: undefined as { reground?: boolean; set?: boolean; children?: boolean } | undefined,
+    harnessDrives: undefined as { set?: boolean; children?: boolean } | undefined,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -764,6 +767,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       echoNode,
+      ...(script.withExitTool === true ? [ExitTool.node] : []),
       policyNode,
       SessionRunnerModel.node,
       SystemContextRegistry.node,

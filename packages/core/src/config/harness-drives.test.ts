@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigHarnessDrives } from "./harness-drives"
 
-// The harness-drive switches make a true unaided baseline possible: `reground` must be disabled,
-// which is an app change no prompt can make.
-//
 // 🔴 The defect this file guards against is a SIGN ERROR, and it is the expensive one. `Config.latest`
 // answers `undefined` for a key nobody set, so reading absence as "off" would silently disable all
 // the live drives on every instance in the world — a change that makes the product quietly worse and
@@ -14,7 +11,6 @@ describe("resolve", () => {
   // existed, or shipping the switch is itself the regression.
   test("an absent block leaves every live drive ON", () => {
     expect(ConfigHarnessDrives.resolve(undefined)).toEqual({
-      reground: true,
       set: false,
       children: true,
       imageShortcut: true,
@@ -23,7 +19,6 @@ describe("resolve", () => {
 
   test("an empty block leaves every live drive ON", () => {
     expect(ConfigHarnessDrives.resolve({})).toEqual({
-      reground: true,
       set: false,
       children: true,
       imageShortcut: true,
@@ -32,38 +27,18 @@ describe("resolve", () => {
 
   test("a malformed stored block leaves every live drive ON", () => {
     const enabled = {
-      reground: true,
       set: false,
       children: true,
       imageShortcut: true,
     } as const
-    for (const malformed of [null, [], { reground: 1 }]) {
+    for (const malformed of [null, [], { children: 1 }]) {
       expect(ConfigHarnessDrives.resolve(malformed)).toEqual(enabled)
     }
   })
 
-  test("an explicit false survives — it is not read as absent", () => {
-    expect(ConfigHarnessDrives.resolve({ reground: false })).toEqual({
-      reground: false,
-      set: false,
-      children: true,
-      imageShortcut: true,
-    })
-  })
-
-  test("an explicit true is honoured", () => {
-    expect(ConfigHarnessDrives.resolve({ reground: true })).toEqual({
-      reground: true,
-      set: false,
-      children: true,
-      imageShortcut: true,
-    })
-  })
-
   // ⚠️ Each live switch is independent. The stale `set` key below is deliberately inert.
   test("switches are independent", () => {
-    expect(ConfigHarnessDrives.resolve({ reground: false, set: true, children: false })).toEqual({
-      reground: false,
+    expect(ConfigHarnessDrives.resolve({ set: true, children: false })).toEqual({
       set: false,
       children: false,
       imageShortcut: true,
@@ -73,13 +48,11 @@ describe("resolve", () => {
   test("the retired set drive stays off even when an old settings record enables it", () => {
     expect(
       ConfigHarnessDrives.resolve({
-        reground: false,
         set: true,
         children: false,
         imageShortcut: false,
       }),
     ).toEqual({
-      reground: false,
       set: false,
       children: false,
       imageShortcut: false,

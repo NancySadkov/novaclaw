@@ -63,16 +63,14 @@ const prefillOf = (request: LLMRequest) => {
 }
 
 describe("ReasoningBudget", () => {
-  test("controller guidance appends after an immutable system prefix", () => {
+  test("a healthy opening is byte-for-byte unchanged", () => {
     const request = LLM.request({
       model,
       system: [SystemPart.make("stable system prefix")],
       messages: [Message.user("solve it")],
     })
     const opening = ReasoningBudget.openingRequest({ request, budget: 512 })
-    expect(opening.system).toEqual(request.system)
-    expect(opening.messages.slice(0, request.messages.length)).toEqual([...request.messages])
-    expect(JSON.stringify(opening.messages.at(-1))).toContain("reasoning budget")
+    expect(opening).toBe(request)
   })
 
   test("natural close — reasoning under budget, no injected nudges", () => {
@@ -89,7 +87,7 @@ describe("ReasoningBudget", () => {
     ])
     expect(requests).toHaveLength(1)
     expect(prefillOf(requests[0]!)).toBe("") // no forced <think>
-    expect(JSON.stringify(requests[0]!.messages)).toContain("reasoning budget")
+    expect(requests[0]!.messages).toEqual(base.messages)
     expect(requests[0]!.system).toEqual([])
     expect((events[4] as { text: string }).text).toBe("The ball costs $0.05.")
   })

@@ -1,20 +1,16 @@
 export * as ExitTool from "./exit"
 
-import { ToolFailure } from "@novaclaw/llm"
-import { DateTime, Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
-import { EventV2 } from "../event"
-import { SessionEvent } from "../session/event"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
-// exit(result) — an agent's "return" (architecture.md step 5), the complement to spawn. Publishes the
-// durable `session.next.completed` event (result rides in it; the projector writes it to the session
-// row for ps/list + for `wait`). Depends on EventV2 directly (a global, cycle-free — no seam needed,
-// unlike spawn which needed create+enqueue). This is also what ENDS the self-drive loop: an
-// auto-prompting/goal-oriented session keeps re-prompting itself at drain-end until the projected
-// `result` lands on its row (runner/drive.ts reads `result !== undefined` as the terminal test).
+// exit(result) — an agent's REQUEST to return (architecture.md step 5), the complement to spawn.
+// The runner presents the request and its evidence to the completion-review service. Only an accepted
+// request publishes `session.next.completed`; a rejected request is the sole healthy-path automatic
+// steer. Keeping publication out of this tool means a parent can never observe completion before the
+// review that authorises it.
 
 export const name = "exit"
 
@@ -31,35 +27,26 @@ type Output = typeof Output.Type
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
-    const events = yield* EventV2.Service
     yield* tools
       .register({
         [name]: Tool.make({
           description:
-            "Mark this session complete and record its result (the session's 'return'). Use it when an " +
-            "autonomous or delegated task is finished; whoever spawned this session (and calls wait) receives the result.",
+            "Request completion and submit this session's result for review. Use it when an autonomous " +
+            "or delegated task is genuinely finished. The session ends only when the completion reviewer accepts it.",
           input: Input,
           output: Output,
           structured: StructuredOutput,
           toStructuredOutput: ({ output }) => ({ completed: output.completed }),
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const timestamp = yield* DateTime.now
-              yield* events.publish(SessionEvent.Completed, {
-                sessionID: context.sessionID,
-                timestamp,
-                result: input.result ?? "",
-              })
-              // Lifecycle status belongs to the runner/executor that owns the whole drain. Publishing
-              // `exited` here, inside a tool fiber, let later snapshot timing publish `busy` over it.
-              // Completed is durable; the owner derives and reasserts the terminal status from it.
-              return { completed: true, message: "Session marked complete; result recorded." }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to mark session complete." }))),
+          execute: () =>
+            Effect.succeed({
+              completed: false,
+              message: "Completion requested; NovaClaw is reviewing the result before ending this session.",
+            }),
         }),
       })
       .pipe(Effect.orDie)
   }),
 )
 
-export const node = makeLocationNode({ name: "tool/exit", layer, deps: [ToolRegistry.node, EventV2.node] })
+export const node = makeLocationNode({ name: "tool/exit", layer, deps: [ToolRegistry.node] })

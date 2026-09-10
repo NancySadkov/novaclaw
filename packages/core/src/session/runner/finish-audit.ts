@@ -10,20 +10,39 @@ export const SYSTEM =
   "part is done; NO means work remains, evidence is missing, or completion is uncertain."
 
 export const CONTINUE_NUDGE =
-  "A completion check found that the requested work is not finished. Continue now with one concrete " +
+  "Your exit request was reviewed and the requested work is not finished. Continue now with one concrete " +
   "next action. Use tools when needed, and do not stop at a plan or progress note."
 
-export const REPLY_NUDGE =
-  "A completion check found that the requested work is finished, but your last turn gave the user no " +
-  "reply. Write the final user-facing response now: state the outcome, the verification you actually " +
-  "observed, and any remaining unverified gap. Do not call another tool."
-
-export const UNKNOWN_NUDGE =
-  "Your last turn ended with no user-visible reply. Re-check whether the requested work is complete. " +
-  "If anything remains, continue with one concrete action now. If it is complete, write the final " +
-  "user-facing response now."
-
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
+
+export interface ExitRequest {
+  readonly result: string
+}
+
+/** The newest assistant turn's successfully executed `exit` request, if it contains one. */
+export const exitRequest = (context: readonly SessionMessage.Message[]): ExitRequest | undefined => {
+  const assistant = context.findLast((message): message is SessionMessage.Assistant => message.type === "assistant")
+  if (!assistant) return undefined
+  for (let i = assistant.content.length - 1; i >= 0; i--) {
+    const part = assistant.content[i]!
+    if (part.type !== "tool" || part.name !== "exit" || part.state.status !== "completed") continue
+    const raw = part.state.input
+    let input: unknown = raw
+    if (typeof raw === "string") {
+      try {
+        input = JSON.parse(raw)
+      } catch {
+        input = undefined
+      }
+    }
+    const result =
+      typeof input === "object" && input !== null && "result" in input && typeof input.result === "string"
+        ? input.result
+        : ""
+    return { result }
+  }
+  return undefined
+}
 
 /**
  * The small, bounded evidence packet for the completion audit.
@@ -32,7 +51,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
  * carries many jobs, and auditing today's work against its opening "hi" confidently answers the
  * wrong question. Harness steers remain excluded by the shared provenance predicate.
  */
-export const excerpt = (context: readonly SessionMessage.Message[]): string | undefined => {
+export const excerpt = (context: readonly SessionMessage.Message[], request: ExitRequest): string | undefined => {
   const user = context
     .filter(isRealUserTurn)
     .slice(-3)
@@ -45,7 +64,9 @@ export const excerpt = (context: readonly SessionMessage.Message[]): string | un
       if (part.type === "tool") {
         const state = part.state.status
         const output =
-          (state === "completed" || state === "error") && "output" in part.state && typeof part.state.output === "string"
+          (state === "completed" || state === "error") &&
+          "output" in part.state &&
+          typeof part.state.output === "string"
             ? clip(part.state.output.trim(), 220)
             : ""
         activity.push(`tool ${part.name} [${state}]${output ? `: ${output}` : ""}`)
@@ -57,7 +78,7 @@ export const excerpt = (context: readonly SessionMessage.Message[]): string | un
   return [
     ...(user.length === 0 ? [] : ["Recent user requests:", ...user]),
     ...(activity.length === 0 ? [] : ["Recent work evidence:", ...activity.slice(-8)]),
-    "The latest agent turn then ended with no text and no tool call.",
+    `The agent explicitly requested exit with this result: ${clip(request.result, 500) || "(empty result)"}`,
   ].join("\n")
 }
 
@@ -70,6 +91,3 @@ export const verdict = (reply: string): Verdict => {
   const parsed = Introspection.verdictOf(reply)
   return parsed === "yes" || parsed === "no" ? parsed : "unknown"
 }
-
-export const nudge = (answer: Verdict): string =>
-  answer === "yes" ? REPLY_NUDGE : answer === "no" ? CONTINUE_NUDGE : UNKNOWN_NUDGE

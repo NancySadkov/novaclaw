@@ -159,7 +159,6 @@ export function AgentConfigDialog(props: {
    * desktop — the floor in `core/src/plugin/agent.ts` — and a stored rule exists only to refuse.
    */
   const [computerUse, setComputerUse] = createSignal<boolean | undefined>()
-  const [reground, setReground] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
   /**
@@ -194,7 +193,6 @@ export function AgentConfigDialog(props: {
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
     strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
-  const regroundValue = () => reground() ?? (agent()?.config?.["reground"] as boolean | undefined) ?? true
 
   // ── Computer Use ───────────────────────────────────────────────────────────────────────────────
   // The switch reads a PERMISSION RULE, not a field of its own, on purpose. A `computerUse: boolean`
@@ -663,7 +661,6 @@ export function AgentConfigDialog(props: {
             ...(computerUse() === undefined || computerRuleset().length === 0
               ? {}
               : { permissions: computerRuleset() }),
-            ...(reground() === undefined ? {} : { reground: reground()! }),
             archiveChats: archiveValue(),
             ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
             ...binding,
@@ -679,9 +676,7 @@ export function AgentConfigDialog(props: {
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
         // Switched back ON and nothing else was ever refused: the field goes away entirely, so the
         // officer inherits the floor's grant the same as a colleague that was never configured.
-        ...(computerUse() !== undefined && computerRuleset().length === 0
-          ? [["agents", id, "permissions"]]
-          : []),
+        ...(computerUse() !== undefined && computerRuleset().length === 0 ? [["agents", id, "permissions"]] : []),
       ])
       const current = conn()
       if (current === undefined) throw new Error("No instance is connected")
@@ -698,7 +693,6 @@ export function AgentConfigDialog(props: {
       setPermissionMode(undefined)
       setStrict(undefined)
       setComputerUse(undefined)
-      setReground(undefined)
       setArchive(undefined)
       setModel(undefined)
       setReasoningBudget(undefined)
@@ -1149,22 +1143,9 @@ export function AgentConfigDialog(props: {
                   <span>{language.t("agentConfig.computerUse")}</span>
                 </label>
                 <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(
-                    computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off",
-                  )}
+                  {language.t(computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off")}
                 </p>
               </Show>
-              <label class="flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={regroundValue()}
-                  disabled={governing()}
-                  onChange={(event) => setReground(event.currentTarget.checked)}
-                />
-                <span>{language.t("agentConfig.reground")}</span>
-              </label>
-              <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.regroundDescription")}</p>
             </div>
           </section>
 

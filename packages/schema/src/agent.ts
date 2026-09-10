@@ -88,8 +88,6 @@ export const Info = Schema.Struct({
     wallMinutes: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
-  /** Finish re-grounding stance for this colleague; absent = the instance harness default. */
-  reground: Schema.Boolean.pipe(optional),
   /** Per-turn reasoning-token ceiling. Absent = selected model default; 0 = reasoning disabled. */
   reasoningBudget: NonNegativeInt.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),

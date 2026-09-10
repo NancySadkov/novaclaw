@@ -238,39 +238,7 @@ export const ANNOUNCED_TOOL_RECOVERY =
   "Your last turn said what you were about to do but did not actually call a tool, so nothing ran. " +
   "Issue that tool call now as a real tool call — do not describe it, and do not restate the plan."
 
-// 2E (codehamr A7) — the deterministic finish re-grounding backstop. When a SUBSTANTIAL turn
-// (≥ this many tool calls since the last real user message) is about to end with a clean,
-// confident summary, one re-prompt walks the model through its own acceptance criteria. Zero
-// LLM cost — this is the always-on tier under the P2 judge.
-export const REGROUND_TOOL_CALLS = 8
-
-export const REGROUND_NUDGE =
-  "Before you finish: walk the original request's acceptance criteria one at a time; for each, " +
-  "name the check you actually ran and what it showed. If you haven't run it, run it now — or " +
-  "probe its absence with one read-only command. Never dress up a static check (a brace count, " +
-  "a grep, an HTTP 200) as proof. If a check genuinely can't be run here, report it as " +
-  "`unverified: <what> — <why>` and lead your summary with that gap."
-
-// The honesty exemption — the battle scar to respect: re-prompting an honest
-// "unverified: browser runtime" has been seen to REGRESS into a confident, caveat-free
-// "it works". A finish that already admits its gaps stands.
-export const containsUnverified = (text: string): boolean => /unverified/i.test(text)
-
-/**
- * A model can stop after one call while plainly saying the work is unfinished. That admission is a
- * stronger signal than the busy-turn threshold: the threshold prevents trivial completed replies
- * from paying for a second pass, but must never turn an explicit progress report into a finish.
- */
-export const admitsUnfinishedWork = (text: string): boolean => {
-  const normalized = text.toLowerCase().replaceAll("’", "'")
-  return (
-    /\b(?:still|remains?)\s+(?:uncommitted|unfinished|incomplete|unimplemented)\b/.test(normalized) ||
-    /\b(?:isn't|is not|aren't|are not)\s+(?:built|done|finished|implemented|complete)\s+yet\b/.test(normalized) ||
-    /\bwhat\s+i(?:'m| am)\s+about\s+to\s+(?:build|do|implement|change|fix)\b/.test(normalized)
-  )
-}
-
-/** The newest assistant message's visible text (reasoning excluded), for the honesty check. */
+/** The newest assistant message's visible text (reasoning excluded). */
 export const lastAssistantText = (context: readonly SessionMessage.Message[]): string => {
   for (let i = context.length - 1; i >= 0; i--) {
     const message = context[i]!
@@ -282,17 +250,6 @@ export const lastAssistantText = (context: readonly SessionMessage.Message[]): s
   }
   return ""
 }
-
-/**
- * Fire the re-grounding nudge for a substantial turn, or any turn that explicitly admits work is
- * unfinished. An honest `unverified:` gap remains exempt in both cases.
- */
-export const shouldReground = (
-  finalText: string,
-  toolCallCount: number,
-  threshold: number = REGROUND_TOOL_CALLS,
-): boolean =>
-  finalText !== "" && !containsUnverified(finalText) && (toolCallCount >= threshold || admitsUnfinishedWork(finalText))
 
 // 1N/A2 — tool calls made since the last REAL user message, each classified failed/ok from its
 // projected state. Scoping to "since the last user message" gives the failure-streak detector its

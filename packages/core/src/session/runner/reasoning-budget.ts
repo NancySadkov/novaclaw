@@ -28,11 +28,10 @@ import { PostfixPrompt } from "./postfix-prompt"
  * facts and are the most likely to survive the swap — but "most likely" is not "measured". **When you
  * re-verify one of these, say which build produced the new number, in this comment.**
  *
- *   1. **Opening** — a provenance-marked harness message at the transcript tail primes the model to
- *      keep reasoning within the budget. It never mutates the cached system/tool prefix.
- *      (MindControl prefills this into `<think>`; a client can't force that safely on non-thinking
- *      models, so we make it an honest instruction the model actually receives.)
- *   2. **~70%** — the first phase runs the NORMAL request. We count reasoning tokens from the live
+ *   1. **Opening** — the first phase runs the request byte-for-byte. A prior implementation appended
+ *      a user-role budget reminder on every provider call; healthy models visibly acknowledged that
+ *      controller message between ordinary tool calls, polluting both their work and the transcript.
+ *   2. **~70%** — we count reasoning tokens from the live
  *      `reasoning` deltas and, once they cross 0.7·budget while still thinking, tear the request down
  *      and CONTINUE the reasoning by prefilling `<think>\n{reasoning so far}\n{mid nudge}\n`.
  *   3. **Budget end** — the next phase stops when reasoning crosses the full budget; it injects a
@@ -81,8 +80,6 @@ const END_RATIO = 1.5
 const HARD_RATIO = 2
 
 export interface Nudges {
-  /** Tail-message priming line (checkpoint 1). */
-  readonly opening: (budget: number) => string
   /** Injected into the reasoning at ~70% of budget (checkpoint 2). */
   readonly mid: string
   /** Injected into the still-open `<think>` at budget end (checkpoint 3) to force a conclusion. */
@@ -92,8 +89,6 @@ export interface Nudges {
 }
 
 export const defaultNudges: Nudges = {
-  opening: (budget) =>
-    `You have a reasoning budget of about ${budget} tokens for your <think> block this turn. Keep your reasoning concise and focused, don't go in circles, and stop thinking once you can answer.`,
   mid: "I've used most of my reasoning budget — let me stop exploring and work towards a conclusion now.",
   end: "I've reached the end of my thinking budget. I'll stop reasoning and give the user my answer now.",
   exhausted:
@@ -169,13 +164,11 @@ const aggregateUsage = (reported: readonly Usage[], unreportedPhases: number): U
 
 export interface Input<E, R> {
   readonly request: LLMRequest
-  /** Exact opening request when the caller already attached and packed the controller envelope.
-   * Supplying it prevents the opening system line from being appended a second time while retaining
-   * `request` as the base for continuation phases. */
+  /** Exact packed opening request. `request` remains the base for threshold-triggered continuations. */
   readonly preparedOpening?: LLMRequest
   readonly stream: (request: LLMRequest, observation: { readonly anchorable: boolean }) => Stream.Stream<LLMEvent, E, R>
   readonly budget: number
-  /** False when the caller's final message is an operation prompt that must remain last. */
+  /** Retained for callers whose final operation message must remain last; openings are now always unchanged. */
   readonly prime?: boolean
   readonly nudges?: Nudges
 }
@@ -185,10 +178,7 @@ export const openingRequest = (input: {
   readonly request: LLMRequest
   readonly budget: number
   readonly nudges?: Nudges
-}): LLMRequest => {
-  const nudges = input.nudges ?? defaultNudges
-  return PostfixPrompt.append(input.request, applySteerProvenance(nudges.opening(input.budget)))
-}
+}): LLMRequest => input.request
 
 /**
  * Wrap a provider turn in the thinking-budget controller. Drop-in for `llm.stream(request)`:
@@ -197,9 +187,7 @@ export const openingRequest = (input: {
  */
 export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> => {
   const nudges = input.nudges ?? defaultNudges
-  const opening =
-    input.preparedOpening ??
-    (input.prime === false ? input.request : openingRequest({ request: input.request, budget: input.budget, nudges }))
+  const opening = input.preparedOpening ?? input.request
   const state: State = {
     think: "",
     reasoningStarted: false,
@@ -411,8 +399,8 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     state.checkpointHit = false
     state.phaseUsage = undefined
     state.phaseTerminals = []
-    // Only the opening request has the same controller envelope as a future ordinary turn. A
-    // continuation carries an assistant prefill / template flags, so its provider usage remains
+    // Only the opening request has the same shape as a future ordinary turn. A continuation carries
+    // an assistant prefill / template flags, so its provider usage remains
     // valid drift evidence but must not become the next turn's durable anchor.
     const source = input.stream(phaseRequest(phase), { anchorable: phase === "opening" }).pipe(
       Stream.flatMap((event) => Stream.fromIterable(transform(event))),

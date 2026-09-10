@@ -58,7 +58,6 @@ export interface AgentLike {
   /** Keep compacted conversations in this colleague's own memory (default on). */
   readonly archiveChats?: boolean | undefined
   /** Whether the harness gives this colleague a final acceptance-check reminder. */
-  readonly reground?: boolean | undefined
   readonly mode: "primary" | "subagent" | "all"
   readonly hidden: boolean
   readonly color?: string | undefined
