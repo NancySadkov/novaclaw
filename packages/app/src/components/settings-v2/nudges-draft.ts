@@ -1,4 +1,4 @@
-import { Nudge } from "@novaclaw/core/nudge"
+import { NudgeDefinition as Nudge } from "@novaclaw/core/nudge-definition"
 import type { ConfigNudge } from "@novaclaw/core/config/nudge"
 
 export type Refusal = "name" | "text" | "pattern" | "hook" | "duplicate"

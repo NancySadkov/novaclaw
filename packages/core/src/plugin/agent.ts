@@ -271,7 +271,7 @@ export const scratchDirsFor = (agentID: string): readonly string[] => [
  * imports into the app's TypeScript program. This is the kernel's door onto it.
  */
 export const withOwnScratch = (agentID: string, rules: readonly PermissionV2.Rule[]): PermissionV2.Rule[] =>
-  ownScratchGrants(agentID, rules)
+  ownScratchGrants(rules, { root: Scratch.root(), own: Scratch.forAgent(agentID) })
 
 export const Plugin = define({
   id: "agent",

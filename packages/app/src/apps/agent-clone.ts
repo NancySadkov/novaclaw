@@ -17,7 +17,7 @@
 // now fails when a new field is neither carried nor deliberately excluded.
 
 import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { ownScratchGrants } from "@novaclaw/core/agent/scratch-grants"
+import { retargetScratchGrants } from "@novaclaw/core/agent/scratch-grants"
 import { OfficerName } from "@novaclaw/core/agent/officer-name"
 import { modelRef } from "./agent-model"
 import type { AgentLike } from "./contacts"
@@ -151,9 +151,9 @@ export const planClone = (input: {
     }
     if (key === "permissions" && Array.isArray(value)) {
       // Strip the source's scratch grant AND grant the clone's own, in the same breath: dropping one
-      // without the other turns a leak into a refusal. `ownScratchGrants` is that pairing, in kernel,
-      // so the clone and the materializer cannot drift apart on what "its own scratch" means.
-      fragment["permissions"] = ownScratchGrants(name, value as never)
+      // without the other turns a leak into a refusal. Retarget the INSTANCE-SUPPLIED path rather
+      // than resolving Scratch on the renderer machine: the UI and NovaClaw may be different hosts.
+      fragment["permissions"] = retargetScratchGrants(input.source.id, name, value as never)
       continue
     }
     fragment[key] = value

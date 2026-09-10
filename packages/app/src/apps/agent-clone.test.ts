@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { Scratch } from "@novaclaw/core/scratch"
 import { cloneAgent, clonedFields, NOT_CLONED, NovaCloneRefusal, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
@@ -187,9 +185,9 @@ describe("every config field is carried or deliberately excluded", () => {
 // "the agent cannot write its own folder" and, in the other direction, as one officer holding a write
 // grant into another's private workspace.
 describe("a clone carries no identity artifacts forward", () => {
-  // Built from the REAL scratch root rather than a literal, so the strip is exercised on a path it
-  // can actually recognize. A fixture under a made-up username passes by accident, not by design.
-  const other = path.join(Scratch.forAgent("daedalus"), "*").replaceAll("\\", "/")
+  // Deliberately belongs to ANOTHER machine. The renderer must preserve the instance-supplied root,
+  // not derive a local one that is wrong whenever the UI is connected to a remote NovaClaw host.
+  const other = "D:/remote-novaclaw/data/scratch/daedalus/*"
   const resolved = (id: string): AgentLike =>
     ({
       id,
@@ -225,6 +223,7 @@ describe("a clone carries no identity artifacts forward", () => {
     // Both halves, or the fix is a refusal wearing a security patch.
     expect(text).not.toContain("scratch/daedalus")
     expect(text).toContain(`scratch/${clone.id}`)
+    expect(text).toContain("D:/remote-novaclaw/data")
   })
 
   test("the source's CHECKOUT does not cross — a clone starts in its own scratch", () => {
