@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { resolveSevenZipArchiver } from "./lib/build-tools"
+import { auditSourceListing } from "./lib/source-audit"
 
 function fail(message: string): never {
   console.error(message)
@@ -52,4 +53,34 @@ if (result.status !== 0) {
 const size = fs.statSync(outFile, { throwIfNoEntry: false })?.size ?? 0
 if (size === 0) fail(`${outFile} is empty after archiving; refusing to publish it`)
 console.log(`wrote ${outFile} (${size} bytes)`)
+
+// Read back what was just written, with the SAME binary that wrote it.
+//
+// ⚠️ This used to be `tar -tf "%ARCHIVE%"` in the batch file, which failed twice over: `tar` resolved
+// by PATH to Git for Windows' GNU tar, and GNU tar reads the `C:` of an absolute Windows path as a
+// remote-host specification — `tar: Cannot connect to C: resolve failed`. The archive on disk was
+// fine; the tool trying to LOOK at it was the wrong tool. Resolving the archiver once and using it
+// for both directions is what keeps the writer and the reader from ever disagreeing.
+const listed = spawnSync(archiver.path, ["-tf", outFile], { encoding: "utf8", windowsHide: true })
+// A refused drop is DELETED, not reported-and-kept. Measured, not assumed: the first version of this
+// check printed its verdict and exited 1 with the offending archive still sitting in
+// packages/desktop/dist, which is the one location a person reaches for without reading the log —
+// and the whole reason the wrapper refuses a dirty tree is that a source drop must not be able to
+// disagree with the commit it names.
+// Narrowed once and named, because a hoisted `function` declaration does not inherit the argv guard
+// above it: the compiler reads its body as able to run before that check, and says so.
+const archivePath: string = outFile
+function refuse(message: string): never {
+  fs.rmSync(archivePath, { force: true })
+  fail(`${message}\n(refused archive deleted: ${archivePath})`)
+}
+if (listed.status !== 0) {
+  refuse(
+    `${archiver.path} could not list the archive it just wrote (exit ${listed.status ?? "null"}):\n${listed.stdout ?? ""}${listed.stderr ?? ""}`,
+  )
+}
+const audit = auditSourceListing(listed.stdout ?? "", path.basename(outFile, ".7z"))
+if (!audit.ok) refuse(`the source drop is not releasable:\n${audit.problems.map((p) => `  - ${p}`).join("\n")}`)
+console.log(`audited ${audit.entries} entries: obligations present, no node_modules, no .git`)
+
 fs.rmSync(tarFile, { force: true })
