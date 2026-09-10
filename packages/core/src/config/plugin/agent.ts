@@ -165,5 +165,12 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.color !== undefined) agent.color = item.color
     if (item.steps !== undefined) agent.steps = item.steps
     if (item.permissions !== undefined) agent.permissions.push(...item.permissions)
+    // 🔴 The agent's own scratch is DERIVED from the id this row is being applied to, never inherited
+    // from whatever the row happens to store. `floor` above bakes a literal path, so a stored layer
+    // can carry a grant minted for a different officer — measured 2026-09-10, `geryon` carried
+    // `…/scratch/daedalus/*`, which both leaked one officer's private workspace to another and
+    // refused the owner its own. See `AgentPlugin.withOwnScratch` for why filtering alone is not
+    // enough, and why this runs AFTER the stored layer is pushed rather than beside it.
+    agent.permissions = AgentPlugin.withOwnScratch(agentID, agent.permissions)
   })
 }
