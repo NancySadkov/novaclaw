@@ -10,6 +10,8 @@ import { ServerSyncContext } from "@/context/server-sync"
 import { ModelsContext } from "@/context/models"
 import { TabsContext } from "@/context/tabs"
 import { LanguageContext } from "@/context/language"
+import { SettingsProvider } from "@/context/settings"
+import { PlatformProvider } from "@/context/platform"
 
 /**
  * THE FIRST TEST IN THIS REPO THAT RENDERS A CONTEXT-DEPENDENT COMPONENT.
@@ -129,28 +131,32 @@ function mount(options: {
 
   dispose = render(
     () => (
-      <MemoryRouter>
-        <Route
-          path="/"
-          component={() => (
-            <LanguageContext.Provider value={languageStub as never}>
-              <GlobalContext.Provider value={globalStub as never}>
-                <ServerContext.Provider value={{ current: connection } as never}>
-                  <ServerSyncContext.Provider value={syncStub as never}>
-                    <ModelsContext.Provider value={modelsStub as never}>
-                      <TabsContext.Provider value={tabsStub as never}>
-                        <DialogProvider>
-                          <Opener agentID={options.agentID ?? "theron"} />
-                        </DialogProvider>
-                      </TabsContext.Provider>
-                    </ModelsContext.Provider>
-                  </ServerSyncContext.Provider>
-                </ServerContext.Provider>
-              </GlobalContext.Provider>
-            </LanguageContext.Provider>
-          )}
-        />
-      </MemoryRouter>
+      <PlatformProvider value={{ platform: "web" } as never}>
+        <MemoryRouter>
+          <Route
+            path="/"
+            component={() => (
+              <SettingsProvider>
+                <LanguageContext.Provider value={languageStub as never}>
+                  <GlobalContext.Provider value={globalStub as never}>
+                    <ServerContext.Provider value={{ current: connection } as never}>
+                      <ServerSyncContext.Provider value={syncStub as never}>
+                        <ModelsContext.Provider value={modelsStub as never}>
+                          <TabsContext.Provider value={tabsStub as never}>
+                            <DialogProvider>
+                              <Opener agentID={options.agentID ?? "theron"} />
+                            </DialogProvider>
+                          </TabsContext.Provider>
+                        </ModelsContext.Provider>
+                      </ServerSyncContext.Provider>
+                    </ServerContext.Provider>
+                  </GlobalContext.Provider>
+                </LanguageContext.Provider>
+              </SettingsProvider>
+            )}
+          />
+        </MemoryRouter>
+      </PlatformProvider>
     ),
     host,
   )

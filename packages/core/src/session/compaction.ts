@@ -496,6 +496,9 @@ export const make = (dependencies: Dependencies) => {
       ...(input.preservesWorkingPrefix ? { preparedOpening: input.request } : {}),
       stream: (request) => dependencies.llm.stream(request),
       budget: COMPACTION_REASONING_BUDGET,
+      // This request is itself a postfix operation. Keep its exact instruction last; token
+      // checkpoints and the hard stop still apply without the informational opening prime.
+      prime: false,
     }).pipe(
       Stream.runForEach((event) => {
         if (LLMEvent.is.providerError(event)) failed = true

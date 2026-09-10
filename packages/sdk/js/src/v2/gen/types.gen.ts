@@ -3661,6 +3661,57 @@ export type ConfigV2ProviderRequest = {
   }
 }
 
+export type ConfigV2Nudge = {
+  id: string
+  name: string
+  enabled?: boolean
+  /**
+   * A harness-owned event selector. Script hooks fire when their command exits successfully.
+   */
+  hook:
+    | {
+        type: "text-match"
+        pattern: string
+      }
+    | {
+        type: "tool-call"
+        tool: string
+      }
+    | {
+        type: "mcp-call"
+        server: string
+      }
+    | {
+        type: "file-read"
+        extension: string
+      }
+    | {
+        type: "file-write"
+        extension: string
+      }
+    | {
+        type: "after-compaction"
+      }
+    | {
+        type: "resource-pressure"
+        level: "warning" | "floor" | "either"
+      }
+    | {
+        type: "time-of-day"
+        after: string
+        before: string
+      }
+    | {
+        type: "new-day"
+      }
+    | {
+        type: "script"
+        command: string
+      }
+  text: string
+  script?: string
+}
+
 export type ConfigV2Agent = {
   model?: string
   variant?: string
@@ -3683,6 +3734,8 @@ export type ConfigV2Agent = {
   }
   shortChat?: boolean
   reground?: boolean
+  nudges?: Array<ConfigV2Nudge>
+  globalNudges?: boolean
   reasoningBudget?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
@@ -3776,50 +3829,6 @@ export type ConfigV2ToolRoutingRule = {
 
 export type ConfigV2ToolRouting = {
   rules: Array<ConfigV2ToolRoutingRule>
-}
-
-export type ConfigV2Nudge = {
-  id: string
-  name: string
-  enabled?: boolean
-  agents?: Array<string>
-  /**
-   * A closed, harness-owned event selector. Free-form code is never executed.
-   */
-  hook:
-    | {
-        type: "text-match"
-        pattern: string
-      }
-    | {
-        type: "tool-call"
-        tool: string
-      }
-    | {
-        type: "mcp-call"
-        server: string
-      }
-    | {
-        type: "file-read"
-        extension: string
-      }
-    | {
-        type: "file-write"
-        extension: string
-      }
-    | {
-        type: "after-compaction"
-      }
-    | {
-        type: "resource-pressure"
-        level: "warning" | "floor" | "either"
-      }
-    | {
-        type: "time-of-day"
-        after: string
-        before: string
-      }
-  text: string
 }
 
 export type ConfigV2McpTimeout = {

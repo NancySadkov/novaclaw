@@ -78,12 +78,9 @@ export const layer = Layer.effectDiscard(
     //     and "the user has not typed anything yet" indistinguishable from the model's side, which is
     //     the same ruling's *a fault is never described falsely* read from the other end.
     //
-    // The practical half, which is what settles it: `hasContent` is the condition that flips OFTEN
-    // and INCIDENTALLY — a user typing their name in Settings — and every flip rewrites the
-    // advertised tool array mid-conversation, invalidating the whole prompt-prefix cache
-    // (tool discovery must be append-only for exactly this reason). The switch
-    // flips rarely and deliberately, and making it apply *now* is the entire point of ruling 3. So
-    // the horizon churns only where churn is the feature. Sharing stays OPT-OUT (`!== false`) so a
+    // The practical half, which is what settles it: this tool is DEFERRED, so a switch change alters
+    // only the searchable catalogue returned at the transcript tail. It never rewrites the resident
+    // provider-native array ahead of the system prompt. Sharing stays OPT-OUT (`!== false`) so a
     // profile filled in before the switch existed keeps working.
     //
     // ⚠️ **Cost, because this lands on a hot path.** `materialize` runs per turn AND per step

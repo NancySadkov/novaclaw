@@ -117,11 +117,15 @@ describe("ConfigAgentPlugin.Plugin", () => {
 
       const buildAgent = yield* agents.get(build)
       if (!buildAgent) throw new Error("expected configured build agent")
-      expect(buildAgent.permissions).toEqual([
+      expect(buildAgent.permissions.slice(0, 4)).toEqual([
         { action: "bash", resource: "*", effect: "allow" },
         { action: "bash", resource: "*", effect: "ask" },
         { action: "read", resource: "*", effect: "allow" },
         { action: "bash", resource: "git *", effect: "allow" },
+      ])
+      expect(buildAgent.permissions.slice(4)).toEqual([
+        { action: "external_directory_read", resource: expect.stringContaining("/scratch/build/*"), effect: "allow" },
+        { action: "external_directory_write", resource: expect.stringContaining("/scratch/build/*"), effect: "allow" },
       ])
       expect(PermissionV2.evaluate("bash", "git status", buildAgent.permissions).effect).toBe("allow")
       expect(PermissionV2.evaluate("bash", "bun test", buildAgent.permissions).effect).toBe("ask")

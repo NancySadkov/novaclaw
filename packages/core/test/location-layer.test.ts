@@ -100,6 +100,7 @@ const deferredCoreTools = [
   // schema has no claim on every turn's prefix (`` 3g, `tool/log.ts`).
   "log",
   "messenger",
+  "nudge",
   "permission",
   "profile",
   "quality_provision",

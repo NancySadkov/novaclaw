@@ -156,13 +156,6 @@ const builtIns = Layer.effectDiscard(
         update: (previous, current) => environmentUpdate(previous.rendered, current.rendered),
         equivalent: environmentEquivalent,
       }),
-      SystemContext.make({
-        key: SystemContext.Key.make("core/date"),
-        codec: Schema.toCodecJson(Schema.String),
-        load: DateTime.nowAsDate.pipe(Effect.map((date) => date.toDateString())),
-        baseline: (date) => `Today's date: ${date}`,
-        update: (_previous, date) => `Today's date is now: ${date}`,
-      }),
     ])
 
     yield* registry.register({ key: SystemContext.Key.make("core/builtins"), load: Effect.succeed(context) })

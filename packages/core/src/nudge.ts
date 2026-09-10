@@ -5,13 +5,13 @@ import type { ConfigNudge } from "./config/nudge"
 
 export const LOW_RESOURCE_ID = "builtin-low-resources"
 export const JAVASCRIPT_TIME_ID = "builtin-javascript-time-safety"
+export const NEW_DAY_ID = "builtin-new-day"
 
 export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
   {
     id: LOW_RESOURCE_ID,
     name: "Protect work when resources run low",
     enabled: true,
-    agents: [],
     hook: { type: "resource-pressure", level: "either" },
     text:
       "This instance is low on memory or disk headroom. Avoid starting memory- or disk-intensive work. " +
@@ -21,13 +21,19 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     id: JAVASCRIPT_TIME_ID,
     name: "Check JavaScript time conversions",
     enabled: true,
-    agents: [],
     hook: {
       type: "text-match",
       pattern:
         "(?:[-+]\\s*(?:(?:[\\w$]+\\.)*time\\.(?:created|completed)|createdAt|completedAt|startedAt|endedAt)|(?:(?:[\\w$]+\\.)*time\\.(?:created|completed)|createdAt|completedAt|startedAt|endedAt)\\s*[-+]|new\\s+Date\\([^)]*(?:created|completed|started|ended|timestamp))",
     },
     text: "You are editing JavaScript/TypeScript time code. Before continuing, verify every value's runtime shape at its transport/schema boundary and normalize it before subtraction or formatting. Guard non-finite results so an invalid conversion can never render NaN.",
+  },
+  {
+    id: NEW_DAY_ID,
+    name: "A new day begins",
+    enabled: true,
+    hook: { type: "new-day" },
+    text: "A new local calendar day has begun. If the exact date matters, read the clock with a tool instead of relying on prompt context.",
   },
 ]
 
@@ -53,11 +59,13 @@ export interface Match {
   readonly occurrence: string
 }
 
+export interface ScopedDefinition {
+  readonly nudge: ConfigNudge.Info
+  readonly deliveryID: string
+}
+
 export const resolved = (stored: readonly ConfigNudge.Info[] | undefined): ReadonlyArray<ConfigNudge.Info> =>
   stored === undefined ? defaults() : stored
-
-const appliesTo = (nudge: ConfigNudge.Info, agentID: string | undefined) =>
-  !nudge.agents?.length || (agentID !== undefined && nudge.agents.includes(agentID))
 
 const printable = (value: unknown): string => {
   try {
@@ -110,8 +118,8 @@ export const validPattern = (pattern: string): boolean => {
   }
 }
 
-export function matches(nudge: ConfigNudge.Info, event: Event, agentID?: string): boolean {
-  if (nudge.enabled === false || nudge.text.trim() === "" || !appliesTo(nudge, agentID)) return false
+export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
+  if (nudge.enabled === false || (nudge.text.trim() === "" && !nudge.script?.trim())) return false
   const hook = nudge.hook
   switch (hook.type) {
     case "text-match":
@@ -145,6 +153,10 @@ export function matches(nudge: ConfigNudge.Info, event: Event, agentID?: string)
       const now = event.at.getHours() * 60 + event.at.getMinutes()
       return after <= before ? now >= after && now < before : now >= after || now < before
     }
+    case "new-day":
+      return event.type === "clock"
+    case "script":
+      return event.type === "clock" && hook.command.trim() !== ""
   }
 }
 
@@ -157,14 +169,8 @@ export const occurrence = (event: Event): string => {
   return `clock:${year}-${month}-${day}`
 }
 
-export const select = (
-  definitions: readonly ConfigNudge.Info[],
-  event: Event,
-  agentID?: string,
-): ReadonlyArray<Match> =>
-  definitions
-    .filter((nudge) => matches(nudge, event, agentID))
-    .map((nudge) => ({ nudge, occurrence: occurrence(event) }))
+export const select = (definitions: readonly ConfigNudge.Info[], event: Event): ReadonlyArray<Match> =>
+  definitions.filter((nudge) => matches(nudge, event)).map((nudge) => ({ nudge, occurrence: occurrence(event) }))
 
 export const prompt = (nudge: Pick<ConfigNudge.Info, "name" | "text">, event?: Event): string =>
   [

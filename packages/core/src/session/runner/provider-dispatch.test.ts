@@ -157,18 +157,19 @@ describe("ProviderDispatch", () => {
     const anchoredTranscript = [
       { type: "assistant", context: { promptAnchor: anchor } },
     ] as unknown as readonly SessionMessage.Message[]
-    const controllerLine = firstOpening.system.at(-1)!
+    const controllerLine = firstOpening.messages.at(-1)!
     const plainSystem = firstBase.system
     const openingSystem = firstOpening.system
-    const controllerTokens = Token.estimate(controllerLine.text)
+    const controllerTokens =
+      ContextPack.estimateMessages(firstOpening.messages) - ContextPack.estimateMessages(firstBase.messages)
     const packingInput = {
       contextSize,
       tools: firstBase.tools,
       promptMarginTokens: firstEstimate.marginTokens,
     }
     const plainHistoryBudget = ContextPack.budget({ ...packingInput, system: plainSystem })
-    const openingHistoryBudget = ContextPack.budget({ ...packingInput, system: openingSystem })
-    expect(plainHistoryBudget - openingHistoryBudget).toBe(controllerTokens)
+    const openingHistoryBudget = ContextPack.budget({ ...packingInput, system: openingSystem }) - controllerTokens
+    expect(openingSystem).toEqual(plainSystem)
 
     let filler = ""
     let secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
@@ -226,9 +227,7 @@ describe("ProviderDispatch", () => {
       }).pipe(Stream.runDrain),
     )
     expect(dispatched).toEqual([openingPacked.request])
-    expect(
-      dispatched[0]!.system.filter((part) => part.text.includes(`reasoning budget of about ${budget} tokens`)),
-    ).toHaveLength(1)
+    expect(JSON.stringify(dispatched[0]!.messages)).toContain(`reasoning budget of about ${budget} tokens`)
   })
 
   test("routes an enabled completion through the reasoning controller", async () => {
@@ -268,7 +267,7 @@ describe("ProviderDispatch", () => {
     )
     expect(requests).toHaveLength(1)
     expect(requests[0]).toEqual(opening)
-    expect(requests[0]!.system.at(-1)?.text).toContain("reasoning budget of about 64 tokens")
+    expect(JSON.stringify(requests[0]!.messages.at(-1))).toContain("reasoning budget of about 64 tokens")
     expect(observed).toHaveLength(1)
     expect(observed[0]!.request).toBe(requests[0])
     expect(observed[0]!.usage).toEqual(usage)

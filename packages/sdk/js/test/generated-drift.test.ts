@@ -308,7 +308,11 @@ const GENERATE_TIMEOUT_MS = 60_000
 // event schema now also has the expected `SyncEventSessionNextToolLabelled` replay envelope.
 // 2026-09-08: the user-facing Nudge config adds exactly one public schema, `ConfigV2Nudge`, and
 // removes none. Its name maps without a collision suffix; the ConfigInfo shape gains the list.
-const SCHEMA_NAME_FINGERPRINT = "9526a84b6f7377c6c07e5e27d9a990713d691b0c6d24fb234ec80fea020f011d"
+// 2026-09-10: officer-owned Nudges make `ConfigV2Agent` reference the already-public
+// `ConfigV2Nudge`, so the emitter reaches Nudge one entry earlier. Measured against HEAD: 510 pairs
+// before and after, the sets are identical, and no source/emitted pair was added, removed or
+// repointed. This is walk order only; the Nudge and Agent wire shapes change in the spec itself.
+const SCHEMA_NAME_FINGERPRINT = "3db462348342a36d6625a486a776e15b72ccf5da5001f408b87ef6589f22570d"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

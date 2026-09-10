@@ -706,6 +706,7 @@ const NO_EXTERNAL = [
   "deferred/db-registry.gen.ts",
   "deferred/log.gen.ts",
   "deferred/messenger.gen.ts",
+  "deferred/nudge.gen.ts",
   "deferred/permission.gen.ts",
   "deferred/profile.gen.ts",
   "deferred/quality-provision.gen.ts",
@@ -761,7 +762,10 @@ const NO_EXTERNAL = [
   "http-body.ts",
   "js-run.ts",
   "js.ts",
-  "kb.ts",
+  // Reads only this instance's nudge configuration. Script stdout is produced by a user-authored
+  // local command in the session folder and is framed by the Nudge provenance message, not fetched
+  // from another party by this tool.
+  "nudge.ts",
   "plugin-tools.ts",
   "permission.ts",
   "profile.ts",

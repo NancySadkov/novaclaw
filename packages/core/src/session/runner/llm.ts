@@ -141,9 +141,6 @@ import { SessionDriveState } from "./drive-state"
 import { RecoveryJoin } from "./recovery-join"
 import { CompactionBackoff } from "./compaction-backoff"
 import { applySteerProvenance, lastRealUserIndex, lastRealUserText } from "../steer-provenance"
-import { ColleagueHop } from "../colleague-hop"
-import { ColleagueTool } from "../../tool/colleague"
-import { ColleagueBound } from "../colleague-bound"
 import { VisionCopy } from "./vision-copy"
 import { ToolOutputSummary } from "./tool-output-summary"
 import { Nudge } from "../../nudge"
@@ -367,8 +364,15 @@ export const layer = Layer.effect(
       sessionID: SessionSchema.ID,
       agentID: string | undefined,
       event: Nudge.Event,
+      enabled = true,
     ) {
-      const claimed = yield* nudges.claim({ sessionID, ...(agentID === undefined ? {} : { agentID }), event })
+      if (!enabled) return 0
+      const claimed = yield* nudges.claim({
+        sessionID,
+        ...(agentID === undefined ? {} : { agentID }),
+        directory: location.directory,
+        event,
+      })
       for (const nudge of claimed) yield* SessionInput.steer(db, events, sessionID, Nudge.prompt(nudge, event))
       return claimed.length
     })
@@ -936,6 +940,14 @@ export const layer = Layer.effect(
      */
     const childrenSpawned = new Map<string, Set<string>>()
     const childrenTask = new Map<string, string>()
+    // Provider-native schemas sit before the system prompt on every supported protocol. Freeze the
+    // exact array at this session's first request; live capability changes belong in deferred
+    // tool-search results at the transcript tail, never in this prefix.
+    const residentToolPrefix = new Map<string, import("@novaclaw/llm").ToolDefinition[]>()
+    const deferredToolPrefixCount = new Map<string, number>()
+    const deferredToolCatalogue = new Map<string, ReadonlySet<string>>()
+    const residentToolCatalogue = new Map<string, ReadonlySet<string>>()
+    const promptPrefixEpoch = new Map<string, number>()
     /**
      * How many times this session has been steered back to its unaccounted children. Bounded by
      * `UnjoinedChildren.MAX_RESTART_ROUNDS` — a restart can itself spawn a child that fails, so this
@@ -1736,49 +1748,85 @@ export const layer = Layer.effect(
       //
       // Falls back to the live read only before the latch exists — the first step of a fresh session,
       // where the prompt is still in the window and the two answers are identical anyway.
-      const latched = setRequests.get(session.id)
-      const userText = lastRealUserText(context) ?? ""
-      const drivingASet =
-        harness.drives.set &&
-        (latched?.asked ?? (UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText)))
-      const toolMaterialization = isLastStep
-        ? undefined
-        : yield* tools.materialize(
-            // The horizon sees what the verdict will refuse everywhere — the mode overlay, the Tuning
-            // switches and the unattended stance, not the agent's own rules alone — so a tool the
-            // model could never use is withdrawn rather than advertised and refused (see
-            // `PermissionV2.horizonLayers` for what stays out, and why).
-            PermissionV2.horizonLayers({
-              agent: agent.info?.permissions,
-              mode: config.permissionMode ?? EFFECTIVE_CONFIG_DEFAULTS.permissionMode,
-              resolved: config,
-              // The NARROWED root type: an unreadable chain reads as unattended here exactly as it does
-              // for the jail, and this file does not become another holder of the tri-state.
-              rootType: yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID)),
-            }),
-            (name) =>
-              !(drivingASet && name === SpawnTool.name) &&
-              ShortChat.offered(config.shortChat, name) &&
-              ConfigToolRouting.offered(harness.toolRouting, {
-                mode: config.permissionMode,
-                providerID: modelRef?.providerID ?? model.provider,
-                modelID: modelRef?.id ?? model.id,
-              })(name),
-            discoveredTools,
-            // 🔴 WITHHELD AT THE CAP, not advertised and refused. `ask`/`ask_group` cannot succeed
-            // once the chain is at `HOP_CAP`, so offering them spends a turn on a refusal the model
-            // then has to interpret. `list`, `hire` and `retire` are unrelated to the bound and stay,
-            // which is why this is a variant rather than withholding the tool.
-            //
-            // ⚠️ Free to consult: the hop rides the transcript this turn already holds
-            // (`ColleagueHop.fromContext`), not a database read — the concern the item raised, and
-            // measured away.
-            (name) =>
-              name === ColleagueTool.name &&
-              ColleagueBound.exceedsHopCap(ColleagueBound.nextHop(ColleagueHop.fromContext(context)))
-                ? ColleagueTool.CAPPED
-                : undefined,
-          )
+      const liveToolMaterialization = yield* tools.materialize(
+        // The horizon sees what the verdict will refuse everywhere — the mode overlay, the Tuning
+        // switches and the unattended stance, not the agent's own rules alone — so a tool the
+        // model could never use is withdrawn rather than advertised and refused (see
+        // `PermissionV2.horizonLayers` for what stays out, and why).
+        PermissionV2.horizonLayers({
+          agent: agent.info?.permissions,
+          mode: config.permissionMode ?? EFFECTIVE_CONFIG_DEFAULTS.permissionMode,
+          resolved: config,
+          // The NARROWED root type: an unreadable chain reads as unattended here exactly as it does
+          // for the jail, and this file does not become another holder of the tri-state.
+          rootType: yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID)),
+        }),
+        (name) =>
+          ShortChat.offered(config.shortChat, name) &&
+          ConfigToolRouting.offered(harness.toolRouting, {
+            mode: config.permissionMode,
+            providerID: modelRef?.providerID ?? model.provider,
+            modelID: modelRef?.id ?? model.id,
+          })(name),
+        discoveredTools,
+      )
+      // Compaction starts a new context epoch. Within one epoch every provider-prefix byte is
+      // immutable; the new baseline sequence deliberately gives changed standing configuration a
+      // fresh prefix instead of mutating the old one in place.
+      const promptPrefixKey = session.id
+      if (promptPrefixEpoch.get(promptPrefixKey) !== system.baselineSeq) {
+        promptPrefixEpoch.set(promptPrefixKey, system.baselineSeq)
+        residentToolPrefix.delete(promptPrefixKey)
+        deferredToolPrefixCount.delete(promptPrefixKey)
+        deferredToolCatalogue.delete(promptPrefixKey)
+        residentToolCatalogue.delete(promptPrefixKey)
+      }
+      const frozenDefinitions = residentToolPrefix.get(promptPrefixKey)
+      const stableDefinitions = frozenDefinitions ?? [...liveToolMaterialization.definitions]
+      if (frozenDefinitions === undefined) residentToolPrefix.set(promptPrefixKey, stableDefinitions)
+      const stableDeferredCount =
+        deferredToolPrefixCount.get(promptPrefixKey) ?? liveToolMaterialization.deferred.length
+      if (!deferredToolPrefixCount.has(promptPrefixKey))
+        deferredToolPrefixCount.set(promptPrefixKey, stableDeferredCount)
+      const toolMaterialization = { ...liveToolMaterialization, definitions: stableDefinitions }
+      const catalogueNow = new Set(toolMaterialization.deferred.map((source) => source.definition.name))
+      const catalogueBefore = deferredToolCatalogue.get(promptPrefixKey)
+      deferredToolCatalogue.set(promptPrefixKey, catalogueNow)
+      const addedTools = catalogueBefore ? [...catalogueNow].filter((name) => !catalogueBefore.has(name)) : []
+      const removedTools = catalogueBefore ? [...catalogueBefore].filter((name) => !catalogueNow.has(name)) : []
+      const liveResidentNames = new Set(liveToolMaterialization.definitions.map((definition) => definition.name))
+      const residentBefore = residentToolCatalogue.get(promptPrefixKey)
+      residentToolCatalogue.set(promptPrefixKey, liveResidentNames)
+      const residentBecameAvailable = residentBefore
+        ? [...liveResidentNames].filter((name) => !residentBefore.has(name))
+        : []
+      const residentBecameUnavailable = residentBefore
+        ? [...residentBefore].filter((name) => !liveResidentNames.has(name))
+        : []
+      const toolCatalogueUpdate =
+        addedTools.length === 0 &&
+        removedTools.length === 0 &&
+        residentBecameAvailable.length === 0 &&
+        residentBecameUnavailable.length === 0
+          ? undefined
+          : SessionInput.applySteerProvenance(
+              [
+                "Tool catalogue update:",
+                ...(addedTools.length ? [`Newly available through tool_search: ${addedTools.join(", ")}.`] : []),
+                ...(removedTools.length ? [`No longer available: ${removedTools.join(", ")}.`] : []),
+                ...(residentBecameUnavailable.length
+                  ? [
+                      `Temporarily unavailable resident tools: ${residentBecameUnavailable.join(", ")}. Calls will return the precise current refusal.`,
+                    ]
+                  : []),
+                ...(residentBecameAvailable.length
+                  ? [
+                      `Resident tools enabled after this context epoch began: ${residentBecameAvailable.join(", ")}. They will enter the native schema prefix in a new chat; runtime-varying tools should use deferred discovery.`,
+                    ]
+                  : []),
+                "This update is appended here so the immutable provider/tool prefix remains cacheable.",
+              ].join("\n"),
+            )
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
       // this turn's request, afpro-style), modulate sampling AROUND the model's configured
@@ -1875,7 +1923,7 @@ export const layer = Layer.effect(
             // The tool list the model is about to receive is `toolMaterialization.definitions`; the
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
             // see the section's own note on why a count and not a hedge.
-            toolDiscovery: SystemCompose.toolDiscoverySection(toolMaterialization?.deferred.length ?? 0),
+            toolDiscovery: SystemCompose.toolDiscoverySection(stableDeferredCount),
             // That the model can SEE, when the catalog says it can. The `canSpawn` half is read off
             // the tools the model is ACTUALLY about to receive rather than off the registry: the
             // delegation paragraph is an instruction, and an instruction naming a tool this turn
@@ -1903,7 +1951,9 @@ export const layer = Layer.effect(
               // Read from the SAME condition that withheld the ops, so the sentence and the tool
               // list cannot disagree — "a section naming a tool the turn cannot call is a false
               // description", and a silent absence is the converse.
-              colleaguesAtCap: ColleagueBound.exceedsHopCap(ColleagueBound.nextHop(ColleagueHop.fromContext(context))),
+              // Hop pressure is live transcript state. Keep it out of the immutable system prefix;
+              // the colleague tool enforces the cap at execution and reports the precise refusal.
+              colleaguesAtCap: false,
               canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
               canAddressColleagues: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "colleague"),
             }),
@@ -1990,6 +2040,7 @@ export const layer = Layer.effect(
           // on a 13.5K-token agent turn. Here, a change costs only the tokens after it.
           ...(recallMessage === undefined ? [] : [Message.user(recallMessage)]),
           ...(todoReminder === undefined ? [] : [Message.user(todoReminder)]),
+          ...(toolCatalogueUpdate === undefined ? [] : [Message.user(toolCatalogueUpdate)]),
           ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
         ],
         // A text-only model is not told a picture "arrives as a picture you can see" (owner,
@@ -2012,13 +2063,13 @@ export const layer = Layer.effect(
         ...(modelSession.model?.variant === undefined ? {} : { variant: modelSession.model.variant }),
       }
       // The controller envelope is part of tokenizer identity: a budgeted opening request carries a
-      // stable extra system part, while a plain request does not. A change falls back for one turn.
+      // stable controller tail message, while a plain request does not. A change falls back for one turn.
       const thinkingBudget = config.reasoningBudget ?? model.route.defaults.limits?.thinkingBudget ?? 0
       const budgetEnforced =
         stanceOf("thinkingBudget", config.thinkingBudget) &&
         (config.reasoningBudget !== undefined || !ShortChat.enabled(config.shortChat))
       // Build checkpoint 1 ONCE, before any consumer measures capacity. Prompt estimation,
-      // compaction, packing and provider dispatch must all see the same controller system part;
+      // compaction, packing and provider dispatch must all see the same controller tail message;
       // otherwise the final append can overflow a pack that was correct for a smaller request.
       const openingRequest = ProviderDispatch.openingRequest({
         request: baseRequest,
@@ -2142,7 +2193,13 @@ export const layer = Layer.effect(
         )
       if (compacted) {
         const latest = yield* SessionHistory.latestCompaction(db, session.id)
-        if (latest) yield* deliverNudges(session.id, String(agent.id), { type: "compaction", id: latest.id })
+        if (latest)
+          yield* deliverNudges(
+            session.id,
+            String(agent.id),
+            { type: "compaction", id: latest.id },
+            !ShortChat.enabled(config.shortChat),
+          )
       }
       if (compacted) yield* timingEnd("compaction")
       else if (shouldAttemptCompaction)
@@ -2490,13 +2547,18 @@ export const layer = Layer.effect(
                           (entry) => entry.type === "file" && entry.mime.toLowerCase().startsWith("image/"),
                         ).length,
                       )
-                    yield* deliverNudges(session.id, String(agent.id), {
-                      type: "tool",
-                      id: event.id,
-                      name: event.name,
-                      input: event.input,
-                      output: modelSettlement.result,
-                    })
+                    yield* deliverNudges(
+                      session.id,
+                      String(agent.id),
+                      {
+                        type: "tool",
+                        id: event.id,
+                        name: event.name,
+                        input: event.input,
+                        output: modelSettlement.result,
+                      },
+                      !ShortChat.enabled(config.shortChat),
+                    )
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and
@@ -3342,7 +3404,13 @@ export const layer = Layer.effect(
         }).pipe(reportArchiveFailure(session.id, prepared.memoryOwnerAgent))
       if (compacted) {
         const latest = yield* SessionHistory.latestCompaction(db, session.id)
-        if (latest) yield* deliverNudges(session.id, prepared.config.agent, { type: "compaction", id: latest.id })
+        if (latest)
+          yield* deliverNudges(
+            session.id,
+            prepared.config.agent,
+            { type: "compaction", id: latest.id },
+            !ShortChat.enabled(prepared.config.shortChat),
+          )
       }
       yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
@@ -3436,7 +3504,13 @@ export const layer = Layer.effect(
       // Targeted ambient hooks are evaluated only when this drain already has work. They never wake
       // an idle colleague just because the clock moved or the host crossed a pressure line.
       const now = new Date()
-      const clockNudges = yield* deliverNudges(input.sessionID, handoff.agent, { type: "clock", at: now })
+      const nudgesEnabled = !ShortChat.enabled(handoff.shortChat)
+      const clockNudges = yield* deliverNudges(
+        input.sessionID,
+        handoff.agent,
+        { type: "clock", at: now },
+        nudgesEnabled,
+      )
       const pressureLevel = yield* resourcePressure.level()
       let ambientNudges = clockNudges
       if (pressureLevel === "warning" || pressureLevel === "floor") {
@@ -3446,7 +3520,7 @@ export const layer = Layer.effect(
           bucket: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}`,
           detail: yield* resourcePressure.inspect(),
         }
-        ambientNudges += yield* deliverNudges(input.sessionID, handoff.agent, event)
+        ambientNudges += yield* deliverNudges(input.sessionID, handoff.agent, event, nudgesEnabled)
       }
       if (ambientNudges > 0 && !hasQueue) hasSteer = true
       if (providerRecovery) {

@@ -198,7 +198,7 @@ describe("location services global identity", () => {
     expect(violations(measured)).toEqual([
       "@novaclaw/v2/storage/Database: expected exactly 1 build and 1 instance per process, got 4 builds and 4 distinct instances across 3 locations",
       "@novaclaw/Global: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
-      "@novaclaw/capability/memory: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
+      "@novaclaw/capability/world-memory: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
       "@novaclaw/v2/SessionScheduler: expected exactly 1 build and 1 instance per process, got 3 builds and 3 distinct instances across 3 locations",
     ])
   }, 20000)

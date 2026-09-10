@@ -6,13 +6,12 @@ const draft = (id = "one"): ConfigNudge.Info => ({
   id,
   name: "  Time safety  ",
   enabled: true,
-  agents: ["writer"],
   hook: { type: "text-match", pattern: "Date\\(" },
   text: "  Check the transport shape.  ",
 })
 
 describe("planNudgeSave", () => {
-  test("adds a trimmed nudge without changing its agent scope", () => {
+  test("adds a trimmed nudge", () => {
     const result = planNudgeSave({ nudges: [], draft: draft() })
     expect(result).toEqual({
       ok: true,

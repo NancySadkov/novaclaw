@@ -29,6 +29,7 @@ import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
+import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 
 const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
@@ -1087,6 +1088,14 @@ export function AgentConfigDialog(props: {
               <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.regroundDescription")}</p>
             </div>
           </section>
+
+          <Show when={props.agentID}>
+            {(id) => (
+              <section class="mt-5">
+                <SettingsNudgesV2 fixedAgentID={id()} />
+              </section>
+            )}
+          </Show>
 
           <Show when={!postureValue()}>
             <section class="mt-5">

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { eq } from "drizzle-orm"
 import { LLMEvent } from "@novaclaw/llm"
 import { Database } from "@novaclaw/core/database/database"
@@ -61,7 +61,7 @@ const runWith = async (policies: readonly ToolPolicy.Provider[], label: string, 
 }
 
 /** The same drain, with the session declared auto-prompting so it self-drives when its queue is dry. */
-const runSelfDriving = async (policies: readonly ToolPolicy.Provider[]) => {
+const runSelfDriving = async (policies: readonly ToolPolicy.Provider[], stopAfterContinuation = false) => {
   const harness = makeRunnerHarness({
     turns: [toolCallTurn("call-1", "first"), toolCallTurn("call-2", "second"), toolCallTurn("call-3", "third")],
     policies,
@@ -82,7 +82,13 @@ const runSelfDriving = async (policies: readonly ToolPolicy.Provider[]) => {
         .where(eq(SessionTable.id, HARNESS_SESSION))
         .run()
         .pipe(Effect.orDie)
-      yield* session.resume(HARNESS_SESSION)
+      if (!stopAfterContinuation) yield* session.resume(HARNESS_SESSION)
+      else {
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        while (harness.requests.length < 2) yield* Effect.yieldNow
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(run)
+      }
     }),
     "self-driving policy drain",
   )
@@ -154,7 +160,7 @@ describe("a halt stops the drain; a deny does not", () => {
   })
 
   test("the control — an auto-prompting session DOES self-drive past a deny", async () => {
-    const harness = await runSelfDriving([policy("refuser", { type: "deny", reason: "not allowed" })])
+    const harness = await runSelfDriving([policy("refuser", { type: "deny", reason: "not allowed" })], true)
     expect(harness.requests.length, "without a halt the session keeps working").toBeGreaterThan(1)
   })
 })

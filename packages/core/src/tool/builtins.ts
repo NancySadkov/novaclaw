@@ -14,6 +14,7 @@ import { JsTool } from "./js"
 import * as DbRegistryTool from "./deferred/db-registry.gen"
 import * as LogTool from "./deferred/log.gen"
 import * as MessengerTool from "./deferred/messenger.gen"
+import * as NudgeTool from "./deferred/nudge.gen"
 import * as PermissionTool from "./deferred/permission.gen"
 import * as ProfileTool from "./deferred/profile.gen"
 import { SelfTool } from "./self"
@@ -58,6 +59,7 @@ export const node = makeLocationNode({
     LogTool.node,
     DbRegistryTool.node,
     MessengerTool.node,
+    NudgeTool.node,
     PermissionTool.node,
     ProfileTool.node,
     QualityProvisionTool.node,

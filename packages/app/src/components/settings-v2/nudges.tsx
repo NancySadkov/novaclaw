@@ -39,6 +39,8 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "after-compaction": "settings.nudges.hook.after-compaction",
   "resource-pressure": "settings.nudges.hook.resource-pressure",
   "time-of-day": "settings.nudges.hook.time-of-day",
+  "new-day": "settings.nudges.hook.new-day",
+  script: "settings.nudges.hook.script",
 }
 
 const RESOURCE_KEY = {
@@ -65,6 +67,10 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type, level: "either" }
     case "time-of-day":
       return { type, after: "18:00", before: "06:00" }
+    case "new-day":
+      return { type }
+    case "script":
+      return { type, command: "" }
   }
 }
 
@@ -72,32 +78,40 @@ const blank = (): ConfigNudge.Info => ({
   id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   name: "",
   enabled: true,
-  agents: [],
   hook: hookFor("text-match"),
   text: "",
 })
 
-export const SettingsNudgesV2: Component = () => {
+export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) => {
   const language = useLanguage()
   const sync = useServerSync()
   const global = useGlobal()
   const server = useServer()
   const confirm = useConfirm()
-  const configured = () => sync().data.config.nudges
-  const nudges = () => [...Nudge.resolved(configured())]
+  const [scope, setScope] = createSignal(props.fixedAgentID ?? "global")
   const connection = () => server.current ?? global.servers.list()[0]
   const colleagues = createMemo(() => {
     const current = connection()
-    return current ? roster(global.ensureServerCtx(current).agents.list()) : []
+    return current ? roster(global.ensureServerCtx(current).agents.list() ?? []) : []
   })
+  const agentRows = createMemo(() => {
+    const current = connection()
+    return current ? (global.ensureServerCtx(current).agents.list() ?? []) : []
+  })
+  const selectedAgent = () => agentRows().find((agent) => agent.id === scope())
+  const selectedAgentConfig = () => sync().data.config?.agents?.[scope()] ?? selectedAgent()?.config
+  const nudges = () =>
+    scope() === "global"
+      ? [...Nudge.resolved(sync().data.config?.nudges)]
+      : [...((selectedAgentConfig()?.nudges as ConfigNudge.Info[] | undefined) ?? [])]
   const toolChoices = createMemo(() => {
-    const configured = sync().data.config.adhoc_tools ?? []
+    const configured = sync().data.config?.adhoc_tools ?? []
     return [...new Set([...CORE_TOOLS, ...configured.flatMap((tool) => (tool.name ? [tool.name] : []))])].sort(
       (left, right) => left.localeCompare(right),
     )
   })
   const mcpChoices = createMemo(() => {
-    const configured = sync().data.config.mcp ?? {}
+    const configured = sync().data.config?.mcp ?? {}
     return Object.keys(configured).sort((left, right) => left.localeCompare(right))
   })
 
@@ -116,6 +130,8 @@ export const SettingsNudgesV2: Component = () => {
         "after-compaction",
         "resource-pressure",
         "time-of-day",
+        "new-day",
+        "script",
       ] as const
     ).map((value) => ({ value, label: language.t(HOOK_KEY[value]) })),
   )
@@ -123,9 +139,9 @@ export const SettingsNudgesV2: Component = () => {
   const persist = (next: readonly ConfigNudge.Info[]) =>
     reportedWrite(
       () =>
-        sync().updateConfig({
-          nudges: next.map((item) => ({ ...item, agents: item.agents ? [...item.agents] : undefined })),
-        }),
+        scope() === "global"
+          ? sync().updateConfig({ nudges: [...next] } as never)
+          : sync().updateConfig({ agents: { [scope()]: { nudges: [...next] } } } as never),
       (description) => showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
     )
 
@@ -159,12 +175,6 @@ export const SettingsNudgesV2: Component = () => {
 
   const patchHook = (patch: Record<string, string>) =>
     setDraft((item) => ({ ...item, hook: { ...item.hook, ...patch } as ConfigNudge.Hook }))
-  const toggleAgent = (id: string) =>
-    setDraft((item) => {
-      const selected = item.agents ?? []
-      return { ...item, agents: selected.includes(id) ? selected.filter((entry) => entry !== id) : [...selected, id] }
-    })
-
   return (
     <>
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
@@ -172,6 +182,70 @@ export const SettingsNudgesV2: Component = () => {
         <p class="settings-v2-tab-description">{language.t("settings.nudges.description")}</p>
       </div>
       <div class="settings-v2-tab-body">
+        <Show when={props.fixedAgentID === undefined}>
+          <div class="settings-v2-section">
+            <SelectV2
+              appearance="inline"
+              options={[
+                { value: "global", label: language.t("settings.nudges.scope.global") },
+                ...colleagues().map((agent) => ({ value: agent.id, label: agent.name })),
+              ]}
+              current={[
+                { value: "global", label: language.t("settings.nudges.scope.global") },
+                ...colleagues().map((agent) => ({ value: agent.id, label: agent.name })),
+              ].find((option) => option.value === scope())}
+              value={(option) => option.value}
+              label={(option) => option.label}
+              onSelect={(option) => {
+                if (!option) return
+                setEditingID(undefined)
+                setScope(option.value)
+              }}
+            />
+            <Show when={scope() !== "global"}>
+              <SettingsRowV2
+                title={language.t("settings.nudges.global.enabled")}
+                description={language.t("settings.nudges.global.description")}
+              >
+                <Switch
+                  checked={selectedAgentConfig()?.globalNudges !== false}
+                  onChange={(enabled) =>
+                    void reportedWrite(
+                      () => sync().updateConfig({ agents: { [scope()]: { globalNudges: enabled } } } as never),
+                      (description) =>
+                        showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
+                    )
+                  }
+                  hideLabel
+                >
+                  {language.t("settings.nudges.global.enabled")}
+                </Switch>
+              </SettingsRowV2>
+            </Show>
+          </div>
+        </Show>
+        <Show when={props.fixedAgentID !== undefined}>
+          <div class="settings-v2-section">
+            <SettingsRowV2
+              title={language.t("settings.nudges.global.enabled")}
+              description={language.t("settings.nudges.global.description")}
+            >
+              <Switch
+                checked={selectedAgentConfig()?.globalNudges !== false}
+                onChange={(enabled) =>
+                  void reportedWrite(
+                    () => sync().updateConfig({ agents: { [scope()]: { globalNudges: enabled } } } as never),
+                    (description) =>
+                      showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
+                  )
+                }
+                hideLabel
+              >
+                {language.t("settings.nudges.global.enabled")}
+              </Switch>
+            </SettingsRowV2>
+          </div>
+        </Show>
         <div class="settings-v2-section">
           <SettingsListV2>
             <For each={nudges()}>
@@ -319,35 +393,28 @@ export const SettingsNudgesV2: Component = () => {
                 />
               </div>
             </Show>
-            <div>
-              <p class="settings-v2-field-description">{language.t("settings.nudges.agents.description")}</p>
-              <div class="settings-v2-models-row-actions">
-                <ButtonV2
-                  size="small"
-                  variant={(draft().agents?.length ?? 0) === 0 ? "gold" : "neutral"}
-                  onClick={() => setDraft((item) => ({ ...item, agents: [] }))}
-                >
-                  {language.t("settings.nudges.agents.all")}
-                </ButtonV2>
-                <For each={colleagues()}>
-                  {(agent) => (
-                    <ButtonV2
-                      size="small"
-                      variant={draft().agents?.includes(agent.id) ? "gold" : "neutral"}
-                      onClick={() => toggleAgent(agent.id)}
-                    >
-                      {agent.name}
-                    </ButtonV2>
-                  )}
-                </For>
-              </div>
-            </div>
+            <Show when={draft().hook.type === "script"}>
+              <TextInputV2
+                appearance="base"
+                value={(draft().hook as { command: string }).command}
+                placeholder={language.t("settings.nudges.field.hookScript")}
+                spellcheck={false}
+                onInput={(event) => patchHook({ command: event.currentTarget.value })}
+              />
+            </Show>
             <TextareaV2
               class="settings-v2-textarea"
               rows={5}
               value={draft().text}
               placeholder={language.t("settings.nudges.field.text")}
               onInput={(event) => setDraft((item) => ({ ...item, text: event.currentTarget.value }))}
+            />
+            <TextInputV2
+              appearance="base"
+              value={draft().script ?? ""}
+              placeholder={language.t("settings.nudges.field.script")}
+              spellcheck={false}
+              onInput={(event) => setDraft((item) => ({ ...item, script: event.currentTarget.value }))}
             />
             <Show when={error()}>
               {(message) => (

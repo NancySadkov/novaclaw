@@ -15,9 +15,14 @@ export function planNudgeSave(input: {
 }):
   | { readonly ok: true; readonly next: readonly ConfigNudge.Info[] }
   | { readonly ok: false; readonly reason: Refusal } {
-  const draft = { ...input.draft, name: input.draft.name.trim(), text: input.draft.text.trim() }
+  const draft = {
+    ...input.draft,
+    name: input.draft.name.trim(),
+    text: input.draft.text.trim(),
+    script: input.draft.script?.trim() || undefined,
+  }
   if (!draft.name) return { ok: false, reason: "name" }
-  if (!draft.text) return { ok: false, reason: "text" }
+  if (!draft.text && !draft.script) return { ok: false, reason: "text" }
   if (input.nudges.some((item) => item.id === draft.id && item.id !== input.editingID))
     return { ok: false, reason: "duplicate" }
   if (draft.hook.type === "text-match" && !Nudge.validPattern(draft.hook.pattern))
@@ -25,6 +30,7 @@ export function planNudgeSave(input: {
   if (
     (draft.hook.type === "tool-call" && !draft.hook.tool.trim()) ||
     (draft.hook.type === "mcp-call" && !draft.hook.server.trim()) ||
+    (draft.hook.type === "script" && !draft.hook.command.trim()) ||
     ((draft.hook.type === "file-read" || draft.hook.type === "file-write") && !draft.hook.extension.trim()) ||
     (draft.hook.type === "time-of-day" && (!validTime(draft.hook.after) || !validTime(draft.hook.before)))
   )

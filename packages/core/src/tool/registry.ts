@@ -160,8 +160,8 @@ export const withDeferredDispatcher = <T extends AnyTool>(tool: T): T => {
 }
 
 /**
- * Declare a live availability predicate for a tool: `materialize` evaluates it when the model's
- * horizon is built, and withdraws the tool for that horizon when it answers `false`.
+ * Declare a live availability predicate for a tool: `materialize` evaluates it for execution and
+ * discovery when the live catalogue is built.
  *
  * ⚠️ **This is one of THREE horizon filters, and it is deliberately generic — the registry must
  * never learn a tool's name.** `whollyDisabled` below withdraws a tool the permission ruleset wholly
@@ -173,10 +173,10 @@ export const withDeferredDispatcher = <T extends AnyTool>(tool: T): T => {
  * frozen until the whole location is torn down. `tool/profile.ts` is the only such tool in the tree
  * and carries the full design argument, including the two options that were rejected.
  *
- * All three filters answer the same question — *is this tool on the horizon* — and answer it in one
- * place, which is what ruling 6 asks for. None advertises-then-refuses: a withdrawn tool is
- * absent from `definitions`, and a call arriving for it from an older horizon is settled by
- * `ToolRuntime.unknownToolMessage`, which names the tools that DO exist.
+ * The runner freezes provider-native resident definitions per context epoch. A later availability
+ * change therefore changes settlement and produces a tail catalogue update without rewriting the
+ * schema prefix. Dynamic tools should still prefer deferred discovery, where schemas live entirely
+ * in ordinary tool-result messages.
  *
  * **Cost.** `materialize` runs per turn AND per step (`session/runner/llm.ts`), so a predicate is on
  * a hot path. Only a tool that declares one pays anything — the `WeakMap` lookup for every other
@@ -402,10 +402,9 @@ const registryLayer = Layer.effect(
           if (registration)
             registrations.set(name, { ...registration, server: "core", deferred: isDeferred(registration.tool) })
         }
-        // Three withdrawals, one seam. Permission decides first and permanently removes a denied
-        // registration. Routing runs only over survivors, so a `true` route decision can undo an
-        // earlier ROUTING decision but can never resurrect a permission-withdrawn tool. Live tool
-        // availability runs last, and a routed-off tool never pays its predicate's I/O.
+        // This materialization describes live availability for execution and discovery. The session
+        // runner separately freezes the provider-native definition array at the first request and
+        // reports later deltas as tail messages, because schemas render ahead of the system prompt.
         // One ruleset or several LAYERS (`PermissionV2.horizonLayers`): a tool is withdrawn when any
         // layer wholly disables it, which is how the verdict reads them — see that function.
         const layers: ReadonlyArray<PermissionV2.Ruleset> = isLayered(permissions) ? permissions : [permissions]

@@ -5,6 +5,7 @@ import { Permission } from "@novaclaw/schema/permission"
 import { ConfigProvider } from "./provider"
 import { NonNegativeInt, PositiveInt } from "../schema"
 import { ModelV2 } from "../model"
+import { ConfigNudge } from "./nudge"
 
 export const Color = Schema.Union([
   Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/)),
@@ -121,6 +122,10 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * part of how that officer works, while the instance setting remains the fleet-wide fallback.
    */
   reground: Schema.Boolean.pipe(Schema.optional),
+  /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
+  nudges: ConfigNudge.List.pipe(Schema.optional),
+  /** Absent/true inherits instance nudges; false opts this officer out without affecting its own nudges. */
+  globalNudges: Schema.Boolean.pipe(Schema.optional),
   /** Per-turn reasoning-token ceiling for this officer. Absent = the selected model's budget;
    *  `0` structurally disables reasoning for the officer. */
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),

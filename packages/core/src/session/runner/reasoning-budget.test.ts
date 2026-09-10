@@ -4,7 +4,7 @@
 // and the common "model finishes on its own" path fires no continuation.
 import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
-import { LLM, LLMEvent, Message, Model, Usage, type LLMRequest, type ProviderMetadata } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, Model, SystemPart, Usage, type LLMRequest, type ProviderMetadata } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ReasoningBudget } from "@novaclaw/core/session/runner/reasoning-budget"
 
@@ -63,6 +63,18 @@ const prefillOf = (request: LLMRequest) => {
 }
 
 describe("ReasoningBudget", () => {
+  test("controller guidance appends after an immutable system prefix", () => {
+    const request = LLM.request({
+      model,
+      system: [SystemPart.make("stable system prefix")],
+      messages: [Message.user("solve it")],
+    })
+    const opening = ReasoningBudget.openingRequest({ request, budget: 512 })
+    expect(opening.system).toEqual(request.system)
+    expect(opening.messages.slice(0, request.messages.length)).toEqual([...request.messages])
+    expect(JSON.stringify(opening.messages.at(-1))).toContain("reasoning budget")
+  })
+
   test("natural close — reasoning under budget, no injected nudges", () => {
     // 40 chars ≈ 10 tokens, well under the 700-token opening checkpoint (budget 1000).
     const { events, requests } = run([[rDelta(40), tDelta("The ball costs $0.05."), finish("stop")]])
@@ -77,7 +89,8 @@ describe("ReasoningBudget", () => {
     ])
     expect(requests).toHaveLength(1)
     expect(prefillOf(requests[0]!)).toBe("") // no forced <think>
-    expect(JSON.stringify(requests[0]!.system)).toContain("reasoning budget")
+    expect(JSON.stringify(requests[0]!.messages)).toContain("reasoning budget")
+    expect(requests[0]!.system).toEqual([])
     expect((events[4] as { text: string }).text).toBe("The ball costs $0.05.")
   })
 
@@ -138,10 +151,7 @@ describe("ReasoningBudget", () => {
       totalTokens: 92,
     })
     const { events } = run(
-      [
-        [rDelta(300)],
-        [tDelta("answer"), ...terminals(reported, { openai: { system_fingerprint: "served-final" } })],
-      ],
+      [[rDelta(300)], [tDelta("answer"), ...terminals(reported, { openai: { system_fingerprint: "served-final" } })]],
       { budget: 100 },
     )
     const terminal = events.find(LLMEvent.is.stepFinish)!
@@ -252,7 +262,8 @@ describe("ReasoningBudget", () => {
     // completion on qwen (probed live 2026-07-25), so the runaway reasoning is NOT fed back.
     expect(prefillOf(hard)).toBe("")
     expect(hard.http?.body?.["continue_final_message"]).toBeUndefined()
-    expect(JSON.stringify(hard.system)).toContain("Do NOT reason further")
+    expect(JSON.stringify(hard.messages)).toContain("Do NOT reason further")
+    expect(hard.system).toEqual([])
     // The earlier phases must NOT carry the flag — thinking stays enabled while budget remains.
     expect((requests[0]!.http?.body as Record<string, unknown>)?.["chat_template_kwargs"]).toBeUndefined()
   })
@@ -301,10 +312,7 @@ describe("ReasoningBudget", () => {
 
   test("partial continuation text can never terminate as a clean answer", () => {
     const { events } = run(
-      [
-        [rDelta(300)],
-        { events: [tDelta("partial answer")], error: new Error("connection lost") },
-      ],
+      [[rDelta(300)], { events: [tDelta("partial answer")], error: new Error("connection lost") }],
       { budget: 100 },
     )
 

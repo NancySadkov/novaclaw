@@ -31,6 +31,10 @@ const CONSUMED: Record<string, string> = {
   disabled:
     "PAUSES the agent (`agent.paused = true`) rather than being copied — it used to remove the agent " +
     "from the draft entirely, which bypassed every guarantee of `agent/retire.ts`",
+  nudges:
+    "read directly from the agent config store by NudgeService; they are harness config, not an AgentV2 record field",
+  globalNudges:
+    "read directly from the agent config store by NudgeService; the opt-out governs delivery, not agent identity",
 }
 
 describe("no config field is silently dropped on the way to the agent record", () => {

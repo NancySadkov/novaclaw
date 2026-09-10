@@ -177,7 +177,7 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
     }),
   )
 
-  // The listed set is the ADVERTISED set: a tool denied by permission is not offered as a correction.
+  // The listed set is the live materialization; the runner freezes its first resident array.
   it.effect("omits tools the turn's permissions removed", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service

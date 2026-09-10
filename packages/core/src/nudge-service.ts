@@ -2,11 +2,16 @@ export * as NudgeService from "./nudge-service"
 
 import { ne } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
+import { createHash } from "node:crypto"
+import { AgentConfigStore } from "./agent-config-store"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
+import { HostExec } from "./host-exec"
+import { JhProcessRunner } from "./jh/process-runner"
 import { SettingsConfigStore } from "./settings-config-store"
 import { ConfigNudge } from "./config/nudge"
 import { Nudge } from "./nudge"
+import { SessionOrigin } from "./session/origin"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
 
 export interface Interface {
@@ -15,6 +20,7 @@ export interface Interface {
   readonly claim: (input: {
     readonly sessionID: string
     readonly agentID?: string
+    readonly directory: string
     readonly event: Nudge.Event
   }) => Effect.Effect<ReadonlyArray<ConfigNudge.Info>>
 }
@@ -28,6 +34,18 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const settings = yield* SettingsConfigStore.Service
+    const agents = yield* AgentConfigStore.Service
+    const runner = JhProcessRunner.plannedRunner({
+      maxOutputBytes: 16_384,
+      plan: ({ command, cwd }) =>
+        HostExec.spawnPlan({
+          shape: { kind: "shell-command", shell: HostExec.resolveShell(), command },
+          cwd,
+          worktree: cwd,
+          consent: "none",
+        }),
+    })
+    const runScript = (command: string, directory: string) => runner.run({ command, cwd: directory, timeoutMs: 5_000 })
     return Service.of({
       claim: Effect.fn("NudgeService.claim")(function* (input) {
         const stored = (yield* settings.all()).nudges
@@ -35,29 +53,81 @@ export const layer = Layer.effect(
         // Malformed settings are ignored rather than taking down the turn. The config HTTP boundary
         // rejects new malformed values; this arm exists for damaged/older stores and keeps defaults
         // from silently overriding a user's unreadable array.
-        const definitions = stored === undefined ? Nudge.defaults() : decoded?._tag === "Some" ? decoded.value : []
-        const selected = Nudge.select(definitions, input.event, input.agentID)
+        const global = stored === undefined ? Nudge.defaults() : decoded?._tag === "Some" ? decoded.value : []
+        const agent =
+          input.agentID === undefined ? undefined : AgentConfigStore.fold((yield* agents.agents())[input.agentID] ?? [])
+        const definitions: Nudge.ScopedDefinition[] = [
+          ...(agent?.globalNudges === false
+            ? []
+            : global.map((nudge) => ({ nudge, deliveryID: `global:${nudge.id}` }))),
+          ...(input.agentID === undefined
+            ? []
+            : (agent?.nudges ?? []).map((nudge) => ({
+                nudge,
+                deliveryID: `agent:${input.agentID}:${nudge.id}`,
+              }))),
+        ]
         const claimed: ConfigNudge.Info[] = []
-        for (const match of selected) {
+        for (const scoped of definitions) {
+          if (!Nudge.matches(scoped.nudge, input.event)) continue
+          let occurrence = Nudge.occurrence(input.event)
+          let hookOutput = ""
+          if (scoped.nudge.hook.type === "script") {
+            const result = yield* runScript(scoped.nudge.hook.command, input.directory)
+            if (result.exitCode !== 0 || result.timedOut) continue
+            hookOutput = result.output.trim()
+            occurrence = `script:${createHash("sha256").update(hookOutput).digest("hex")}`
+          }
+          const rendered = scoped.nudge.script?.trim()
+            ? yield* runScript(scoped.nudge.script, input.directory)
+            : undefined
+          const dynamic = rendered?.exitCode === 0 && !rendered.timedOut ? rendered.output.trim() : ""
+          const text = [
+            scoped.nudge.text.trim(),
+            hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",
+            dynamic ? SessionOrigin.externalContentFrame("configured nudge script output") + dynamic : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+          // A script-only nudge whose renderer failed has no honest payload. Leave the occurrence
+          // unclaimed so a repaired command can deliver it on the next clock event.
+          if (!text) continue
           const now = Date.now()
+          if (scoped.nudge.hook.type === "new-day") {
+            const seeded = yield* db
+              .insert(NudgeDeliveryTable)
+              .values({
+                session_id: input.sessionID,
+                nudge_id: scoped.deliveryID,
+                occurrence,
+                fired_at: now,
+              })
+              .onConflictDoNothing()
+              .returning({ occurrence: NudgeDeliveryTable.occurrence })
+              .get()
+              .pipe(Effect.orDie)
+            // Establishing today's baseline is not a calendar transition. The first actual change
+            // updates the row below and delivers the Nudge once.
+            if (seeded) continue
+          }
           const recorded = yield* db
             .insert(NudgeDeliveryTable)
             .values({
               session_id: input.sessionID,
-              nudge_id: match.nudge.id,
-              occurrence: match.occurrence,
+              nudge_id: scoped.deliveryID,
+              occurrence,
               fired_at: now,
             })
             .onConflictDoUpdate({
               target: [NudgeDeliveryTable.session_id, NudgeDeliveryTable.nudge_id],
-              set: { occurrence: match.occurrence, fired_at: now },
-              setWhere: ne(NudgeDeliveryTable.occurrence, match.occurrence),
+              set: { occurrence, fired_at: now },
+              setWhere: ne(NudgeDeliveryTable.occurrence, occurrence),
             })
             .returning({ occurrence: NudgeDeliveryTable.occurrence })
             .get()
             .pipe(Effect.orDie)
           if (!recorded) continue
-          claimed.push(match.nudge)
+          claimed.push({ ...scoped.nudge, text })
         }
         return claimed
       }),
@@ -68,5 +138,10 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
+  Layer.provide(AgentConfigStore.defaultLayer),
 )
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, SettingsConfigStore.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  deps: [Database.node, SettingsConfigStore.node, AgentConfigStore.node],
+})

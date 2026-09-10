@@ -113,7 +113,7 @@ const groundingFor = async (input: {
           // Pure Chat may legitimately have no system prompt at all, but the runner fixture routes
           // prompt-less requests as utility work. A real configured brief keeps this request
           // observable and lets the assertions prove it is the ONLY system text.
-          agent.system = "Configured officer brief."
+          agent.personality = "Configured officer brief."
           agent.mode = "primary"
           if (input.directory !== undefined) agent.directory = input.directory
         }),

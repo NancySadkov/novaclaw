@@ -1,9 +1,11 @@
 export * as ReasoningBudget from "./reasoning-budget"
 
 import { Stream, Effect } from "effect"
-import { LLM, LLMEvent, Message, SystemPart, Usage } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, Usage } from "@novaclaw/llm"
 import type { Finish, FinishReason, LLMRequest, ProviderMetadata, StepFinish } from "@novaclaw/llm"
 import { Token } from "../../util/token"
+import { applySteerProvenance } from "../steer-provenance"
+import { PostfixPrompt } from "./postfix-prompt"
 
 /**
  * MindControl-style thinking-budget controller (notes/experimental.md, owner ask 2026-07-24).
@@ -26,7 +28,8 @@ import { Token } from "../../util/token"
  * facts and are the most likely to survive the swap — but "most likely" is not "measured". **When you
  * re-verify one of these, say which build produced the new number, in this comment.**
  *
- *   1. **Opening** — a system-prompt line primes the model to keep reasoning within the budget.
+ *   1. **Opening** — a provenance-marked harness message at the transcript tail primes the model to
+ *      keep reasoning within the budget. It never mutates the cached system/tool prefix.
  *      (MindControl prefills this into `<think>`; a client can't force that safely on non-thinking
  *      models, so we make it an honest instruction the model actually receives.)
  *   2. **~70%** — the first phase runs the NORMAL request. We count reasoning tokens from the live
@@ -78,13 +81,13 @@ const END_RATIO = 1.5
 const HARD_RATIO = 2
 
 export interface Nudges {
-  /** System-prompt priming line (checkpoint 1). */
+  /** Tail-message priming line (checkpoint 1). */
   readonly opening: (budget: number) => string
   /** Injected into the reasoning at ~70% of budget (checkpoint 2). */
   readonly mid: string
   /** Injected into the still-open `<think>` at budget end (checkpoint 3) to force a conclusion. */
   readonly end: string
-  /** System line for the mechanical hard stop (checkpoint 4), where thinking is disabled outright. */
+  /** Tail-message line for the mechanical hard stop (checkpoint 4), where thinking is disabled outright. */
   readonly exhausted: string
 }
 
@@ -172,6 +175,8 @@ export interface Input<E, R> {
   readonly preparedOpening?: LLMRequest
   readonly stream: (request: LLMRequest, observation: { readonly anchorable: boolean }) => Stream.Stream<LLMEvent, E, R>
   readonly budget: number
+  /** False when the caller's final message is an operation prompt that must remain last. */
+  readonly prime?: boolean
   readonly nudges?: Nudges
 }
 
@@ -182,10 +187,7 @@ export const openingRequest = (input: {
   readonly nudges?: Nudges
 }): LLMRequest => {
   const nudges = input.nudges ?? defaultNudges
-  return LLM.request({
-    ...LLM.requestInput(input.request),
-    system: [...input.request.system, SystemPart.make(nudges.opening(input.budget))],
-  })
+  return PostfixPrompt.append(input.request, applySteerProvenance(nudges.opening(input.budget)))
 }
 
 /**
@@ -195,8 +197,9 @@ export const openingRequest = (input: {
  */
 export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> => {
   const nudges = input.nudges ?? defaultNudges
-  const opening = input.preparedOpening ?? openingRequest({ request: input.request, budget: input.budget, nudges })
-  const system = opening.system
+  const opening =
+    input.preparedOpening ??
+    (input.prime === false ? input.request : openingRequest({ request: input.request, budget: input.budget, nudges }))
   const state: State = {
     think: "",
     reasoningStarted: false,
@@ -347,10 +350,7 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     // prompt sits near the context limit, `prompt_tokens + max_tokens` overflows the window and the
     // provider 400s ("maximum context length"). Leaving it unset lets the server clamp output to what
     // actually fits — which is also the most generous cap available.
-    const base = {
-      ...LLM.requestInput(input.request),
-      system,
-    }
+    const base = LLM.requestInput(opening)
     // Phase 1 runs the model normally (no forced `<think>`) so non-thinking models simply answer.
     if (phase === "opening") return opening
     // Checkpoint 4 — the MECHANICAL hard stop. Both nudges were ignored (a degenerate loop reasons
@@ -361,8 +361,7 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     // back to the model. A backend that ignores the flag is still caught by this phase's own ceiling.
     if (phase === "hard")
       return LLM.request({
-        ...base,
-        system: [...system, SystemPart.make(nudges.exhausted)],
+        ...LLM.requestInput(PostfixPrompt.append(opening, applySteerProvenance(nudges.exhausted))),
         http: {
           ...(input.request.http ?? {}),
           body: {
@@ -384,7 +383,7 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     const prefill = `<think>\n${state.think}\n`
     return LLM.request({
       ...base,
-      messages: [...input.request.messages, Message.assistant(prefill)],
+      messages: [...opening.messages, Message.assistant(prefill)],
       // vLLM continuation: keep our prefilled assistant turn as the running generation instead of
       // starting a fresh one. Merged over any model-default http.body (min_p, repetition_penalty…).
       http: {

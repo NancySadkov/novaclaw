@@ -40,6 +40,25 @@ const click = (label: string) => {
   button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 }
 
+const chooseScope = async (key: string) => {
+  const select = document.querySelector<HTMLElement>('[data-component="select-v2"]')
+  if (!select) throw new Error("no scope selector")
+  select.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.dataset.key === key)
+  if (!option) throw new Error(`no scope option ${key}`)
+  option.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  option.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
+
 const typeInto = (selector: string, value: string) => {
   const field = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null
   if (!field) throw new Error(`no field matching ${selector}`)
@@ -87,25 +106,27 @@ const mount = () => {
 }
 
 describe("Settings Nudges", () => {
-  test("shows shipped defaults and saves a new nudge narrowed to one colleague", async () => {
+  test("shows shipped defaults and saves a personal nudge for one officer", async () => {
     const config = mount()
     await settle()
 
     expect(document.body.textContent).toContain("Protect work when resources run low")
     expect(document.body.textContent).toContain("Check JavaScript time conversions")
+    await chooseScope("writer")
+    expect(document.body.textContent).toContain(t("settings.nudges.global.enabled"))
+    expect(document.body.textContent).not.toContain("Protect work when resources run low")
     click(t("settings.nudges.add"))
     await settle()
     typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Review writes")
     typeInto(`input[placeholder="${t("settings.nudges.field.pattern")}"]`, "write\\(")
     typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Check the output path.")
-    click("Ada")
     click(t("common.save"))
     await settle()
 
-    const saved = config().nudges as Array<{ name: string; agents?: string[] }>
-    expect(saved).toHaveLength(3)
-    expect(saved.at(-1)?.name).toBe("Review writes")
-    expect(saved.at(-1)?.agents).toEqual(["writer"])
+    const saved = (config().agents as { writer: { nudges: Array<{ name: string }> } }).writer.nudges
+    expect(saved).toHaveLength(1)
+    expect(saved[0]?.name).toBe("Review writes")
+    expect(document.body.textContent).toContain("Review writes")
     expect(document.querySelector('[data-component="settings-nudges-editor"]')).toBeNull()
   })
 })

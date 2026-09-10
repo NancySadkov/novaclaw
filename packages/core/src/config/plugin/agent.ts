@@ -66,6 +66,8 @@ export const Plugin = define({
  *  one field that matters. The refusal is LOUD — a silent drop is how a user concludes the product is
  *  broken rather than that the write was refused. */
 function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
+  // `item.nudges` and `item.globalNudges` are intentionally consumed by NudgeService straight from
+  // AgentConfigStore. They are harness-delivery components, not fields on the AgentV2 identity row.
   if (AgentV2.isProtected(agentID)) {
     console.warn(
       `config: ignoring a definition for "${agentID}" — it is this instance's governing agent and its ` +

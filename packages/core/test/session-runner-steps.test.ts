@@ -4,7 +4,7 @@ import { LLMEvent } from "@novaclaw/llm"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — the agent's configured step allowance.
@@ -29,7 +29,7 @@ const toolCallTurn = (id: string, text: string) => [
 describe("SessionRunnerLLM — step allowance", () => {
   test("forces a text response on an agent's configured final step", async () => {
     const harness = makeRunnerHarness({
-      turns: [toolCallTurn("call-terminal", "done"), toolCallTurn("call-forbidden", "forbidden")],
+      turns: [toolCallTurn("call-terminal", "done"), completeTurn("final", "Finished at the limit")],
     })
 
     await drive(
@@ -55,15 +55,14 @@ describe("SessionRunnerLLM — step allowance", () => {
     expect(harness.requests).toHaveLength(2)
     // The first turn is unconstrained…
     expect(harness.requests[0]?.toolChoice).toBeUndefined()
-    // …and the last one cannot call a tool even if it wants to. Both halves matter: telling the model
-    // to stop while leaving the tools attached would make compliance optional.
+    // …and the last one cannot call a tool. The provider-native schemas remain byte-identical for
+    // prefix caching; the structural tool choice is the execution gate.
     expect(harness.requests[1]?.toolChoice).toMatchObject({ type: "none" })
-    expect(harness.requests[1]?.tools).toEqual([])
+    expect(harness.requests[1]?.tools).toEqual(harness.requests[0]?.tools)
     expect(harness.requests[1]?.messages.at(-1)).toMatchObject({
       role: "assistant",
       content: [{ type: "text", text: expect.stringContaining("MAXIMUM STEPS REACHED") }],
     })
-    // The forbidden call in the scripted second turn never ran.
     expect(harness.executions).toEqual(["done"])
   })
 

@@ -2,45 +2,33 @@ import { describe, expect, test } from "bun:test"
 import type { ConfigNudge } from "./config/nudge"
 import { Nudge } from "./nudge"
 
-const definition = (hook: ConfigNudge.Hook, agents: readonly string[] = []): ConfigNudge.Info => ({
+const definition = (hook: ConfigNudge.Hook): ConfigNudge.Info => ({
   id: "test",
   name: "Test",
   enabled: true,
-  agents: [...agents],
   hook,
   text: "Check this.",
 })
 
 describe("Nudge", () => {
-  test("ships the resource guard and JavaScript time guard enabled for every agent", () => {
-    expect(Nudge.defaults().map((item) => [item.id, item.enabled, item.agents])).toEqual([
-      [Nudge.LOW_RESOURCE_ID, true, []],
-      [Nudge.JAVASCRIPT_TIME_ID, true, []],
+  test("ships resource, JavaScript time, and new-day guards enabled", () => {
+    expect(Nudge.defaults().map((item) => [item.id, item.enabled])).toEqual([
+      [Nudge.LOW_RESOURCE_ID, true],
+      [Nudge.JAVASCRIPT_TIME_ID, true],
+      [Nudge.NEW_DAY_ID, true],
     ])
   })
 
   test("the time-safety example catches direct timestamp arithmetic and Date construction", () => {
     const item = Nudge.defaults().find((entry) => entry.id === Nudge.JAVASCRIPT_TIME_ID)!
     expect(
-      Nudge.matches(
-        item,
-        { type: "tool", id: "a", name: "write", input: { content: "done - message.time.created" } },
-        "nova",
-      ),
+      Nudge.matches(item, { type: "tool", id: "a", name: "write", input: { content: "done - message.time.created" } }),
     ).toBe(true)
     expect(
-      Nudge.matches(
-        item,
-        { type: "tool", id: "b", name: "write", input: { content: "new Date(event.timestamp)" } },
-        "nova",
-      ),
+      Nudge.matches(item, { type: "tool", id: "b", name: "write", input: { content: "new Date(event.timestamp)" } }),
     ).toBe(true)
     expect(
-      Nudge.matches(
-        item,
-        { type: "tool", id: "c", name: "write", input: { content: "const label = title.trim()" } },
-        "nova",
-      ),
+      Nudge.matches(item, { type: "tool", id: "c", name: "write", input: { content: "const label = title.trim()" } }),
     ).toBe(false)
   })
 
@@ -53,13 +41,6 @@ describe("Nudge", () => {
         input: "anything",
       }),
     ).toBe(false)
-  })
-
-  test("agent scope defaults to all and narrows to selected colleagues", () => {
-    const event = { type: "tool", id: "a", name: "bash", input: {} } as const
-    expect(Nudge.matches(definition({ type: "tool-call", tool: "bash" }), event, "nova")).toBe(true)
-    expect(Nudge.matches(definition({ type: "tool-call", tool: "bash" }, ["writer"]), event, "nova")).toBe(false)
-    expect(Nudge.matches(definition({ type: "tool-call", tool: "bash" }, ["writer"]), event, "writer")).toBe(true)
   })
 
   test("matches MCP prefixes, file operation+extension, compaction, and pressure", () => {
@@ -113,7 +94,7 @@ describe("Nudge", () => {
   })
 
   test("stored empty list intentionally disables every shipped default", () => {
-    expect(Nudge.resolved(undefined)).toHaveLength(2)
+    expect(Nudge.resolved(undefined)).toHaveLength(3)
     expect(Nudge.resolved([])).toEqual([])
   })
 })
