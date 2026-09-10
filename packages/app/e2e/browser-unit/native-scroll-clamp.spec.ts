@@ -1,6 +1,23 @@
+// ⚠️ A CONTROLLER UNIT TEST THAT HAPPENS TO RUN IN CHROMIUM — not a chat regression spec, whatever
+// its old filename implied. It lived as `e2e/regression/uix-session-continuity.spec.ts` long enough
+// for two separate sessions to count it as browser coverage of the chat-switch flash. It is not that.
+//
+// What it drives: `page.goto("/")`, then `page.setContent(...)` builds a synthetic scroller, then the
+// page imports `createBottomPinController` directly. No router, no keyed timeline, no message store,
+// no session data — and it could not have any of those: `utils/mock-event-server.ts` serves
+// `/global/health`, one event endpoint and the SSE stream, and 404s everything else, so nothing in
+// `e2e/` can render a real chat today.
+//
+// What it pins: Chromium clamps `scrollTop` to the new maximum when content SHRINKS and emits the same
+// upward `scroll` event a scrollbar gesture would, and the controller must read that as layout rather
+// than as the reader navigating away. Every trigger here is a LAYOUT change — row insertion above the
+// viewport, a `<details>` fold, and the `replaceChildren()` step that simulates one chat's rows being
+// swapped for another's. That step simulates the CLAMP, not the route change that causes it in the
+// product, and it is the closest this file comes to the defect. A real chat-to-chat route change is
+// still uncovered, and stays uncovered until the mock server can serve sessions and messages.
 import { expect, test } from "@playwright/test"
 
-test("keeps the real timeline pin through layout changes until the user scrolls", async ({ page }) => {
+test("keeps the bottom-pin controller following through layout changes until the user scrolls", async ({ page }) => {
   await page.goto("/")
   await page.setContent(`
     <style>
