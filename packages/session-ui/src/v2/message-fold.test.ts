@@ -93,6 +93,43 @@ describe("applySessionNextEvent", () => {
     }
   })
 
+  test("a peer prompt becomes a first-class colleague operation, never the owner's user row", () => {
+    const messages = fold(
+      [],
+      ev("session.next.prompted", {
+        timestamp: 4,
+        sessionID: "s",
+        messageID: "msg_peer",
+        prompt: {
+          text: "The audit is complete.",
+          files: [],
+          agents: [],
+          origin: {
+            via: "agent",
+            relation: "peer",
+            label: "Nova",
+            sessionID: "ses_nova",
+            turn: "answer",
+            conversation: "colconv_1",
+          },
+        },
+      }),
+    )
+
+    expect(messages).toEqual([
+      {
+        id: "msg_peer",
+        type: "colleague",
+        sender: "Nova",
+        senderSessionID: "ses_nova",
+        turn: "answer",
+        text: "The audit is complete.",
+        conversation: "colconv_1",
+        time: { created: 4 },
+      },
+    ])
+  })
+
   test("synthetic Device refusal preserves its structured one-click repair", () => {
     const messages = fold(
       [],

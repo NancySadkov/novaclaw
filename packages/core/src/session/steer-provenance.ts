@@ -63,6 +63,7 @@ export const isRealUserTurn = (message: SessionMessage.Message): message is Sess
  * cannot drift into disagreeing about who spoke.
  */
 export const isPeerTurn = (message: SessionMessage.Message): boolean => {
+  if (message.type === "colleague") return true
   if (message.type !== "user") return false
   const origin = (message as { origin?: { via?: string; relation?: string } }).origin
   return origin?.via === "agent" && origin.relation === "peer"

@@ -93,6 +93,16 @@ describe("toLLMMessages", () => {
           agents: [AgentAttachment.make({ name: "build" })],
           time: { created },
         }),
+        SessionMessage.Colleague.make({
+          id: id("colleague"),
+          type: "colleague",
+          sender: "Nova",
+          senderSessionID: SessionV2.ID.make("ses_nova"),
+          turn: "answer",
+          text: "The audit is complete.",
+          conversation: "colconv_1",
+          time: { created },
+        }),
         SessionMessage.Synthetic.make({
           id: id("synthetic"),
           type: "synthetic",
@@ -120,7 +130,15 @@ describe("toLLMMessages", () => {
       model,
     )
 
-    expect(messages.map((message) => message.role)).toEqual(["system", "user", "user", "user", "user"])
+    expect(messages.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+      "user",
+      "user",
+      "user",
+    ])
     expect(messages[0]).toEqual(Message.system("Updated context\n\nOther context"))
     expect(messages[1]).toEqual(
       Message.make({
@@ -133,7 +151,11 @@ describe("toLLMMessages", () => {
         metadata: { agents: [{ name: "build" }] },
       }),
     )
-    expect(messages.slice(2).map((message) => message.content)).toEqual([
+    expect(messages[2]?.role).toBe("assistant")
+    expect(messages[3]?.role).toBe("tool")
+    expect(JSON.stringify(messages.slice(2, 4))).toContain("Incoming answer from colleague Nova")
+    expect(JSON.stringify(messages.slice(2, 4))).not.toContain('"role":"user"')
+    expect(messages.slice(4).map((message) => message.content)).toEqual([
       [{ type: "text", text: "Synthetic context" }],
       [{ type: "text", text: "Shell command: pwd\n\n/project" }],
       [

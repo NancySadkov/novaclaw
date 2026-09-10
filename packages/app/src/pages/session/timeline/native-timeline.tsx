@@ -8,8 +8,9 @@ import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { createBottomPinController, navigationTargetIndex } from "./native-scroll"
-import { keepEqualRows, startPendingPoll } from "./pending-poll"
+import { handoffPending, keepEqualRows, startPendingPoll } from "./pending-poll"
 import { isInFlightAssistant } from "@novaclaw/session-ui/v2/message-fold"
+import { harnessWaitLabel, type HarnessWaitAttempt } from "../session-harness-wait"
 
 export type NativeTimelineController = {
   navigateUser: (offset: number) => void
@@ -37,6 +38,8 @@ export function NativeTimeline(props: {
   sessionID: string
   /** Durable unfinished work; survives the gap between process boot and live-status recovery. */
   executionOpen?: boolean
+  /** The persisted execution boundary that explains what unfinished work is waiting on. */
+  executionAttempt?: HarnessWaitAttempt
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
@@ -77,6 +80,8 @@ export function NativeTimeline(props: {
   // hides it); rendering and auto-scroll read `messages`.
   const stored = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
   const messages = createMemo(() => selectVisibleMessages(stored(), props.revertMessageID))
+  const reconciling = () => serverSync().nativeMessages.reconciling(props.sessionID)
+  const waitLabel = () => harnessWaitLabel(props.executionAttempt, { transcriptReconciliation: reconciling() })
 
   // Prompts the user sent that the agent has not read yet. They live in the durable input queue, not the
   // transcript, so they are invisible to the message stream and have to be polled. Always make one read
@@ -85,13 +90,14 @@ export function NativeTimeline(props: {
   // settles clears the last bubble the moment its input is promoted.
   const [pending, setPending] = createSignal<readonly PendingPrompt[]>([])
   const updatePending = (rows: readonly PendingPrompt[]) =>
-    setPending((current) =>
-      keepEqualRows(
+    setPending((current) => {
+      const handed = handoffPending(current, rows, stored())
+      return keepEqualRows(
         current,
-        rows,
+        handed,
         (a, b) => a.id === b.id && a.text === b.text && a.delivery === b.delivery && a.timeCreated === b.timeCreated,
-      ),
-    )
+      )
+    })
   /**
    * 🔴 `time?.completed`, not `time.completed` — this line put a shipped renderer on the floor.
    *
@@ -286,7 +292,8 @@ export function NativeTimeline(props: {
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}
-            executionOpen={props.executionOpen}
+            executionOpen={props.executionOpen || reconciling()}
+            waitLabel={waitLabel()}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}
             developer={expertise.level() === "developer"}

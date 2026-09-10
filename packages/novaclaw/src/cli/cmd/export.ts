@@ -107,6 +107,8 @@ function assistantContent(item: SessionMessage.AssistantContent): SessionMessage
 export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Message {
   const metadata = data("message-metadata", msg.id, msg.metadata)
   switch (msg.type) {
+    case "colleague":
+      return { ...msg, metadata, text: redact("text", msg.id, msg.text) }
     case "user":
       return {
         ...msg,

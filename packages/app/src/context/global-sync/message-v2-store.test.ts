@@ -240,6 +240,81 @@ describe("recovering a transcript after the stream dropped", () => {
     expect(store.messages("s")!.map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_3"])
   })
 
+  test("step.ended is a reconciliation barrier when all reply deltas were missed", async () => {
+    const complete = {
+      id: "msg_answer",
+      type: "assistant",
+      agent: "build",
+      model: MODEL,
+      content: [{ type: "text", id: "text_1", text: "The durable answer." }],
+      time: { created: 2, completed: 5 },
+      finish: "stop",
+    } as unknown as SessionMessage
+    let release: ((value: unknown) => void) | undefined
+    const client = {
+      v2: {
+        session: {
+          messages() {
+            return new Promise((resolve) => (release = resolve))
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+
+    // The browser sees only the terminal event — step.started and every text event were dropped.
+    store.apply(
+      ev("session.next.step.ended", {
+        timestamp: 5,
+        sessionID: "s",
+        assistantMessageID: "msg_answer",
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    )
+    expect(store.reconciling("s")).toBe(true)
+
+    release?.({ data: { data: [complete] } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(store.reconciling("s")).toBe(false)
+    expect(store.messages("s")?.[0]).toMatchObject({ id: "msg_answer", type: "assistant", finish: "stop" })
+  })
+
+  test("a failed terminal reload keeps the barrier raised until reconnect succeeds", async () => {
+    let call = 0
+    const client = {
+      v2: {
+        session: {
+          async messages() {
+            call += 1
+            if (call === 1) throw new Error("offline during terminal reconcile")
+            return { data: { data: [message("msg_answer", "recovered answer")] } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+
+    store.apply(
+      ev("session.next.step.ended", {
+        timestamp: 5,
+        sessionID: "s",
+        assistantMessageID: "msg_answer",
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(store.reconciling("s")).toBe(true)
+
+    await store.reconcileAll()
+    expect(store.reconciling("s")).toBe(false)
+    expect(store.messages("s")?.[0]).toMatchObject({ id: "msg_answer", text: "recovered answer" })
+  })
+
   test("reconnect retries a transcript whose first load failed before it created a store row", async () => {
     let call = 0
     const client = {

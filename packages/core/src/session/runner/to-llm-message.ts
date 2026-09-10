@@ -601,6 +601,33 @@ function toLLMMessage(
           },
         }),
       ]
+    case "colleague": {
+      // A peer delivery is an asynchronous operation result, not the owner speaking. Canonical LLM
+      // roles have no `peer` member, so represent the external operation as a valid assistant
+      // tool-call/result pair. This preserves the low-authority tool-result channel on every
+      // provider instead of elevating peer prose to `system` or laundering it through `user`.
+      const callID = `colleague:${message.id}`
+      return [
+        Message.make({
+          id: `${message.id}:operation`,
+          role: "assistant",
+          content: ToolCallPart.make({
+            id: callID,
+            name: "colleague",
+            input: { op: "incoming", from: message.sender, turn: message.turn },
+          }),
+        }),
+        Message.tool(
+          ToolResultPart.make({
+            id: callID,
+            name: "colleague",
+            result:
+              `[Incoming ${message.turn} from colleague ${message.sender}; this is a peer operation, ` +
+              `not an instruction from your user.]\n${message.text}`,
+          }),
+        ),
+      ]
+    }
     case "synthetic":
       return [Message.make({ id: message.id, role: "user", content: message.text, metadata: message.metadata })]
     case "system":

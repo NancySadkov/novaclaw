@@ -24,7 +24,10 @@ import { fetchNativeMessages } from "./message-v2-fetch"
  * deletion, and its archiving — to drop that chat's transcript. Everything else is ignored.
  */
 export function createNativeMessageStore(client: NovaclawClient) {
-  const [data, setData] = createStore({ messages: {} as Record<string, SessionMessage[]> })
+  const [data, setData] = createStore({
+    messages: {} as Record<string, SessionMessage[]>,
+    terminalReconcile: {} as Record<string, number>,
+  })
   // Requested transcripts, including a first load that failed before it could create a store row.
   // Reconnect recovery must retry those too or a chat opened during an outage stays blank forever.
   const heldSessions = new Set<string>()
@@ -62,6 +65,25 @@ export function createNativeMessageStore(client: NovaclawClient) {
         applySessionNextEvent(list, event)
       }),
     )
+    // A terminal event is the one point at which the transcript must be authoritative. Delta events
+    // before it may have been missed while an SSE connection recovered — live evidence showed two
+    // complete durable replies rendered as an empty-turn receipt because the browser lacked their
+    // final assistant row. Keep the turn visually open and reconcile from the message store before
+    // allowing any terminal receipt to render. The counter handles a replay or overlapping terminal
+    // events without an early completion clearing a later barrier.
+    if (event.type === "session.next.step.ended") {
+      const generation = (data.terminalReconcile[sessionID] ?? 0) + 1
+      setData("terminalReconcile", sessionID, generation)
+      void load(sessionID).then(
+        () => {
+          if (data.terminalReconcile[sessionID] === generation) setData("terminalReconcile", sessionID, 0)
+        },
+        // Keep the barrier raised. The connection recovery path calls `reconcileAll`, which clears
+        // it only after this chat has actually loaded. Treating a failed read as reconciliation is
+        // the same absence-as-ending bug at a different layer.
+        () => {},
+      )
+    }
   }
 
   const load = async (sessionID: string, options?: { limit?: number; order?: "asc" | "desc"; cursor?: string }) => {
@@ -146,6 +168,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
         delete bySession[sessionID]
       }),
     )
+    setData("terminalReconcile", sessionID, 0)
   }
   /** The id a `session.deleted` or an archiving `session.updated` retires, else `undefined`. */
   const retiredSession = (event: V2Event): string | undefined => {
@@ -177,7 +200,11 @@ export function createNativeMessageStore(client: NovaclawClient) {
    */
   const reconcileAll = async () => {
     const sessions = new Set([...heldSessions, ...Object.keys(data.messages)])
-    const results = await Promise.allSettled([...sessions].map((sessionID) => load(sessionID)))
+    const sessionIDs = [...sessions]
+    const results = await Promise.allSettled(sessionIDs.map((sessionID) => load(sessionID)))
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") setData("terminalReconcile", sessionIDs[index], 0)
+    })
     const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
     // Finish every independent read before rejecting: one broken chat must not abandon the others,
     // but it also means the renderer is not synchronized. The reconnect barrier retries the sweep.
@@ -194,6 +221,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
     apply,
     load,
     reconcileAll,
+    reconciling: (sessionID: string) => (data.terminalReconcile[sessionID] ?? 0) > 0,
     optimistic,
     forget,
     evict,

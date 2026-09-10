@@ -1702,6 +1702,7 @@ export type SessionPendingResponse = {
     text: string
     delivery: string
     timeCreated: number
+    origin?: PromptOrigin
   }>
 }
 
@@ -2209,6 +2210,7 @@ export type PromptOrigin =
       sessionID: string
       label?: string
       relation?: "parent" | "peer"
+      turn?: "ask" | "answer" | "announce"
       hops?: number
       path?: Array<string>
       conversation?: string
@@ -2292,6 +2294,26 @@ export type SessionMessageUser = {
   agents?: Array<PromptAgentAttachment>
   origin?: PromptOrigin
   type: "user"
+}
+
+export type SessionMessageColleague = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  seq?: number
+  type: "colleague"
+  sender: string
+  senderSessionID?: string
+  turn: "ask" | "answer" | "announce"
+  text: string
+  hops?: number
+  path?: Array<string>
+  conversation?: string
+  participants?: Array<string>
 }
 
 export type SessionMessageSynthetic = {
@@ -2611,6 +2633,7 @@ export type SessionMessage =
   | SessionMessageModelSwitched
   | SessionMessagePermissionChanged
   | SessionMessageUser
+  | SessionMessageColleague
   | SessionMessageSynthetic
   | SessionMessageSystem
   | SessionMessageShell

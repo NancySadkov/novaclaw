@@ -14,6 +14,16 @@ export interface PendingPrompt {
   text: string
   delivery: string
   timeCreated: number
+  origin?: {
+    via: string
+    sessionID?: string
+    label?: string
+    relation?: string
+    turn?: "ask" | "answer" | "announce"
+    announce?: boolean
+    conversation?: string
+    participants?: string[]
+  }
 }
 
 /**

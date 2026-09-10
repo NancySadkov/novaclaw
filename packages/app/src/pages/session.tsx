@@ -1153,6 +1153,7 @@ export default function Page() {
                         <NativeTimeline
                           sessionID={_id}
                           executionOpen={executionOpen()}
+                          executionAttempt={executionAttempt()}
                           setController={(controller) => (timelineController = controller)}
                           directory={sdk().directory}
                           onRevert={revertToPrompt}

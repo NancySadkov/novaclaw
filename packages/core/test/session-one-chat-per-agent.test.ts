@@ -64,7 +64,7 @@ const here = () => AbsolutePath.make(process.cwd())
 /** A pre-existing chat, written straight to the row so the test does not depend on create's own rule. */
 const seedChat = (
   db: Database.Interface["db"],
-  row: { id: string; agent?: string; parent?: string; archived?: number },
+  row: { id: string; agent?: string; parent?: string; archived?: number; type?: "interactive" | "goal-oriented" },
 ) =>
   db
     .insert(SessionTable)
@@ -76,6 +76,7 @@ const seedChat = (
         title: `${row.agent ?? "nobody"}'s chat`,
         version: "test",
         agent: row.agent,
+        type: row.type,
         parent_id: row.parent ? SessionSchema.ID.make(row.parent) : undefined,
         time_archived: row.archived,
         time_created: 1,
@@ -168,8 +169,27 @@ describe("one chat per colleague", () => {
       // The SAME chat, not a sibling — an answer, not an error (the product rule is "you already
       // have that conversation").
       expect(String(created.id)).toBe("ses_theron")
+      expect(created.type).toBe("goal-oriented")
       const roots_theron = yield* rootsFor(d.db, "theron")
       expect(roots_theron.length).toBe(1)
+    }),
+  )
+
+  it.effect("a new colleague is born autonomous, while an explicit interactive choice remains explicit", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      const autonomous = yield* createSessionRecord(d, {
+        agent: "eris",
+        location: { directory: here() },
+      } as never)
+      const interactive = yield* createSessionRecord(d, {
+        agent: "selene",
+        type: "interactive",
+        location: { directory: here() },
+      } as never)
+
+      expect(autonomous.type).toBe("goal-oriented")
+      expect(interactive.type).toBe("interactive")
     }),
   )
 

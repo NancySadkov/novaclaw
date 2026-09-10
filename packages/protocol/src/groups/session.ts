@@ -2,6 +2,7 @@ import { SessionMessage } from "@novaclaw/schema/session-message"
 import { SessionInput } from "@novaclaw/schema/session-input"
 import { SessionReceipt as SessionReceiptSchema } from "@novaclaw/schema/session-receipt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
+import { Prompt } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@novaclaw/schema/schema"
 import { Workspace } from "@novaclaw/schema/workspace"
@@ -651,6 +652,7 @@ export const makeSessionGroups = <
                 text: Schema.String,
                 delivery: Schema.String,
                 timeCreated: Schema.Finite,
+                origin: Prompt.fields.origin,
               }),
             ),
           }).annotate({ identifier: "SessionPendingResponse" }),

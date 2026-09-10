@@ -510,6 +510,7 @@ const SessionControlHandler = handlerLayer(
                 text: row.prompt.text,
                 delivery: String(row.delivery),
                 timeCreated: row.timeCreated,
+                origin: row.prompt.origin,
               })),
             }
           }),

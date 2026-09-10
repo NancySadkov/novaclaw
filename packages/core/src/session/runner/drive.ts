@@ -38,7 +38,10 @@ export interface GoalContext {
 
 export const initialState = (nowMs: number): DriveState => ({ rounds: 0, startedAt: nowMs })
 
-export type DriveDecision = { readonly kind: "continue"; readonly message: string } | { readonly kind: "stop" }
+export type DriveDecision =
+  | { readonly kind: "continue"; readonly message: string }
+  | { readonly kind: "idle" }
+  | { readonly kind: "terminated" }
 
 /** The session's own drive type, if it declares one (undefined row/type = no drive). */
 export const driveType = (session: DriveSession | undefined): DriveType | undefined =>
@@ -83,7 +86,9 @@ const goalContinue = (context: GoalContext | undefined) => {
 
 /**
  * One drive decision at drain-end (queue empty). `continue` keeps an autonomous worker alive;
- * `stop` means an ordinary interactive turn is idle or `exit(result)` already landed.
+ * `idle` means an ordinary interactive turn has drained without terminating the session;
+ * `terminated` means `exit(result)` already landed. Keeping those states distinct prevents a
+ * missing live signal from being relabelled as an agent ending.
  */
 export const decide = (
   session: DriveSession | undefined,
@@ -94,8 +99,8 @@ export const decide = (
   const type = driveType(session)
   // exit(result) called — the terminal test (exit records "" for a bare exit, so `!== undefined`).
   // Checked before every self-drive arm: `exit` already published the sole completion event.
-  if (session !== undefined && session.result !== undefined) return { kind: "stop" }
+  if (session !== undefined && session.result !== undefined) return { kind: "terminated" }
   if (session?.type === "sub-agent") return { kind: "continue", message: SUB_AGENT_CONTINUE }
-  if (type === undefined) return { kind: "stop" }
+  if (type === undefined) return { kind: "idle" }
   return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
 }

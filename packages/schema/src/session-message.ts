@@ -158,6 +158,27 @@ export const User = Schema.Struct({
   type: Schema.Literal("user"),
 }).annotate({ identifier: "Session.Message.User" })
 
+/**
+ * A message delivered by one colleague into another colleague's conversation.
+ *
+ * It is deliberately not a `User` with decorative provenance. The type is the durable answer to
+ * who spoke, and keeps UI grouping, compaction and model lowering from laundering a peer operation
+ * into something the owner said.
+ */
+export interface Colleague extends Schema.Schema.Type<typeof Colleague> {}
+export const Colleague = Schema.Struct({
+  ...Base,
+  type: Schema.Literal("colleague"),
+  sender: Schema.String,
+  senderSessionID: Schema.String.pipe(optional),
+  turn: Schema.Literals(["ask", "answer", "announce"]),
+  text: Schema.String,
+  hops: Schema.Finite.pipe(optional),
+  path: Schema.Array(Schema.String).pipe(optional),
+  conversation: Schema.String.pipe(optional),
+  participants: Schema.Array(Schema.String).pipe(optional),
+}).annotate({ identifier: "Session.Message.Colleague" })
+
 export interface Synthetic extends Schema.Schema.Type<typeof Synthetic> {}
 export const SyntheticRepair = Schema.Struct({
   type: Schema.Literal("unpin-device"),
@@ -484,6 +505,7 @@ export const Message = Schema.Union([
   ModelSwitched,
   PermissionChanged,
   User,
+  Colleague,
   Synthetic,
   System,
   Shell,
@@ -498,6 +520,7 @@ export type Message =
   | ModelSwitched
   | PermissionChanged
   | User
+  | Colleague
   | Synthetic
   | System
   | Shell

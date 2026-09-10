@@ -33,7 +33,7 @@ const LABELS = {
   "snapshot-after": "Checking what changed",
   "scheduler-wait": "Waiting for a turn",
   "provider-setup": "Preparing the model",
-  "provider-prefill": "Waiting for the model",
+  "provider-prefill": "Loading the prompt into the model",
   generation: "Writing the answer",
   "capability-queue": "Waiting for a service",
   "capability-load": "Starting a service",
@@ -94,7 +94,7 @@ export const longStageNote = (
         return "The visual model is reading the attached image. Large images can take time."
       if ((context?.imageAttachments ?? 0) > 1)
         return "The visual model is reading the attached images. Large images can take time."
-      return "Waiting for the model provider to respond."
+      return "The request reached the model, but it has not produced its first token. It may still be loading context or model data."
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":
@@ -159,8 +159,9 @@ export const turnIsRunning = (status: string | undefined, executionOpen: boolean
  *
  * ## What it may say
  *
- * Only what the transcript actually knows: the turn settled, it ran N tools, and its last message
- * carried no trailing prose. It must not guess why. A turn that ends on `exit(result)` ended
+ * Only what the transcript actually knows: the visible projection has no prose yet and it ran N
+ * tools. Absence of a live-status signal is not evidence that the agent ended; the durable harness
+ * may still be recovering or reconciling the completed row. A turn that ends on `exit(result)` ended
  * deliberately and already carries its terminal answer, so that result is shown; a bare `exit()`
  * falls back to a truthful finish line rather than being described as stopping short (ruling 2).
  */
@@ -170,5 +171,5 @@ export const turnOutcome = (input: {
 }): string | undefined => {
   if (input.toolCount <= 0) return undefined
   if (input.lastTool?.name === "exit") return input.lastTool.result?.trim() || "Finished."
-  return "The model ended here without writing a reply."
+  return "Waiting for the harness…"
 }

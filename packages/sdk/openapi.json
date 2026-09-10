@@ -28790,6 +28790,9 @@
                 },
                 "timeCreated": {
                   "type": "number"
+                },
+                "origin": {
+                  "$ref": "#/components/schemas/PromptOrigin"
                 }
               },
               "required": ["id", "text", "delivery", "timeCreated"],
@@ -30227,6 +30230,10 @@
                 "type": "string",
                 "enum": ["parent", "peer"]
               },
+              "turn": {
+                "type": "string",
+                "enum": ["ask", "answer", "announce"]
+              },
               "hops": {
                 "type": "number"
               },
@@ -30498,6 +30505,69 @@
           }
         },
         "required": ["id", "time", "text", "type"],
+        "additionalProperties": false
+      },
+      "SessionMessageColleague": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msg_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "number"
+              }
+            },
+            "required": ["created"],
+            "additionalProperties": false
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "enum": ["colleague"]
+          },
+          "sender": {
+            "type": "string"
+          },
+          "senderSessionID": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string",
+            "enum": ["ask", "answer", "announce"]
+          },
+          "text": {
+            "type": "string"
+          },
+          "hops": {
+            "type": "number"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["id", "time", "type", "sender", "turn", "text"],
         "additionalProperties": false
       },
       "SessionMessageSynthetic": {
@@ -31441,6 +31511,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionMessageUser"
+          },
+          {
+            "$ref": "#/components/schemas/SessionMessageColleague"
           },
           {
             "$ref": "#/components/schemas/SessionMessageSynthetic"

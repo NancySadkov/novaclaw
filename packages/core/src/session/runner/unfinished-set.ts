@@ -38,10 +38,18 @@ const COLLECTION_CUES = [
   "list the",
 ] as const
 
-/** One matcher per cue, anchored at WORD BOUNDARIES on both ends — see `asksForSet`. Every cue is
- *  letters and spaces, so nothing here needs regex-escaping and none is applied: a cue that ever
- *  carries punctuation must add it. */
+/** One matcher per cue, anchored at WORD BOUNDARIES on both ends — used for explicitly named sets. */
 const CUE_MATCHERS: readonly RegExp[] = COLLECTION_CUES.map((cue) => new RegExp(String.raw`\b${cue}\b`, "i"))
+
+/** Things this controller can actually enumerate and verify. A collection word on its own is not a
+ * file-set request: "gather all evidence" and "fix all issues" are ordinary whole-task language. */
+const SET_SUBJECT = String.raw`(?:files?|images?|icons?|pictures?|photos?|screenshots?|glyphs?|pngs?|jpe?gs?|webps?|gifs?|svgs?)`
+const SET_MODIFIER = String.raw`(?:(?:the|these|those|remaining|first|top|initial|matching|requested|named|uploaded|attached|png|jpe?g|webp|gif|svg|\d+)\s+)*`
+const CUE_THEN_SUBJECT = new RegExp(
+  String.raw`\b(?:each(?:\s+of)?|every|all(?:\s+of)?|both|list)\s+${SET_MODIFIER}${SET_SUBJECT}\b`,
+  "i",
+)
+const SUBJECT_THEN_CUE = new RegExp(String.raw`\b${SET_SUBJECT}\s+one\s+by\s+one\b`, "i")
 
 /**
  * Did the user ask about a SET?
@@ -61,7 +69,10 @@ const CUE_MATCHERS: readonly RegExp[] = COLLECTION_CUES.map((cue) => new RegExp(
  * `recall the` are ordinary phrasing for a coding agent, which is what made a substring test
  * expensive rather than merely imprecise.
  */
-export const asksForSet = (userText: string): boolean => CUE_MATCHERS.some((matcher) => matcher.test(userText))
+export const asksForSet = (userText: string): boolean =>
+  CUE_THEN_SUBJECT.test(userText) ||
+  SUBJECT_THEN_CUE.test(userText) ||
+  (requestedNames(userText).length >= 2 && CUE_MATCHERS.some((matcher) => matcher.test(userText)))
 
 /** Words that name DELEGATION itself, rather than the set being worked through. */
 const DELEGATION_CUES = [

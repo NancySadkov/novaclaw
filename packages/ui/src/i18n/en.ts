@@ -265,6 +265,10 @@ export const dict = {
   "ui.transcript.colleague.listed": "Looked up colleagues",
   "ui.transcript.colleague.messaged": "Messaged {{who}}",
   "ui.transcript.colleague.messagedUnknown": "Messaged a colleague",
+  "ui.transcript.colleague.asked": "{{who}} asked",
+  "ui.transcript.colleague.replied": "{{who}} replied",
+  "ui.transcript.colleague.informed": "{{who}} informed the group",
+  "ui.transcript.colleague.unknown": "A colleague",
   // The only words a screen-reader user gets for these two controls (keyed 2026-09-03).
   "ui.tabs.close": "Close tab",
   "ui.toast.dismiss": "Dismiss",

@@ -21,6 +21,18 @@ export interface Row {
   readonly subtitle?: string
 }
 
+export const incomingColleagueRow = (
+  input: { readonly sender: string; readonly turn: "ask" | "answer" | "announce" },
+  t: UiI18n["t"],
+): Row => ({
+  title:
+    input.turn === "answer"
+      ? t("ui.transcript.colleague.replied", { who: input.sender })
+      : input.turn === "announce"
+        ? t("ui.transcript.colleague.informed", { who: input.sender })
+        : t("ui.transcript.colleague.asked", { who: input.sender }),
+})
+
 const text = (value: unknown): string | undefined => (typeof value === "string" && value !== "" ? value : undefined)
 
 /** `t` is the caller's translator: the row is what the user SEES, so it speaks the user's language. */

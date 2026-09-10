@@ -76,6 +76,12 @@ export const Origin = Schema.Union([
      */
     relation: Schema.Literals(["parent", "peer"]).pipe(optional),
     /**
+     * Which half of a colleague exchange this delivery is. Persisted rather than inferred from the
+     * reply-note prose so transcript labels, compaction and the receiving model cannot disagree.
+     * Absent on historical peer rows; readers conservatively call those an `ask`.
+     */
+    turn: Schema.Literals(["ask", "answer", "announce"]).pipe(optional),
+    /**
      * How many colleague hand-offs deep this message is, with nobody outside the chain.
      *
      * 🔴 The loop bound's carrier (`session/colleague-bound.ts`). It rides HERE rather than in a side

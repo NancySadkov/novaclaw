@@ -194,6 +194,24 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       // The computer substrate binding is another row-projected control signal.
       "session.next.control-binding.switched": () => Effect.void,
       "session.next.prompted": (event) => {
+        const origin = event.data.prompt.origin
+        if (origin?.via === "agent" && origin.relation === "peer")
+          return adapter.appendMessage(
+            SessionMessage.Colleague.make({
+              id: event.data.messageID,
+              type: "colleague",
+              metadata: event.metadata,
+              sender: origin.label ?? origin.sessionID ?? "colleague",
+              senderSessionID: origin.sessionID,
+              turn: origin.turn ?? (origin.announce === true ? "announce" : "ask"),
+              text: event.data.prompt.text,
+              hops: origin.hops,
+              path: origin.path,
+              conversation: origin.conversation,
+              participants: origin.participants,
+              time: { created: event.data.timestamp },
+            }),
+          )
         return adapter.appendMessage(
           SessionMessage.User.make({
             id: event.data.messageID,

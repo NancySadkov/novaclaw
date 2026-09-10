@@ -25,6 +25,8 @@ import { isSteerText } from "./steer-provenance"
 export const fromContext = (context: readonly SessionMessage.Message[]): number => {
   for (let index = context.length - 1; index >= 0; index -= 1) {
     const message = context[index]
+    if (message?.type === "colleague")
+      return typeof message.hops === "number" && Number.isFinite(message.hops) ? message.hops : 0
     if (message?.type !== "user") continue
     // 🔴 An instance NOTICE is nobody's turn — step over it. It carries no origin (it is not a
     // colleague speaking), and without this the line below reads that as A PERSON speaking and

@@ -269,6 +269,10 @@ export const serializeToolContent = (content: SessionMessage.ToolStateCompleted[
  * `test/session-compaction.test.ts`); `serializeToolContent` above is exported for the same reason.
  */
 export const serializeMessage = (message: SessionMessage.Message) => {
+  if (message.type === "colleague") {
+    const room = message.conversation !== undefined ? ", to the room" : ""
+    return `[Colleague ${message.sender}${room}, ${message.turn}]: ${ColleagueNote.stripReplyNote(message.text)}`
+  }
   if (message.type === "user") {
     // Ask the provenance question BEFORE claiming the user said this (session/steer-provenance.ts).
     if (isSteerText(message.text)) return `${STEER_LABEL}${stripSteerProvenance(message.text)}`

@@ -629,13 +629,38 @@ export const createSessionRecord = (
       return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
     const colleagueRoot =
       input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
+    // A named officer is an autonomous process, not an anonymous one-answer chat. Its lifecycle
+    // kind must therefore be durable at construction: omission used to leave old colleague roots
+    // with `type=NULL`, and `SessionDrive` quite correctly interpreted that as an interactive idle
+    // boundary after one provider reply. A later peer prompt happened to wake the process, but no
+    // deterministic continuation existed. Explicit `interactive` remains a user choice; only the
+    // absent constructor value is repaired.
+    const colleagueType = colleagueRoot ? (input.type ?? "goal-oriented") : input.type
+    const ensureColleagueLifecycle = (session: SessionSchema.Info) =>
+      !colleagueRoot || session.type !== undefined
+        ? Effect.succeed(session)
+        : events
+            .publish(SessionEvent.TypeSwitched, {
+              sessionID: session.id,
+              messageID: SessionMessage.ID.create(),
+              timestamp: DateTime.makeUnsafe(Date.now()),
+              sessionType: colleagueType!,
+            })
+            .pipe(
+              Effect.andThen(store.get(session.id)),
+              Effect.flatMap((repaired) =>
+                repaired === undefined
+                  ? Effect.die(`Session disappeared while repairing lifecycle: ${session.id}`)
+                  : Effect.succeed(repaired),
+              ),
+            )
     // A colleague root has one identity regardless of which caller supplied the request. An
     // explicit arbitrary id is ignored rather than creating a second spelling of the same agent.
     const canonical = colleagueRoot ? SessionSchema.ID.make(`ses_${input.agent}`) : undefined
     const claimed = canonical === undefined ? undefined : yield* store.get(canonical)
     // A LIVE chat at the canonical id IS this colleague's chat: the idempotent answer, reached
     // without a scan, because the id already said whose it is.
-    if (claimed !== undefined && claimed.time.archived === undefined) return claimed
+    if (claimed !== undefined && claimed.time.archived === undefined) return yield* ensureColleagueLifecycle(claimed)
     // Preserve the old transcript, but free the canonical seat. The move is one transaction and
     // leaves the successor with the only live `ses_<agent>` row.
     if (canonical !== undefined && claimed?.time.archived !== undefined)
@@ -690,7 +715,7 @@ export const createSessionRecord = (
       const live = yield* liveRootFor(db, input.agent)
       if (live) {
         const existing = yield* store.get(SessionSchema.ID.make(live.id))
-        if (existing) return existing
+        if (existing) return yield* ensureColleagueLifecycle(existing)
       }
     }
     const project = yield* projects.resolve(input.location.directory)
@@ -717,7 +742,7 @@ export const createSessionRecord = (
       // `surgical_edits` and `ask_before_changes` for four months (two of them RESTRICTIONS, so a
       // create meaning to restrict produced an unrestricted session and nothing said so).
       // `config-columns.ts` now generates all three directions from one descriptor.
-      ...SessionConfigColumns.configFromInput(input),
+      ...SessionConfigColumns.configFromInput({ ...input, type: colleagueType }),
       // ⚠️ There is no saved `permission` ruleset any more. It was WRITTEN by create and
       // `setPermission` and READ by nobody — `permission.ts` resolves the AGENT's ruleset
       // (`configured(sessionID, agentID)`) and never consulted the session row. v0.2.0 ruling 16

@@ -169,12 +169,30 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.prompted":
+      if (event.data.prompt.origin?.via === "agent" && event.data.prompt.origin.relation === "peer") {
+        const origin = event.data.prompt.origin
+        appendMessage(messages, {
+          id: event.data.messageID,
+          type: "colleague",
+          sender: origin.label ?? origin.sessionID,
+          senderSessionID: origin.sessionID,
+          turn: origin.turn ?? (origin.announce === true ? "announce" : "ask"),
+          text: event.data.prompt.text,
+          hops: origin.hops,
+          path: origin.path,
+          conversation: origin.conversation,
+          participants: origin.participants,
+          time: { created: event.data.timestamp },
+        })
+        break
+      }
       appendMessage(messages, {
         id: event.data.messageID,
         type: "user",
         text: event.data.prompt.text,
         files: event.data.prompt.files,
         agents: event.data.prompt.agents,
+        origin: event.data.prompt.origin,
         time: { created: event.data.timestamp },
       })
       break

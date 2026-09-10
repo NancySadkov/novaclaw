@@ -11,16 +11,16 @@ describe("SessionDrive.decide", () => {
     const state = SessionDrive.initialState(t0)
     expect(SessionDrive.decide({ type: "auto-prompting" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, state, t0).kind).toBe("continue")
-    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("stop")
+    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("idle")
     expect(SessionDrive.decide({ type: "sub-agent" }, state, t0).kind).toBe("continue")
-    expect(SessionDrive.decide({}, state, t0).kind).toBe("stop") // undefined type = interactive default
-    expect(SessionDrive.decide(undefined, state, t0).kind).toBe("stop") // missing row = never drive
+    expect(SessionDrive.decide({}, state, t0).kind).toBe("idle") // undefined type = interactive default
+    expect(SessionDrive.decide(undefined, state, t0).kind).toBe("idle") // missing row = never drive
   })
 
   test("exit(result) is terminal — even a bare exit's empty-string result stops the drive", () => {
     const state = SessionDrive.initialState(t0)
-    expect(SessionDrive.decide({ type: "auto-prompting", result: "done" }, state, t0).kind).toBe("stop")
-    expect(SessionDrive.decide({ type: "goal-oriented", result: "" }, state, t0).kind).toBe("stop")
+    expect(SessionDrive.decide({ type: "auto-prompting", result: "done" }, state, t0).kind).toBe("terminated")
+    expect(SessionDrive.decide({ type: "goal-oriented", result: "" }, state, t0).kind).toBe("terminated")
   })
 
   test("long-horizon work has no round or wall-clock completion authority", () => {

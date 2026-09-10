@@ -52,6 +52,6 @@ describe("elapsed is measured from the run, not the turn", () => {
 describe("phase labels name stages, and stages go inside the fold", () => {
   test("the label that was being used as a title is a STAGE name", () => {
     expect(phaseLabel("generation")).toBe("Writing the answer")
-    expect(phaseLabel("provider-prefill")).toBe("Waiting for the model")
+    expect(phaseLabel("provider-prefill")).toBe("Loading the prompt into the model")
   })
 })

@@ -18,17 +18,17 @@ describe("a sub-agent runs until explicit exit", () => {
   test("a sub-agent that DID exit is left alone — one completion per session", () => {
     // The result check runs before the sub-agent arm on purpose: `exit` has already published
     // `Completed`, and settling again would publish a second completion for one session.
-    expect(SessionDrive.decide({ type: "sub-agent", result: "done" }, fresh(), now)).toEqual({ kind: "stop" })
+    expect(SessionDrive.decide({ type: "sub-agent", result: "done" }, fresh(), now)).toEqual({ kind: "terminated" })
     // `exit` records "" for a bare call, so empty-string is still a RESULT and still terminal.
-    expect(SessionDrive.decide({ type: "sub-agent", result: "" }, fresh(), now)).toEqual({ kind: "stop" })
+    expect(SessionDrive.decide({ type: "sub-agent", result: "" }, fresh(), now)).toEqual({ kind: "terminated" })
   })
 
   test("an INTERACTIVE session is never settled — nobody is joining it", () => {
     // ⚠️ The negative that matters most. Settling a session a human is talking to would mark their
     // chat "exited" the moment it went quiet, and `wait` has no claim on it.
-    expect(SessionDrive.decide({ type: "interactive" }, fresh(), now)).toEqual({ kind: "stop" })
-    expect(SessionDrive.decide({}, fresh(), now)).toEqual({ kind: "stop" })
-    expect(SessionDrive.decide(undefined, fresh(), now)).toEqual({ kind: "stop" })
+    expect(SessionDrive.decide({ type: "interactive" }, fresh(), now)).toEqual({ kind: "idle" })
+    expect(SessionDrive.decide({}, fresh(), now)).toEqual({ kind: "idle" })
+    expect(SessionDrive.decide(undefined, fresh(), now)).toEqual({ kind: "idle" })
   })
 
   test("every autonomous type keeps driving regardless of elapsed rounds", () => {
@@ -42,7 +42,7 @@ describe("a sub-agent runs until explicit exit", () => {
   test("an unknown thread type is stopped, not settled", () => {
     // Only `sub-agent` has a parent that might be blocked. A future type must opt in deliberately
     // rather than inherit completion semantics by falling through.
-    expect(SessionDrive.decide({ type: "fork" }, fresh(), now)).toEqual({ kind: "stop" })
+    expect(SessionDrive.decide({ type: "fork" }, fresh(), now)).toEqual({ kind: "idle" })
   })
 })
 

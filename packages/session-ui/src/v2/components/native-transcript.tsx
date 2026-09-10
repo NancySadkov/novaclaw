@@ -19,6 +19,7 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageCompaction,
   SessionMessageCompactionStatus,
+  SessionMessageColleague,
   SessionMessagePermissionChanged,
   SessionMessageShell,
   SessionMessageSynthetic,
@@ -32,7 +33,7 @@ import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
-import { colleagueRow } from "./colleague-row"
+import { colleagueRow, incomingColleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
 import { waitRow } from "./wait-row"
 import { toolIcon } from "./tool-icon"
@@ -171,13 +172,26 @@ export function NativeTranscript(props: {
   status?: SessionStatus
   /** Durable execution says this turn still has an owner obligation, even while live status reconnects. */
   executionOpen?: boolean
+  /** Exact temporary wait derived from the durable execution boundary by the app shell. */
+  waitLabel?: string
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
    * so they are rendered here, after the real messages, as their own waiting bubbles. Without this a
    * mid-turn prompt disappears and is answered minutes later, and people retype it.
    */
-  pending?: readonly { id: string; text: string }[]
+  pending?: readonly {
+    id: string
+    text: string
+    origin?: {
+      via: string
+      sessionID?: string
+      label?: string
+      relation?: string
+      turn?: "ask" | "answer" | "announce"
+      announce?: boolean
+    }
+  }[]
 }) {
   const i18n = useI18n()
   // The native store captures the session's initial agent/model as `*-switched` messages,
@@ -196,7 +210,10 @@ export function NativeTranscript(props: {
   const turns = createMemo<readonly TurnGroup<SessionMessage>[]>((previous) =>
     stableGroups(
       previous ?? [],
-      groupTurns(visible(), (message) => message.type === "user" && !isSteerText(message.text)),
+      groupTurns(
+        visible(),
+        (message) => message.type === "colleague" || (message.type === "user" && !isSteerText(message.text)),
+      ),
     ),
   )
   const busy = createMemo(() => turnIsRunning(props.status?.type, props.executionOpen))
@@ -289,15 +306,31 @@ export function NativeTranscript(props: {
             {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
               the first prompt of a session while it waits for the runner. */}
             <For each={unqueuedPending(props.pending, props.messages)}>
-              {(item) => <QueuedMessage id={item.id} text={item.text} />}
+              {(item) =>
+                item.origin?.via === "agent" && item.origin.relation === "peer" ? (
+                  <QueuedColleagueMessage
+                    id={item.id}
+                    text={item.text}
+                    sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
+                    turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+                  />
+                ) : (
+                  <QueuedMessage id={item.id} text={item.text} />
+                )
+              }
             </For>
             <Show
               when={liveTiming()}
               fallback={
-                <Show when={props.status?.type === "busy" && !hasOpenAssistant()}>
+                <Show
+                  when={
+                    (busy() && !hasOpenAssistant() && props.waitLabel) ||
+                    (props.status?.type === "busy" && !hasOpenAssistant())
+                  }
+                >
                   <div data-slot="native-provider-status" role="status" aria-live="polite">
                     <span data-slot="native-working-dot" aria-hidden="true" />
-                    <span>{i18n.t("ui.transcript.working")}</span>
+                    <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
                   </div>
                 </Show>
               }
@@ -506,6 +539,9 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
       <Match when={props.message.type === "assistant" && props.message}>
         {(m) => <AssistantMessage message={m()} developer={props.developer} liveTiming={props.liveTiming} />}
       </Match>
+      <Match when={props.message.type === "colleague" && props.message}>
+        {(m) => <ColleagueMessage message={m() as SessionMessageColleague} />}
+      </Match>
       <Match when={props.message.type === "shell" && props.message}>{(m) => <ShellMessage message={m()} />}</Match>
       <Match when={props.message.type === "system" && props.message}>
         {(m) => <NoticeMessage kind="system" text={m().text} messageID={m().id} />}
@@ -561,6 +597,37 @@ function QueuedMessage(props: { id: string; text: string }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function QueuedColleagueMessage(props: {
+  id: string
+  text: string
+  sender: string
+  turn: "ask" | "answer" | "announce"
+}) {
+  const i18n = useI18n()
+  return (
+    <BasicToolV2
+      data-slot="native-colleague"
+      status="pending"
+      expandWhilePending
+      trigger={{ icon: toolIcon("colleague"), ...incomingColleagueRow(props, i18n.t) }}
+    >
+      <Markdown text={props.text} cacheKey={`${props.id}:queued-colleague`} />
+    </BasicToolV2>
+  )
+}
+
+function ColleagueMessage(props: { message: SessionMessageColleague }) {
+  const i18n = useI18n()
+  return (
+    <BasicToolV2
+      data-slot="native-colleague"
+      trigger={{ icon: toolIcon("colleague"), ...incomingColleagueRow(props.message, i18n.t) }}
+    >
+      <Markdown text={props.message.text} cacheKey={`${props.message.id}:colleague`} />
+    </BasicToolV2>
   )
 }
 

@@ -50,7 +50,7 @@ describe("turn receipt", () => {
 
   test("uses friendly labels and stable seconds", () => {
     expect(phaseLabel("memory-search")).toBe("Recalling")
-    expect(phaseLabel("provider-prefill")).toBe("Waiting for the model")
+    expect(phaseLabel("provider-prefill")).toBe("Loading the prompt into the model")
     expect(phaseLabel("capability-queue")).toBe("Waiting for a service")
     expect(phaseLabel("capability-load")).toBe("Starting a service")
     expect(phaseLabel("capability-run")).toBe("Running a service")
@@ -92,7 +92,7 @@ describe("turn receipt", () => {
     expect(longStageNote("provider-prefill", LONG_STAGE_MS - 1)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBeTruthy()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBe(
-      "Waiting for the model provider to respond.",
+      "The request reached the model, but it has not produced its first token. It may still be loading context or model data.",
     )
     expect(longStageNote("provider-prefill", LONG_STAGE_MS, { imageAttachments: 1 })).toBe(
       "The visual model is reading the attached image. Large images can take time.",
@@ -153,9 +153,9 @@ describe("durable turn activity", () => {
 
 describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
   // The case that unblocks the fold: 57% of tool-bearing turns end here.
-  test("says plainly that no reply was written without exposing the internal step count", () => {
-    expect(turnOutcome({ toolCount: 3 })).toBe("The model ended here without writing a reply.")
-    expect(turnOutcome({ toolCount: 1 })).toBe("The model ended here without writing a reply.")
+  test("treats an absent answer as an unknown harness wait, never as proof of termination", () => {
+    expect(turnOutcome({ toolCount: 3 })).toBe("Waiting for the harness…")
+    expect(turnOutcome({ toolCount: 1 })).toBe("Waiting for the harness…")
   })
 
   // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would

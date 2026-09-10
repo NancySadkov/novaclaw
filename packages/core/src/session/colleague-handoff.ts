@@ -1,6 +1,6 @@
 export * as ColleagueHandoff from "./colleague-handoff"
 
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, or } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentRetire } from "../agent/retire"
@@ -83,13 +83,19 @@ interface PeerContext {
    * collapsing them would either exempt nobody or exempt everybody.
    */
   readonly hops: number
+  readonly conversation: string | undefined
 }
 
 const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID): Effect.Effect<PeerContext> =>
   db
-    .select({ id: SessionMessageTable.id, data: SessionMessageTable.data })
+    .select({ id: SessionMessageTable.id, type: SessionMessageTable.type, data: SessionMessageTable.data })
     .from(SessionMessageTable)
-    .where(and(eq(SessionMessageTable.session_id, session), eq(SessionMessageTable.type, "user")))
+    .where(
+      and(
+        eq(SessionMessageTable.session_id, session),
+        or(eq(SessionMessageTable.type, "user"), eq(SessionMessageTable.type, "colleague")),
+      ),
+    )
     .orderBy(desc(SessionMessageTable.seq))
     .limit(PEER_LOOKBACK)
     .all()
@@ -99,7 +105,24 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
         let hops: number | undefined
         let path: ReadonlyArray<string> | undefined
         let participants: ReadonlyArray<string> | undefined
+        let conversation: string | undefined
         for (const row of rows) {
+          if (row.type === "colleague") {
+            const peer = row.data as {
+              readonly sender?: string
+              readonly hops?: number
+              readonly path?: ReadonlyArray<string>
+              readonly participants?: ReadonlyArray<string>
+              readonly conversation?: string
+            }
+            if (label === undefined && typeof peer.sender === "string") label = peer.sender
+            if (hops === undefined) hops = typeof peer.hops === "number" ? peer.hops : 0
+            if (path === undefined) path = Array.isArray(peer.path) ? peer.path : []
+            if (participants === undefined) participants = Array.isArray(peer.participants) ? peer.participants : []
+            if (conversation === undefined && typeof peer.conversation === "string") conversation = peer.conversation
+            if (label !== undefined && hops !== undefined) break
+            continue
+          }
           // 🔴 Step over an instance NOTICE — it is nobody's turn. Without this the `hops = 0` line
           // below reads a notice as the user at the composer and resets the chain, so the notice's
           // own "ask again" advice reopened the full budget every thirty minutes. The PATH resets
@@ -117,6 +140,7 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
                 readonly hops?: number
                 readonly path?: ReadonlyArray<string>
                 readonly participants?: ReadonlyArray<string>
+                readonly conversation?: string
               }
             }
           )?.origin
@@ -135,9 +159,17 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
           // this been" can never describe two different exchanges.
           if (participants === undefined)
             participants = peer && Array.isArray(origin?.participants) ? origin.participants : []
+          if (conversation === undefined && peer && typeof origin?.conversation === "string")
+            conversation = origin.conversation
           if (label !== undefined && hops !== undefined) break
         }
-        return { label, hops: hops ?? 0, path: path ?? [], participants: participants ?? [] } satisfies PeerContext
+        return {
+          label,
+          hops: hops ?? 0,
+          path: path ?? [],
+          participants: participants ?? [],
+          conversation,
+        } satisfies PeerContext
       }),
       Effect.orDie,
     )
@@ -326,6 +358,7 @@ const landColleagueMessage = (
           via: "agent",
           sessionID: args.from,
           relation: "peer",
+          turn: args.turn,
           // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
           // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
           hops: args.hop,
@@ -569,6 +602,10 @@ export const fromParts = (input: {
     const context = yield* lastPeerContext(input.db, request.from)
     const askedByRecipient = context.label === request.colleague
     const turn = ColleagueNote.turnFor({ askedByRecipient })
+    const conversation =
+      turn === "answer"
+        ? (context.conversation ?? Identifier.ascending("conversation"))
+        : Identifier.ascending("conversation")
     // 🔴 THE BOUND, checked before anything is written. Both refusals return `delivered: false` with a
     // reason the sender reads as its tool result — see `colleague-bound.ts` for why the note's
     // asymmetry alone was never enough, and why these two mechanisms catch different failures.
@@ -616,6 +653,7 @@ export const fromParts = (input: {
       turn,
       hop,
       path,
+      conversation,
     })
     // AFTER the admit, so a refused or failed hand-off never spends the sender's allowance.
     ColleagueBound.record(String(request.from), now)
@@ -777,8 +815,7 @@ export const layer = Layer.effect(
         store,
         refresh: agents.reload(),
         roster: agents.all(),
-        forget: (colleague) =>
-          AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
+        forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
         // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,
         // read where it already lives.
         paused: (colleague) =>

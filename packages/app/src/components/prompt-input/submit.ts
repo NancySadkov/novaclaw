@@ -201,17 +201,13 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   // caused by the fix for it. Caught live by `submit.test.ts`, whose serverSync mock has no
   // `nativeMessages`: the assertion that failed was "the prompt reached the session", not anything
   // about rendering. Delivery is the product; the echo is a courtesy.
-  // ⚠️ ONLY when the session is IDLE, and the boundary is not an optimisation — it is ownership.
-  //
-  // A prompt sent MID-TURN is admitted to the server's durable input queue and rendered by
-  // `QueuedMessage` from `fetchPendingPrompts`, which is read from the SERVER on purpose so a prompt
-  // sent from another device or the messenger gateway also appears (see session-pending-api.ts's
-  // header — that is a recorded decision, not an accident). Showing an optimistic row there too would
-  // put the same message on screen TWICE: once as a normal bubble, once as a queued one.
-  //
-  // Idle is the case nothing else covers: the pending poll does not even run (its effect returns early
-  // when the session is not working and nothing is queued), so between Enter and the first
-  // `session.next.prompted` there is no other view of the message at all.
+  // Mid-turn and idle sends use the SAME optimistic row. The pending queue is still read from the
+  // server so another device and a messenger remain visible, but `unqueuedPending` removes a queued
+  // row whose id the transcript already holds. Withholding the optimistic row while busy created an
+  // ownership gap: promotion removed the server-pending row before this client was guaranteed to
+  // have folded `session.next.prompted`, so an acknowledged prompt blinked out while the agent was
+  // already processing it. One id across both projections makes duplication impossible and loss
+  // visible until the canonical echo replaces our row.
   // Guarded like the calls below, and for the same reason: this runs BEFORE the prompt POST, so an
   // exception here would swallow the message. ⚠️ It fails toward SHOWING. If we cannot tell whether the
   // session was busy, a duplicate bubble is visible, self-correcting (the queued one clears on
@@ -225,7 +221,6 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     }
   })()
   const showOptimistic = () => {
-    if (wasBusy) return
     try {
       input.serverSync.nativeMessages?.optimistic(input.draft.sessionID, {
         id: messageID,
