@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AgentPlugin } from "@novaclaw/core/plugin/agent"
 import { whollyDisabled } from "@novaclaw/core/tool/registry"
+import { evaluate } from "@novaclaw/core/permission"
 
 /**
  * WHAT A FLOOR'S DENY ACTUALLY DOES TO THE MODEL'S HORIZON.
@@ -58,5 +59,42 @@ describe("the officer floor and the model's horizon", () => {
     expect(whollyDisabled("spawn", [...floorFor(false), { action: "spawn", resource: "*", effect: "allow" }])).toBe(
       false,
     )
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// COMPUTER USE: granted to officers in the floor, switched off per officer by a narrowing rule.
+// Owner directive 2026-09-10. Two things are asserted, because they are different claims: the
+// VERDICT (does the real predicate allow the bind resource the tool actually asserts) and the
+// HORIZON (does the opt-out take the schema off the model's turn, or just refuse it).
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("computer use is opt-out per officer", () => {
+  const BIND = "bind-windows-app/novaclaw.exe"
+
+  test("an officer is allowed the bare action AND the bind resource it asserts", () => {
+    const ruleset = floorFor(true)
+    expect(evaluate("computer", "*", ruleset).effect).toBe("allow")
+    // The second assert is the one that bit us: `tool/computer.ts` asserts the action twice, and a
+    // grant written on a narrow resource passes the first and refuses the second.
+    expect(evaluate("computer", BIND, ruleset).effect).toBe("allow")
+  })
+
+  test("a non-officer is refused, exactly as it was before officers were granted anything", () => {
+    // No rule at all, so it falls through to `ask`, which the assert path resolves to a denial.
+    expect(evaluate("computer", BIND, floorFor(false)).effect).toBe("ask")
+  })
+
+  test("the opt-out is a `deny` on `*`: it refuses AND withdraws the tool from the horizon", () => {
+    const optedOut = [...floorFor(true), { action: "computer" as const, resource: "*", effect: "deny" as const }]
+    expect(evaluate("computer", BIND, optedOut).effect).toBe("deny")
+    expect(whollyDisabled("computer", optedOut)).toBe(true)
+  })
+
+  test("NEGATIVE CONTROL: a deny narrower than `*` would refuse without withdrawing", () => {
+    // This is the shape the opt-out must NOT be written in — the model would pay ~2 KB of schema
+    // every turn for a capability it cannot use. Proves the `*` above is load-bearing, not decorative.
+    const narrow = [...floorFor(true), { action: "computer" as const, resource: BIND, effect: "deny" as const }]
+    expect(evaluate("computer", BIND, narrow).effect).toBe("deny")
+    expect(whollyDisabled("computer", narrow)).toBe(false)
   })
 })

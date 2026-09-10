@@ -18,7 +18,14 @@ import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } fro
 import { useModels } from "@/context/models"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
-import { GOVERNING_ID, displayName, memoryDisclosure, superiorCandidates, type AgentLike } from "@/apps/contacts"
+import {
+  GOVERNING_ID,
+  displayName,
+  isColleague,
+  memoryDisclosure,
+  superiorCandidates,
+  type AgentLike,
+} from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
 import { worldMemoryClearScopeVerified, worldMemoryList, GOVERNED_KINDS } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -145,6 +152,13 @@ export function AgentConfigDialog(props: {
   const [posture, setPosture] = createSignal<boolean | undefined>()
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
   const [strict, setStrict] = createSignal<boolean | undefined>()
+  /**
+   * Computer Use, drafted as the OPT-OUT rather than as the permission. `undefined` = untouched;
+   * `true` = hand the officer back to the floor's grant (the rule goes away); `false` = store the deny.
+   * Absence means ON, so there is exactly one place that says whether an officer can touch the
+   * desktop — the floor in `core/src/plugin/agent.ts` — and a stored rule exists only to refuse.
+   */
+  const [computerUse, setComputerUse] = createSignal<boolean | undefined>()
   const [reground, setReground] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
@@ -181,6 +195,38 @@ export function AgentConfigDialog(props: {
   const strictValue = () =>
     strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
   const regroundValue = () => reground() ?? (agent()?.config?.["reground"] as boolean | undefined) ?? true
+
+  // ── Computer Use ───────────────────────────────────────────────────────────────────────────────
+  // The switch reads a PERMISSION RULE, not a field of its own, on purpose. A `computerUse: boolean`
+  // on the agent would be a second answer to "may this officer touch the desktop", stored beside the
+  // rule that actually decides it, and the two would drift. The rule is the truth; this is its face.
+  type StoredRule = { readonly action: string; readonly resource: string; readonly effect: string }
+  const storedRules = (): readonly StoredRule[] => {
+    const raw = agent()?.config?.["permissions"]
+    return Array.isArray(raw) ? (raw as StoredRule[]) : []
+  }
+  /** Opted out means a `deny` on `*` specifically. Anything narrower is the user's own rule. */
+  const computerOptedOut = () =>
+    storedRules().some((rule) => rule.action === "computer" && rule.resource === "*" && rule.effect === "deny")
+  const computerUseValue = () => computerUse() ?? !computerOptedOut()
+  /**
+   * The ruleset to store, with the officer's and the user's other rules riding along untouched.
+   *
+   * `resource: "*"` is load-bearing twice over: `ToolRegistry` withdraws a tool from the model's
+   * horizon only on a `*` deny (a narrower one leaves ~2 KB of schema in every turn for a tool that
+   * cannot be called), and `tool/computer.ts` asserts the action a second time as
+   * `bind-windows-app/<exe>`, which a narrow grant would pass the first check and refuse the second.
+   * Turning it back ON deletes the rule rather than writing an `allow`: the floor is what grants it,
+   * and a stored allow would outlive the floor it was compensating for.
+   */
+  const computerRuleset = () => {
+    const kept = storedRules().filter(
+      (rule) => !(rule.action === "computer" && rule.resource === "*" && rule.effect === "deny"),
+    )
+    return computerUse() === false
+      ? [...kept, { action: "computer", resource: "*", effect: "deny" } satisfies StoredRule]
+      : kept
+  }
   /**
    * Where this colleague's own workspace is, as the server computed it.
    *
@@ -293,6 +339,7 @@ export function AgentConfigDialog(props: {
     posture() !== undefined ||
     permissionMode() !== undefined ||
     strict() !== undefined ||
+    computerUse() !== undefined ||
     archive() !== undefined ||
     needsTier() !== undefined ||
     model() !== undefined ||
@@ -611,6 +658,11 @@ export function AgentConfigDialog(props: {
             ...(posture() === undefined ? {} : { shortChat: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+            // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
+            // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
+            ...(computerUse() === undefined || computerRuleset().length === 0
+              ? {}
+              : { permissions: computerRuleset() }),
             ...(reground() === undefined ? {} : { reground: reground()! }),
             archiveChats: archiveValue(),
             ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
@@ -625,6 +677,11 @@ export function AgentConfigDialog(props: {
         ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
         ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
+        // Switched back ON and nothing else was ever refused: the field goes away entirely, so the
+        // officer inherits the floor's grant the same as a colleague that was never configured.
+        ...(computerUse() !== undefined && computerRuleset().length === 0
+          ? [["agents", id, "permissions"]]
+          : []),
       ])
       const current = conn()
       if (current === undefined) throw new Error("No instance is connected")
@@ -640,6 +697,7 @@ export function AgentConfigDialog(props: {
       setPosture(undefined)
       setPermissionMode(undefined)
       setStrict(undefined)
+      setComputerUse(undefined)
       setReground(undefined)
       setArchive(undefined)
       setModel(undefined)
@@ -1075,6 +1133,27 @@ export function AgentConfigDialog(props: {
                 />
                 <span>{language.t("agentConfig.strict")}</span>
               </label>
+
+              {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
+                  row only exists where that grant actually reaches. A subagent has no grant to opt out
+                  of, and showing it a switch reading "on" would be a control that lies. */}
+              <Show when={agent() !== undefined && isColleague(agent()!)}>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={computerUseValue()}
+                    disabled={governing()}
+                    onChange={(event) => setComputerUse(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("agentConfig.computerUse")}</span>
+                </label>
+                <p class="text-[11px] text-v2-text-text-faint">
+                  {language.t(
+                    computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off",
+                  )}
+                </p>
+              </Show>
               <label class="flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"

@@ -2846,6 +2846,11 @@ export const dict = {
   "agentConfig.work": "How it works",
   "agentConfig.posture": "Mode",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
+  "agentConfig.computerUse": "Computer Use — see the screen and drive the mouse and keyboard",
+  "agentConfig.computerUse.on":
+    "On — this colleague can control the desktop, and asks before installing anything new",
+  "agentConfig.computerUse.off":
+    "Off — the tool is taken out of this colleague's reach entirely, not just refused when it tries",
   "agentConfig.reground": "Double-check the request before finishing",
   "agentConfig.regroundDescription":
     "On by default. Turn this off when this colleague should stop without Nova's final acceptance-check reminder.",

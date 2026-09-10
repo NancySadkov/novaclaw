@@ -202,6 +202,24 @@ export const floor = (input: {
   // falling through to `ask`, which the assert path refuses. `agent-floor-horizon.test.ts` drives
   // that distinction through the real predicate so the next person does not have to trust a comment.
   ...(input.officer ? [{ action: "spawn", resource: "inherit", effect: "allow" } as const] : []),
+  // 🔴 **Computer Use is granted to every officer by default, and turned off per officer rather than
+  // per grant** (owner directive 2026-09-10). It sits in the floor and not in five `agent_config`
+  // rows for the same reason `spawn` does: a per-row grant has to be remembered for every future
+  // hire, and an officer hired tomorrow would silently have no eyes or hands. An explicit rule, not a
+  // catch-all — `test/permission-baseline.test.ts` fails if this ever becomes `{action:"*"}`.
+  //
+  // `resource: "*"` is required, not convenient: `tool/computer.ts` asserts this action twice — once
+  // bare, and once as `bind-windows-app/<exe>` (or the X11 display grant) — and a narrow rule would
+  // pass the first and refuse the second, which reads as "granted but cannot bind".
+  //
+  // ⚠️ **The opt-out is a `deny` on `resource: "*"`, and only that shape works.** `evaluate` is a
+  // `findLast`, so a stored rule lands after the floor and wins; and `ToolRegistry.materialize`
+  // withdraws a tool only when the last matching rule reads `resource: "*"` + `deny`
+  // (`registry.ts` → `whollyDisabled`). Anything narrower leaves the model reading a ~2 KB schema
+  // every turn for a capability it cannot use — the same mistake the `spawn` comment above records.
+  // Non-officers keep the verdict they always had: no rule, falling through to `ask`, which the
+  // assert path refuses.
+  ...(input.officer ? [{ action: "computer", resource: "*", effect: "allow" } as const] : []),
   { action: "plan_enter", resource: "*", effect: "deny" },
   { action: "plan_exit", resource: "*", effect: "deny" },
 ]
