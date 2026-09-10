@@ -27,7 +27,7 @@ import type {
   SessionMessageUser,
   SessionStatus,
 } from "@novaclaw/sdk/v2"
-import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
+import { isSteerText, stripSteerProvenance, stripAutomatedEcho } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
@@ -393,7 +393,11 @@ function Turn(props: {
   }
   const split = () => {
     const message = closing()
-    return message ? answerStart(message.content) : 0
+    return message
+      ? answerStart(
+          message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)),
+        )
+      : 0
   }
   const hasAnswer = () => {
     const message = closing()
@@ -734,15 +738,16 @@ function AssistantMessage(props: {
     !props.message.time.completed &&
     !props.message.content.some(
       (c) =>
-        (c.type === "text" && c.text.trim().length > 0) ||
-        (c.type === "reasoning" && c.text.trim().length > 0) ||
+        (c.type === "text" && stripAutomatedEcho(c.text).trim().length > 0) ||
+        (c.type === "reasoning" && stripAutomatedEcho(c.text).trim().length > 0) ||
         c.type === "tool",
     )
   // The assistant's prose (text parts only — reasoning/tool output isn't "the answer").
   const copyableText = () =>
     props.message.content
       .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
-      .map((c) => c.text)
+      .map((c) => stripAutomatedEcho(c.text))
+      .filter((text) => text.trim().length > 0)
       .join("\n")
       .trim()
   // The real reasoning-token count lands on the MESSAGE at step end. Attribute it to the reasoning
@@ -762,7 +767,10 @@ function AssistantMessage(props: {
   const reasoningTokens = () => (reasoningParts() === 1 ? props.message.tokens?.reasoning : undefined)
   const faultText = useFaultText()
   const actions = useContext(TranscriptActionsContext)
-  const split = () => answerStart(props.message.content)
+  const split = () =>
+    answerStart(
+      props.message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)),
+    )
   const parts = () => {
     if (props.half === "work") return props.message.content.slice(0, split())
     if (props.half === "answer") return props.message.content.slice(split())
@@ -793,17 +801,20 @@ function AssistantMessage(props: {
         {(part) => (
           <Switch>
             <Match when={part.type === "text" && part}>
-              {(p) => (
-                <Show when={p().text.trim()}>
-                  <div data-slot="native-assistant-text">
-                    <Markdown
-                      text={p().text}
-                      cacheKey={`${props.message.id}:${p().id}`}
-                      streaming={!props.message.time.completed}
-                    />
-                  </div>
-                </Show>
-              )}
+              {(p) => {
+                const text = () => stripAutomatedEcho(p().text)
+                return (
+                  <Show when={text().trim()}>
+                    <div data-slot="native-assistant-text">
+                      <Markdown
+                        text={text()}
+                        cacheKey={`${props.message.id}:${p().id}`}
+                        streaming={!props.message.time.completed}
+                      />
+                    </div>
+                  </Show>
+                )
+              }}
             </Match>
             <Match when={part.type === "reasoning" && part}>
               {(p) => (

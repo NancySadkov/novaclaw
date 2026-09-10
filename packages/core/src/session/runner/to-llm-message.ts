@@ -15,6 +15,7 @@ import { SessionMessage } from "../message"
 import { SessionOrigin } from "../origin"
 import type { FileAttachment } from "../prompt"
 import { ArchiveAttachment } from "./archive-attachment"
+import { stripAutomatedEcho } from "../automated-echo"
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -512,19 +513,24 @@ const assistant = (message: SessionMessage.Assistant, model: Model, capabilities
   // text/reasoning, but make the next request re-ground from portable history rather than reusing them.
   const reuseProviderMetadata = sameModel && message.error === undefined && message.finish !== "broken"
   const content = message.content.flatMap((item): ContentPart[] => {
-    if (item.type === "text") return [{ type: "text", text: item.text }]
-    if (item.type === "reasoning")
+    if (item.type === "text") {
+      const text = stripAutomatedEcho(item.text)
+      return text.length > 0 ? [{ type: "text", text }] : []
+    }
+    if (item.type === "reasoning") {
+      const text = stripAutomatedEcho(item.text)
       return sameModel
         ? [
             {
               type: "reasoning",
-              text: item.text,
+              text,
               providerMetadata: reuseProviderMetadata ? item.providerMetadata : undefined,
             },
           ]
-        : item.text.length > 0
-          ? [{ type: "text", text: item.text }]
+        : text.length > 0
+          ? [{ type: "text", text }]
           : []
+    }
     const call = toolCall(item, reuseProviderMetadata ? item.provider?.metadata : undefined)
     if (item.provider?.executed !== true) return [call]
     const result = toolResult(

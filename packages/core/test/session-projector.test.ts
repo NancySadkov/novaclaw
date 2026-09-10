@@ -917,4 +917,128 @@ describe("SessionProjector", () => {
       ])
     }),
   )
+
+  // Door test for the automated-echo scrub. The harness stamps injected steers with a prose provenance
+  // marker, and a small model imitates prose: it answers one with a lead-in of its own
+  // ("Automated steer, not you."). The projector is the ONE place a finished text/reasoning part
+  // becomes durable, so the scrub lives here and the echo can never enter history — where it would
+  // become a few-shot example and compound. A reader-side-only scrub leaves new rows polluted.
+  it.effect("does not persist a model's echo of the harness provenance marker", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionMessageTable)
+        .values(assistantRow(SessionMessage.ID.make("msg_echo"), 0))
+        .run()
+        .pipe(Effect.orDie)
+
+      const service = yield* EventV2.Service
+      const assistantMessageID = SessionMessage.ID.make("msg_echo")
+      yield* service.publish(SessionEvent.Text.Started, {
+        sessionID,
+        assistantMessageID,
+        timestamp: DateTime.makeUnsafe(1),
+        textID: "text-echo",
+      })
+      yield* service.publish(SessionEvent.Text.Ended, {
+        sessionID,
+        assistantMessageID,
+        timestamp: DateTime.makeUnsafe(2),
+        textID: "text-echo",
+        text: "\n\nAutomated steer, not you. Continuing with the deletion path.",
+      })
+      yield* service.publish(SessionEvent.Reasoning.Started, {
+        sessionID,
+        assistantMessageID,
+        timestamp: DateTime.makeUnsafe(3),
+        reasoningID: "reasoning-echo",
+      })
+      yield* service.publish(SessionEvent.Reasoning.Ended, {
+        sessionID,
+        assistantMessageID,
+        timestamp: DateTime.makeUnsafe(4),
+        reasoningID: "reasoning-echo",
+        text: "Automated recall, not you — the recalled memories are stale.",
+      })
+
+      const rows = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      const [assistant] = rows
+        .map((row) => Schema.decodeUnknownSync(SessionMessage.Message)({ ...row.data, id: row.id, type: row.type }))
+        .filter((message): message is SessionMessage.Assistant => message.type === "assistant")
+      const spoken = assistant?.content.find((part): part is SessionMessage.AssistantText => part.type === "text")
+      const thought = assistant?.content.find(
+        (part): part is SessionMessage.AssistantReasoning => part.type === "reasoning",
+      )
+      expect(spoken?.text).toBe("Continuing with the deletion path.")
+      // The separator goes with the disclaimer; what follows keeps its own bytes, including its case.
+      expect(thought?.text).toBe("the recalled memories are stale.")
+    }),
+  )
+
+  // The scrub must be invisible to ordinary prose: an assistant turn that merely starts with clean
+  // text keeps its bytes, including leading whitespace, or the scrub would rewrite every prompt.
+  it.effect("leaves an ordinary assistant text part byte-identical", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionMessageTable)
+        .values(assistantRow(SessionMessage.ID.make("msg_clean"), 0))
+        .run()
+        .pipe(Effect.orDie)
+
+      const service = yield* EventV2.Service
+      yield* service.publish(SessionEvent.Text.Started, {
+        sessionID,
+        assistantMessageID: SessionMessage.ID.make("msg_clean"),
+        timestamp: DateTime.makeUnsafe(1),
+        textID: "text-clean",
+      })
+      yield* service.publish(SessionEvent.Text.Ended, {
+        sessionID,
+        assistantMessageID: SessionMessage.ID.make("msg_clean"),
+        timestamp: DateTime.makeUnsafe(2),
+        textID: "text-clean",
+        text: "\n\n  Here is the summary, with its leading whitespace intact.",
+      })
+
+      const rows = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      const [assistant] = rows
+        .map((row) => Schema.decodeUnknownSync(SessionMessage.Message)({ ...row.data, id: row.id, type: row.type }))
+        .filter((message): message is SessionMessage.Assistant => message.type === "assistant")
+      const spoken = assistant?.content.find((part): part is SessionMessage.AssistantText => part.type === "text")
+      expect(spoken?.text).toBe("\n\n  Here is the summary, with its leading whitespace intact.")
+    }),
+  )
 })

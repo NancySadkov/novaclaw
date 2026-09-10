@@ -2,6 +2,7 @@ import { castDraft, produce, type WritableDraft } from "immer"
 import { Effect } from "effect"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
+import { stripAutomatedEcho } from "./automated-echo"
 
 export type MemoryState = {
   messages: SessionMessage.Message[]
@@ -344,7 +345,15 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.text.ended": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestText(draft, event.data.textID)
-          if (match) match.text = event.data.text
+          // The durable door for a finished text part. The harness's own provenance marker is written
+          // in the same register as model prose (`[Automated NovaClaw check — not a message from your
+          // user.]` on a `user`-role turn), and a ~30B model imitates prose it has just been handed: it
+          // answers an injected steer with a lead-in of its own — "Automated steer, not you." Scrubbed
+          // HERE, at the one assignment a completed part's text goes through, rather than at each of
+          // the readers, so the echo never becomes durable history. Durable history is precisely what
+          // teaches the model to keep writing it: one recorded echo is a few-shot example, and it
+          // compounds (measured 2026-09-10: 39 echoes in one session's 498 messages).
+          if (match) match.text = stripAutomatedEcho(event.data.text)
         })
       },
       "session.next.tool.input.started": (event) => {
@@ -485,7 +494,10 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestReasoning(draft, event.data.reasoningID)
           if (match) {
-            match.text = event.data.text
+            // Same door, same reason as `session.next.text.ended` above: a thinking model narrates the
+            // steer acknowledgment into its reasoning trace too, and the trace is replayed to it as
+            // text when the reply is lowered on a different model.
+            match.text = stripAutomatedEcho(event.data.text)
             match.time = { created: match.time?.created ?? event.data.timestamp, completed: event.data.timestamp }
             if (event.data.providerMetadata !== undefined) match.providerMetadata = event.data.providerMetadata
           }

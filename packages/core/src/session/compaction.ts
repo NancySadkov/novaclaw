@@ -9,7 +9,7 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { ColleagueNote } from "./colleague-note"
-import { isSteerText, stripSteerProvenance } from "./steer-provenance"
+import { isSteerText, stripSteerProvenance, stripAutomatedEcho } from "./steer-provenance"
 import { Token } from "../util/token"
 import { Log } from "@novaclaw/schema/log"
 import { ReasoningBudget } from "./runner/reasoning-budget"
@@ -295,8 +295,14 @@ export const serializeMessage = (message: SessionMessage.Message) => {
   if (message.type === "assistant") {
     return message.content
       .flatMap((part) => {
-        if (part.type === "text") return [`[Assistant]: ${part.text}`]
-        if (part.type === "reasoning") return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
+        if (part.type === "text") {
+          const text = stripAutomatedEcho(part.text)
+          return text ? [`[Assistant]: ${text}`] : []
+        }
+        if (part.type === "reasoning") {
+          const text = stripAutomatedEcho(part.text)
+          return text ? [`[Assistant reasoning]: ${text}`] : []
+        }
         const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
         if (part.state.status === "completed")
           return [

@@ -20,6 +20,8 @@ export const isSteerText = (text: string) => text.startsWith(STEER_PROVENANCE_PR
 export const stripSteerProvenance = (text: string) =>
   text.startsWith(STEER_PROVENANCE_PREFIX) ? text.slice(STEER_PROVENANCE_PREFIX.length) : text
 
+export { stripAutomatedEcho } from "./automated-echo"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // B2 — ONE answer to "is this really the user talking?", and the transcript walks that use it.
 //
