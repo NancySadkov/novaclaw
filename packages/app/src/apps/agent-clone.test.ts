@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { Scratch } from "@novaclaw/core/scratch"
 import { cloneAgent, clonedFields, NOT_CLONED, NovaCloneRefusal, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
@@ -175,5 +177,75 @@ describe("every config field is carried or deliberately excluded", () => {
     // Without this the comparison above would pass forever on an empty set.
     expect(Object.keys(ConfigAgent.Info.fields).length).toBeGreaterThan(10)
     expect(clonedFields()).toContain("model")
+  })
+})
+
+// 🔴 A clone inherits the brief and NONE of the identity. The roster hands back a RESOLVED record, so
+// two fields arrive in the bag looking authored while being derived from the SOURCE: its avatar route
+// and the materialized scratch grant inside `permissions`. Measured on a live instance 2026-09-10 —
+// this is the writer that gave `geryon` Daedalus's portrait and `…/scratch/daedalus/*`, which read as
+// "the agent cannot write its own folder" and, in the other direction, as one officer holding a write
+// grant into another's private workspace.
+describe("a clone carries no identity artifacts forward", () => {
+  // Built from the REAL scratch root rather than a literal, so the strip is exercised on a path it
+  // can actually recognize. A fixture under a made-up username passes by accident, not by design.
+  const other = path.join(Scratch.forAgent("daedalus"), "*").replaceAll("\\", "/")
+  const resolved = (id: string): AgentLike =>
+    ({
+      id,
+      name: "Daedalus",
+      title: "Engineer",
+      mode: "primary",
+      // The shape only the agent.list handler emits: a route rebuilt from the SOURCE's id, with the
+      // portrait's content hash appended.
+      avatar: "/api/agent/daedalus/avatar?v=65337e00",
+      description: "Daedalus, Engineer.",
+      directory: "C:\\Users\\nangl\\d\\code\\llm",
+      permissions: [
+        { action: "external_directory_read", resource: other, effect: "allow" },
+        { action: "external_directory_write", resource: other, effect: "allow" },
+        { action: "external_directory_write", resource: "*", effect: "ask" },
+      ],
+    }) as unknown as AgentLike
+
+  test("a derived avatar route does not cross the identity boundary", () => {
+    const clone = planClone({ source: resolved("daedalus"), taken: [], random: () => 0 })
+    expect(clone.fragment["avatar"]).toBeUndefined()
+    expect(JSON.stringify(clone.fragment)).not.toContain("daedalus/avatar")
+  })
+
+  test("an AUTHORED avatar still carries — the rule is derived, not absent", () => {
+    const authored = { ...resolved("daedalus"), avatar: "📒" } as unknown as AgentLike
+    expect(planClone({ source: authored, taken: [], random: () => 0 }).fragment["avatar"]).toBe("📒")
+  })
+
+  test("stripping the source's scratch grant is PAIRED with granting the clone's own", () => {
+    const clone = planClone({ source: resolved("daedalus"), taken: [], random: () => 0 })
+    const text = JSON.stringify(clone.fragment["permissions"])
+    // Both halves, or the fix is a refusal wearing a security patch.
+    expect(text).not.toContain("scratch/daedalus")
+    expect(text).toContain(`scratch/${clone.id}`)
+  })
+
+  test("the source's CHECKOUT does not cross — a clone starts in its own scratch", () => {
+    const clone = planClone({ source: resolved("daedalus"), taken: [], random: () => 0 })
+    expect(clone.fragment["directory"]).toBeUndefined()
+    expect(JSON.stringify(clone.fragment)).not.toContain("code\\llm")
+    // Dropping it is not a downgrade, and that claim is not load-bearing on this test: with no
+    // `directory`, `AgentWorkspace.folderFor` resolves the colleague to `Scratch.forAgent(id)`, which
+    // `packages/core/test/agent-workspace.test.ts` already pins. The clone is productive on turn one.
+  })
+
+  test("NEGATIVE CONTROL: the source really carried a directory, so the exclusion is not vacuous", () => {
+    expect((resolved("daedalus") as unknown as { directory?: string }).directory).toBeTruthy()
+    // And it is excluded by NAME with a stated reason, not by the field quietly missing from the schema.
+    expect(NOT_CLONED.directory).toMatch(/\S/)
+  })
+
+  test("NEGATIVE CONTROL: the source really carried a scratch grant, so the strip is not vacuous", () => {
+    const carried = (resolved("daedalus") as unknown as { permissions: { resource: string }[] }).permissions
+    expect(carried.some((rule) => rule.resource.endsWith("scratch/daedalus/*"))).toBe(true)
+    // And the clone's id is a real drawn name, or `scratch/${clone.id}` would assert nothing.
+    expect(planClone({ source: resolved("daedalus"), taken: [], random: () => 0 }).id.length).toBeGreaterThan(2)
   })
 })

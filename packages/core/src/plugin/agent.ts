@@ -5,6 +5,7 @@ import { define } from "./internal"
 import { Effect } from "effect"
 import { AgentV2 } from "../agent"
 import { Scratch } from "../scratch"
+import { ownScratchGrants } from "../agent/scratch-grants"
 import { Global } from "../global"
 import { Location } from "../location"
 import { PermissionV2 } from "../permission"
@@ -262,45 +263,15 @@ export const scratchDirsFor = (agentID: string): readonly string[] => [
   path.join(Scratch.forAgent(agentID), "*").replaceAll("\\", "/"),
 ]
 
-const SCRATCH_GRANT_ACTIONS = ["external_directory_read", "external_directory_write"]
-
 /**
  * Rewrite a ruleset's scratch grants so they name THIS agent's own workspace, and nothing else's.
  *
- * 🔴 **Why a derivation and not a check.** `floor({ scratchDirs: scratchDirsFor(id) })` bakes a
- * literal path into the agent's stored layer, so the grant is a SNAPSHOT of an id rather than a
- * function of it. Anything that later re-keys or copies that row carries the literal along: measured
- * on a live instance 2026-09-10, the `geryon` row held `…/scratch/daedalus/*` and `ariadne` held
- * `…/scratch/myron/*`. Each of those officers could therefore write into a colleague's private
- * workspace — AGENTS.md's filing cabinet with no drawers, in the one direction the metaphor says is
- * forbidden — and could NOT write into its own, which is what its own system prompt promises
- * (`system-compose.workspaceSection`: *"you may read and write there freely — it needs no
- * permission"*). The promise and the rule disagreed, and the model met the rule.
- *
- * ⚠️ **Both halves are load-bearing.** Adding the correct grant without dropping the foreign one
- * fixes the promise and leaves the cross-officer access open. Dropping the foreign one without
- * adding the correct one turns a leak into a refusal. So this filters and then grants.
- *
- * Only grants sitting UNDER the scratch root are touched. The other members of `SCRATCH_DIRS` — the
- * system temp root and the truncation store — are shared locations by design and pass through
- * untouched, so this never narrows anything the floor intended to grant.
+ * The rule itself lives in `agent/scratch-grants.ts`, not here: the roster's clone action needs the
+ * same rule, and importing this plugin's graph from the app drags `agent/avatar.ts`'s bundled portrait
+ * imports into the app's TypeScript program. This is the kernel's door onto it.
  */
-export const withOwnScratch = (agentID: string, rules: readonly PermissionV2.Rule[]): PermissionV2.Rule[] => {
-  const own = path.join(Scratch.forAgent(agentID), "*").replaceAll("\\", "/")
-  const root = `${Scratch.root().replaceAll("\\", "/")}/`
-  const kept = rules.filter((rule) => {
-    if (!SCRATCH_GRANT_ACTIONS.includes(rule.action)) return true
-    const resource = String(rule.resource)
-    if (!resource.startsWith(root)) return true
-    return resource === own
-  })
-  if (kept.some((rule) => rule.action === "external_directory_write" && String(rule.resource) === own)) return kept
-  return [
-    ...kept,
-    { action: "external_directory_read", resource: own, effect: "allow" as const },
-    { action: "external_directory_write", resource: own, effect: "allow" as const },
-  ]
-}
+export const withOwnScratch = (agentID: string, rules: readonly PermissionV2.Rule[]): PermissionV2.Rule[] =>
+  ownScratchGrants(agentID, rules)
 
 export const Plugin = define({
   id: "agent",

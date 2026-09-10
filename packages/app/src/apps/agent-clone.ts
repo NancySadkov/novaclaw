@@ -17,6 +17,7 @@
 // now fails when a new field is neither carried nor deliberately excluded.
 
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { ownScratchGrants } from "@novaclaw/core/agent/scratch-grants"
 import { OfficerName } from "@novaclaw/core/agent/officer-name"
 import { modelRef } from "./agent-model"
 import type { AgentLike } from "./contacts"
@@ -44,6 +45,13 @@ export const NOT_CLONED = {
   /** Provider request overrides are per-deployment plumbing (headers, body), not who a colleague IS.
    *  Copying them duplicates a credential-shaped detail into a second place to keep in sync. */
   request: "deployment plumbing, not the brief",
+  /** A workspace is a PLACE, not a brief, and two colleagues on one checkout is not sharing — it is
+   *  two writers on one tree with no lock. Measured 2026-09-10: `geryon.directory` equalled
+   *  `daedalus.directory`, and the collision was the backdrop to every other symptom in that incident.
+   *  Dropping it is not a downgrade: with no `directory` the clone works in its OWN scratch
+   *  (`AgentWorkspace.folderFor` falls back to `Scratch.forAgent`), so it is productive from its first
+   *  turn and a person assigns a project when they mean to. */
+  directory: "a checkout is chosen, not inherited — the clone starts in its own scratch",
 } as const satisfies Partial<Record<keyof ConfigAgent.Info, string>>
 
 /** Every config field a clone carries: the schema's own keys, minus the deliberate exclusions. */
@@ -124,6 +132,28 @@ export const planClone = (input: {
       if (model.providerID && model.id) fragment["model"] = modelRef({ providerID: model.providerID, id: model.id })
       // The variant rides INSIDE the model on the API shape and is its own field in config.
       if (model.variant) fragment["variant"] = model.variant
+      continue
+    }
+    // 🔴 **Two fields are DERIVED FROM THE SOURCE and must not ride across an identity boundary**, even
+    // though they arrive in the bag looking like authored config. They do because the roster hands back
+    // a RESOLVED record, not the stored one: `avatar` may be the source's own derived route (only the
+    // `agent.list` handler emits `/api/agent/<id>/avatar`, and it appends `?v=<hash>`), and
+    // `permissions` carries the MATERIALIZED floor, whose per-agent scratch grant names the SOURCE's
+    // private workspace. Carried verbatim, a clone wears the source's face and holds a write grant to a
+    // colleague's scratch folder. Measured on a live instance 2026-09-10: that is how `geryon` acquired
+    // Daedalus's portrait, Daedalus's description and `…/scratch/daedalus/*`. An authored glyph (`"📒"`)
+    // is a value the user chose and still carries. (`directory` was the third leg of that incident and
+    // is now excluded outright in `NOT_CLONED`, so it never reaches this loop.)
+    if (key === "avatar") {
+      const derived = typeof value === "string" && value.startsWith(`/api/agent/${input.source.id}/avatar`)
+      if (!derived) fragment["avatar"] = value
+      continue
+    }
+    if (key === "permissions" && Array.isArray(value)) {
+      // Strip the source's scratch grant AND grant the clone's own, in the same breath: dropping one
+      // without the other turns a leak into a refusal. `ownScratchGrants` is that pairing, in kernel,
+      // so the clone and the materializer cannot drift apart on what "its own scratch" means.
+      fragment["permissions"] = ownScratchGrants(name, value as never)
       continue
     }
     fragment[key] = value
