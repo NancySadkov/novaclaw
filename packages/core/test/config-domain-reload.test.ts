@@ -18,6 +18,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillV2 } from "@novaclaw/core/skill"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
+import { Scratch } from "@novaclaw/core/scratch"
 import { Database } from "../src/database/database"
 import { EventV2 } from "../src/event"
 import { tmpdir } from "./fixture/tmpdir"
@@ -228,5 +229,69 @@ describe("the reload guard is per-key, and a failed reload is described honestly
       const store = yield* AgentConfigStore.Service
       expect((yield* store.agents())[PROBE]?.at(-1)?.description).toBe("durable")
     }),
+  )
+})
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// THE RELOAD HOOK, NOT THE HELPER. `agent-scratch-pairing.test.ts` proves `ownScratchGrants` computes
+// the right ruleset; it cannot prove the agents door CALLS it, and the call is inline in this hook
+// body (`config/plugin/agent.ts`, right after `agent.permissions.push(...item.permissions)`), so no
+// helper-level test reaches it. That line is what will enforce containment in the first build that
+// ships it, which makes an untested wiring line in a security rule the exact shape this comes back in.
+//
+// The discriminating half is the STRIP. `floor` only ever ADDS grants, so a materialized agent that
+// carries no foreign scratch grant can only be the work of the wiring line. The GRANT half is weaker
+// by construction — `floor({ scratchDirs: scratchDirsFor(id) })` may supply it when the agent is new
+// — so it is asserted on a SECOND write of an agent that already exists, where the floor is skipped.
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("the agents reload hook derives the scratch grant instead of carrying it", () => {
+  const OFFICER = "scratch-door-probe"
+
+  it.live("a stored layer naming ANOTHER officer's scratch is rewritten by the hook, not by the writer", () =>
+    Effect.scoped(
+      withLocation((location) =>
+        Effect.gen(function* () {
+          const plugins = yield* PluginV2.Service
+          yield* plugins.ready
+          const agents = yield* AgentV2.Service
+          const store = yield* AgentConfigStore.Service
+          const id = AgentV2.ID.make(OFFICER)
+          const own = `${Scratch.forAgent(OFFICER).replaceAll("\\", "/")}/*`
+          const foreign = own.replace(`/${OFFICER}/*`, "/some-colleague/*")
+          const grant = (resource: string) => [
+            { action: "external_directory_read" as const, resource, effect: "allow" as const },
+            { action: "external_directory_write" as const, resource, effect: "allow" as const },
+          ]
+
+          // The exact residue the clone writer left on a live instance 2026-09-10: a stored layer whose
+          // scratch grant names a DIFFERENT agent, written through the one path every config write
+          // takes. Nothing is rebuilt after it.
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({ agents: { [OFFICER]: { description: "first write", permissions: grant(foreign) } } }),
+          )
+
+          const held = (yield* store.agents())[OFFICER]?.flatMap((layer) => layer.permissions ?? []) ?? []
+          const materialized = (yield* agents.get(id))?.permissions ?? []
+          const resources = materialized.map((rule) => String(rule.resource))
+
+          // NEGATIVE CONTROL: the row really does carry the foreign grant. Without this, "the
+          // materialized agent has no foreign grant" is satisfiable by a fixture that never had one.
+          expect(held.map((rule) => String(rule.resource))).toContain(foreign)
+          // THE STRIP — the assertion only the wiring line can satisfy.
+          expect(resources.some((resource) => resource.includes("scratch/some-colleague"))).toBe(false)
+          expect(resources).toContain(own)
+
+          // A SECOND write, now that the agent exists: the floor is skipped for an agent already in the
+          // draft, so if the own grant still shows up it came from the hook re-deriving it, not from
+          // boot-time floor. The foreign grant is planted again to prove the strip is per-reload.
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({ agents: { [OFFICER]: { description: "second write", permissions: grant(foreign) } } }),
+          )
+          const again = (yield* agents.get(id))?.permissions.map((rule) => String(rule.resource)) ?? []
+          expect(again.some((resource) => resource.includes("scratch/some-colleague"))).toBe(false)
+          expect(again).toContain(own)
+        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      ),
+    ),
   )
 })
