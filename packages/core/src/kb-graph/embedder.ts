@@ -39,27 +39,61 @@ export function parseEmbeddings(body: unknown, expected: number): number[][] | u
 }
 
 const BATCH = 32
-const TIMEOUT_MS = 15_000
+/**
+ * Two deadlines, because ONE was wrong for whichever caller it happened to serve.
+ *
+ * 🔴 The single 15 s bound was sized for the largest payload this module carries — a maintenance
+ * backfill of hundreds of passages — and applied unchanged to the smallest: one query sentence,
+ * awaited inside a user's turn, where the work measures ~0.2 s. One wedged LAN endpoint therefore
+ * paused every step of every turn for fifteen seconds, and the pause was indistinguishable from a
+ * slow model. A bound has to be sized to the request it bounds.
+ *
+ * ⚠️ The short one is a LATENCY bound, not a capacity bound: it may abandon a query embed that a
+ * slow-but-healthy device would have finished. That is the intended trade, because the degradation is
+ * cheap and correct — the search runs keyword-only, and `recall.ts` says so in the receipt. The bulk
+ * bound gets no such trade: a backfill has no turn waiting on it and its only graceful path is to
+ * retry, so it keeps the patient number.
+ */
+const BULK_TIMEOUT_MS = 15_000
+const QUERY_TIMEOUT_MS = 1_500
 
 /** Embed texts with the configured device. `undefined` = no vector leg available (caller uses FTS).
  *  `dbFile` is the same settings-db override `MemorySetting.memoryEnabled` takes — tests point it at a
  *  scratch db (the hermetic test preload pins NOVACLAW_DB to ":memory:"); production passes nothing. */
-export async function embed(texts: readonly string[], dbFile?: string): Promise<number[][] | undefined> {
+export async function embed(
+  texts: readonly string[],
+  dbFile?: string,
+  deadlineMs: number = BULK_TIMEOUT_MS,
+): Promise<number[][] | undefined> {
   if (texts.length === 0) return []
   const settings = MemorySetting.embeddingSettings(dbFile)
   if (settings === undefined) return undefined
   const out: number[][] = []
   for (const batch of batches(texts, BATCH)) {
-    const vectors = await requestBatch(settings, batch)
+    const vectors = await requestBatch(settings, batch, deadlineMs)
     if (vectors === undefined) return undefined // partial vectors would silently corrupt the index
     out.push(...vectors)
   }
   return out
 }
 
-/** Embed one text (the common case: a search query, or one remembered fact). */
+/** Embed one text (the common case: one remembered fact, or one archived passage). */
 export async function embedOne(text: string, dbFile?: string): Promise<number[] | undefined> {
   const vectors = await embed([text], dbFile)
+  return vectors?.[0]
+}
+
+/**
+ * Embed a SEARCH QUERY — the only embedding anyone waits for.
+ *
+ * It is a separate entry point rather than a flag on `embedOne` because the thing being declared is
+ * not a size, it is a *waiter*: the same 0.2 s of work is patient when a background drain asks for it
+ * and unacceptable when a live turn asks for it. Naming it here means the caller cannot forget the
+ * distinction, and a future `embedOne` on a turn path fails the review rather than quietly inheriting
+ * fifteen seconds.
+ */
+export async function embedQuery(text: string, dbFile?: string): Promise<number[] | undefined> {
+  const vectors = await embed([text], dbFile, QUERY_TIMEOUT_MS)
   return vectors?.[0]
 }
 
@@ -85,6 +119,7 @@ export async function embedOne(text: string, dbFile?: string): Promise<number[] 
 async function requestBatch(
   settings: MemorySetting.EmbeddingSettings,
   batch: readonly string[],
+  deadlineMs: number,
 ): Promise<number[][] | undefined> {
   const verdict = Offline.checkUrl(settings.url, Offline.currentPolicy())
   if (!verdict.allowed) {
@@ -96,7 +131,7 @@ async function requestBatch(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: settings.model, input: batch }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(deadlineMs),
     })
     if (!response.ok) return undefined
     return parseEmbeddings(await response.json(), batch.length)

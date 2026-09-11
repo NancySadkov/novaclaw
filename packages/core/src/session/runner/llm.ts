@@ -220,8 +220,14 @@ const SLOW_STAGE_MS = 10_000
  * user is staring at "Choosing useful memories" the whole time. Thinking-off on the current test
  * model this pass lands well inside a second, so the deadline only fires when something is wrong —
  * a model ignoring `enable_thinking:false`, a cold server, a device under load.
+ *
+ * ⚠️ It is now the OUTER bound only. The pass enters through the scheduler's interactive-idle tier, so
+ * a contended device preempts it long before four seconds; what this catches is a device that is
+ * neither preempted nor responsive.
  */
 const RERANK_DEADLINE = "4 seconds"
+/** The answer is a permutation of at most a dozen small integers. Generous, and thinking is off. */
+const RERANK_ANSWER_TOKENS = 128
 
 /**
  * Write the just-compacted conversation into the colleague's own memory as searchable passages.
@@ -277,10 +283,25 @@ const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(fun
     at: new Date(),
   })
   if (passages.length === 0) return
-  for (const passage of passages) {
+  // ONE batched request for the whole archive, not one round trip per passage.
+  //
+  // 🔴 This loop called the SINGLE-item API inside a `for`, so an eight-passage compaction issued
+  // eight sequential requests — each carrying the bulk fifteen-second bound — while the user's turn
+  // waited on it. The module already batches 32 texts per request; the loop was the only thing
+  // keeping that from being used. A wedged device therefore cost 8 × 15 s inline instead of 1 × 15 s,
+  // and it sat on the path a compaction already makes expensive.
+  //
+  // ⚠️ The coarser degradation is taken knowingly: `embed` returns undefined when any batch fails, so
+  // one bad batch now costs the whole archive its vectors rather than one passage's. That is the
+  // correct trade precisely because the failure is device-wide — if a batch failed, the device is
+  // down, and a per-passage retry would pay the full timeout once per passage to recover nothing.
+  // The archive lands FTS-only and recall still reaches it by keyword; nothing is lost but the vector
+  // leg of a run that could not have had one.
+  const vectors = yield* Effect.promise(() => KbEmbedder.embed(passages.map((passage) => passage.text)))
+  for (const [index, passage] of passages.entries()) {
     // Embedded on write so the vector leg can reach it later; degrades to FTS-only when no device is
     // configured, exactly as `kb ingest` does.
-    const embedding = yield* Effect.promise(() => KbEmbedder.embedOne(passage.text))
+    const embedding = vectors?.[index]
     yield* input.memory
       .addMemory({
         id: passage.id,
@@ -1602,13 +1623,42 @@ export const layer = Layer.effect(
         // when the config resolves, so a reader that forgets it can no longer be off by omission.
         stanceOf("memory", config.memory)
       ) {
+        /**
+         * ONE LEG PER TURN, not one per provider step.
+         *
+         * The query is `lastRealUserText`, which cannot change while a turn runs, and the cabinet,
+         * pool and budget cannot either — so a forty-step turn was paying forty embeds, forty searches
+         * and (with rerank on) forty model calls to assemble a byte-identical block. `recall.ts`
+         * holds why the window is a TTL rather than an invalidation hook, and what the one stale case
+         * costs. `reusePack` below is that decision at each expensive statement; a statement added
+         * here later must join the guards, which is why the pack itself is taken from `remembered`
+         * rather than recomputed and discarded.
+         */
+        const recallBudgetTokens = SessionRecall.recallBudget(tier)
+        const recallTokenBudget = SessionRecall.recallTokenBudget(tier)
+        const legKey = SessionRecall.recallLegKey({
+          agentID: memoryOwnerAgent,
+          scopes: memoryScopes,
+          query: recallQuery,
+          poolSize: SessionRecall.recallPoolSize(recallBudgetTokens),
+          budget: recallTokenBudget,
+        })
+        const remembered = SessionRecall.cachedPack(legKey)
+        const reusePack = remembered !== undefined
         // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
-        yield* timingStart("memory-embed")
-        const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
-        yield* timingEnd("memory-embed")
-        const budget = SessionRecall.recallBudget(tier)
+        // The query embedding is the one call here a live turn WAITS on, so it takes the short bound
+        // (`embedQuery`, not `embedOne`): a keyword-only pack is a cheap degradation, a fifteen-second
+        // pause on every step is not. The whole phase is skipped when this turn already assembled the
+        // pack — a 0 ms row for work that did not happen would be the receipt lying.
+        let recallVector: number[] | undefined
+        if (!reusePack) {
+          yield* timingStart("memory-embed")
+          recallVector = yield* Effect.promise(() => KbEmbedder.embedQuery(recallQuery))
+          yield* timingEnd("memory-embed")
+        }
+        const budget = recallBudgetTokens
         /**
          * The id that links THIS recall's ledger rows to what the turn ends up doing with them.
          *
@@ -1623,32 +1673,35 @@ export const layer = Layer.effect(
         // them. What the model sees each turn is the SHORT list, so ordering matters most here — a
         // recent authoritative fact must beat an old passive musing that merely echoes the wording.
         // Bounded (ranking.ts) and a no-op when hits share provenance and age.
-        yield* timingStart("memory-search")
-        const recallCandidates = yield* memory
-          .search({
-            query: recallQuery,
-            k: SessionRecall.recallPoolSize(budget),
-            scopes: memoryScopes,
-            surface: "auto-recall",
-            recallID,
-            ...(recallVector === undefined ? {} : { embedding: recallVector }),
-          })
-          .pipe(
-            // 🔴 A FAILED recall and an EMPTY one are different facts, and this collapsed them into
-            // one `[]` with nothing written down. `MemoryClient.fromEngine` folds every engine fault
-            // into a single tagged error, so a store whose engine had been failing every search for
-            // weeks presented as a store with nothing relevant to say — to the user, and to whoever
-            // read the log afterwards. Every sibling degradation in this subsystem names its fault;
-            // this is the highest-traffic path in the store and it named nothing.
-            Effect.tapError((fault) =>
-              Log.event("session.memory.recall.failed", {
-                "session.id": session.id,
-                "session.cause": Log.fault(fault),
-              }),
-            ),
-            Effect.orElseSucceed(() => []),
-          )
-        yield* timingEnd("memory-search")
+        let recallCandidates: ReadonlyArray<MemoryClient.SearchHit> = []
+        if (!reusePack) {
+          yield* timingStart("memory-search")
+          recallCandidates = yield* memory
+            .search({
+              query: recallQuery,
+              k: SessionRecall.recallPoolSize(budget),
+              scopes: memoryScopes,
+              surface: "auto-recall",
+              recallID,
+              ...(recallVector === undefined ? {} : { embedding: recallVector }),
+            })
+            .pipe(
+              // 🔴 A FAILED recall and an EMPTY one are different facts, and this collapsed them into
+              // one `[]` with nothing written down. `MemoryClient.fromEngine` folds every engine fault
+              // into a single tagged error, so a store whose engine had been failing every search for
+              // weeks presented as a store with nothing relevant to say — to the user, and to whoever
+              // read the log afterwards. Every sibling degradation in this subsystem names its fault;
+              // this is the highest-traffic path in the store and it named nothing.
+              Effect.tapError((fault) =>
+                Log.event("session.memory.recall.failed", {
+                  "session.id": session.id,
+                  "session.cause": Log.fault(fault),
+                }),
+              ),
+              Effect.orElseSucceed(() => []),
+            )
+          yield* timingEnd("memory-search")
+        }
         // P8d: let the MODEL order what it will actually see. Metadata ordering can't read
         // authoritativeness out of the TEXT — a definitive older statement should outrank a newer
         // offhand musing (measured 4/4 vs 1/4 for metadata alone). One short call (~0.4s at 5
@@ -1660,7 +1713,6 @@ export const layer = Layer.effect(
         // a fallback looks exactly like a success in a duration.
         let rerankRan = false
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
-          rerankRan = true
           yield* timingStart("memory-rerank")
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
           // ⚠️ This is the ONE utility pass sitting inside the user's own turn — it runs before the
@@ -1669,16 +1721,58 @@ export const layer = Layer.effect(
           // here and nothing else. Bound it: past the deadline we keep what we have rather than make
           // someone wait for a list of numbers. (The `NO_THINKING` overlay on `judgeCompletion` makes
           // the deadline the rare path; a model that ignores the overlay makes it the common one.)
-          const reply = yield* judgeCompletion(
-            session.id,
-            harness.introspection,
-            `${prompt.system}\n\n${prompt.user}`,
-          ).pipe(
-            Effect.timeoutOrElse({ duration: RERANK_DEADLINE, orElse: () => Effect.succeed("") }),
-            Effect.orElseSucceed(() => ""),
-          )
+          // ⚠️ This used to be the ONE utility pass sitting inline in the user's own turn, called
+          // through the runner's private judge-completion helper. The doctrine is explicit: a model
+          // GENERATING an ordering is decode-shaped work, and decode-shaped work belongs on the
+          // device's interactive-idle tier, not on the bus the user's reply needs. So it now enters
+          // through `ShortAnswer.generate` like the titler and the status sweep do — admitted as
+          // maintenance, and PREEMPTED the instant a real interactive turn wants the device, which
+          // returns "" and leaves the deterministic ranking in place. That is a better outcome than
+          // the deadline it keeps below: preemption yields immediately, while the deadline only
+          // catches a device that is neither idle nor contended, merely slow.
+          const rerankSession =
+            harness.introspection.model === undefined
+              ? session
+              : {
+                  ...session,
+                  model: {
+                    providerID: ProviderV2.ID.make(harness.introspection.model.providerID),
+                    id: ModelV2.ID.make(harness.introspection.model.id),
+                  },
+                }
+          const rerankModel = yield* models.resolve(rerankSession)
+          const rerankDevice = yield* models.device(rerankSession)
+          const reply =
+            rerankDevice === undefined
+              ? ""
+              : yield* ShortAnswer.generate({
+                  model: rerankModel,
+                  llm,
+                  system: prompt.system,
+                  text: prompt.user,
+                  // No deliberation wanted: the ask is a list of numbers, and thinking about the order
+                  // of five passages is how a 0.4 s call becomes a 4 s one.
+                  reasoningBudget: 0,
+                  maxTokens: RERANK_ANSWER_TOKENS,
+                  scheduler,
+                  maintenance: {
+                    ownerID: session.id,
+                    task: "memory-rerank",
+                    deviceKey: rerankDevice.key,
+                    ...(rerankDevice.concurrency === undefined ? {} : { concurrency: rerankDevice.concurrency }),
+                    ...(rerankDevice.locality === undefined ? {} : { locality: rerankDevice.locality }),
+                  },
+                }).pipe(
+                  Effect.timeoutOrElse({ duration: RERANK_DEADLINE, orElse: () => Effect.succeed("") }),
+                  Effect.orElseSucceed(() => ""),
+                )
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
-          if (order) ordered = order.map((index) => recallCandidates[index]!)
+          // `rerankRan` now means the model ACTUALLY ordered the pack, not that we asked — a call
+          // preempted by the user's own turn is a fallback, and the receipt must not claim otherwise.
+          if (order) {
+            ordered = order.map((index) => recallCandidates[index]!)
+            rerankRan = true
+          }
           yield* timingEnd("memory-rerank")
         }
         /**
@@ -1689,30 +1783,38 @@ export const layer = Layer.effect(
          * the same amount of window. `recall.ts` holds the tiering, the estimator and what the
          * estimate's error costs.
          */
-        const pack = SessionRecall.packRecall(ordered, SessionRecall.recallTokenBudget(tier))
+        const pack = remembered ?? SessionRecall.packRecall(ordered, recallTokenBudget)
         recalledMemories = pack.shown
         memoryRecall = SessionRecall.formatRecall(pack)
-        // The receipt row for this leg, stamped where the numbers are true. A duration alone cannot
-        // tell a healthy hybrid search from a keyword-only search of an empty cabinet — both are
-        // fast, and the degraded one is the FAST one, which is precisely why timing hid it.
-        timing.annotate("memory-search", {
-          retrieved: recallCandidates.length,
-          shown: pack.shown.length,
-          omitted: pack.omitted,
-          tokens: pack.tokens,
-          protectedCount: pack.protectedCount,
-          vector: recallVector !== undefined,
-          reranked: rerankRan,
-        })
-        // 🔴 The other half of the P3 ledger: RETURNED is not USED. The store recorded the whole
-        // pool; this says which of it survived the budget and actually reached the model, which is
-        // the signal the pruning policy weighs and the "never used" list is the absence of.
-        // Best-effort — a measurement must never cost a turn.
-        yield* MemoryAccessLedger.markUsed(db, {
-          recallID,
-          ids: pack.shown.map((hit) => hit.id),
-          at: Date.now(),
-        })
+        // Only a leg that ACTUALLY RAN is stamped, recorded, or remembered. A reused pack gets no
+        // receipt row (nothing ran; the absence is the fact, and a 0 ms row would be the receipt
+        // inventing work), no `used` ledger write (step one of this turn already said these memories
+        // reached the model, and re-marking the same ids changes no signal the pruning policy weighs),
+        // and no second cache entry.
+        if (remembered === undefined) {
+          SessionRecall.storePack(legKey, pack)
+          // The receipt row for this leg, stamped where the numbers are true. A duration alone cannot
+          // tell a healthy hybrid search from a keyword-only search of an empty cabinet — both are
+          // fast, and the degraded one is the FAST one, which is precisely why timing hid it.
+          timing.annotate("memory-search", {
+            retrieved: recallCandidates.length,
+            shown: pack.shown.length,
+            omitted: pack.omitted,
+            tokens: pack.tokens,
+            protectedCount: pack.protectedCount,
+            vector: recallVector !== undefined,
+            reranked: rerankRan,
+          })
+          // 🔴 The other half of the P3 ledger: RETURNED is not USED. The store recorded the whole
+          // pool; this says which of it survived the budget and actually reached the model, which is
+          // the signal the pruning policy weighs and the "never used" list is the absence of.
+          // Best-effort — a measurement must never cost a turn.
+          yield* MemoryAccessLedger.markUsed(db, {
+            recallID,
+            ids: pack.shown.map((hit) => hit.id),
+            at: Date.now(),
+          })
+        }
       }
       // The exact wire text of the tail-injected recall block. Carries the 1N provenance prefix for
       // the same reason the todo reminder does: it rides the `user` role, and every real-user walk

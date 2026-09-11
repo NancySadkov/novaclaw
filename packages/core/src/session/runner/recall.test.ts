@@ -120,3 +120,68 @@ describe("rememberScope", () => {
     expect(source.match(/SessionRecall\.rememberScope\(/g)).toHaveLength(2)
   })
 })
+
+describe("the recall leg cache", () => {
+  const pack = { shown: [], omitted: 0, tokens: 0, protectedCount: 0 }
+  const key = (over: Partial<Parameters<typeof SessionRecall.recallLegKey>[0]> = {}) =>
+    SessionRecall.recallLegKey({
+      agentID: "agent_hera",
+      scopes: ["agent:hera", "global"],
+      query: "the deploy freeze",
+      poolSize: 24,
+      budget: 900,
+      ...over,
+    })
+
+  const T0 = 1_000_000
+
+  it("answers the second ask of the same leg from the first", () => {
+    SessionRecall.clearRecallCache()
+    const k = key()
+    SessionRecall.storePack(k, pack, T0)
+    expect(SessionRecall.cachedPack(k, T0 + 1000)).toEqual(pack)
+  })
+
+  // Every dimension of the key is a different way for the answer to be a DIFFERENT answer. A cache
+  // that ignores one of them serves one colleague another colleague's recall.
+  it("misses whenever any input that could change the pack changed", () => {
+    SessionRecall.clearRecallCache()
+    SessionRecall.storePack(key(), pack, T0)
+    for (const other of [
+      { agentID: "agent_ares" },
+      { agentID: undefined },
+      { scopes: ["global"] },
+      { query: "the deploy freeze." },
+      { poolSize: 32 },
+      { budget: 400 },
+    ])
+      expect(SessionRecall.cachedPack(key(other), T0 + 1000)).toBeUndefined()
+  })
+
+  it("expires rather than serving a pack from a previous turn forever", () => {
+    SessionRecall.clearRecallCache()
+    const k = key()
+    SessionRecall.storePack(k, pack, T0)
+    expect(SessionRecall.cachedPack(k, T0 + 29_000)).toEqual(pack)
+    expect(SessionRecall.cachedPack(k, T0 + 31_000)).toBeUndefined()
+    // The expired entry is gone, not merely hidden: a later read cannot resurrect it.
+    expect(SessionRecall.cachedPack(k, T0 + 10)).toBeUndefined()
+  })
+
+  it("stays bounded, evicting the oldest", () => {
+    SessionRecall.clearRecallCache()
+    for (let i = 0; i < 70; i++) SessionRecall.storePack(key({ query: `q${i}` }), pack, T0)
+    expect(SessionRecall.cachedPack(key({ query: "q0" }), T0)).toBeUndefined()
+    expect(SessionRecall.cachedPack(key({ query: "q69" }), T0)).toBeDefined()
+  })
+
+  // A clock that returns garbage must not make the cache permanent or crash it.
+  it("refuses to store or serve on a non-finite clock", () => {
+    SessionRecall.clearRecallCache()
+    const k = key()
+    SessionRecall.storePack(k, pack, Number.NaN)
+    expect(SessionRecall.cachedPack(k, T0)).toBeUndefined()
+    SessionRecall.storePack(k, pack, T0)
+    expect(SessionRecall.cachedPack(k, Number.NaN)).toBeUndefined()
+  })
+})

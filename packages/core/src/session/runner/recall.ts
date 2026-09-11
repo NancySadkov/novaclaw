@@ -274,3 +274,66 @@ export const formatRecall = (pack: RecallPack): string | undefined => {
     omission
   )
 }
+
+/**
+ * THE SAME LEG, ASKED TWICE IN ONE TURN: remembered rather than re-run.
+ *
+ * 🔴 The recall leg sits in the code that prepares EACH PROVIDER STEP, and a turn with forty tool
+ * calls has forty steps. Its query is `lastRealUserText`, which by construction does not change
+ * during a turn, over the same cabinet, with the same pool size and the same budget. So every step
+ * re-embedded a byte-identical sentence, re-querying the store, re-ranking, and — where rerank is on
+ * — asking a model to order the same numbers again. Measured on one investigation: 268 legs for 137
+ * turns. Individually cheap, which is precisely why it stayed unnoticed.
+ *
+ * ⚠️ Why a TTL rather than an invalidation hook: the store carries no version counter, and the
+ * knowledge invariant places memory WRITES at compaction or chat clear, not mid-turn — so during a
+ * turn's seconds the pack is stale for nobody. The window where this can be wrong is a memory written
+ * by a tool call inside the same turn, and what that costs is one step seeing a three-second-old
+ * pack. This is derived context, re-derived every turn; it is not where a fact lives, and nothing may
+ * be stored here.
+ *
+ * Small and dumb on purpose: insertion-ordered, oldest evicted. The key carries the agent, its
+ * scopes, the query, the pool and the budget, so two colleagues who happen to share a sentence cannot
+ * share a pack.
+ */
+const PACK_TTL_MS = 30_000
+const MAX_CACHED_PACKS = 64
+const packs = new Map<string, { readonly at: number; readonly pack: RecallPack }>()
+
+export const recallLegKey = (input: {
+  /** The cabinet owner, `undefined` for a throwaway agent. Its scopes still carry its own session, so
+   *  two owner-less sessions cannot collide on this key. */
+  readonly agentID: string | undefined
+  readonly scopes: readonly string[]
+  readonly query: string
+  readonly poolSize: number
+  readonly budget: number
+}): string =>
+  [input.agentID ?? "no-owner", input.scopes.join(","), input.poolSize, input.budget, JSON.stringify(input.query)].join(
+    "|",
+  )
+
+export function cachedPack(key: string, now: number = Date.now()): RecallPack | undefined {
+  const hit = packs.get(key)
+  if (hit === undefined) return undefined
+  if (!Number.isFinite(now) || !Number.isFinite(hit.at) || now - hit.at > PACK_TTL_MS) {
+    packs.delete(key)
+    return undefined
+  }
+  return hit.pack
+}
+
+export function storePack(key: string, pack: RecallPack, now: number = Date.now()): void {
+  if (!Number.isFinite(now)) return
+  packs.set(key, { at: now, pack })
+  while (packs.size > MAX_CACHED_PACKS) {
+    const oldest = packs.keys().next()
+    if (oldest.done === true) break
+    packs.delete(oldest.value)
+  }
+}
+
+/** Test seam: forget every remembered leg. Production never calls it. */
+export function clearRecallCache(): void {
+  packs.clear()
+}
