@@ -121,9 +121,17 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(gate).toBeGreaterThan(0)
     expect(shortChatGate).toBeGreaterThan(gate)
     expect(memoryGate).toBeGreaterThan(shortChatGate)
-    expect(gate).toBeLessThan(source.indexOf("KbEmbedder.embedOne(recallQuery)", gate))
+    expect(gate).toBeLessThan(source.indexOf("KbEmbedder.embedQuery(recallQuery)", gate))
     expect(gate).toBeLessThan(source.indexOf(".search({", gate))
     expect(gate).toBeLessThan(source.indexOf("MemoryRerank.buildRerankPrompt", gate))
+    // 🔴 The per-turn cache must sit BEHIND every gate, never in front of one. A hit that skipped
+    // the gates would serve recalled memories to a `memory: none` agent, a short chat, or a turn with
+    // no real user text — the exact three doors this test exists to keep shut. The leg's own guard is
+    // `if (!reusePack)`, so the check here is that the key is minted after the gates and the pack is
+    // read after the key.
+    const cacheRead = source.indexOf("SessionRecall.cachedPack(legKey)", gate)
+    expect(cacheRead).toBeGreaterThan(memoryGate)
+    expect(source.indexOf("recallLegKey", gate)).toBeLessThan(cacheRead)
   })
 })
 
