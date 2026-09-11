@@ -125,6 +125,60 @@ const descendantsFirst = Effect.fn("SessionBootRecovery.descendantsFirst")(funct
   return ordered.sort((a, b) => depth(b) - depth(a))
 })
 
+/**
+ * 🔴 **THE QUESTION EVERY BOOT ARM MUST ASK, AND THAT NONE OF THEM ASKED.**
+ *
+ * Each arm below enumerates leftover WORK — an un-promoted `session_input` row, a stranded provider
+ * latch, a state that stopped mid-flight. None of those tables has any notion of a STOP. A queue row
+ * records that a prompt was ACCEPTED; it does not record that anyone still wants it run. So the arms
+ * honoured `invariants.md` ("User to just stop the agent" is one of the four legal stops, "everything
+ * else leads to guaranteed recovery") exactly as far as each one happened to read
+ * `session_execution` — which is to say one of the three did, and the pending-queue arm, the busiest
+ * one, did not read it at all.
+ *
+ * Measured in production on `ses_geryon`: the user stopped it and the stop was recorded CORRECTLY
+ * (`state='interrupted', failure_class='interrupt'`), and it was still adopted on every restart —
+ * because a stall nudge had left one unpromoted `queue` row behind, and that arm's query is
+ * `promoted_seq IS NULL AND delivery='queue'` with no join to anything that could object.
+ *
+ * `failure_class='interrupt'` is the mark `requestInterrupt` writes, and the first new attempt nulls
+ * it (`execution-attempt.ts`), so a row still carrying it means: someone stopped this session and
+ * NOTHING has run since. That is the whole question, asked once at the single door where boot turns
+ * leftover work into a running session — which is why it lives on the adopt function rather than in
+ * any one arm, and why it re-reads the row per session instead of snapshotting: a snapshot taken
+ * before the sweeps run is stale in exactly the direction that matters, and the read is a primary-key
+ * lookup on a table with one row per session.
+ *
+ * ⚠️ This gates BOOT adoption only, and deliberately so. A session the user re-prompts still carries
+ * the mark at admission time — the attempt that clears it opens later, inside the drain — so putting
+ * the same check inside `execution.adopt` would refuse a legitimate resume. Runtime admissions are
+ * not this door.
+ */
+export const holdStopped = (input: {
+  readonly db: Database.Interface["db"]
+  readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
+}) =>
+  Effect.fn("SessionBootRecovery.holdStopped")(function* (sessionID: SessionSchema.ID) {
+    const stopped = yield* input.db
+      .select({ sessionID: SessionExecutionTable.session_id })
+      .from(SessionExecutionTable)
+      .where(
+        and(
+          eq(SessionExecutionTable.session_id, sessionID),
+          eq(SessionExecutionTable.failure_class, "interrupt"),
+        ),
+      )
+      .all()
+      .pipe(Effect.orDie)
+    if (stopped.length === 0) return yield* input.adopt(sessionID)
+    // Silent recovery is the defect this function exists to end; silent refusal must at least be
+    // readable in the log, or a session that stays stopped looks identical to one that is stuck.
+    yield* Log.event("session.boot.recovery.held", {
+      "session.id": sessionID,
+      "session.reason": "stopped",
+    })
+  })
+
 export const adoptRecovered = (input: {
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]
   readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
@@ -285,13 +339,16 @@ export const start = (input: {
     // Both durable-work scans share one short adoption lane so the same session cannot be claimed
     // twice. Adoption itself never joins a drain; device scheduling owns concurrency afterwards.
     const recoveryLane = yield* Semaphore.make(1)
+    // ONE gate for both arms: whatever a sweep found, a session someone stopped stays stopped. See
+    // `holdStopped` — the arms enumerate work, and work is not consent.
+    const adopt = holdStopped({ db: input.db, adopt: input.execution.adopt })
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
         Effect.gen(function* () {
           yield* recoveryLane.withPermits(1)(
             adoptRecovered({
               recovered,
-              adopt: input.execution.adopt,
+              adopt,
               parentOf: (sessionID) =>
                 input.store
                   .get(sessionID)
@@ -303,7 +360,7 @@ export const start = (input: {
     )
     yield* Effect.forkScoped(
       recoveryLane
-        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt: input.execution.adopt }))
+        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt }))
         .pipe(Effect.ignore),
     )
   })

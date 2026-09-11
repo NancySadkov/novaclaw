@@ -2242,6 +2242,22 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * Boot recovery: a sweep found leftover work belonging to a session someone explicitly STOPPED, and
+   * the adoption was refused.
+   *
+   * ⚠️ This line is the only difference between "the stop was honoured" and "the session is stuck",
+   * which look identical from the outside. Silence here used to be the defect: a stopped officer was
+   * adopted on every restart and the log said nothing, because the arms enumerated leftover WORK and
+   * work is not consent.
+   */
+  "session.boot.recovery.held": {
+    level: "info",
+    message: "held a stopped session back from boot recovery",
+    attributes: { "session.id": "correlate", "session.reason": "id" },
+    content: "correlated",
+    file: "packages/core/src/session/boot-recovery.ts",
+  },
   /** Boot recovery: queued prompts a dead process left un-promoted, handed back to the executor. */
   "session.input.abandoned.resumed": {
     level: "info",

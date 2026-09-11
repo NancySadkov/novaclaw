@@ -1,6 +1,7 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect, test } from "bun:test"
 import { DateTime, Deferred, Duration, Effect, Layer } from "effect"
+import { eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
@@ -457,3 +458,113 @@ describe("the sweep is owned by the instance, not by one executor", () => {
     expect(SessionV2.node.dependencies.map((node) => node.name)).toContain("@novaclaw/v2/SessionExecutionAttempt")
   })
 })
+
+/**
+ * 🔴 **A stop is one of the four legal ways an agent stops, and it had no representation at the one
+ * door that resurrects work.**
+ *
+ * The production specimen was `ses_geryon` in a live instance database: stopped by the shareholder,
+ * with `state='interrupted', failure_class='interrupt'` written correctly, and adopted on EVERY
+ * restart — because a stall nudge had left one unpromoted `queue` row behind, and the pending-queue
+ * arm's query is `promoted_seq IS NULL AND delivery='queue'` with no join to anything that could
+ * object. Two thirds of the boot arms (the queue arm and the latch arm) never consulted the stop at
+ * all; only the stranded-state arm did, and only by accident of reading the same table.
+ *
+ * The class is broader than that row: `requestInterrupt` matched only the three RUNNING states, so a
+ * stop pressed on a chat that had already settled recorded nothing anywhere — leaving every boot
+ * question about it unanswerable.
+ */
+describe("a stop survives the restart", () => {
+  const record = () => {
+    const woken: string[] = []
+    return { woken, wake: (sessionID: SessionV2.ID) => Effect.sync(() => void woken.push(sessionID)) }
+  }
+
+  /** The footprint a Stop leaves on a session that was mid-turn. */
+  const stopRow = (sessionID: SessionV2.ID, attempt: string) => ({
+    session_id: sessionID,
+    attempt_id: attempt,
+    generation: 1,
+    owner_id: "stopped-host",
+    state: "interrupted" as const,
+    phase: "drain" as const,
+    failure_count: 0,
+    failure_class: "interrupt",
+    heartbeat_at: 1234,
+    started_at: 1234,
+    time_updated: 1234,
+  })
+
+  it.live("leftover queued input does NOT resurrect a session the user stopped", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const store = yield* SessionStoreService.Service
+
+      // The measured case, row for row: a queue row nobody promoted AND an explicit stop.
+      const stopped = yield* session.create({ location, agent: rootAgent })
+      yield* queue(stopped.id)
+      yield* db.insert(SessionExecutionTable).values(stopRow(stopped.id, "stopped-attempt")).run().pipe(Effect.orDie)
+
+      // Positive control in the same sweep: an unstopped session with the SAME leftover queue row
+      // must still be woken, or this test would also pass with a gate that stops everything.
+      const waiting = yield* session.create({ location, agent: rootAgent })
+      yield* queue(waiting.id)
+
+      const { woken, wake } = record()
+      // Wired the way `start` wires it, so the gate is exercised rather than tested around.
+      yield* SessionBootRecovery.wakeAbandonedInput({
+        db,
+        store,
+        adopt: SessionBootRecovery.holdStopped({ db, adopt: wake }),
+      })
+
+      expect(woken).toContain(waiting.id)
+      expect(woken).not.toContain(stopped.id)
+    }),
+  )
+
+  it.live("stopping a session that is NOT running still records the stop durably", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+
+      const settled = yield* session.create({ location, agent: rootAgent })
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: settled.id,
+          attempt_id: "finished-attempt",
+          generation: 1,
+          owner_id: "previous-host",
+          state: "settled",
+          phase: "drain",
+          failure_count: 0,
+          heartbeat_at: 1234,
+          started_at: 1234,
+          time_updated: 1234,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      // The real stop path, not a hand-written row: this is the call the Stop button ends at.
+      yield* session.interrupt(settled.id)
+
+      const rows = yield* db
+        .select({ state: SessionExecutionTable.state, failureClass: SessionExecutionTable.failure_class })
+        .from(SessionExecutionTable)
+        .where(eq(SessionExecutionTable.session_id, settled.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(1)
+      // The mark exists, which is all the boot gate needs…
+      expect(rows[0]!.failureClass).toBe("interrupt")
+      // …and `state` is untouched, because `settled` is the truth about the attempt that finished and
+      // two other readers depend on it. A stop records an intent; it does not rewrite a verdict.
+      expect(rows[0]!.state).toBe("settled")
+    }),
+  )
+})
+

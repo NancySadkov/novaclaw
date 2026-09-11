@@ -129,6 +129,18 @@ describe("a session has exactly one completion door and one explicit-stop bounda
     ])
   })
 
+  test("boot recovery adopts ONLY through the stopped-session gate", () => {
+    // The bug this pins: three boot arms enumerated leftover WORK, and only the one that happened to
+    // read `session_execution` could see that a user had stopped the session. A stopped officer was
+    // adopted on every restart through the pending-queue arm. Behavioural tests cannot hold the door
+    // shut — an arm added later would be a new call site that nothing existing observes — so the
+    // shape is pinned here: the executor's raw adopt may be named exactly once, and only as the
+    // INPUT to the gate.
+    const boot = code(readFileSync(path.join(coreSrc, "session", "boot-recovery.ts"), "utf8"))
+    expect(boot).toContain("holdStopped({ db: input.db, adopt: input.execution.adopt })")
+    expect(boot.match(/input\.execution\.adopt/g)).toHaveLength(1)
+  })
+
   test("the autonomous drive contains no count or wall-clock completion authority", () => {
     const drive = code(readFileSync(path.join(coreSrc, "session", "runner", "drive.ts"), "utf8"))
     expect(drive).not.toContain("MAX_DRIVE_")

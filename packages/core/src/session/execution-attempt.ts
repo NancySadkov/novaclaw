@@ -613,7 +613,7 @@ export const layer = Layer.effect(
       }),
       requestInterrupt: Effect.fn("SessionExecutionAttempt.requestInterrupt")(function* (sessionID) {
         const now = Date.now()
-        yield* db
+        const stopped = yield* db
           .update(SessionExecutionTable)
           .set({
             state: "interrupted",
@@ -629,6 +629,36 @@ export const layer = Layer.effect(
               inArray(SessionExecutionTable.state, ["starting", "busy", "recovering"]),
             ),
           )
+          .returning({ sessionID: SessionExecutionTable.session_id })
+          .get()
+          .pipe(Effect.orDie)
+        if (stopped) return
+        /**
+         * 🔴 **Nothing was running, which used to mean the stop was recorded NOWHERE.** The `where`
+         * above matches only the three running states, so a Stop pressed on a chat that had settled
+         * (or that was parked `paused`) updated zero rows and left no trace of an act the owner lists
+         * as one of the four legal ways an agent stops. The consequence was not cosmetic: every
+         * boot-time sweep asks a question about this row, and an unrecorded stop is an
+         * unanswerable one — so the session came back.
+         *
+         * The mark alone is written, and `state` is deliberately NOT moved. `settled` is the truth
+         * about the attempt that finished, and two readers depend on it (`boot-recovery`'s latch arm
+         * and the schedule store's "did this fire's session finish"). Rewriting history to say an
+         * attempt that completed was interrupted would buy the gate one field and cost both of them
+         * theirs. `failure_class` is where an explicit stop is already recorded — arm 3 of the boot
+         * sweep excludes on it today.
+         *
+         * ⚠️ No row, no write: a session that never ran has no execution row to mark, and nothing
+         * enumerates it at boot either, so there is no resurrection to prevent.
+         */
+        yield* db
+          .update(SessionExecutionTable)
+          .set({
+            failure_class: "interrupt",
+            failure_detail: null,
+            time_updated: now,
+          })
+          .where(eq(SessionExecutionTable.session_id, sessionID))
           .run()
           .pipe(Effect.orDie)
       }),
