@@ -67,6 +67,7 @@ describe("every field the wire schema declares is accounted for", () => {
       color: "amber",
       steps: 4,
       archiveChats: true,
+      toolLabels: true,
       shortChat: true,
       needsTier: "mid",
       reasoningBudget: 0,

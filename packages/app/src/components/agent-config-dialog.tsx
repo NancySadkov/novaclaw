@@ -153,6 +153,12 @@ export function AgentConfigDialog(props: {
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
   const [strict, setStrict] = createSignal<boolean | undefined>()
   /**
+   * Tool-call captions, drafted as the OPT-OUT. `undefined` = untouched; ON is the default, so a
+   * stored `false` is the only way this colleague stops paying a model call per shell command for a
+   * caption that never reaches the model.
+   */
+  const [toolLabels, setToolLabels] = createSignal<boolean | undefined>()
+  /**
    * Computer Use, drafted as the OPT-OUT rather than as the permission. `undefined` = untouched;
    * `true` = hand the officer back to the floor's grant (the rule goes away); `false` = store the deny.
    * Absence means ON, so there is exactly one place that says whether an officer can touch the
@@ -255,6 +261,9 @@ export function AgentConfigDialog(props: {
   }
   // Default ON — `undefined` means on, per the owner's "unless the settings disable it".
   const archiveValue = () => archive() ?? agent()?.archiveChats ?? true
+  // Default ON, exactly like `archiveChats`: absent means on, and only an explicit `false` skips the
+  // per-tool-call captioning request.
+  const toolLabelsValue = () => toolLabels() ?? agent()?.toolLabels ?? true
   // "" is the INHERIT choice, and it is a real value rather than a missing one: a colleague with no
   // model of its own follows the instance default, which is a decision the user can return to.
   const modelValue = () => {
@@ -337,6 +346,7 @@ export function AgentConfigDialog(props: {
     posture() !== undefined ||
     permissionMode() !== undefined ||
     strict() !== undefined ||
+    toolLabels() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
     needsTier() !== undefined ||
@@ -614,7 +624,7 @@ export function AgentConfigDialog(props: {
 
   const save = async () => {
     const id = props.agentID
-    if (id === undefined || governing()) return
+    if (id === undefined) return
     setSaving(true)
     try {
       // The ordinary config merge — one agent's fragment, layered like any other config write.
@@ -635,9 +645,16 @@ export function AgentConfigDialog(props: {
           ? {}
           : { reasoningBudget: parsedReasoningBudget() }),
       }
+      // 🔴 Nova's fragment is TWO KEYS, never the officer payload. The server refuses a fragment
+      // naming the governing agent that carries anything outside `AgentV2.PROTECTED_TUNABLE`, and it
+      // refuses the WHOLE write — so one stray `name` from this accessor chain would have thrown away
+      // the user's caption switch alongside it. The charter fields are not rendered for Nova at all;
+      // they are not sent either, so the two statements cannot drift.
       await sync().updateConfig({
         agents: {
-          [id]: {
+          [id]: governing()
+            ? { memory: memoryValue(), ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }) }
+            : {
             ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
             ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
             ...(personality() === undefined && agent()?.personality === undefined
@@ -656,6 +673,7 @@ export function AgentConfigDialog(props: {
             ...(posture() === undefined ? {} : { shortChat: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+            ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
             // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
             // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
             ...(computerUse() === undefined || computerRuleset().length === 0
@@ -693,6 +711,7 @@ export function AgentConfigDialog(props: {
       setPermissionMode(undefined)
       setStrict(undefined)
       setComputerUse(undefined)
+      setToolLabels(undefined)
       setArchive(undefined)
       setModel(undefined)
       setReasoningBudget(undefined)
@@ -776,6 +795,43 @@ export function AgentConfigDialog(props: {
                   </Show>
                 </dl>
               </section>
+              {/* 🔴 The two switches Nova DOES own. Everything above is the charter and is read-only
+                  by law; these two are components, not identity — what Nova keeps between chats, and
+                  whether Nova pays a model call to caption each shell command. They were absent
+                  entirely, which read as "Nova has no settings" and, worse, gave the owner no way to
+                  switch captioning off on the one colleague they actually talk to. The write is
+                  refused server-side if it carries anything else (AgentV2.PROTECTED_TUNABLE), so
+                  offering these cannot widen anything. */}
+              <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                  {language.t("agentConfig.memory")}
+                </h3>
+                <label class="mt-2 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={memoryValue() === "own"}
+                    onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
+                  />
+                  <span>{language.t("agentConfig.memoryRag")}</span>
+                </label>
+                <p class="text-[11px] text-v2-text-text-faint">
+                  {language.t(memoryDisclosure(memoryValue()).privateKey)}
+                  <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
+                </p>
+                <label class="mt-4 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={toolLabelsValue()}
+                    onChange={(event) => setToolLabels(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("agentConfig.toolLabels")}</span>
+                </label>
+                <p class="text-[11px] text-v2-text-text-faint">
+                  {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
+                </p>
+              </section>
               <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
             </div>
           </div>
@@ -810,6 +866,43 @@ export function AgentConfigDialog(props: {
               onClick={() => void clone()}
             >
               {language.t("agentConfig.clone")}
+            </button>
+            {/* 🔴 The door into Nova's OWN cabinet. It sat in the officer footer only, so the one
+                colleague a user actually wonders about — "what has Nova been remembering about me" —
+                had no answer: Clear Memory was there, but nothing to look at before pressing it. The
+                cabinet exists whether or not the switch above is on, which is exactly why the officer
+                footer made this button unconditional. */}
+            <button
+              type="button"
+              data-action="agent-open-memory"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={busy() !== undefined || props.agentID === undefined}
+              onClick={() => {
+                const id = props.agentID
+                if (id === undefined) return
+                props.onDismiss()
+                navigate(ownerRoute(id))
+              }}
+            >
+              {memoryCountLabel(remembered()) === undefined
+                ? language.t("agentConfig.memoryOpen", { name: name() })
+                : language.t("agentConfig.memoryOpenCount", {
+                    name: name(),
+                    count: memoryCountLabel(remembered())!,
+                  })}
+            </button>
+            {/* Save, for the two switches above and nothing else. Without it the checkboxes were a
+                surface that lied: they moved, the toast never came, and the value reverted on reopen.
+                Pause and Retire stay absent — pausing Nova is a different act from tuning it, and the
+                charter makes it impossible anyway. */}
+            <button
+              type="button"
+              data-action="agent-save"
+              class="ml-auto rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+              disabled={!dirty() || saving() || props.agentID === undefined || agent() === undefined}
+              onClick={() => void save()}
+            >
+              {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
             </button>
           </div>
         </div>
@@ -1127,6 +1220,22 @@ export function AgentConfigDialog(props: {
                 />
                 <span>{language.t("agentConfig.strict")}</span>
               </label>
+
+              {/* Captions a shell command with a generated title. Off costs nothing but the caption;
+                  on costs a model call per command on the device this colleague's own turns wait for. */}
+              <label class="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={toolLabelsValue()}
+                  disabled={governing()}
+                  onChange={(event) => setToolLabels(event.currentTarget.checked)}
+                />
+                <span>{language.t("agentConfig.toolLabels")}</span>
+              </label>
+              <p class="text-[11px] text-v2-text-text-faint">
+                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
+              </p>
 
               {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
                   row only exists where that grant actually reaches. A subagent has no grant to opt out

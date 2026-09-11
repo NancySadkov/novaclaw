@@ -2846,6 +2846,11 @@ export const dict = {
   "agentConfig.work": "How it works",
   "agentConfig.posture": "Mode",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
+  "agentConfig.toolLabels": "Caption each command — write a short title for every shell command",
+  "agentConfig.toolLabels.on":
+    "On — every command costs one extra model call to name it, on the same model this colleague is thinking with",
+  "agentConfig.toolLabels.off":
+    "Off — commands run unnamed, and nothing waits on the model for a caption. Spawned chats keep their default name.",
   "agentConfig.computerUse": "Computer Use — see the screen and drive the mouse and keyboard",
   "agentConfig.computerUse.on": "On — this colleague can control the desktop, and asks before installing anything new",
   "agentConfig.computerUse.off":

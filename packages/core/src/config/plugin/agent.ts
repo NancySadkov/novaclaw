@@ -69,10 +69,29 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
   // `item.nudges` and `item.globalNudges` are intentionally consumed by NudgeService straight from
   // AgentConfigStore. They are harness-delivery components, not fields on the AgentV2 identity row.
   if (AgentV2.isProtected(agentID)) {
-    console.warn(
-      `config: ignoring a definition for "${agentID}" — it is this instance's governing agent and its ` +
-        `profile is fixed in code. Create your own agent instead, or edit any other one.`,
-    )
+    // ⚠️ Only the CLOSED tuning vocabulary survives (AgentV2.PROTECTED_TUNABLE). This used to drop the
+    // fragment whole, "rather than merged field-by-field" on the theory that a partial override lands
+    // the one field that matters. That holds for the charter and silently cost the user two switches:
+    // Nova's caption and memory settings were storable, refused HERE, and shown as nothing at all.
+    // The narrow rule keeps the security property — the vocabulary is closed at its definition site,
+    // so a charter key cannot sneak through — and stops punishing the two knobs that are components,
+    // not identity.
+    const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>)
+    // And only onto a row that EXISTS: `Draft.update` MINTS a blank `Info.empty` agent for an id that
+    // has none, so a stored `nova` layer arriving before the code seed would create a ghost rather
+    // than tune the real one.
+    if (draft.get(agentID) !== undefined && (item.memory !== undefined || item.toolLabels !== undefined)) {
+      draft.update(agentID, (agent) => {
+        if (item.memory !== undefined) agent.memory = item.memory
+        if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
+      })
+    }
+    if (refused.length > 0)
+      console.warn(
+        `config: ignoring ${refused.map((key) => `"${key}"`).join(", ")} for "${agentID}" — it is this ` +
+          `instance's governing agent and its profile is fixed in code. Its memory and caption ` +
+          `switches do apply; its identity and permissions do not.`,
+      )
     return
   }
   // 🔴 `disabled` PAUSES; it does not remove (owner decision, 2026-08-23 — `notes/named-agents.md`).
@@ -150,6 +169,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.avatar !== undefined) agent.avatar = item.avatar
     if (item.memory !== undefined) agent.memory = item.memory
     if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
+    if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
     if (item.needsTier !== undefined) agent.needsTier = item.needsTier
     if (item.description !== undefined) agent.description = item.description
     if (item.directory !== undefined) agent.directory = item.directory

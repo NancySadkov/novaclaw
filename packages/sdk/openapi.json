@@ -35171,6 +35171,9 @@
           "archiveChats": {
             "type": "boolean"
           },
+          "toolLabels": {
+            "type": "boolean"
+          },
           "needsTier": {
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
@@ -37641,6 +37644,9 @@
             "$ref": "#/components/schemas/AgentMemory"
           },
           "archiveChats": {
+            "type": "boolean"
+          },
+          "toolLabels": {
             "type": "boolean"
           },
           "needsTier": {

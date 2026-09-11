@@ -53,6 +53,17 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    *  settings disable it". Ignored for a throwaway, which keeps nothing by definition. */
   archiveChats: Schema.Boolean.pipe(Schema.optional),
   /**
+   * Generate a short title for each shell/spawn tool call (the `tool-title` maintenance sample in
+   * `agent-status/sampler.ts`). Default ON (`undefined` = on).
+   *
+   * ⚠️ This is a MODEL CALL PER TOOL CALL, issued on the same device the agent's own turns run on.
+   * It is presentation-only — the title never reaches the provider wire — so an agent whose work is
+   * dominated by shell calls pays a decode-shaped request for every one of them to buy a caption
+   * nobody reads while it works. Turning it off is a supported way to test whether that traffic is
+   * what delays the next turn.
+   */
+  toolLabels: Schema.Boolean.pipe(Schema.optional),
+  /**
    * The capability floor this role needs, as a model tier (`agent/model-fit.ts`).
    *
    * 🔴 A role can outrun its model SILENTLY, and the fallback added on 2026-08-22 is why: when a

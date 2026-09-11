@@ -83,6 +83,35 @@ export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
 export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 
 /**
+ * The CLOSED vocabulary of config fields a stored layer may set for a protected agent.
+ *
+ * `PROTECTED_IDS` protects Nova's identity and authority — its name, brief, model, permissions,
+ * whether it exists at all. That is the charter, and the charter is not editable from inside. It was
+ * enforced by dropping a stored `nova` layer WHOLE, which also silently swallowed the two knobs that
+ * are not the charter: whether Nova captions its shell commands, and whether Nova keeps memories.
+ * Both are components on the ECS lens (AGENTS.md, the structural metaphor), not governing agent
+ * redefinition — neither grants a capability, alters a prompt, nor touches who exists.
+ *
+ * So the rule is now: a fragment naming Nova may carry these keys and nothing else. Closed rather than
+ * "everything except the dangerous ones", for the reason principle 13 gives — an open vocabulary is
+ * the charter with extra steps, and an exclusion list is only as good as whoever last imagined the
+ * threat. Adding a key here is a security decision, not a convenience: it must not be able to widen
+ * what Nova can do or rewrite what Nova is told.
+ *
+ * ⚠️ `memory` is here because keeping-or-not-keeping memories is the user's call about their own
+ * machine, not a property of the charter. Turning it off costs Nova its recall; it grants nothing.
+ */
+export const PROTECTED_TUNABLE: ReadonlySet<string> = new Set(["memory", "toolLabels"])
+
+/** Which of {@link PROTECTED_TUNABLE} a fragment actually carries. Empty = it carries only charter. */
+export const protectedTunableKeys = (fragment: Record<string, unknown>): string[] =>
+  Object.keys(fragment).filter((key) => PROTECTED_TUNABLE.has(key))
+
+/** Which keys of a fragment naming a protected agent this rule refuses. */
+export const protectedRefusedKeys = (fragment: Record<string, unknown>): string[] =>
+  Object.keys(fragment).filter((key) => !PROTECTED_TUNABLE.has(key))
+
+/**
  * May this agent STAFF the roster — hire and retire?
  *
  * 🔴 The CEO's alone (AGENTS.md — the structural metaphor: Nova "creates the role when none exists,

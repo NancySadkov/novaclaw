@@ -41,6 +41,9 @@ export const Info = Schema.Struct({
   memory: Memory.pipe(optional),
   /** Keep compacted conversations in this agent's own memory (default on). */
   archiveChats: Schema.Boolean.pipe(optional),
+  /** Caption each shell/spawn tool call with a generated title (default on). Costs a model call per
+   *  call, so it is opt-out for agents whose work is shell-heavy. Read by the status sampler. */
+  toolLabels: Schema.Boolean.pipe(optional),
   /** The capability floor this role needs (`agent/model-fit.ts`). Warns when the bound model is
    *  beneath it; never refuses. Absent = no floor declared, which is silence and not "micro". */
   needsTier: Model.Tier.pipe(optional),

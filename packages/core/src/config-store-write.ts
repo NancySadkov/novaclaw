@@ -396,15 +396,26 @@ const applyToStores = (patch: Config.Info) =>
     // refused rather than written-and-ignored. One place, no per-arm plumbing, and all-or-nothing —
     // the rest of the patch is NOT applied, matching the remove verb's rule that a refused request
     // never half-lands.
-    const protectedAgents = Object.keys(patch.agents ?? {}).filter((name) => AgentV2.isProtected(name))
+    //
+    // ⚠️ It refuses the CHARTER keys, not the whole fragment. `AgentV2.PROTECTED_TUNABLE` is the
+    // closed set of knobs that are components rather than identity (captions, memory), and a write
+    // carrying only those is legitimate — which is how the config dialog can offer Nova the same two
+    // switches every officer has without offering anyone a door into Nova's brief or permissions.
+    // A fragment mixing the two is refused WHOLE, so nobody learns to half-write a charter edit.
+    const protectedAgents = Object.keys(patch.agents ?? {}).filter(
+      (name) =>
+        AgentV2.isProtected(name) &&
+        AgentV2.protectedRefusedKeys((patch.agents![name] ?? {}) as Record<string, unknown>).length > 0,
+    )
     if (protectedAgents.length > 0)
       return yield* Effect.fail(
         new ConfigWriteRefused({
           keys: protectedAgents,
           message:
             `config: NOTHING was written — ${protectedAgents.map((name) => `"${name}"`).join(", ")} ` +
-            `is this instance's governing agent and its profile is fixed in code. Every other agent ` +
-            `on the roster can be edited, and you can create your own.`,
+            `is this instance's governing agent and its profile is fixed in code. Its memory and ` +
+            `command-caption switches can be set; its name, brief, model and permissions cannot. ` +
+            `Every other agent on the roster can be edited, and you can create your own.`,
         }),
       )
     const consumed = new Set<string>()

@@ -5,6 +5,7 @@ import { AgentStatusEvent } from "@novaclaw/schema/agent-status-event"
 import { Log } from "@novaclaw/schema/log"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { AgentV2 } from "../agent"
+import { AgentConfigStore } from "../agent-config-store"
 import { AgentStatus } from "../agent-status"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -42,6 +43,14 @@ export const lifecycleSession = (event: { readonly type: string; readonly data: 
     return data.sessionID
   return undefined
 }
+
+/**
+ * Whether this colleague's tool calls get a generated caption. `undefined` = ON; only an explicit
+ * `false` opts out — the same tri-state as `archiveChats`, so a colleague that never set the field
+ * keeps the shipped behaviour and a config layer that says `false` is obeyed by every reader.
+ */
+export const toolLabelsEnabled = (declared: { readonly toolLabels?: boolean | undefined } | undefined) =>
+  declared?.toolLabels !== false
 
 export const shellCall = (event: { readonly type: string; readonly data: unknown }) => {
   if (event.type !== "session.next.tool.called") return undefined
@@ -154,6 +163,7 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const status = yield* AgentStatus.Service
     const store = yield* SessionStore.Service
+    const agentConfigs = yield* AgentConfigStore.Service
     const labeller = yield* AgentStatusDerive.makeLabeller()
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     type PendingSample = { readonly revision: number; readonly sessionID: string }
@@ -250,6 +260,18 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const session = yield* store.get(input.sessionID as never)
         if (!session) return
+        // 🔴 The per-agent opt-out. This sample is a MODEL CALL PER TOOL CALL on the device the
+        // agent's own turns are waiting for, and its only consumer is a caption in the surface — the
+        // title never reaches the provider wire. A colleague that declares `toolLabels: false` is
+        // saying its shell traffic is not worth that queue time, which is also how the owner measures
+        // whether this traffic is what delays a turn. `undefined` means ON; only an explicit `false`
+        // skips. Naming a spawned child's chat rides this same path, so opting out leaves those chats
+        // on their default title rather than half-renamed.
+        const agentID = session.agent
+        if (agentID !== undefined) {
+          const declared = AgentConfigStore.fold((yield* agentConfigs.agents())[agentID] ?? [])
+          if (!toolLabelsEnabled(declared)) return
+        }
         const raw = yield* labeller
           .short(input.sessionID, {
             system: input.system,
@@ -326,6 +348,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     AgentStatus.node,
     SessionStore.node,
+    AgentConfigStore.node,
     LocationServiceMap.node,
     SessionScheduler.node,
     llmClient,

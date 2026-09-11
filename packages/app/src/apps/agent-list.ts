@@ -94,6 +94,12 @@ export const listAgents = async (sdk: {
         color: text("color"),
         memory,
         ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),
+        // ⚠️ Carried EXPLICITLY for the reason `workspace` above documents: this mapper is a hand-kept
+        // subset, and a stored `toolLabels: false` dying here made the config dialog's caption switch
+        // read ON forever — so switching it OFF looked like a save that did nothing, while the switch
+        // itself was never marked dirty. The `config` spread below does hold it, but the dialog reads
+        // the lifted field, and `AgentLike` declares it.
+        ...(typeof row["toolLabels"] === "boolean" ? { toolLabels: row["toolLabels"] } : {}),
         // Everything the CONFIG schema declares, verbatim — the clone's source of truth. Derived from
         // the schema rather than listed here, because a hand-kept projection is exactly what dropped
         // `steps` on the way to a clone (see `AgentLike.config`).

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { lifecycleSession, shellCall, workerCall, workerSuccess, WorkerLabelPairs } from "./sampler"
+import { lifecycleSession, shellCall, toolLabelsEnabled, workerCall, workerSuccess, WorkerLabelPairs } from "./sampler"
 
 const source = await Bun.file(new URL("./sampler.ts", import.meta.url)).text()
 
@@ -111,5 +111,23 @@ describe("agent lifecycle sampler routing", () => {
     expect(source).toContain("text: command.command")
     expect(source).toContain("text: worker.prompt")
     expect(source).not.toContain("text: yield* store.context")
+  })
+})
+
+describe("per-agent tool-label opt-out", () => {
+  test("absent means ON, and only an explicit false opts out", () => {
+    expect(toolLabelsEnabled(undefined)).toBe(true)
+    expect(toolLabelsEnabled({})).toBe(true)
+    expect(toolLabelsEnabled({ toolLabels: undefined })).toBe(true)
+    expect(toolLabelsEnabled({ toolLabels: true })).toBe(true)
+    expect(toolLabelsEnabled({ toolLabels: false })).toBe(false)
+  })
+
+  test("the opt-out skips the model request, not merely its result", () => {
+    // Skipping after `labeller.short` would still pay for the generation this is meant to avoid.
+    const gate = source.indexOf("if (!toolLabelsEnabled(declared)) return")
+    const request = source.indexOf('task: "tool-title"')
+    expect(gate).toBeGreaterThan(-1)
+    expect(request).toBeGreaterThan(gate)
   })
 })

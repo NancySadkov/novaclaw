@@ -57,6 +57,8 @@ export interface AgentLike {
   readonly memory?: "own" | "none" | undefined
   /** Keep compacted conversations in this colleague's own memory (default on). */
   readonly archiveChats?: boolean | undefined
+  /** Caption each shell command with a generated title (default on). Costs a model call per call. */
+  readonly toolLabels?: boolean | undefined
   /** Whether the harness gives this colleague a final acceptance-check reminder. */
   readonly mode: "primary" | "subagent" | "all"
   readonly hidden: boolean
