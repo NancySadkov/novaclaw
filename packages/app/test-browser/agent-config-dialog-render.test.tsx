@@ -212,6 +212,18 @@ const saveButton = () =>
   [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
     | HTMLButtonElement
     | undefined
+/**
+ * Controls that could rewrite the CHARTER: a text field, a textarea, a picker. Counted, not returned
+ * — see the note at `agentConfig.governingLocked` below on what handing a failing assertion an
+ * ELEMENT costs. A checkbox is deliberately NOT one of these.
+ */
+const charterControls = () =>
+  document.querySelectorAll('input[type="text"], input:not([type]), textarea, [data-component="select-v2"]').length
+/** Every control the dialog left ENABLED, as its KIND rather than as its node. */
+const enabledControlKinds = () =>
+  [...document.querySelectorAll('input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])')].map(
+    (el) => (el as HTMLInputElement).type ?? el.tagName.toLowerCase(),
+  )
 const dialogText = () => document.body.textContent ?? ""
 
 describe("AgentConfigDialog renders", () => {
@@ -225,15 +237,24 @@ describe("AgentConfigDialog renders", () => {
     await settle()
 
     expect(dialogText()).toContain("agentConfig.governingLocked")
-    expect(saveButton()).toBeUndefined()
-    expect(
-      document.querySelector(
-        'input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])',
-      ),
-    ).toBeNull()
-    expect(document.querySelector('[data-action="agent-clear-chat"]')).not.toBeNull()
+    // 🔴 Re-pinned 2026-09-11 to the contract `e2a19b533` changed, and pinned by MEASUREMENT rather
+    // than by reading that commit. The guard this test used to run — "the governing colleague has NO
+    // enabled control" — encoded a rule the server no longer applies: `AgentV2.PROTECTED_TUNABLE`
+    // admits exactly two components for a protected agent, so Nova now legitimately has two
+    // checkboxes and a Save. What the test actually protects is NARROWER and still true: nobody can
+    // rewrite a CHARTER from this dialog, and opening it writes nothing.
+    //
+    // ⚠️ Both halves assert on NUMBERS and STRINGS. Handing `expect()` an ELEMENT here is what took
+    // 407 s and 11.38 GB to say one sentence — see `happydom.ts`.
+    expect(charterControls()).toBe(0)
+    expect(enabledControlKinds()).toEqual(["checkbox", "checkbox"])
+    expect(dialogText()).toContain("agentConfig.memoryRag")
+    expect(dialogText()).toContain("agentConfig.toolLabels")
+    expect(document.querySelector('[data-action="agent-clear-chat"]') !== null).toBe(true)
     expect(dialogText()).toContain("agentConfig.clearChat")
     expect(dialogText()).toContain("agentConfig.clone")
+    // The claim VR-001 was always about: a Save may EXIST now, but the dialog wrote nothing merely
+    // for being opened.
     expect(writes).toEqual([])
     expect(dialogText()).not.toContain("NOTHING was written")
   })
