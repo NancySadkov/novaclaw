@@ -3,7 +3,8 @@ export * as ServerAuth from "./auth"
 import { ConfigService } from "@/effect/config-service"
 import { ServerAuth as Shared } from "@novaclaw/server/auth"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { Config as EffectConfig } from "effect"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
+import { Config as EffectConfig, Option } from "effect"
 
 // ONE implementation, two tags. Everything below the `Config` class used to be a second, line-for-line
 // copy of `packages/server/src/auth.ts`; as of 2026-07-28 (v0.2.0 PREP, Wave 1 follow-up) the shared
@@ -37,8 +38,27 @@ export type {
 // distinct; `packages/protocol/test/context-key-uniqueness.test.ts` fails if they ever converge again,
 // and the sibling test named above proves at RUNTIME that the two tags resolve independently.
 export class Config extends ConfigService.Service<Config>()("@novaclaw/InstanceServerAuthConfig", {
-  password: EffectConfig.string("NOVACLAW_SERVER_PASSWORD").pipe(EffectConfig.option),
-  username: EffectConfig.string("NOVACLAW_SERVER_USERNAME").pipe(EffectConfig.withDefault("novaclaw")),
+  // 🔴 ARGV, never the environment — see `ServerLaunchCredential` for why an exported shell variable
+  // is not a configuration channel.
+  //
+  // ⚠️ The `Config.succeed(null).pipe(Config.map(...))` shape is load-bearing, not ceremony. This
+  // Effect version has no `Config.suspend`/`defer`, and a field written `Config.succeed(read())`
+  // evaluates `read()` when the CLASS is defined — at module import, long before the CLI has parsed
+  // argv — so every instance would boot with an empty credential, i.e. OPEN. `map`'s function runs at
+  // PARSE time, which is when `ConfigService`'s generated `defaultLayer` builds, by which point the
+  // CLI handler has already filled the holder. Verified, not assumed: `tmp/probe-config-lazy.ts`
+  // mutates a holder after constructing the config and the parse observes the new value.
+  //
+  // The explicit conditional is also not fuss: this version's `Option.fromNullOr` wraps `undefined` as
+  // `Some(undefined)`, which `required()` would read as "a password is set" and then authenticate
+  // against the value `undefined`. An unset launch credential must be `Option.none()`.
+  password: EffectConfig.succeed(null).pipe(
+    EffectConfig.map(() => {
+      const password = ServerLaunchCredential.get().password
+      return password === undefined ? Option.none<string>() : Option.some(password)
+    }),
+  ),
+  username: EffectConfig.succeed(null).pipe(EffectConfig.map(() => ServerLaunchCredential.get().username)),
 }) {}
 
 /**

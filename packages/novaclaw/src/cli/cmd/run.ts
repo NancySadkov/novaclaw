@@ -238,12 +238,14 @@ export const RunCommand = effectCmd({
       .option("password", {
         alias: ["p"],
         type: "string",
-        describe: "basic auth password for --attach (defaults to NOVACLAW_SERVER_PASSWORD)",
+        // The old copy named an environment variable as the default, which taught people to export
+        // one. The real fallback is this process's own launch credential, set by `--password` above.
+        describe: "basic auth password for --attach (defaults to this instance's launch credential)",
       })
       .option("username", {
         alias: ["u"],
         type: "string",
-        describe: "basic auth username for --attach (defaults to NOVACLAW_SERVER_USERNAME or 'novaclaw')",
+        describe: "basic auth username for --attach (defaults to 'novaclaw')",
       })
       .option("dir", {
         type: "string",

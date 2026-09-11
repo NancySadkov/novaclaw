@@ -1,8 +1,11 @@
 export * as ServerToken from "./server-token"
 
 // P2P instances: the instance's INCOMING API token (the Basic-auth password every HTTP surface
-// gates on). Resolution order: the NOVACLAW_SERVER_PASSWORD env (machine escape hatch, wins) →
-// the settings store's `server.password` (set from Settings → Instances). Read synchronously
+// gates on). Resolution order: this stored `server.password` (set from Settings → Instances), which
+// WINS, then the launch credential from `serve --password`, then open. The environment is not in that
+// list: `NOVACLAW_SERVER_PASSWORD` used to sit at the top of it and is now ignored outright, because a
+// secret a launching shell happens to export is not a configuration source anyone chose. See
+// `server-launch-credential.ts` and `ServerAuth.resolve`. Read synchronously
 // with a short TTL cache so a token set in the UI applies live (~2s) without threading a store
 // service through every auth middleware — the same boot-time sync-read pattern offline.ts uses.
 

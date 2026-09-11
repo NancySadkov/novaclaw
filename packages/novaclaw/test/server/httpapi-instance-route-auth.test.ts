@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityPeerPaths } from "../../src/server/routes/instance/httpapi/groups/community"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
@@ -11,19 +11,15 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 
 function app(input: { password?: string; username?: string }) {
-  const handler = HttpRouter.toWebHandler(
-    HttpApiApp.routes.pipe(
-      Layer.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromUnknown({
-            NOVACLAW_SERVER_PASSWORD: input.password,
-            NOVACLAW_SERVER_USERNAME: input.username,
-          }),
-        ),
-      ),
-    ),
-    { disableLogger: true },
-  ).handler
+  // 🔴 The launch credential is set HERE rather than injected as a `ConfigProvider`, because the auth
+  // config no longer reads the environment at all — `NOVACLAW_SERVER_PASSWORD` was the door this
+  // change closed. Setting the holder is also the more faithful test: it is exactly what the CLI does
+  // with `--password` before the server graph builds, so the test drives the real launch path instead
+  // of a side channel that production no longer has. Cleared in `afterEach` below.
+  ServerLaunchCredential.set({ password: input.password, username: input.username })
+  const handler = HttpRouter.toWebHandler(HttpApiApp.routes, {
+    disableLogger: true,
+  }).handler
 
   return {
     fetch: (request: Request) => handler(request, HttpApiApp.context),
@@ -42,6 +38,11 @@ async function cancelBody(response: Response) {
 }
 
 afterEach(async () => {
+  // 🔴 The launch credential is a PROCESS-GLOBAL holder, not a per-app argument (that is what replaced
+  // the env var), so leaving it set would silently authenticate every later test in this file — the
+  // exact leak the old `ConfigProvider` injection could not cause. A password set here and never
+  // cleared turns an "open server" case into a 401 case, which reads like a broken route.
+  ServerLaunchCredential.clear()
   // The consent gate is process-wide: a test that opens the peer door must close it again, or the
   // next file's "never consented" case is silently testing a joined instance.
   CommunityConsent.resetGate()

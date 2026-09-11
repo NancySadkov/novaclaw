@@ -1,7 +1,7 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { describe, expect } from "bun:test"
-import { Config, ConfigProvider, Effect, Layer } from "effect"
+import { Config, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { Server } from "../../src/server/server"
@@ -15,6 +15,11 @@ const testStateLayer = Layer.effectDiscard(
     const original = {
       NOVACLAW_SERVER_PASSWORD: Flag.NOVACLAW_SERVER_PASSWORD,
     }
+    // 🔴 One line, and it is the whole credential for this file: `Flag.NOVACLAW_SERVER_PASSWORD` is an
+    // accessor onto the launch-credential holder, so this sets what the auth layer reads. It used to be
+    // a module-load snapshot of the environment, which is why a second `ConfigProvider` injection sat
+    // further down — that pair is gone, and a file that sets its credential in two places is the shape
+    // that let the old one drift.
     Flag.NOVACLAW_SERVER_PASSWORD = "secret"
     yield* Effect.promise(() => resetDatabase())
     yield* Effect.addFinalizer(() =>
@@ -62,12 +67,9 @@ describe("HttpApi CORS", () => {
 
   it.live("adds CORS headers to unauthorized responses", () =>
     Effect.gen(function* () {
-      const handler = HttpRouter.toWebHandler(
-        HttpApiApp.createRoutes().pipe(
-          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NOVACLAW_SERVER_PASSWORD: "secret" }))),
-        ),
-        { disableLogger: true },
-      ).handler
+      const handler = HttpRouter.toWebHandler(HttpApiApp.createRoutes(), {
+        disableLogger: true,
+      }).handler
       const response = yield* Effect.promise(() =>
         handler(
           new Request(new URL("/global/config", "http://localhost"), {

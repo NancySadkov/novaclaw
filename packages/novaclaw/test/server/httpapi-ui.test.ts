@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { describe, expect } from "bun:test"
+import { Effect, Layer } from "effect"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -41,19 +42,13 @@ function restoreEnv(key: string, value: string | undefined) {
 }
 
 function app(input?: { password?: string; username?: string }) {
-  const handler = HttpRouter.toWebHandler(
-    HttpApiApp.routes.pipe(
-      Layer.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromUnknown({
-            NOVACLAW_SERVER_PASSWORD: input?.password,
-            NOVACLAW_SERVER_USERNAME: input?.username,
-          }),
-        ),
-      ),
-    ),
-    { disableLogger: true },
-  ).handler
+  // 🔴 Set the launch credential rather than injecting a `ConfigProvider`. The auth config stopped
+  // reading the environment, so the provider this replaced was a DEAD CHANNEL: the test believed it
+  // had started a password-protected server and had in fact started an open one, and its 401/200
+  // assertions would have gone on passing for the wrong reason forever. This is the source the CLI
+  // fills from `--password`, so the test now drives the path production actually takes.
+  ServerLaunchCredential.set({ password: input?.password, username: input?.username })
+  const handler = HttpRouter.toWebHandler(HttpApiApp.routes, { disableLogger: true }).handler
   return {
     request(input: string | URL | Request, init?: RequestInit) {
       return Effect.promise(() =>
@@ -79,6 +74,11 @@ function uiApp(input?: {
   embeddedWebUI?: Record<string, string>
   fs?: FSUtil.Interface
 }) {
+  // 🔴 Same reason as `app()` above: the credential holder is the live source, and the `ConfigProvider`
+  // entry that used to sit in the layer list below answered nothing. Note the mocked settings store
+  // right below returns `serverPassword: undefined`, so before this fix this handler had NO auth
+  // source at all while the test believed it had one.
+  ServerLaunchCredential.set({ password: input?.password, username: input?.username })
   const handler = HttpRouter.toWebHandler(
     HttpApiApp.createUIRoute(input?.embeddedWebUI).pipe(
       Layer.provide([
@@ -88,12 +88,6 @@ function uiApp(input?: {
           serverPassword: () => Effect.succeed(undefined),
         }),
         HttpServer.layerServices,
-        ConfigProvider.layer(
-          ConfigProvider.fromUnknown({
-            NOVACLAW_SERVER_PASSWORD: input?.password,
-            NOVACLAW_SERVER_USERNAME: input?.username,
-          }),
-        ),
       ]),
     ),
     { disableLogger: true },

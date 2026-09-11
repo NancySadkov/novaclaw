@@ -30,7 +30,11 @@ export const CommandSpec = {
   web: {
     command: ["web", "$0"],
     describe: "start novaclaw server and open web interface",
-    builder: withNetworkOptions,
+    // No `builder` here, and that is a decision rather than an omission. Assigning a GENERIC helper
+    // (`withServerOptions<T>(yargs: Argv<T>)`) in this position makes yargs infer `T = unknown`, which
+    // quietly drops the concrete option types from the handler's `args`; `cmd/web.ts` declares its
+    // builder inline, the way `cmd/serve.ts` does, and infers them properly. One builder per command,
+    // declared where its options are actually visible to the type checker.
   },
   models: {
     command: "models [provider]",
@@ -47,4 +51,4 @@ export const CommandSpec = {
 } as const
 
 export type CommandSpec = (typeof CommandSpec)[keyof typeof CommandSpec]
-import { withNetworkOptions } from "./network-options"
+

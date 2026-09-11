@@ -1,7 +1,9 @@
 import { Effect } from "effect"
 import { effectCmd, fail } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { resolveNetworkOptions } from "../network"
+import { withServerOptions, applyCredentialOptions, warnOnIgnoredEnv } from "../credential-options"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 // THE one tree-kill, in its leaf spelling (`Shell.killTreeSync` is the same function). The leaf
 // imports `node:` builtins only, which keeps it off the CLI's startup cost.
@@ -194,7 +196,7 @@ async function forwardStdout(stream: ReadableStream<Uint8Array>, onLine: (line: 
 export const ServeCommand = effectCmd({
   ...CommandSpec.serve,
   builder: (yargs) =>
-    withNetworkOptions(yargs).option("supervise", {
+    withServerOptions(yargs).option("supervise", {
       type: "boolean",
       default: true,
       describe: "restart the server automatically if it crashes (--no-supervise runs it bare)",
@@ -203,14 +205,25 @@ export const ServeCommand = effectCmd({
   // need for an ambient project InstanceContext at startup.
   instance: false,
   handler: Effect.fn("Cli.serve")(function* (args) {
+    // 🔴 FIRST, before the server graph assembles: the auth `Config` reads this holder lazily, so a
+    // credential that arrives after `Server.listen` is a credential no request ever sees. Supervised,
+    // the child re-execs with this same argv (`ServeChildCommand.current` replays it), so the flag
+    // reaches the process that actually binds the port rather than dying in the parent.
+    applyCredentialOptions(args)
+    warnOnIgnoredEnv()
     if (args.supervise) {
       const outcome = yield* Effect.promise(superviseLoop)
       if (outcome === "giveup") return yield* fail("server crash loop — supervision gave up", 1)
       return
     }
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
-    if (!Flag.NOVACLAW_SERVER_PASSWORD) {
-      console.log("Warning: NOVACLAW_SERVER_PASSWORD is not set; server is unsecured.")
+    // Phrased as the choice it is. The old sentence named an environment variable nobody is asked to
+    // set, which read as an instruction to go export one — the opposite of the fix.
+    if (!ServerLaunchCredential.isSet()) {
+      console.log(
+        "note: no --password given and no stored token, so this instance accepts unauthenticated " +
+          "requests on its bind address. Pass --password, or set one in Settings → Instances.",
+      )
     }
     const opts = yield* resolveNetworkOptions(args)
     // ONE instance graph: this command runs under `AppRuntime`, whose `AppLayer` is already alive in

@@ -44,10 +44,14 @@ export async function spawnWslSidecar(
     "export WSLENV=",
     "export NOVACLAW_EXPERIMENTAL_DISABLE_FILEWATCHER=true",
     "export NOVACLAW_CLIENT=desktop",
-    `export NOVACLAW_SERVER_USERNAME=${shellEscape(username)}`,
-    `export NOVACLAW_SERVER_PASSWORD=${shellEscape(password)}`,
     'export XDG_STATE_HOME="$HOME/.local/state"',
-    `exec ${shellEscape(novaclaw)} --print-logs --log-level ${app.isPackaged ? "WARN" : "INFO"} serve --hostname 0.0.0.0 --port ${port}`,
+    // 🔴 The credential travels as an OPTION, not an `export`. The server stopped reading
+    // `NOVACLAW_SERVER_PASSWORD` from the environment, so the two exports that used to sit here would
+    // not merely have been ignored — this launcher's instances would have come up OPEN while the
+    // desktop believed it had given them a token. Passing it on argv is also the only form that
+    // survives a `sudo`/profile reset inside the distro, and it names itself in `ps` inside the WSL VM
+    // rather than hiding in an environment nobody can inspect from the UI.
+    `exec ${shellEscape(novaclaw)} --print-logs --log-level ${app.isPackaged ? "WARN" : "INFO"} serve --hostname 0.0.0.0 --port ${port} --username ${shellEscape(username)} --password ${shellEscape(password)}`,
   ].join("\n")
   const child = (opts.spawn ?? spawn)("wsl", wslArgs(["bash", "-se"], distro), {
     stdio: ["pipe", "pipe", "pipe"],

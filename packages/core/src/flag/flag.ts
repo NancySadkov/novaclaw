@@ -1,4 +1,5 @@
 import { Config } from "effect"
+import { ServerLaunchCredential } from "../server-launch-credential"
 
 function env(name: string): string | undefined {
   return process.env[name]
@@ -78,8 +79,25 @@ export const Flag = {
    * repeatedly put a stack of tabs in the owner's browser, one per run.
    */
   NOVACLAW_NO_OPEN: truthy("NOVACLAW_NO_OPEN"),
-  NOVACLAW_SERVER_PASSWORD: env("NOVACLAW_SERVER_PASSWORD"),
-  NOVACLAW_SERVER_USERNAME: env("NOVACLAW_SERVER_USERNAME"),
+  // 🔴 NOT read from the environment. These two forward to `ServerLaunchCredential`, whose only
+  // writers are the CLI's `--password` / `--username` options. They used to be `env(...)` snapshots,
+  // which meant an instance's authentication depended on whatever the launching shell happened to
+  // export — measured on the owner's machine, where a dev server inherited a password exported for an
+  // unrelated session and came up locked while its driver believed it was open. Getters/setters
+  // rather than plain properties because the tests and `server/auth.ts` assign through this object,
+  // and a second registry for one light is how a switch ends up wired to neither.
+  get NOVACLAW_SERVER_PASSWORD() {
+    return ServerLaunchCredential.get().password
+  },
+  set NOVACLAW_SERVER_PASSWORD(value: string | undefined) {
+    ServerLaunchCredential.set({ password: value ?? "" })
+  },
+  get NOVACLAW_SERVER_USERNAME() {
+    return ServerLaunchCredential.get().username
+  },
+  set NOVACLAW_SERVER_USERNAME(value: string | undefined) {
+    ServerLaunchCredential.set({ username: value ?? "" })
+  },
   NOVACLAW_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("NOVACLAW_DISABLE_FFF"),
 
   // Experimental

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { ConfigProvider, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Effect, Layer, Option, Redacted } from "effect"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { ServerAuth as Instance, Config as InstanceAuthConfig } from "../../src/server/auth"
 import { ServerAuth as Shared, Config as SharedAuthConfig } from "@novaclaw/server/auth"
 import type { Info as SharedInfo } from "@novaclaw/server/auth"
@@ -36,6 +37,11 @@ function restoreEnv(key: string, value: string | undefined) {
 }
 
 afterEach(() => {
+  // 🔴 Stated explicitly rather than left to the `Flag` assignments below. Those DO forward to the
+  // launch-credential holder now, so they would happen to reset it — but an invariant that holds
+  // because two unrelated lines alias each other is the kind that breaks the day someone adds an
+  // early `return` or reorders them. Clear first, then restore the snapshot.
+  ServerLaunchCredential.clear()
   Flag.NOVACLAW_SERVER_PASSWORD = original.flagPassword
   Flag.NOVACLAW_SERVER_USERNAME = original.flagUsername
   restoreEnv("NOVACLAW_SERVER_PASSWORD", original.envPassword)
@@ -61,32 +67,52 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
  */
 const CONFIG_SHAPE_IS_SHARED_INFO: Exact<Context.Service.Shape<typeof InstanceAuthConfig>, SharedInfo> = true
 
-const fromEnv = (env: Record<string, string>) => ConfigProvider.layer(ConfigProvider.fromUnknown(env))
-
-const readInstanceConfig = (env: Record<string, string>) =>
-  Effect.runPromise(
+/**
+ * Reads BOTH tags from ONE launch credential, sequentially.
+ *
+ * 🔴 This used to inject a `ConfigProvider` carrying `NOVACLAW_SERVER_PASSWORD`, and that channel no
+ * longer exists: the server stopped reading its credential from the environment, so a provider-shaped
+ * test would now be asserting nothing at all — both tags would answer "open" no matter what the test
+ * wrote. The credential holder is what replaced it, and it is the honest subject: this is the same
+ * value `--password` fills before the graph builds.
+ *
+ * ⚠️ Sequentially, and that is not a style choice. The holder is one process-global, so the two reads
+ * would race if they ran in a `Promise.all` — the second could observe the first's credential. The
+ * version this replaced could run them in parallel precisely BECAUSE its input was a per-layer
+ * provider; a shared global is the price of having one credential source instead of two.
+ */
+const readBothConfigs = async (credential: { readonly password?: string; readonly username?: string }) => {
+  ServerLaunchCredential.clear()
+  ServerLaunchCredential.set(credential)
+  const instance = await Effect.runPromise(
     Effect.gen(function* () {
       return yield* InstanceAuthConfig
-    }).pipe(Effect.provide(InstanceAuthConfig.defaultLayer.pipe(Layer.provide(fromEnv(env))))),
+    }).pipe(Effect.provide(InstanceAuthConfig.defaultLayer)),
   )
-
-const readSharedConfig = (env: Record<string, string>) =>
-  Effect.runPromise(
+  const shared = await Effect.runPromise(
     Effect.gen(function* () {
       return yield* SharedAuthConfig
-    }).pipe(Effect.provide(SharedAuthConfig.defaultLayer.pipe(Layer.provide(fromEnv(env))))),
+    }).pipe(Effect.provide(SharedAuthConfig.defaultLayer)),
   )
+  return { instance, shared }
+}
 
 /**
- * The five env shapes the Wave-1 rename measured behaviour-identity across. Kept — and re-run against
- * the MERGED modules, because merging is a stronger claim than renaming was.
+ * The five credential shapes the Wave-1 rename measured behaviour-identity across, restated as launch
+ * credentials now that the env var is gone. Kept — and re-run against the MERGED modules, because
+ * merging is a stronger claim than renaming was.
+ *
+ * What is still under test is not "do two env readers agree" (there is one reader now), but whether
+ * both tags SHAPE one credential identically: the same `Option` for an unset password, the same
+ * default username, empty string treated as unset on both sides. A `Some("")` on one side and
+ * `none()` on the other is exactly the drift this matrix catches.
  */
-const ENV_SHAPES: readonly Record<string, string>[] = [
+const CREDENTIAL_SHAPES: readonly { readonly password?: string; readonly username?: string }[] = [
   {},
-  { NOVACLAW_SERVER_PASSWORD: "secret" },
-  { NOVACLAW_SERVER_USERNAME: "kit" },
-  { NOVACLAW_SERVER_PASSWORD: "secret", NOVACLAW_SERVER_USERNAME: "kit" },
-  { NOVACLAW_SERVER_PASSWORD: "", NOVACLAW_SERVER_USERNAME: "" },
+  { password: "secret" },
+  { username: "kit" },
+  { password: "secret", username: "kit" },
+  { password: "", username: "" },
 ]
 
 const basic = (username: string, password: string) =>
@@ -175,20 +201,31 @@ describe("ServerAuth config tags", () => {
   // ⚠️ Spread + annotate: bun's `test.each` overloads do not accept a `readonly` array, and without
   // the parameter type it infers `unknown` and both calls below fail TS2345. Bun type-strips, so this
   // was green at runtime and only `tsgo` saw it.
-  test.each([...ENV_SHAPES])("parse %o to the same value on both tags", async (env: Record<string, string>) => {
-    const [instance, shared] = await Promise.all([readInstanceConfig(env), readSharedConfig(env)])
+  test.each([...CREDENTIAL_SHAPES])(
+    "read the credential %o to the same value on both tags",
+    async (credential: { readonly password?: string; readonly username?: string }) => {
+      const { instance, shared } = await readBothConfigs(credential)
 
-    expect(instance).toEqual(shared)
-  })
+      expect(instance).toEqual(shared)
+    },
+  )
 
-  test("parse different environments to different values", async () => {
+  test("read different credentials to different values", async () => {
     // Negative control for the matrix above: `toEqual` on these two shapes is not vacuously true.
-    const [instance, shared] = await Promise.all([
-      readInstanceConfig({ NOVACLAW_SERVER_PASSWORD: "one", NOVACLAW_SERVER_USERNAME: "kit" }),
-      readSharedConfig({ NOVACLAW_SERVER_PASSWORD: "two", NOVACLAW_SERVER_USERNAME: "bob" }),
-    ])
+    //
+    // ⚠️ Its shape had to change with the code. It used to feed the two tags DIFFERENT environments and
+    // watch them disagree, which was only possible because they read two different sources — the thing
+    // this change removed on purpose. With one credential source they cannot be made to disagree by
+    // input, so what this now proves is the property the matrix actually depends on: that the value it
+    // compares MOVES when the credential changes. Same credential, both tags agreeing, is the claim;
+    // different credential, different value, is what stops that agreement from being an accident.
+    const first = await readBothConfigs({ password: "one", username: "kit" })
+    const second = await readBothConfigs({ password: "two", username: "bob" })
 
-    expect(instance).not.toEqual(shared)
+    expect(first.instance).not.toEqual(second.instance)
+    expect(first.shared).not.toEqual(second.shared)
+    expect(first.instance).toEqual(first.shared)
+    expect(second.instance).toEqual(second.shared)
   })
 })
 

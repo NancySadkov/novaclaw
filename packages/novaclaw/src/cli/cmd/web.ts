@@ -2,7 +2,9 @@ import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { resolveNetworkOptions } from "../network"
+import { withServerOptions, applyCredentialOptions, warnOnIgnoredEnv } from "../credential-options"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import open from "open"
 import { networkInterfaces } from "os"
@@ -39,10 +41,21 @@ export const WebCommand = effectCmd({
   // Server loads instances per-request via x-novaclaw-directory header — no
   // ambient project InstanceContext needed at startup.
   instance: false,
+  // Inline, like `cmd/serve.ts`: assigning a generic helper in `CommandSpec` instead makes yargs infer
+  // `T = unknown` and the handler loses the concrete option types. Exactly one builder for this command.
+  builder: (yargs) => withServerOptions(yargs),
   handler: Effect.fn("Cli.web")(function* (args) {
+    // Before the server graph assembles — see the same call in `serve.ts` for why the order is the
+    // contract. `web` is the DEFAULT command (`$0`), so this is the path a person's bare `novaclaw`
+    // takes, and it is the one where an open server matters most: it opens a browser straight at it.
+    applyCredentialOptions(args)
+    warnOnIgnoredEnv((line) => UI.println(UI.Style.TEXT_WARNING_BOLD + "!  " + line))
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
-    if (!Flag.NOVACLAW_SERVER_PASSWORD) {
-      UI.println(UI.Style.TEXT_WARNING_BOLD + "!  NOVACLAW_SERVER_PASSWORD is not set; server is unsecured.")
+    if (!ServerLaunchCredential.isSet()) {
+      UI.println(
+        UI.Style.TEXT_WARNING_BOLD +
+          "!  no --password given and no stored token, so this instance accepts unauthenticated requests.",
+      )
     }
     const opts = yield* resolveNetworkOptions(args)
     // ONE instance graph, as in `serve.ts`: this command runs under `AppRuntime`. `ListenOptions.memoMap`.

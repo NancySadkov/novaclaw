@@ -1,5 +1,6 @@
 export * as ServerAuth from "./auth"
 
+import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
 
 // THE server-auth implementation. `packages/novaclaw/src/server/auth.ts` used to carry a second,
@@ -37,17 +38,34 @@ export class Config extends Context.Service<Config, Info>()("@novaclaw/ServerAut
     return Layer.succeed(this, this.of(input))
   }
 
+  /**
+   * 🔴 The launch credential comes from ARGV, never the environment.
+   *
+   * This used to be `EffectConfig.string("NOVACLAW_SERVER_PASSWORD")`, and Effect's default provider
+   * reads the process environment — so an instance's authentication was decided by whatever the
+   * launching shell happened to export. `ServerLaunchCredential` is filled from the CLI's
+   * `--password` / `--username` before any layer builds, and `suspend` keeps the read LAZY: a plain
+   * `Config.succeed(...)` would evaluate at class-definition time, i.e. before the CLI had parsed
+   * anything, and every instance would boot open.
+   */
   static get defaultLayer() {
-    return Layer.effect(
-      this,
-      Effect.gen(function* () {
-        return Config.of(
-          yield* EffectConfig.all({
-            password: EffectConfig.string("NOVACLAW_SERVER_PASSWORD").pipe(EffectConfig.option),
-            username: EffectConfig.string("NOVACLAW_SERVER_USERNAME").pipe(EffectConfig.withDefault("novaclaw")),
-          }),
-        )
-      }),
+    // ⚠️ `suspend`, and it is load-bearing rather than stylistic. The getter is ACCESSED at module
+    // load — `routes/instance/httpapi/server.ts` builds `authOnlyRouterLayer` as a module-level
+    // constant — which is long before the CLI handler parses argv. A plain `Layer.succeed` here would
+    // therefore capture the credential as it stood at import time, i.e. empty, and every instance
+    // would boot open while `--password` sat unread in the holder. `suspend` defers the read to the
+    // first actual build of the layer, by which point the CLI has run.
+    return Layer.suspend(() =>
+      Layer.succeed(
+        this,
+        this.of({
+          // Written out rather than via a helper: this Effect version's `Option.fromNullOr` wraps
+          // `undefined` as `Some(undefined)`, which would read as "a password is set" and demand Basic
+          // auth against the value `undefined`. An open server must be `Option.none()`.
+          password: ServerLaunchCredential.get().password === undefined ? Option.none() : Option.some(ServerLaunchCredential.get().password!),
+          username: ServerLaunchCredential.get().username,
+        }),
+      ),
     )
   }
 }

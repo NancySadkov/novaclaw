@@ -16,7 +16,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Server")({
   password: ConfigAnnotation.secret(
     Schema.String.pipe(Schema.optional).annotate({
       description:
-        "Incoming API token (HTTP Basic password; username stays 'novaclaw'). Empty/unset = open server. The NOVACLAW_SERVER_PASSWORD env overrides.",
+        "Incoming API token (HTTP Basic password; username stays 'novaclaw'). Empty/unset = open server. This store is the runtime authority: a token passed with `serve --password` is only a bootstrap default and never overrides what is set here. The environment is never a source — an exported NOVACLAW_SERVER_PASSWORD is ignored, and the server says so at boot.",
     }),
   ),
   mdns: Schema.Boolean.pipe(Schema.optional).annotate({ description: "Enable mDNS service discovery" }),
