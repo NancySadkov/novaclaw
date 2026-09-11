@@ -117,21 +117,36 @@ if (!nodeExe) {
    */
   const runSmoke = async () => {
     const home = await mkdtemp(path.join(tmpdir(), "novaclaw-sidecar-smoke-"))
+    // 🔴 BUILD the child's environment; do not hand it ours wholesale.
+    //
+    // A launch credential is argv-or-settings, never environment (`server-launch-credential.ts`), and
+    // `warnOnIgnoredEnv` announces the variable when it is present — so an exported
+    // NOVACLAW_SERVER_PASSWORD changes nothing about what this smoke server accepts. It is stripped
+    // anyway for two reasons that are not about behaviour:
+    //   · it otherwise travels into a spawned process that can never use it, where anything able to
+    //     read that process can read it. The owner's shell exports a real one.
+    //   · it makes the smoke print "set in this shell and is IGNORED" into build output nobody asked
+    //     for, in the one place a person is reading the log closely.
+    // Nothing here needs it: the smoke authenticates with its own `smoke-${random}` credential, and an
+    // explicit credential always outranks the env fallback (`server/src/auth.ts` `headerFrom`).
+    // ⚠️ The annotation is load-bearing, not decoration: spreading `process.env` into a literal drops
+    // its index signature (the inferred type keeps only the keys TypeScript has heard of), and the two
+    // `delete`s below then fail to compile — which is the typechecker pointing at the one property
+    // this block is actually about.
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      NOVACLAW_DB: ":memory:",
+      XDG_DATA_HOME: path.join(home, "data"),
+      XDG_CONFIG_HOME: path.join(home, "config"),
+      XDG_CACHE_HOME: path.join(home, "cache"),
+      XDG_STATE_HOME: path.join(home, "state"),
+    }
+    delete env.NOVACLAW_SERVER_PASSWORD
+    delete env.NOVACLAW_SERVER_USERNAME
     try {
       return Bun.spawnSync(
         [nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js"],
-        {
-          stdout: "inherit",
-          stderr: "inherit",
-          env: {
-            ...process.env,
-            NOVACLAW_DB: ":memory:",
-            XDG_DATA_HOME: path.join(home, "data"),
-            XDG_CONFIG_HOME: path.join(home, "config"),
-            XDG_CACHE_HOME: path.join(home, "cache"),
-            XDG_STATE_HOME: path.join(home, "state"),
-          },
-        },
+        { stdout: "inherit", stderr: "inherit", env },
       ).exitCode
     } finally {
       await rm(home, { recursive: true, force: true })
