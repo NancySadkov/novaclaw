@@ -44,6 +44,20 @@ const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (
     return {
       agents: new Set(roster.map((item) => String(item.id))),
       models: new Set(models.map((model) => `${model.providerID}/${model.id}`)),
+      // 🔴 SWITCHED OFF, not merely unreachable — hence `enabled` and not `available()`. A provider
+      // whose key expired is `all()` but not `available()`, and that is a transient condition the
+      // header above refuses to punish; a model the user turned off is a standing decision, and it is
+      // the one the task cannot run on. See `Known.disabled` for what happens if this line is dropped:
+      // the schedule saves, and fires on a substitute model nobody chose.
+      //
+      // ⚠️ `=== false` and not `!model.enabled`, which is not the same predicate. Absence of the flag
+      // is not evidence that anybody switched anything off — it is a catalog entry that never went
+      // through the one place that sets it (`config/plugin/provider.ts`). Testing for falsiness would
+      // refuse a save over a field nobody wrote; three of this package's own fakes, which build model
+      // records structurally, say so by failing.
+      disabled: new Set(
+        models.filter((model) => model.enabled === false).map((model) => `${model.providerID}/${model.id}`),
+      ),
     }
   })
   const check = pinnedDirectory

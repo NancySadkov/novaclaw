@@ -348,9 +348,33 @@ export const SettingsModelsV2: Component = () => {
                               : language.t("settings.models.probe.test")}
                           </ButtonV2>
                           <Switch
-                            checked={models.visible(key)}
+                            checked={models.enabled(key)}
                             onChange={(checked) => {
-                              models.setVisibility(key, checked)
+                              // 🔴 This switch ENABLES/DISABLES the model for the whole instance — it
+                              // writes config, and the server rebuilds its catalog on the spot. It is
+                              // not the picker's show/hide preference, which lives in this browser and
+                              // which the server cannot see; wiring that one here is what made a
+                              // switched-off model carry on answering prompts.
+                              void models
+                                .setEnabled(key, checked)
+                                .then(() =>
+                                  showToast({
+                                    variant: "success",
+                                    icon: "circle-check",
+                                    title: checked
+                                      ? language.t("settings.models.enable.toast.on", { model: item.name })
+                                      : language.t("settings.models.enable.toast.off", { model: item.name }),
+                                  }),
+                                )
+                                .catch((error: unknown) =>
+                                  showToast({
+                                    variant: "error",
+                                    title: language.t("settings.models.enable.toast.failed", {
+                                      model: item.name,
+                                      error: error instanceof Error ? error.message : String(error),
+                                    }),
+                                  }),
+                                )
                             }}
                             hideLabel
                           >

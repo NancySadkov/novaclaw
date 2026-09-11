@@ -187,7 +187,67 @@ export const {
       setStore("user", store.user.length, { ...model, visibility: state })
     }
 
+    /**
+     * 🔴 ENABLEMENT lives on the server, in config, and nowhere else.
+     *
+     * `providers.<id>.models.<id>.disabled` is the ONE thing the catalog's `model.enabled` flag is
+     * derived from (`config/plugin/provider.ts`: `model.enabled = !config.disabled`), and
+     * `catalog.model.available()` is what every turn, every agent and every scheduled run resolves
+     * through. A switch that does not write that key therefore changes nothing anyone can observe:
+     * the model stays in the served catalog, stays `available()`, and keeps answering prompts as if
+     * it had never been touched. That is the defect this closes — a control whose whole job is to
+     * stop a model from being used, which did not stop it from being used.
+     *
+     * ⚠️ This is NOT the same claim as `visibility` below, and the two must not be collapsed.
+     * `visibility` is a per-client picker preference (which of a 400-model cloud catalog to clutter
+     * the menu with); it is stored in this browser, per instance, and the server never hears of it.
+     * Enablement is a property of the installation. A model can be enabled and unlisted here, or
+     * hidden here and still be what a colleague runs on. The switch in the Models tab means the
+     * second thing, so it writes the second store.
+     */
+    const disabledInConfig = (model: ModelKey) =>
+      (
+        serverSync().data.config?.providers as
+          | Record<string, { models?: Record<string, { disabled?: boolean }> }>
+          | undefined
+      )?.[model.providerID]?.models?.[model.modelID]?.disabled === true
+
+    const enabled = (model: ModelKey) => !disabledInConfig(model)
+
+    /**
+     * Turn a model on or off for the whole instance.
+     *
+     * The write is a full provider fragment on purpose: a layered entity's patch is appended as a
+     * NEW layer over the ones already stored, so the fragment must restate the provider it is
+     * overriding rather than name one field of it — the same reason `cloneModel` in the Models tab
+     * spreads the provider it is editing. `refetchProviders` then re-reads the served catalog, which
+     * the server has already rebuilt: `providers` is a `catalog` reload trigger, so the write
+     * re-materialises the catalog in place rather than waiting for a restart.
+     */
+    const setEnabled = async (model: ModelKey, on: boolean) => {
+      const providers = serverSync().data.config?.providers as
+        | Record<string, Record<string, unknown> & { models?: Record<string, Record<string, unknown>> }>
+        | undefined
+      const provider = providers?.[model.providerID] ?? {}
+      const entry = provider.models?.[model.modelID] ?? {}
+      await serverSync().updateConfig({
+        providers: {
+          [model.providerID]: {
+            ...provider,
+            models: {
+              ...(provider.models ?? {}),
+              [model.modelID]: { ...entry, disabled: on ? false : true },
+            },
+          },
+        },
+      } as never)
+      await serverSync().refetchProviders()
+    }
+
     const visible = (model: ModelKey) => {
+      // A model the installation has switched off is not "hidden from this picker" — it is not
+      // usable, and offering it in a menu would be a lie the user can act on.
+      if (disabledInConfig(model)) return false
       const key = modelKey(model)
       const state = visibility().get(key)
       if (state === "hide") return false
@@ -267,6 +327,8 @@ export const {
       visible,
       shown,
       setVisibility,
+      enabled,
+      setEnabled,
       recent: {
         list: () => recentModels()!,
         push,

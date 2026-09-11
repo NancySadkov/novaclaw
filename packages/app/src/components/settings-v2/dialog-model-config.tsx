@@ -182,6 +182,40 @@ export const DialogModelConfig: Component<{
     outAudio: outMod.includes("audio"),
   })
 
+  // 🔴 Make THIS the model a fresh session resolves to when nothing else names one.
+  //
+  // The instance default is config's `model` key ("Default model to use when no session or agent
+  // model is selected"), and a write to it is pushed straight into the live catalog
+  // (`config-store-write.ts`: `patch.model` → `catalog.setDefault`) — so this takes effect for the
+  // next new session without a restart. Before this button existed the key had no writer anywhere in
+  // the UI: `catalog.model.default()` silently fell back to the newest released model in the catalog,
+  // which is a fact about upstream release dates, not a choice anybody made.
+  const currentDefault = () => (serverSync().data.config as { model?: string } | undefined)?.model
+  const isDefault = () => currentDefault() === `${props.providerID}/${form.modelID.trim()}`
+
+  const makeDefault = async () => {
+    const modelID = form.modelID.trim()
+    if (!modelID) return
+    try {
+      await serverSync().updateConfig({ model: `${props.providerID}/${modelID}` } as never)
+      await serverSync().refetchProviders()
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("settings.models.config.toast.defaultSet", {
+          model: form.modelName.trim() || modelID,
+        }),
+      })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("settings.models.config.toast.defaultFailed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      })
+    }
+  }
+
   const save = async () => {
     const limit: { context?: number; output?: number; images?: number } = {}
     if (num(form.context) !== undefined) limit.context = num(form.context)
@@ -581,6 +615,16 @@ export const DialogModelConfig: Component<{
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-1">
+          <ButtonV2
+            size="normal"
+            variant="ghost-muted"
+            disabled={!form.modelID.trim() || isDefault()}
+            onClick={() => void makeDefault()}
+          >
+            {isDefault()
+              ? language.t("settings.models.config.default.isDefault")
+              : language.t("settings.models.config.default.make")}
+          </ButtonV2>
           <ButtonV2 size="normal" variant="ghost-muted" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </ButtonV2>

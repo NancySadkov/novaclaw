@@ -27,6 +27,18 @@ export type Known = {
   readonly agents: ReadonlySet<string> | undefined
   /** Every model as `providerID/modelID`, or `undefined` if no catalog was resolvable. */
   readonly models: ReadonlySet<string> | undefined
+  /**
+   * Configured models that are switched OFF, as `providerID/modelID`. Absent means "not checked".
+   *
+   * 🔴 `models` answers "does this thing exist?"; this answers "will it run?". A disabled model is
+   * both, and the difference is not cosmetic: `catalog.model.all()` contains it, so a schedule naming
+   * one passes the existence check and then silently runs on whatever `catalog.model.default()` hands
+   * out at fire time (`session/runner/model.ts` falls back rather than killing the turn). The user
+   * switched that model off and the work carried on using another one, unannounced — which is the
+   * complaint "I turned it off and nothing happened" in its scheduled form. Refusing at SAVE time is
+   * the last moment anybody is present to choose again.
+   */
+  readonly disabled?: ReadonlySet<string> | undefined
 }
 
 export type Settings = {
@@ -72,6 +84,10 @@ export function refusal(settings: Settings, known: Known): string | undefined {
     if (!model.includes("/"))
       return `Model "${model}" is missing its provider — write it as provider/model. Available: ${suggest(known.models)}.`
     if (!known.models.has(model)) return `No model "${model}". Available: ${suggest(known.models)}.`
+    if (known.disabled?.has(model))
+      return `Model "${model}" is switched off, so a task cannot run on it. Enable it under Settings → Models, or pick another. Currently runnable: ${suggest(
+        new Set([...known.models].filter((item) => !known.disabled?.has(item))),
+      )}.`
   }
   return undefined
 }

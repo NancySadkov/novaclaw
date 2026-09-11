@@ -87,3 +87,28 @@ test("🔴 an unresolved catalog does not excuse an unchecked AGENT", () => {
   expect(Settings.refusal({ agent: "ghost", model: "spark/anything" }, { ...known, models: undefined }))
     .toContain('No agent named "ghost"')
 })
+
+test("🔴 a model that EXISTS BUT IS SWITCHED OFF is refused — existence is not runnability", () => {
+  /**
+   * The owner's complaint in its scheduled form: *"switching the model off does not register — agents
+   * keep using it, like nothing happened."* `catalog.model.all()` contains a disabled model, so the
+   * existence check above waved it through; at fire time the runner cannot resolve it and falls back
+   * to the instance default rather than killing the turn (`session/runner/model.ts`, the owner-
+   * mandated fallback). Net effect: a saved task silently runs on a model nobody chose, unattended.
+   *
+   * A/B: drop the `disabled` arm in `refusal` and the first assertion below finds no fault to report.
+   */
+  const off = { ...known, disabled: new Set(["spark/qwen3.8-27b"]) }
+  const message = Settings.refusal({ model: "spark/qwen3.8-27b" }, off)
+  expect(message).toContain("switched off")
+  // The repair names the other door (enable it) AND what would run today, so it is not a dead end.
+  expect(message).toContain("Settings → Models")
+  expect(message).toContain("anthropic/sonnet")
+  expect(message).not.toContain("spark/qwen3.8-27b,")
+
+  // An enabled model is untouched by the new arm, and an unchecked one is refused nothing.
+  expect(Settings.refusal({ model: "anthropic/sonnet" }, off)).toBeUndefined()
+  expect(Settings.refusal({ model: "anthropic/sonnet" }, known)).toBeUndefined()
+  // Clearing the field stays legal even while some OTHER model is off.
+  expect(Settings.refusal({ model: null }, off)).toBeUndefined()
+})
