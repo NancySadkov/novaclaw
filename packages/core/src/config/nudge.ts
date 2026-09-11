@@ -25,6 +25,20 @@ export class Info extends Schema.Class<Info>("ConfigV2.Nudge")({
   script: Schema.String.pipe(Schema.optional).annotate({
     description: "Optional command whose bounded stdout is appended to the instruction at delivery time.",
   }),
+  /**
+   * **Opt out of the quiet rule.** Absent means quiet.
+   *
+   * A quiet nudge reaches a session at most once per 30 minutes AND at most once per context epoch
+   * (compaction), whichever is later. That is what makes a trigger that fires on every matching edit
+   * — a text-match on timestamp arithmetic, say — deliver once instead of filling the transcript
+   * with the same paragraph. `Spammable` is for the nudges whose repetition IS the payload: a
+   * heartbeat that reports a changing count, for instance. It is opt-in because the quiet rule is
+   * the behaviour every nudge wants unless its author says otherwise.
+   */
+  spammable: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Repeat as often as the trigger fires. Off by default: a nudge is delivered at most once per 30 minutes and at most once per context epoch.",
+  }),
 }) {}
 
 export const List = Schema.Array(Info)

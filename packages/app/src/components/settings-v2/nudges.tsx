@@ -416,6 +416,21 @@ export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) =>
               spellcheck={false}
               onInput={(event) => setDraft((item) => ({ ...item, script: event.currentTarget.value }))}
             />
+            {/* 🔴 Off by default, and the default is the point: a quiet nudge reaches a session at
+                most once per 30 minutes and once per context. Switch this ON only for a nudge whose
+                repetition IS its payload — a heartbeat reporting a changing count, say. */}
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.spammable")}
+              description={language.t("settings.nudges.spammable.description")}
+            >
+              <Switch
+                checked={draft().spammable === true}
+                onChange={(spammable) => setDraft((item) => ({ ...item, spammable }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.spammable")}
+              </Switch>
+            </SettingsRowV2>
             <Show when={error()}>
               {(message) => (
                 <p class="settings-v2-field-description" style={{ color: "var(--v2-state-danger-text, #ef4444)" }}>

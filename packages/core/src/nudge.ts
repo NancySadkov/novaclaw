@@ -126,6 +126,63 @@ export const occurrence = (event: Event): string => {
   return `clock:${year}-${month}-${day}`
 }
 
+/**
+ * Whether an occurrence names a **period** rather than an **event**.
+ *
+ * 🔴 This distinction is what makes the quiet rule fair. A `tool:` occurrence is unique per tool
+ * call — it has no intrinsic period at all, so without an epoch cap the same instruction could be
+ * delivered thousands of times in one context, which is the spam the owner reported. A `clock:` or
+ * `resource:` occurrence IS the period (`clock:2026-09-12`, `resource:warning:mem`): it cannot
+ * repeat inside that period by construction, so demanding an intervening compaction as well would
+ * silently swallow the new-day notice in a session that happens not to compact overnight.
+ *
+ * `script:` occurrences are hashes of the hook's output, so they change exactly as often as the
+ * output does — that is repetition by construction, and such a nudge needs `spammable` to be chatty.
+ */
+export const periodic = (occurrence: string): boolean => occurrence.startsWith("clock:") || occurrence.startsWith("resource:")
+
+/**
+ * 🔴 **THE QUIET RULE.** How long a delivered nudge stays silenced before the same one may be
+ * delivered to the same session again.
+ *
+ * The owner's report, 2026-09-11: *"nudges by default same nudge can't be inserted more than once
+ * per session compaction and per 30 minutes. Otherwise the nudges, like the js time code, gets
+ * spammed a lot."* The mechanism behind the complaint is `occurrence()`: a `tool:` occurrence is
+ * `tool:<event.id>`, unique per tool call, so the shipped time-safety nudge — a `text-match` on
+ * timestamp arithmetic — cleared the replay guard on EVERY edit that touched a `createdAt`, and each
+ * delivery pushed a fresh paragraph into the transcript the model was trying to work in.
+ *
+ * Two caps, and both have to clear, which is why the silence lasts as long as the LONGER of them:
+ * once per 30 minutes, and once per context epoch. The interval bounds a session that compacts in a
+ * thrash; the epoch bounds a session that runs for hours without one.
+ */
+export const QUIET_INTERVAL_MS = 30 * 60_000
+
+/**
+ * Whether a nudge that ALREADY reached this session may reach it again.
+ *
+ * Pure, and deliberately so: the whole policy is answerable from three numbers and a string, so it
+ * can be argued about without a database. `nudge-service.ts` supplies the numbers.
+ *
+ * `compactedAfter` is "a compaction happened after that delivery" — the durable form of "the context
+ * this was delivered into no longer exists". Losing the reminder to compaction is the one legitimate
+ * reason to repeat it; losing it to the model simply continuing is not.
+ */
+export const deliverable = (input: {
+  readonly prior: Readonly<{ occurrence: string; firedAt: number }>
+  readonly occurrence: string
+  readonly spammable: boolean
+  readonly now: number
+  readonly compactedAfter: boolean
+}): boolean => {
+  // The same occurrence twice is a replay, not a repeat — that guard predates this rule and stays.
+  if (input.prior.occurrence === input.occurrence) return false
+  if (input.spammable) return true
+  if (input.now - input.prior.firedAt < QUIET_INTERVAL_MS) return false
+  if (!periodic(input.occurrence) && !input.compactedAfter) return false
+  return true
+}
+
 export const select = (definitions: readonly ConfigNudge.Info[], event: Event): ReadonlyArray<Match> =>
   definitions.filter((nudge) => matches(nudge, event)).map((nudge) => ({ nudge, occurrence: occurrence(event) }))
 

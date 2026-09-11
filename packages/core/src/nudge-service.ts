@@ -1,8 +1,9 @@
 export * as NudgeService from "./nudge-service"
 
-import { ne } from "drizzle-orm"
+import { and, desc, eq, ne } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { createHash } from "node:crypto"
+import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
@@ -12,6 +13,8 @@ import { SettingsConfigStore } from "./settings-config-store"
 import { ConfigNudge } from "./config/nudge"
 import { Nudge } from "./nudge"
 import { SessionOrigin } from "./session/origin"
+import { SessionSchema } from "./session/schema"
+import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
 
 export interface Interface {
@@ -46,8 +49,27 @@ export const layer = Layer.effect(
         }),
     })
     const runScript = (command: string, directory: string) => runner.run({ command, cwd: directory, timeoutMs: 5_000 })
+    /** What this session was last told about this nudge, if anything. */
+    const priorDelivery = (sessionID: string, deliveryID: string) =>
+      db
+        .select({ occurrence: NudgeDeliveryTable.occurrence, firedAt: NudgeDeliveryTable.fired_at })
+        .from(NudgeDeliveryTable)
+        .where(and(eq(NudgeDeliveryTable.session_id, sessionID), eq(NudgeDeliveryTable.nudge_id, deliveryID)))
+        .get()
+        .pipe(Effect.orDie)
     return Service.of({
       claim: Effect.fn("NudgeService.claim")(function* (input) {
+        // One read per event, not per definition: the quiet rule asks whether the context this nudge
+        // was delivered into still exists, and a session has at most one answer to that.
+        const compacted = yield* db
+          .select({ at: SessionCompactionTable.time_created })
+          .from(SessionCompactionTable)
+          .where(eq(SessionCompactionTable.session_id, input.sessionID as SessionSchema.ID))
+          .orderBy(desc(SessionCompactionTable.seq))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie)
+        let suppressed = 0
         const stored = (yield* settings.all()).nudges
         const decoded = stored === undefined ? undefined : decode(stored)
         // Malformed settings are ignored rather than taking down the turn. The config HTTP boundary
@@ -71,6 +93,13 @@ export const layer = Layer.effect(
         for (const scoped of definitions) {
           if (!Nudge.matches(scoped.nudge, input.event)) continue
           let occurrence = Nudge.occurrence(input.event)
+          // The interval cap is tested BEFORE any hook runs: saying "quiet" must not itself cost a
+          // command execution on the way to the answer.
+          const prior = yield* priorDelivery(input.sessionID, scoped.deliveryID)
+          if (prior && scoped.nudge.spammable !== true && Date.now() - prior.firedAt < Nudge.QUIET_INTERVAL_MS) {
+            suppressed++
+            continue
+          }
           let hookOutput = ""
           if (scoped.nudge.hook.type === "script") {
             const result = yield* runScript(scoped.nudge.hook.command, input.directory)
@@ -93,6 +122,20 @@ export const layer = Layer.effect(
           // unclaimed so a repaired command can deliver it on the next clock event.
           if (!text) continue
           const now = Date.now()
+          // The occurrence is final now (a script hook rewrote it), so the full rule can be answered.
+          if (
+            prior &&
+            !Nudge.deliverable({
+              prior,
+              occurrence,
+              spammable: scoped.nudge.spammable === true,
+              now,
+              compactedAfter: compacted !== undefined && compacted.at > prior.firedAt,
+            })
+          ) {
+            suppressed++
+            continue
+          }
           if (scoped.nudge.hook.type === "new-day") {
             const seeded = yield* db
               .insert(NudgeDeliveryTable)
@@ -100,7 +143,11 @@ export const layer = Layer.effect(
                 session_id: input.sessionID,
                 nudge_id: scoped.deliveryID,
                 occurrence,
-                fired_at: now,
+                // 🔴 `0`, not `now`: this row is a BASELINE, and nothing was delivered. Writing the
+                // current time here would tell the quiet rule that a delivery happened just now, and
+                // the midnight notice would then be held back for half an hour by an event that never
+                // fired. The day-change claim below overwrites it with a real timestamp.
+                fired_at: 0,
               })
               .onConflictDoNothing()
               .returning({ occurrence: NudgeDeliveryTable.occurrence })
@@ -129,6 +176,14 @@ export const layer = Layer.effect(
           if (!recorded) continue
           claimed.push({ ...scoped.nudge, text })
         }
+        // Suppression is the interesting half of this feature and it is invisible by construction:
+        // a quiet nudge leaves no trace in the transcript. Without this line, "the rule is working"
+        // and "the nudge stopped matching" are the same observation.
+        if (suppressed > 0)
+          yield* Log.event("session.nudge.quiet", {
+            "session.id": input.sessionID,
+            "nudge.suppressed": suppressed,
+          })
         return claimed
       }),
     })

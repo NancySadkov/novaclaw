@@ -2274,6 +2274,21 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/session/boot-recovery.ts",
   },
+  /**
+   * Nudge delivery: a nudge matched this event and was **withheld** by the quiet rule — same nudge,
+   * same session, inside 30 minutes, or inside the context epoch it was already delivered into.
+   *
+   * ⚠️ Suppression is invisible by construction: a quiet nudge leaves nothing in the transcript, so
+   * without this line "the rule is protecting the context" and "the nudge stopped matching" are the
+   * same observation. The owner asked for the quiet rule; this is what makes it debuggable.
+   */
+  "session.nudge.quiet": {
+    level: "debug",
+    message: "withheld a repeated nudge from this session",
+    attributes: { "session.id": "correlate", "nudge.suppressed": "count" },
+    content: "correlated",
+    file: "packages/core/src/nudge-service.ts",
+  },
   "session.memory.extract.empty": {
     level: "warn",
     message: "memory extraction: model returned an empty completion",

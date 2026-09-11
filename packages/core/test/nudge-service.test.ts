@@ -31,9 +31,22 @@ describe("NudgeService", () => {
         ),
       ).toEqual([Nudge.JAVASCRIPT_TIME_ID])
       expect(yield* service.claim({ sessionID: "ses_a", agentID: "nova", directory: process.cwd(), event })).toEqual([])
+      // 🔴 A NEW TOOL CALL IS NOT A NEW CONTEXT. This assertion used to read `toHaveLength(1)`, and
+      // that line WAS the defect the owner reported: the shipped time-safety nudge matches timestamp
+      // arithmetic in tool payloads, so every edit touching a `createdAt` re-delivered the same
+      // paragraph into the transcript. Quiet now until the floor passes AND the context turns over.
       expect(
         yield* service.claim({
           sessionID: "ses_a",
+          agentID: "nova",
+          directory: process.cwd(),
+          event: { ...event, id: "call-2" },
+        }),
+      ).toEqual([])
+      // The cap is per session, not global — an untouched chat still hears it on its own first hit.
+      expect(
+        yield* service.claim({
+          sessionID: "ses_other",
           agentID: "nova",
           directory: process.cwd(),
           event: { ...event, id: "call-2" },
@@ -165,6 +178,75 @@ describe("NudgeService", () => {
         event: { type: "clock", at: new Date(2026, 8, 11, 0, 1) },
       })
       expect(next.map((item) => item.id)).toEqual([Nudge.NEW_DAY_ID])
+    }),
+  )
+
+  /**
+   * 🔴 The two caps, end to end, against the shipped time-safety nudge — the one the owner named.
+   *
+   * ⚠️ The compaction row is inserted by hand rather than by running a compaction, because what the
+   * rule reads is one fact about that table (when the context last turned over), and building a real
+   * summary to obtain it would test the summariser instead. `PRAGMA foreign_keys = ON`, so the
+   * parent session is inserted too.
+   */
+  it.effect("waits for BOTH the half-hour floor and a turn of the context", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const { db } = yield* Database.Service
+      const event = (id: string) => ({
+        type: "tool" as const,
+        id,
+        name: "write",
+        input: { content: "const elapsed = endedAt - startedAt" },
+      })
+      const claim = (id: string) => service.claim({ sessionID: "ses_quiet", agentID: "nova", directory: process.cwd(), event: event(id) })
+
+      // `time_created`/`time_updated` are named because raw SQL does not see drizzle's `$default`.
+      yield* db.run(
+        `INSERT INTO session (id, slug, directory, title, version, time_created, time_updated) ` +
+          `VALUES ('ses_quiet', 'quiet', '/tmp', 'quiet', '1', ${Date.now()}, ${Date.now()})`,
+      )
+      expect(yield* claim("q-1")).toHaveLength(1)
+
+      // The whole point of the change: edits keep matching, and the transcript stops filling up.
+      expect(yield* claim("q-2")).toEqual([])
+
+      // The floor has passed and the context has NOT turned over — the long uncompacted session.
+      yield* db.run(`UPDATE session_nudge_delivery SET fired_at = fired_at - 1860000 WHERE session_id = 'ses_quiet'`)
+      expect(yield* claim("q-3")).toEqual([])
+
+      // Now the context turns over, the reminder really has been summarised away, and it returns.
+      yield* db.run(
+        `INSERT INTO session_compaction (id, session_id, seq, prefix_seq, prefix_hash, reason, summary, recent, time_created) ` +
+          `VALUES ('msg_quiet', 'ses_quiet', 1, 0, 'hash', 'auto', 'summary', 'recent', ${Date.now()})`,
+      )
+      expect(yield* claim("q-4")).toHaveLength(1)
+      // …and the floor closes again immediately behind it.
+      expect(yield* claim("q-5")).toEqual([])
+    }),
+  )
+
+  it.effect("a spammable nudge repeats, which is how a heartbeat stays alive", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const settings = yield* SettingsConfigStore.Service
+      yield* settings.set("nudges", [
+        {
+          id: "beat",
+          name: "Heartbeat",
+          hook: { type: "tool-call", tool: "bash" },
+          text: "Report the heartbeat count.",
+          spammable: true,
+        },
+      ])
+      const claim = (id: string) =>
+        service.claim({ sessionID: "ses_beat", agentID: "nova", directory: process.cwd(), event: { type: "tool", id, name: "bash", input: {} } })
+
+      expect(yield* claim("b-1")).toHaveLength(1)
+      // The escape hatch the owner asked for: repetition IS the payload here.
+      expect(yield* claim("b-2")).toHaveLength(1)
+      // Opting out of the quiet rule does not opt out of the replay guard.
+      expect(yield* claim("b-2")).toEqual([])
     }),
   )
 })

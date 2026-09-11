@@ -1256,6 +1256,9 @@ export const dict = {
   "settings.nudges.field.extension": "File extension, for example ts",
   "settings.nudges.field.hookScript": "Command: exit 0 when the nudge should fire",
   "settings.nudges.field.script": "Optional command whose output is inserted into the nudge",
+  "settings.nudges.field.spammable": "Spammable",
+  "settings.nudges.spammable.description":
+    "Deliver this nudge every time it fires. While it is off, the same nudge reaches a session at most once every 30 minutes and once per context — again after a compaction, when the reminder would otherwise be summarised away.",
   "settings.nudges.scope.global": "Global nudges",
   "settings.nudges.global.enabled": "Receive global nudges",
   "settings.nudges.global.description": "Personal nudges still run when this is off.",
