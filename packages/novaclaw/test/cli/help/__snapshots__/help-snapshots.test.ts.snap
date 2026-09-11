@@ -49,10 +49,10 @@ Options:
                                       provided)                                             [string]
       --attach                        attach to a running novaclaw server (e.g.,
                                       http://localhost:4096)                                [string]
-  -p, --password                      basic auth password for --attach (defaults to
-                                      NOVACLAW_SERVER_PASSWORD)                             [string]
-  -u, --username                      basic auth username for --attach (defaults to
-                                      NOVACLAW_SERVER_USERNAME or 'novaclaw')               [string]
+  -p, --password                      basic auth password for --attach (defaults to this instance's
+                                      launch credential)                                    [string]
+  -u, --username                      basic auth username for --attach (defaults to 'novaclaw')
+                                                                                            [string]
       --dir                           directory to run in, path on remote server if attaching
                                                                                             [string]
       --variant                       model variant (requires --model unless running --command)
@@ -142,6 +142,9 @@ Options:
       --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
                                                                 [string] [default: "novaclaw.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
+      --password     incoming API token for this instance (HTTP Basic password). Unset = the stored
+                     server.password, else an open server                                   [string]
+      --username     HTTP Basic username to require alongside --password                    [string]
       --supervise    restart the server automatically if it crashes (--no-supervise runs it bare)
                                                                            [boolean] [default: true]"
 `;
@@ -165,7 +168,10 @@ Options:
                                                                           [boolean] [default: false]
       --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
                                                                 [string] [default: "novaclaw.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+      --password     incoming API token for this instance (HTTP Basic password). Unset = the stored
+                     server.password, else an open server                                   [string]
+      --username     HTTP Basic username to require alongside --password                    [string]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw models --help 1`] = `

@@ -118,11 +118,25 @@ const cli = yargs(args)
   .strict()
 
 try {
-  if (args.includes("-h") || args.includes("--help")) {
+  // 🔴 Two different requests arrive through this branch, and they were being served by ONE path
+  // that only worked for the second. `novaclaw serve --help` wants that command's page, and yargs'
+  // help middleware prints it — fine, 1,929 bytes measured. Bare `novaclaw --help` wants the
+  // TOP-LEVEL page, and yargs handed it to the parse callback as an EMPTY string: the old
+  // `if (!out) return` then exited 0 having written nothing to either stream, while `novaclaw --nope`
+  // printed the whole 2,740-byte page through `.fail()`. So the most-typed invocation in the tool
+  // was silent, and only a snapshot test asserting "stderr ends with a newline" ever noticed.
+  //
+  // Asking for the page directly is the version of this that does not depend on whether yargs
+  // decided to print it first. A command word in front of the flag means the middleware path, which
+  // works and must stay — routing THAT through the top-level page would print the wrong help.
+  const helpFlag = args.includes("-h") || args.includes("--help")
+  const commandWord = args.find((arg) => !arg.startsWith("-"))
+  if (helpFlag && commandWord === undefined) {
+    show(await cli.getHelp())
+  } else if (helpFlag) {
     await cli.parseAsync(args, (err: Error | undefined, _argv: unknown, out: string) => {
       if (err) throw err
-      if (!out) return
-      show(out)
+      if (out) show(out)
     })
   } else {
     await cli.parseAsync()
