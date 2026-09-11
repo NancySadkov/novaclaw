@@ -170,5 +170,50 @@ describe("discard — a stage that ran and did nothing", () => {
     timing.end("context-load")
     expect(timing.snapshot().phases.map((phase) => phase.phase)).toEqual(["context-load"])
   })
+
+  test("annotate stamps the NEWEST record for a phase, so a second recall cannot be credited to the first", () => {
+    let now = 100
+    const timing = TurnTiming.make(() => now)
+    const leg = {
+      retrieved: 16,
+      shown: 3,
+      omitted: 13,
+      tokens: 120,
+      protectedCount: 1,
+      vector: true,
+      reranked: false,
+    }
+    timing.start("memory-search")
+    now = 140
+    timing.end("memory-search")
+    timing.annotate("memory-search", { ...leg, retrieved: 8, shown: 1, omitted: 7 })
+    // The second leg of the same turn: annotate must land on THIS one.
+    timing.start("memory-search")
+    now = 190
+    timing.end("memory-search")
+    timing.annotate("memory-search", leg)
+    const phases = timing.snapshot().phases
+    expect(phases.map((phase) => phase.phase)).toEqual(["memory-search", "memory-search"])
+    expect(phases[0]!.recall?.retrieved).toBe(8)
+    expect(phases[1]!.recall).toEqual(leg)
+  })
+
+  test("annotate on a phase that never ran records nothing — no memory, no phantom row", () => {
+    const timing = TurnTiming.make(() => 100)
+    timing.start("context-load")
+    timing.end("context-load")
+    timing.annotate("memory-search", {
+      retrieved: 0,
+      shown: 0,
+      omitted: 0,
+      tokens: 0,
+      protectedCount: 0,
+      vector: false,
+      reranked: false,
+    })
+    const phases = timing.snapshot().phases
+    expect(phases.map((phase) => phase.phase)).toEqual(["context-load"])
+    expect(phases[0]!.recall).toBeUndefined()
+  })
 })
 

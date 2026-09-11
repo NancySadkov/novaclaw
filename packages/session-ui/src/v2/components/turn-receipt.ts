@@ -57,6 +57,34 @@ export const elapsedMs = (startedAt: unknown, completedAt: unknown, now: unknown
   return elapsed === undefined ? undefined : Math.max(0, elapsed)
 }
 
+export type RecallInfo = NonNullable<TurnPhaseTiming["recall"]>
+
+/**
+ * One line under the recall stage saying what it FOUND, not only how long it took.
+ *
+ * The stage already had a label and a stopwatch, and that was not enough to answer the question it
+ * was asked to answer: a 0.6 s recall is a healthy hybrid search over a full cabinet and a
+ * keyword-only search over an empty one, and the degraded case is the FAST one. The counts are what
+ * separate them, and they are also how a person can see recall spending its budget in a turn that
+ * then took two minutes to prefill.
+ *
+ * ⚠️ Every number passes through `count` first. These arrive from a decoded stored row, which may
+ * have been written by a build other than this one; a `~NaN tokens` in someone's transcript is not an
+ * acceptable way to find out.
+ */
+export const recallNote = (recall: RecallInfo | undefined): string | undefined => {
+  if (recall === undefined) return undefined
+  const count = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0)
+  const head = `${count(recall.retrieved)} looked at, ${count(recall.shown)} shown`
+  const cut = count(recall.omitted) > 0 ? `, ${count(recall.omitted)} did not fit` : ""
+  const tokens = count(recall.tokens) > 0 ? ` · ~${count(recall.tokens)} tokens` : ""
+  const degraded = [
+    recall.vector === true ? undefined : "keywords only",
+    recall.reranked === true ? undefined : "ranked without the model",
+  ].filter((part): part is string => part !== undefined)
+  return `${head}${cut}${tokens}${degraded.length > 0 ? ` · ${degraded.join(", ")}` : ""}`
+}
+
 /** A settled run's user-facing duration, normalized without ever leaking NaN or clock skew. */
 export const completedRunSeconds = (startedAt: unknown, completedAt: unknown): string | undefined => {
   if (completedAt === undefined || completedAt === null) return undefined

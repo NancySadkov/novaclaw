@@ -8,6 +8,7 @@ import {
   longStageNote,
   phaseLabel,
   phaseLabels,
+  recallNote,
   RETIRED_PHASES,
   seconds,
   turnOutcome,
@@ -185,5 +186,47 @@ describe("turnOutcome — the stand-in when a settled turn wrote no prose", () =
     const line = turnOutcome({ toolCount: 4 })!
     for (const forbidden of ["error", "failed", "crash", "stuck", "probably", "may have"])
       expect(line.toLowerCase()).not.toContain(forbidden)
+  })
+})
+
+describe("recallNote", () => {
+  const leg = {
+    retrieved: 24,
+    shown: 8,
+    omitted: 16,
+    tokens: 612,
+    protectedCount: 2,
+    vector: true,
+    reranked: true,
+  }
+
+  test("says what was found and what was cut", () => {
+    expect(recallNote(leg)).toBe("24 looked at, 8 shown, 16 did not fit · ~612 tokens")
+  })
+
+  test("says nothing about omissions there were none of", () => {
+    expect(recallNote({ ...leg, omitted: 0 })).toBe("24 looked at, 8 shown · ~612 tokens")
+  })
+
+  // The degraded leg is the FAST one, so a duration could never show it. The words have to.
+  test("names the degradations a stopwatch cannot see", () => {
+    expect(recallNote({ ...leg, vector: false })).toBe("24 looked at, 8 shown, 16 did not fit · ~612 tokens · keywords only")
+    expect(recallNote({ ...leg, reranked: false })).toContain("ranked without the model")
+    expect(recallNote({ ...leg, vector: false, reranked: false })).toContain("keywords only, ranked without the model")
+  })
+
+  test("an absent leg renders nothing — no memory, no row", () => {
+    expect(recallNote(undefined)).toBeUndefined()
+  })
+
+  // Counts arrive from a decoded stored row, possibly written by another build. A rendered NaN in
+  // someone's transcript is a bug report about the receipt, not about their memory.
+  test("a malformed count renders as zero, never as NaN", () => {
+    for (const bad of [NaN, -3, Infinity, "24", undefined, null]) {
+      const line = recallNote({ ...leg, tokens: bad as unknown as number, retrieved: bad as unknown as number })!
+      expect(line).not.toContain("NaN")
+      expect(line).not.toContain("Infinity")
+      expect(line).toContain("0 looked at")
+    }
   })
 })

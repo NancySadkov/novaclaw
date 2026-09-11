@@ -1655,7 +1655,12 @@ export const layer = Layer.effect(
         // candidates). ANY failure — gate off, model down, unparseable reply — falls back to the
         // deterministic ranker, so ordering degrades but the turn never breaks.
         let ordered: ReadonlyArray<MemoryClient.SearchHit> = MemoryRanking.rankHits(recallCandidates, Date.now())
+        // Recorded for the receipt: whether the MODEL ordered this pack or the deterministic ranker
+        // did. They are different facts and the user can only tell them apart if the row says so —
+        // a fallback looks exactly like a success in a duration.
+        let rerankRan = false
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
+          rerankRan = true
           yield* timingStart("memory-rerank")
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
           // ⚠️ This is the ONE utility pass sitting inside the user's own turn — it runs before the
@@ -1687,6 +1692,18 @@ export const layer = Layer.effect(
         const pack = SessionRecall.packRecall(ordered, SessionRecall.recallTokenBudget(tier))
         recalledMemories = pack.shown
         memoryRecall = SessionRecall.formatRecall(pack)
+        // The receipt row for this leg, stamped where the numbers are true. A duration alone cannot
+        // tell a healthy hybrid search from a keyword-only search of an empty cabinet — both are
+        // fast, and the degraded one is the FAST one, which is precisely why timing hid it.
+        timing.annotate("memory-search", {
+          retrieved: recallCandidates.length,
+          shown: pack.shown.length,
+          omitted: pack.omitted,
+          tokens: pack.tokens,
+          protectedCount: pack.protectedCount,
+          vector: recallVector !== undefined,
+          reranked: rerankRan,
+        })
         // 🔴 The other half of the P3 ledger: RETURNED is not USED. The store recorded the whole
         // pool; this says which of it survived the budget and actually reached the model, which is
         // the signal the pruning policy weighs and the "never used" list is the absence of.

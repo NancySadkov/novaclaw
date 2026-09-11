@@ -414,6 +414,38 @@ export const SnapshotPhaseTiming = Schema.Struct({
   startedAt: NonNegativeInt,
   completedAt: NonNegativeInt.pipe(optional),
 })
+
+/**
+ * WHAT the automatic recall leg actually did, recorded beside its duration.
+ *
+ * 🔴 Timings alone could not answer the question they were supposed to answer. A receipt saying
+ * *"Recalling — 0.6 s"* tells a person watching a stalled turn nothing about whether recall is the
+ * problem: the same 0.6 s is a healthy vector+FTS search over a full cabinet and a keyword-only
+ * search over an empty one. The counts are what make the row diagnosable — `retrieved` vs `shown`
+ * says whether the token budget is cutting, and `vector: false` says the embedding device never
+ * answered, which a duration can never show because a degraded leg is FAST.
+ *
+ * ⚠️ These are the harness's own measurements of one leg of one step, not a claim about retrieval
+ * quality: `tokens` is the estimator's (four characters to a token), and `reranked: false` means the
+ * deterministic ranker ordered the pack, which is a fallback, not a failure.
+ */
+export const TurnPhaseRecall = Schema.Struct({
+  /** Candidates pulled from the store before ranking — the pool, bounded by `recallPoolSize`. */
+  retrieved: NonNegativeInt,
+  /** Of those, how many reached the model. */
+  shown: NonNegativeInt,
+  /** Ranked material the token budget could not fit. The block says this to the model too. */
+  omitted: NonNegativeInt,
+  /** Estimated tokens the shown block occupies. */
+  tokens: NonNegativeInt,
+  /** How many of `shown` were admitted by the constraint protection rather than by the budget. */
+  protectedCount: NonNegativeInt,
+  /** Did the vector leg contribute an embedding? False = keyword-only (no device, or it failed). */
+  vector: Schema.Boolean,
+  /** Did the model order the pack? False = the deterministic ranker did. */
+  reranked: Schema.Boolean,
+})
+export type TurnPhaseRecall = typeof TurnPhaseRecall.Type
 export type SnapshotPhaseTiming = typeof SnapshotPhaseTiming.Type
 
 export const TurnPhaseTiming = Schema.Struct({
@@ -421,6 +453,8 @@ export const TurnPhaseTiming = Schema.Struct({
   startedAt: NonNegativeInt,
   completedAt: NonNegativeInt.pipe(optional),
   details: Schema.Array(SnapshotPhaseTiming).pipe(optional),
+  /** Present on the `memory-search` record of a turn that recalled: what the leg found and showed. */
+  recall: TurnPhaseRecall.pipe(optional),
 })
 export type TurnPhaseTiming = typeof TurnPhaseTiming.Type
 

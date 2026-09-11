@@ -67,6 +67,7 @@ import {
   elapsedMs,
   longStageNote,
   phaseLabel,
+  recallNote,
   seconds,
   type TurnTiming,
 } from "./turn-receipt"
@@ -1062,6 +1063,15 @@ function TurnReceipt(props: {
                       <span>{phaseLabel(phase.phase)}</span>
                       <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} live={props.live} />
                     </div>
+                    {/* What recall found, shown to everyone rather than behind the developer switch:
+                        this is the row that answers "did remembering something slow this turn down",
+                        and a person watching a stall should not have to know a setting exists to see it.
+                        Absent when the turn did not recall — no memory, no row. */}
+                    <Show when={recallNote(phase.recall) !== undefined}>
+                      <ul data-slot="native-turn-details">
+                        <li>{recallNote(phase.recall)}</li>
+                      </ul>
+                    </Show>
                     <Show when={props.developer && phase.details?.length}>
                       <ul data-slot="native-turn-details">
                         <For each={phase.details}>

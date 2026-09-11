@@ -243,6 +243,15 @@ export type SessionStatus =
             startedAt: number
             completedAt?: number
           }>
+          recall?: {
+            retrieved: number
+            shown: number
+            omitted: number
+            tokens: number
+            protectedCount: number
+            vector: boolean
+            reranked: boolean
+          }
         }>
         providerAttempts: Array<{
           attempt: number
@@ -640,6 +649,15 @@ export type GlobalEvent = {
                 startedAt: number
                 completedAt?: number
               }>
+              recall?: {
+                retrieved: number
+                shown: number
+                omitted: number
+                tokens: number
+                protectedCount: number
+                vector: boolean
+                reranked: boolean
+              }
             }>
             providerAttempts: Array<{
               attempt: number
@@ -2582,6 +2600,15 @@ export type SessionMessageAssistant = {
         startedAt: number
         completedAt?: number
       }>
+      recall?: {
+        retrieved: number
+        shown: number
+        omitted: number
+        tokens: number
+        protectedCount: number
+        vector: boolean
+        reranked: boolean
+      }
     }>
     providerAttempts: Array<{
       attempt: number
@@ -3219,6 +3246,15 @@ export type SyncEventSessionNextStepEnded = {
             startedAt: number
             completedAt?: number
           }>
+          recall?: {
+            retrieved: number
+            shown: number
+            omitted: number
+            tokens: number
+            protectedCount: number
+            vector: boolean
+            reranked: boolean
+          }
         }>
         providerAttempts: Array<{
           attempt: number
@@ -5268,6 +5304,15 @@ export type SessionNextStepEnded = {
           startedAt: number
           completedAt?: number
         }>
+        recall?: {
+          retrieved: number
+          shown: number
+          omitted: number
+          tokens: number
+          protectedCount: number
+          vector: boolean
+          reranked: boolean
+        }
       }>
       providerAttempts: Array<{
         attempt: number
@@ -7455,6 +7500,15 @@ export type EventSessionNextStepEnded = {
           startedAt: number
           completedAt?: number
         }>
+        recall?: {
+          retrieved: number
+          shown: number
+          omitted: number
+          tokens: number
+          protectedCount: number
+          vector: boolean
+          reranked: boolean
+        }
       }>
       providerAttempts: Array<{
         attempt: number

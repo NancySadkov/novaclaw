@@ -120,6 +120,22 @@ export const make = (now: () => number = Date.now) => {
     phases[index.phase] = { ...phases[index.phase]!, details }
     if (indexes?.length === 0) openSnapshotDetails.delete(detail)
   }
+  /**
+   * Stamp the newest record for `phase` with what that leg actually DID, alongside its duration.
+   *
+   * ⚠️ It stamps the newest record with that name whether it is still open or already closed, because
+   * the recall leg knows its own counts only after the pack is built — which is after `memory-search`
+   * has closed. Taking the NEWEST (not the oldest, and not "the open one") is what keeps a step that
+   * recalled twice in one turn from stamping the earlier leg's numbers onto the later leg's row.
+   *
+   * A phase that never ran is not stamped and not created: `annotate` on an absent phase is a no-op,
+   * so a turn with memory off gains no phantom recall row — the absence is the fact.
+   */
+  const annotate = (phase: Phase, info: SessionMessage.TurnPhaseRecall): void => {
+    const index = phases.findLastIndex((record) => record.phase === phase)
+    if (index < 0) return
+    phases[index] = { ...phases[index]!, recall: info }
+  }
   const queued = () => start("scheduler-wait")
   const admitted = () => end("scheduler-wait")
   const attemptStarted = (attempt: number) => {
@@ -156,6 +172,7 @@ export const make = (now: () => number = Date.now) => {
 
   return {
     discard,
+    annotate,
     start,
     begin,
     end,

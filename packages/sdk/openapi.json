@@ -23726,6 +23726,47 @@
                             "required": ["phase", "startedAt"],
                             "additionalProperties": false
                           }
+                        },
+                        "recall": {
+                          "type": "object",
+                          "properties": {
+                            "retrieved": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "shown": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "omitted": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "tokens": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "protectedCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "vector": {
+                              "type": "boolean"
+                            },
+                            "reranked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "retrieved",
+                            "shown",
+                            "omitted",
+                            "tokens",
+                            "protectedCount",
+                            "vector",
+                            "reranked"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": ["phase", "startedAt"],
@@ -25151,6 +25192,47 @@
                                     "required": ["phase", "startedAt"],
                                     "additionalProperties": false
                                   }
+                                },
+                                "recall": {
+                                  "type": "object",
+                                  "properties": {
+                                    "retrieved": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "shown": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "omitted": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "tokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "protectedCount": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "vector": {
+                                      "type": "boolean"
+                                    },
+                                    "reranked": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "retrieved",
+                                    "shown",
+                                    "omitted",
+                                    "tokens",
+                                    "protectedCount",
+                                    "vector",
+                                    "reranked"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": ["phase", "startedAt"],
@@ -31352,6 +31434,39 @@
                         "required": ["phase", "startedAt"],
                         "additionalProperties": false
                       }
+                    },
+                    "recall": {
+                      "type": "object",
+                      "properties": {
+                        "retrieved": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shown": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "omitted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "protectedCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "vector": {
+                          "type": "boolean"
+                        },
+                        "reranked": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["retrieved", "shown", "omitted", "tokens", "protectedCount", "vector", "reranked"],
+                      "additionalProperties": false
                     }
                   },
                   "required": ["phase", "startedAt"],
@@ -33505,6 +33620,47 @@
                                 "required": ["phase", "startedAt"],
                                 "additionalProperties": false
                               }
+                            },
+                            "recall": {
+                              "type": "object",
+                              "properties": {
+                                "retrieved": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "shown": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "omitted": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "tokens": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "protectedCount": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "vector": {
+                                  "type": "boolean"
+                                },
+                                "reranked": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "retrieved",
+                                "shown",
+                                "omitted",
+                                "tokens",
+                                "protectedCount",
+                                "vector",
+                                "reranked"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": ["phase", "startedAt"],
@@ -39755,6 +39911,47 @@
                             "required": ["phase", "startedAt"],
                             "additionalProperties": false
                           }
+                        },
+                        "recall": {
+                          "type": "object",
+                          "properties": {
+                            "retrieved": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "shown": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "omitted": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "tokens": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "protectedCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "vector": {
+                              "type": "boolean"
+                            },
+                            "reranked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "retrieved",
+                            "shown",
+                            "omitted",
+                            "tokens",
+                            "protectedCount",
+                            "vector",
+                            "reranked"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": ["phase", "startedAt"],
@@ -46414,6 +46611,47 @@
                             "required": ["phase", "startedAt"],
                             "additionalProperties": false
                           }
+                        },
+                        "recall": {
+                          "type": "object",
+                          "properties": {
+                            "retrieved": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "shown": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "omitted": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "tokens": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "protectedCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "vector": {
+                              "type": "boolean"
+                            },
+                            "reranked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "retrieved",
+                            "shown",
+                            "omitted",
+                            "tokens",
+                            "protectedCount",
+                            "vector",
+                            "reranked"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": ["phase", "startedAt"],

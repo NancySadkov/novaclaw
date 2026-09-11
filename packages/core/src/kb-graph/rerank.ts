@@ -18,7 +18,14 @@ import type { SearchHit } from "./wasm-engine"
 
 /** Compact one-line view of a candidate: what the model needs to judge, and nothing else. */
 const describe = (hit: SearchHit, nowMs: number): string => {
-  const age = hit.validAt ? Math.max(0, Math.round((nowMs - Date.parse(hit.validAt)) / 86_400_000)) : undefined
+  // ⚠️ `validAt` is a STRING at this boundary, and `Date.parse` answers anything it cannot read with
+  // NaN — which used to reach the model as the literal text "NaNd old" (an epoch-ms value stored as
+  // text, or a hand-edited row, is enough). An unparseable date is an UNKNOWN age, exactly the answer
+  // `ranking.ts`'s `recencyFactor` gives it: a candidate is never penalised for a store that cannot
+  // say when, and a prompt is never handed arithmetic that failed.
+  const at = hit.validAt === undefined ? Number.NaN : Date.parse(hit.validAt)
+  const age =
+    Number.isFinite(at) && Number.isFinite(nowMs) ? Math.max(0, Math.round((nowMs - at) / 86_400_000)) : undefined
   const when = age === undefined ? "age unknown" : age === 0 ? "today" : `${age}d old`
   const tier = hit.relation === "core" ? "curated" : hit.source === "auto-extract" ? "auto-noted" : "user-recorded"
   return `${when}; ${tier}) ${hit.text.replace(/\s+/g, " ").trim()}`
