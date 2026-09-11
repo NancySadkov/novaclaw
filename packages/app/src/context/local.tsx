@@ -248,6 +248,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return models.find(item)
     }
 
+    /**
+     * 🔴 The model THIS CHOSE, or nothing. `current()` above is what the chat will RUN on and walks
+     * `this chat's pick → the officer's model → recents → the default`, so most of the time it is a
+     * value nobody picked. Only the first link may be written to the session row: the keystone is
+     * `resolveSessionConfig`, where an absent column means inherit, so persisting a resolved value
+     * turns a live dependency into a frozen copy. That is exactly why an officer's model change, and
+     * why switching a model off, never reached a working chat — the composer had stamped the answer
+     * of the day onto the row, and the row outranks the officer forever after.
+     */
+    const override = () => scope()?.model
+
     const configured = () => {
       const item = agent.current()
       const model = current()
@@ -292,6 +303,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const model = {
       ready: models.ready,
       current,
+      override,
       recent,
       list: models.list,
       cycle(direction: 1 | -1) {

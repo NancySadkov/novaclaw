@@ -13773,7 +13773,14 @@
                 "type": "object",
                 "properties": {
                   "model": {
-                    "$ref": "#/components/schemas/ModelRef"
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ModelRef"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["model"],
@@ -35285,6 +35292,9 @@
           },
           "script": {
             "type": "string"
+          },
+          "spammable": {
+            "type": "boolean"
           }
         },
         "required": ["id", "name", "hook", "text"],

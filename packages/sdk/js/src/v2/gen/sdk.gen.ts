@@ -1696,7 +1696,7 @@ class ApiV2Session extends NovaClawApiClient {
   public switchModel<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      model: T.ModelRef
+      model: T.ModelRef | null
     },
     options?: Options<never, ThrowOnError>,
   ) {

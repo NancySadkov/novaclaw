@@ -707,7 +707,12 @@ export const makeSessionGroups = <
       .add(
         HttpApiEndpoint.post("session.switchModel", "/api/session/:sessionID/model", {
           params: { sessionID: Session.ID },
-          payload: Schema.Struct({ model: Model.Ref }),
+          // 🔴 `null` is a supported value, not an omission: it means "this chat names no model, so
+          // inherit one every turn". The kernel event behind this (`ModelSwitched.model`) has been
+          // nullable since 2026-08-14, but the wire never let anyone say it — so a chat that had ever
+          // been stamped could never go back to following its officer. Absence in a PATCH means
+          // "unchanged"; clearing needs a value that means "now nothing", which is `null`.
+          payload: Schema.Struct({ model: Schema.NullOr(Model.Ref) }),
           success: HttpApiSchema.NoContent,
           error: SessionNotFoundError,
         })

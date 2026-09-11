@@ -377,7 +377,8 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly switchModel: (input: {
     sessionID: SessionSchema.ID
-    model: ModelV2.Ref
+    /** `null` = name no model, i.e. go back to inheriting one each turn. */
+    model: ModelV2.Ref | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchResponder: (input: {
     sessionID: SessionSchema.ID
@@ -1276,6 +1277,19 @@ export const layer = Layer.effect(
       }),
       switchModel: Effect.fn("V2Session.switchModel")(function* (input) {
         const session = yield* result.get(input.sessionID)
+        // 🔴 `null` clears the pin, and clearing an already-clear row is the no-op — the same
+        // idempotence the set-path above practices, so a composer that re-sends "no pick" every turn
+        // does not stamp a switch event onto the transcript each time.
+        if (input.model === null) {
+          if (session.model === undefined) return
+          yield* events.publish(SessionEvent.ModelSwitched, {
+            sessionID: input.sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            model: null,
+          })
+          return
+        }
         if (
           session.model?.providerID === input.model.providerID &&
           session.model.id === input.model.id &&

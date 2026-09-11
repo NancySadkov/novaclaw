@@ -511,6 +511,50 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  // 🔴 Fix D — the OTHER half of a switch: coming back. A chat that never picked a model must be
+  // able to STOP being pinned, because a written `session.model` outranks its officer permanently
+  // (runner/model.ts `select()` prefers the row over `agent.current()?.model`). Before this, the only
+  // way a row got a value was the composer shipping the RESOLVED model — so every chat silently
+  // acquired a pin it never asked for, and nothing could ever remove it. That is why the live DB
+  // shows nearly every `session` row nailed to one model with `session.agent` NULL.
+  //
+  // A/B: make `switchModel` ignore a null payload (or the projector write `undefined` instead of the
+  // payload) and the first assertion below still sees the pinned model.
+  it.effect("a null switch clears the pin so the chat follows its officer again", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location, agent })
+      const model = ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic })
+
+      yield* session.switchModel({ sessionID: created.id, model })
+      expect(yield* session.get(created.id)).toMatchObject({ model })
+
+      yield* session.switchModel({ sessionID: created.id, model: null })
+
+      const pinned = (yield* session.get(created.id)).model
+      expect(pinned ?? null).toBeNull()
+    }),
+  )
+
+  it.effect("re-sending 'no pick' is a no-op, not a switch event on every turn", () =>
+    Effect.gen(function* () {
+      // The composer sends the clear on EVERY prompt of an unpinned chat (that is how it heals a row
+      // left over from before Fix D). If the clear were not idempotent, each turn would stamp another
+      // model-switched event into the transcript and bump time_updated — noise that reads as churn.
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location, agent })
+      const { db } = yield* Database.Service
+      const eventsOf = () =>
+        db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie)
+
+      const before = yield* eventsOf()
+      yield* session.switchModel({ sessionID: created.id, model: null })
+      yield* session.switchModel({ sessionID: created.id, model: null })
+
+      expect(yield* eventsOf()).toHaveLength(before.length)
+    }),
+  )
+
   it.effect("treats an omitted variant as the default variant", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

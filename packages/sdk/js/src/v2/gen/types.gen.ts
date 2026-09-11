@@ -3746,6 +3746,7 @@ export type ConfigV2Nudge = {
       }
   text: string
   script?: string
+  spammable?: boolean
 }
 
 export type ConfigV2Agent = {
@@ -14010,7 +14011,7 @@ export type V2SessionSwitchAgentResponse = V2SessionSwitchAgentResponses[keyof V
 
 export type V2SessionSwitchModelData = {
   body: {
-    model: ModelRef
+    model: ModelRef | null
   }
   path: {
     sessionID: string

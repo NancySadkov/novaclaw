@@ -127,6 +127,10 @@ beforeAll(async () => {
     useLocal: () => ({
       model: {
         current: () => ({ id: "model", provider: { id: "provider" } }),
+        // Fix D: `submit.ts` asks the CHAT what it picked, separately from what it resolved to. These
+        // fixtures model a chat that did pick (matching `current()`), because the variant assertions
+        // below ride on the pick — a variant only travels with a deliberate choice.
+        override: () => ({ providerID: "provider", modelID: "model" }),
         variant: { current: () => variant },
       },
       agent: {

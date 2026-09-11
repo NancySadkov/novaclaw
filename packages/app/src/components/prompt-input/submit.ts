@@ -135,6 +135,14 @@ export type FollowupDraft = {
   context: (ContextItem & { key: string })[]
   agent: string
   model: { providerID: string; modelID: string }
+  /**
+   * What THIS chat picked, or `undefined` when it never picked. `model` above is what the composer
+   * will RUN on — the same field resolved through the officer and the fallbacks — so it must never
+   * reach the session row: the keystone resolves `undefined` as inherit, and a written value
+   * outranks the officer forever after. `undefined` here means "clear any pin", which is what lets a
+   * chat follow its officer's model, or move off a model that was switched off, on the next turn.
+   */
+  override?: { providerID: string; modelID: string }
   variant?: string
 }
 
@@ -251,23 +259,38 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    // The composer's agent/model selection persists on the session (V2 switch semantics — the V1
-    // promptAsync carried them per turn). Switch only when the record disagrees.
+    // 🔴 The session row carries an OVERRIDE, and an override is a choice. `resolveSessionConfig` —
+    // the keystone — reads an absent `model` column as INHERIT, so whatever is written here outranks
+    // the officer permanently. This block used to write `draft.model`, which is the composer's
+    // RESOLVED model (this chat's pick → the officer's model → recents → the default): on the common
+    // path it persisted an answer nobody had given, and from that turn on the chat no longer had an
+    // officer to follow. Both of the owner's complaints are that line: switching the officer's model
+    // did nothing, and switching a model off did nothing, because the row kept saying what the picker
+    // had happened to resolve on the day the chat started.
+    //
+    // So: write only a pick this chat actually made; and if it made none, take the pin OFF, which is
+    // what `null` means on this wire (the kernel event has been nullable since 2026-08-14). Clearing
+    // is idempotent server-side, so re-sending it every prompt costs nothing and heals the rows this
+    // bug already wrote — including the officer chats in front of me, which are all pinned today.
     const record = input.serverSync.session.get(input.draft.sessionID)
-    const draftModel = input.draft.model
-    if (
-      record?.model?.providerID !== draftModel.providerID ||
-      record?.model?.id !== draftModel.modelID ||
-      (input.draft.variant !== undefined && record?.model?.variant !== input.draft.variant)
-    )
-      await input.client.v2.session.switchModel({
-        sessionID: input.draft.sessionID,
-        model: {
-          providerID: draftModel.providerID,
-          id: draftModel.modelID,
-          ...(input.draft.variant ? { variant: input.draft.variant } : {}),
-        },
-      })
+    const picked = input.draft.override
+    if (picked) {
+      if (
+        record?.model?.providerID !== picked.providerID ||
+        record?.model?.id !== picked.modelID ||
+        (input.draft.variant !== undefined && record?.model?.variant !== input.draft.variant)
+      )
+        await input.client.v2.session.switchModel({
+          sessionID: input.draft.sessionID,
+          model: {
+            providerID: picked.providerID,
+            id: picked.modelID,
+            ...(input.draft.variant ? { variant: input.draft.variant } : {}),
+          },
+        })
+    } else if (record?.model) {
+      await input.client.v2.session.switchModel({ sessionID: input.draft.sessionID, model: null })
+    }
     /**
      * 🔴 **A chat that already has a colleague is NEVER reassigned from here** (owner, 2026-08-27:
      * *"any chat with Umbris for some reason switches to a chat with Build"*).
@@ -441,6 +464,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const currentModel = local.model.current()
+    const currentOverride = local.model.override()
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
     if (!currentModel || !currentAgent) {
@@ -564,6 +588,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       context,
       agent,
       model,
+      // 🔴 What this chat picked, not what it resolved to. See `FollowupDraft.override`.
+      override: currentOverride ? { providerID: currentOverride.providerID, modelID: currentOverride.modelID } : undefined,
       variant,
     }
 
@@ -641,7 +667,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             command: commandName,
             arguments: args.join(" "),
             agent,
-            model: `${model.providerID}/${model.modelID}`,
+            // Same rule as the prompt path above, and for the same reason: `session.command` persists
+            // whatever model it is given, so sending the composer's RESOLVED model here would pin the
+            // chat to an answer it never gave. Send a pick, or send nothing.
+            ...(currentOverride
+              ? { model: `${currentOverride.providerID}/${currentOverride.modelID}` }
+              : {}),
             variant,
           })
           .catch((err) => {
