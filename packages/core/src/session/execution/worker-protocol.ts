@@ -108,6 +108,17 @@ export const AwaitChildResult = Schema.Struct({
   outcome: Schema.Literals(["completed", "timeout", "rejected"]),
   /** The child's rendered `exit(result)`; present only when `outcome` is "completed". */
   result: Schema.String.pipe(Schema.optional),
+  generatedAnyTokens: Schema.Boolean,
+  generatedTokens: NonNegativeInt,
+  providerErrors: Schema.Array(
+    Schema.Struct({
+      message: Schema.String,
+      tag: Schema.String.pipe(Schema.optional),
+      retryable: Schema.Boolean.pipe(Schema.optional),
+      status: PositiveInt.pipe(Schema.optional),
+      count: PositiveInt,
+    }),
+  ),
 }).annotate({ identifier: "SessionWorker.AwaitChildResult" })
 
 /**
@@ -373,14 +384,15 @@ export type SpawnChildInput = (typeof SpawnChild.Type)["input"]
  * "only works in host-only contexts". Found the moment fixing spawn let the live smoke reach test 8.
  *
  * ⚠️ **It BLOCKS, which none of the other requests do.** The host tails the child's durable stream
- * until a completion arrives or `timeoutMs` elapses. A timeout is a normal ANSWER (`outcome:
- * "timeout"`), not a transport failure — the child may simply still be working.
+ * for the kernel-owned seven-minute join. A timeout is a normal ANSWER (`outcome: "timeout"`), not
+ * a transport failure — the child may simply still be working. There is deliberately no duration in
+ * this request: a worker cannot widen or shorten the officer's invariant.
  */
 export const AwaitChild = Schema.Struct({
   ...Identity,
   type: Schema.Literal("await-child"),
   requestID: Schema.String,
-  input: Schema.Struct({ childID: SessionSchema.ID, timeoutMs: Schema.Finite }),
+  input: Schema.Struct({ childID: SessionSchema.ID }),
 }).annotate({ identifier: "SessionWorker.AwaitChild" })
 
 /**

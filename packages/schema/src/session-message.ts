@@ -382,6 +382,7 @@ export const Context = Schema.Struct({
 export const TurnPhase = Schema.Literals([
   "prepare",
   "context-load",
+  "model-recovery",
   "request-build",
   "context-fit",
   "memory-embed",

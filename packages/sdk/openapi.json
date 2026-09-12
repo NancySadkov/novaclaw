@@ -23686,6 +23686,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",
@@ -25152,6 +25153,7 @@
                                   "enum": [
                                     "prepare",
                                     "context-load",
+                                    "model-recovery",
                                     "request-build",
                                     "context-fit",
                                     "memory-embed",
@@ -31394,6 +31396,7 @@
                       "enum": [
                         "prepare",
                         "context-load",
+                        "model-recovery",
                         "request-build",
                         "context-fit",
                         "memory-embed",
@@ -33580,6 +33583,7 @@
                               "enum": [
                                 "prepare",
                                 "context-load",
+                                "model-recovery",
                                 "request-build",
                                 "context-fit",
                                 "memory-embed",
@@ -39889,6 +39893,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",
@@ -46589,6 +46594,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",

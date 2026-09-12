@@ -1,4 +1,4 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
@@ -10,6 +10,7 @@ import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
 import { File } from "@novaclaw/session-ui/file"
 import { Markdown } from "@novaclaw/session-ui/markdown"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import type { SessionMessage } from "@novaclaw/sdk/v2/client"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
@@ -18,6 +19,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContext, getSessionTokenTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import { sessionCompactionEvents } from "./session-compaction-events"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -117,6 +119,8 @@ export function SessionContextTab() {
   const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()], providers.model))
   const tokens = createMemo(() => info()?.tokens)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const compactions = createMemo(() => sessionCompactionEvents(messages()))
+  const [showCompactions, setShowCompactions] = createSignal(false)
 
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
@@ -264,6 +268,52 @@ export function SessionContextTab() {
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>{(stat) => <Stat label={language.t(stat.label)} value={stat.value()} />}</For>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <div>
+            <ButtonV2 type="button" variant="outline" onClick={() => setShowCompactions((value) => !value)}>
+              {language.t("context.compactions.button")} ({compactions().length.toLocaleString(language.intl())})
+            </ButtonV2>
+          </div>
+          <Show when={showCompactions()}>
+            <div class="flex flex-col gap-2" aria-label={language.t("context.compactions.title")}>
+              <Show
+                when={compactions().length > 0}
+                fallback={<div class="text-12-regular text-text-weak">{language.t("context.compactions.empty")}</div>}
+              >
+                <For each={compactions()}>
+                  {(event) => (
+                    <div class="rounded-md border border-border-base bg-surface-base px-3 py-2 flex flex-col gap-1">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="text-12-medium text-text-strong">
+                          {language.t(`context.compactions.cause.${event.cause}`)}
+                        </div>
+                        <div class="text-11-regular text-text-weak">{formatter().time(event.at)}</div>
+                      </div>
+                      <div class="text-12-regular text-text-base">
+                        {event.beforeTokens === undefined
+                          ? language.t("context.compactions.sizeUnknown")
+                          : event.afterTokens === undefined
+                            ? `${formatter().number(event.beforeTokens)} ${language.t("context.compactions.tokensBefore")}`
+                            : `${formatter().number(event.beforeTokens)} → ${formatter().number(event.afterTokens)} ${language.t("context.compactions.tokens")}`}
+                      </div>
+                      <div
+                        class={
+                          event.status === "failed"
+                            ? "text-11-regular text-icon-critical-base"
+                            : "text-11-regular text-text-weak"
+                        }
+                      >
+                        {language.t(`context.compactions.status.${event.status}`)}
+                        {event.failure ? ` · ${event.failure}` : ""}
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Show>
         </div>
 
         <Show when={breakdown().length > 0}>

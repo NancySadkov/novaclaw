@@ -720,6 +720,18 @@ export const dict = {
 
   "context.systemPrompt.title": "System Prompt",
   "context.rawMessages.title": "Raw messages",
+  "context.compactions.button": "Compaction Events",
+  "context.compactions.title": "Compaction events",
+  "context.compactions.empty": "No compaction events in this session yet.",
+  "context.compactions.sizeUnknown": "Size was not recorded by this older event.",
+  "context.compactions.tokensBefore": "tokens before compaction",
+  "context.compactions.tokens": "tokens",
+  "context.compactions.cause.manual": "Manual compaction",
+  "context.compactions.cause.overflow": "Context overflow recovery",
+  "context.compactions.cause.threshold": "Context threshold reached",
+  "context.compactions.status.completed": "Completed",
+  "context.compactions.status.failed": "Failed",
+  "context.compactions.status.running": "Running",
 
   "context.stats.session": "Session",
   "context.stats.messages": "Messages",

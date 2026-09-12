@@ -1,6 +1,6 @@
 export * as SessionJoin from "./join"
 
-import { Context, Effect, Layer, Option, Stream } from "effect"
+import { Context, Effect, Layer, Stream } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeLocationNode } from "../effect/app-node"
@@ -38,8 +38,8 @@ import { SessionStore } from "./store"
  * same order as one inference reports a false negative on a healthy run, which is exactly what a
  * supervisor must never do.
  *
- * ⚠️ It still has to be BOUNDED, so a wedged child cannot hold a caller forever. Ten minutes is well
- * past a slow local turn and well short of a hang.
+ * ⚠️ It still has to be BOUNDED, so a wedged child cannot hold a caller forever. Seven minutes is
+ * past a slow local turn and short enough for an officer to recover the slice in the same work turn.
  *
  * ⚠️ **It lives here because there were TWO joins and only one of them learned this** ().
  * `tool/wait.ts` owned the measurement above; `SessionV2.wait` — the `POST /api/session/:id/wait`
@@ -49,12 +49,27 @@ import { SessionStore } from "./store"
  *
  * Milliseconds, because this crosses the worker protocol and a `Duration` does not.
  */
-export const JOIN_TIMEOUT_MS = 10 * 60_000
+export const JOIN_TIMEOUT_MS = 7 * 60_000
+
+export interface ProviderError {
+  readonly message: string
+  readonly tag?: string
+  readonly retryable?: boolean
+  readonly status?: number
+  /** Repeated identical failures are one bounded diagnostic, with their frequency preserved. */
+  readonly count: number
+}
 
 export interface Outcome {
   readonly completed: boolean
   /** The child's `exit(result)` payload, rendered. Absent when it timed out. */
   readonly result?: string
+  /** Output plus reasoning tokens generated after this wait sampled the durable event head. */
+  readonly generatedTokens: number
+  /** True even when a failed stream persisted output but never returned an exact usage total. */
+  readonly generatedAnyTokens: boolean
+  /** Provider/API failures observed after that same head, deduplicated without losing counts. */
+  readonly providerErrors: ReadonlyArray<ProviderError>
 }
 
 export interface Interface {
@@ -107,19 +122,78 @@ export const fromParts = (parts: Parts): Interface => ({
     Effect.gen(function* () {
       const after = yield* parts.sequence(childID)
       const current = yield* parts.session(childID)
-      if (current?.result !== undefined) return { completed: true, result: render(current.result) } satisfies Outcome
+      let completed: EventV2.Payload<typeof SessionEvent.Completed> | undefined
+      let generatedTokens = 0
+      let generatedAnyTokens = false
+      const failures = new Map<string, ProviderError>()
+      const consume = (event: EventV2.Payload) => {
+        if (event.type === SessionEvent.Completed.type) {
+          completed = event as EventV2.Payload<typeof SessionEvent.Completed>
+          return
+        }
+        if (event.type === SessionEvent.Step.Ended.type) {
+          const ended = event as EventV2.Payload<typeof SessionEvent.Step.Ended>
+          const count = Math.max(0, ended.data.tokens.output) + Math.max(0, ended.data.tokens.reasoning)
+          generatedTokens += count
+          generatedAnyTokens ||= count > 0
+          return
+        }
+        if (
+          event.type === SessionEvent.Text.Progress.type ||
+          event.type === SessionEvent.Text.Ended.type ||
+          event.type === SessionEvent.Reasoning.Progress.type ||
+          event.type === SessionEvent.Reasoning.Ended.type ||
+          event.type === SessionEvent.Tool.Input.Progress.type ||
+          event.type === SessionEvent.Tool.Input.Ended.type
+        ) {
+          const data = event.data as { readonly delta?: unknown; readonly text?: unknown }
+          generatedAnyTokens ||=
+            (typeof data.delta === "string" && data.delta.length > 0) ||
+            (typeof data.text === "string" && data.text.length > 0)
+          return
+        }
+        if (event.type !== SessionEvent.Step.Failed.type) return
+        const failed = event as EventV2.Payload<typeof SessionEvent.Step.Failed>
+        const error = failed.data.error
+        const key = JSON.stringify([error._tag, error.status, error.retryable, error.message])
+        const previous = failures.get(key)
+        failures.set(key, {
+          message: error.message,
+          ...(error._tag === undefined ? {} : { tag: error._tag }),
+          ...(error.retryable === undefined ? {} : { retryable: error.retryable }),
+          ...(error.status === undefined ? {} : { status: error.status }),
+          count: (previous?.count ?? 0) + 1,
+        })
+      }
+      const durable = parts.events.durable({ aggregateID: childID, after })
+      if (current?.result !== undefined) {
+        // Completion may land between sampling `after` and reading the projected row. Consume exactly
+        // the now-durable delta so tokens/errors generated inside that race are not reported as zero;
+        // a completion already present before this call has a zero delta and returns immediately.
+        const through = yield* parts.sequence(childID)
+        yield* durable.pipe(
+          Stream.take(Math.max(0, through - after)),
+          Stream.runForEach((event) => Effect.sync(() => consume(event))),
+        )
+        return {
+          completed: true,
+          result: render(current.result),
+          generatedTokens,
+          generatedAnyTokens,
+          providerErrors: [...failures.values()],
+        } satisfies Outcome
+      }
 
-      const completed = yield* parts.events.durable({ aggregateID: childID, after }).pipe(
-        Stream.filter((event) => event.type === SessionEvent.Completed.type),
-        Stream.map((event) => event as EventV2.Payload<typeof SessionEvent.Completed>),
-        Stream.runHead,
-        Effect.map(Option.getOrUndefined),
-        // A timeout is a legitimate ANSWER, not a failure: the child may simply still be working.
-        Effect.timeoutOrElse({ duration: timeoutMs, orElse: () => Effect.succeed(undefined) }),
+      const stream = durable.pipe(
+        Stream.takeUntil((event) => event.type === SessionEvent.Completed.type),
+        Stream.runForEach((event) => Effect.sync(() => consume(event))),
       )
+      // A timeout is a legitimate ANSWER, not a failure: the child may simply still be working.
+      yield* stream.pipe(Effect.timeoutOrElse({ duration: timeoutMs, orElse: () => Effect.void }))
+      const diagnostics = { generatedTokens, generatedAnyTokens, providerErrors: [...failures.values()] }
       return completed === undefined
-        ? ({ completed: false } satisfies Outcome)
-        : ({ completed: true, result: render(completed.data.result) } satisfies Outcome)
+        ? ({ completed: false, ...diagnostics } satisfies Outcome)
+        : ({ completed: true, result: render(completed.data.result), ...diagnostics } satisfies Outcome)
     }).pipe(Effect.orDie),
 })
 
@@ -141,4 +215,8 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node, SessionStore.node, Database.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer,
+  deps: [EventV2.node, SessionStore.node, Database.node],
+})

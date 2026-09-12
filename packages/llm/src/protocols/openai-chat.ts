@@ -379,6 +379,7 @@ const lowerUserMessage = Effect.fn("OpenAIChat.lowerUserMessage")(function* (mes
 
 const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(function* (
   message: OpenAIChatRequestMessage,
+  reasoningContentRequired: boolean,
 ) {
   const content: TextPart[] = []
   const reasoning: ReasoningPart[] = []
@@ -443,15 +444,17 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
   // prepends the system turn — which `@novaclaw/core` always supplies, so the production floor is a
   // system-only request, not an empty array. An empty-request guard is a separate decision.
   if (content.length === 0 && toolCalls.length === 0) return []
+  const replayedReasoning =
+    reasoning.length > 0
+      ? reasoning.map((part) => part.text).join("")
+      : (openAICompatibleReasoningContent(message.native?.openaiCompatible) ??
+        (reasoningContentRequired ? "" : undefined))
   return [
     {
       role: "assistant" as const,
       content: content.length === 0 ? null : ProviderShared.joinText(content),
       tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
-      reasoning_content:
-        reasoning.length > 0
-          ? reasoning.map((part) => part.text).join("")
-          : openAICompatibleReasoningContent(message.native?.openaiCompatible),
+      ...(replayedReasoning === undefined ? {} : { reasoning_content: replayedReasoning }),
     },
   ]
 })
@@ -479,10 +482,13 @@ const lowerToolMessages = Effect.fn("OpenAIChat.lowerToolMessages")(function* (m
   return { messages, images }
 })
 
-const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: OpenAIChatRequestMessage) {
+const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (
+  message: OpenAIChatRequestMessage,
+  reasoningContentRequired: boolean,
+) {
   if (message.role === "user") return [yield* lowerUserMessage(message)]
   // 0..n, like `lowerToolMessages` — the assistant arm drops unrenderable messages (see there).
-  if (message.role === "assistant") return yield* lowerAssistantMessage(message)
+  if (message.role === "assistant") return yield* lowerAssistantMessage(message, reasoningContentRequired)
   return (yield* lowerToolMessages(message)).messages
 })
 
@@ -494,6 +500,10 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
   const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
   const system: OpenAIChatMessage[] = systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
   const messages = [...system]
+  const reasoningContentRequired =
+    request.model.compatibility?.reasoningContent === "required" &&
+    !PromptedTools.isPrompted(request) &&
+    request.tools.length > 0
   const pendingImages: Array<Schema.Schema.Type<typeof OpenAIChatUserContent>> = []
   const flushImages = () => {
     if (pendingImages.length === 0) return
@@ -524,7 +534,7 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
       continue
     }
     flushImages()
-    messages.push(...(yield* lowerMessage(message)))
+    messages.push(...(yield* lowerMessage(message, reasoningContentRequired)))
   }
   flushImages()
   return messages

@@ -442,6 +442,9 @@ test("parallel child joins begin independently instead of serializing behind the
         requestID: message.requestID,
         outcome: "completed",
         result: message.input.childID,
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
       }
     },
   })

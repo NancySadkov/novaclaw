@@ -586,26 +586,28 @@ describe("both wait doors are the same bounded join", () => {
     }),
   )
 
-  it.effect("⚠️ it is still BOUNDED: past ten minutes it answers OperationUnavailable, as the endpoint promises", () =>
-    Effect.gen(function* () {
-      const location = yield* workspace
-      const session = yield* SessionV2.Service
-      const child = yield* session.create({ location, agent: rootAgent })
+  it.effect(
+    "⚠️ it is still BOUNDED: past seven minutes it answers OperationUnavailable, as the endpoint promises",
+    () =>
+      Effect.gen(function* () {
+        const location = yield* workspace
+        const session = yield* SessionV2.Service
+        const child = yield* session.create({ location, agent: rootAgent })
 
-      const waiting = yield* Effect.exit(session.wait(child.id)).pipe(Effect.forkChild)
-      yield* TestClock.adjust(Duration.millis(SessionJoin.JOIN_TIMEOUT_MS + 1000))
-      const exit = yield* Fiber.join(waiting)
-      expect(exit._tag).toBe("Failure")
-      // The endpoint's contract is "503, re-call to keep waiting" — a timeout must NOT read as
-      // success, which would tell a client a running child had finished.
-      expect(JSON.stringify(exit)).toContain("OperationUnavailableError")
-    }),
+        const waiting = yield* Effect.exit(session.wait(child.id)).pipe(Effect.forkChild)
+        yield* TestClock.adjust(Duration.millis(SessionJoin.JOIN_TIMEOUT_MS + 1000))
+        const exit = yield* Fiber.join(waiting)
+        expect(exit._tag).toBe("Failure")
+        // The endpoint's contract is "503, re-call to keep waiting" — a timeout must NOT read as
+        // success, which would tell a client a running child had finished.
+        expect(JSON.stringify(exit)).toContain("OperationUnavailableError")
+      }),
   )
 
   test("the bound is ONE constant, not two — this is the whole finding", () => {
     // The tool path and the HTTP path both read `SessionJoin.JOIN_TIMEOUT_MS`. Two copies is how the
     // 2026-08-20 fix landed on one door and not the other.
-    expect(SessionJoin.JOIN_TIMEOUT_MS).toBe(10 * 60_000)
+    expect(SessionJoin.JOIN_TIMEOUT_MS).toBe(7 * 60_000)
     const waitTool = readFileSync(new URL("../src/tool/wait.ts", import.meta.url), "utf8")
     const kernel = readFileSync(new URL("../src/session.ts", import.meta.url), "utf8")
     expect(waitTool).toContain("SessionJoin.JOIN_TIMEOUT_MS")

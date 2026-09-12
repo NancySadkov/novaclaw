@@ -236,12 +236,22 @@ const awaitRequest = {
   ...base,
   type: "await-child" as const,
   requestID: "req_await",
-  input: { childID: SessionSchema.ID.make("ses_child"), timeoutMs: 5_000 },
+  input: { childID: SessionSchema.ID.make("ses_child") },
 }
 
 test("a completed child returns its result", async () => {
+  let observedTimeout: number | undefined
   const join: SessionJoin.Interface = {
-    awaitCompletion: () => Effect.succeed({ completed: true, result: "EXIT-MARKER-42" }),
+    awaitCompletion: (input) => {
+      observedTimeout = input.timeoutMs
+      return Effect.succeed({
+        completed: true,
+        result: "EXIT-MARKER-42",
+        generatedAnyTokens: true,
+        generatedTokens: 17,
+        providerErrors: [],
+      })
+    },
   }
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
@@ -253,13 +263,31 @@ test("a completed child returns its result", async () => {
       message: awaitRequest,
     }),
   )
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "completed", result: "EXIT-MARKER-42" })
+  expect(reply).toMatchObject({
+    type: "await-child-result",
+    outcome: "completed",
+    result: "EXIT-MARKER-42",
+    generatedAnyTokens: true,
+    generatedTokens: 17,
+    providerErrors: [],
+  })
+  expect(observedTimeout, "the worker protocol cannot choose a different wait duration").toBe(
+    SessionJoin.JOIN_TIMEOUT_MS,
+  )
 })
 
 test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
   // The child may simply still be working. Reporting "rejected" would tell the model its worker is
   // stale — a different fact entirely, and one it would act on differently.
-  const join: SessionJoin.Interface = { awaitCompletion: () => Effect.succeed({ completed: false }) }
+  const join: SessionJoin.Interface = {
+    awaitCompletion: () =>
+      Effect.succeed({
+        completed: false,
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [{ message: "bad request", tag: "InvalidRequest", status: 400, count: 2 }],
+      }),
+  }
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,
@@ -270,7 +298,13 @@ test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
       message: awaitRequest,
     }),
   )
-  expect(reply).toMatchObject({ type: "await-child-result", outcome: "timeout" })
+  expect(reply).toMatchObject({
+    type: "await-child-result",
+    outcome: "timeout",
+    generatedAnyTokens: false,
+    generatedTokens: 0,
+    providerErrors: [{ message: "bad request", count: 2 }],
+  })
   expect((reply as { result?: string }).result).toBeUndefined()
 })
 
@@ -279,7 +313,13 @@ test("a stale lease is refused before the join is attempted", async () => {
   const join: SessionJoin.Interface = {
     awaitCompletion: () => {
       called = true
-      return Effect.succeed({ completed: true, result: "x" })
+      return Effect.succeed({
+        completed: true,
+        result: "x",
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
     },
   }
   const reply = await Effect.runPromise(
@@ -298,7 +338,10 @@ test("a stale lease is refused before the join is attempted", async () => {
 
 test("a completed child with no result still reports completion", async () => {
   // `exit()` with no payload is legitimate — the join succeeded and there is simply nothing to show.
-  const join: SessionJoin.Interface = { awaitCompletion: () => Effect.succeed({ completed: true }) }
+  const join: SessionJoin.Interface = {
+    awaitCompletion: () =>
+      Effect.succeed({ completed: true, generatedAnyTokens: false, generatedTokens: 0, providerErrors: [] }),
+  }
   const reply = await Effect.runPromise(
     SessionWorkerInteractionBridge.handle({
       permission: unusedPermission,

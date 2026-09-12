@@ -52,6 +52,7 @@ describe("turn receipt", () => {
   test("uses friendly labels and stable seconds", () => {
     expect(phaseLabel("memory-search")).toBe("Recalling")
     expect(phaseLabel("provider-prefill")).toBe("Loading the prompt into the model")
+    expect(phaseLabel("model-recovery")).toBe("Waiting for the model to recover")
     expect(phaseLabel("capability-queue")).toBe("Waiting for a service")
     expect(phaseLabel("capability-load")).toBe("Starting a service")
     expect(phaseLabel("capability-run")).toBe("Running a service")
@@ -108,6 +109,7 @@ describe("turn receipt", () => {
     // honestly explain gets nothing — an empty reassurance is what this replaces.
     expect(longStageNote("scheduler-wait", 30_000)).toContain("Another session")
     expect(longStageNote("capability-load", 30_000)).toContain("first time")
+    expect(longStageNote("model-recovery", 30_000)).toContain("selected model is unavailable")
     expect(longStageNote("compaction", 30_000)).toBeUndefined()
     expect(longStageNote("generation", 30_000)).toBeUndefined()
     expect(longStageNote("memory-rerank", 30_000)).toBeUndefined()
@@ -210,7 +212,9 @@ describe("recallNote", () => {
 
   // The degraded leg is the FAST one, so a duration could never show it. The words have to.
   test("names the degradations a stopwatch cannot see", () => {
-    expect(recallNote({ ...leg, vector: false })).toBe("24 looked at, 8 shown, 16 did not fit · ~612 tokens · keywords only")
+    expect(recallNote({ ...leg, vector: false })).toBe(
+      "24 looked at, 8 shown, 16 did not fit · ~612 tokens · keywords only",
+    )
     expect(recallNote({ ...leg, reranked: false })).toContain("ranked without the model")
     expect(recallNote({ ...leg, vector: false, reranked: false })).toContain("keywords only, ranked without the model")
   })

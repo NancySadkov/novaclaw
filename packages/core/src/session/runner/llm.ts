@@ -1128,6 +1128,7 @@ export const layer = Layer.effect(
       options: {
         readonly promotion?: SessionInput.Delivery | undefined
         readonly onFailure?: ((error: unknown) => Effect.Effect<void>) | undefined
+        readonly recoveryWait?: SessionRunnerModel.ResolveOptions["recoveryWait"]
       } = {},
     ) {
       const onFailure = options.onFailure
@@ -1210,7 +1211,10 @@ export const layer = Layer.effect(
       // to select another real catalog placement of the same model, so resolving these separately
       // could dispatch one endpoint while charging another endpoint's capacity ledger.
       const resolvedModel = yield* tap(
-        models.resolveWithDevice(modelSession, { requested: session.model !== undefined }),
+        models.resolveWithDevice(modelSession, {
+          requested: session.model !== undefined,
+          recoveryWait: options.recoveryWait,
+        }),
       )
       const model = resolvedModel.model
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq, system.compaction)
@@ -1326,7 +1330,14 @@ export const layer = Layer.effect(
               : {}),
           })
         }).pipe(Effect.ignore)
-      const prepared = yield* prepareTurn(sessionID, { promotion, onFailure: surfacePreTurnFailure })
+      const prepared = yield* prepareTurn(sessionID, {
+        promotion,
+        onFailure: surfacePreTurnFailure,
+        recoveryWait: {
+          started: () => timingStart("model-recovery"),
+          ended: () => timingEnd("model-recovery"),
+        },
+      })
       // The session moved to another location while this drain was queued — not ours to run.
       if (prepared === undefined) return yield* Effect.interrupt
       const {
@@ -3010,11 +3021,22 @@ export const layer = Layer.effect(
           // epilogue: the endpoint plainly served, and demoting a colleague's model for a damaged
           // `[DONE]` would move it off something that works.
           const turnFailed = publisher.hasAssistantFailed() && !handledResponseFailure
+          const providerFailureRetryable =
+            llmFailure !== undefined
+              ? ProviderRetry.isTransientProviderFailure(llmFailure)
+              : publisher.assistantFailureRetryable()
+          // A provider that explicitly rejected THIS request cannot recover by replaying the same
+          // payload after a delay. Treating `retryable:false` as endpoint health made autonomous
+          // sessions resubmit one malformed history forever (441 identical DeepSeek 400s live).
+          const providerHalted = turnFailed && providerFailureRetryable === false
           // Replaying a failed pre-action turn on a substitute is safe. Replaying after a tool call
           // is not: the call may already have changed a file or sent a message, even if the provider
           // connection died before acknowledging the result.
           const reroutableProviderFailure =
-            turnFailed && !sawToolCall && !(stream._tag === "Failure" && Cause.hasInterrupts(stream.cause))
+            turnFailed &&
+            !providerHalted &&
+            !sawToolCall &&
+            !(stream._tag === "Failure" && Cause.hasInterrupts(stream.cause))
           let providerFailureRecorded = false
           if (turnFailed) {
             // 🔴 An endpoint saying it does not HAVE this model is not a flaky turn, and counting it
@@ -3209,6 +3231,7 @@ export const layer = Layer.effect(
           if (
             stream._tag === "Failure" &&
             !handledResponseFailure &&
+            !providerHalted &&
             !(reroutableProviderFailure && providerFailureRecorded)
           )
             return yield* Effect.failCause(stream.cause)
@@ -3231,6 +3254,7 @@ export const layer = Layer.effect(
             finish: stepSettlement?.finish,
             brokenResponse,
             emptyResponse,
+            providerHalted,
             providerFailed: reroutableProviderFailure && providerFailureRecorded ? ranOn : undefined,
             maxProviderAttempts,
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
@@ -3313,6 +3337,8 @@ export const layer = Layer.effect(
         readonly brokenResponse: boolean
         /** This provider turn emitted no assistant output before its durable failure row was added. */
         readonly emptyResponse: boolean
+        /** The provider explicitly said replaying this same request cannot succeed. */
+        readonly providerHalted: boolean
         /** Failed before useful output; the drain may immediately resolve a compatible substitute. */
         readonly providerFailed: ModelV2.Ref | undefined
         readonly maxProviderAttempts: number
@@ -3790,6 +3816,7 @@ export const layer = Layer.effect(
       const alreadyExited =
         (yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined)))?.result !== undefined
       let exitedMidDrain = false
+      let providerHalted = false
       while (shouldRun) {
         let needsContinuation = true
         let step = 1
@@ -3820,6 +3847,12 @@ export const layer = Layer.effect(
           if (result.providerFailed) {
             needsContinuation = true
             continue
+          }
+          if (result.providerHalted) {
+            providerHalted = true
+            needsContinuation = false
+            yield* Log.event("session.provider.halted", { "session.id": input.sessionID })
+            break
           }
           // exit(result) landed during this turn → stop the run NOW: no tool-call continuation,
           // no steer re-arm, no nudge machinery (post-exit, harness steers used to resurrect the
@@ -4436,7 +4469,7 @@ export const layer = Layer.effect(
         // queue promotion or the self-drive continuation below would immediately steer the same
         // starved model straight back into the same wall, and the two-strike bound would be
         // decorative. Pending input is safe for the same reason it is safe on the exit path.
-        if (exitedMidDrain || truncationHalted || policyHalted) break
+        if (exitedMidDrain || truncationHalted || policyHalted || providerHalted) break
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {

@@ -5,6 +5,7 @@ import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { SessionEvent } from "../session/event"
+import { SessionMessage } from "../session/message"
 import { SessionStore } from "../session/store"
 import { SessionExecutionAttempt } from "../session/execution-attempt"
 import { SessionSchema } from "../session/schema"
@@ -39,7 +40,7 @@ import { SessionJoin } from "../session/join"
  * live side of this predicate for as long as it existed. Current process-loss recovery never writes
  * `paused`, but an older database can still contain that state. Nothing automatically leaves such a
  * legacy row; only `authorizeRetry` — an operator action — does. So a parent told *"it may still be
- * working"* about a paused child waits ten minutes a lap, forever.
+ * working"* about a paused child waits seven minutes a lap, forever.
  */
 /**
  * ⭐ **The classification is EXHAUSTIVE over `SessionExecutionAttempt.State`, by construction.** A
@@ -47,8 +48,8 @@ import { SessionJoin } from "../session/join"
  * ignored default here is *"alive"* — the direction that strands a parent. `Unclassified` below is
  * a type error the moment a state is added to the union without an answer to the question above.
  */
-const HALTED_STATES = ["failed", "interrupted", "paused"] as const
-const PROGRESSING_STATES = ["starting", "busy", "recovering", "settled"] as const
+const HALTED_STATES = ["failed", "interrupted", "paused", "settled"] as const
+const PROGRESSING_STATES = ["starting", "busy", "recovering"] as const
 type Classified = (typeof HALTED_STATES)[number] | (typeof PROGRESSING_STATES)[number]
 type Unclassified = Exclude<SessionExecutionAttempt.State, Classified>
 const _everyAttemptStateIsClassified: [Unclassified] extends [never]
@@ -72,6 +73,12 @@ export const deadChildMessage = (childID: string, state: string | undefined): st
       `not resume on its own. It is not still working and waiting again will not help. Its share of ` +
       `the work was NOT done — say so in your reply, and re-issue that slice yourself only if ` +
       `repeating it is safe; it may have been parked because a tool's outcome is unknown.`
+    )
+  if (state === "settled")
+    return (
+      `Session ${childID} DID NOT FINISH: its execution stopped without calling exit(). ` +
+      `It is not still working and waiting again will not help. Its share of the work was NOT done — ` +
+      `inspect the provider/API diagnostics below, then spawn a fresh replacement session for that slice.`
     )
   return (
     `Session ${childID} DID NOT FINISH: its execution ${state === "failed" ? "failed" : "was interrupted"}. ` +
@@ -140,9 +147,66 @@ export const Input = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The child session id to wait for (returned by a prior spawn)." }),
 })
 
-const StructuredOutput = Schema.Struct({ completed: Schema.Boolean, terminal: Schema.Boolean })
+const ProviderError = Schema.Struct({
+  message: Schema.String,
+  tag: Schema.String.pipe(Schema.optional),
+  retryable: Schema.Boolean.pipe(Schema.optional),
+  status: Schema.Number.pipe(Schema.optional),
+  count: Schema.Number,
+})
+const StructuredOutput = Schema.Struct({
+  completed: Schema.Boolean,
+  terminal: Schema.Boolean,
+  generatedAnyTokens: Schema.Boolean,
+  generatedTokens: Schema.Number,
+  providerErrors: Schema.Array(ProviderError),
+})
 const Output = Schema.Struct({ ...StructuredOutput.fields, message: Schema.String })
 type Output = typeof Output.Type
+
+export const diagnosticMessage = (
+  outcome: Pick<SessionJoin.Outcome, "generatedAnyTokens" | "generatedTokens" | "providerErrors">,
+  errorScope: "during" | "before" = "during",
+): string => {
+  const generated = outcome.generatedAnyTokens
+    ? outcome.generatedTokens > 0
+      ? `The worker generated ${outcome.generatedTokens} output/reasoning tokens during this wait.`
+      : "The worker generated output during this wait, but the failed provider stream did not report a token count."
+    : "The worker generated no tokens during this wait."
+  const scope = errorScope === "during" ? "during this wait" : "on the worker before this wait"
+  if (outcome.providerErrors.length === 0) return `${generated} No provider/API errors were observed ${scope}.`
+  const errors = outcome.providerErrors
+    .map((error) => {
+      const details = [
+        error.tag ? `type ${error.tag}` : undefined,
+        error.status ? `HTTP ${error.status}` : undefined,
+        error.retryable === undefined ? undefined : error.retryable ? "retryable" : "not retryable",
+        error.count > 1 ? `${error.count} times` : undefined,
+      ].filter(Boolean)
+      return `- ${details.length === 0 ? "Provider error" : details.join(", ")}: ${error.message}`
+    })
+    .join("\n")
+  return `${generated} Provider/API errors observed ${scope}:\n${errors}`
+}
+
+export const recentProviderErrors = (messages: ReadonlyArray<SessionMessage.Message>): SessionJoin.ProviderError[] => {
+  const lastUser = messages.findLastIndex((message) => message.type === "user")
+  const failures = new Map<string, SessionJoin.ProviderError>()
+  for (const message of messages.slice(lastUser + 1)) {
+    if (message.type !== "assistant" || message.error === undefined) continue
+    const error = message.error
+    const key = JSON.stringify([error._tag, error.status, error.retryable, error.message])
+    const previous = failures.get(key)
+    failures.set(key, {
+      message: error.message,
+      ...(error._tag === undefined ? {} : { tag: error._tag }),
+      ...(error.retryable === undefined ? {} : { retryable: error.retryable }),
+      ...(error.status === undefined ? {} : { status: error.status }),
+      count: (previous?.count ?? 0) + 1,
+    })
+  }
+  return [...failures.values()]
+}
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -160,11 +224,17 @@ export const layer = Layer.effectDiscard(
           sideEffect,
           description:
             "Block until a child session (spawned earlier) completes via exit(), then return its result. " +
-            "Times out after ~10 minutes if the child has not completed.",
+            "Times out after 7 minutes if the child has not completed, reporting tokens generated and provider/API errors observed during the wait.",
           input: Input,
           output: Output,
           structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => ({ completed: output.completed, terminal: output.terminal }),
+          toStructuredOutput: ({ output }) => ({
+            completed: output.completed,
+            terminal: output.terminal,
+            generatedAnyTokens: output.generatedAnyTokens,
+            generatedTokens: output.generatedTokens,
+            providerErrors: output.providerErrors,
+          }),
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>
             Effect.gen(function* () {
@@ -183,10 +253,23 @@ export const layer = Layer.effectDiscard(
 
               // A boot deliberately leaves disposable worker attempts interrupted so their officer
               // can replace them. Inspect that durable terminal state BEFORE subscribing: checking
-              // only after the ten-minute join made an already-dead worker look slow for ten minutes.
+              // only after the bounded join made an already-dead worker look slow for seven minutes.
               const before = yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
               const alreadyDead = deadChildMessage(childID, before?.state)
-              if (alreadyDead) return { completed: false, terminal: true, message: alreadyDead }
+              if (alreadyDead) {
+                const messages = yield* store.context(childID).pipe(Effect.orElseSucceed(() => []))
+                const priorDiagnostics = {
+                  generatedAnyTokens: false,
+                  generatedTokens: 0,
+                  providerErrors: recentProviderErrors(messages),
+                }
+                return {
+                  completed: false,
+                  terminal: true,
+                  ...priorDiagnostics,
+                  message: `${alreadyDead}\n\n${diagnosticMessage(priorDiagnostics, "before")}`,
+                }
+              }
 
               // ⚠️ Through `SessionJoin`, never `events.durable` directly — the worker's EventV2
               // replacement DIES on the durable stream, which is what killed `wait` inside every
@@ -211,7 +294,15 @@ export const layer = Layer.effectDiscard(
                 ? undefined
                 : yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
               const dead = joined.completed ? undefined : deadChildMessage(childID, attempt?.state)
-              if (dead) return { completed: false, terminal: true, message: dead }
+              if (dead)
+                return {
+                  completed: false,
+                  terminal: true,
+                  generatedAnyTokens: joined.generatedAnyTokens,
+                  generatedTokens: joined.generatedTokens,
+                  providerErrors: [...joined.providerErrors],
+                  message: `${dead}\n\n${diagnosticMessage(joined)}`,
+                }
               if (!joined.completed)
                 // ⚠️ Says what it MEANS, because the model reasons from this sentence. Measured
                 // 2026-08-20: given a bare "Timed out waiting for session …", the model concluded
@@ -221,15 +312,22 @@ export const layer = Layer.effectDiscard(
                 return {
                   completed: false,
                   terminal: false,
+                  generatedAnyTokens: joined.generatedAnyTokens,
+                  generatedTokens: joined.generatedTokens,
+                  providerErrors: [...joined.providerErrors],
                   message:
                     `Session ${childID} has not finished yet (waited ${Math.round(WAIT_TIMEOUT_MS / 60_000)} minutes). ` +
                     `It may still be working — this is not an error and does not mean it failed. ` +
-                    `Call wait on ${childID} again to keep waiting, or carry on and join it later.`,
+                    `Call wait on ${childID} again to keep waiting, or carry on and join it later.\n\n` +
+                    diagnosticMessage(joined),
                 }
               return {
                 completed: true,
                 terminal: true,
-                message: `Session ${childID} completed. Result: ${joined.result ?? ""}`,
+                generatedAnyTokens: joined.generatedAnyTokens,
+                generatedTokens: joined.generatedTokens,
+                providerErrors: [...joined.providerErrors],
+                message: `Session ${childID} completed. Result: ${joined.result ?? ""}\n\n${diagnosticMessage(joined)}`,
               }
             }).pipe(
               Effect.mapError((error) =>

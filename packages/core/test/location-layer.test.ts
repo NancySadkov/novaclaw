@@ -290,7 +290,22 @@ describe("LocationServiceMap", () => {
           // *Should it be resident at all?* The `colleague` tool already is, and an op cannot be
           // deferred separately from the schema that declares it. The choice was a new op or a
           // cheaper ambiguous field, not resident or deferred.
-          expect(residentBytes).toBeLessThan(34_700) // observed 34,506 on 2026-08-24 (99.4% of 34,700)
+          //
+          // ── Raised 2026-09-12 for truthful worker joins (34,506 → 35,417) ───────────────────────
+          //
+          // *Who pays?* Only sessions allowed to supervise children: the same officers for whom
+          // `spawn` and `wait` are resident. A session that cannot delegate never receives this tool.
+          //
+          // *What buys the 911 bytes?* The result now states whether the child generated anything,
+          // its reported output/reasoning token count, and every provider/API failure observed during
+          // the seven-minute join (with status, retryability and repeat count). Without the schema a
+          // crashed worker and a silent worker collapse to the same answer, which caused officers to
+          // wait and replay invalid DeepSeek histories indefinitely.
+          //
+          // *Could it be deferred?* No: joining is the immediate next action after a resident spawn,
+          // and the result fields are the information the officer needs to decide whether replacement
+          // is safe. Hiding the contract until after the call cannot reduce its request-time schema.
+          expect(residentBytes).toBeLessThan(35_650) // observed 35,417 on 2026-09-12 (99.3% of 35,650)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the
