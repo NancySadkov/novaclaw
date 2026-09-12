@@ -8,6 +8,7 @@
   --bt-title: var(--v2-text-text-base);
   --bt-sep: var(--v2-text-text-muted);
   --bt-subtitle: var(--v2-text-text-muted);
+  --bt-timing: var(--v2-text-text-muted);
   --bt-args: var(--v2-text-text-muted);
   --bt-chevron: var(--v2-text-text-faint);
   --bt-content: var(--v2-text-text-muted);
@@ -112,6 +113,21 @@
     line-height: 1;
     letter-spacing: -0.04px;
     color: var(--bt-args);
+    font-variation-settings: "slnt" 0;
+    user-select: none;
+  }
+
+  [data-slot="basic-tool-v2-timing"] {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 440;
+    line-height: 1;
+    letter-spacing: -0.04px;
+    color: var(--bt-timing);
+    font-variant-numeric: tabular-nums;
     font-variation-settings: "slnt" 0;
     user-select: none;
   }

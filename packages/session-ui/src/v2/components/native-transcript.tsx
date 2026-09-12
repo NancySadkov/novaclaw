@@ -38,6 +38,7 @@ import { spawnRow } from "./spawn-row"
 import { waitRow } from "./wait-row"
 import { toolIcon } from "./tool-icon"
 import { toolInputForDisplay } from "./tool-input-preview"
+import { fileMutationDisplayPaths } from "./tool-file-path"
 import { fallbackWorkerLabel } from "@novaclaw/core/agent-status/worker-label"
 import { Markdown } from "../../components/markdown"
 import {
@@ -58,7 +59,7 @@ import {
 import { useI18n, type UiI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
 import { messageTime } from "../message-time"
-import { commandElapsed, shellActionTitle } from "../shell-card"
+import { commandElapsed, shellActionTitle, toolTimeoutMs } from "../shell-card"
 import {
   attemptLabel,
   completedRunSeconds,
@@ -136,6 +137,7 @@ type TranscriptActions = {
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
+const TranscriptDirectoryContext = createContext<Accessor<string | undefined>>(() => undefined)
 
 /** Images on the latest real prompt explain a long provider-prefill without blaming the endpoint. */
 function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): number {
@@ -175,6 +177,10 @@ export function NativeTranscript(props: {
   executionOpen?: boolean
   /** Exact temporary wait derived from the durable execution boundary by the app shell. */
   waitLabel?: string
+  /** Absolute working directory on the instance host, for honest file-tool disclosure. */
+  directory?: string
+  /** Run-wide live generation count, including streamed tool-call arguments. */
+  liveGeneratedTokens?: number
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -255,10 +261,20 @@ export function NativeTranscript(props: {
     return text.length === 0 ? undefined : text
   })
   const liveTokens = createMemo(() => {
+    const runTotal = props.liveGeneratedTokens
+    if (typeof runTotal === "number" && Number.isFinite(runTotal) && runTotal > 0) return `~${Math.floor(runTotal)}`
     const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
     if (open?.type !== "assistant") return undefined
     const text = open.content
-      .map((part) => (part.type === "text" || part.type === "reasoning" ? part.text : ""))
+      .map((part) => {
+        if (part.type === "text" || part.type === "reasoning") return part.text
+        if (part.state.status === "pending") return part.state.input
+        try {
+          return JSON.stringify(part.state.input)
+        } catch {
+          return ""
+        }
+      })
       .join("")
     return text.length === 0 ? undefined : reasoningTokenLabel(undefined, text)
   })
@@ -283,82 +299,84 @@ export function NativeTranscript(props: {
         settled: !busy(),
       })}
     >
-      <TranscriptMessagesContext.Provider value={() => props.messages}>
-        <TranscriptActionsContext.Provider
-          value={() => ({
-            onRevert: props.onRevert,
-            onRetry: props.onRetry,
-            onChooseModel: props.onChooseModel,
-            onUnpinDevice: props.onUnpinDevice,
-            onStopCommand: props.onStopCommand,
-          })}
-        >
-          <div data-component="native-transcript" class={props.class}>
-            <For each={turns()}>
-              {(group, index) => (
-                <Turn
-                  group={group}
-                  developer={props.developer}
-                  liveTiming={liveTiming() !== undefined}
-                  busy={busy() && index() === turns().length - 1}
-                />
-              )}
-            </For>
-            {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
-              the first prompt of a session while it waits for the runner. */}
-            <For each={unqueuedPending(props.pending, props.messages)}>
-              {(item) =>
-                item.origin?.via === "agent" && item.origin.relation === "peer" ? (
-                  <QueuedColleagueMessage
-                    id={item.id}
-                    text={item.text}
-                    sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
-                    turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+      <TranscriptDirectoryContext.Provider value={() => props.directory}>
+        <TranscriptMessagesContext.Provider value={() => props.messages}>
+          <TranscriptActionsContext.Provider
+            value={() => ({
+              onRevert: props.onRevert,
+              onRetry: props.onRetry,
+              onChooseModel: props.onChooseModel,
+              onUnpinDevice: props.onUnpinDevice,
+              onStopCommand: props.onStopCommand,
+            })}
+          >
+            <div data-component="native-transcript" class={props.class}>
+              <For each={turns()}>
+                {(group, index) => (
+                  <Turn
+                    group={group}
+                    developer={props.developer}
+                    liveTiming={liveTiming() !== undefined}
+                    busy={busy() && index() === turns().length - 1}
                   />
-                ) : (
-                  <QueuedMessage id={item.id} text={item.text} />
-                )
-              }
-            </For>
-            <Show
-              when={liveTiming()}
-              fallback={
-                <Show
-                  when={
-                    (busy() && !hasOpenAssistant() && props.waitLabel) ||
-                    (props.status?.type === "busy" && !hasOpenAssistant())
-                  }
-                >
+                )}
+              </For>
+              {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
+              the first prompt of a session while it waits for the runner. */}
+              <For each={unqueuedPending(props.pending, props.messages)}>
+                {(item) =>
+                  item.origin?.via === "agent" && item.origin.relation === "peer" ? (
+                    <QueuedColleagueMessage
+                      id={item.id}
+                      text={item.text}
+                      sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
+                      turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+                    />
+                  ) : (
+                    <QueuedMessage id={item.id} text={item.text} />
+                  )
+                }
+              </For>
+              <Show
+                when={liveTiming()}
+                fallback={
+                  <Show
+                    when={
+                      (busy() && !hasOpenAssistant() && props.waitLabel) ||
+                      (props.status?.type === "busy" && !hasOpenAssistant())
+                    }
+                  >
+                    <div data-slot="native-provider-status" role="status" aria-live="polite">
+                      <span data-slot="native-working-dot" aria-hidden="true" />
+                      <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                    </div>
+                  </Show>
+                }
+              >
+                {(timing) => (
+                  <TurnReceipt
+                    messageID={liveMessageID()}
+                    timing={timing()}
+                    live
+                    developer={props.developer}
+                    runStartedAt={runStartedAt()}
+                    tokens={liveTokens()}
+                    reasoning={liveReasoning()}
+                  />
+                )}
+              </Show>
+              <Show when={props.status?.type === "retry" && props.status.message}>
+                {(message) => (
                   <div data-slot="native-provider-status" role="status" aria-live="polite">
                     <span data-slot="native-working-dot" aria-hidden="true" />
-                    <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                    <span>{message()}</span>
                   </div>
-                </Show>
-              }
-            >
-              {(timing) => (
-                <TurnReceipt
-                  messageID={liveMessageID()}
-                  timing={timing()}
-                  live
-                  developer={props.developer}
-                  runStartedAt={runStartedAt()}
-                  tokens={liveTokens()}
-                  reasoning={liveReasoning()}
-                />
-              )}
-            </Show>
-            <Show when={props.status?.type === "retry" && props.status.message}>
-              {(message) => (
-                <div data-slot="native-provider-status" role="status" aria-live="polite">
-                  <span data-slot="native-working-dot" aria-hidden="true" />
-                  <span>{message()}</span>
-                </div>
-              )}
-            </Show>
-          </div>
-        </TranscriptActionsContext.Provider>
-      </TranscriptMessagesContext.Provider>
+                )}
+              </Show>
+            </div>
+          </TranscriptActionsContext.Provider>
+        </TranscriptMessagesContext.Provider>
+      </TranscriptDirectoryContext.Provider>
     </ReasoningFoldContext.Provider>
   )
 }
@@ -395,9 +413,7 @@ function Turn(props: {
   const split = () => {
     const message = closing()
     return message
-      ? answerStart(
-          message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)),
-        )
+      ? answerStart(message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)))
       : 0
   }
   const hasAnswer = () => {
@@ -769,9 +785,7 @@ function AssistantMessage(props: {
   const faultText = useFaultText()
   const actions = useContext(TranscriptActionsContext)
   const split = () =>
-    answerStart(
-      props.message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)),
-    )
+    answerStart(props.message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)))
   const parts = () => {
     if (props.half === "work") return props.message.content.slice(0, split())
     if (props.half === "answer") return props.message.content.slice(split())
@@ -1232,15 +1246,22 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const faultText = useFaultText()
   const actions = useContext(TranscriptActionsContext)
   const [now, setNow] = createSignal(Date.now())
+  const input = () => toolInput(props.part.state)
+  const timed = () => props.part.name === "bash" || props.part.name === "wait"
   createEffect(() => {
-    if (props.part.name !== "bash" || props.part.state.status !== "running") return
+    if (!timed() || props.part.state.status !== "running") return
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     onCleanup(() => clearInterval(timer))
   })
-  const shellCommand = () => (props.part.name === "bash" ? str(toolInput(props.part.state).command) : undefined)
+  const shellCommand = () => (props.part.name === "bash" ? str(input().command) : undefined)
   const elapsed = () =>
-    props.part.name === "bash"
-      ? commandElapsed(props.part.time.ran ?? props.part.time.created, props.part.time.completed, now())
+    timed() && props.part.state.status !== "pending"
+      ? commandElapsed(
+          props.part.time.ran ?? props.part.time.created,
+          props.part.time.completed,
+          now(),
+          toolTimeoutMs(props.part.name, input()),
+        )
       : undefined
   return (
     <Switch>
@@ -1268,7 +1289,8 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
             icon: toolIcon(props.part.name),
             title:
               props.part.name === "bash" ? (props.part.title ?? shellActionTitle(shellCommand() ?? "")) : meta().title,
-            subtitle: props.part.name === "bash" ? elapsed() : meta().subtitle,
+            subtitle: props.part.name === "bash" ? undefined : meta().subtitle,
+            timing: elapsed(),
             args: meta().args,
           }}
         >
@@ -1351,14 +1373,27 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
 
 /** Tool-card body: a real unified diff for file edits, else input args + textual output. */
 function ToolBody(props: { part: SessionMessageAssistantTool }) {
+  const directory = useContext(TranscriptDirectoryContext)
   const output = () => {
     const state = props.part.state
     if (state.status === "completed" || state.status === "running" || state.status === "error")
       return toolContentText(state.content)
     return ""
   }
+  const paths = () => {
+    const state = props.part.state
+    const settled = state.status === "completed" || state.status === "error"
+    return fileMutationDisplayPaths({
+      name: props.part.name,
+      args: toolInput(state),
+      directory: directory(),
+      result: settled ? state.result : undefined,
+      structured: state.status === "pending" ? undefined : state.structured,
+    })
+  }
   return (
     <div data-slot="native-tool-io">
+      <For each={paths()}>{(path) => <pre data-slot="native-tool-path">{path}</pre>}</For>
       <Show
         when={filePatches(props.part.state)}
         fallback={

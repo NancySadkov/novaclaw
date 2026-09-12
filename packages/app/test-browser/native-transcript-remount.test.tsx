@@ -44,7 +44,15 @@ const messages = [
   },
 ] as unknown as SessionMessage[]
 
-function mount(onStopCommand?: (reason: string) => void | Promise<void>) {
+function mount(
+  onStopCommand?: (reason: string) => void | Promise<void>,
+  options?: {
+    messages?: SessionMessage[]
+    status?: unknown
+    liveGeneratedTokens?: number
+    directory?: string
+  },
+) {
   const host = document.createElement("div")
   document.body.appendChild(host)
   dispose = render(
@@ -52,7 +60,13 @@ function mount(onStopCommand?: (reason: string) => void | Promise<void>) {
       <MarkedContext.Provider
         value={{ parser: { parse: async (text: string) => text }, resolveFile: () => undefined } as never}
       >
-        <NativeTranscript messages={messages} status={{ type: "busy" } as never} onStopCommand={onStopCommand} />
+        <NativeTranscript
+          messages={options?.messages ?? messages}
+          status={(options?.status ?? { type: "busy" }) as never}
+          liveGeneratedTokens={options?.liveGeneratedTokens}
+          directory={options?.directory}
+          onStopCommand={onStopCommand}
+        />
       </MarkedContext.Provider>
     ),
     host,
@@ -94,5 +108,84 @@ describe("native transcript remount", () => {
     stop.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(stoppedFor).toBe("it has made no progress")
+  })
+
+  test("keeps the run token counter moving through streamed tool arguments", () => {
+    const startedAt = Date.now() - 1_000
+    const host = mount(undefined, {
+      liveGeneratedTokens: 321,
+      status: {
+        type: "busy",
+        timing: { startedAt, phases: [], providerAttempts: [] },
+      },
+    })
+    expect(host.querySelector('[data-slot="native-turn-tokens"]')?.textContent).toBe("~321")
+  })
+
+  test("shows elapsed and timeout for commands and worker waits", () => {
+    const now = Date.now()
+    const timedMessages = [
+      { id: "msg_user_timed", type: "user", text: "Run both", time: { created: now - 10_000 } },
+      {
+        id: "msg_assistant_timed",
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created: now - 9_000, completed: now - 8_000 },
+        content: [
+          {
+            id: "call_bash",
+            type: "tool",
+            name: "bash",
+            time: { created: now - 8_000, ran: now - 8_000 },
+            state: { status: "running", input: { command: "bun test" }, structured: {}, content: [] },
+          },
+          {
+            id: "call_wait",
+            type: "tool",
+            name: "wait",
+            time: { created: now - 7_000, ran: now - 7_000 },
+            state: { status: "running", input: { sessionID: "ses_child" }, structured: {}, content: [] },
+          },
+        ],
+      },
+    ] as unknown as SessionMessage[]
+    const host = mount(undefined, { messages: timedMessages })
+    const timings = [...host.querySelectorAll('[data-slot="basic-tool-v2-timing"]')].map((node) => node.textContent)
+    expect(timings[0]).toMatch(/^[78]s \/ 120s$/)
+    expect(timings[1]).toMatch(/^[67]s \/ 420s$/)
+  })
+
+  test("reveals the absolute host path when a file edit is unfolded", async () => {
+    const fileMessages = [
+      { id: "msg_user_file", type: "user", text: "Update the note", time: { created: 1 } },
+      {
+        id: "msg_assistant_file",
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created: 2, completed: 5 },
+        content: [
+          {
+            id: "call_edit",
+            type: "tool",
+            name: "edit",
+            time: { created: 3, ran: 4, completed: 5 },
+            state: {
+              status: "completed",
+              input: { path: "drafts/browser-printing-wedge.md", oldString: "old", newString: "new" },
+              structured: {},
+              content: [],
+            },
+          },
+        ],
+      },
+    ] as unknown as SessionMessage[]
+    const host = mount(undefined, { messages: fileMessages, status: { type: "idle" }, directory: "C:\\Nova\\scratch" })
+    ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(host.querySelector('[data-slot="native-tool-path"]')?.textContent).toBe(
+      "C:\\Nova\\scratch\\drafts\\browser-printing-wedge.md",
+    )
   })
 })

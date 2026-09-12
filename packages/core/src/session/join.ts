@@ -7,49 +7,8 @@ import { makeLocationNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
-
-/**
- * Awaiting a child session's completion — the half of `wait` that a session WORKER cannot do.
- *
- * 🔴 **Why this is a service and not four lines inside `tool/wait.ts`.** The tool joined a child with
- * `events.durable({aggregateID})`, and the worker's `EventV2` replacement is
- * `durable: () => Stream.die(unavailable("durable event stream"))`. So `wait` died in every session
- * worker with *"only works in host-only contexts"* — the same class of outage as `spawn`, found the
- * moment fixing spawn let the live smoke reach test 8. A service is a seam the worker can REPLACE
- * with an RPC to the host; a direct `events.durable` call is not.
- *
- * ⚠️ **The direct-child check stays in the TOOL, deliberately.** `SessionStore` is NOT replaced in a
- * worker — it reads the database — so `store.get` works on both sides and the authorisation check
- * belongs where it already is. Only the part that genuinely needs host-owned machinery moved. (An
- * earlier note of mine claimed the store was unavailable in a worker; that was wrong, and moving the
- * check would have been a needless widening of this seam.)
- *
- * **This is a request/response, not a stream, and that is what makes the RPC cheap.** `wait` only ever
- * took `Stream.runHead` with a timeout — the FIRST completion or nothing. Forwarding a live stream
- * across the worker protocol would have been a far larger job for a value nobody reads.
- */
-/**
- * **THE bound on a join, for every door into it.**
- *
- * 🔴 **Raised from 2 minutes on 2026-08-20 because 2 minutes is shorter than one child's TURN.**
- * Measured: a child asked only to reply "BANANA" settled **121.7 seconds** after `wait` started, and
- * `wait` had given up 1.6 seconds earlier. Nothing was wrong; parent and child share one local model
- * server, so the child's single inference queued behind the parent's own. A join whose timeout is the
- * same order as one inference reports a false negative on a healthy run, which is exactly what a
- * supervisor must never do.
- *
- * ⚠️ It still has to be BOUNDED, so a wedged child cannot hold a caller forever. Seven minutes is
- * past a slow local turn and short enough for an officer to recover the slice in the same work turn.
- *
- * ⚠️ **It lives here because there were TWO joins and only one of them learned this** ().
- * `tool/wait.ts` owned the measurement above; `SessionV2.wait` — the `POST /api/session/:id/wait`
- * door — was a separate hand-rolled 2000ms×60 poll that still carried the falsified 2-minute bound,
- * under a comment claiming *"same semantics as the wait TOOL"*. Two doors onto one question must not
- * be able to answer it differently, so there is now one implementation and one constant.
- *
- * Milliseconds, because this crosses the worker protocol and a `Duration` does not.
- */
-export const JOIN_TIMEOUT_MS = 7 * 60_000
+export { JOIN_TIMEOUT_MS } from "./join-deadline"
+import { JOIN_TIMEOUT_MS } from "./join-deadline"
 
 export interface ProviderError {
   readonly message: string
@@ -72,6 +31,26 @@ export interface Outcome {
   readonly providerErrors: ReadonlyArray<ProviderError>
 }
 
+/**
+ * Awaiting a child session's completion — the half of `wait` that a session WORKER cannot do.
+ *
+ * 🔴 **Why this is a service and not four lines inside `tool/wait.ts`.** The tool joined a child with
+ * `events.durable({aggregateID})`, and the worker's `EventV2` replacement is
+ * `durable: () => Stream.die(unavailable("durable event stream"))`. So `wait` died in every session
+ * worker with *"only works in host-only contexts"* — the same class of outage as `spawn`, found the
+ * moment fixing spawn let the live smoke reach test 8. A service is a seam the worker can REPLACE
+ * with an RPC to the host; a direct `events.durable` call is not.
+ *
+ * ⚠️ **The direct-child check stays in the TOOL, deliberately.** `SessionStore` is NOT replaced in a
+ * worker — it reads the database — so `store.get` works on both sides and the authorisation check
+ * belongs where it already is. Only the part that genuinely needs host-owned machinery moved. (An
+ * earlier note of mine claimed the store was unavailable in a worker; that was wrong, and moving the
+ * check would have been a needless widening of this seam.)
+ *
+ * **This is a request/response, not a stream, and that is what makes the RPC cheap.** `wait` only ever
+ * took `Stream.runHead` with a timeout — the FIRST completion or nothing. Forwarding a live stream
+ * across the worker protocol would have been a far larger job for a value nobody reads.
+ */
 export interface Interface {
   readonly awaitCompletion: (input: {
     readonly childID: SessionSchema.ID

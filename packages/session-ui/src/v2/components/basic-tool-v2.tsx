@@ -27,6 +27,8 @@ export interface BasicToolV2TriggerTitle {
   icon?: IconName
   title: string
   subtitle?: string
+  /** Live elapsed/deadline pair, kept separate so a wait can retain the worker's purpose. */
+  timing?: string
   args?: string[]
   changes?: { additions: number; deletions: number } | { additions: number; deletions: number }[]
   action?: JSX.Element
@@ -117,6 +119,12 @@ export function BasicToolV2(props: BasicToolV2Props) {
                   >
                     {title().subtitle}
                   </span>
+                </Show>
+                <Show when={title().timing}>
+                  <span data-slot="basic-tool-v2-sep" aria-hidden="true">
+                    ·
+                  </span>
+                  <span data-slot="basic-tool-v2-timing">{title().timing}</span>
                 </Show>
                 <Show when={!pending() && title().args?.length}>
                   <For each={title().args}>{(arg) => <span data-slot="basic-tool-v2-arg">{arg}</span>}</For>

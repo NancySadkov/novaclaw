@@ -292,6 +292,8 @@ export function NativeTimeline(props: {
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}
+            directory={props.directory}
+            liveGeneratedTokens={serverSync().session.data.session_live(props.sessionID)?.approxTokens}
             executionOpen={props.executionOpen || reconciling()}
             waitLabel={waitLabel()}
             reasoningFold={reasoningFold()}

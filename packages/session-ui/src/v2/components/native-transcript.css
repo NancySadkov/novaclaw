@@ -350,6 +350,7 @@
 }
 [data-slot="native-tool-input"],
 [data-slot="native-tool-output"],
+[data-slot="native-tool-path"],
 [data-slot="native-shell-output"] {
   margin: 0;
   padding: 0.5rem 0.625rem;
@@ -360,6 +361,11 @@
   white-space: pre-wrap;
   overflow-x: auto;
   max-height: 24rem;
+}
+[data-slot="native-tool-path"] {
+  color: var(--v2-text-text-base);
+  font-family: var(--font-family-mono, monospace);
+  white-space: pre;
 }
 [data-slot="native-command-stop"] {
   display: flex;

@@ -723,6 +723,8 @@ const NO_EXTERNAL = [
   "profile-availability.ts",
   "application-tools.ts",
   "apply-patch.ts",
+  // Pure executor deadline constants; reads and emits no content.
+  "bash-deadline.ts",
   "bash-jobs.sql.ts",
   "bash-jobs.ts",
   "bash.ts",
