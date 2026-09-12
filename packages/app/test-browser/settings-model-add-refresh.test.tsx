@@ -73,6 +73,15 @@ function mount(options: { refreshFails?: boolean }) {
     remove: () => {},
     visible: () => true,
     setVisibility: () => {},
+    // Enablement is read from the config store the same way the real context derives it
+    // (`config/plugin/provider.ts`: `model.enabled = !config.disabled`). A stub that omits it
+    // does not make the Models row simpler — it makes the row throw.
+    enabled: (key: { providerID: string; modelID: string }) =>
+      (
+        sync().data.config?.providers as
+          | Record<string, { models?: Record<string, { disabled?: boolean }> }>
+          | undefined
+      )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
     tier: { get: () => "guess", set: () => {} },
   }
   const connection = { type: "http", url: "http://localhost:4096", http: { url: "http://localhost:4096" } }
