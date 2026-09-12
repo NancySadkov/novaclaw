@@ -425,6 +425,17 @@ definition: new ToolDefinition({
               }
             ],
             "description": "Optional command whose bounded stdout is appended to the instruction at delivery time."
+          },
+          "spammable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Repeat as often as the trigger fires. Off by default: a nudge is delivered at most once per 30 minutes and at most once per context epoch."
           }
         },
         "required": [
