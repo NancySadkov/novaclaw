@@ -80,14 +80,14 @@ export const homeOverride = (argv: readonly string[], env: Env): string | undefi
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === undefined) continue
-    if (arg === "--home" || arg === "--home-dir") {
+    if (arg === "--home") {
       const next = argv[i + 1]
       // A following flag means `--home` was given with no value; treat it as absent rather than
       // silently adopting "--port" as a directory name.
       if (next !== undefined && !next.startsWith("-") && next.trim() !== "") return next
       continue
     }
-    const eq = /^--home(?:-dir)?=(.*)$/.exec(arg)
+    const eq = /^--home=(.*)$/.exec(arg)
     if (eq?.[1] !== undefined && eq[1].trim() !== "") return eq[1]
   }
   return firstNonEmpty(env.NOVACLAW_HOME)

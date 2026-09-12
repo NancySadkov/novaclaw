@@ -5,8 +5,8 @@ const entry = read("./index.ts")
 const application = read("./application.ts")
 
 test("the desktop entry composes the application without mutable lifecycle state", () => {
-  expect(entry).toContain('import { runDesktop } from "./application"')
-  expect(entry).toContain("runDesktop().catch")
+  expect(entry).toContain('import("./application")')
+  expect(entry).toContain("runDesktop())")
   expect(entry).not.toMatch(/\b(?:let|var)\b/)
   expect(entry).not.toContain("superviseLocalServer")
 })
@@ -32,6 +32,9 @@ test("sidecar startup and login-shell probes belong to the local owner", () => {
 })
 test("desktop has no maintenance scheduler and crash capture follows home selection", () => {
   expect(application.indexOf("prepareInstanceHome()")).toBeLessThan(application.indexOf("createDesktopDiagnostics()"))
+  expect(application.indexOf("prepareInstanceHome()")).toBeLessThan(
+    application.indexOf("app.requestSingleInstanceLock()"),
+  )
   expect(read("./diagnostics.ts")).toContain('import("@novaclaw/core/observability/crash-capture")')
   expect(application).not.toMatch(/(?:checkForUpdates|downloadUpdate|setInterval)\(/)
 })
