@@ -583,6 +583,35 @@ async function run() {
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
   const exe = await stageArtifact(sourceExe, tempHome)
   console.log(`staged   : ${exe} (isolated from workspace dependencies)`)
+  const longHelp = spawnSync(exe, ["--help"], {
+    cwd: tempHome,
+    encoding: "utf8",
+    env: childEnv(tempHome),
+    timeout: 10_000,
+    windowsHide: true,
+  })
+  const shortHelp = spawnSync(exe, ["-h"], {
+    cwd: tempHome,
+    encoding: "utf8",
+    env: childEnv(tempHome),
+    timeout: 10_000,
+    windowsHide: true,
+  })
+  const help = longHelp.stdout ?? ""
+  check(
+    longHelp.status === 0 && shortHelp.status === 0 && shortHelp.stdout === help,
+    "desktop-help-exit",
+    `--help exited ${String(longHelp.status)}, -h exited ${String(shortHelp.status)}; ` +
+      `${longHelp.stderr || shortHelp.stderr || "outputs differed"}`,
+  )
+  check(
+    help.includes("Usage:") &&
+      help.includes("--home=DIR") &&
+      help.includes("-h, --help") &&
+      !help.includes("--user-data-dir"),
+    "desktop-help-options",
+    `desktop help did not describe the complete NovaClaw option surface: ${JSON.stringify(help)}`,
+  )
   try {
     const bundle = readPackagedRenderer(exe)
     const appEnglish = readFileSync(path.join(APP_ROOT, "packages", "app", "src", "i18n", "en.ts"), "utf8")

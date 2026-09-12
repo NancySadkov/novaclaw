@@ -29,6 +29,10 @@ at your model in **Settings** and you're running. (The download is a 7-Zip archi
 a ~1 GB app is a much bigger download. Windows 11's File Explorer opens `.7z` with no extra software;
 on Windows 10, unpack it with [7-Zip](https://www.7-zip.org/).)
 
+`NovaClaw.exe --help` lists the desktop command line. Use `NovaClaw.exe --home=DIR` to launch an
+independent instance whose config, data, state, cache, desktop settings, and single-instance lock all
+live under `DIR`.
+
 Both pages always list the current release, so this file never goes stale about it. macOS and Linux
 packaging targets exist in the build config but are not released yet; on those platforms, build from
 source as described below.

@@ -92,7 +92,10 @@ describe("Xdg.homeOverride", () => {
   test("reads --home <dir> and --home=<dir>", () => {
     expect(Xdg.homeOverride(["serve", "--home", "D:\\inst-a"], {})).toBe("D:\\inst-a")
     expect(Xdg.homeOverride(["serve", "--home=D:\\inst-b"], {})).toBe("D:\\inst-b")
-    expect(Xdg.homeOverride(["serve", "--home-dir", "D:\\inst-c"], {})).toBe("D:\\inst-c")
+  })
+
+  test("does not preserve the retired --home-dir alias", () => {
+    expect(Xdg.homeOverride(["serve", "--home-dir", "D:\\inst-c"], {})).toBeUndefined()
   })
 
   test("a --home with no value does not swallow the next flag as a directory", () => {
