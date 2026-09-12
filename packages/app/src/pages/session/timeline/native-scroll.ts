@@ -98,6 +98,15 @@ export function createBottomPinController(input: {
   input.scroller.addEventListener("pointerdown", onPointerDown)
   const resizeObserver = new ResizeObserver(stick)
   resizeObserver.observe(input.content)
+  // 🔴 Measured in real Chromium, 2026-09-12: observing only the CONTENT box leaves a pinned view off
+  // the bottom when the SCROLLER box changes. Switching to a chat with long history, then letting the
+  // composer region settle 150ms later (its placeholder is shorter than the real prompt), shrank the
+  // transcript viewport 610px → 500px; the content box was untouched, so nothing re-stuck and the
+  // view sat at `scrollTop 6018` against a true bottom of `6128` — a 110px gap on 300+ consecutive
+  // frames, with no scroll write at all. A pinned view means the newest row stays visible, so the
+  // viewport's own size has to be a trigger too. `stick()` only writes `scrollTop`, which cannot
+  // change this box, so observing the scroller cannot feed back into the observer.
+  resizeObserver.observe(input.scroller)
   // A history reconcile can replace DOM rows with equal-height rows in one rendering turn. The
   // content's final border box is unchanged, so ResizeObserver has nothing to report, but Chromium
   // may already have clamped scrollTop while the old rows were absent. MutationObserver is the only

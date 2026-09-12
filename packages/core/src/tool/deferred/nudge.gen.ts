@@ -243,6 +243,26 @@ definition: new ToolDefinition({
                   "type": {
                     "type": "string",
                     "enum": [
+                      "write-match"
+                    ]
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "pattern"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when the content a writing tool is about to write matches the pattern. Never tested against a tool's OUTPUT, so text the agent merely read cannot fire it."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
                       "tool-call"
                     ]
                   },

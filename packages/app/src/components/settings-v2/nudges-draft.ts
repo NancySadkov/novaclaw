@@ -25,7 +25,10 @@ export function planNudgeSave(input: {
   if (!draft.text && !draft.script) return { ok: false, reason: "text" }
   if (input.nudges.some((item) => item.id === draft.id && item.id !== input.editingID))
     return { ok: false, reason: "duplicate" }
-  if (draft.hook.type === "text-match" && !Nudge.validPattern(draft.hook.pattern))
+  if (
+    (draft.hook.type === "text-match" || draft.hook.type === "write-match") &&
+    !Nudge.validPattern(draft.hook.pattern)
+  )
     return { ok: false, reason: "pattern" }
   if (
     (draft.hook.type === "tool-call" && !draft.hook.tool.trim()) ||

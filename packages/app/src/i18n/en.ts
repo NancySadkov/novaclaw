@@ -1268,6 +1268,7 @@ export const dict = {
   "settings.nudges.error.hook": "Complete the selected trigger.",
   "settings.nudges.error.duplicate": "This nudge already exists.",
   "settings.nudges.hook.text-match": "Text matches a regular expression",
+  "settings.nudges.hook.write-match": "Content being written matches a regular expression",
   "settings.nudges.hook.tool-call": "A specific tool is called",
   "settings.nudges.hook.mcp-call": "A tool from an MCP server is called",
   "settings.nudges.hook.file-read": "A file type is read",

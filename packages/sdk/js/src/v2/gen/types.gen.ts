@@ -3710,6 +3710,10 @@ export type ConfigV2Nudge = {
         pattern: string
       }
     | {
+        type: "write-match"
+        pattern: string
+      }
+    | {
         type: "tool-call"
         tool: string
       }
