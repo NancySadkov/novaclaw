@@ -12,11 +12,13 @@ const APP_IDS = { dev: "app.novaclaw.desktop.dev", beta: "app.novaclaw.desktop.b
 
 /** Must run before logging, runtime imports or the single-instance lock. The sidecar and Electron
  * share one resolved instance home, including Electron's lock and window-state files. */
-export function prepareInstanceHome() {
+export function prepareInstanceHome(role: "client" | "server" = "client", serverEnabled = false) {
   try {
     process.chdir(homedir())
   } catch {}
-  process.env.NOVACLAW_DISABLE_EMBEDDED_WEB_UI = "true"
+  // Client-only has no HTTP server to host the UI. Every server-capable mode must retain the
+  // embedded web UI so another machine can actually use the advertised public endpoint.
+  if (!serverEnabled) process.env.NOVACLAW_DISABLE_EMBEDDED_WEB_UI = "true"
   const appId = app.isPackaged ? APP_IDS[CHANNEL] : APP_IDS.dev
   const testRoot =
     process.env.NOVACLAW_TEST_ONBOARDING === "1" ? join(tmpdir(), `novaclaw-onboarding-${randomUUID()}`) : undefined
@@ -39,8 +41,11 @@ export function prepareInstanceHome() {
   const emergencyRoot = join(app.getPath("temp"), "novaclaw-home")
   const selectedRoot =
     testRoot ?? resolveInstanceRoot(process.argv, process.env, homedir() || app.getPath("home"), emergencyRoot)
-  const prepared = ensureDesktopProfile(selectedRoot, emergencyRoot, (directory) =>
-    mkdirSync(directory, { recursive: true }),
+  const prepared = ensureDesktopProfile(
+    selectedRoot,
+    emergencyRoot,
+    (directory) => mkdirSync(directory, { recursive: true }),
+    role,
   )
   const { instanceRoot, profile } = prepared
   // A dev build is a separate instance, not a production instance with only its renderer moved.

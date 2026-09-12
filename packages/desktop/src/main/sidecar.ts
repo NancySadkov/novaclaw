@@ -3,7 +3,6 @@ import * as tls from "node:tls"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { enableCompileCache } from "./compile-cache"
-import { prepareSidecarEnv } from "./sidecar-env"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -18,7 +17,11 @@ type StartCommand = {
   type: "start"
   hostname: string
   port: number
-  password: string
+  username: string
+  password?: string
+  cors: string[]
+  mdns: boolean
+  mdnsDomain: string
 }
 
 type StopCommand = { type: "stop" }
@@ -50,6 +53,7 @@ type Listener = {
 }
 
 type ServerModule = {
+  configureServerLaunchCredential(input: { readonly password?: string; readonly username?: string }): void
   Server: {
     listen(options: {
       port: number
@@ -57,6 +61,8 @@ type ServerModule = {
       username: string
       password: string
       cors: string[]
+      mdns?: boolean
+      mdnsDomain?: string
     }): Promise<Listener>
   }
 }
@@ -76,7 +82,6 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -95,15 +100,20 @@ async function start(command: StartCommand) {
       join(dirname(fileURLToPath(import.meta.url)), "server-runtime", "novaclaw-server.js"),
     ).href
     const beforeImport = performance.now()
-    const { Server } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
+    const { Server, configureServerLaunchCredential } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
+    // The server runtime is a separate bundle with its own module singletons. Apply the credential
+    // through that bundle's exported seam; setting a lookalike holder in this wrapper leaves it open.
+    configureServerLaunchCredential({ password: command.password, username: command.username })
 
     const beforeListen = performance.now()
     listener = await Server.listen({
       port: command.port,
       hostname: command.hostname,
-      username: "novaclaw",
-      password: command.password,
-      cors: ["nc://renderer"],
+      username: command.username,
+      password: command.password ?? "",
+      cors: ["nc://renderer", ...command.cors],
+      mdns: command.mdns,
+      mdnsDomain: command.mdnsDomain,
     })
     const done = performance.now()
     parentPort.postMessage({
@@ -185,12 +195,20 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (command.type !== "start") return
   if (typeof command.hostname !== "string") return
   if (typeof command.port !== "number") return
-  if (typeof command.password !== "string") return
+  if (typeof command.username !== "string") return
+  if (command.password !== undefined && typeof command.password !== "string") return
+  if (!Array.isArray(command.cors) || command.cors.some((origin) => typeof origin !== "string")) return
+  if (typeof command.mdns !== "boolean") return
+  if (typeof command.mdnsDomain !== "string") return
   return {
     type: "start",
     hostname: command.hostname,
     port: command.port,
+    username: command.username,
     password: command.password,
+    cors: command.cors,
+    mdns: command.mdns,
+    mdnsDomain: command.mdnsDomain,
   }
 }
 

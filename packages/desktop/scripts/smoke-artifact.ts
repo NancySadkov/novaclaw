@@ -607,6 +607,14 @@ async function run() {
   check(
     help.includes("Usage:") &&
       help.includes("--home=DIR") &&
+      help.includes("General options:") &&
+      help.includes("Client options") &&
+      help.includes("--client-only") &&
+      help.includes("--connect=URL") &&
+      help.includes("Server options:") &&
+      help.includes("--server-only") &&
+      help.includes("--hostname=HOST") &&
+      help.includes("--password=TOKEN") &&
       help.includes("-h, --help") &&
       !help.includes("--user-data-dir"),
     "desktop-help-options",

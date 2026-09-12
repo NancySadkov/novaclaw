@@ -20,8 +20,11 @@ export function resolveInstanceRoot(
   return !dirs?.explicitHome && environment.NOVACLAW_DEV_ISOLATED === "1" ? `${root}-dev` : root
 }
 
-export function desktopProfilePaths(instanceRoot: string) {
-  const desktop = join(instanceRoot, "desktop")
+export function desktopProfilePaths(instanceRoot: string, role: "client" | "server" = "client") {
+  // A headless server and a client may deliberately run as two processes over one instance home.
+  // Electron's single-instance lock lives in userData, so give the server process its own lock/profile
+  // while all actual NovaClaw instance data continues to live at instanceRoot.
+  const desktop = join(instanceRoot, role === "server" ? "desktop-server" : "desktop")
   return {
     userData: desktop,
     sessionData: join(desktop, "session"),
@@ -32,10 +35,11 @@ export function ensureDesktopProfile(
   instanceRoot: string,
   emergencyRoot: string,
   makeDirectory: (path: string) => void,
+  role: "client" | "server" = "client",
 ): { instanceRoot: string; profile: ReturnType<typeof desktopProfilePaths>; relocated: boolean } {
   const failures: string[] = []
   for (const root of [...new Set([instanceRoot, emergencyRoot])]) {
-    const profile = desktopProfilePaths(root)
+    const profile = desktopProfilePaths(root, role)
     try {
       makeDirectory(profile.userData)
       makeDirectory(profile.sessionData)

@@ -11,15 +11,19 @@ import { createDesktopLifecycle } from "./lifecycle"
 import { createLocalInstance } from "./local-instance"
 import { exportDebugLogs, startNetLog, write as writeLog } from "./logging"
 import { prepareLocalEnvironment, prepareProcessEnvironment } from "./process-environment"
-import { getDefaultServerUrl, setDefaultServerUrl, superviseLocalServer } from "./server"
+import { getDefaultServerUrl, setDefaultServerUrl, spawnLocalServer, superviseLocalServer } from "./server"
 import { createWindowHost } from "./window-host"
 import { registerRendererProtocol, setBackgroundColor, setDockIcon, setRelaunchHandler } from "./windows"
 import { createWslInstanceHost } from "./wsl-instance"
+import type { DesktopLaunchOptions } from "./desktop-cli"
+import type { LocalInstanceOwner } from "./lifecycle"
+import type { ServerReadyData } from "../preload/types"
+import type { SuperviseStatus } from "@novaclaw/script/supervise"
 
 /** Electron is an adapter to the lifecycle. The owners below are constructed before they can start;
  * no callback has to wait for a module-level window, listener or shutdown function to appear. */
-export async function runDesktop() {
-  const home = prepareInstanceHome()
+export async function runDesktop(options: DesktopLaunchOptions) {
+  const home = prepareInstanceHome("client", options.mode === "both")
   const diagnostics = createDesktopDiagnostics()
   const { logger, mark } = diagnostics
   contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
@@ -35,25 +39,58 @@ export async function runDesktop() {
   }
 
   const wsl = createWslInstanceHost(app.getVersion(), logger)
-  const local = createLocalInstance({
-    prepare: () => {
-      mark("sidecar-start")
-      prepareLocalEnvironment(logger)
-    },
-    pinnedPort: process.env.NOVACLAW_PORT,
-    log: (message, metadata) => logger.log(message, metadata),
-    spawn: (port, password, signal, report) =>
-      superviseLocalServer("127.0.0.1", port, password, {
-        signal,
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-        onState: (state) => {
-          writeLog("utility", "supervisor state", { ...state }, state.phase === "gave-up" ? "error" : "info")
-          report(state)
-        },
-      }),
-  })
+  const local =
+    options.mode === "client"
+      ? createConnectedInstance(options.connect!)
+      : createLocalInstance({
+          prepare: () => {
+            mark("sidecar-start")
+            prepareLocalEnvironment(logger)
+          },
+          pinnedPort: options.server.port === undefined ? process.env.NOVACLAW_PORT : undefined,
+          requestedPort: options.server.port,
+          hostname: options.server.hostname,
+          username: options.server.username,
+          password: options.server.password,
+          log: (message, metadata) => logger.log(message, metadata),
+          spawn: (port, password, signal, report) => {
+            const callbacks = {
+              signal,
+              onStdout: (message: string) => writeLog("server", "stdout", { message }),
+              onStderr: (message: string) => writeLog("server", "stderr", { message }, "warn"),
+              onExit: (code: number) => {
+                writeLog("utility", "sidecar exited", { code }, "warn")
+                if (!options.server.supervise) report({ phase: "gave-up", reason: "crash", attempts: 0 })
+              },
+            }
+            const runtime = {
+              username: options.server.username,
+              cors: options.server.cors,
+              mdns: options.server.mdns,
+              mdnsDomain: options.server.mdnsDomain,
+            }
+            if (!options.server.supervise)
+              return spawnLocalServer(options.server.hostname, port, password, callbacks, runtime)
+            return superviseLocalServer(
+              options.server.hostname,
+              port,
+              password,
+              {
+                ...callbacks,
+                onState: (state) => {
+                  writeLog(
+                    "utility",
+                    "supervisor state",
+                    { ...state },
+                    state.phase === "gave-up" ? "error" : "info",
+                  )
+                  report(state)
+                },
+              },
+              runtime,
+            )
+          },
+        })
   // Menu/window callbacks are invoked only after lifecycle construction; unlike the old mutable
   // relaunch callback, they always reach this same owner and the same shutdown promise.
   const window = createWindowHost(() => {
@@ -76,7 +113,7 @@ export async function runDesktop() {
         },
         awaitInitialization: lifecycle.awaitInitialization,
         consumeInitialDeepLinks: window.consumeLinks,
-        getDefaultServerUrl,
+        getDefaultServerUrl: () => (options.mode === "client" ? null : getDefaultServerUrl()),
         setDefaultServerUrl,
         getDisplayBackend: async () => null,
         setDisplayBackend: async () => undefined,
@@ -166,4 +203,25 @@ export async function runDesktop() {
     window.links([url])
   })
   await lifecycle.run()
+}
+
+/** A client-only launch has an instance owner too; it owns credentials, not a child process. */
+function createConnectedInstance(connect: NonNullable<DesktopLaunchOptions["connect"]>): LocalInstanceOwner & {
+  state(): SuperviseStatus
+  subscribe(listener: (state: SuperviseStatus) => void): () => void
+} {
+  const credentials: ServerReadyData = {
+    url: connect.url,
+    username: connect.username ?? null,
+    password: connect.password ?? null,
+  }
+  return {
+    state: () => ({ phase: "running" }),
+    subscribe: () => () => undefined,
+    start: async (signal) => {
+      signal.throwIfAborted()
+      return { credentials, healthy: Promise.resolve() }
+    },
+    stop: async () => undefined,
+  }
 }

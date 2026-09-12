@@ -27,6 +27,15 @@ describe("the desktop profile is part of the instance home", () => {
       expect(isInsideInstanceRoot(cli, candidate)).toBe(true)
   })
 
+  test("a server-only process has a separate Electron lock from its client", () => {
+    const root = resolve("D:\\instances\\shared")
+    expect(desktopProfilePaths(root, "server")).toEqual({
+      userData: join(root, "desktop-server"),
+      sessionData: join(root, "desktop-server", "session"),
+    })
+    expect(desktopProfilePaths(root, "server").userData).not.toBe(desktopProfilePaths(root, "client").userData)
+  })
+
   test("an unavailable OS home degrades inside the supplied emergency home", () => {
     const emergency = resolve("C:\\Temp\\novaclaw-home")
     expect(resolveInstanceRoot([], {}, undefined, emergency)).toBe(emergency)

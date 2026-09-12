@@ -17,6 +17,7 @@ import {
   type StopReason,
   type SuperviseStatus,
 } from "@novaclaw/script/supervise"
+import { mainRuntimeDirectory } from "./runtime-path"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -26,6 +27,13 @@ type SidecarMessage =
   | { type: "error"; error: { name?: string; message: string; stack?: string } }
 
 export type SidecarListener = { stop: () => Promise<void> }
+
+export type ServerRuntimeOptions = {
+  readonly username?: string
+  readonly cors?: readonly string[]
+  readonly mdns?: boolean
+  readonly mdnsDomain?: string
+}
 
 const SIDECAR_SERVICE_NAME = "novaclaw server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -106,11 +114,20 @@ export function preferAppEnv() {
 export async function spawnLocalServer(
   hostname: string,
   port: number,
-  password: string,
+  password: string | undefined,
   options: SpawnLocalServerOptions,
+  runtime: ServerRuntimeOptions = {},
 ) {
   options.signal?.throwIfAborted()
-  const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
+  // Dynamic imports may cause Rollup to move this module under out/main/chunks. Runtime assets are
+  // rooted at the application, not beside whichever chunk happened to retain this function.
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url))
+  const mainDirectory = mainRuntimeDirectory({
+    packaged: app.isPackaged,
+    appPath: app.isPackaged ? app.getAppPath() : "",
+    moduleDirectory,
+  })
+  const sidecar = join(mainDirectory, "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
     env: createSidecarEnv(),
@@ -207,7 +224,11 @@ export async function spawnLocalServer(
       type: "start",
       hostname,
       port,
+      username: runtime.username ?? "novaclaw",
       password,
+      cors: [...(runtime.cors ?? [])],
+      mdns: runtime.mdns ?? false,
+      mdnsDomain: runtime.mdnsDomain ?? "novaclaw.local",
     })
   }).catch(async (error) => {
     if (!exited) child.kill()
@@ -284,8 +305,9 @@ export async function spawnLocalServer(
 export async function superviseLocalServer(
   hostname: string,
   port: number,
-  password: string,
+  password: string | undefined,
   options: SuperviseLocalServerOptions,
+  runtime: ServerRuntimeOptions = {},
 ): Promise<{ listener: SidecarListener; health: HealthCheck }> {
   let stopping = false
   let state = initialSuperviseState
@@ -360,7 +382,7 @@ export async function superviseLocalServer(
         // is unexpected and must heal; otherwise a buggy clean exit silently leaves a dead port.
         if (readySeen && !stopping) onChildGone(unresponsive || code === 0 ? 1 : code)
       },
-    })
+    }, runtime)
     readySeen = true
     return handle
   }
@@ -512,6 +534,9 @@ export async function checkHealth(url: string, password?: string | null): Promis
       headers,
       signal: AbortSignal.timeout(3000),
     })
+    // Authentication refusal proves the process is alive. The effective password may come from the
+    // instance settings store, which this parent intentionally does not duplicate or read.
+    if (res.status === 401 || res.status === 403) return true
     return res.ok
   } catch {
     return false
