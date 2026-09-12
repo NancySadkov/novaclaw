@@ -176,7 +176,7 @@ General options:
 Client options (with --client-only):
   --connect=URL              Connect to an http:// or https:// NovaClaw server.
   --connect-username=USER    HTTP Basic username for that server.
-  --connect-password=TOKEN   HTTP Basic password for that server.
+  --connect-password=TOKEN   HTTP Basic password (visible in the process list).
 
 Server options:
   --hostname=HOST            Listen on HOST (default: 127.0.0.1).
