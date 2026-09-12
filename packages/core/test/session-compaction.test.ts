@@ -413,13 +413,21 @@ const summaryModel = Model.make({
 
 const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) => {
   const requests: LLMRequest[] = []
-  const published: { readonly type: string; readonly data: Record<string, unknown> }[] = []
+  const published: {
+    readonly type: string
+    readonly data: Record<string, unknown>
+    readonly metadata?: Record<string, unknown>
+  }[] = []
   let index = 0
   const compactor = SessionCompaction.make({
     events: {
-      publish: (definition: { type: string }, data: Record<string, unknown>) =>
+      publish: (
+        definition: { type: string },
+        data: Record<string, unknown>,
+        options?: { readonly metadata?: Record<string, unknown> },
+      ) =>
         Effect.sync(() => {
-          published.push({ type: definition.type, data })
+          published.push({ type: definition.type, data, metadata: options?.metadata })
         }),
     } as unknown as EventV2.Interface,
     llm: {
@@ -464,9 +472,11 @@ const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) 
   const ended = published.find((event) => event.type === SessionEvent.Compaction.Ended.type)?.data as
     | { readonly text?: string }
     | undefined
+  /** The durable decision record: it rides the event's `metadata`, which the projector writes verbatim. */
+  const endedMetadata = published.find((event) => event.type === SessionEvent.Compaction.Ended.type)?.metadata
   const userPrompt = (request: LLMRequest) =>
     request.messages.flatMap((message) => message.content.map((part) => ("text" in part ? part.text : ""))).join("\n")
-  return { compacted, requests, ended, published, userPrompt }
+  return { compacted, requests, ended, endedMetadata, published, userPrompt }
 }
 
 describe("postfix compaction prompt", () => {
@@ -524,6 +534,54 @@ describe("postfix compaction prompt", () => {
       "- Do not mention the summary process or that context was compacted.",
     )
     expect(run.userPrompt(request)).toContain("Create a new anchored summary")
+  })
+})
+
+describe("the durable compaction decision record", () => {
+  /**
+   * 🔴 The owner read a context gauge saying 88,745 of 262,144 while compaction fired, and nothing
+   * durable anywhere said which number the trigger had compared: `session_compaction.metadata` was
+   * NULL on every row the live database held. "Why did it compact" and "why did it compact AGAIN a
+   * few tool calls later" both had no answer that outlived the turn, because the only report was a
+   * `debug` Log line the packaged build does not keep.
+   *
+   * ⭐ This guard pins the replacement: a committing compaction publishes its decision, and the
+   * projector writes that object verbatim into `session_compaction.metadata`. The numbers are the
+   * point — a record that says "compacted" without saying against WHAT is the defect restated.
+   */
+  test("a committing compaction publishes the window, reserve and threshold it measured against", () => {
+    const run = driveSummary([{ text: "## Goal\n- done", reason: "stop", outputTokens: 8 }])
+    const record = run.endedMetadata
+
+    expect(run.compacted).toBe(true)
+    expect(record).toBeDefined()
+    // The route declares a 100k window and the summary config sets no `buffer`, so the documented
+    // default (20,000) outranks the 10% rule and the ceiling is 100,000 - 20,000.
+    expect(record).toMatchObject({
+      "compaction.cause": "manual",
+      "compaction.window": 100_000,
+      "compaction.response.reserve": 20_000,
+      "compaction.threshold": 80_000,
+      "compaction.buffer": 20_000,
+      "compaction.keep.tokens": 8,
+    })
+    expect(record!["compaction.after.tokens"]).toBeGreaterThan(0)
+    // This harness passes no `promptEstimate`, so the trigger falls back to a whole-request estimate
+    // rather than the anchored one a real turn supplies. The mode is recorded so the two are never
+    // confused when the numbers are read back.
+    expect(record!["compaction.estimate.mode"]).toBe("full")
+  })
+
+  /**
+   * ⚠️ `reason` is "auto" for BOTH the threshold trigger and overflow recovery, so a record keyed on
+   * it alone cannot tell the two apart — and "it compacted again after a few tool calls" is exactly
+   * the question where they must be distinguished. The overflow path is the only caller that
+   * supplies the prompt size its provider rejected; that is the discriminator.
+   */
+  test("names overflow recovery as its own cause, not the threshold trigger", () => {
+    const run = driveSummary([{ text: "## Goal\n- done", reason: "stop", outputTokens: 8 }])
+    expect(run.endedMetadata?.["compaction.cause"]).toBe("manual")
+    expect(run.endedMetadata?.["compaction.overflow.prompt"]).toBeUndefined()
   })
 })
 

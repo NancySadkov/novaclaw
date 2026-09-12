@@ -220,6 +220,7 @@ export type SessionStatus =
           phase:
             | "prepare"
             | "context-load"
+            | "model-recovery"
             | "request-build"
             | "context-fit"
             | "memory-embed"
@@ -626,6 +627,7 @@ export type GlobalEvent = {
               phase:
                 | "prepare"
                 | "context-load"
+                | "model-recovery"
                 | "request-build"
                 | "context-fit"
                 | "memory-embed"
@@ -2577,6 +2579,7 @@ export type SessionMessageAssistant = {
       phase:
         | "prepare"
         | "context-load"
+        | "model-recovery"
         | "request-build"
         | "context-fit"
         | "memory-embed"
@@ -3223,6 +3226,7 @@ export type SyncEventSessionNextStepEnded = {
           phase:
             | "prepare"
             | "context-load"
+            | "model-recovery"
             | "request-build"
             | "context-fit"
             | "memory-embed"
@@ -3707,6 +3711,10 @@ export type ConfigV2Nudge = {
   hook:
     | {
         type: "text-match"
+        pattern: string
+      }
+    | {
+        type: "write-match"
         pattern: string
       }
     | {
@@ -5282,6 +5290,7 @@ export type SessionNextStepEnded = {
         phase:
           | "prepare"
           | "context-load"
+          | "model-recovery"
           | "request-build"
           | "context-fit"
           | "memory-embed"
@@ -7478,6 +7487,7 @@ export type EventSessionNextStepEnded = {
         phase:
           | "prepare"
           | "context-load"
+          | "model-recovery"
           | "request-build"
           | "context-fit"
           | "memory-embed"

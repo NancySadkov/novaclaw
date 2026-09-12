@@ -537,7 +537,11 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
             SessionMessage.Compaction.make({
               id: audit.id,
               type: "compaction",
-              metadata: audit.metadata,
+              // ⚠️ MERGED, not replaced. The audit row carries what was known when the cycle started
+              // (the trigger's window, reserve, threshold and estimate); this event carries what only
+              // the end can know (the size after). Taking either alone would leave the durable
+              // compaction log with half an answer, which is the defect it exists to close.
+              metadata: { ...audit.metadata, ...event.metadata },
               reason: event.data.reason,
               summary: event.data.text,
               recent: event.data.recent,

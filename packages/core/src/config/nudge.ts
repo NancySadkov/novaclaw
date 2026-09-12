@@ -4,6 +4,10 @@ import { Schema } from "effect"
 
 export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("text-match"), pattern: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("write-match"), pattern: Schema.String }).annotate({
+    description:
+      "Fires when the content a writing tool is about to write matches the pattern. Never tested against a tool's OUTPUT, so text the agent merely read cannot fire it.",
+  }),
   Schema.Struct({ type: Schema.Literal("tool-call"), tool: Schema.String }),
   Schema.Struct({ type: Schema.Literal("mcp-call"), server: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-read"), extension: Schema.String }),

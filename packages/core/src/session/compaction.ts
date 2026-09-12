@@ -601,6 +601,54 @@ export const make = (dependencies: Dependencies) => {
     const context = input.contextWindowTokens ?? input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return decline("context-window-unknown")
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
+    /**
+     * 🔴 **WHY THIS CYCLE FIRED, WRITTEN WHERE IT OUTLIVES THE PROCESS.**
+     *
+     * The trigger does report itself, through `session.compaction.threshold` — but that is a `debug`
+     * Log line. It goes to the log sink rather than into the session, and a packaged build does not
+     * keep it. The owner was left reading a context gauge that said 88,745 of 262,144 while
+     * compaction fired, and nothing durable anywhere said which number the trigger had actually
+     * compared: `session_compaction.metadata` is NULL on all ten rows the live database holds. So
+     * both "why did it compact" and "why did it compact AGAIN a few tool calls later" had no answer
+     * that survived the turn.
+     *
+     * ⭐ The record below rides the event's `metadata`, which the projector already writes verbatim
+     * into `session_compaction.metadata`. That keeps the projector the one writer of that table, and
+     * it re-cuts no event version: nothing replays this field, a person reads it.
+     */
+    const triggerEstimate = input.promptEstimate ?? PromptEstimate.unsupported(input.request, input.imagePatchPixels)
+    const triggerCapacity = PromptEstimate.capacity({
+      contextTokens: context,
+      outputTokens: output,
+      minimumResponseReserveTokens: config.buffer,
+    })
+    // Which of the three doors reached this cycle. `reason` alone cannot say: it is "auto" for BOTH
+    // the threshold trigger and overflow recovery, and the owner's report — a compaction that fires
+    // again a few tool calls later — is exactly the case where telling them apart is the whole
+    // question. The overflow path is the only caller that supplies a rejected prompt size.
+    const cause: "manual" | "overflow" | "threshold" =
+      reason === "manual" ? "manual" : input.overflowPromptTokens === undefined ? "threshold" : "overflow"
+    const decision = {
+      "compaction.cause": cause,
+      "compaction.window": context,
+      "compaction.threshold": triggerCapacity.promptCeilingTokens,
+      "compaction.response.reserve": triggerCapacity.responseReserveTokens,
+      "compaction.buffer": config.buffer,
+      "compaction.keep.tokens": config.tokens,
+      "compaction.estimate": triggerEstimate.estimatedTokens,
+      "compaction.estimate.margin": triggerEstimate.marginTokens,
+      "compaction.estimate.with-margin": PromptEstimate.withMargin(triggerEstimate),
+      "compaction.estimate.mode": triggerEstimate.confidence === "whole" ? "full" : "anchored",
+      "compaction.anchor.reported": triggerEstimate.anchorReportedTokens,
+      "compaction.anchor.delta": triggerEstimate.deltaTokens,
+      "compaction.anchor.growth": Math.round(triggerEstimate.growth * 10_000) / 10_000,
+      "compaction.anchor.low-confidence": triggerEstimate.confidence === "low",
+      "compaction.anchor.fallback": triggerEstimate.fallback,
+      // The provider-rejected size when there was one; otherwise the estimate the trigger compared.
+      "compaction.before.tokens":
+        input.overflowPromptTokens ?? PromptEstimate.withMargin(triggerEstimate),
+      "compaction.entries": input.entries.length,
+    } as const
     const entries = yield* pruneCheapTier(input.entries, input.imagePatchPixels)
     // PRUNE ONLY (`compaction.summarize: false`). The cheap tier has already run and its reclaim is
     // durable for this cycle; stopping here is the whole point of the setting. Returning `false`
@@ -673,12 +721,19 @@ export const make = (dependencies: Dependencies) => {
     // rides the prompt the model is sent, so it is visible in the request the tests pin.
     const messageID = SessionMessage.ID.create()
     const startedAt = yield* DateTime.now
-    yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
-      sessionID: input.sessionID,
-      messageID,
-      timestamp: startedAt,
-      reason,
-    })
+    yield* dependencies.events.publish(
+      SessionEvent.Compaction.Started,
+      {
+        sessionID: input.sessionID,
+        messageID,
+        timestamp: startedAt,
+        reason,
+      },
+      // The audit row this creates is the one the ended message copies its metadata from, so the
+      // trigger's numbers have to ride THIS publish to reach the transcript the app syncs. The
+      // ended publish adds what only it can know (the size after).
+      { metadata: decision },
+    )
 
     const fail = Effect.fnUntraced(function* (why: DeclineReason, generatedChars: number) {
       yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
@@ -748,17 +803,29 @@ export const make = (dependencies: Dependencies) => {
     }
     if (!summary.trim()) return yield* fail("summarizer-unavailable", first.generatedChars)
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
-    yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
-      sessionID: input.sessionID,
-      messageID,
-      timestamp: yield* DateTime.now,
-      reason,
-      text: summary,
-      recent: selected.recent,
-      prefixSeq,
-      prefixHash: yield* dependencies.prefixHash(input.sessionID, prefixSeq),
-      generatedChars: first.generatedChars,
-    })
+    yield* dependencies.events.publish(
+      SessionEvent.Compaction.Ended,
+      {
+        sessionID: input.sessionID,
+        messageID,
+        timestamp: yield* DateTime.now,
+        reason,
+        text: summary,
+        recent: selected.recent,
+        prefixSeq,
+        prefixHash: yield* dependencies.prefixHash(input.sessionID, prefixSeq),
+        generatedChars: first.generatedChars,
+      },
+      {
+        metadata: {
+          ...decision,
+          "compaction.after.tokens": Token.estimate(summary) + Token.estimate(selected.recent),
+          "compaction.folded.chars": selected.head.length,
+          "compaction.summary.chars": summary.length,
+          "compaction.recent.chars": selected.recent.length,
+        },
+      },
+    )
     return true
   })
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {

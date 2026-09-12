@@ -63,6 +63,43 @@ describe("NudgeService", () => {
     }),
   )
 
+  /**
+   * 🔴 The two firings the owner still saw on 0.1.75, replayed end to end.
+   *
+   * `68e406e63` made a matching nudge quiet, but the quiet rule only delays a REPEAT: the first
+   * delivery into a session — and the first after every compaction — is uncapped by design, so a
+   * trigger that should never have matched still fired once per session. Measured on this instance
+   * 2026-09-12: the only two deliveries of the shipped time-safety nudge after that fix were a `bash`
+   * call (the owner's session, 02:21Z, formatting an event-log column) and a `read` (this repository's
+   * own nudge tests, whose fixtures contain the arithmetic). Neither was an edit, so the fix has to
+   * be in the TRIGGER, not in the caps — which is what `write-match` is.
+   */
+  it.effect("does not deliver the time-safety nudge to a session that is only reading or querying", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const claim = (name: string, input: unknown, output?: unknown) =>
+        service.claim({
+          sessionID: "ses_reading",
+          agentID: "nova",
+          directory: process.cwd(),
+          event: { type: "tool", id: `call-${name}`, name, input, ...(output === undefined ? {} : { output }) },
+        })
+      expect(yield* claim("bash", { command: "bun -e \"console.log(new Date(r.time_created))\"" })).toEqual([])
+      expect(
+        yield* claim("read", { path: "packages/core/src/nudge.test.ts" }, "done - message.time.created"),
+      ).toEqual([])
+      // …and an edit that really does touch timestamp arithmetic still reaches the session.
+      expect(
+        (
+          yield* claim("edit", {
+            oldString: "const t = 0",
+            newString: "const elapsed = message.time.created - message.time.updated",
+          })
+        ).map((item) => item.id),
+      ).toEqual([Nudge.JAVASCRIPT_TIME_ID])
+    }),
+  )
+
   it.effect("a stored list replaces defaults and an edit applies without rebuilding the layer", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service

@@ -463,12 +463,24 @@ describe("SessionProjector", () => {
         output: "/project",
       })
       const compactionID = SessionMessage.ID.create()
-      yield* events.publish(SessionEvent.Compaction.Started, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: created,
-        reason: "manual",
-      })
+      yield* events.publish(
+        SessionEvent.Compaction.Started,
+        {
+          sessionID,
+          messageID: compactionID,
+          timestamp: created,
+          reason: "manual",
+        },
+        // What the trigger knew before the summary existed. It reaches the transcript through the
+        // audit row this publish creates, which is why it must ride THIS event.
+        {
+          metadata: {
+            "compaction.cause": "manual",
+            "compaction.window": 262_144,
+            "compaction.threshold": 235_929,
+          },
+        },
+      )
       yield* events.publish(SessionEvent.Compaction.Delta, {
         sessionID,
         messageID: compactionID,
@@ -497,17 +509,34 @@ describe("SessionProjector", () => {
           .all()
           .pipe(Effect.orDie),
       ).toEqual([{ id: compactionID }])
-      yield* events.publish(SessionEvent.Compaction.Ended, {
-        sessionID,
-        messageID: compactionID,
-        timestamp: DateTime.makeUnsafe(1),
-        reason: "manual",
-        text: "summary",
-        recent: "recent context",
-        prefixSeq: 0,
-        prefixHash: "0".repeat(64),
-        generatedChars: 12,
-      })
+      yield* events.publish(
+        SessionEvent.Compaction.Ended,
+        {
+          sessionID,
+          messageID: compactionID,
+          timestamp: DateTime.makeUnsafe(1),
+          reason: "manual",
+          text: "summary",
+          recent: "recent context",
+          prefixSeq: 0,
+          prefixHash: "0".repeat(64),
+          generatedChars: 12,
+        },
+        // ⚠️ This is the FIRST time this path has ever carried metadata. The projector has always
+        // spread `row.metadata` into the compaction message, but `session_compaction.metadata` was
+        // NULL on every row the live database held, so the branch never ran. A change that starts
+        // writing metadata is a change that starts exercising it.
+        // The ended publish carries the whole decision plus what only the end can know, so the
+        // durable `session_compaction` row is complete on its own.
+        {
+          metadata: {
+            "compaction.cause": "manual",
+            "compaction.window": 262_144,
+            "compaction.threshold": 235_929,
+            "compaction.after.tokens": 16_430,
+          },
+        },
+      )
 
       const rows = yield* db
         .select()
@@ -542,12 +571,27 @@ describe("SessionProjector", () => {
         generatedChars: 12,
         summary: "summary",
         time: { created, completed: DateTime.makeUnsafe(1) },
+        // The transcript row the app already syncs carries the decision, so a compaction log needs no
+        // second endpoint: the numbers ride the message the UI is already rendering. It is the MERGE
+        // of the two publishes — the started half alone would leave the log without its after-size.
+        metadata: {
+          "compaction.cause": "manual",
+          "compaction.window": 262_144,
+          "compaction.threshold": 235_929,
+          "compaction.after.tokens": 16_430,
+        },
       })
       expect(yield* db.select().from(SessionCompactionTable).get().pipe(Effect.orDie)).toMatchObject({
         summary: "summary",
         recent: "recent context",
         prefix_seq: 0,
         prefix_hash: "0".repeat(64),
+        metadata: {
+          "compaction.cause": "manual",
+          "compaction.window": 262_144,
+          "compaction.threshold": 235_929,
+          "compaction.after.tokens": 16_430,
+        },
       })
       expect(
         yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie),

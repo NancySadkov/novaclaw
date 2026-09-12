@@ -36,7 +36,7 @@ export type {
   AnyTool,
   ExecutableTool,
   ExecutableTools,
-  Tool as ToolShape,
+  Shape as ToolShape,
   ToolExecute,
   ToolExecuteContext,
   ToolModelOutputInput,

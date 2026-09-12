@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Effect, Fiber } from "effect"
+import { DateTime, Effect, Fiber, Stream } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -30,7 +30,7 @@ import { testEffect } from "./lib/effect"
  *   2. the child finished BEFORE the wait started — the LOST WAKEUP, which works because the
  *      projected current result is checked before the durable stream tails later events. A live-only
  *      stream would leave the parent blocked on an event that already happened, and since a timeout
- *      is a legitimate answer here it would surface as "still working" ten minutes later rather than
+ *      is a legitimate answer here it would surface as "still working" seven minutes later rather than
  *      as a bug;
  *   3. two waiters on one child — one consuming the completion must not starve the other;
  *   4. nobody finishes — the timeout must be an ANSWER, never a hang.
@@ -73,6 +73,59 @@ const finish = (events: EventV2.Interface, id: SessionSchema.ID, result: string)
   })
 
 describe("awaiting a child", () => {
+  test("completion racing the projected-row read keeps diagnostics from the same interval", async () => {
+    let sequenceReads = 0
+    const event = (type: string, data: Record<string, unknown>) => ({ type, data }) as EventV2.Payload
+    const join = SessionJoin.fromParts({
+      sequence: () => Effect.succeed(sequenceReads++ === 0 ? -1 : 2),
+      session: () => Effect.succeed({ result: "raced" } as SessionSchema.Info),
+      events: {
+        durable: () =>
+          Stream.fromIterable([
+            event(SessionEvent.Step.Ended.type, { tokens: { output: 3, reasoning: 4 } }),
+            event(SessionEvent.Step.Failed.type, {
+              error: { message: "bad request", _tag: "InvalidRequest", retryable: false, status: 400 },
+            }),
+            event(SessionEvent.Completed.type, { result: "raced" }),
+          ]),
+      } as unknown as EventV2.Interface,
+    })
+
+    expect(await Effect.runPromise(join.awaitCompletion({ childID: CHILD, timeoutMs: 1_000 }))).toEqual({
+      completed: true,
+      result: "raced",
+      generatedAnyTokens: true,
+      generatedTokens: 7,
+      providerErrors: [{ message: "bad request", tag: "InvalidRequest", retryable: false, status: 400, count: 1 }],
+    })
+  })
+
+  test("partial output is reported even when the failed stream has no usage total", async () => {
+    const event = (type: string, data: Record<string, unknown>) => ({ type, data }) as EventV2.Payload
+    const join = SessionJoin.fromParts({
+      sequence: () => Effect.succeed(-1),
+      session: () => Effect.succeed(undefined),
+      events: {
+        durable: () =>
+          Stream.fromIterable([
+            event(SessionEvent.Text.Progress.type, { delta: "partial" }),
+            event(SessionEvent.Step.Failed.type, {
+              error: { message: "connection lost", _tag: "Transport", retryable: true },
+            }),
+            event(SessionEvent.Completed.type, { result: "stopped" }),
+          ]),
+      } as unknown as EventV2.Interface,
+    })
+
+    expect(await Effect.runPromise(join.awaitCompletion({ childID: CHILD, timeoutMs: 1_000 }))).toEqual({
+      completed: true,
+      result: "stopped",
+      generatedAnyTokens: true,
+      generatedTokens: 0,
+      providerErrors: [{ message: "connection lost", tag: "Transport", retryable: true, count: 1 }],
+    })
+  })
+
   it.live("wakes when the child finishes AFTER the wait began", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service
@@ -124,6 +177,60 @@ describe("awaiting a child", () => {
     }),
   )
 
+  it.live("reports tokens and provider errors observed during exactly this wait", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const observed = "ses_join_observed" as SessionSchema.ID
+      yield* create(observed)
+      const join = yield* SessionJoin.Service
+      const waiting = yield* Effect.forkScoped(join.awaitCompletion({ childID: observed, timeoutMs: 20_000 }))
+      yield* Effect.sleep("400 millis")
+      const timestamp = yield* DateTime.now
+      yield* events.publish(SessionEvent.Step.Ended, {
+        sessionID: observed,
+        timestamp,
+        assistantMessageID: SessionMessage.ID.create(),
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 100, output: 12, reasoning: 5, cache: { read: 0, write: 0 } },
+      } as never)
+      const failure = {
+        sessionID: observed,
+        timestamp,
+        assistantMessageID: SessionMessage.ID.create(),
+        error: {
+          type: "unknown",
+          message: "reasoning_content is required",
+          _tag: "InvalidRequest",
+          retryable: false,
+          status: 400,
+        },
+      }
+      yield* events.publish(SessionEvent.Step.Failed, failure as never)
+      yield* events.publish(SessionEvent.Step.Failed, {
+        ...failure,
+        assistantMessageID: SessionMessage.ID.create(),
+      } as never)
+      yield* finish(events, observed, "done")
+
+      expect(yield* Fiber.join(waiting)).toEqual({
+        completed: true,
+        result: "done",
+        generatedAnyTokens: true,
+        generatedTokens: 17,
+        providerErrors: [
+          {
+            message: "reasoning_content is required",
+            tag: "InvalidRequest",
+            retryable: false,
+            status: 400,
+            count: 2,
+          },
+        ],
+      })
+    }),
+  )
+
   it.live("a child that never finishes TIMES OUT with an answer, and does not hang", () =>
     Effect.gen(function* () {
       // ⚠️ `completed: false` is the honest report — the child may simply still be working, which is
@@ -133,7 +240,12 @@ describe("awaiting a child", () => {
         childID: ABSENT,
         timeoutMs: 1_500,
       })
-      expect(outcome).toEqual({ completed: false })
+      expect(outcome).toEqual({
+        completed: false,
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
     }),
   )
 
@@ -148,7 +260,12 @@ describe("awaiting a child", () => {
         childID: "ses_join_waiting_on" as SessionSchema.ID,
         timeoutMs: 1_500,
       })
-      expect(outcome).toEqual({ completed: false })
+      expect(outcome).toEqual({
+        completed: false,
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
     }),
   )
 
@@ -175,10 +292,19 @@ describe("awaiting a child", () => {
       yield* Effect.sleep("400 millis")
       yield* finish(events, reopened, "second answer")
 
-      expect(yield* Fiber.join(waiting)).toEqual({ completed: true, result: "second answer" })
+      expect(yield* Fiber.join(waiting)).toEqual({
+        completed: true,
+        result: "second answer",
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
       expect(yield* join.awaitCompletion({ childID: reopened, timeoutMs: 1_000 })).toEqual({
         completed: true,
         result: "second answer",
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
       })
     }),
   )

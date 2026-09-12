@@ -161,6 +161,15 @@ export type Error =
   | LocalModelManager.UnavailableError
   | Integration.AuthorizationError
 
+export interface ResolveOptions {
+  readonly requested?: boolean
+  /** Exact visibility around the durable provider-backoff sleep; absent callers keep it silent. */
+  readonly recoveryWait?: {
+    readonly started: (delayMs: number) => Effect.Effect<void>
+    readonly ended: () => Effect.Effect<void>
+  }
+}
+
 export interface Interface {
   /**
    * @param requested — the user NAMED this model (a `--model` flag, a switch, a per-turn override),
@@ -168,14 +177,11 @@ export interface Interface {
    *   unavailable model means: an explicit request that cannot be served is an ERROR the caller must
    *   see, while a colleague's configured model being down falls back so the officer keeps working.
    */
-  readonly resolve: (
-    session: SessionSchema.Info,
-    options?: { readonly requested?: boolean },
-  ) => Effect.Effect<Model, Error>
+  readonly resolve: (session: SessionSchema.Info, options?: ResolveOptions) => Effect.Effect<Model, Error>
   /** Resolve the provider route and the scheduler identity from one placement decision. */
   readonly resolveWithDevice: (
     session: SessionSchema.Info,
-    options?: { readonly requested?: boolean },
+    options?: ResolveOptions,
   ) => Effect.Effect<Resolution, Error>
   /**
    * Report WHICH process served a live turn, so a verdict measured on another is discarded.
@@ -552,6 +558,20 @@ export const configuredToolChannel = (body: Record<string, unknown>): "native" |
   return raw === "prompted" || raw === "native" ? raw : undefined
 }
 
+export const configuredReasoningContent = (body: Record<string, unknown>): "optional" | "required" | undefined => {
+  const raw = body["reasoningContent"]
+  return raw === "optional" || raw === "required" ? raw : undefined
+}
+
+const requiresReasoningContent = (url: string | undefined): boolean => {
+  if (url === undefined) return false
+  try {
+    return new URL(url).hostname.toLowerCase() === "api.deepseek.com"
+  } catch {
+    return false
+  }
+}
+
 const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   const body = model.request.body
   // `thinkingBudget` is a harness-side knob carried in `request.body` (see the config seeder), not
@@ -566,7 +586,9 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   // leave the model on its native channel — the working default — instead of silently selecting a
   // third behaviour or sending `toolChannel` to a server that will reject the whole request.
   const httpBody = Object.fromEntries(
-    Object.entries(body).filter(([key]) => key !== "apiKey" && key !== "thinkingBudget" && key !== "toolChannel"),
+    Object.entries(body).filter(
+      ([key]) => key !== "apiKey" && key !== "thinkingBudget" && key !== "toolChannel" && key !== "reasoningContent",
+    ),
   )
   // Protocol-owned sampling (temperature/top_p/top_k/penalties/…) must go through the
   // canonical `generation` options, not the http.body overlay — the native transport
@@ -691,7 +713,21 @@ export const fromCatalogModel = (
   // it; nothing else does.
   const modelInput = (id: ModelV2.ID) => {
     const toolChannel = configuredToolChannel(resolved.request.body) ?? measuredToolChannel
-    return toolChannel === undefined ? { id } : { id, compatibility: { toolChannel } }
+    // DeepSeek's official thinking-mode endpoint requires the field on EVERY replayed assistant
+    // message while tools are present, including turns that generated zero reasoning tokens. Keep
+    // the fact runtime-editable for compatible proxies: an explicit model setting wins either way.
+    const reasoningContent =
+      configuredReasoningContent(resolved.request.body) ??
+      (requiresReasoningContent(resolved.api.url) ? "required" : undefined)
+    return toolChannel === undefined && reasoningContent === undefined
+      ? { id }
+      : {
+          id,
+          compatibility: {
+            ...(toolChannel === undefined ? {} : { toolChannel }),
+            ...(reasoningContent === undefined ? {} : { reasoningContent }),
+          },
+        }
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(
@@ -881,9 +917,14 @@ export const locationLayer = Layer.effect(
        */
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (
         session: SessionSchema.Info,
-        options?: { readonly requested?: boolean },
+        options?: ResolveOptions,
       ) {
-        const selected = yield* turnModel(session, { requested: options?.requested, latch: true, report: true })
+        const selected = yield* turnModel(session, {
+          requested: options?.requested,
+          latch: true,
+          report: true,
+          recoveryWait: options?.recoveryWait,
+        })
         yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
@@ -1034,7 +1075,7 @@ export const locationLayer = Layer.effect(
      */
     const turnModel = Effect.fnUntraced(function* (
       session: SessionSchema.Info,
-      options?: { readonly requested?: boolean; readonly latch?: boolean; readonly report?: boolean },
+      options?: ResolveOptions & { readonly latch?: boolean; readonly report?: boolean },
     ) {
       const report = options?.report === true
       // Location plugins populate and filter the catalog asynchronously during layer startup
@@ -1189,7 +1230,11 @@ export const locationLayer = Layer.effect(
             // retain an explicit error for malformed state rather than spinning with no deadline.
             if (probe === undefined || selectedRecovery === undefined)
               return yield* new ModelUnavailableError({ providerID: selected.providerID, modelID: selected.id })
-            yield* Effect.sleep(Duration.millis(Math.max(0, probe.next - at)))
+            const delayMs = Math.max(0, probe.next - at)
+            yield* options?.recoveryWait?.started(delayMs) ?? Effect.void
+            yield* Effect.sleep(Duration.millis(delayMs)).pipe(
+              Effect.ensuring(options?.recoveryWait?.ended() ?? Effect.void),
+            )
             selected = probe.model
           }
         }

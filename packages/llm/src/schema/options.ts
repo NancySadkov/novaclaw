@@ -171,6 +171,9 @@ export type ModelToolSchemaCompatibility = Schema.Schema.Type<typeof ModelToolSc
 export const ModelToolChannel = Schema.Literals(["native", "prompted"])
 export type ModelToolChannel = Schema.Schema.Type<typeof ModelToolChannel>
 
+export const ModelReasoningContent = Schema.Literals(["optional", "required"])
+export type ModelReasoningContent = Schema.Schema.Type<typeof ModelReasoningContent>
+
 export class ModelCompatibility extends Schema.Class<ModelCompatibility>("LLM.ModelCompatibility")({
   toolSchema: Schema.optional(ModelToolSchemaCompatibility),
   /**
@@ -185,6 +188,13 @@ export class ModelCompatibility extends Schema.Class<ModelCompatibility>("LLM.Mo
    * templates, and the template is what decides whether the tool channel works.
    */
   toolChannel: Schema.optional(ModelToolChannel),
+  /**
+   * Whether an OpenAI-compatible endpoint requires `reasoning_content` on every replayed assistant
+   * message while native tools are in use. DeepSeek's thinking-mode API rejects the entire history
+   * when even a tool-call turn that generated no reasoning omits the field; ordinary OpenAI-shaped
+   * endpoints leave it optional.
+   */
+  reasoningContent: Schema.optional(ModelReasoningContent),
 }) {}
 
 export namespace ModelCompatibility {

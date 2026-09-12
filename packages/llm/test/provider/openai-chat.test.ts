@@ -496,6 +496,47 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
+  it.effect("replays an empty reasoning_content for endpoints that require it during tool use", () =>
+    Effect.gen(function* () {
+      const strictModel = Model.update(model, { compatibility: { reasoningContent: "required" } })
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          id: "req_required_reasoning_tool",
+          model: strictModel,
+          tools: [{ name: "ls", description: "List files", inputSchema: { type: "object" } }],
+          messages: [
+            Message.user("count the files"),
+            Message.assistant({ type: "tool-call", id: "call_1", name: "ls", input: {} }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "count the files" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+          reasoning_content: "",
+        },
+      ])
+    }),
+  )
+
+  it.effect("does not add empty reasoning_content to ordinary OpenAI-compatible histories", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model,
+          tools: [{ name: "ls", description: "List files", inputSchema: { type: "object" } }],
+          messages: [Message.assistant({ type: "tool-call", id: "call_1", name: "ls", input: {} })],
+        }),
+      )
+
+      expect(prepared.body.messages[0]).not.toHaveProperty("reasoning_content")
+    }),
+  )
+
   // ⚠️ The drop is UNCONDITIONAL with respect to reasoning `providerMetadata`, and that is the
   // whole difference between this fix and the core-side one that was rejected. A guard that
   // exempts a reasoning part carrying provider state (`if (… && reasoning.every((p) =>

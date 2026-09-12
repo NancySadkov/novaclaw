@@ -23686,6 +23686,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",
@@ -25152,6 +25153,7 @@
                                   "enum": [
                                     "prepare",
                                     "context-load",
+                                    "model-recovery",
                                     "request-build",
                                     "context-fit",
                                     "memory-embed",
@@ -31394,6 +31396,7 @@
                       "enum": [
                         "prepare",
                         "context-load",
+                        "model-recovery",
                         "request-build",
                         "context-fit",
                         "memory-embed",
@@ -33580,6 +33583,7 @@
                               "enum": [
                                 "prepare",
                                 "context-load",
+                                "model-recovery",
                                 "request-build",
                                 "context-fit",
                                 "memory-embed",
@@ -35159,6 +35163,21 @@
                 },
                 "required": ["type", "pattern"],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["write-match"]
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "pattern"],
+                "additionalProperties": false,
+                "description": "Fires when the content a writing tool is about to write matches the pattern. Never tested against a tool's OUTPUT, so text the agent merely read cannot fire it."
               },
               {
                 "type": "object",
@@ -39874,6 +39893,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",
@@ -46574,6 +46594,7 @@
                           "enum": [
                             "prepare",
                             "context-load",
+                            "model-recovery",
                             "request-build",
                             "context-fit",
                             "memory-embed",

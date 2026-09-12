@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
+import { eq } from "drizzle-orm"
 import { InvalidProviderOutputReason, LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
+import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
@@ -20,6 +23,51 @@ import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harn
  */
 
 describe("SessionRunnerLLM — provider errors", () => {
+  test("an explicitly non-retryable request failure stops an unattended drain", async () => {
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.providerError({
+            message: "reasoning_content is required",
+            retryable: false,
+          }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "should-not-run" }),
+          LLMEvent.textDelta({ id: "should-not-run", text: "replayed" }),
+          LLMEvent.textEnd({ id: "should-not-run" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Keep working" }),
+          resume: false,
+        })
+        yield* db
+          .update(SessionTable)
+          .set({ type: "goal-oriented" })
+          .where(eq(SessionTable.id, HARNESS_SESSION))
+          .run()
+          .pipe(Effect.orDie)
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — a fatal provider verdict cannot self-drive into an identical request",
+    )
+
+    expect(harness.requests, "the self-drive must not replay a request the provider declared fatal").toHaveLength(1)
+  })
+
   test("projects provider errors as terminal assistant step failures", async () => {
     const harness = makeRunnerHarness({
       turns: [[LLMEvent.stepStart({ index: 0 }), LLMEvent.providerError({ message: "Provider unavailable" })]],

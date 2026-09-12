@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { SessionSchema } from "../session/schema"
-import { deadChildMessage, resolveDirectChildID, sideEffect } from "./wait"
+import { SessionMessage } from "../session/message"
+import { deadChildMessage, diagnosticMessage, recentProviderErrors, resolveDirectChildID, sideEffect } from "./wait"
 
 const id = (value: string) => SessionSchema.ID.make(value)
 
@@ -15,6 +16,60 @@ test("an already-halted worker is classified before the blocking join", () => {
   const join = source.indexOf("const joined = yield* join.awaitCompletion")
   expect(precheck).toBeGreaterThan(0)
   expect(join).toBeGreaterThan(precheck)
+})
+
+test("wait diagnostics state both token activity and deduplicated provider failures", () => {
+  const message = diagnosticMessage({
+    generatedAnyTokens: true,
+    generatedTokens: 23,
+    providerErrors: [
+      { message: "reasoning_content is required", tag: "InvalidRequest", status: 400, retryable: false, count: 7 },
+    ],
+  })
+  expect(message).toContain("generated 23 output/reasoning tokens")
+  expect(message).toContain("HTTP 400")
+  expect(message).toContain("not retryable")
+  expect(message).toContain("7 times")
+  expect(message).toContain("reasoning_content is required")
+})
+
+test("wait diagnostics explicitly report zero activity", () => {
+  expect(diagnosticMessage({ generatedAnyTokens: false, generatedTokens: 0, providerErrors: [] })).toContain(
+    "generated no tokens",
+  )
+  expect(diagnosticMessage({ generatedAnyTokens: false, generatedTokens: 0, providerErrors: [] })).toContain(
+    "No provider/API errors",
+  )
+})
+
+test("wait diagnostics do not call a partial failed stream tokenless", () => {
+  expect(diagnosticMessage({ generatedAnyTokens: true, generatedTokens: 0, providerErrors: [] })).toContain(
+    "did not report a token count",
+  )
+})
+
+test("a worker already stopped still reports provider errors from its current request", () => {
+  const messages = [
+    { type: "assistant", error: { message: "old" } },
+    { type: "user" },
+    {
+      type: "assistant",
+      error: { message: "reasoning_content is required", _tag: "InvalidRequest", status: 400, retryable: false },
+    },
+    {
+      type: "assistant",
+      error: { message: "reasoning_content is required", _tag: "InvalidRequest", status: 400, retryable: false },
+    },
+  ] as unknown as SessionMessage.Message[]
+  expect(recentProviderErrors(messages)).toEqual([
+    {
+      message: "reasoning_content is required",
+      tag: "InvalidRequest",
+      status: 400,
+      retryable: false,
+      count: 2,
+    },
+  ])
 })
 
 describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () => {
@@ -86,8 +141,11 @@ describe("deadChildMessage — a dead child must not read as a slow one", () => 
    * wrong* — see the two cases below.
    */
   test("every state that can still finish is NOT dead", () => {
-    for (const state of ["starting", "busy", "recovering", "settled"])
-      expect(deadChildMessage("ses_child", state)).toBeUndefined()
+    for (const state of ["starting", "busy", "recovering"]) expect(deadChildMessage("ses_child", state)).toBeUndefined()
+  })
+
+  test("a settled child without exit is stopped, not still working", () => {
+    expect(deadChildMessage("ses_child", "settled")).toContain("stopped without calling exit")
   })
 
   /**

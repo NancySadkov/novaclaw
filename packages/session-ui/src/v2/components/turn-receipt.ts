@@ -21,6 +21,7 @@ const LABELS = {
   // schema's note). Nothing records it now.
   prepare: "Preparing your prompt",
   "context-load": "Gathering the conversation",
+  "model-recovery": "Waiting for the model to recover",
   "request-build": "Building the request",
   "context-fit": "Fitting the context window",
   "memory-embed": "Preparing recall",
@@ -74,7 +75,8 @@ export type RecallInfo = NonNullable<TurnPhaseTiming["recall"]>
  */
 export const recallNote = (recall: RecallInfo | undefined): string | undefined => {
   if (recall === undefined) return undefined
-  const count = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0)
+  const count = (value: unknown): number =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0
   const head = `${count(recall.retrieved)} looked at, ${count(recall.shown)} shown`
   const cut = count(recall.omitted) > 0 ? `, ${count(recall.omitted)} did not fit` : ""
   const tokens = count(recall.tokens) > 0 ? ` · ~${count(recall.tokens)} tokens` : ""
@@ -123,6 +125,8 @@ export const longStageNote = (
       if ((context?.imageAttachments ?? 0) > 1)
         return "The visual model is reading the attached images. Large images can take time."
       return "The request reached the model, but it has not produced its first token. It may still be loading context or model data."
+    case "model-recovery":
+      return "The selected model is unavailable. NovaClaw will retry it when its recovery delay ends, or use a compatible healthy model if one becomes available."
     case "capability-load":
       return "Starting a service for the first time — later turns skip this."
     case "compaction":

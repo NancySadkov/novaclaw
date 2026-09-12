@@ -95,6 +95,15 @@ export function createNativeMessageStore(client: NovaclawClient) {
     // merge tell a deleted row from one that arrived while the request was in flight.
     const asOf = Date.now()
     const fetched = await fetchNativeMessages(client, sessionID, options)
+    // ⚠️ ABSENCE IS NOT AN ENDING — the same rule the terminal-reconcile barrier below already
+    // follows ("treating a failed read as reconciliation is the same absence-as-ending bug at a
+    // different layer"). `undefined` means the response carried no payload at all, so it says nothing
+    // about what the session contains. Committing it would reach `mergeNativeMessages` as an EMPTY
+    // AUTHORITATIVE fetch, which by that module's own rule "means the session is empty — a full
+    // revert" and drops every local row: the transcript blanks, the scroll container collapses to
+    // the top, and the next fetch restores it. A genuine empty session still arrives as `[]` and is
+    // still authoritative, so reverts keep working.
+    if (fetched === undefined) return
     // A later authoritative request has already captured a newer server snapshot. Committing this
     // older response would let an incomplete assistant regress a completed reply (and could also
     // resurrect rows a newer snapshot proved deleted).

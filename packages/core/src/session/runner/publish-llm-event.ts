@@ -125,6 +125,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   // saying it does not serve this model at all — the two recover differently and a bare boolean
   // cannot distinguish them.
   let assistantFailureMessage: string | undefined
+  let assistantFailureRetryable: boolean | undefined
   let providerFailed = false
   let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
   const executionBoundary = input.executionBoundary ?? (() => Effect.void)
@@ -347,6 +348,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       typeof (fault as { message?: unknown }).message === "string"
         ? ((fault as { message?: string }).message ?? undefined)
         : undefined
+    assistantFailureRetryable = fault.retryable
     yield* events.publish(SessionEvent.Step.Failed, {
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
@@ -646,6 +648,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
      */
     hasAssistantFailed: () => assistantFailed,
     assistantFailureMessage: () => assistantFailureMessage,
+    assistantFailureRetryable: () => assistantFailureRetryable,
     stepSettlement: () => stepSettlement,
     startAssistant,
     assistantMessageID: assistantMessageIDForTool,

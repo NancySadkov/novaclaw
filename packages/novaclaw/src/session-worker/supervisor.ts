@@ -503,6 +503,9 @@ export function spawn(input: Input): Handle {
             generation: input.lease.generation,
             requestID: message.requestID,
             outcome: "rejected",
+            generatedAnyTokens: false,
+            generatedTokens: 0,
+            providerErrors: [],
           })
           return
         }

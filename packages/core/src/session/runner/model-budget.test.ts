@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { configuredToolChannel, defaultThinkingBudget } from "./model"
+import { configuredReasoningContent, configuredToolChannel, defaultThinkingBudget } from "./model"
 
 // The reasoning-token ceiling. The trap this pins: a CONFIGURED value used to be returned raw, so a budget
 // larger than the model could ever emit meant no checkpoint could fire and the whole controller went inert
@@ -62,5 +62,17 @@ describe("configuredToolChannel", () => {
     for (const value of ["Prompted", "text", "", 1, true, null, undefined])
       expect(configuredToolChannel({ toolChannel: value })).toBeUndefined()
     expect(configuredToolChannel({})).toBeUndefined()
+  })
+})
+
+describe("configuredReasoningContent", () => {
+  test("the two known values are honoured", () => {
+    expect(configuredReasoningContent({ reasoningContent: "required" })).toBe("required")
+    expect(configuredReasoningContent({ reasoningContent: "optional" })).toBe("optional")
+  })
+
+  test("anything else is ignored", () => {
+    for (const value of ["Required", "", 1, true, null, undefined])
+      expect(configuredReasoningContent({ reasoningContent: value })).toBeUndefined()
   })
 })

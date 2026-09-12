@@ -2410,6 +2410,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.provider.halted": {
+    level: "warn",
+    message: "provider rejected a non-retryable request — autonomous drive halted",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.quality.check.errored": {
     level: "warn",
     message: "quality check errored",

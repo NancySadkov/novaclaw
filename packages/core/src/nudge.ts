@@ -82,6 +82,18 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
     case "text-match":
       if (event.type !== "tool" || !validPattern(hook.pattern)) return false
       return new RegExp(hook.pattern, "i").test(`${printable(event.input)}\n${printable(event.output)}`)
+    case "write-match":
+      // 🔴 The INPUT of a writing tool, and nothing else. `text-match` above also reads the tool's
+      // OUTPUT, which for a reading tool IS the file — so a nudge meant for code the agent is writing
+      // fired on code the agent merely looked at. Measured on this instance 2026-09-12: a `read` of
+      // `nudge.test.ts`, whose fixtures contain `done - message.time.created`, delivered the shipped
+      // time-safety nudge into a session that was reading; a `bash` one-liner that formatted a SQLite
+      // column with `new Date(r.time_created)` delivered it into the owner's. Both firings were
+      // "nothing needs saying" — the nudge's own text claims the agent is editing time code, and
+      // neither event was an edit. The quiet rule below cannot repair that: it delays a REPEAT, and
+      // the first delivery in a session (and the first after every compaction) is by design uncapped.
+      if (event.type !== "tool" || !toolWrites.has(event.name) || !validPattern(hook.pattern)) return false
+      return new RegExp(hook.pattern, "i").test(printable(event.input))
     case "tool-call":
       return event.type === "tool" && event.name === hook.tool
     case "mcp-call":

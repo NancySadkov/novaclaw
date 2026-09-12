@@ -68,10 +68,9 @@ export interface Capabilities {
     op: SessionWorkerProtocol.DriveStateOp,
     args: ReadonlyArray<unknown>,
   ) => Promise<Extract<Reply, { readonly type: "drive-state-result" }>>
-  /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
+  /** Join a child session. BLOCKS host-side for the kernel-owned seven-minute bound — see `AwaitChild`. */
   readonly awaitChild: (input: {
     readonly childID: string
-    readonly timeoutMs: number
   }) => Promise<Extract<Reply, { readonly type: "await-child-result" }>>
   readonly execution: SessionExecutionAttempt.CurrentInterface
 }

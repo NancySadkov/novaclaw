@@ -32,6 +32,7 @@ const REFUSAL_KEY: Record<Refusal, TranslationKey> = {
 
 const HOOK_KEY: Record<HookType, TranslationKey> = {
   "text-match": "settings.nudges.hook.text-match",
+  "write-match": "settings.nudges.hook.write-match",
   "tool-call": "settings.nudges.hook.tool-call",
   "mcp-call": "settings.nudges.hook.mcp-call",
   "file-read": "settings.nudges.hook.file-read",
@@ -52,6 +53,8 @@ const RESOURCE_KEY = {
 const hookFor = (type: HookType): ConfigNudge.Hook => {
   switch (type) {
     case "text-match":
+      return { type, pattern: "" }
+    case "write-match":
       return { type, pattern: "" }
     case "tool-call":
       return { type, tool: "" }
@@ -123,6 +126,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) =>
     (
       [
         "text-match",
+        "write-match",
         "tool-call",
         "mcp-call",
         "file-read",
@@ -298,7 +302,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) =>
               label={(option) => option.label}
               onSelect={(option) => option && setDraft((item) => ({ ...item, hook: hookFor(option.value) }))}
             />
-            <Show when={draft().hook.type === "text-match"}>
+            <Show when={draft().hook.type === "text-match" || draft().hook.type === "write-match"}>
               <TextInputV2
                 appearance="base"
                 value={(draft().hook as { pattern: string }).pattern}

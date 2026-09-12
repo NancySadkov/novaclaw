@@ -152,6 +152,33 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
+  it.effect("marks the official DeepSeek endpoint as requiring reasoning-content replay", () =>
+    Effect.gen(function* () {
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://api.deepseek.com/v1" }),
+      )
+      expect(resolved.compatibility?.reasoningContent).toBe("required")
+    }),
+  )
+
+  it.effect("lets an operator override reasoning-content replay and keeps the knob off the wire", () =>
+    Effect.gen(function* () {
+      const configured = ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://api.deepseek.com/v1" }),
+        request: {
+          headers: {},
+          body: { reasoningContent: "optional", custom_extension: { enabled: true } },
+        },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(configured)
+      expect(resolved.compatibility?.reasoningContent).toBe("optional")
+      expect(resolved.route.defaults.http?.body).toEqual({
+        custom_extension: { enabled: true },
+        repetition_penalty: 1.05,
+      })
+    }),
+  )
+
   it.effect("prefers a live probed window over the catalog context limit", () =>
     Effect.gen(function* () {
       ProbeWindow.clear()
@@ -757,7 +784,6 @@ describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
 // expression verbatim.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("the runner CONSULTS the device key (source ratchet)", () => {
-
   const runnerSource = () => {
     const file = path.resolve(import.meta.dir, "../src/session/runner/llm.ts")
     const raw = fs.readFileSync(file, "utf8")

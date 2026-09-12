@@ -5,10 +5,11 @@
 // `NOVACLAW_CONFIG_CONTENT` providing the test provider config inline.
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { reply } from "../../lib/llm-server"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { reply } from "../../lib/llm-server"
 import { cliIt } from "../../lib/cli-process"
+import { testProviderConfig } from "../../lib/test-provider"
 
 describe("novaclaw run (non-interactive subprocess)", () => {
   cliIt.concurrent(
@@ -44,6 +45,87 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         const result = yield* novaclaw.run("say hi")
         novaclaw.expectExit(result, 0)
         expect(result.stdout).toBe("hello from the test llm\n")
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "resumes a session from its stored directory and receives its completion events",
+    ({ home, llm, novaclaw }) =>
+      Effect.gen(function* () {
+        const located = path.join(home, "located-project")
+        const database = path.join(home, "located-session.db")
+        yield* Effect.promise(() => fs.mkdir(located, { recursive: true }))
+
+        yield* llm.text("first located reply")
+        const first = yield* novaclaw.run("first", {
+          format: "json",
+          env: { NOVACLAW_DB: database },
+          extraArgs: ["--dir", located],
+        })
+        novaclaw.expectExit(first, 0)
+        const sessionID = String(novaclaw.parseJsonEvents(first.stdout)[0]?.sessionID)
+
+        yield* llm.text("resumed located reply")
+        const resumed = yield* novaclaw.run("second", {
+          format: "json",
+          timeoutMs: 30_000,
+          env: { NOVACLAW_DB: database },
+          extraArgs: ["--session", sessionID],
+        })
+
+        novaclaw.expectExit(resumed, 0)
+        expect(resumed.durationMs).toBeLessThan(30_000)
+        expect(novaclaw.parseJsonEvents(resumed.stdout)).toContainEqual(
+          expect.objectContaining({ type: "text", sessionID, text: "resumed located reply" }),
+        )
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "runs each one-shot task as the named colleague instead of silently falling back to Nova",
+    ({ home, llm, novaclaw }) =>
+      Effect.gen(function* () {
+        const database = path.join(home, "named-agent.db")
+        const agent = "audit-colleague"
+        const config = JSON.stringify({
+          ...testProviderConfig(llm.url),
+          agents: {
+            [agent]: {
+              name: "Audit Colleague",
+              description: "Read-only audit fixture",
+              mode: "primary",
+              model: "test/test-model",
+              memory: "none",
+              directory: home,
+            },
+          },
+        })
+        const env = { NOVACLAW_DB: database, NOVACLAW_CONFIG_CONTENT: config }
+
+        yield* llm.text("first colleague reply")
+        const first = yield* novaclaw.run("first", { agent, format: "json", env })
+        novaclaw.expectExit(first, 0)
+        const firstEvents = novaclaw.parseJsonEvents(first.stdout)
+        const firstSessionID = String(firstEvents[0]?.sessionID)
+        expect(firstEvents[0]).toEqual(
+          expect.objectContaining({ type: "step_start", step: expect.objectContaining({ agent }) }),
+        )
+
+        yield* llm.text("second colleague reply")
+        const second = yield* novaclaw.run("second", { agent, format: "json", env })
+        novaclaw.expectExit(second, 0)
+        const secondEvents = novaclaw.parseJsonEvents(second.stdout)
+        expect(secondEvents[0]).toEqual(
+          expect.objectContaining({
+            type: "step_start",
+            step: expect.objectContaining({ agent }),
+          }),
+        )
+        // One-shot runs are child threads, not the colleague's durable root chat. Reusing the root
+        // would pile unrelated headless tasks into the conversation the user has with that officer.
+        expect(secondEvents[0]?.sessionID).not.toBe(firstSessionID)
       }),
     60_000,
   )

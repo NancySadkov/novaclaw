@@ -40,7 +40,14 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
     input.message.type === "colleague-request"
       ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
       : input.message.type === "await-child"
-        ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
+        ? ({
+            ...identity(input.message),
+            type: "await-child-result" as const,
+            outcome: "rejected" as const,
+            generatedAnyTokens: false,
+            generatedTokens: 0,
+            providerErrors: [],
+          } as Reply)
         : input.message.type === "spawn-child"
           ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
           : ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
@@ -57,23 +64,35 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
    */
   /**
    * ⚠️ The only request that BLOCKS. The host tails the child's durable stream until it completes or
-   * the worker's budget elapses; a timeout is a normal answer, because the child may still be working.
+   * the kernel's seven-minute bound elapses; a timeout is a normal answer, because the child may
+   * still be working. The request carries no timeout, so a worker cannot change this invariant.
    * The direct-child authorisation check is NOT here — it stays in `tool/wait.ts`, where the session
    * store is readable on both sides of the boundary.
    */
   if (input.message.type === "await-child") {
     const joined = yield* input.join
-      .awaitCompletion({ childID: input.message.input.childID, timeoutMs: input.message.input.timeoutMs })
+      .awaitCompletion({ childID: input.message.input.childID, timeoutMs: SessionJoin.JOIN_TIMEOUT_MS })
       .pipe(Effect.exit)
     if (!Exit.isSuccess(joined)) return reject()
+    const diagnostics = {
+      generatedAnyTokens: joined.value.generatedAnyTokens,
+      generatedTokens: joined.value.generatedTokens,
+      providerErrors: [...joined.value.providerErrors],
+    }
     return joined.value.completed
       ? {
           ...identity(input.message),
           type: "await-child-result" as const,
           outcome: "completed" as const,
+          ...diagnostics,
           ...(joined.value.result === undefined ? {} : { result: joined.value.result }),
         }
-      : { ...identity(input.message), type: "await-child-result" as const, outcome: "timeout" as const }
+      : {
+          ...identity(input.message),
+          type: "await-child-result" as const,
+          outcome: "timeout" as const,
+          ...diagnostics,
+        }
   }
 
   if (input.message.type === "spawn-child") {

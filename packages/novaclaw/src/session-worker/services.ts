@@ -362,16 +362,33 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    */
   const join: SessionJoin.Interface = {
     awaitCompletion: (request) =>
-      Effect.promise(() => capabilities.awaitChild({ childID: request.childID, timeoutMs: request.timeoutMs })).pipe(
+      Effect.promise(() => capabilities.awaitChild({ childID: request.childID })).pipe(
         Effect.flatMap((reply): Effect.Effect<SessionJoin.Outcome> => {
           if (reply.outcome === "completed")
             return Effect.succeed(
               reply.result === undefined
-                ? ({ completed: true } satisfies SessionJoin.Outcome)
-                : ({ completed: true, result: reply.result } satisfies SessionJoin.Outcome),
+                ? ({
+                    completed: true,
+                    generatedAnyTokens: reply.generatedAnyTokens,
+                    generatedTokens: reply.generatedTokens,
+                    providerErrors: reply.providerErrors,
+                  } satisfies SessionJoin.Outcome)
+                : ({
+                    completed: true,
+                    result: reply.result,
+                    generatedAnyTokens: reply.generatedAnyTokens,
+                    generatedTokens: reply.generatedTokens,
+                    providerErrors: reply.providerErrors,
+                  } satisfies SessionJoin.Outcome),
             )
           // A timeout is the honest answer, not a fault: the child may still be working.
-          if (reply.outcome === "timeout") return Effect.succeed({ completed: false } satisfies SessionJoin.Outcome)
+          if (reply.outcome === "timeout")
+            return Effect.succeed({
+              completed: false,
+              generatedAnyTokens: reply.generatedAnyTokens,
+              generatedTokens: reply.generatedTokens,
+              providerErrors: reply.providerErrors,
+            } satisfies SessionJoin.Outcome)
           return Effect.die(unavailable("child join"))
         }),
       ),
@@ -425,11 +442,9 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     addMemory: (input) => memoryOp<void>("addMemory", [input]),
     addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>("addEdge", [input, access]),
     search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>("search", [input]),
-    neighbors: (id, access, opts) =>
-      memoryOp<ReadonlyArray<MemoryClient.Neighbor>>("neighbors", [id, access, opts]),
+    neighbors: (id, access, opts) => memoryOp<ReadonlyArray<MemoryClient.Neighbor>>("neighbors", [id, access, opts]),
     get: (id, access) => memoryOp<MemoryClient.MemoryRow | null>("get", [id, access]),
-    path: (from, to, access, maxHops) =>
-      memoryOp<MemoryClient.PathResult | null>("path", [from, to, access, maxHops]),
+    path: (from, to, access, maxHops) => memoryOp<MemoryClient.PathResult | null>("path", [from, to, access, maxHops]),
     invalidate: (id, access, at) => memoryOp<void>("invalidate", [id, access, at]),
     purge: (id, access) => memoryOp<void>("purge", [id, access]),
     addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>("addClaim", [input, access]),

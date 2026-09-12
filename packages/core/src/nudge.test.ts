@@ -32,6 +32,54 @@ describe("Nudge", () => {
     ).toBe(false)
   })
 
+  /**
+   * 🔴 The owner's report, 2026-09-12 — and the whole reason `write-match` exists.
+   *
+   * The shipped time-safety nudge's own text tells the agent it *is editing* JavaScript/TypeScript
+   * time code, so the trigger has to be an edit. `text-match` is tested against the INPUT and the
+   * OUTPUT of EVERY tool call, which made the trigger "text the agent touched anywhere": it fired on
+   * files the agent was only READING, and on a shell one-liner that formatted a column. Both firings
+   * asserted below are the real ones from this instance's `session_nudge_delivery` table — the
+   * owner's session at 02:21Z (a `bash` query over the event log) and a `read` of this repository's
+   * own nudge tests. Nothing needed saying in either; the quiet rule cannot help, because it delays a
+   * REPEAT and the first delivery in a session is uncapped by design.
+   */
+  test("the shipped time-safety nudge ignores what the agent reads and matches only what it writes", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.JAVASCRIPT_TIME_ID)!
+    const matches = (name: string, input: unknown, output?: unknown) =>
+      Nudge.matches(item, { type: "tool", id: "x", name, input, ...(output === undefined ? {} : { output }) })
+
+    // Nothing to say: a one-off query that formats a SQLite column. `time_created` is snake_case, and
+    // the loose `new Date(...)` arm of the pattern is what caught it.
+    expect(matches("bash", { command: "bun -e \"console.log(new Date(r.time_created).toISOString())\"" })).toBe(false)
+    // Nothing to say: reading a file that merely CONTAINS the arithmetic — the tool's output is the
+    // world, not the agent's action.
+    expect(matches("read", { path: "packages/core/src/nudge.test.ts" }, "done - message.time.created")).toBe(false)
+    expect(matches("grep", { pattern: "createdAt" }, "a.ts:12: const t = a.createdAt - b.createdAt")).toBe(false)
+
+    // Something to say: the agent is writing it. This is the firing the nudge was written for.
+    expect(matches("write", { content: "const elapsed = endedAt - startedAt" })).toBe(true)
+    expect(
+      matches("edit", { oldString: "const t = 0", newString: "const elapsed = message.time.created - message.time.updated" }),
+    ).toBe(true)
+    expect(matches("apply_patch", { patchText: "+  const at = new Date(event.timestamp)" })).toBe(true)
+  })
+
+  // ⚠️ The counterpart guarantee: narrowing the SHIPPED default must not narrow anyone else's hook.
+  // `text-match` still reads tool output, so a stored nudge that watches for an error string in a
+  // command's stderr keeps working — the fix is a new hook, not a redefinition of the old one.
+  test("text-match still reads a tool's output, so stored hooks are not silently narrowed", () => {
+    expect(
+      Nudge.matches(definition({ type: "text-match", pattern: "permission denied" }), {
+        type: "tool",
+        id: "a",
+        name: "bash",
+        input: { command: "cat secret" },
+        output: "cat: secret: Permission denied",
+      }),
+    ).toBe(true)
+  })
+
   test("invalid regex is inert rather than crashing a turn", () => {
     expect(
       Nudge.matches(definition({ type: "text-match", pattern: "[" }), {
