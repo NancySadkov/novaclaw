@@ -82,8 +82,8 @@ type SchemaDocument = {
 /**
  * Every request-body field the wire contract lets a caller send as `null`, by name.
  *
- * All four are the point of the ledger. `PATCH /api/session/{sessionID}`'s `archived` and
- * the three `POST /api/session/{sessionID}/…` overrides are `Schema.NullOr`, and `null` is the value
+ * Every entry is the point of the ledger. `PATCH /api/session/{sessionID}`'s `archived` and
+ * the four `POST /api/session/{sessionID}/…` overrides are `Schema.NullOr`, and `null` is the value
  * that CLEARS the override so the session inherits from its parent chain — architecture.md's keystone,
  * reachable over HTTP. Until 2026-07-31 the original fields were typed non-nullable in the generated client and a
  * typed caller simply could not express *inherit*.
@@ -98,6 +98,11 @@ const NULLABLE_REQUEST_FIELDS = [
   "POST /api/session/{sessionID}/strict strict",
   "POST /api/session/{sessionID}/feature enabled",
   "POST /api/session/{sessionID}/prompt-override override",
+  // Grown, not shrunk, and legitimately so: the protocol now declares the per-session MODEL
+  // override `Schema.NullOr`, for the same reason the three above do — `null` is how a caller says
+  // "this officer has no model of its own, it inherits". Before that, clearing an override was
+  // unspeakable over HTTP: an officer could be pinned to a retired model with no way to unpin it.
+  "POST /api/session/{sessionID}/model model",
 ] as const
 
 /**
