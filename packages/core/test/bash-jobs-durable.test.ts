@@ -30,6 +30,17 @@ const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, BashJobs.node]), [[AppProcess.node, appProcess]]),
 )
 
+const launchFailure = Layer.succeed(
+  AppProcess.Service,
+  AppProcess.Service.of({
+    spawn: () => Effect.fail(new Error("ENOENT: renderer executable was not found")) as never,
+    run: () => Effect.die("unused"),
+  } as never),
+)
+const itLaunchFailure = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Database.node, BashJobs.node]), [[AppProcess.node, launchFailure]]),
+)
+
 const command = { _tag: "StandardCommand" } as unknown as ChildProcess.Command
 
 // A second harness with the REAL process node: proves the throttled flush lands output in the
@@ -68,6 +79,21 @@ describe("BashJobs durability (live process)", () => {
 })
 
 describe("BashJobs durability", () => {
+  itLaunchFailure.effect("returns an OS process launch failure immediately with its cause", () =>
+    Effect.gen(function* () {
+      const bashJobs = yield* BashJobs.Service
+      const before = Date.now()
+      const error = yield* bashJobs
+        .start({ owner: "ses_launch_failure", command, commandText: "missing-renderer", maxOutputBytes: 4096 })
+        .pipe(Effect.flip)
+
+      expect(error._tag).toBe("BashJobs.LaunchError")
+      if (error._tag !== "BashJobs.LaunchError") throw new Error(`unexpected launch error: ${error._tag}`)
+      expect(error.reason).toContain("ENOENT: renderer executable was not found")
+      expect(Date.now() - before).toBeLessThan(500)
+    }),
+  )
+
   it.effect("write-through: a finished job lands as a done row with output and exit", () =>
     Effect.gen(function* () {
       const bashJobs = yield* BashJobs.Service

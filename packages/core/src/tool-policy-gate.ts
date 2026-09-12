@@ -10,6 +10,7 @@ import { ProjectFileCache } from "./project-file-cache"
 import type { AgentV2 } from "./agent"
 import type { SessionSchema } from "./session/schema"
 import { SessionStore } from "./session/store"
+import { SessionEffectiveConfig } from "./session/effective-config"
 import { ToolPolicy } from "./tool-policy"
 import { SessionPolicyDecisionTable } from "./tool-policy.sql"
 
@@ -52,6 +53,8 @@ export type Screened =
       readonly input: unknown
       /** The sentence to put in front of the tool's own result, or absent when nothing intervened. */
       readonly note?: string
+      /** Officer ceiling resolved through the parent chain; absent only in test bypasses. */
+      readonly maxToolTimeoutMs?: number
     }
   /** Do not run the tool. `message` is model-facing and already explains itself. */
   | { readonly kind: "refuse"; readonly message: string; readonly halt: boolean }
@@ -125,6 +128,7 @@ export const layer = Layer.effect(
     const permission = yield* PermissionV2.Service
     const projects = yield* ProjectFileCache.Service
     const sessions = yield* SessionStore.Service
+    const effective = yield* SessionEffectiveConfig.Service
 
     const providers = new Map<string, ToolPolicy.Provider>()
 
@@ -285,6 +289,7 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
 
     const screen: Interface["screen"] = Effect.fn("ToolPolicyGate.screen")(function* (input) {
+      const maxToolTimeoutMs = (yield* effective.resolve(input.sessionID)).maxToolTimeoutMs
       const directory = yield* directoryOf(input.sessionID)
       const project = yield* projects.read(directory, directory)
       const projectFault = ProjectFileCache.fault(project)
@@ -319,11 +324,11 @@ export const layer = Layer.effect(
       const candidates = [...providers.values()].filter(
         (provider) => ToolPolicy.alwaysOn(provider) || wanted.has(provider.id),
       )
-      // The fast path, and it is the normal one: nothing installed applies, so nothing is consulted,
-      // nothing is composed, no row is written — and, deliberately, the settings store is not read.
-      // Placing the config read AFTER this is what keeps an instance with no policies free.
+      // The fast path, and it is the normal one: nothing installed applies, so no policy is
+      // consulted, nothing is composed, and no receipt row is written. Effective config is still
+      // resolved above because the tool-deadline ceiling applies independently of policy presence.
       if (candidates.length === 0 && requested.length === 0)
-        return { kind: "run", input: input.input } satisfies Screened
+        return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
 
       // 🔴 What the user switched off in Settings. The direction below is the same fail-closed one
       // the missing case uses: a folder that DECLARED a policy which is now off is refused, because
@@ -339,7 +344,7 @@ export const layer = Layer.effect(
         } satisfies Screened
 
       const applicable = candidates.filter((provider) => !off.has(provider.id))
-      if (applicable.length === 0) return { kind: "run", input: input.input } satisfies Screened
+      if (applicable.length === 0) return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
 
       const request: ToolPolicy.Request = {
         sessionID: input.sessionID,
@@ -386,7 +391,7 @@ export const layer = Layer.effect(
                 .join(", ") +
               `. Those policies are advisory (not safety-critical), so their silence did not refuse the call.`,
           })
-        return { kind: "run", input: input.input } satisfies Screened
+        return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
       }
 
       if (decision.type === "deny" || decision.type === "halt") {
@@ -458,7 +463,7 @@ export const layer = Layer.effect(
       })
       const patched =
         Object.keys(decision.patch).length === 0 ? input.input : ToolPolicy.applyPatch(request.input, decision.patch)
-      return { kind: "run", input: patched, note: decision.detail } satisfies Screened
+      return { kind: "run", input: patched, note: decision.detail, maxToolTimeoutMs } satisfies Screened
     })
 
     return Service.of({
@@ -493,5 +498,13 @@ export function refusalMessage(decision: ToolPolicy.Decision) {
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Config.node, Database.node, Location.node, PermissionV2.node, ProjectFileCache.node, SessionStore.node],
+  deps: [
+    Config.node,
+    Database.node,
+    Location.node,
+    PermissionV2.node,
+    ProjectFileCache.node,
+    SessionStore.node,
+    SessionEffectiveConfig.node,
+  ],
 })

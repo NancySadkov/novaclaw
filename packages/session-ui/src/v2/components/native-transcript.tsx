@@ -138,6 +138,7 @@ type TranscriptActions = {
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
 const TranscriptDirectoryContext = createContext<Accessor<string | undefined>>(() => undefined)
+const ToolTimeoutContext = createContext<Accessor<number | undefined>>(() => undefined)
 
 /** Images on the latest real prompt explain a long provider-prefill without blaming the endpoint. */
 function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): number {
@@ -181,6 +182,8 @@ export function NativeTranscript(props: {
   directory?: string
   /** Run-wide live generation count, including streamed tool-call arguments. */
   liveGeneratedTokens?: number
+  /** Effective officer ceiling for the command/wait elapsed display. */
+  maxToolTimeoutMs?: number
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -300,82 +303,84 @@ export function NativeTranscript(props: {
       })}
     >
       <TranscriptDirectoryContext.Provider value={() => props.directory}>
-        <TranscriptMessagesContext.Provider value={() => props.messages}>
-          <TranscriptActionsContext.Provider
-            value={() => ({
-              onRevert: props.onRevert,
-              onRetry: props.onRetry,
-              onChooseModel: props.onChooseModel,
-              onUnpinDevice: props.onUnpinDevice,
-              onStopCommand: props.onStopCommand,
-            })}
-          >
-            <div data-component="native-transcript" class={props.class}>
-              <For each={turns()}>
-                {(group, index) => (
-                  <Turn
-                    group={group}
-                    developer={props.developer}
-                    liveTiming={liveTiming() !== undefined}
-                    busy={busy() && index() === turns().length - 1}
-                  />
-                )}
-              </For>
-              {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
-              the first prompt of a session while it waits for the runner. */}
-              <For each={unqueuedPending(props.pending, props.messages)}>
-                {(item) =>
-                  item.origin?.via === "agent" && item.origin.relation === "peer" ? (
-                    <QueuedColleagueMessage
-                      id={item.id}
-                      text={item.text}
-                      sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
-                      turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+        <ToolTimeoutContext.Provider value={() => props.maxToolTimeoutMs}>
+          <TranscriptMessagesContext.Provider value={() => props.messages}>
+            <TranscriptActionsContext.Provider
+              value={() => ({
+                onRevert: props.onRevert,
+                onRetry: props.onRetry,
+                onChooseModel: props.onChooseModel,
+                onUnpinDevice: props.onUnpinDevice,
+                onStopCommand: props.onStopCommand,
+              })}
+            >
+              <div data-component="native-transcript" class={props.class}>
+                <For each={turns()}>
+                  {(group, index) => (
+                    <Turn
+                      group={group}
+                      developer={props.developer}
+                      liveTiming={liveTiming() !== undefined}
+                      busy={busy() && index() === turns().length - 1}
                     />
-                  ) : (
-                    <QueuedMessage id={item.id} text={item.text} />
-                  )
-                }
-              </For>
-              <Show
-                when={liveTiming()}
-                fallback={
-                  <Show
-                    when={
-                      (busy() && !hasOpenAssistant() && props.waitLabel) ||
-                      (props.status?.type === "busy" && !hasOpenAssistant())
-                    }
-                  >
+                  )}
+                </For>
+                {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
+              the first prompt of a session while it waits for the runner. */}
+                <For each={unqueuedPending(props.pending, props.messages)}>
+                  {(item) =>
+                    item.origin?.via === "agent" && item.origin.relation === "peer" ? (
+                      <QueuedColleagueMessage
+                        id={item.id}
+                        text={item.text}
+                        sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
+                        turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+                      />
+                    ) : (
+                      <QueuedMessage id={item.id} text={item.text} />
+                    )
+                  }
+                </For>
+                <Show
+                  when={liveTiming()}
+                  fallback={
+                    <Show
+                      when={
+                        (busy() && !hasOpenAssistant() && props.waitLabel) ||
+                        (props.status?.type === "busy" && !hasOpenAssistant())
+                      }
+                    >
+                      <div data-slot="native-provider-status" role="status" aria-live="polite">
+                        <span data-slot="native-working-dot" aria-hidden="true" />
+                        <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                      </div>
+                    </Show>
+                  }
+                >
+                  {(timing) => (
+                    <TurnReceipt
+                      messageID={liveMessageID()}
+                      timing={timing()}
+                      live
+                      developer={props.developer}
+                      runStartedAt={runStartedAt()}
+                      tokens={liveTokens()}
+                      reasoning={liveReasoning()}
+                    />
+                  )}
+                </Show>
+                <Show when={props.status?.type === "retry" && props.status.message}>
+                  {(message) => (
                     <div data-slot="native-provider-status" role="status" aria-live="polite">
                       <span data-slot="native-working-dot" aria-hidden="true" />
-                      <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                      <span>{message()}</span>
                     </div>
-                  </Show>
-                }
-              >
-                {(timing) => (
-                  <TurnReceipt
-                    messageID={liveMessageID()}
-                    timing={timing()}
-                    live
-                    developer={props.developer}
-                    runStartedAt={runStartedAt()}
-                    tokens={liveTokens()}
-                    reasoning={liveReasoning()}
-                  />
-                )}
-              </Show>
-              <Show when={props.status?.type === "retry" && props.status.message}>
-                {(message) => (
-                  <div data-slot="native-provider-status" role="status" aria-live="polite">
-                    <span data-slot="native-working-dot" aria-hidden="true" />
-                    <span>{message()}</span>
-                  </div>
-                )}
-              </Show>
-            </div>
-          </TranscriptActionsContext.Provider>
-        </TranscriptMessagesContext.Provider>
+                  )}
+                </Show>
+              </div>
+            </TranscriptActionsContext.Provider>
+          </TranscriptMessagesContext.Provider>
+        </ToolTimeoutContext.Provider>
       </TranscriptDirectoryContext.Provider>
     </ReasoningFoldContext.Provider>
   )
@@ -1240,6 +1245,7 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const i18n = useI18n()
   const messages = useContext(TranscriptMessagesContext)
+  const maxToolTimeoutMs = useContext(ToolTimeoutContext)
   const meta = () => toolMeta(props.part, i18n, messages())
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
@@ -1260,7 +1266,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           props.part.time.ran ?? props.part.time.created,
           props.part.time.completed,
           now(),
-          toolTimeoutMs(props.part.name, input()),
+          toolTimeoutMs(props.part.name, input(), maxToolTimeoutMs()),
         )
       : undefined
   return (

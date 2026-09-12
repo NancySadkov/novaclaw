@@ -2844,6 +2844,12 @@ export const dict = {
   "agentConfig.reasoningBudgetDefault": "Uses the selected model's reasoning budget.",
   "agentConfig.reasoningBudgetOff": "Reasoning is off — answer directly.",
   "agentConfig.reasoningBudgetCustom": "Wrap up reasoning after about {{tokens}} tokens, then answer.",
+  "agentConfig.maxToolTimeout": "Maximum tool wait (minutes)",
+  "agentConfig.maxToolTimeoutDefault": "10 minutes",
+  "agentConfig.maxToolTimeoutHelpDefault":
+    "Tools return control after at most 10 minutes. Spawned workers inherit this limit.",
+  "agentConfig.maxToolTimeoutHelpCustom":
+    "Tools return control after at most {{minutes}} minutes. Spawned workers inherit this limit.",
   "agentConfig.superior": "Superior",
   "agentConfig.superiorNova": "Nova — CEO (default)",
   "agentConfig.superiorDescription":

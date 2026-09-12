@@ -47,6 +47,8 @@ import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionWorkerLocation } from "./location"
 import { WorkerRegistry } from "@/storage/worker-registry"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { ToolDeadline } from "@novaclaw/core/tool-deadline"
 
 /**
  * Render ONE worker outcome as the sentence a person reads under *"Technical detail:"*.
@@ -80,6 +82,16 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
       return `session worker was killed by signal ${outcome.signal}`
     case "start-timeout":
       return "session worker did not report ready before its startup deadline"
+    case "heartbeat-timeout":
+      return (
+        `session worker stopped responding for ${Math.ceil(outcome.silenceMs / 1_000)} seconds ` +
+        `(maximum ${Math.ceil(outcome.limitMs / 1_000)} seconds); its event loop was wedged or blocked`
+      )
+    case "command-launch-timeout":
+      return (
+        `command ${outcome.callID} failed to confirm launch within ${Math.ceil(outcome.limitMs / 1_000)} seconds; ` +
+        `the worker stopped responding during command preflight, so nothing was confirmed running`
+      )
     case "stale-message":
       return "session worker sent a message for a superseded execution"
     // Neither of these two reaches a failure notice — the caller returns on both before rendering —
@@ -150,6 +162,7 @@ export const layer = Layer.effect(
     // the live roster is this process's snapshot, so both are resolved here, once, at layer build —
     // never inside the per-request handler, which is the trap `SessionJoin` warns about above.
     const agentConfig = yield* AgentConfigStore.Service
+    const effectiveConfig = yield* SessionEffectiveConfig.Service
     // Retiring a colleague clears its cabinet, so this seam needs a memory client too. Resolved at
     // layer build like everything else here — `WorldMemory.client` wraps a CAPABILITY that acquires per
     // call, so holding it costs nothing when memory is disabled and never blocks the handler.
@@ -290,6 +303,8 @@ export const layer = Layer.effect(
 
             for (;;) {
               const lease = yield* attempts.start(sessionID, ownerID)
+              const maxToolTimeoutMs =
+                (yield* effectiveConfig.resolve(sessionID)).maxToolTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
               const workerInput: SessionWorkerSupervisor.Input = {
                 command: command.command,
                 env: command.env,
@@ -297,6 +312,10 @@ export const layer = Layer.effect(
                 directory: session.location.directory,
                 workspaceID: session.location.workspaceID,
                 force,
+                // Outside the worker process on purpose: a synchronous parser/adapter loop blocks
+                // every timer inside that process. Heartbeat silence lets the host enforce the same
+                // officer ceiling even when the worker's event loop cannot enforce its own deadline.
+                heartbeatTimeoutMs: maxToolTimeoutMs,
                 memoryLimitBytes: workerMemoryLimitBytes(command.workerPath),
                 // Every host Effect is tied to this worker's lifetime. Once supervision stops the
                 // child, an outstanding admission or publication must unwind before deletion can
@@ -576,6 +595,7 @@ export const node = makeGlobalNode({
     SessionPresence.node,
     Database.node,
     AgentConfigStore.node,
+    SessionEffectiveConfig.node,
     WorldMemory.node,
     // The manager the server graph builds, named here so this layer resolves the runtime client and
     // never core's inert default (whose `ensure` is a no-op that would leave every worker modelless).

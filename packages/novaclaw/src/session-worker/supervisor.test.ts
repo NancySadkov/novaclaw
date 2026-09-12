@@ -115,11 +115,10 @@ test("a worker that never becomes ready is killed at the startup deadline", asyn
   expect(await worker.result).toEqual({ type: "start-timeout" })
 }, 15_000)
 
-test("a silent live worker remains alive until an explicit interrupt", async () => {
+test("a silent live worker is tree-killed when its host-side liveness deadline expires", async () => {
   const worker = run("silent")
-  await Bun.sleep(700)
-  expect(activeWorkerCount()).toBe(1)
-  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
+  expect(await worker.result).toMatchObject({ type: "heartbeat-timeout", limitMs: 350 })
+  expect(activeWorkerCount()).toBe(0)
 })
 
 test("a stale worker identity is rejected and tree-killed", async () => {
@@ -257,7 +256,7 @@ test("an explicit interrupt aborts an in-flight host RPC", async () => {
     directory: process.cwd(),
     force: false,
     startupTimeoutMs: 8_000,
-    heartbeatTimeoutMs: 350,
+    heartbeatTimeoutMs: 2_000,
     onDeviceRequest: (_message, signal) =>
       new Promise((_resolve, reject) => {
         signal.addEventListener(
@@ -568,7 +567,7 @@ test("the standard worker keeps execution checkpoints and heartbeats host-owned"
   expect(heartbeats).toBeGreaterThan(0)
 })
 
-test("a CPU-wedged session cannot delay an unrelated session and only explicit stop reaps it", async () => {
+test("a CPU-wedged session cannot delay an unrelated session and is reaped by heartbeat silence", async () => {
   const wedged = spawn({
     command: [process.execPath, fixture, "busy"],
     lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_wedged"), attemptID: "exe_wedged" },
@@ -590,8 +589,72 @@ test("a CPU-wedged session cannot delay an unrelated session and only explicit s
   // The healthy peer must complete independently; allow Bun's WSL-on-NTFS loader overhead while
   // remaining far below the wedged worker's unbounded lifetime.
   expect(Date.now() - started).toBeLessThan(4_000)
-  expect(await wedged.interrupt()).toEqual({ type: "interrupted" })
+  expect(await wedged.result).toMatchObject({ type: "heartbeat-timeout", limitMs: 350 })
   expect(activeWorkerCount()).toBe(0)
+})
+
+test("a healthy async wait survives the same deadline because heartbeats continue", async () => {
+  const worker = spawn({
+    command: [process.execPath, entrypointFixture, "interrupt"],
+    lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_async_wait"), attemptID: "exe_async_wait" },
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 200,
+    interruptGraceMs: 500,
+  })
+  await Bun.sleep(700)
+  expect(activeWorkerCount()).toBe(1)
+  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
+})
+
+test("a synchronous bash preflight wedge is stopped by the host launch deadline", async () => {
+  const worker = spawn({
+    command: [process.execPath, fixture, "bash-prelaunch-busy"],
+    lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_bash_wedge"), attemptID: "exe_bash_wedge" },
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    commandLaunchTimeoutMs: 250,
+    onExecutionRequest: async (message) => ({
+      version: SessionWorkerProtocol.VERSION,
+      type: "execution-result",
+      sessionID: message.sessionID,
+      attemptID: message.attemptID,
+      generation: message.generation,
+      requestID: message.requestID,
+      outcome: "applied",
+    }),
+  })
+  expect(await worker.result).toEqual({
+    type: "command-launch-timeout",
+    callID: "call_bash_wedged",
+    limitMs: 250,
+  })
+  expect(activeWorkerCount()).toBe(0)
+})
+
+test("a long-running bash call is not mistaken for a launch wedge while its worker heartbeats", async () => {
+  const worker = spawn({
+    command: [process.execPath, fixture, "bash-running"],
+    lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_bash_running"), attemptID: "exe_bash_running" },
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    commandLaunchTimeoutMs: 250,
+    onExecutionRequest: async (message) => ({
+      version: SessionWorkerProtocol.VERSION,
+      type: "execution-result",
+      sessionID: message.sessionID,
+      attemptID: message.attemptID,
+      generation: message.generation,
+      requestID: message.requestID,
+      outcome: "applied",
+    }),
+  })
+  expect(await worker.result).toEqual({ type: "settled" })
 })
 
 test("one crashing session leaves its concurrent peer alive", async () => {

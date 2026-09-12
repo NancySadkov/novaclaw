@@ -112,7 +112,11 @@ function words(command: string, family: Exclude<Family, "unknown">): ReadonlyArr
   const result: string[] = []
   let index = 0
   while (index < command.length) {
-    while (/\s/.test(command[index] ?? "") || ";|&<>()".includes(command[index] ?? "")) index++
+    // `String.includes("")` is true. The explicit bound is therefore load-bearing: a token that
+    // ends in whitespace followed by `)` (for example `$(( i + 1 ))`) used to walk past EOF and
+    // spin forever in this synchronous parser, blocking the whole session worker so no timer could
+    // fire. Never represent EOF with the empty-string sentinel inside a membership test.
+    while (index < command.length && (/\s/.test(command[index]!) || ";|&<>()".includes(command[index]!))) index++
     if (index >= command.length) break
     const token = tokenAfter(command, index, family)
     if (!token) return undefined

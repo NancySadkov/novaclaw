@@ -181,6 +181,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.strict !== undefined) agent.strict = item.strict
     if (item.shortChat !== undefined) agent.shortChat = item.shortChat
     if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
+    if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

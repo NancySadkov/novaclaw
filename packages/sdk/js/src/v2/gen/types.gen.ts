@@ -3782,6 +3782,7 @@ export type ConfigV2Agent = {
   nudges?: Array<ConfigV2Nudge>
   globalNudges?: boolean
   reasoningBudget?: number
+  maxToolTimeoutMs?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4640,6 +4641,7 @@ export type AgentV2Info = {
   }
   shortChat?: boolean
   reasoningBudget?: number
+  maxToolTimeoutMs?: number
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   paused?: boolean

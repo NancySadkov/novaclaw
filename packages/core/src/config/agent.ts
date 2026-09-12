@@ -134,6 +134,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   /** Per-turn reasoning-token ceiling for this officer. Absent = the selected model's budget;
    *  `0` structurally disables reasoning for the officer. */
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),
+  /** Maximum wall time for one tool call in milliseconds. Absent = 600000. */
+  maxToolTimeoutMs: PositiveInt.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

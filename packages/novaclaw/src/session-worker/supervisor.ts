@@ -8,11 +8,14 @@ import childProcess from "node:child_process"
 import type { Readable } from "node:stream"
 import * as ProtocolWrite from "./protocol-write"
 import { SessionWorkerFraming } from "./protocol-framing"
+import { ToolDeadline } from "@novaclaw/core/tool-deadline"
 
 export type Outcome =
   | { readonly type: "settled" }
   | { readonly type: "failed"; readonly classification: string; readonly detail?: string }
   | { readonly type: "start-timeout" }
+  | { readonly type: "heartbeat-timeout"; readonly silenceMs: number; readonly limitMs: number }
+  | { readonly type: "command-launch-timeout"; readonly callID: string; readonly limitMs: number }
   | { readonly type: "memory-limit"; readonly rssBytes: number; readonly limitBytes: number }
   | { readonly type: "protocol-error"; readonly detail: string }
   | { readonly type: "stale-message" }
@@ -28,8 +31,10 @@ export interface Input {
   readonly force: boolean
   readonly env?: Record<string, string | undefined>
   readonly startupTimeoutMs?: number
-  /** @deprecated Heartbeat silence is observable but never authority to terminate a worker. */
+  /** Host-side event-loop liveness deadline. Defaults to the officer's ten-minute tool ceiling. */
   readonly heartbeatTimeoutMs?: number
+  /** Short host-side backstop from bash dispatch until the worker proves its loop is still alive. */
+  readonly commandLaunchTimeoutMs?: number
   readonly interruptGraceMs?: number
   readonly cleanupTimeoutMs?: number
   readonly memoryLimitBytes?: number
@@ -267,6 +272,8 @@ export function spawn(input: Input): Handle {
   installReaper()
   const startedAt = Date.now()
   let ready = false
+  let lastHeartbeatAt = startedAt
+  const commandLaunchPending = new Map<string, number>()
   let done = false
   let interruptRequested = false
   let monitor: ReturnType<typeof setInterval> | undefined
@@ -359,6 +366,7 @@ export function spawn(input: Input): Handle {
     switch (message.type) {
       case "ready":
         ready = true
+        lastHeartbeatAt = Date.now()
         return
       case "heartbeat":
         if (!ready) {
@@ -373,6 +381,7 @@ export function spawn(input: Input): Handle {
           finish({ type: "memory-limit", rssBytes: message.rssBytes, limitBytes: input.memoryLimitBytes })
           return
         }
+        lastHeartbeatAt = Date.now()
         // A heartbeat is evidence of life, never authority to end it. A transient database write
         // failure is retried naturally by the next heartbeat; killing useful work because its
         // liveness receipt could not be recorded inverted the purpose of the mechanism.
@@ -612,6 +621,9 @@ export function spawn(input: Input): Handle {
           })
           return
         }
+        if (message.type === "execution-tool-dispatched" && message.name === "bash")
+          commandLaunchPending.set(message.callID, Date.now())
+        if (message.type === "execution-tool-settled") commandLaunchPending.delete(message.callID)
         dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
@@ -644,10 +656,22 @@ export function spawn(input: Input): Handle {
   })
 
   const startupTimeoutMs = input.startupTimeoutMs ?? STARTUP_TIMEOUT_MS
+  const heartbeatTimeoutMs = input.heartbeatTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
+  const commandLaunchTimeoutMs = input.commandLaunchTimeoutMs ?? ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS
   monitor = setInterval(
     () => {
       const now = Date.now()
       if (!ready && now - startedAt > startupTimeoutMs) finish({ type: "start-timeout" })
+      if (ready && now - lastHeartbeatAt > heartbeatTimeoutMs)
+        finish({ type: "heartbeat-timeout", silenceMs: now - lastHeartbeatAt, limitMs: heartbeatTimeoutMs })
+      for (const [callID, dispatchedAt] of commandLaunchPending) {
+        // A valid long-running command keeps the worker's event loop responsive and therefore keeps
+        // heartbeating. Require BOTH clocks to be stale: a heartbeat can race between the durable
+        // dispatch acknowledgement and the synchronous preflight that wedged Daedalus.
+        if (now - dispatchedAt <= commandLaunchTimeoutMs || now - lastHeartbeatAt <= commandLaunchTimeoutMs) continue
+        finish({ type: "command-launch-timeout", callID, limitMs: commandLaunchTimeoutMs })
+        break
+      }
     },
     Math.min(MONITOR_INTERVAL_MS, startupTimeoutMs),
   )

@@ -52,6 +52,14 @@ const echo = () =>
     execute: () => Effect.succeed({ ok: true }),
   })
 
+const deadlineTool = (execute: () => Effect.Effect<{ ok: boolean }>) =>
+  Tool.make({
+    description: "Deadline probe",
+    input: Schema.Struct({ timeout: Schema.Number }),
+    output: Schema.Struct({ ok: Schema.Boolean }),
+    execute,
+  })
+
 const deferredDispatcher = () =>
   ToolRegistry.withDeferredDispatcher(
     Tool.makeExternal({
@@ -267,6 +275,61 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
 
       expect(after.definitions.map((definition) => definition.name)).toEqual(["tool_call", "read"])
       expect(settled.result).toEqual({ type: "json", value: { ok: true } })
+    }),
+  )
+})
+
+describe("ToolRegistry tool deadlines", () => {
+  it.effect("refuses a timeout above the officer ceiling before executing", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      let executed = false
+      yield* service.register({
+        deadline_refusal: deadlineTool(() =>
+          Effect.sync(() => {
+            executed = true
+            return { ok: true }
+          }),
+        ),
+      })
+
+      const settled = yield* settleTool(service, {
+        ...call("deadline_refusal"),
+        call: {
+          type: "tool-call",
+          id: "call-deadline-refusal",
+          name: "deadline_refusal",
+          input: { timeout: 600_001 },
+        },
+      })
+
+      expect(message(settled)).toContain("600s maximum")
+      expect(message(settled)).toContain("Nothing ran")
+      expect(executed).toBe(false)
+    }),
+  )
+
+  it.live("interrupts an asynchronous tool and returns an explanatory error", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        deadline_expiry: deadlineTool(() => Effect.sleep("1 second").pipe(Effect.as({ ok: true }))),
+      })
+
+      const before = Date.now()
+      const settled = yield* settleTool(service, {
+        ...call("deadline_expiry"),
+        call: {
+          type: "tool-call",
+          id: "call-deadline-expiry",
+          name: "deadline_expiry",
+          input: { timeout: 25 },
+        },
+      })
+
+      expect(message(settled)).toContain("within its 25ms deadline")
+      expect(message(settled)).toContain("Control has returned")
+      expect(Date.now() - before).toBeLessThan(500)
     }),
   )
 })

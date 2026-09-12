@@ -16,7 +16,7 @@ export * as BashJobs from "./bash-jobs"
 // pre-restart job) — no re-attach to dead PIDs, just honest status + output.
 
 import { and, eq, lt } from "drizzle-orm"
-import { Context, Data, Deferred, Duration, Effect, Fiber, Layer, Stream } from "effect"
+import { Cause, Context, Data, Deferred, Duration, Effect, Fiber, Layer, Stream } from "effect"
 import type { ChildProcess } from "effect/unstable/process"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Database } from "../database/database"
@@ -44,6 +44,7 @@ export interface Snapshot {
 
 export class JobNotFoundError extends Data.TaggedError("BashJobs.NotFoundError")<{ id: string }> {}
 export class JobLimitError extends Data.TaggedError("BashJobs.LimitError")<{ limit: number }> {}
+export class JobLaunchError extends Data.TaggedError("BashJobs.LaunchError")<{ reason: string }> {}
 
 interface JobState {
   readonly id: string
@@ -56,6 +57,9 @@ interface JobState {
   exit?: number
   doneAt?: number
   readonly done: Deferred.Deferred<void>
+  readonly launchDone: Deferred.Deferred<void>
+  launchSettled: boolean
+  launchError?: string
   fiber?: Fiber.Fiber<unknown, unknown>
 }
 
@@ -65,7 +69,7 @@ export interface Interface {
     readonly command: ChildProcess.Command
     readonly commandText: string
     readonly maxOutputBytes: number
-  }) => Effect.Effect<{ id: string }, JobLimitError>
+  }) => Effect.Effect<{ id: string }, JobLimitError | JobLaunchError>
   /** Block up to timeoutMs for completion, then report (running or done). */
   readonly wait: (id: string, owner: string, timeoutMs: number) => Effect.Effect<Snapshot, JobNotFoundError>
   readonly status: (id: string, owner: string) => Effect.Effect<Snapshot, JobNotFoundError>
@@ -145,6 +149,7 @@ export const layer = Layer.effect(
       const active = [...jobs.values()].filter((job) => job.owner === input.owner && job.doneAt === undefined)
       if (active.length >= MAX_JOBS_PER_SESSION) return yield* new JobLimitError({ limit: MAX_JOBS_PER_SESSION })
       const done = yield* Deferred.make<void>()
+      const launchDone = yield* Deferred.make<void>()
       const state: JobState = {
         id: "job_" + ascending(),
         owner: input.owner,
@@ -154,6 +159,8 @@ export const layer = Layer.effect(
         bytes: 0,
         truncated: false,
         done,
+        launchDone,
+        launchSettled: false,
       }
       jobs.set(state.id, state)
       yield* db
@@ -169,6 +176,8 @@ export const layer = Layer.effect(
         .pipe(Effect.ignore)
       const runJob = Effect.gen(function* () {
         const handle = yield* appProcess.spawn(input.command)
+        state.launchSettled = true
+        yield* Deferred.succeed(state.launchDone, undefined)
         const consume = Stream.runForEach(handle.all, (chunk: Uint8Array) =>
           Effect.sync(() => {
             const remaining = input.maxOutputBytes - state.bytes
@@ -182,9 +191,20 @@ export const layer = Layer.effect(
         state.exit = Number(exit)
       }).pipe(
         Effect.scoped,
-        // A spawn/stream failure just finishes the job (exit stays undefined);
-        // the model sees "stopped without an exit code" in the snapshot text.
-        Effect.catchCause(() => Effect.void),
+        // Preserve the actual process-creation failure for the caller. Failures after launch still
+        // finish the durable job honestly, but are not mislabeled as launch failures.
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            if (!state.launchSettled) {
+              state.launchError = Cause.pretty(cause)
+              state.launchSettled = true
+              // Wake the caller at the failure site. Durable final-row bookkeeping continues in
+              // this job fiber, but a slow disk must never delay returning launch failure to the
+              // officer.
+              Deferred.doneUnsafe(state.launchDone, Effect.void)
+            }
+          }),
+        ),
         Effect.ensuring(
           // Stamp, flush the FINAL row, then settle — a waiter that wakes on `done` must be able
           // to read the durable row immediately (the settle is guarded so it always happens).
@@ -196,11 +216,23 @@ export const layer = Layer.effect(
             Effect.ensuring(Effect.sync(() => Deferred.doneUnsafe(state.done, Effect.void))),
           ),
         ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (state.launchSettled) return
+            state.launchSettled = true
+            Deferred.doneUnsafe(state.launchDone, Effect.void)
+          }),
+        ),
       )
       // Forked into the SERVICE scope: the job outlives the tool call and the
       // turn. Interrupting the fiber unwinds the spawn scope → the child is
       // killed (forceKillAfter applies) — that IS the `stop` implementation.
       state.fiber = yield* runJob.pipe(Effect.forkIn(scope, { startImmediately: true }))
+      // `start` means the OS process exists, not merely that a background fiber was queued. This
+      // handshake lets bash report a launch failure immediately and lets the registry cancel its
+      // short launch watchdog only after that fact is true.
+      yield* Deferred.await(state.launchDone)
+      if (state.launchError) return yield* new JobLaunchError({ reason: state.launchError })
       // Throttled output flush: while the job runs, land output-so-far in the row every
       // couple of seconds, so a hard process death still leaves readable output behind.
       yield* Effect.gen(function* () {

@@ -8,3 +8,5 @@
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
 export const MAX_TIMEOUT_MS = 10 * 60 * 1_000
 export const JOB_WAIT_DEFAULT_TIMEOUT_MS = 30_000
+/** Preflight + OS process creation must either establish a job or return control promptly. */
+export const COMMAND_LAUNCH_TIMEOUT_MS = 10_000

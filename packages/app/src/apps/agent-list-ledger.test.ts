@@ -71,6 +71,7 @@ describe("every field the wire schema declares is accounted for", () => {
       shortChat: true,
       needsTier: "mid",
       reasoningBudget: 0,
+      maxToolTimeoutMs: 600_000,
       permissionMode: "build",
       strict: { enabled: true },
       permissions: [],

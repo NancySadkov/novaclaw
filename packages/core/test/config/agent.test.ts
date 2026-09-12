@@ -71,6 +71,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
           reviewer: {
             model: "openrouter/openai/gpt-5",
             description: "Review changes",
+            maxToolTimeoutMs: 90_000,
             mode: "subagent",
             permissions: [
               { action: "edit", resource: "*", effect: "deny" },
@@ -136,6 +137,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
         description: "Review changes",
         mode: "subagent",
         hidden: true,
+        maxToolTimeoutMs: 90_000,
         model: { providerID: "openrouter", id: "openai/gpt-5", variant: "high" },
       })
       // ⚠️ A config-borne agent now opens with the shared FLOOR (`plugin/agent.ts` → `floor`), added

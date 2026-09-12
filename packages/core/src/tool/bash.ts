@@ -42,11 +42,9 @@ export const Input = Schema.Struct({
   workdir: Schema.String.pipe(Schema.optional).annotate({
     description: "Working directory. Defaults to the active Location; relative paths resolve from that Location.",
   }),
-  timeout: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_TIMEOUT_MS))
-    .pipe(Schema.optional)
-    .annotate({
-      description: `Soft deadline in milliseconds (default ${DEFAULT_TIMEOUT_MS}, max ${MAX_TIMEOUT_MS}). A command that outlives it is NOT killed — it keeps running as a job and control returns to you. For \`action:"wait"\` this is how long to wait.`,
-    }),
+  timeout: PositiveInt.pipe(Schema.optional).annotate({
+    description: `Soft deadline in milliseconds (default ${DEFAULT_TIMEOUT_MS}; officer maximum defaults to ${MAX_TIMEOUT_MS} and is configurable). A command that outlives it is NOT killed — it keeps running as a job and control returns to you. For \`action:"wait"\` this is how long to wait.`,
+  }),
   job: Schema.String.pipe(Schema.optional).annotate({
     description: "A job id previously returned by this tool (a command that outlived its soft deadline)",
   }),
@@ -201,7 +199,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           sideEffect: "external-unknown",
-          description: `Execute one shell command string with the host user's filesystem, process, and network authority. Prefer the dedicated \`read\`/\`edit\`/\`glob\`/\`grep\` tools over cat/sed/find/grep — they page and report limits safely. Output is capped at ${Math.round(MAX_CAPTURE_BYTES / 1024 / 1024)} MB: when the result says it was truncated, do not conclude from the missing span — re-run narrower (grep/head/tail). The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. The timeout is a SOFT deadline in milliseconds (default: ${DEFAULT_TIMEOUT_MS}; maximum: ${MAX_TIMEOUT_MS}): a command that outlives it is NOT killed — it keeps running as a job and you get its id plus output-so-far; poll with {"job": "<id>"}, block with {"job": "<id>", "action": "wait", "timeout": 30000}, or terminate with {"job": "<id>", "action": "stop"}. Never re-run a command that yielded to a job — poll the job instead. Uses the configured shell when set; otherwise bash when available (the bundled shell or system bash), falling back to /bin/sh on POSIX and COMSPEC or cmd.exe on Windows.`,
+          description: `Execute one shell command string with the host user's filesystem, process, and network authority. Prefer the dedicated \`read\`/\`edit\`/\`glob\`/\`grep\` tools over cat/sed/find/grep — they page and report limits safely. Output is capped at ${Math.round(MAX_CAPTURE_BYTES / 1024 / 1024)} MB: when the result says it was truncated, do not conclude from the missing span — re-run narrower (grep/head/tail). The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. The timeout is a SOFT deadline in milliseconds (default: ${DEFAULT_TIMEOUT_MS}; officer maximum defaults to ${MAX_TIMEOUT_MS} and is configurable): a command that outlives it is NOT killed — it keeps running as a job and you get its id plus output-so-far; poll with {"job": "<id>"}, block with {"job": "<id>", "action": "wait", "timeout": 30000}, or terminate with {"job": "<id>", "action": "stop"}. Never re-run a command that yielded to a job — poll the job instead. Uses the configured shell when set; otherwise bash when available (the bundled shell or system bash), falling back to /bin/sh on POSIX and COMSPEC or cmd.exe on Windows.`,
           input: Input,
           output: Output,
           structured: StructuredOutput,
@@ -222,6 +220,7 @@ export const layer = Layer.effectDiscard(
               // permission assert — the original command was already approved, and
               // owner-binding means a session can only ever touch its own jobs.
               if (input.job !== undefined) {
+                context.commandLaunch?.succeeded()
                 const action = input.action ?? "status"
                 const job = yield* action === "stop"
                   ? bashJobs.stop(input.job, context.sessionID)
@@ -538,13 +537,22 @@ export const layer = Layer.effectDiscard(
               // 1H: run as a JOB and wait up to the soft deadline. A command that
               // outlives it is NOT killed — the model gets the job id + partial
               // output and decides: keep working, wait, or stop.
-              const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
+              const timeout = Math.max(
+                0,
+                Math.min(
+                  input.timeout ?? DEFAULT_TIMEOUT_MS,
+                  context.deadline?.expiresAt === undefined
+                    ? Number.POSITIVE_INFINITY
+                    : context.deadline.expiresAt - Date.now() - 50,
+                ),
+              )
               const { id } = yield* bashJobs.start({
                 owner: context.sessionID,
                 command,
                 commandText,
                 maxOutputBytes: MAX_CAPTURE_BYTES,
               })
+              context.commandLaunch?.succeeded()
               const job = yield* bashJobs.wait(id, context.sessionID, timeout).pipe(
                 // start→wait on our own fresh id cannot miss; normalize the typed error away.
                 Effect.catchTag("BashJobs.NotFoundError", () => Effect.die("bash job vanished between start and wait")),
@@ -585,8 +593,12 @@ export const layer = Layer.effectDiscard(
                   return new ToolFailure({
                     message: `This session already has ${error.limit} running jobs. Wait for one ({"job": "<id>", "action": "wait"}) or stop one ({"job": "<id>", "action": "stop"}) before starting another command.`,
                   })
+                if (error instanceof BashJobs.JobLaunchError)
+                  return new ToolFailure({
+                    message: `Command failed to launch. Nothing is running and control has returned to you. ${error.reason}`,
+                  })
                 return new ToolFailure({
-                  message: `Unable to execute command: ${input.command ?? input.job ?? "(no command)"}`,
+                  message: `Unable to execute command: ${input.command ?? input.job ?? "(no command)"}. ${error instanceof Error ? error.message : String(error)}`,
                 })
               }),
             ),

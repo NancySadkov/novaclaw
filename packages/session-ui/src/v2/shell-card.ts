@@ -1,6 +1,5 @@
 import * as Timestamp from "@novaclaw/schema/time"
-import { DEFAULT_TIMEOUT_MS, JOB_WAIT_DEFAULT_TIMEOUT_MS } from "@novaclaw/core/tool/bash-deadline"
-import { JOIN_TIMEOUT_MS } from "@novaclaw/core/session/join-deadline"
+import { ToolDeadline } from "@novaclaw/core/tool-deadline"
 
 /** Friendly fallback while the parallel model label is not available yet. Never expose a blank `Shell`. */
 export function shellActionTitle(command: string): string {
@@ -14,12 +13,13 @@ export function shellActionTitle(command: string): string {
   return "Run a terminal command"
 }
 
-export function toolTimeoutMs(name: string, input: Record<string, unknown>): number | undefined {
-  if (name === "wait") return JOIN_TIMEOUT_MS
-  if (name !== "bash") return undefined
-  const supplied = input.timeout
-  if (typeof supplied === "number" && Number.isFinite(supplied) && supplied > 0) return supplied
-  return input.job !== undefined && input.action === "wait" ? JOB_WAIT_DEFAULT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS
+export function toolTimeoutMs(
+  name: string,
+  input: Record<string, unknown>,
+  configuredLimitMs?: number,
+): number | undefined {
+  if (name !== "bash" && name !== "wait") return undefined
+  return ToolDeadline.resolve(name, input, configuredLimitMs).timeoutMs
 }
 
 export function commandElapsed(

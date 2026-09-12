@@ -462,6 +462,8 @@ export interface EffectiveConfig {
   readonly shortChat?: boolean
   /** Officer-level reasoning ceiling; absent = use the resolved model's own budget. */
   readonly reasoningBudget?: number
+  /** Officer-level wall-time ceiling for every tool call; absent = the shipped ten-minute limit. */
+  readonly maxToolTimeoutMs?: number
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
 }

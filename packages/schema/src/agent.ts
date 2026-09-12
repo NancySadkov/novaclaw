@@ -93,6 +93,8 @@ export const Info = Schema.Struct({
   shortChat: Schema.Boolean.pipe(optional),
   /** Per-turn reasoning-token ceiling. Absent = selected model default; 0 = reasoning disabled. */
   reasoningBudget: NonNegativeInt.pipe(optional),
+  /** Maximum wall time for one tool call in milliseconds. Descendant workers inherit it. */
+  maxToolTimeoutMs: PositiveInt.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   /**

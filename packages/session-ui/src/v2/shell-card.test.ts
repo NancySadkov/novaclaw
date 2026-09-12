@@ -26,6 +26,8 @@ describe("shell command card", () => {
     expect(toolTimeoutMs("bash", { job: "job_1", action: "wait" })).toBe(30_000)
     expect(toolTimeoutMs("bash", { command: "bun test", timeout: 45_000 })).toBe(45_000)
     expect(toolTimeoutMs("wait", { sessionID: "ses_child" })).toBe(420_000)
+    expect(toolTimeoutMs("wait", { sessionID: "ses_child" }, 90_000)).toBe(90_000)
+    expect(toolTimeoutMs("bash", { command: "bun test" }, 60_000)).toBe(60_000)
     expect(toolTimeoutMs("edit", { path: "src/a.ts" })).toBeUndefined()
   })
 })

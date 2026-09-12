@@ -64,6 +64,41 @@ input.on("line", (line) => {
       // wedge a same-process Effect fiber cannot contain and a worker process must contain.
       for (;;) Math.imul(17, 19)
     }
+    if (mode === "bash-prelaunch-busy") {
+      emit({
+        ...identity,
+        type: "execution-tool-dispatched",
+        requestID: "rpc_bash_dispatch",
+        callID: "call_bash_wedged",
+        name: "bash",
+        sideEffect: "external-unknown",
+      })
+      // The Daedalus shape: checkpoint publication succeeds, then synchronous command parsing
+      // wedges before process creation and before another heartbeat can run.
+      for (;;) Math.imul(23, 29)
+    }
+    if (mode === "bash-running") {
+      emit({
+        ...identity,
+        type: "execution-tool-dispatched",
+        requestID: "rpc_bash_running_dispatch",
+        callID: "call_bash_running",
+        name: "bash",
+        sideEffect: "external-unknown",
+      })
+      const heartbeat = setInterval(() => emit({ ...identity!, type: "heartbeat", phase: "tool", at: Date.now() }), 50)
+      setTimeout(() => {
+        clearInterval(heartbeat)
+        emit({
+          ...identity!,
+          type: "execution-tool-settled",
+          requestID: "rpc_bash_running_settled",
+          callID: "call_bash_running",
+        })
+        emit({ ...identity!, type: "settled" })
+      }, 700)
+      return
+    }
     if (mode === "memory") {
       emit({ ...identity, type: "heartbeat", phase: "drain", at: Date.now(), rssBytes: 2_000_000 })
       return

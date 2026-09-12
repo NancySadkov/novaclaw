@@ -34,6 +34,7 @@ import {
 } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
+import { ToolDeadline } from "../tool-deadline"
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -248,41 +249,95 @@ const registryLayer = Layer.effect(
         (yield* external.entries()).get(input.call.name)
       if (!registration || registration.identity !== advertised)
         return yield* new ToolFailure({ message: `Stale tool call: ${input.call.name}` })
-      const screened = yield* policies.screen({
-        sessionID: input.sessionID,
-        agent: input.agent,
-        tool: input.call.name,
-        toolCallID: input.call.id,
-        input: input.call.input,
-      })
-      if (screened.kind === "refuse") {
-        // The halt latch is set on the shared holder rather than carried in the error, because a
-        // refusal travels as an ordinary `ToolFailure` — the type every tool absorber already
-        // lowers into a model-visible error result — and adding a second failure type here would
-        // make every existing `catchTag("LLM.ToolFailure")` in the tree incomplete.
-        if (screened.halt && halt) halt.halted = true
-        return yield* new ToolFailure({ message: screened.message })
+      const startedAt = Date.now()
+      let launchTimer: ReturnType<typeof setTimeout> | undefined
+      let launched = false
+      const commandLaunch = {
+        succeeded: () => {
+          launched = true
+          if (launchTimer !== undefined) clearTimeout(launchTimer)
+        },
       }
-      const output = yield* settle(
-        registration.tool,
-        screened.input === input.call.input ? input.call : { ...input.call, input: screened.input },
-        {
+      const launchGuard = Effect.callback<never, ToolFailure>((resume) => {
+        if (!launched)
+          launchTimer = setTimeout(
+            () =>
+              resume(
+                Effect.fail(
+                  new ToolFailure({
+                    message:
+                      `Command did not launch within ${ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS / 1_000}s. ` +
+                      `Nothing was confirmed running; control has returned to you. Preflight, policy, job registration, or OS process creation stalled. Inspect the command before retrying it.`,
+                  }),
+                ),
+              ),
+            ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS,
+          )
+        return Effect.sync(() => {
+          if (launchTimer !== undefined) clearTimeout(launchTimer)
+        })
+      })
+      const run = Effect.gen(function* () {
+        const screened = yield* policies.screen({
           sessionID: input.sessionID,
           agent: input.agent,
-          assistantMessageID: input.assistantMessageID,
+          tool: input.call.name,
           toolCallID: input.call.id,
-          ...(input.model === undefined ? {} : { model: input.model }),
-          ...(input.timing === undefined ? {} : { timing: input.timing }),
-          attachmentPaths: input.attachmentPaths ?? new Set(),
-          ...(input.imageBudget === undefined ? {} : { imageBudget: input.imageBudget }),
-          ...(deferredTools.length === 0 ? {} : { deferredTools }),
-          ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
-        },
-      )
-      return {
-        output: screened.note === undefined ? output : withPolicyNote(output, screened.note),
-        tool: registration.tool,
-      }
+          input: input.call.input,
+        })
+        if (screened.kind === "refuse") {
+          // The halt latch is set on the shared holder rather than carried in the error, because a
+          // refusal travels as an ordinary `ToolFailure` — the type every tool absorber already
+          // lowers into a model-visible error result — and adding a second failure type here would
+          // make every existing `catchTag("LLM.ToolFailure")` in the tree incomplete.
+          if (screened.halt && halt) halt.halted = true
+          return yield* new ToolFailure({ message: screened.message })
+        }
+        // A policy may rewrite arguments. The rewritten call is screened too; policy code cannot
+        // silently widen the officer's ceiling after the model's original input passed.
+        const rewrittenExcess = ToolDeadline.exceedsLimit(input.call.name, screened.input, screened.maxToolTimeoutMs)
+        if (rewrittenExcess)
+          return yield* new ToolFailure({ message: ToolDeadline.refusal(input.call.name, rewrittenExcess) })
+        const deadline = ToolDeadline.resolve(input.call.name, screened.input, screened.maxToolTimeoutMs)
+        const expiresAt = startedAt + deadline.timeoutMs
+        const remainingMs = Math.max(0, expiresAt - Date.now())
+        const execution = settle(
+          registration.tool,
+          screened.input === input.call.input ? input.call : { ...input.call, input: screened.input },
+          {
+            sessionID: input.sessionID,
+            agent: input.agent,
+            assistantMessageID: input.assistantMessageID,
+            toolCallID: input.call.id,
+            deadline: {
+              startedAt,
+              expiresAt,
+              timeoutMs: deadline.timeoutMs,
+              limitMs: deadline.limitMs,
+            },
+            ...(input.call.name === "bash" ? { commandLaunch } : {}),
+            ...(input.model === undefined ? {} : { model: input.model }),
+            ...(input.timing === undefined ? {} : { timing: input.timing }),
+            attachmentPaths: input.attachmentPaths ?? new Set(),
+            ...(input.imageBudget === undefined ? {} : { imageBudget: input.imageBudget }),
+            ...(deferredTools.length === 0 ? {} : { deferredTools }),
+            ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
+          },
+        ).pipe(
+          Effect.timeoutOrElse({
+            duration: remainingMs,
+            orElse: () =>
+              Effect.fail(new ToolFailure({ message: ToolDeadline.expired(input.call.name, deadline.timeoutMs) })),
+          }),
+        )
+        const output = yield* execution
+        return {
+          output: screened.note === undefined ? output : withPolicyNote(output, screened.note),
+          tool: registration.tool,
+        }
+      })
+      const guarded = input.call.name === "bash" ? run.pipe(Effect.raceFirst(launchGuard)) : run
+      return yield* guarded
     })
 
     // `advertised` is the identity materialization handed to the model, and it is always supplied: the only

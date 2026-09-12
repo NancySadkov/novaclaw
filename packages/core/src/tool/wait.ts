@@ -274,7 +274,16 @@ export const layer = Layer.effectDiscard(
               // ⚠️ Through `SessionJoin`, never `events.durable` directly — the worker's EventV2
               // replacement DIES on the durable stream, which is what killed `wait` inside every
               // session worker. The service is the seam the worker swaps for a host RPC.
-              const joined = yield* join.awaitCompletion({ childID, timeoutMs: WAIT_TIMEOUT_MS })
+              const timeoutMs = Math.max(
+                0,
+                Math.min(
+                  WAIT_TIMEOUT_MS,
+                  context.deadline?.expiresAt === undefined
+                    ? Number.POSITIVE_INFINITY
+                    : context.deadline.expiresAt - Date.now() - 50,
+                ),
+              )
+              const joined = yield* join.awaitCompletion({ childID, timeoutMs })
               /**
                * 🔴 **A DEAD child must not read as a slow one.** `awaitCompletion` waits for a `Completed`
                * event, so a child that crashed, was interrupted, or failed emits nothing and times out
@@ -316,7 +325,7 @@ export const layer = Layer.effectDiscard(
                   generatedTokens: joined.generatedTokens,
                   providerErrors: [...joined.providerErrors],
                   message:
-                    `Session ${childID} has not finished yet (waited ${Math.round(WAIT_TIMEOUT_MS / 60_000)} minutes). ` +
+                    `Session ${childID} has not finished yet (waited ${Math.ceil(timeoutMs / 1_000)} seconds). ` +
                     `It may still be working — this is not an error and does not mean it failed. ` +
                     `Call wait on ${childID} again to keep waiting, or carry on and join it later.\n\n` +
                     diagnosticMessage(joined),

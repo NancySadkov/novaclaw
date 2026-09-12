@@ -1156,6 +1156,11 @@ export default function Page() {
                           executionAttempt={executionAttempt()}
                           setController={(controller) => (timelineController = controller)}
                           directory={sdk().directory}
+                          maxToolTimeoutMs={
+                            info()?.agent === undefined
+                              ? undefined
+                              : sync().data.config.agents?.[info()!.agent!]?.maxToolTimeoutMs
+                          }
                           onRevert={revertToPrompt}
                           onRetry={retryFailedTurn}
                           onChooseModel={chooseAnotherModel}

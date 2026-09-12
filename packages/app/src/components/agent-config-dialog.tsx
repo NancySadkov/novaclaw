@@ -116,6 +116,7 @@ export function AgentConfigDialog(props: {
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
   const [reasoningBudget, setReasoningBudget] = createSignal<string | undefined>()
+  const [maxToolTimeoutMinutes, setMaxToolTimeoutMinutes] = createSignal<string | undefined>()
   const [needsTier, setNeedsTier] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
@@ -266,6 +267,19 @@ export function AgentConfigDialog(props: {
     return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN
   }
   const reasoningBudgetValid = () => !Number.isNaN(parsedReasoningBudget())
+  const maxToolTimeoutMinutesValue = () => {
+    const chosen = maxToolTimeoutMinutes()
+    if (chosen !== undefined) return chosen
+    const stored = (agent()?.config as Record<string, unknown> | undefined)?.["maxToolTimeoutMs"]
+    return typeof stored === "number" ? String(stored / 60_000) : ""
+  }
+  const parsedMaxToolTimeoutMs = () => {
+    const value = maxToolTimeoutMinutesValue().trim()
+    if (value === "") return undefined
+    const milliseconds = Number(value) * 60_000
+    return Number.isSafeInteger(milliseconds) && milliseconds > 0 ? milliseconds : Number.NaN
+  }
+  const maxToolTimeoutValid = () => !Number.isNaN(parsedMaxToolTimeoutMs())
   const superiorValue = () => superior() ?? agent()?.superior ?? ""
   const boundTier = createMemo(() => {
     const ref = parseModelRef(modelValue())
@@ -325,6 +339,7 @@ export function AgentConfigDialog(props: {
     needsTier() !== undefined ||
     model() !== undefined ||
     reasoningBudget() !== undefined ||
+    maxToolTimeoutMinutes() !== undefined ||
     superior() !== undefined ||
     avatarFile() !== undefined ||
     avatarRemoved()
@@ -611,12 +626,18 @@ export function AgentConfigDialog(props: {
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
       const tier = needsTierValue()
-      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> & { reasoningBudget?: number } = {
+      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> & {
+        reasoningBudget?: number
+        maxToolTimeoutMs?: number
+      } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(needsTier() === undefined || !isTier(tier) ? {} : { needsTier: tier }),
         ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
           ? {}
           : { reasoningBudget: parsedReasoningBudget() }),
+        ...(maxToolTimeoutMinutes() === undefined || parsedMaxToolTimeoutMs() === undefined
+          ? {}
+          : { maxToolTimeoutMs: parsedMaxToolTimeoutMs() }),
       }
       // 🔴 Nova's fragment is TWO KEYS, never the officer payload. The server refuses a fragment
       // naming the governing agent that carries anything outside `AgentV2.PROTECTED_TUNABLE`, and it
@@ -664,6 +685,7 @@ export function AgentConfigDialog(props: {
         ...(model() === "" ? [["agents", id, "model"]] : []),
         ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
         ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
+        ...(maxToolTimeoutMinutes() === "" ? [["agents", id, "maxToolTimeoutMs"]] : []),
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
         // Switched back ON and nothing else was ever refused: the field goes away entirely, so the
         // officer inherits the floor's grant the same as a colleague that was never configured.
@@ -688,6 +710,7 @@ export function AgentConfigDialog(props: {
       setArchive(undefined)
       setModel(undefined)
       setReasoningBudget(undefined)
+      setMaxToolTimeoutMinutes(undefined)
       setSuperior(undefined)
       setNeedsTier(undefined)
       props.onChanged?.()
@@ -1100,6 +1123,27 @@ export function AgentConfigDialog(props: {
                   ? language.t("agentConfig.reasoningBudgetOff")
                   : language.t("agentConfig.reasoningBudgetCustom", { tokens: reasoningBudgetValue() })}
             </p>
+            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
+              {language.t("agentConfig.maxToolTimeout")}
+            </label>
+            <input
+              id="agent-tool-timeout"
+              aria-label={language.t("agentConfig.maxToolTimeout")}
+              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+              type="number"
+              min="1"
+              step="1"
+              value={maxToolTimeoutMinutesValue()}
+              placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
+              onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+            />
+            <p class="mt-1 text-[11px] text-v2-text-text-faint">
+              {maxToolTimeoutMinutesValue().trim() === ""
+                ? language.t("agentConfig.maxToolTimeoutHelpDefault")
+                : language.t("agentConfig.maxToolTimeoutHelpCustom", {
+                    minutes: maxToolTimeoutMinutesValue(),
+                  })}
+            </p>
             {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
                 sometimes the right one. */}
             <Show when={mindTooSmall()}>
@@ -1436,7 +1480,12 @@ export function AgentConfigDialog(props: {
               // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
               // without it a save fired before the roster landed wrote the fields it had not read yet.
               disabled={
-                !dirty() || !reasoningBudgetValid() || saving() || props.agentID === undefined || agent() === undefined
+                !dirty() ||
+                !reasoningBudgetValid() ||
+                !maxToolTimeoutValid() ||
+                saving() ||
+                props.agentID === undefined ||
+                agent() === undefined
               }
               onClick={() => void save()}
             >

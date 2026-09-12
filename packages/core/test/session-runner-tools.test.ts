@@ -93,6 +93,9 @@ describe("SessionRunnerLLM — application tools", () => {
       "agent",
       "assistantMessageID",
       "attachmentPaths",
+      // The controller-owned absolute wall deadline follows every tool call so nested waits can
+      // narrow themselves without accidentally outliving the registry's universal bound.
+      "deadline",
       // The assistant turn's remaining image allowance (`tool/tool.ts` → `imageBudget`), which
       // `read` consults before handing over pixels the turn cannot describe. It argues for itself
       // twice over: it carries no attribution, and it is here at all only because this ratchet's

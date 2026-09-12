@@ -15,11 +15,11 @@ import { Tool } from "./tool"
 import { Tools } from "./tools"
 import { WebGovernor } from "../web/governor"
 import { CalloutPolicy } from "../callout-policy"
+import { DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS } from "../webfetch-deadline"
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
-export const DEFAULT_TIMEOUT_SECONDS = 30
-export const MAX_TIMEOUT_SECONDS = 120
+export { DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS } from "../webfetch-deadline"
 
 export const description = `Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.
 

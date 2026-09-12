@@ -45,6 +45,17 @@ describe("shell approval reduction", () => {
     })
   })
 
+  test("terminates at EOF after spaced arithmetic substitutions", () => {
+    const command =
+      'SCR="/c/tmp/raw"; NF=10328; NC=12; t0=$(date +%s); for i in $(seq 0 $((NC-1))); do f=$(( i*NF/NC )); t=$(((i+1)*NF/NC)); ./comms.exe --from $f --to $t --raw > "$SCR/part_$(printf %02d $i).raw" & if [ $((i % 6)) -eq 5 ]; then wait; fi; done; wait; echo "elapsed $(( $(date +%s) - t0 ))s"'
+    const started = performance.now()
+    expect(ShellApproval.analyze(command, "/bin/bash")).toEqual({
+      status: "unparseable",
+      reason: "dynamic-redirect-target",
+    })
+    expect(performance.now() - started).toBeLessThan(100)
+  })
+
   test("attributes tee, dd, and PowerShell content writers", () => {
     expect(ShellApproval.analyze("make | tee -a 'build log.txt'; dd if=in.bin of=out.bin", "/bin/bash")).toEqual({
       status: "parsed",

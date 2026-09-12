@@ -61,6 +61,7 @@ describe("who declared what", () => {
       shortChat: true,
       strict: { enabled: true },
       reasoningBudget: 0,
+      maxToolTimeoutMs: 90_000,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
     const changed = Object.keys(folded).filter(
@@ -102,8 +103,14 @@ describe("a colleague's standing choices", () => {
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, undefined)).toEqual({ ...EFFECTIVE_CONFIG_DEFAULTS })
   })
 
-  test("only the four WORK choices are declarable", () => {
-    expect([...AgentDefaults.DECLARABLE].sort()).toEqual(["permissionMode", "reasoningBudget", "shortChat", "strict"])
+  test("only the standing WORK choices are declarable", () => {
+    expect([...AgentDefaults.DECLARABLE].sort()).toEqual([
+      "maxToolTimeoutMs",
+      "permissionMode",
+      "reasoningBudget",
+      "shortChat",
+      "strict",
+    ])
     const folded = AgentDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
       agent({ thinkingBudget: false, memory: false, permissionMode: "plan" }),
@@ -121,6 +128,13 @@ describe("a colleague's standing choices", () => {
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({})).reasoningBudget).toBeUndefined()
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reasoningBudget: 0 })).reasoningBudget).toBe(0)
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ reasoningBudget: 2048 })).reasoningBudget).toBe(2048)
+  })
+
+  test("tool deadline is inherited by the officer's spawned workers", () => {
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({})).maxToolTimeoutMs).toBeUndefined()
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ maxToolTimeoutMs: 90_000 })).maxToolTimeoutMs).toBe(
+      90_000,
+    )
   })
 })
 

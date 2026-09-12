@@ -342,7 +342,10 @@ describe("only a DIRECT child may be waited on", () => {
 
   test("the join it guards is BOUNDED — the timeout is passed, never omitted", () => {
     // The five cases above prove `awaitCompletion` honours a timeout. This pins that the tool actually
-    // supplies one: an unbounded call would hang the officer on a wedged child.
-    expect(source).toMatch(/awaitCompletion\(\{[^}]*timeoutMs: WAIT_TIMEOUT_MS/)
+    // supplies one, and that the join's own bound narrows to the universal tool deadline: an
+    // unbounded call would hang the officer on a wedged child.
+    expect(source).toContain("Math.min(\n                  WAIT_TIMEOUT_MS,")
+    expect(source).toContain("context.deadline.expiresAt - Date.now()")
+    expect(source).toMatch(/awaitCompletion\(\{[^}]*timeoutMs[^}]*\}/)
   })
 })

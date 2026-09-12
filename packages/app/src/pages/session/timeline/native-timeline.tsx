@@ -59,6 +59,8 @@ export function NativeTimeline(props: {
   revertMessageID?: string
   /** The session's working directory — needed for the directory-scoped pending-prompt fetch. */
   directory?: string
+  /** Effective officer ceiling used by command/wait progress labels. */
+  maxToolTimeoutMs?: number
   setController?: (controller: NativeTimelineController | undefined) => void
 }) {
   const serverSync = useServerSync()
@@ -294,6 +296,7 @@ export function NativeTimeline(props: {
             messages={messages()}
             directory={props.directory}
             liveGeneratedTokens={serverSync().session.data.session_live(props.sessionID)?.approxTokens}
+            maxToolTimeoutMs={props.maxToolTimeoutMs}
             executionOpen={props.executionOpen || reconciling()}
             waitLabel={waitLabel()}
             reasoningFold={reasoningFold()}

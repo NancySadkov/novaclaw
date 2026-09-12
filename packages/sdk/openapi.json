@@ -35401,6 +35401,10 @@
             "type": "integer",
             "minimum": 0
           },
+          "maxToolTimeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
           "description": {
             "type": "string"
           },
@@ -37891,6 +37895,10 @@
           "reasoningBudget": {
             "type": "integer",
             "minimum": 0
+          },
+          "maxToolTimeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           },
           "mode": {
             "type": "string",

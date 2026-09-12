@@ -21,6 +21,15 @@ export interface Context {
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly toolCallID: string
+  /** Server-owned wall deadline for this whole invocation, including preflight and execution. */
+  readonly deadline?: {
+    readonly startedAt: number
+    readonly expiresAt: number
+    readonly timeoutMs: number
+    readonly limitMs: number
+  }
+  /** Bash-only handshake: called after the OS process exists and its durable job row is established. */
+  readonly commandLaunch?: { readonly succeeded: () => void }
   /** The catalog identity that actually runs this turn, after default, availability and health fallbacks.
    * Optional only for direct/non-runner tool execution, where no model has run. The session runner always supplies it. */
   readonly model?: {
