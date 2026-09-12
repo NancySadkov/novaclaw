@@ -1,5 +1,5 @@
 {
-  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `counts` = tests Bun reported completed per run unit; `failing` = failures PINNED as known, by name. All three are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Counts seeded from the 2026-09-04 fast tier after the worker framing and dependency-ledger fixes.",
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `counts` = tests Bun reported completed per run unit; `failing` = failures PINNED as known, by name. All three are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Counts seeded from the 2026-09-04 fast tier after the worker framing and dependency-ledger fixes. Counts re-synced 2026-09-12 after a full green run (23/23 units, 19/19 typechecks). SIX units moved, all UPWARD, and each delta is a test that was ADDED and never re-baselined — not a count that drifted on its own: `script` 242→249 is `script/lib/source-audit.test.ts` (7 cases, added 2026-09-10 by 5005df2d1), whose number had not been touched since it was written on 2026-09-05; `app:unit` 2089→2100 is `models-enablement.test.ts` (6) plus `model-override-source.test.ts` (5); `app:browser` 268→270 is `dom-failure-printing.test.ts` (2); `core` 7445→7472 is the model-switch silence, scheduler class-fault, recall, nudge, turn-timing, sampler and boot-recovery guards; `session-ui` 212→218 is `turn-receipt.test.ts`; `novaclaw:config` 127→130 is `nova-is-not-editable.test.ts`. No unit moved DOWN, so nothing was silently lost.",
   "reasons": {
     "core": "9 as of 2026-09-05: eight Windows PTY cases and one symlink watcher case. Commit 323345771 re-enabled the two offline file-fixture npm cases, but left the old eleven-skip pin. Core count is 7478 after the 2026-09-09 recovery, lifecycle, single-terminal-door and officer-owned worker-cascade regressions were added. Lowered to 7445 on 2026-09-10 because the finish re-ground drive was retired: its unit file and the drive's per-arm cases left with the feature. A count that drops because tests were REMOVED is the ratchet working, not a regression — the llm reason below is the same shape.",
     "llm": "28 as of 2026-09-01, lowered from 29. The refactor sweep deleted the unused provider surface and its tests (`test/exports.test.ts`, `test/provider/cloudflare.test.ts`, `test/provider/openrouter.test.ts` and others); one of those files carried a skipped test, so the skip left with the file it lived in. A skip count that drops because tests were REMOVED is a ratchet working, not a regression — but it is lowered deliberately and in the same commit, never left to drift.",
@@ -27,7 +27,7 @@
     "novaclaw test/*": 3
   },
   "counts": {
-    "script": 242,
+    "script": 249,
     "script-lib": 5,
     "schema": 105,
     "protocol": 36,
@@ -36,16 +36,16 @@
     "llm": 496,
     "host": 11,
     "sdk-js": 46,
-    "session-ui": 212,
+    "session-ui": 218,
     "ui": 66,
-    "core": 7445,
-    "app:unit": 2089,
-    "app:browser": 268,
+    "core": 7472,
+    "app:unit": 2100,
+    "app:browser": 270,
     "desktop": 226,
     "server": 119,
     "novaclaw:server": 474,
     "novaclaw:v2": 7,
-    "novaclaw:config": 127,
+    "novaclaw:config": 130,
     "novaclaw:tool": 43,
     "novaclaw:control-plane": 21,
     "novaclaw:fixture": 32,
