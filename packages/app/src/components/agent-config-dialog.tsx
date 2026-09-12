@@ -745,10 +745,7 @@ export function AgentConfigDialog(props: {
           <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
             <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
               <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
-                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                  {language.t("agentConfig.who")}
-                </h3>
-                <p class="mt-2 text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
+                <p class="text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
                 <dl class="mt-5 grid gap-4 sm:grid-cols-2">
                   <div>
                     <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.name")}</dt>
@@ -792,7 +789,15 @@ export function AgentConfigDialog(props: {
                   {language.t(memoryDisclosure(memoryValue()).privateKey)}
                   <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
                 </p>
-                <label class="mt-4 flex items-start gap-2 text-xs">
+              </section>
+              <section
+                class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5"
+                data-section="model"
+              >
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                  {language.t("agentConfig.mind")}
+                </h3>
+                <label class="mt-2 flex items-start gap-2 text-xs">
                   <input
                     type="checkbox"
                     class="mt-0.5"
@@ -942,15 +947,12 @@ export function AgentConfigDialog(props: {
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <section>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.who")}
-            </h3>
+          <section data-section="profile">
             <Show
               when={!governing()}
               fallback={<p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}</p>}
             >
-              <label class="mt-2 block text-xs text-v2-text-text-muted">
+              <label class="block text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.name")}
                 <TextInputV2
                   class="mt-1"
@@ -1005,7 +1007,7 @@ export function AgentConfigDialog(props: {
                   }}
                 />
               </div>
-              <Show when={isAgentPortraitURL(agent()?.avatar) || avatarFile() !== undefined}>
+              <Show when={!avatarRemoved() && isAgentPortraitURL(agent()?.avatar)}>
                 <button
                   type="button"
                   class="mt-2 text-xs text-v2-text-text-accent hover:underline"
@@ -1020,7 +1022,7 @@ export function AgentConfigDialog(props: {
             </div>
           </section>
 
-          <section class="mt-5">
+          <section class="mt-5" data-section="memory">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
               {language.t("agentConfig.memory")}
             </h3>
@@ -1047,7 +1049,7 @@ export function AgentConfigDialog(props: {
             </div>
           </section>
 
-          <section class="mt-5">
+          <section class="mt-5" data-section="model">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
               {language.t("agentConfig.mind")}
             </h3>
@@ -1064,6 +1066,19 @@ export function AgentConfigDialog(props: {
               label={(option) => option.label}
               onSelect={(option) => option && setModel(option.value)}
             />
+            <label class="mt-3 flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={toolLabelsValue()}
+                disabled={governing()}
+                onChange={(event) => setToolLabels(event.currentTarget.checked)}
+              />
+              <span>{language.t("agentConfig.toolLabels")}</span>
+            </label>
+            <p class="text-[11px] text-v2-text-text-faint">
+              {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
+            </p>
             <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
               {language.t("agentConfig.reasoningBudget")}
             </label>
@@ -1131,7 +1146,7 @@ export function AgentConfigDialog(props: {
             <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
           </section>
 
-          <section class="mt-5">
+          <section class="mt-5" data-section="work">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
               {language.t("agentConfig.work")}
             </h3>
@@ -1188,22 +1203,6 @@ export function AgentConfigDialog(props: {
                 />
                 <span>{language.t("agentConfig.strict")}</span>
               </label>
-
-              {/* Captions a shell command with a generated title. Off costs nothing but the caption;
-                  on costs a model call per command on the device this colleague's own turns wait for. */}
-              <label class="flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={toolLabelsValue()}
-                  disabled={governing()}
-                  onChange={(event) => setToolLabels(event.currentTarget.checked)}
-                />
-                <span>{language.t("agentConfig.toolLabels")}</span>
-              </label>
-              <p class="text-[11px] text-v2-text-text-faint">
-                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
-              </p>
 
               {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
                   row only exists where that grant actually reaches. A subagent has no grant to opt out

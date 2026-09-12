@@ -460,11 +460,9 @@ export const dict = {
   "prompt.features.safeMode.description.more":
     "Off by default, so the agent can install packages, build and run tests on its own. Turning it on trades some of that away for a harder boundary. It changes nothing while you are here answering: chats you drive yourself run the same either way, and commands from an untrusted messenger contact stay confined whatever this says.",
   "prompt.features.askBeforeChanges.title": "Ask before every change",
-  "prompt.features.askBeforeChanges.description":
-    "Stop and ask you before the agent edits, creates or deletes anything, and before it runs a shell command. Off by default — the permission mode already decides where it may work.",
+  "prompt.features.askBeforeChanges.description": "Approval before commands or file changes.",
   "prompt.features.surgicalEdits.title": "Edits instead of overwriting",
-  "prompt.features.surgicalEdits.description":
-    "Refuse to replace a whole file. The agent must make the smallest change that works, which keeps diffs readable and avoids losing parts of a file it did not mean to touch.",
+  "prompt.features.surgicalEdits.description": "Make small, targeted file edits.",
   "prompt.features.contextBudget.title": "Context guard",
   "prompt.features.contextBudget.description":
     "Keep conversation, recalled memory, knowledge retrieval, and tool output from crowding one another out.",
@@ -2799,7 +2797,6 @@ export const dict = {
   "agentConfig.saving": "Saving…",
   "agentConfig.saveFailed": "Could not save this colleague's profile",
   "agentConfig.noTitle": "No job title yet",
-  "agentConfig.who": "Who this colleague is",
   "agentConfig.name": "Name",
   "agentConfig.jobTitle": "Job title",
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
@@ -2813,7 +2810,7 @@ export const dict = {
   "agentConfig.portraitNone": "No image chosen",
   "agentConfig.memory": "What it remembers",
   "agentConfig.memoryRag": "Persistent Agent Memory (RAG)",
-  "agentConfig.mind": "Model it thinks with",
+  "agentConfig.mind": "Model",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
   // Behind one Help button, and written about the MODEL rather than this dialog's fields: a help
   // page that narrates the form goes stale the day a control moves, one that explains the ideas is
@@ -2841,7 +2838,7 @@ export const dict = {
   "agentHelp.chat.title": "Its chat",
   "agentHelp.chat.body":
     "A colleague has exactly one conversation, so there is no list to lose things in. Clearing it puts the conversation away and starts fresh — the colleague, its brief and its memories all stay. When a chat gets long it is summarised to keep going, and by default the older part is kept in the colleague's memory so it can still look things up.",
-  "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
+  "agentConfig.modelInherit": "Default Model",
   "agentConfig.reasoningBudget": "Reasoning budget",
   "agentConfig.reasoningBudgetModel": "Model default",
   "agentConfig.reasoningBudgetDefault": "Uses the selected model's reasoning budget.",
@@ -2870,7 +2867,7 @@ export const dict = {
   "agentConfig.work": "How it works",
   "agentConfig.posture": "Mode",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
-  "agentConfig.toolLabels": "Caption each command — write a short title for every shell command",
+  "agentConfig.toolLabels": "Caption each command",
   "agentConfig.toolLabels.on":
     "On — every command costs one extra model call to name it, on the same model this colleague is thinking with",
   "agentConfig.toolLabels.off":

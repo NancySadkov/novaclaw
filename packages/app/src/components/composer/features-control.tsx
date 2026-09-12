@@ -882,15 +882,14 @@ function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
  * the remote-chat section and six switches do not fit in an anchored panel, and on a phone a popover that
  * tall is unusable. A centered dialog scrolls and can be dismissed the ordinary way.
  */
-function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void; embedded?: boolean }) {
+export function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void; embedded?: boolean }) {
   /**
    * The one line under each switch that says WHY it reads the way it does.
    *
    * Order matters and is not arbitrary: this chat's own choice outranks everything, so it is checked
    * first; below that the folder outranks the instance, matching the resolution the kernel actually
    * runs (`session/effective-config.ts`). Falling back to the instance wording when the origin is
-   * not loaded yet is deliberate — it is what the panel said before, so a slow request degrades to
-   * the previous behaviour instead of to a blank line.
+   * not loaded yet needs no extra label: the switch already states the default value in force.
    */
   const featureSource = (feature: ComposerFeature) => {
     const state = language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`)
@@ -898,7 +897,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
     const origin = props.state.origin[feature]
     if (origin?.kind === "project") return language.t("prompt.features.source.project", { state })
     if (origin?.kind === "session") return language.t("prompt.features.source.parent", { state })
-    return language.t("prompt.features.source.inherit", { state })
+    return undefined
   }
 
   /** A switch's title, for the project section's lists. Unknown names render as themselves. */
@@ -1063,9 +1062,13 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                 </SettingsExplainV2>
               </Show>
             </span>
-            <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
-              {featureSource(feature)}
-            </span>
+            <Show when={featureSource(feature)}>
+              {(source) => (
+                <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
+                  {source()}
+                </span>
+              )}
+            </Show>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-1">
             <SwitchToggle

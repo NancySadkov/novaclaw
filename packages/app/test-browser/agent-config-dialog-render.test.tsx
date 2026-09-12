@@ -265,7 +265,7 @@ describe("AgentConfigDialog renders", () => {
     mount({ agents: [AGENT] })
     await settle()
     // The guard on the instrument: if this is empty every assertion below is vacuous.
-    expect(dialogText()).toContain("agentConfig.who")
+    expect(dialogText()).not.toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
     expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
     expect(document.querySelector('[data-action="agent-clear-memory"]')).not.toBeNull()
@@ -281,6 +281,28 @@ describe("AgentConfigDialog renders", () => {
     expect(input!.classList.contains("sr-only")).toBe(true)
     expect(label?.textContent).toContain("agentConfig.portraitChoose")
     expect(dialogText()).toContain("agentConfig.portraitNone")
+    expect(dialogText()).not.toContain("agentConfig.portraitRemove")
+  })
+
+  test("an uploaded portrait can be removed once, then the action disappears", async () => {
+    mount({ agents: [{ ...AGENT, avatar: "/api/agent/theron/avatar?v=1" }] })
+    await settle()
+    const remove = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "agentConfig.portraitRemove",
+    )
+    expect(remove).toBeDefined()
+
+    remove!.click()
+    expect(dialogText()).not.toContain("agentConfig.portraitRemove")
+  })
+
+  test("the command-caption switch belongs to Model, not How it works", async () => {
+    mount({ agents: [AGENT] })
+    await settle()
+    const model = document.querySelector('[data-section="model"]')
+    const work = document.querySelector('[data-section="work"]')
+    expect(model?.textContent).toContain("agentConfig.toolLabels")
+    expect(work?.textContent).not.toContain("agentConfig.toolLabels")
   })
 
   test("D2 · the model select shows the colleague's BOUND model, not Inherit", async () => {
