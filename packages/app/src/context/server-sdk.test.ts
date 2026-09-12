@@ -27,6 +27,37 @@ describe("reconnect recovery is a connection barrier", () => {
     expect(source).toContain("setStreamStatus(status)")
   })
 
+  test("arms the stream heartbeat at attempt start, so a hanging open cannot park the loop", () => {
+    const source = fs.readFileSync(path.join(import.meta.dir, "server-sdk.tsx"), "utf8")
+    const start = source.indexOf("attemptStarted: (controller) => {")
+    const end = source.indexOf("attemptFinished: (controller) => {")
+
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+
+    // `runReconnectingStream` awaits `open()` with no timeout of its own, so it only regains control
+    // once `open()` settles. A HALF-OPEN connection — TCP established, response headers never
+    // arriving — leaves `open()` unsettled, and a heartbeat armed only inside `open()` (after the SSE
+    // response resolves) is then never reached. That is an unbounded window: no timer, no abort, no
+    // `failed()` log, no `state("reconnecting")`, no banner, no retry.
+    //
+    // Measured 2026-09-12 in log/novaclaw.log: the global event stream for run=655af8cd went
+    // `disconnected` at 08:06:49.885Z and the next subscription did not arrive until 11:00:37.777Z —
+    // 2h53m48s dead, with no retry in between. Same shape on 09-06 (3h13m), 09-07 (6h22m),
+    // 09-09 (4h05m) and 09-10 (3h27m).
+    // ⚠️ Strip comment lines before asserting. The first version of this guard asserted
+    // `toContain("resetHeartbeat()")` against the RAW slice — and still passed with the fix removed,
+    // because the block contains this guard's own explanatory prose naming `resetHeartbeat()`. A
+    // source ratchet that prose can satisfy is not a guard.
+    const code = source
+      .slice(start, end)
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n")
+
+    expect(code).toContain("resetHeartbeat()")
+  })
+
   test("does not settle before every registered recovery settles", async () => {
     let release!: () => void
     const pending = new Promise<void>((resolve) => (release = resolve))

@@ -204,7 +204,18 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         },
         attemptStarted: (controller) => {
           attempt = controller
-          lastEventAt = Date.now()
+          // ⚠️ Arm the heartbeat HERE, not only inside `open()` after the SSE response resolves.
+          // `runReconnectingStream` awaits `open()` with no timeout of its own, so it only regains
+          // control once `open()` settles. A HALF-OPEN connection — TCP established, response headers
+          // never arriving — leaves `open()` unsettled, and the `resetHeartbeat()` call inside `open()`
+          // is then never reached: no timer is armed, so nothing aborts, `failed()` never logs,
+          // `state("reconnecting")` is never published, and the loop parks forever with no retry.
+          // Measured 2026-09-12 in log/novaclaw.log: the global event stream for run=655af8cd went
+          // `disconnected` at 08:06:49.885Z and the next subscription did not arrive until
+          // 11:00:37.777Z — 2h53m48s of a dead stream that never once retried or raised a banner.
+          // Same shape on 09-06 (3h13m), 09-07 (6h22m), 09-09 (4h05m), 09-10 (3h27m).
+          // `resetHeartbeat()` also stamps `lastEventAt`, so this replaces that assignment.
+          resetHeartbeat()
           const onAbort = () => controller.abort()
           abortListeners.set(controller, onAbort)
           abort.signal.addEventListener("abort", onAbort)

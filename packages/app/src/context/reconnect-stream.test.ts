@@ -45,6 +45,47 @@ describe("runReconnectingStream", () => {
     ])
   })
 
+  test("a hanging open is retried, not parked, once the attempt deadline aborts it", async () => {
+    // A HALF-OPEN connection: `open()` never settles on its own. `runReconnectingStream` awaits it
+    // with no timeout, so only an abort from `attemptStarted` can hand control back to the loop.
+    // `server-sdk.tsx` arms its 15s heartbeat there for exactly that reason. Without it the loop parks
+    // forever, and nothing reports it: `state("reconnecting")` is published only AFTER `open()`
+    // settles, so the reconnect banner never appears and no retry is ever attempted.
+    //
+    // Measured 2026-09-12 in log/novaclaw.log: the global event stream for run=655af8cd went
+    // `disconnected` at 08:06:49.885Z and the next subscription did not arrive until 11:00:37.777Z —
+    // 2h53m48s dead, with no retry in between.
+    let active = true
+    let opens = 0
+    const states: Array<[ReconnectStreamState, number]> = []
+
+    await runReconnectingStream<string>({
+      active: () => active,
+      open: (signal) =>
+        new Promise<AsyncIterable<string>>((_resolve, reject) => {
+          opens += 1
+          signal.addEventListener("abort", () => reject(new Error("aborted")))
+        }),
+      recover: async () => {},
+      accept: () => {},
+      wait: async () => {},
+      delay: () => 0,
+      state: (status, attempt) => {
+        states.push([status, attempt])
+        if (attempt >= 2) active = false
+      },
+      attemptStarted: (controller) => {
+        setTimeout(() => controller.abort(), 0)
+      },
+    })
+
+    expect(opens).toBe(2)
+    expect(states).toEqual([
+      ["reconnecting", 1],
+      ["reconnecting", 2],
+    ])
+  })
+
   test("does not expose connected or consume an event until recovery has settled", async () => {
     let active = true
     let release!: () => void
