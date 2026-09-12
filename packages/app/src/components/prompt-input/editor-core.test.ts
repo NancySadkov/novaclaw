@@ -143,6 +143,12 @@ describe("editor-core (ui-arch P4a)", () => {
 
     expect(document.activeElement).toBe(tab)
     expect(getCursorPosition(host)).toBe(5)
+
+    // Suspense can later reattach the same editor and clear Selection without changing the prompt.
+    window.getSelection()?.removeAllRanges()
+    core.restoreCursor(3)
+    expect(document.activeElement).toBe(tab)
+    expect(getCursorPosition(host)).toBe(3)
   })
 
   test("caretState reports collapsed cursor inside the editor and zeros outside", () => {

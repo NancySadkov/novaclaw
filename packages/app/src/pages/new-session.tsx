@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createResource, untrack } from "solid-js"
+import { Show, createEffect, createMemo, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView } from "@/components/session"
@@ -74,12 +74,6 @@ export default function NewSessionPage() {
 
   // (P3: no separate autofocus here — PromptInput owns the focus-on-open behavior; a second
   // rAF-parked focus path was both redundant and the hidden-window trap from the incident.)
-  const [promptReady] = createResource(
-    // P1 readiness contract: ready.promise ALWAYS exists (resolved when already loaded).
-    () => prompt.ready.promise,
-    (promise) => promise.then(() => true),
-  )
-
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
       <div class="flex-1 min-h-0 flex flex-col gap-2 p-2">
@@ -88,7 +82,7 @@ export default function NewSessionPage() {
             <NewSessionDesignView>
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <Show
-                  when={prompt.ready() || promptReady()}
+                  when={prompt.ready()}
                   fallback={
                     <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak pointer-events-none">
                       {language.t("prompt.loading")}

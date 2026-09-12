@@ -1,6 +1,6 @@
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useSpring } from "@novaclaw/ui/motion-spring"
-import { type Accessor, createEffect, createMemo, createResource, onCleanup } from "solid-js"
+import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
@@ -107,12 +107,6 @@ export function createSessionComposerRegionController(input: {
     () => `${input.sessionKey()}\0${store.ready}`,
   )
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
-  const [promptReady] = createResource(
-    // P1 readiness contract: ready.promise ALWAYS exists (resolved when already loaded).
-    () => input.prompt.ready.promise,
-    (promise) => promise.then(() => true),
-  )
-
   return {
     state: input.state,
     sessionID: input.sessionID,
@@ -126,7 +120,10 @@ export function createSessionComposerRegionController(input: {
     parentID,
     child: () => !!parentID(),
     handoffPrompt: () => getSessionHandoff(input.sessionKey())?.prompt,
-    promptReady: () => input.prompt.ready() || promptReady(),
+    // `ready()` is already the reactive settled-state gate. Wrapping `ready.promise` in a resource
+    // enrolled this local placeholder in the PAGE-WIDE Suspense instead, which removed and reinserted
+    // the entire chat when the draft settled and reset native scroll/selection state.
+    promptReady: input.prompt.ready,
     dock: () => (store.ready && input.state.dock()) || value() > 0.001,
     dockProgress: value,
     dockHeight: () => Math.max(78, store.height),

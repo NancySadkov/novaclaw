@@ -118,6 +118,12 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     if (restore !== undefined) setCursorPosition(el(), restore)
   }
 
+  /** Restore persisted selection state after an ancestor was reattached, without stealing focus. */
+  const restoreCursor = (cursor?: number) => {
+    if (cursor === undefined || otherOwnsTextSelection()) return
+    setCursorPosition(el(), cursor)
+  }
+
   const parse = (): Prompt => {
     const parts: Prompt = []
     let position = 0
@@ -364,6 +370,7 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     isNormalized,
     render,
     renderWithCursor,
+    restoreCursor,
     currentCursor,
     parse,
     placeCursorAtEnd,

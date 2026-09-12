@@ -166,6 +166,37 @@ test("the view is back at the bottom once the rows return", async () => {
   controller.dispose()
 })
 
+test("reattaching the session subtree cannot reset a pinned timeline to the top", async () => {
+  const { element: scroller, geometry } = fakeScroller({ scrollHeight: 6628, clientHeight: 500, scrollTop: 6128 })
+  const content = document.createElement("div")
+  const route = document.createElement("div")
+  const main = document.createElement("main")
+  scroller.append(content)
+  route.append(scroller)
+  main.append(route)
+  document.body.append(main)
+  let pinned = true
+  const controller = createBottomPinController({
+    scroller,
+    content,
+    pinned: () => pinned,
+    setPinned: (value) => (pinned = value),
+  })
+  await nextFrames(2)
+
+  // This is Solid Suspense's resolved-subtree swap. happy-dom has no native layout, so replay
+  // Chromium's measured silent reset between removing and reinserting the SAME nodes.
+  route.remove()
+  geometry.scrollTop = 0
+  main.append(route)
+  expect(scroller.scrollTop).toBe(0)
+  await nextFrames(1)
+  expect(scroller.scrollTop).toBe(6128)
+
+  controller.dispose()
+  main.remove()
+})
+
 test("isAtBottom is true at the exact bottom", () => {
   expect(isAtBottom({ scrollHeight: 1000, scrollTop: 400, clientHeight: 600 })).toBe(true)
 })

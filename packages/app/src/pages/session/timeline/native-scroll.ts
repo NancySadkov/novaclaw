@@ -1,3 +1,5 @@
+import { observeAncestorReattachment } from "@/utils/dom-reattachment"
+
 /**
  * Pure geometry helpers for the native timeline's chat auto-scroll (F1e THE FLIP, F-a).
  *
@@ -119,6 +121,10 @@ export function createBottomPinController(input: {
     })
   })
   mutationObserver.observe(input.content, { childList: true, subtree: true, characterData: true, attributes: true })
+  // A page-wide Suspense moves the resolved SESSION subtree, above both observed boxes. Chromium
+  // preserves this element but resets its native scrollTop during the move without a scroll event.
+  // The shared reattachment seam catches exactly that containment-edge mutation.
+  const stopObservingReattachment = observeAncestorReattachment(input.scroller, stick)
   stick()
   layoutFrame = requestAnimationFrame(() => {
     layoutFrame = undefined
@@ -131,6 +137,7 @@ export function createBottomPinController(input: {
     dispose() {
       resizeObserver.disconnect()
       mutationObserver.disconnect()
+      stopObservingReattachment()
       if (layoutFrame !== undefined) cancelAnimationFrame(layoutFrame)
       input.scroller.removeEventListener("scroll", onScroll)
       input.scroller.removeEventListener("wheel", onWheel)

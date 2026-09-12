@@ -14,9 +14,10 @@ test("a session-tab switch preserves the long-chat viewport and prompt caret", a
     directory: fixture.directory,
     project: fixture.project,
     pageMessages: nativePageMessages,
-    // Make the session handoff genuinely asynchronous. The timeline stays absent until its own
-    // message load is authoritative; once it appears, no tall frame may expose the first message.
-    messageDelay: 150,
+    // The reported fault arrives a few moments after returning to an already-loaded idle chat.
+    // Delay every authoritative refresh so the re-entry mount and its reconciliation are distinct
+    // browser frames, then keep sampling well after both have settled.
+    messageDelay: 500,
     onMessages: ({ sessionID, phase }) => messageLoads.push(`${sessionID}:${phase}`),
   })
   await configureTabs(page)
@@ -26,27 +27,34 @@ test("a session-tab switch preserves the long-chat viewport and prompt caret", a
   const review = page.getByRole("dialog", { name: "Review and files" })
   await review.getByRole("button", { name: "Close" }).click()
   await expect(page.locator('[data-component="native-timeline"]')).toBeVisible()
+  await expect(page.locator('[data-message-id="msg_switch_user_0059"]')).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThanOrEqual(2)
   const prompt = page.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill("hello")
   await setPromptCursor(prompt, 3)
+  await scrollTimelineToBottom(page)
 
-  await startTimelineSampling(page)
   await switchSession(page, fixture.targetID)
   await expect.poll(() => messageLoads.join(",")).toContain(`${fixture.targetID}:end`)
-  await expect(page.locator('[data-message-id="msg_switch_user_0059"]')).toBeVisible({ timeout: 30_000 })
-  await expect.poll(() => targetTallFrameCount(page, fixture.targetID)).toBeGreaterThanOrEqual(30)
+  const sourceLoadsBeforeReturn = loadCount(messageLoads, fixture.sourceID, "end")
+  await startTimelineSampling(page)
+  await switchSession(page, fixture.sourceID)
+  await expect
+    .poll(() => loadCount(messageLoads, fixture.sourceID, "end"))
+    .toBeGreaterThan(sourceLoadsBeforeReturn)
+  await expect.poll(() => targetTallFrameCount(page, fixture.sourceID)).toBeGreaterThanOrEqual(180)
   const frames = await readTimelineSamples(page)
   const tall = frames.filter(
-    (sample) => sample.sessionID === fixture.targetID && sample.scrollHeight > sample.clientHeight,
+    (sample) => sample.sessionID === fixture.sourceID && sample.scrollHeight > sample.clientHeight,
   )
 
   expect(tall.length).toBeGreaterThan(0)
+  const bad = tall.filter((sample) => sample.gap > 2)
   expect(
-    tall.filter((sample) => sample.gap > 2),
-    "a rendered target-session frame exposed transcript content above the latest row",
-  ).toEqual([])
+    { count: bad.length, first: bad[0], last: bad.at(-1) },
+    "a rendered returning-session frame exposed transcript content above the latest row",
+  ).toEqual({ count: 0, first: undefined, last: undefined })
 
-  await switchSession(page, fixture.sourceID)
   await expect(prompt).toHaveText("hello")
   await expect.poll(() => promptCursor(prompt)).toBe(3)
 })
@@ -106,7 +114,7 @@ const longMessages = Array.from({ length: 60 }, (_, index) => {
 
 function nativePageMessages(sessionID: string, limit: number, before?: string) {
   const messages =
-    sessionID === fixture.targetID
+    sessionID === fixture.sourceID
       ? longMessages
       : [{ id: "msg_switch_source", type: "user", text: "Source chat", time: { created: 1_700_000_000_000 } }]
   const end = before ? Math.max(0, messages.findIndex((message) => message.id === before)) : messages.length
@@ -125,6 +133,16 @@ async function switchSession(page: Page, sessionID: string) {
   await expect(tab).toBeVisible()
   await tab.click()
   await expect(page).toHaveURL(new RegExp(`${sessionID}$`))
+}
+
+function loadCount(loads: string[], sessionID: string, phase: "start" | "end") {
+  return loads.filter((load) => load === `${sessionID}:${phase}`).length
+}
+
+function scrollTimelineToBottom(page: Page) {
+  return page.locator('[data-component="native-timeline"]').evaluate((timeline) => {
+    timeline.scrollTop = timeline.scrollHeight
+  })
 }
 
 type TimelineSample = {
