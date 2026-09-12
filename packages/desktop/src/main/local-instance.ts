@@ -10,11 +10,16 @@ export interface LocalInstancePorts {
   prepare(): void
   spawn(
     port: number,
-    password: string,
+    password: string | undefined,
     signal: AbortSignal,
     report: (status: SuperviseStatus) => void,
   ): Promise<Started>
   pinnedPort?: string
+  requestedPort?: number
+  hostname?: string
+  username?: string
+  /** undefined generates the desktop's private token; null deliberately starts without a launch token. */
+  password?: string | null
   probe?(signal: AbortSignal): Promise<number>
   log(message: string, metadata?: unknown): void
 }
@@ -49,15 +54,19 @@ export function createLocalInstance(ports: LocalInstancePorts): LocalInstanceOwn
     ports.prepare()
     signal.throwIfAborted()
     const pinned = ports.pinnedPort !== undefined && ports.pinnedPort !== ""
-    const fixed = pinned ? Number(ports.pinnedPort) : undefined
+    const requested = ports.requestedPort ?? (pinned ? Number(ports.pinnedPort) : undefined)
+    const fixed = requested === 0 ? undefined : requested
     if (pinned && (!Number.isInteger(fixed) || fixed! < 1 || fixed! > 65535))
       throw new Error("NOVACLAW_PORT must be a port number from 1 to 65535")
-    const password = randomUUID()
+    const hostname = ports.hostname ?? "127.0.0.1"
+    const clientHostname = hostname === "0.0.0.0" || hostname === "::" || hostname === "[::]" ? "127.0.0.1" : hostname
+    const username = ports.username ?? "novaclaw"
+    const password = ports.password === null ? undefined : (ports.password ?? randomUUID())
     for (let attempt = 0; attempt < 3; attempt++) {
       signal.throwIfAborted()
       const port = fixed ?? (await (ports.probe ?? probeLocalPort)(signal))
       signal.throwIfAborted()
-      const url = `http://127.0.0.1:${port}`
+      const url = `http://${clientHostname}:${port}`
       try {
         ports.log("spawning sidecar", { url })
         current = await ports.spawn(port, password, signal, (state) => {
@@ -69,7 +78,7 @@ export function createLocalInstance(ports: LocalInstancePorts): LocalInstanceOwn
           await stopHandle()
           signal.throwIfAborted()
         }
-        const credentials: ServerReadyData = { url, username: "novaclaw", password }
+        const credentials: ServerReadyData = { url, username, password: password ?? null }
         return { credentials, healthy: deadlineHealth(current.health.wait, signal) }
       } catch (error) {
         if (

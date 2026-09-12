@@ -6,17 +6,35 @@ describe("desktop command line", () => {
     expect(parseDesktopInvocation(["C:\\NovaClaw.exe", flag])).toEqual({ action: "help" })
   })
 
-  test("documents every NovaClaw desktop argument in GCC style", () => {
-    expect(desktopHelp()).toBe(`Usage: NovaClaw.exe [OPTION]... [novaclaw://URL]
-Launch the NovaClaw desktop app.
+  test("prints the version without launching", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--version"])).toEqual({ action: "version" })
+  })
 
-Options:
-  --home=DIR    Store this instance's config, data, state, and cache in DIR.
-  -h, --help    Display this help and exit.
-
-Arguments:
-  novaclaw://URL  Open a NovaClaw link in the selected instance.
-`)
+  test("groups the complete public command line by general, client, and server roles", () => {
+    const help = desktopHelp()
+    expect(help).toStartWith("Usage: NovaClaw.exe [OPTION]... [novaclaw://URL]\n")
+    expect(help).toContain("\nGeneral options:\n")
+    expect(help).toContain("\nClient options (with --client-only):\n")
+    expect(help).toContain("\nServer options:\n")
+    for (const option of [
+      "--home=DIR",
+      "--client-only",
+      "--server-only",
+      "-h, --help",
+      "--version",
+      "--connect=URL",
+      "--connect-username=USER",
+      "--connect-password=TOKEN",
+      "--hostname=HOST",
+      "--port=PORT",
+      "--username=USER",
+      "--password=TOKEN",
+      "--cors=ORIGIN",
+      "--mdns",
+      "--mdns-domain=DOMAIN",
+      "--[no-]supervise",
+    ])
+      expect(help, option).toContain(option)
   })
 
   test("retires Chromium's old user-data spelling with the replacement in the error", () => {
@@ -28,27 +46,106 @@ Arguments:
     )
   })
 
-  test("a missing home value is an ordinary command-line error", () => {
-    for (const argv of [
-      ["NovaClaw.exe", "--home"],
-      ["NovaClaw.exe", "--home="],
-      ["NovaClaw.exe", "--home", "--no-sandbox"],
-    ])
-      expect(parseDesktopInvocation(argv)).toEqual({
-        action: "error",
-        message: "option '--home' requires a directory",
-      })
+  test("defaults to launching client and server on loopback", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--home=D:\\one"])).toEqual({
+      action: "launch",
+      options: {
+        mode: "both",
+        server: {
+          hostname: "127.0.0.1",
+          username: "novaclaw",
+          cors: [],
+          mdns: false,
+          mdnsDomain: "novaclaw.local",
+          supervise: true,
+        },
+      },
+    })
   })
 
-  test("ordinary launches, homes, Chromium switches and deep links continue to launch", () => {
+  test("parses a client-only connection", () => {
     expect(
       parseDesktopInvocation([
-        "C:\\NovaClaw.exe",
-        "--home=D:\\instances\\one",
-        "--remote-debugging-port=9222",
-        "novaclaw://session/ses_1",
+        "NovaClaw.exe",
+        "--client-only",
+        "--connect=https://nova.example",
+        "--connect-username=alice",
+        "--connect-password=secret",
       ]),
-    ).toEqual({ action: "launch" })
+    ).toMatchObject({
+      action: "launch",
+      options: {
+        mode: "client",
+        connect: { url: "https://nova.example", username: "alice", password: "secret" },
+      },
+    })
+  })
+
+  test("parses all headless server options", () => {
+    expect(
+      parseDesktopInvocation([
+        "NovaClaw.exe",
+        "--server-only",
+        "--hostname=0.0.0.0",
+        "--port",
+        "4096",
+        "--username=alice",
+        "--password=secret",
+        "--cors=https://one.example",
+        "--cors",
+        "https://two.example",
+        "--mdns",
+        "--mdns-domain=nova.local",
+        "--no-supervise",
+      ]),
+    ).toEqual({
+      action: "launch",
+      options: {
+        mode: "server",
+        server: {
+          hostname: "0.0.0.0",
+          port: 4096,
+          username: "alice",
+          password: "secret",
+          cors: ["https://one.example", "https://two.example"],
+          mdns: true,
+          mdnsDomain: "nova.local",
+          supervise: false,
+        },
+      },
+    })
+  })
+
+  test("mDNS without an explicit hostname listens on all interfaces", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "--mdns"])).toMatchObject({
+      action: "launch",
+      options: { server: { hostname: "0.0.0.0", mdns: true } },
+    })
+  })
+
+  test("rejects incomplete and contradictory modes", () => {
+    for (const [argv, message] of [
+      [["NovaClaw.exe", "--home"], "option '--home' requires a value"],
+      [["NovaClaw.exe", "--client-only"], "option '--client-only' requires '--connect=URL'"],
+      [
+        ["NovaClaw.exe", "--client-only", "--server-only"],
+        "options '--client-only' and '--server-only' cannot be used together",
+      ],
+      [
+        ["NovaClaw.exe", "--client-only", "--connect=http://host", "--port=4096"],
+        "server option '--port' cannot be used with '--client-only'",
+      ],
+      [["NovaClaw.exe", "--server-only", "--connect=http://host"], "client option '--connect' cannot be used with '--server-only'"],
+      [["NovaClaw.exe", "--port=70000"], "option '--port' must be a whole number from 0 to 65535"],
+      [["NovaClaw.exe", "--client-only", "--connect=file:///tmp/nova"], "option '--connect' requires an http:// or https:// URL"],
+    ] as const)
+      expect(parseDesktopInvocation(argv)).toEqual({ action: "error", message })
+  })
+
+  test("Chromium switches and deep links continue to launch the combined app", () => {
+    expect(
+      parseDesktopInvocation(["NovaClaw.exe", "--remote-debugging-port=9222", "novaclaw://session/ses_1"]),
+    ).toMatchObject({ action: "launch", options: { mode: "both" } })
   })
 
   test("uses the real executable basename in diagnostics", () => {
