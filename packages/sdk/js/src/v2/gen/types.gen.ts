@@ -4246,6 +4246,7 @@ export type ConfigInfo = {
   $schema?: string
   shell?: string
   model?: string
+  model_order?: Array<string>
   default_agent?: string
   username?: string
   expertise?: "normal" | "advanced" | "developer"

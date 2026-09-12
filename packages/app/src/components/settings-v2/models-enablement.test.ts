@@ -50,7 +50,7 @@ describe("Models tab — enablement is a server fact, not a browser preference",
     // ...and it is checked BEFORE the per-client preference, so a stale "show" in this browser cannot
     // resurrect a model the instance turned off.
     const at = context.indexOf("if (disabledInConfig(model)) return false")
-    const preference = context.indexOf('const state = visibility().get(key)')
+    const preference = context.indexOf("const state = visibility().get(key)")
     expect(at).toBeGreaterThan(-1)
     expect(preference).toBeGreaterThan(at)
   })
@@ -59,7 +59,7 @@ describe("Models tab — enablement is a server fact, not a browser preference",
     // Removing this would be its own regression — decluttering a 400-model catalog is a per-person
     // choice, and making it instance-wide would hide other people's models from them.
     expect(context).toContain("setVisibility")
-    expect(context).toContain("update(model, state ? \"show\" : \"hide\")")
+    expect(context).toContain('update(model, state ? "show" : "hide")')
   })
 
   test("the switch says what it did, including that agents now resolve something else", () => {
@@ -80,11 +80,12 @@ describe("Model Configure — the default model finally has a writer", () => {
      * ever wrote it.
      */
     expect(dialog).toContain("updateConfig({ model:")
-    expect(dialog).toContain("${props.providerID}/${modelID}")
+    expect(dialog).toContain("const defaultRef = () => `${props.providerID}/${props.modelID}`")
+    expect(dialog).toContain("updateConfig({ model: defaultRef() }")
     expect(dialog).toContain("refetchProviders()")
     // It shows which model IS the default rather than offering the act again, and it is not a button
     // that lies about being finished.
-    expect(dialog).toContain("disabled={!form.modelID.trim() || isDefault()}")
+    expect(dialog).toContain("disabled={isDefault()}")
     expect(en["settings.models.config.default.make"]).toBeTruthy()
     expect(en["settings.models.config.default.isDefault"]).toBeTruthy()
     expect(en["settings.models.config.toast.defaultSet"]).toContain("{{model}}")

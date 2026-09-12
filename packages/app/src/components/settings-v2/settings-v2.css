@@ -385,6 +385,111 @@
   gap: 10px;
 }
 
+/* The sortable shell owns row separation and the default-state surface. The inset gold rail plus
+   quiet wash makes the default legible before the badge is read, without turning it into a button. */
+.settings-v2-models [data-component="settings-v2-model-sortable"] {
+  position: relative;
+  z-index: 0;
+  margin-inline: -12px;
+  padding-inline: 12px;
+  border-bottom: 0.5px solid var(--v2-border-border-base);
+  border-radius: 7px;
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+  will-change: transform;
+}
+
+.settings-v2-models [data-component="settings-v2-model-sortable"]:last-child {
+  border-bottom-color: transparent;
+}
+
+.settings-v2-models [data-component="settings-v2-model-sortable"] > [data-component="settings-v2-row"] {
+  border-bottom: none;
+}
+
+.settings-v2-models [data-component="settings-v2-model-sortable"][data-default="true"] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--v2-border-border-focus) 13%, transparent),
+    color-mix(in oklab, var(--v2-border-border-focus) 4%, transparent) 62%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--v2-border-border-focus) 88%, transparent);
+}
+
+.settings-v2-models [data-component="settings-v2-model-sortable"][data-dragging="true"] {
+  z-index: 2;
+  opacity: 0.72;
+  background-color: var(--v2-background-bg-layer-02);
+  box-shadow: 0 10px 26px color-mix(in oklab, black 28%, transparent);
+}
+
+.settings-v2-models-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-v2-models-identity > span:first-of-type {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-v2-models-drag-handle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  margin: -5px 0 -5px -7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--v2-text-text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+
+.settings-v2-models-drag-handle:is(:hover, :focus-visible) {
+  color: var(--v2-icon-icon-accent);
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.settings-v2-models-drag-handle:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
+}
+
+.settings-v2-models-drag-handle:active {
+  cursor: grabbing;
+}
+
+.settings-v2-models-drag-handle:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.settings-v2-models-default-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px 3px 5px;
+  border: 1px solid color-mix(in oklab, var(--v2-border-border-focus) 45%, transparent);
+  border-radius: 999px;
+  color: var(--v2-text-text-accent);
+  background: color-mix(in oklab, var(--v2-border-border-focus) 10%, transparent);
+  font-size: 10px;
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .settings-v2-models [data-slot="settings-v2-row-control"] {
   width: 100%;
   justify-content: flex-end;

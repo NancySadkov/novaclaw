@@ -62,6 +62,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   model: Schema.String.pipe(Schema.optional).annotate({
     description: "Default model to use when no session or agent model is selected",
   }),
+  model_order: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+    description:
+      "User-arranged model catalog order as provider/model references. Unknown refs are ignored and newly discovered models append automatically.",
+  }),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description:
       "Default primary agent to use when no session agent is selected. ⚠️ Ruling 4: PRIVILEGED — " +

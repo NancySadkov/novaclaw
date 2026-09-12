@@ -17,6 +17,7 @@ const MODEL = {
   api: { id: MODEL_ID },
   limit: { context: 131072, output: 8192 },
   variants: [],
+  time: { released: 1 },
   capabilities: { tools: true, input: ["text"], output: ["text"] },
   provider: {
     id: "long-endpoint",
@@ -28,8 +29,16 @@ const MODEL = {
     },
   },
 }
+const SECOND_MODEL = {
+  ...MODEL,
+  id: "compact-model",
+  name: "Compact Model",
+  api: { id: "compact-model" },
+  time: { released: 0 },
+}
 
 export function mount() {
+  document.querySelectorAll('[data-fixture="visual-regressions"]').forEach((node) => node.remove())
   const host = document.createElement("div")
   host.dataset.fixture = "visual-regressions"
   host.style.width = "min(520px, 100vw)"
@@ -38,6 +47,7 @@ export function mount() {
   const connection = { type: "http", url: "http://127.0.0.1:4096", http: { url: "http://127.0.0.1:4096" } }
   const sdk = { client: { path: { get: async () => ({ data: { directory: "/tmp/visual" } }) }, v2: {} } }
   const modelConfig = {
+    model: `${MODEL.provider.id}/${MODEL.id}`,
     providers: {
       "long-endpoint": {
         name: MODEL.provider.name,
@@ -48,13 +58,24 @@ export function mount() {
             capabilities: MODEL.capabilities,
             request: { body: {} },
           },
+          [SECOND_MODEL.id]: {
+            name: SECOND_MODEL.name,
+            capabilities: SECOND_MODEL.capabilities,
+            request: { body: {} },
+          },
         },
       },
     },
   }
   const sync = () => ({
     data: { config: modelConfig, path: { directory: "/tmp/visual" } },
-    updateConfig: async () => ({}),
+    updateConfig: async (patch: { model_order?: string[] }) => {
+      if (patch.model_order) {
+        ;(modelConfig as typeof modelConfig & { model_order?: string[] }).model_order = patch.model_order
+        ;(window as typeof window & { __modelOrderWrite?: string[] }).__modelOrderWrite = [...patch.model_order]
+      }
+      return {}
+    },
     removeConfig: async () => ({}),
     refetchConfig: async () => ({}),
     refetchProviders: async () => ({ models: new Map([[MODEL.provider.id, [MODEL]]]) }),
@@ -64,10 +85,12 @@ export function mount() {
     ensureServerCtx: () => ({ sdk, sync: { data: { path: { directory: "/tmp/visual" } } } }),
   }
   const models = {
-    list: () => [MODEL],
+    list: () => [MODEL, SECOND_MODEL],
     remove: () => {},
     visible: () => true,
     setVisibility: () => {},
+    enabled: () => true,
+    setEnabled: async () => {},
     tier: { get: () => "guess", set: () => {} },
   }
 

@@ -119,6 +119,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   $schema: "operational",
   // Image resize thresholds. Numbers and a boolean; no command, no endpoint, no text.
   attachments: "operational",
+  // Presentation order only: existing provider/model refs, no endpoint, prompt, enablement or
+  // selection semantics. A bad value can make a row inconvenient to find and nothing more.
+  model_order: "operational",
   // The session's own context-reclaim policy. `prune` MARKS rows already out of the model's context
   // (`session/compaction-prune.ts`); it destroys no stored message, so "a read never destroys" holds.
   compaction: "operational",

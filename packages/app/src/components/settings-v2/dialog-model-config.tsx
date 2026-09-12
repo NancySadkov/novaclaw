@@ -190,20 +190,22 @@ export const DialogModelConfig: Component<{
   // next new session without a restart. Before this button existed the key had no writer anywhere in
   // the UI: `catalog.model.default()` silently fell back to the newest released model in the catalog,
   // which is a fact about upstream release dates, not a choice anybody made.
-  const currentDefault = () => (serverSync().data.config as { model?: string } | undefined)?.model
-  const isDefault = () => currentDefault() === `${props.providerID}/${form.modelID.trim()}`
+  const currentDefault = () => serverSync().data.config.model
+  // The default names the LOCAL catalog key, not the upstream wire id edited by this form. A clone
+  // intentionally has different values for those two; storing the wire id would create a dangling
+  // default which silently falls back to another model.
+  const defaultRef = () => `${props.providerID}/${props.modelID}`
+  const isDefault = () => currentDefault() === defaultRef()
 
   const makeDefault = async () => {
-    const modelID = form.modelID.trim()
-    if (!modelID) return
     try {
-      await serverSync().updateConfig({ model: `${props.providerID}/${modelID}` } as never)
+      await serverSync().updateConfig({ model: defaultRef() } as never)
       await serverSync().refetchProviders()
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("settings.models.config.toast.defaultSet", {
-          model: form.modelName.trim() || modelID,
+          model: form.modelName.trim() || props.modelName,
         }),
       })
     } catch (error) {
@@ -615,12 +617,7 @@ export const DialogModelConfig: Component<{
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-1">
-          <ButtonV2
-            size="normal"
-            variant="ghost-muted"
-            disabled={!form.modelID.trim() || isDefault()}
-            onClick={() => void makeDefault()}
-          >
+          <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>
             {isDefault()
               ? language.t("settings.models.config.default.isDefault")
               : language.t("settings.models.config.default.make")}

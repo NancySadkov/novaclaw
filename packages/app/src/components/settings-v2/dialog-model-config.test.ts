@@ -29,6 +29,10 @@ describe("Model Configure — Provider", () => {
     expect(source).toContain("api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID }")
     expect(source).toContain("[props.modelID]: model")
     expect(source).not.toContain("[form.modelID]: model")
+    // The instance default names that same catalog identity. A clone deliberately uses a different
+    // upstream wire id, so defaulting by form.modelID would store a ref the catalog cannot resolve.
+    expect(source).toContain("const defaultRef = () => `${props.providerID}/${props.modelID}`")
+    expect(source).toContain("updateConfig({ model: defaultRef() }")
   })
 
   test("keeps the complete API channel when changing its URL", () => {

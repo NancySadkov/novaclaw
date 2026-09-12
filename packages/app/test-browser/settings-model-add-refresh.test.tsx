@@ -23,6 +23,7 @@ const MODEL = {
   api: { id: MODEL_ID },
   limit: { context: 131072, output: 8192 },
   variants: [] as unknown[],
+  time: { released: 1 },
   capabilities: { tools: true, input: ["text"], output: ["text"] },
   provider: {
     id: PROVIDER_ID,
@@ -78,9 +79,7 @@ function mount(options: { refreshFails?: boolean }) {
     // does not make the Models row simpler — it makes the row throw.
     enabled: (key: { providerID: string; modelID: string }) =>
       (
-        sync().data.config?.providers as
-          | Record<string, { models?: Record<string, { disabled?: boolean }> }>
-          | undefined
+        sync().data.config?.providers as Record<string, { models?: Record<string, { disabled?: boolean }> }> | undefined
       )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
     tier: { get: () => "guess", set: () => {} },
   }

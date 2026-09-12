@@ -79,13 +79,22 @@ describe("ConfigStoreWrite.apply", () => {
       const settings = yield* SettingsConfigStore.Service
       yield* settings.set("quality", { enabled: true, checks: { build: "make" } })
 
-      const consumed = yield* ConfigStoreWrite.apply(decodeInfo({ quality: { enabled: false }, shell: "bash" }))
-      expect([...consumed].sort()).toEqual(["quality", "shell"])
+      const consumed = yield* ConfigStoreWrite.apply(
+        decodeInfo({
+          quality: { enabled: false },
+          shell: "bash",
+          model_order: ["spark/m2", "spark/m1"],
+        }),
+      )
+      expect([...consumed].sort()).toEqual(["model_order", "quality", "shell"])
 
       const all = yield* settings.all()
       // Deep merge: the patch flips `enabled`, the stored `checks` survives.
       expect(all.quality).toEqual({ enabled: false, checks: { build: "make" } })
       expect(all.shell).toBe("bash")
+      // `SettingsConfigStore` reads the runtime_setting SQLite table. This is the persistence gate:
+      // ordering is instance data, not a browser-only preference that another client contradicts.
+      expect(all.model_order).toEqual(["spark/m2", "spark/m1"])
     }),
   )
 

@@ -34,6 +34,9 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  */
 export const SETTINGS_KEYS = [
   "shell",
+  // Presentation order for the instance model catalog. A whole-value list: drag-reordering writes
+  // one authoritative arrangement, while readers ignore vanished refs and append new models.
+  "model_order",
   "expertise",
   "virtualFs",
   "folder_bookmarks",

@@ -27,6 +27,7 @@ const wholeDocumentDecode = (values: Record<string, unknown>) =>
  */
 const VALID: Record<string, unknown> = {
   shell: "bash",
+  model_order: ["spark-holo/holo3.1"],
   expertise: "normal",
   virtualFs: false,
   folder_bookmarks: ["/home/nancy/code"],

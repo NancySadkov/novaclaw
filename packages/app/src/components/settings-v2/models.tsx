@@ -4,7 +4,17 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
+import {
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  closestCenter,
+  createSortable,
+  type DragEvent,
+} from "@thisbeyond/solid-dnd"
+import * as Timestamp from "@novaclaw/schema/time"
+import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import type { JSX } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage, type Translator } from "@/context/language"
 import { useModels } from "@/context/models"
@@ -22,8 +32,96 @@ import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
 import { useConfirm } from "@/components/dialog-confirm"
 import { scopedDirectory } from "@/utils/routing-directory"
+import { applyModelOrder, modelOrderRef, moveModelOrder } from "./model-list-order"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
+
+const naturalModelSort = (a: ModelItem, b: ModelItem) => {
+  const aPopular = popularProviders.indexOf(a.provider.id)
+  const bPopular = popularProviders.indexOf(b.provider.id)
+  if (aPopular >= 0 || bPopular >= 0) {
+    if (aPopular < 0) return 1
+    if (bPopular < 0) return -1
+    if (aPopular !== bPopular) return aPopular - bPopular
+  }
+  return a.provider.name.localeCompare(b.provider.name) || a.name.localeCompare(b.name)
+}
+
+const SortableModelRow: Component<{
+  item: ModelItem
+  isDefault: boolean
+  saving: boolean
+  dragLabel: string
+  dragHint: string
+  defaultLabel: string
+  onKeyboardMove: (direction: -1 | 1) => void
+  children: JSX.Element
+}> = (props) => {
+  // eslint-disable-next-line solid/reactivity -- a catalog key is stable for this keyed row's lifetime
+  const sortable = createSortable(modelOrderRef(props.item))
+  let handle: HTMLButtonElement | undefined
+
+  // Register the pointer sensor ONLY on the visible grip. Registering `use:sortable` on the whole
+  // row makes every Configure/Test/Switch press a potential drag, which is a broken control surface.
+  // The row itself is still both the measured draggable and droppable through `sortable.ref`.
+  createEffect(() => {
+    if (!handle) return
+    const activators = sortable.dragActivators
+    const listeners = Object.entries(activators).map(([name, listener]) => [
+      name.startsWith("on") ? name.slice(2) : name,
+      listener as EventListener,
+    ] as const)
+    for (const [name, listener] of listeners) handle.addEventListener(name, listener)
+    onCleanup(() => {
+      if (!handle) return
+      for (const [name, listener] of listeners) handle.removeEventListener(name, listener)
+    })
+  })
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
+    event.preventDefault()
+    props.onKeyboardMove(event.key === "ArrowUp" ? -1 : 1)
+  }
+
+  return (
+    <div
+      ref={sortable.ref}
+      data-component="settings-v2-model-sortable"
+      data-default={props.isDefault ? "true" : undefined}
+      data-dragging={sortable.isActiveDraggable ? "true" : undefined}
+      style={{ transform: `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)` }}
+    >
+      <SettingsRowV2
+        title={
+          <div class="settings-v2-models-identity">
+            <button
+              ref={handle}
+              type="button"
+              class="settings-v2-models-drag-handle"
+              aria-label={props.dragLabel}
+              title={props.dragHint}
+              disabled={props.saving}
+              onKeyDown={onKeyDown}
+            >
+              <Icon name="dot-grid" size="normal" />
+            </button>
+            <span>{props.item.name}</span>
+            <Show when={props.isDefault}>
+              <span class="settings-v2-models-default-badge">
+                <Icon name="circle-check" size="small" />
+                {props.defaultLabel}
+              </span>
+            </Show>
+          </div>
+        }
+        description={props.item.provider.name}
+      >
+        {props.children}
+      </SettingsRowV2>
+    </div>
+  )
+}
 
 // B15 — one-line human rendering of a probe outcome (the config-drift killer: "cannot
 // connect" mysteries become "unreachable" / "auth failed" / "not on server" at a glance).
@@ -83,6 +181,8 @@ export const SettingsModelsV2: Component = () => {
     return scopedDirectory(got)
   })
   const [probes, setProbes] = createSignal<Record<string, ProbeResult | "probing" | undefined>>({})
+  const [pendingOrder, setPendingOrder] = createSignal<string[] | undefined>()
+  const [savingOrder, setSavingOrder] = createSignal(false)
 
   async function probe(key: { providerID: string; modelID: string }) {
     const cn = conn()
@@ -210,28 +310,76 @@ export const SettingsModelsV2: Component = () => {
     models.remove(key)
   }
 
+  const storedOrder = () => serverSync().data.config.model_order ?? []
+  const displayedItems = () =>
+    applyModelOrder([...models.list()].sort(naturalModelSort), pendingOrder() ?? storedOrder())
+
   const list = useFilteredList<ModelItem>({
-    items: (_filter) => models.list(),
+    items: (_filter) => displayedItems(),
     key: (x) => `${x.provider.id}:${x.id}`,
     filterKeys: ["provider.name", "name", "id"],
-    // Flat list (no provider headers): keep same-provider models adjacent, then sort by name.
-    sortBy: (a, b) => a.provider.name.localeCompare(b.provider.name) || a.name.localeCompare(b.name),
-    groupBy: (x) => x.provider.id,
-    sortGroupsBy: (a, b) => {
-      const aIndex = popularProviders.indexOf(a.category)
-      const bIndex = popularProviders.indexOf(b.category)
-      const aPopular = aIndex >= 0
-      const bPopular = bIndex >= 0
-
-      if (aPopular && !bPopular) return -1
-      if (!aPopular && bPopular) return 1
-      if (aPopular && bPopular) return aIndex - bIndex
-
-      const aName = a.items[0].provider.name
-      const bName = b.items[0].provider.name
-      return aName.localeCompare(bName)
-    },
   })
+
+  // `catalog.model.default()` first honours the stored ref, then falls back to the newest usable
+  // model. Mirror that exact rule so the badge always states what a fresh unpinned session will use,
+  // including on an untouched install where no explicit `model` row exists yet.
+  const effectiveDefault = createMemo(() => {
+    const configured = serverSync().data.config.model
+    const exact = configured ? models.list().find((item) => modelOrderRef(item) === configured) : undefined
+    if (exact && models.enabled({ providerID: exact.provider.id, modelID: exact.id })) return configured
+
+    let newest: ModelItem | undefined
+    let newestAt = Number.NEGATIVE_INFINITY
+    for (const item of models.list()) {
+      if (!models.enabled({ providerID: item.provider.id, modelID: item.id })) continue
+      const released = Timestamp.toEpochMillis(item.time.released) ?? Number.NEGATIVE_INFINITY
+      if (released <= newestAt) continue
+      newest = item
+      newestAt = released
+    }
+    return newest ? modelOrderRef(newest) : undefined
+  })
+
+  const persistOrder = async (refs: string[]) => {
+    if (savingOrder()) return
+    setPendingOrder(refs)
+    setSavingOrder(true)
+    try {
+      // `model_order` is a Config.Info settings key, so ConfigStoreWrite stores this whole array in
+      // runtime_setting (SQLite). It is deliberately not localStorage: the instance has one model
+      // catalog and every client must see the same arrangement.
+      await serverSync().updateConfig({ model_order: refs }, { refetch: false })
+      await serverSync().refetchConfig()
+      setPendingOrder(undefined)
+    } catch (error) {
+      setPendingOrder(undefined)
+      showToast({
+        variant: "error",
+        title: language.t("settings.models.order.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  const moveByKeyboard = (ref: string, direction: -1 | 1) => {
+    if (savingOrder()) return
+    const refs = list.flat().map(modelOrderRef)
+    const at = refs.indexOf(ref)
+    const target = at + direction
+    if (at < 0 || target < 0 || target >= refs.length) return
+    const next = moveModelOrder(refs, ref, refs[target]!)
+    if (next) void persistOrder(next)
+  }
+
+  const onDragEnd = (event: DragEvent) => {
+    if (savingOrder()) return
+    const { draggable, droppable } = event
+    if (!draggable || !droppable) return
+    const next = moveModelOrder(list.flat().map(modelOrderRef), String(draggable.id), String(droppable.id))
+    if (next) void persistOrder(next)
+  }
 
   return (
     <>
@@ -267,144 +415,158 @@ export const SettingsModelsV2: Component = () => {
               </div>
             }
           >
-            <SettingsListV2>
-              <For each={list.flat()}>
-                {(item) => {
-                  const key = { providerID: item.provider.id, modelID: item.id }
-                  const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
-                  const probeResult = () => {
-                    const state = probeState()
-                    return state && state !== "probing" ? state : undefined
-                  }
-                  return (
-                    <SettingsRowV2 title={item.name} description={item.provider.name}>
-                      <div class="settings-v2-models-row-actions">
-                        <div class="settings-v2-models-row-controls">
-                          <ButtonV2
-                            size="small"
-                            variant="neutral"
-                            aria-label={language.t("settings.models.tier.pick")}
-                            onClick={() =>
-                              dialog.push(() => (
-                                <DialogModelTier
-                                  modelName={item.name}
-                                  current={models.tier.get(key)}
-                                  onSelect={(tier) => models.tier.set(key, tier)}
-                                />
-                              ))
-                            }
-                          >
-                            {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
-                          </ButtonV2>
-                          <ButtonV2
-                            size="small"
-                            variant="ghost-muted"
-                            aria-label={language.t("settings.models.config.open")}
-                            onClick={() => {
-                              const cn = conn()
-                              const dir = routeDir()
-                              // The same guard the sibling openers use: without a connection and a
-                              // directory the dialog cannot probe, and pushing it anyway would offer a
-                              // Test button that fails for a reason the user cannot see.
-                              if (!cn || !dir) return
-                              dialog.push(() => (
-                                <DialogModelConfig
-                                  http={cn.http}
-                                  directory={dir}
-                                  providerID={key.providerID}
-                                  modelID={key.modelID}
-                                  modelName={item.name}
-                                  apiModelID={item.api.id}
-                                  providerApi={item.provider.api}
-                                  defaults={{
-                                    capabilities: {
-                                      tools: item.capabilities.tools,
-                                      input: [...item.capabilities.input],
-                                      output: [...item.capabilities.output],
-                                    },
-                                  }}
-                                />
-                              ))
-                            }}
-                          >
-                            {language.t("settings.models.config.open")}
-                          </ButtonV2>
-                          <ButtonV2
-                            size="small"
-                            variant="ghost-muted"
-                            aria-label={language.t("settings.models.clone.action")}
-                            onClick={() => void cloneModel(key, item.name)}
-                          >
-                            {language.t("settings.models.clone.action")}
-                          </ButtonV2>
-                          <ButtonV2
-                            size="small"
-                            variant="neutral"
-                            disabled={probeState() === "probing"}
-                            onClick={() => void probe(key)}
-                          >
-                            {probeState() === "probing"
-                              ? language.t("settings.models.probe.probing")
-                              : language.t("settings.models.probe.test")}
-                          </ButtonV2>
-                          <Switch
-                            checked={models.enabled(key)}
-                            onChange={(checked) => {
-                              // 🔴 This switch ENABLES/DISABLES the model for the whole instance — it
-                              // writes config, and the server rebuilds its catalog on the spot. It is
-                              // not the picker's show/hide preference, which lives in this browser and
-                              // which the server cannot see; wiring that one here is what made a
-                              // switched-off model carry on answering prompts.
-                              void models
-                                .setEnabled(key, checked)
-                                .then(() =>
-                                  showToast({
-                                    variant: "success",
-                                    icon: "circle-check",
-                                    title: checked
-                                      ? language.t("settings.models.enable.toast.on", { model: item.name })
-                                      : language.t("settings.models.enable.toast.off", { model: item.name }),
-                                  }),
-                                )
-                                .catch((error: unknown) =>
-                                  showToast({
-                                    variant: "error",
-                                    title: language.t("settings.models.enable.toast.failed", {
-                                      model: item.name,
-                                      error: error instanceof Error ? error.message : String(error),
-                                    }),
-                                  }),
-                                )
-                            }}
-                            hideLabel
-                          >
-                            {item.name}
-                          </Switch>
-                          <IconButtonV2
-                            size="small"
-                            variant="ghost-muted"
-                            aria-label={language.t("settings.models.remove.confirm.action")}
-                            icon={<Icon name="trash" size="normal" />}
-                            onClick={() => void removeModel(key, item.name)}
-                          />
-                        </div>
-                        <Show when={probeResult()}>
-                          {(result) => (
-                            <span
-                              class="settings-v2-models-probe-result"
-                              data-status={result().status}
-                              title={result().detail ?? ""}
-                            >
-                              {probeLabel(result(), language.t)}
-                            </span>
-                          )}
-                        </Show>
-                      </div>
-                    </SettingsRowV2>
-                  )
-                }}
-              </For>
-            </SettingsListV2>
+            <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+              <DragDropSensors />
+              <SortableProvider ids={list.flat().map(modelOrderRef)}>
+                <SettingsListV2>
+                  <For each={list.flat()}>
+                    {(item) => {
+                      const key = { providerID: item.provider.id, modelID: item.id }
+                      const ref = modelOrderRef(item)
+                      const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
+                      const probeResult = () => {
+                        const state = probeState()
+                        return state && state !== "probing" ? state : undefined
+                      }
+                      return (
+                        <SortableModelRow
+                          item={item}
+                          isDefault={effectiveDefault() === ref}
+                          saving={savingOrder()}
+                          dragLabel={language.t("settings.models.order.drag", { model: item.name })}
+                          dragHint={language.t("settings.models.order.hint")}
+                          defaultLabel={language.t("settings.models.default.badge")}
+                          onKeyboardMove={(direction) => moveByKeyboard(ref, direction)}
+                        >
+                          <div class="settings-v2-models-row-actions">
+                            <div class="settings-v2-models-row-controls">
+                              <ButtonV2
+                                size="small"
+                                variant="neutral"
+                                aria-label={language.t("settings.models.tier.pick")}
+                                onClick={() =>
+                                  dialog.push(() => (
+                                    <DialogModelTier
+                                      modelName={item.name}
+                                      current={models.tier.get(key)}
+                                      onSelect={(tier) => models.tier.set(key, tier)}
+                                    />
+                                  ))
+                                }
+                              >
+                                {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
+                              </ButtonV2>
+                              <ButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.config.open")}
+                                onClick={() => {
+                                  const cn = conn()
+                                  const dir = routeDir()
+                                  // The same guard the sibling openers use: without a connection and a
+                                  // directory the dialog cannot probe, and pushing it anyway would offer a
+                                  // Test button that fails for a reason the user cannot see.
+                                  if (!cn || !dir) return
+                                  dialog.push(() => (
+                                    <DialogModelConfig
+                                      http={cn.http}
+                                      directory={dir}
+                                      providerID={key.providerID}
+                                      modelID={key.modelID}
+                                      modelName={item.name}
+                                      apiModelID={item.api.id}
+                                      providerApi={item.provider.api}
+                                      defaults={{
+                                        capabilities: {
+                                          tools: item.capabilities.tools,
+                                          input: [...item.capabilities.input],
+                                          output: [...item.capabilities.output],
+                                        },
+                                      }}
+                                    />
+                                  ))
+                                }}
+                              >
+                                {language.t("settings.models.config.open")}
+                              </ButtonV2>
+                              <ButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.clone.action")}
+                                onClick={() => void cloneModel(key, item.name)}
+                              >
+                                {language.t("settings.models.clone.action")}
+                              </ButtonV2>
+                              <ButtonV2
+                                size="small"
+                                variant="neutral"
+                                disabled={probeState() === "probing"}
+                                onClick={() => void probe(key)}
+                              >
+                                {probeState() === "probing"
+                                  ? language.t("settings.models.probe.probing")
+                                  : language.t("settings.models.probe.test")}
+                              </ButtonV2>
+                              <Switch
+                                checked={models.enabled(key)}
+                                onChange={(checked) => {
+                                  // 🔴 This switch ENABLES/DISABLES the model for the whole instance — it
+                                  // writes config, and the server rebuilds its catalog on the spot. It is
+                                  // not the picker's show/hide preference, which lives in this browser and
+                                  // which the server cannot see; wiring that one here is what made a
+                                  // switched-off model carry on answering prompts.
+                                  void models
+                                    .setEnabled(key, checked)
+                                    .then(() =>
+                                      showToast({
+                                        variant: "success",
+                                        icon: "circle-check",
+                                        title: checked
+                                          ? language.t("settings.models.enable.toast.on", { model: item.name })
+                                          : language.t("settings.models.enable.toast.off", { model: item.name }),
+                                      }),
+                                    )
+                                    .catch((error: unknown) =>
+                                      showToast({
+                                        variant: "error",
+                                        title: language.t("settings.models.enable.toast.failed", {
+                                          model: item.name,
+                                          error: error instanceof Error ? error.message : String(error),
+                                        }),
+                                      }),
+                                    )
+                                }}
+                                hideLabel
+                              >
+                                {item.name}
+                              </Switch>
+                              <IconButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.remove.confirm.action")}
+                                icon={<Icon name="trash" size="normal" />}
+                                onClick={() => void removeModel(key, item.name)}
+                              />
+                            </div>
+                            <Show when={probeResult()}>
+                              {(result) => (
+                                <span
+                                  class="settings-v2-models-probe-result"
+                                  data-status={result().status}
+                                  title={result().detail ?? ""}
+                                >
+                                  {probeLabel(result(), language.t)}
+                                </span>
+                              )}
+                            </Show>
+                          </div>
+                        </SortableModelRow>
+                      )
+                    }}
+                  </For>
+                </SettingsListV2>
+              </SortableProvider>
+            </DragDropProvider>
           </Show>
         </Show>
       </div>

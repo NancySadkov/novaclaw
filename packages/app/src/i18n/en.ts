@@ -2059,6 +2059,10 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.models.title": "Models",
+  "settings.models.default.badge": "Default",
+  "settings.models.order.drag": "Move {{model}}",
+  "settings.models.order.hint": "Drag to reorder · Arrow keys also work",
+  "settings.models.order.failed": "Could not save model order",
   "settings.models.probe.test": "Test",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "Endpoint and generation are healthy",

@@ -30,7 +30,6 @@ import { languageStub } from "./language-stub"
  * the row would satisfy the control.
  */
 
-
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined
 
@@ -52,6 +51,7 @@ const MODEL = {
   api: { id: "test-model" },
   limit: { context: 131072, output: 8192 },
   variants: [] as unknown[],
+  time: { released: 1 },
   capabilities: { tools: true, input: ["text"], output: ["text"] },
   provider: { id: "local", name: "Local", api: "openai" },
 }
@@ -72,9 +72,7 @@ function mount(options: { removeFails: boolean }) {
     // does not make the Models row simpler — it makes the row throw.
     enabled: (key: { providerID: string; modelID: string }) =>
       (
-        sync().data.config?.providers as
-          | Record<string, { models?: Record<string, { disabled?: boolean }> }>
-          | undefined
+        sync().data.config?.providers as Record<string, { models?: Record<string, { disabled?: boolean }> }> | undefined
       )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
     tier: { get: () => "guess", set: () => {} },
   }
@@ -155,7 +153,8 @@ const deleteTheModel = async () => {
   await settle()
 }
 
-const rowNames = () => [...document.querySelectorAll('[data-slot="settings-v2-row-title"]')].map((n) => n.textContent)
+const rowNames = () =>
+  [...document.querySelectorAll(".settings-v2-models-identity > span:first-of-type")].map((n) => n.textContent)
 
 describe("a failed model delete", () => {
   test("is named on screen, and the row stays", async () => {
