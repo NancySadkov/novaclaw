@@ -221,9 +221,11 @@ const charterControls = () =>
   document.querySelectorAll('input[type="text"], input:not([type]), textarea, [data-component="select-v2"]').length
 /** Every control the dialog left ENABLED, as its KIND rather than as its node. */
 const enabledControlKinds = () =>
-  [...document.querySelectorAll('input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])')].map(
-    (el) => (el as HTMLInputElement).type ?? el.tagName.toLowerCase(),
-  )
+  [
+    ...document.querySelectorAll(
+      'input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])',
+    ),
+  ].map((el) => (el as HTMLInputElement).type ?? el.tagName.toLowerCase())
 const dialogText = () => document.body.textContent ?? ""
 
 describe("AgentConfigDialog renders", () => {
@@ -267,6 +269,7 @@ describe("AgentConfigDialog renders", () => {
     expect(selects().length).toBeGreaterThan(0)
     expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
     expect(document.querySelector('[data-action="agent-clear-memory"]')).not.toBeNull()
+    expect(document.querySelector('[data-action="agent-open-memory"]')?.textContent).toBe("agentConfig.memoryOpen")
   })
 
   test("portrait selection is a readable button with its filename separate", async () => {

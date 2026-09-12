@@ -54,7 +54,7 @@ function fixture(initial: boolean) {
             <ServerContext.Provider value={{ current: cn } as never}>
               <ServerSyncContext.Provider value={(() => ({ data: { path: { directory: "/tmp/test" } } })) as never}>
                 <DialogProvider>
-                  <MemoryRemembered owner={{ scopes: ["global"], label: "Shared" }} />
+                  <MemoryRemembered owner={{ scopes: ["global"], label: "Shared" }} directory="/tmp/p" />
                 </DialogProvider>
               </ServerSyncContext.Provider>
             </ServerContext.Provider>

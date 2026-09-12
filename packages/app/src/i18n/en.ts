@@ -2779,11 +2779,8 @@ export const dict = {
     "Nova is this instance's single CEO. If you want another Nova, deploy a separate NovaClaw instance.",
   "agentConfig.retire": "Retire",
   "agentConfig.retiring": "Retiring…",
-  // The door into ONE colleague's cabinet, opened from that colleague. Two spellings because a count
-  // is only worth showing once there is something to count — "remembers 0 things" reads as a fault,
-  // and a new hire that has learned nothing yet is not faulty.
-  "agentConfig.memoryOpen": "See what {{name}} remembers",
-  "agentConfig.memoryOpenCount": "See what {{name}} remembers ({{count}})",
+  // The colleague is already named by this configuration screen; the action names only where it goes.
+  "agentConfig.memoryOpen": "Memory",
   "agentConfig.retire.confirm.title": "Retire {{name}}?",
   // Names what is DESTROYED, in the order it will be missed — role, chat AND private memories.
   // ⚠️ If this control's blast radius grows again, this sentence grows with it: a control that
@@ -3406,9 +3403,8 @@ export const dict = {
   "memoryGraph.page.recordedBy": "Recorded by",
   "memoryGraph.page.noRecallHasEverReturnedThis": "No recall has ever returned this one.",
   "memoryGraph.page.noLinks": "No links.",
-  "memoryGraph.page.home": "Home",
+  "memoryGraph.page.back": "Back",
   "memoryGraph.page.memory": "Memory",
-  "memoryGraph.page.whose": "Whose",
   "memoryGraph.page.shared": "Shared",
   "memoryGraph.page.loadingTheMemoryGraph": "Loading the memory graph…",
   "memoryGraph.page.retry": "Retry",

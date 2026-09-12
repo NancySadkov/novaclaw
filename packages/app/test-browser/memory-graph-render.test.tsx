@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { render } from "solid-js/web"
-import { MemoryRouter, Route } from "@solidjs/router"
+import { createMemoryHistory, MemoryRouter, Route } from "@solidjs/router"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { MemoryGraphPage } from "@/pages/memory-graph"
 import { GlobalContext } from "@/context/global"
@@ -88,6 +88,7 @@ let originalRO: unknown
 let restoreFetch: (() => void) | undefined
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined
+let memoryRequests: { url: string; body: unknown }[] = []
 
 beforeEach(() => {
   paneSize = { width: 900, height: 600 }
@@ -96,6 +97,7 @@ beforeEach(() => {
   memoryBoardDetail = undefined
   resizeCallbacks.length = 0
   busListeners = []
+  memoryRequests = []
   originalRect = HTMLElement.prototype.getBoundingClientRect
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
     // ONLY the graph canvas reports a size; everything else keeps happy-dom's zeroes, so no other
@@ -195,7 +197,7 @@ const sideAnswer = (url: string): unknown => {
 }
 
 /** What each graph fetch answers, in order; the last entry serves every later call. A throw faults it. */
-function mount(answers: (() => MemoryGraph)[]) {
+function mount(answers: (() => MemoryGraph)[], options: { ownerKey?: string; agents?: unknown[] } = {}) {
   host = document.createElement("div")
   document.body.appendChild(host)
   let call = 0
@@ -204,10 +206,14 @@ function mount(answers: (() => MemoryGraph)[]) {
   // `server.url` off it. A string here yields `new URL(route, "undefined/")` and every request throws.
   const connection = { type: "http", url: "http://localhost:4096", http: { url: "http://localhost:4096" } }
   const originalFetch = globalThis.fetch
-  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL) => {
+  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     // `instanceFetch` sends a `URL` object; a `Request` would carry `.url`. Reading the wrong one
     // throws INSIDE the stub, and a stub that throws looks exactly like the outage under test.
     const url = typeof input === "string" ? input : ((input as Request).url ?? String(input))
+    if (url.includes("memory/")) {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      memoryRequests.push({ url, body })
+    }
     // The page mounts on the Remembered LIST, which fetches on its own — so the stub has to answer
     // those routes with their real SHAPES. A blanket `[]` made `instanceDiagnosis` return an array,
     // and `health()?.signals.some(...)` threw before the graph was ever reached.
@@ -222,7 +228,12 @@ function mount(answers: (() => MemoryGraph)[]) {
     ;(globalThis as { fetch: typeof fetch }).fetch = originalFetch
   }
 
-  const agentsCache = { list: () => [], loading: () => false, error: () => undefined, refetch: () => {} }
+  const agentsCache = {
+    list: () => options.agents ?? [],
+    loading: () => false,
+    error: () => undefined,
+    refetch: () => {},
+  }
   // The three things the Memory app asks of the SDK: the stream's status, a subscription, and a
   // start it may call whether or not the shell already did.
   const sdkStub = {
@@ -242,11 +253,14 @@ function mount(answers: (() => MemoryGraph)[]) {
     servers: { list: () => [connection] },
     ensureServerCtx: () => ({
       agents: agentsCache,
-      sync: { data: { path: { directory: "/tmp/p" } } },
+      sync: { data: { path: { directory: "/tmp/p", home: "/tmp" } } },
       sdk: sdkStub,
     }),
   }
-  const syncStub = () => ({ data: { path: { directory: "/tmp/p" } }, session: { data: { info: {} } } })
+  const syncStub = () => ({
+    data: { path: { directory: "/tmp/p", home: "/tmp" } },
+    session: { data: { info: {} } },
+  })
   // Deliberately echoes the KEY rather than resolving copy — this file asserts which key a row
   // reaches for, not what it says. `plural` echoes the group for the same reason.
   //
@@ -262,9 +276,13 @@ function mount(answers: (() => MemoryGraph)[]) {
     setLocale: () => {},
   }
 
+  const history = createMemoryHistory()
+  if (options.ownerKey)
+    history.set({ value: `/?owner=${encodeURIComponent(options.ownerKey)}`, replace: true, scroll: false })
+
   dispose = render(
     () => (
-      <MemoryRouter>
+      <MemoryRouter history={history}>
         <Route
           path="/"
           component={() => (
@@ -403,6 +421,29 @@ const hubCount = () => markKinds().filter((k) => k === "hub").length
 const edgeEndpoints = () => [...document.querySelectorAll('[data-slot="memory-graph-canvas"] svg line')].length
 
 describe("MemoryGraphPage renders", () => {
+  test("one colleague owns the screen, the data requests, and Back", async () => {
+    mount([() => FIXTURE], {
+      ownerKey: "agent:theron",
+      // The route must be sufficient to read the cabinet. A late or failed roster request may cost
+      // the custom display name for a moment; it may not redirect the data request to Shared.
+      agents: [],
+    })
+    await settle()
+
+    expect(document.querySelector('[data-slot="memory-owner-picker"]')).toBeNull()
+    expect(document.querySelector('[data-slot="memory-title"]')?.textContent).toBe("Theron")
+    const back = document.querySelector('[data-slot="memory-back"]')
+    expect(back?.textContent).toContain("memoryGraph.page.back")
+    expect(back?.getAttribute("href")).toBe("/contacts?configure=theron")
+
+    const reads = memoryRequests.filter(
+      (request) => request.url.includes("world-memory/list") || request.url.includes("world-memory/graph"),
+    )
+    expect(reads.length).toBeGreaterThanOrEqual(2)
+    expect(reads.every((request) => JSON.stringify(request.body).includes('"scopes":["agent:theron"]'))).toBe(true)
+    expect(reads.map((request) => new URL(request.url).searchParams.get("directory"))).toEqual(["/tmp", "/tmp"])
+  })
+
   test("the instrument works at all — the graph mounts and draws its visible marks", async () => {
     mount([() => FIXTURE])
     await settle()

@@ -14,7 +14,7 @@ describe("pure Chat officers have no project surface", () => {
     expect(hiddenFolder).toBeGreaterThan(0)
     expect(folderHeading).toBeGreaterThan(hiddenFolder)
     expect(hiddenFolderEnd).toBeGreaterThan(folderHeading)
-    expect(dialog).toContain('postureValue()\n              ? { directory: "" }')
+    expect(dialog).toMatch(/postureValue\(\)\s*\? \{ directory: "" \}/)
   })
 
   test("the chat composer projects the officer posture and gates its project button from it", () => {

@@ -3,7 +3,6 @@ import { useLanguage } from "@/context/language"
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { Icon } from "@novaclaw/ui/v2/icon"
-import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import * as Timestamp from "@novaclaw/schema/time"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -31,7 +30,14 @@ import { LENSES, lensByID, statusBadge, type LensID } from "@/utils/memory-lens"
 import { createMemoryActivity } from "./memory-graph/activity-live"
 import { MemoryActivityFeedRail } from "./memory-graph/activity-feed"
 import { FLARE_MS, RANK_RING_R, rankPop } from "./memory-graph/activity"
-import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
+import {
+  agentConfigureRoute,
+  agentIDFromOwnerKey,
+  ownerFromKey,
+  ownersFor,
+  scopeOwnerName,
+  type MemoryOwner,
+} from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
 import {
@@ -290,24 +296,31 @@ export function MemoryGraphPage() {
   // replaced the whole UI with the error page.
   const agents = () => ctx()?.agents.list()
   const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[]), "Shared with everyone"))
-  // WHOSE memory, taken from the URL first.
+  // WHOSE memory, taken from the URL.
   //
   // 🔴 This is the door a colleague's own config opens (`agent-config-dialog.tsx` → `ownerRoute`).
   // Under the roster, "what does this colleague remember" is a question you ask ABOUT A COLLEAGUE,
-  // so it must be reachable from that colleague — not only by opening a global app and hunting for
-  // the name in a picker, which is the same shape as the chat list the roster replaced.
-  const [params, setParams] = useSearchParams<{ owner?: string }>()
-  const [ownerKey, setOwnerKey] = createSignal<string | undefined>()
-  const owner = createMemo(() => ownerFromKey(owners(), ownerKey() ?? params.owner))
+  // so it must be reachable from that colleague — never by opening a global app and hunting for a
+  // name again, which is the same shape as the chat list the roster replaced.
+  const [params] = useSearchParams<{ owner?: string }>()
+  const owner = createMemo(() => ownerFromKey(owners(), params.owner))
+
+  /** Memory is a component of the colleague already selected in Configure. The household's shared
+   * row is the only non-colleague entry point, and returns to the roster it hangs from. */
+  const backRoute = () => {
+    const current = owner()
+    const agentID = current?.kind === "agent" ? agentIDFromOwnerKey(current.key) : undefined
+    return agentID ? agentConfigureRoute(agentID) : "/contacts"
+  }
 
   const [graph] = createResource(
     () => {
       const cn = conn()
       const scopes = owner()?.scopes
-      // No owner resolved yet = the roster has not loaded. Querying now would draw the WHOLE graph
-      // for a moment and then swap it for one colleague's — a flash of everyone's memories in a view
-      // whose entire promise is that they are separate.
-      return cn && scopes ? { cn, dir: directory(), scopes, t: tick() } : undefined
+      const dir = directory()
+      // A missing owner or routing directory may never become an unscoped query. The route key can
+      // resolve before the roster, but the instance path is asynchronous on a cold client.
+      return cn && scopes && dir ? { cn, dir, scopes, t: tick() } : undefined
     },
     ({ cn, dir, scopes }): Promise<GraphLoad> =>
       worldMemoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes })
@@ -931,38 +944,19 @@ export function MemoryGraphPage() {
   return (
     <div class="flex h-full w-full flex-col bg-v2-background-bg-base text-v2-text-text-base">
       <header class="flex items-center gap-3 border-b border-v2-border-border-muted px-4 py-2.5">
-        <A href="/" class="flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100">
+        <A
+          href={backRoute()}
+          data-slot="memory-back"
+          class="flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100"
+        >
           <Icon name="arrow-left" size="large" />
-          {language.t("memoryGraph.page.home")}
+          {language.t("memoryGraph.page.back")}
         </A>
         <div class="flex items-center gap-2">
           <Icon name="branch" size="large" />
-          <h1 class="text-sm font-medium">{language.t("memoryGraph.page.memory")}</h1>
-        </div>
-        {/* WHOSE memory. The app used to show one undifferentiated pile, which was the only honest
-            rendering while there was one pile; now every memory belongs to a colleague, to one chat
-            or to the household, and a view that hid that would be the last place still claiming the
-            old model. Nova is included like anyone else — it is not a super-user of its colleagues'
-            cabinets, it just has one of its own. */}
-        <div class="flex items-center gap-1.5 text-[11px] opacity-80" data-slot="memory-owner-picker">
-          <span class="opacity-70">{language.t("memoryGraph.page.whose")}</span>
-          <SelectV2
-            appearance="inline"
-            aria-label={language.t("memoryGraph.page.whose")}
-            options={owners()}
-            current={owner()}
-            value={(entry) => entry.key}
-            label={(entry) => entry.label}
-            valueClass="text-[11px]"
-            onSelect={(entry) => {
-              if (!entry) return
-              setOwnerKey(entry.key)
-              // The URL follows the picker, so this view is linkable and the back button means
-              // something. `replace` — switching whose cabinet you are reading is not a navigation
-              // step a user wants to walk back through one colleague at a time.
-              setParams({ owner: entry.key }, { replace: true })
-            }}
-          />
+          <h1 class="text-sm font-medium" data-slot="memory-title">
+            {owner()?.label ?? language.t("memoryGraph.page.memory")}
+          </h1>
         </div>
         <div class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]">
           <For
@@ -995,53 +989,53 @@ export function MemoryGraphPage() {
         {/* SEARCH, on both views. It sits in the shared header rather than inside either one, because
             it IS shared — the same query narrows the list and picks out the marks. */}
         <label class="flex items-center gap-1.5" data-slot="memory-search">
-            <input
-              type="search"
-              value={filter().query}
-              placeholder={language.t("memoryGraph.page.searchMemories")}
-              aria-label={language.t("memoryGraph.page.searchMemories")}
-              class="w-40 rounded bg-v2-background-bg-layer-01 px-2 py-1 text-[11px] placeholder:opacity-40"
-              onInput={(event) => setQuery(event.currentTarget.value)}
-            />
-            {/* The COUNT is the whole point of a search that highlights rather than hides: without it
+          <input
+            type="search"
+            value={filter().query}
+            placeholder={language.t("memoryGraph.page.searchMemories")}
+            aria-label={language.t("memoryGraph.page.searchMemories")}
+            class="w-40 rounded bg-v2-background-bg-layer-01 px-2 py-1 text-[11px] placeholder:opacity-40"
+            onInput={(event) => setQuery(event.currentTarget.value)}
+          />
+          {/* The COUNT is the whole point of a search that highlights rather than hides: without it
                 a query that matches nothing looks identical to a query that matched something
                 off-screen. */}
-            <Show when={filter().query.trim().length > 0}>
-              <span class="text-[11px] opacity-60" data-slot="memory-search-count">
-                {appView() === "graph" ? matched().size : listMatchCount()} found
-              </span>
-            </Show>
-          </label>
-          {/* THE LENS. Four questions, one row, and the one in force says what it means underneath
+          <Show when={filter().query.trim().length > 0}>
+            <span class="text-[11px] opacity-60" data-slot="memory-search-count">
+              {appView() === "graph" ? matched().size : listMatchCount()} found
+            </span>
+          </Show>
+        </label>
+        {/* THE LENS. Four questions, one row, and the one in force says what it means underneath
               — principle 12(d): what is in force in ONE line, the rest on demand (the `title`). */}
-          <div
-            class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]"
-            data-slot="memory-lens"
-            data-lens={filter().lens}
-          >
-            <For each={LENSES}>
-              {(entry) => (
-                <button
-                  type="button"
-                  data-slot="memory-lens-tab"
-                  data-lens={entry.id}
-                  aria-pressed={filter().lens === entry.id}
-                  title={entry.hint}
-                  onClick={() => setLens(entry.id)}
-                  class="rounded px-2 py-1"
-                  classList={{
-                    "bg-v2-background-bg-layer-03 text-v2-text-text-base": filter().lens === entry.id,
-                    "opacity-60 hover:opacity-100": filter().lens !== entry.id,
-                  }}
-                >
-                  {entry.label}
-                </button>
-              )}
-            </For>
-          </div>
-          <span class="max-w-56 truncate text-[11px] opacity-50" data-slot="memory-lens-hint" title={lens().hint}>
-            {lens().hint}
-          </span>
+        <div
+          class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]"
+          data-slot="memory-lens"
+          data-lens={filter().lens}
+        >
+          <For each={LENSES}>
+            {(entry) => (
+              <button
+                type="button"
+                data-slot="memory-lens-tab"
+                data-lens={entry.id}
+                aria-pressed={filter().lens === entry.id}
+                title={entry.hint}
+                onClick={() => setLens(entry.id)}
+                class="rounded px-2 py-1"
+                classList={{
+                  "bg-v2-background-bg-layer-03 text-v2-text-text-base": filter().lens === entry.id,
+                  "opacity-60 hover:opacity-100": filter().lens !== entry.id,
+                }}
+              >
+                {entry.label}
+              </button>
+            )}
+          </For>
+        </div>
+        <span class="max-w-56 truncate text-[11px] opacity-50" data-slot="memory-lens-hint" title={lens().hint}>
+          {lens().hint}
+        </span>
 
         {/* FOCUS, stated. A view silently showing a neighborhood instead of a cabinet is the same
             class of lie as the empty one — true of what is on screen, wrong as an answer. So it says
@@ -1178,12 +1172,13 @@ export function MemoryGraphPage() {
           It owns its own fetch, so switching views does not depend on the graph having loaded. */}
         <Show when={appView() === "list"}>
           <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
+            {/* The list obeys the same route owner as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
             <Show when={owner()} keyed>
               {(memoryOwner) => (
                 <MemoryRemembered
                   owner={memoryOwner}
+                  directory={directory()}
                   filter={filter()}
                   revision={listRevision()}
                   onCounts={setListCounts}
@@ -1196,7 +1191,6 @@ export function MemoryGraphPage() {
             </Show>
           </div>
         </Show>
-
 
         {/* ⚠️ `ref={attachCanvas}` on the CANVAS wrapper, not on the svg: the svg is inside the `Show`
           and is torn down and rebuilt as the state changes, so an observer bound to it would be

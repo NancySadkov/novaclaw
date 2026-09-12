@@ -4,7 +4,6 @@ import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
   memoryCorrectionProne,
@@ -56,6 +55,10 @@ interface ListPage {
  * parent's resource through both would tie each surface's staleness to the other's.
  */
 export const MemoryRemembered: Component<{
+  /** Instance-global routing token chosen by the owning Memory screen. Both List and Graph must use
+   * the same one; resolving it independently made one view ask through the project folder while the
+   * other used instance home, so a rejected list request was caught and rendered as no memories. */
+  directory: string
   /** The chat whose scope reads as "this chat"; absent outside a session. */
   sessionID?: string
   /** Bumped by a caller that has just changed the set, to force a re-read. */
@@ -101,11 +104,10 @@ export const MemoryRemembered: Component<{
   const confirm = useConfirm()
   const server = useServer()
   const global = useGlobal()
-  const serverSync = useServerSync()
   const [localTick, setLocalTick] = createSignal(0)
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
-  const directory = () => serverSync().data.path?.directory ?? ""
+  const directory = () => props.directory
   const sessionScope = () => (props.sessionID ? `session:${props.sessionID}` : undefined)
 
   /**
@@ -121,7 +123,7 @@ export const MemoryRemembered: Component<{
   const [memories, { refetch }] = createResource(
     () => {
       const cn = conn()
-      return cn
+      return cn && directory()
         ? {
             cn,
             dir: directory(),
@@ -306,9 +308,7 @@ export const MemoryRemembered: Component<{
 
   // Reads and batch writes derive their scope from the same owner. A label and an unrelated
   // hard-coded scope let a colleague's Clear control erase the household's shared memories.
-  const clearTargets = createMemo(() =>
-    props.owner.scopes.map((scope) => ({ scope, label: props.owner.label })),
-  )
+  const clearTargets = createMemo(() => props.owner.scopes.map((scope) => ({ scope, label: props.owner.label })))
   const forgetScope = async (target: { scope: string; label: string }) => {
     const cn = conn()
     if (!cn) return

@@ -19,7 +19,8 @@ afterEach(() => {
 const settle = async () => {
   for (let i = 0; i < 12; i++) await new Promise((resolve) => setTimeout(resolve, 0))
 }
-const button = (name: string) => [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === name)!
+const button = (name: string) =>
+  [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === name)!
 
 function mount(accept = true, scoped = true) {
   const scopes = new Set(["global", "agent:daedalus", "agent:myron"])
@@ -40,9 +41,18 @@ function mount(accept = true, scoped = true) {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       const asked = body?.scopes ?? url.searchParams.get("scopes")?.split(",") ?? [...scopes]
       queries.push(asked)
-      return Response.json(asked.filter((scope) => scopes.has(scope)).map((scope) => ({
-        id: scope, scope, kind: "entity", text: `${scope} record`, status: "active", relation: "staged",
-      })))
+      return Response.json(
+        asked
+          .filter((scope) => scopes.has(scope))
+          .map((scope) => ({
+            id: scope,
+            scope,
+            kind: "entity",
+            text: `${scope} record`,
+            status: "active",
+            relation: "staged",
+          })),
+      )
     }
     if (url.pathname.endsWith("memory/stats")) return Response.json({ total: scopes.size, valid: scopes.size })
     return Response.json({ signals: [{ id: "memory", status: "ok" }] })
@@ -50,17 +60,22 @@ function mount(accept = true, scoped = true) {
   const cn = { url: "http://memory.test", http: { url: "http://memory.test" } }
   const host = document.createElement("div")
   document.body.append(host)
-  dispose = render(() => (
-    <LanguageContext.Provider value={languageStub as never}>
-      <GlobalContext.Provider value={{ servers: { list: () => [cn] } } as never}>
-        <ServerContext.Provider value={{ current: cn } as never}>
-          <ServerSyncContext.Provider value={(() => ({ data: { path: { directory: "/tmp/test" } } })) as never}>
-            <DialogProvider><MemoryRemembered owner={owner()} /></DialogProvider>
-          </ServerSyncContext.Provider>
-        </ServerContext.Provider>
-      </GlobalContext.Provider>
-    </LanguageContext.Provider>
-  ), host)
+  dispose = render(
+    () => (
+      <LanguageContext.Provider value={languageStub as never}>
+        <GlobalContext.Provider value={{ servers: { list: () => [cn] } } as never}>
+          <ServerContext.Provider value={{ current: cn } as never}>
+            <ServerSyncContext.Provider value={(() => ({ data: { path: { directory: "/tmp/test" } } })) as never}>
+              <DialogProvider>
+                <MemoryRemembered owner={owner()} directory="/tmp/p" />
+              </DialogProvider>
+            </ServerSyncContext.Provider>
+          </ServerContext.Provider>
+        </GlobalContext.Provider>
+      </LanguageContext.Provider>
+    ),
+    host,
+  )
   return { scopes, clears, queries, setOwner }
 }
 

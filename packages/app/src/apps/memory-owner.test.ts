@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentLike } from "./contacts"
 import {
+  agentConfigureRoute,
+  agentIDFromOwnerKey,
   defaultOwner,
-  MEMORY_COUNT_CAP,
-  memoryCountLabel,
   ownerFromKey,
   ownerRoute,
   ownersFor,
@@ -14,7 +14,10 @@ import {
 
 const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({ mode: "primary", hidden: false, ...over })
 
-const owners = ownersFor([agent({ id: "trader" }), agent({ id: "nova" }), agent({ id: "general", mode: "subagent" })], "Shared")
+const owners = ownersFor(
+  [agent({ id: "trader" }), agent({ id: "nova" }), agent({ id: "general", mode: "subagent" })],
+  "Shared",
+)
 
 describe("whose memory the app can show", () => {
   test("one entry per colleague, then the household — sub-agents are not owners", () => {
@@ -64,12 +67,19 @@ describe("opening ONE colleague's cabinet by link", () => {
     expect(ownerFromKey(owners, SHARED_KEY)?.scopes).toEqual(["global"])
   })
 
-  test("an unknown key falls back to the DEFAULT, never to everything", () => {
-    // A retired colleague's old link is the live case: answering a question about one colleague with
-    // everybody's memories would undo the partition through a stale URL.
-    expect(ownerFromKey(owners, "agent:retired_last_week")?.key).toBe("agent:nova")
+  test("an explicit agent key remains authoritative while the roster is late or missing", () => {
+    // The route already chose the cabinet. Roster data supplies the pretty name only; making it a
+    // prerequisite for the scope is how a transient roster failure turned remembered data into an
+    // empty screen.
+    expect(ownerFromKey([], "agent:trader")).toEqual({
+      key: "agent:trader",
+      label: "Trader",
+      scopes: ["agent:trader"],
+      kind: "agent",
+    })
+    expect(ownerFromKey(owners, "agent:retired_last_week")?.key).toBe("agent:retired_last_week")
     expect(ownerFromKey(owners, undefined)?.key).toBe("agent:nova")
-    expect(ownerFromKey([], "agent:trader")).toBeUndefined()
+    expect(ownerFromKey(owners, "not-an-owner")).toBeUndefined()
   })
 
   test("the route the dialog writes is the key the page reads", () => {
@@ -77,18 +87,11 @@ describe("opening ONE colleague's cabinet by link", () => {
     const key = new URLSearchParams(route.slice(route.indexOf("?"))).get("owner")
     expect(ownerFromKey(owners, key ?? undefined)?.label).toBe("Trader")
   })
-})
 
-describe("the count beside the door", () => {
-  test("zero shows no number — a new hire is not a fault", () => {
-    expect(memoryCountLabel(0)).toBeUndefined()
-    expect(memoryCountLabel(undefined)).toBeUndefined()
-  })
-
-  test("a real count shows itself, and the cap stops counting rather than inventing a total", () => {
-    expect(memoryCountLabel(7)).toBe("7")
-    expect(memoryCountLabel(MEMORY_COUNT_CAP)).toBe("200+")
-    expect(memoryCountLabel(MEMORY_COUNT_CAP + 500)).toBe("200+")
+  test("Back has one addressable route to this colleague's configuration", () => {
+    expect(agentIDFromOwnerKey("agent:trader")).toBe("trader")
+    expect(agentIDFromOwnerKey("global")).toBeUndefined()
+    expect(agentConfigureRoute("talent scout")).toBe("/contacts?configure=talent%20scout")
   })
 })
 

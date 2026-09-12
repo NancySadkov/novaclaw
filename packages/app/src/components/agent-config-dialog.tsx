@@ -26,8 +26,8 @@ import {
   superiorCandidates,
   type AgentLike,
 } from "@/apps/contacts"
-import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
-import { worldMemoryClearScopeVerified, worldMemoryList, GOVERNED_KINDS } from "@/utils/memory-api"
+import { ownerRoute } from "@/apps/memory-owner"
+import { worldMemoryClearScopeVerified } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
@@ -103,33 +103,6 @@ export function AgentConfigDialog(props: {
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
 
-  /**
-   * How much this colleague remembers, for the door below.
-   *
-   * ⚠️ Capped and COUNTED HERE rather than asked for as a statistic: `memory/stats` is instance-wide
-   * and would answer with the household's total, which on this surface reads as "Spectre remembers
-   * 4,000 things". A capped list is the honest cheap answer — past the cap the label says "many",
-   * and no number on this dialog is ever larger than the colleague's own cabinet.
-   */
-  const [remembered] = createResource(
-    () => {
-      const current = conn()
-      const id = props.agentID
-      return current && id ? { cn: current, id, dir: sync().data.path?.directory ?? "" } : undefined
-    },
-    ({ cn, id, dir }) =>
-      worldMemoryList(cn.http, {
-        directory: dir,
-        scopes: [`agent:${id}`],
-        // 🔴 THE SAME FILTER THE CABINET LIST APPLIES. Without it a cabinet holding only ingestion
-        // passages read as "200+ memories" beside a list page that correctly showed none — measured
-        // 2026-09-10: 2,116 rows, all `kind=passage`. A badge and its page answer one question.
-        kinds: [...GOVERNED_KINDS],
-        limit: MEMORY_COUNT_CAP,
-      })
-        .then((rows) => rows.length)
-        .catch(() => undefined),
-  )
   const name = createMemo(() => agent()?.name?.trim() || (props.agentID ? displayName(props.agentID) : ""))
 
   // Drafts start empty and fall back to the stored value at render, so an edit survives a re-read of
@@ -655,34 +628,34 @@ export function AgentConfigDialog(props: {
           [id]: governing()
             ? { memory: memoryValue(), ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }) }
             : {
-            ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
-            ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
-            ...(personality() === undefined && agent()?.personality === undefined
-              ? {}
-              : { personality: personalityValue() }),
-            memory: memoryValue(),
-            // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
-            // optional, so an empty string is how a UI says "unset" through a merge patch.
-            // A pure Chat role has no project component. Clear an old assignment even when this
-            // save changed another field, so a stale hidden folder cannot spring back later.
-            ...(postureValue()
-              ? { directory: "" }
-              : directory() === undefined
-                ? {}
-                : { directory: directory()!.trim() }),
-            ...(posture() === undefined ? {} : { shortChat: posture()! }),
-            ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
-            ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
-            ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
-            // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
-            // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
-            ...(computerUse() === undefined || computerRuleset().length === 0
-              ? {}
-              : { permissions: computerRuleset() }),
-            archiveChats: archiveValue(),
-            ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
-            ...binding,
-          },
+                ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
+                ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
+                ...(personality() === undefined && agent()?.personality === undefined
+                  ? {}
+                  : { personality: personalityValue() }),
+                memory: memoryValue(),
+                // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
+                // optional, so an empty string is how a UI says "unset" through a merge patch.
+                // A pure Chat role has no project component. Clear an old assignment even when this
+                // save changed another field, so a stale hidden folder cannot spring back later.
+                ...(postureValue()
+                  ? { directory: "" }
+                  : directory() === undefined
+                    ? {}
+                    : { directory: directory()!.trim() }),
+                ...(posture() === undefined ? {} : { shortChat: posture()! }),
+                ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
+                ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+                ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
+                // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
+                // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
+                ...(computerUse() === undefined || computerRuleset().length === 0
+                  ? {}
+                  : { permissions: computerRuleset() }),
+                archiveChats: archiveValue(),
+                ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
+                ...binding,
+              },
         },
       } as never)
       // Config patches preserve omitted fields and reject null. Returning to inheritance is a
@@ -884,12 +857,7 @@ export function AgentConfigDialog(props: {
                 navigate(ownerRoute(id))
               }}
             >
-              {memoryCountLabel(remembered()) === undefined
-                ? language.t("agentConfig.memoryOpen", { name: name() })
-                : language.t("agentConfig.memoryOpenCount", {
-                    name: name(),
-                    count: memoryCountLabel(remembered())!,
-                  })}
+              {language.t("agentConfig.memoryOpen")}
             </button>
             {/* Save, for the two switches above and nothing else. Without it the checkboxes were a
                 surface that lied: they moved, the toast never came, and the value reverted on reopen.
@@ -1409,11 +1377,9 @@ export function AgentConfigDialog(props: {
           >
             {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
           </button>
-          {/* 🔴 The DOOR into this colleague's own cabinet — MOVED here from the memory section on
-              2026-09-10, so "what does it remember" sits with the other things you can DO about a
-              colleague, not under the stance that decides whether it can. Unconditional now: the
-              cabinet exists even when recording is off, and Clear Memory beside it never asked
-              permission either. The count is live and says the honest thing when it is zero. */}
+          {/* The door into this colleague's own cabinet. The profile already says whose screen this
+              is, so the action is simply “Memory”; repeating the name turns a destination into a
+              sentence and makes the footer harder to scan. */}
           <button
             type="button"
             data-action="agent-open-memory"
@@ -1426,12 +1392,7 @@ export function AgentConfigDialog(props: {
               navigate(ownerRoute(id))
             }}
           >
-            {memoryCountLabel(remembered()) === undefined
-              ? language.t("agentConfig.memoryOpen", { name: name() })
-              : language.t("agentConfig.memoryOpenCount", {
-                  name: name(),
-                  count: memoryCountLabel(remembered())!,
-                })}
+            {language.t("agentConfig.memoryOpen")}
           </button>
           <Show when={!governing()}>
             {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
