@@ -479,7 +479,7 @@ export const RunCommand = effectCmd({
         return message.slice(0, 50) + (message.length > 50 ? "..." : "")
       }
 
-      async function session(sdk: NovaclawClient): Promise<SessionInfo | undefined> {
+      async function session(sdk: NovaclawClient, requestedAgent: string | undefined): Promise<SessionInfo | undefined> {
         if (args.session) {
           const current = await sdk.v2.session
             .get({
@@ -551,18 +551,20 @@ export const RunCommand = effectCmd({
         // and `question` has not been a permission since the tool was deleted. `plan_enter`/
         // `plan_exit` are already denied by default in `plugin/agent.ts`, so nothing is lost.
         /**
-         * 🔴 **A run belongs to NOVA, as one of her sub-sessions** (owner, 2026-08-28: *"no
-         * ghosthouse architecture"*). This used to create a root with no agent at all — a chat owned
-         * by nobody, on no roster, which is precisely the ghost `DEFAULT_COLLEAGUE_ID` names an owner
-         * for: *"an unattributed request is exactly the case the CEO exists to absorb."*
+         * 🔴 **A run belongs to the officer the caller named, or to NOVA when nobody was named**
+         * (owner, 2026-08-28: *"no ghosthouse architecture"*). This used to create a root with no
+         * agent at all — a chat owned by nobody, on no roster.
          *
          * ⚠️ A CHILD, and that is the whole reason the parent call comes first. `novaclaw run` is a
-         * one-shot task and people run many; as a ROOT with an agent it would resolve to Nova's one
-         * chat and every run would pile into the conversation the user has with her. As a sub-session
-         * each run is its own thread under an owner who can be pointed at.
+         * one-shot task and people run many; as a ROOT with an agent it would resolve to that
+         * colleague's one chat and every run would pile into the human-facing conversation. As a
+         * sub-session each run is its own thread under an owner who can be pointed at. The parent
+         * must be the chosen owner: switching only the child changes who executes, but leaves durable
+         * component ownership (memory, folder and model) with the old root officer.
          */
         /**
-         * 🔴 **The run is Nova's SUB-SESSION, in the directory the user ran it from** (NC-CS-002).
+         * 🔴 **The run is the chosen officer's SUB-SESSION, in the directory the user ran it from**
+         * (NC-CS-002).
          *
          * ⚠️ **`location` is not optional decoration — omitting it is what made this "hang".** A
          * session created with an agent and no location inherits that COLLEAGUE's folder, so this
@@ -580,18 +582,18 @@ export const RunCommand = effectCmd({
          *
          * ⚠️ A CHILD, not a root. With an agent and no parent the kernel resolves the canonical
          * `ses_<agent>`, so every one-shot run would pile into the single chat the user has with
-         * Nova. The parent create is idempotent — it hands back the existing live root — so this
-         * costs one round trip and makes each run its own thread under an owner who can be pointed
-         * at.
+         * that colleague. The parent create is idempotent — it hands back the existing live root —
+         * so this costs one round trip and makes each run its own thread under that owner.
          *
          * ⚠️ `test/cli/run/run-process.test.ts` is NOT in the fast gate. It lives under
          * `test/cli/`, which no promoted unit scans (`novaclaw:server` runs `test/server/` and
          * nothing else), so it executes only under `--full`. Run it by name after touching this.
          */
         const where = { directory: (directory ?? root) as never }
-        const parent = await sdk.v2.session.create({ agent: RUN_AGENT, location: where })
+        const owner = requestedAgent ?? RUN_AGENT
+        const parent = await sdk.v2.session.create({ agent: owner, location: where })
         const parentID = parent.data?.data?.id
-        const result = await sdk.v2.session.create({ title: name, agent: RUN_AGENT, parentID, location: where })
+        const result = await sdk.v2.session.create({ title: name, agent: owner, parentID, location: where })
         const id = result.data?.data?.id
         if (!id) {
           return
@@ -717,7 +719,11 @@ export const RunCommand = effectCmd({
        * exercised path was the working one; do not fix one and leave the other.
        */
       async function execute(sdk: NovaclawClient, rebind: (dir: string) => NovaclawClient) {
-        const sess = await session(sdk)
+        // Resolve the requested officer before creating a new child. Execution identity is the
+        // nearest declaration, while component ownership is the root's first declaration; choosing
+        // the parent afterward would run as one officer while reading another officer's cabinet.
+        const agent = await chosenAgent(sdk)
+        const sess = await session(sdk, agent)
         if (!sess?.id) {
           UI.error("Session not found")
           process.exit(1)
@@ -970,9 +976,6 @@ export const RunCommand = effectCmd({
             ? (sess.directory ?? (await current(sdk)))
             : (sess.directory ?? directory ?? root)
         const client = rebind(cwd)
-
-        // Validate agent if specified
-        const agent = await chosenAgent(client)
 
         // `/api/event` — the contract stream; the legacy `/event` this read until 2026-09-03 is gone.
         const events = await client.v2.event.subscribe()

@@ -4,6 +4,7 @@
 // `novaclaw.run(message, opts?)` to spawn `bun src/index.ts run ...` with
 // `NOVACLAW_CONFIG_CONTENT` providing the test provider config inline.
 import { describe, expect } from "bun:test"
+import { Database as BunSqlite } from "bun:sqlite"
 import { Effect } from "effect"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -112,6 +113,21 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         expect(firstEvents[0]).toEqual(
           expect.objectContaining({ type: "step_start", step: expect.objectContaining({ agent }) }),
         )
+        const db = new BunSqlite(database, { readonly: true })
+        const firstRow = db
+          .query("SELECT parent_id FROM session WHERE id = ?")
+          .get(firstSessionID) as { parent_id: string | null } | null
+        const parentRow = firstRow?.parent_id
+          ? (db.query("SELECT agent FROM session WHERE id = ?").get(firstRow.parent_id) as {
+              agent: string | null
+            } | null)
+          : null
+        db.close()
+        // Execution identity (the child) and durable component ownership (the root) must agree.
+        // Switching a Nova-owned child to this colleague would pass the step_start assertion above
+        // while still reading Nova's memory cabinet through ownerAgentOf(root-first chain).
+        expect(firstRow?.parent_id).toBeTruthy()
+        expect(parentRow?.agent).toBe(agent)
 
         yield* llm.text("second colleague reply")
         const second = yield* novaclaw.run("second", { agent, format: "json", env })
