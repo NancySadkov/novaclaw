@@ -82,6 +82,20 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     return getCursorPosition(el())
   }
 
+  /**
+   * Whether some OTHER control is holding the user's text selection right now.
+   *
+   * ⚠️ Only a control that can actually own a text caret counts. `document.activeElement` is also a
+   * `<button>` — the chat TAB the user just clicked — and treating that as "another control owns the
+   * selection" is what lost the caret on every session switch (see `renderWithCursor`).
+   */
+  const otherOwnsTextSelection = () => {
+    const active = document.activeElement
+    if (!active || active === el()) return false
+    if (active instanceof HTMLElement && active.isContentEditable) return true
+    return active.tagName === "INPUT" || active.tagName === "TEXTAREA"
+  }
+
   const renderWithCursor = (parts: Prompt, fallbackCursor?: number) => {
     const focused = document.activeElement === el()
     const cursor = currentCursor()
@@ -91,7 +105,16 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     // offset zero, so the next keystrokes prefix the draft. The prompt store already owns the last
     // confirmed cursor from `input`; use it only when this editor still owns focus, never to steal
     // selection back from another control.
-    const restore = cursor ?? (focused ? fallbackCursor : undefined)
+    //
+    // 🔴 **SWITCHING CHAT TABS IS THE CASE THAT SLIPPED THROUGH THAT "never".** (owner, 2026-09-12)
+    // Clicking a tab moves focus to the tab BUTTON, which owns no text selection at all — yet
+    // `focused` was false, so the caret was not restored either, and the rebuild left the browser
+    // default of offset zero: *"any new keystrokes prepend to the edited prompt"*. Restoring here
+    // cannot steal anything, because a button has no selection to take; the case the rule exists for
+    // is a real text control (the `<input>` in the test beside this), and that is exactly what
+    // `otherOwnsTextSelection` still refuses. Setting the range does NOT focus the editor, so the
+    // tab keeps focus and the caret is already in the right place the moment typing resumes.
+    const restore = cursor ?? (focused || !otherOwnsTextSelection() ? fallbackCursor : undefined)
     if (restore !== undefined) setCursorPosition(el(), restore)
   }
 

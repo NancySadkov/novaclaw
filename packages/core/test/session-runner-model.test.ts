@@ -906,13 +906,13 @@ describe("SessionRunnerModel.resolveDefault", () => {
   })
 })
 
-// AN EXPLICIT REQUEST IS NOT A SUGGESTION.
+// A caller that explicitly opts into strict resolution is not asking for a suggestion.
 //
 // 🔴 Found by the RELEASE gate, 2026-08-23. The fallback added for a colleague whose configured model
 // is temporarily down had also started swallowing `--model does/not-exist`: `novaclaw run` exited 0
 // having quietly run something else, defeating `run-process.test.ts`'s regression guard for #27371.
 // Both rules are right; the resolver could not tell them apart, because an agent-declared model and a
-// user-named one arrive on the same field. `requested` is the distinction, read from the RAW ROW.
+// user-named one arrive on the same field. `requested` is the distinction supplied by the caller.
 describe("the fallback never substitutes for a model the user NAMED", () => {
   test("an explicit request that cannot be served is an error, not a substitution", () => {
     // The unavailable branch is guarded on `options.requested === true` BEFORE the fallback runs, so
@@ -935,5 +935,60 @@ describe("the fallback never substitutes for a model the user NAMED", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1")
     expect(runner).toMatch(/requested: session\.model !== undefined/)
+  })
+})
+
+// A MODEL THE USER SWITCHED OFF IS NOT A REQUEST EITHER.
+//
+// 🔴 Owner, 2026-09-12: *"Turning model off should short circuit any traffic to it ASAP, switching
+// agents to available models."* Reported as three symptoms with one cause — the officer settings
+// model picker appearing inert, the context indicator naming a model that was not answering, and
+// every turn failing with *"the selected model … is unavailable. Pick an available model in
+// Settings"*, cleared only by restarting.
+//
+// The cause: `session.model` is written by the composer's first prompt as well as by a deliberate
+// pick, so a chat carries a permanent pin to whichever model was the default the day it was created
+// (every session on the live instance did, including officer chats whose colleague names no model at
+// all). `requested` is derived from that row, so the switch-off itself was read as a user instruction
+// the resolver had failed to honour — and the error branch fired before the fallback could run.
+describe("a pin to a model the user switched OFF is void, not a request", () => {
+  const stripped = (relative: string) =>
+    fs
+      .readFileSync(path.join(import.meta.dir, relative), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+
+  test("the hard-failure branch excludes a pin the catalog reports as switched off", () => {
+    const source = stripped("../src/session/runner/model.ts")
+    const block = source.slice(source.indexOf("if (!selected && session.model) {"))
+    // The catalog is asked what the PINNED ref is, not what is servable: `available()` has already
+    // dropped a disabled model by the time we get here, which is exactly why the pin resolved to
+    // nothing in the first place.
+    expect(block).toContain("const pinned = yield* catalog.model.get(session.model.providerID, session.model.id)")
+    expect(block).toContain("const switchedOff = pinned !== undefined && !pinned.enabled")
+    // ORDERING is the property: the error must be guarded on the pin being a live one, and the
+    // fallback must still be reachable when it is not.
+    expect(block).toMatch(/if \(options\?\.requested === true && !switchedOff\)/)
+    const guard = block.indexOf("!switchedOff")
+    expect(guard).toBeGreaterThan(0)
+    expect(block.indexOf("usableFallback({")).toBeGreaterThan(guard)
+  })
+
+  test("the two causes are told apart in the fallback line an operator reads", () => {
+    const source = stripped("../src/session/runner/model.ts")
+    // "switched off" and "cannot be resolved" are diagnosed differently — the first is a Settings
+    // switch, the second a missing model or a dead key — so a run of these must say which.
+    expect(source).toMatch(/"model\.reason": switchedOff \? "disabled" : "unavailable"/)
+  })
+
+  test("`enabled` has ONE writer in the tree, so it can only mean the Settings switch", () => {
+    // ⚠️ The rule above reads `enabled` as "the user switched this off". That is only true while
+    // `config/plugin/provider.ts` is the sole writer — `model.enabled = !config.disabled`, from the
+    // catalog_provider layers the Settings toggle commits. A second writer would silently widen what
+    // this branch treats as void, so the fact is asserted rather than assumed.
+    const plugin = stripped("../src/config/plugin/provider.ts")
+    expect(plugin).toMatch(/if \(config\.disabled !== undefined\) model\.enabled = !config\.disabled/)
+    const catalog = stripped("../src/catalog.ts")
+    expect(catalog).not.toMatch(/\.enabled = /)
   })
 })

@@ -124,6 +124,27 @@ describe("editor-core (ui-arch P4a)", () => {
     expect(window.getSelection()?.rangeCount).toBe(0)
   })
 
+  test("renderWithCursor restores the stored caret after a TAB switch moved focus to a button", () => {
+    // 🔴 Owner, 2026-09-12: *"If the user managed to type anything into prompt edit before this
+    // switch, it also resets the cursor to the start of the prompt edit box, so any new keystrokes
+    // prepend to the edited prompt."*
+    //
+    // Clicking a chat tab focuses the tab BUTTON. The editor is not focused and holds no selection,
+    // so the old `focused ?` guard skipped the restore and `render(parts)` left the browser default
+    // of offset zero. A button owns no text selection, so restoring here steals nothing — and
+    // setting the range must NOT focus the editor, or the tab the user just clicked loses focus.
+    core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
+    const tab = document.createElement("button")
+    document.body.appendChild(tab)
+    tab.focus()
+    window.getSelection()?.removeAllRanges()
+
+    core.renderWithCursor([{ type: "text", content: "hello!", start: 0, end: 6 }], 5)
+
+    expect(document.activeElement).toBe(tab)
+    expect(getCursorPosition(host)).toBe(5)
+  })
+
   test("caretState reports collapsed cursor inside the editor and zeros outside", () => {
     core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
     setCursorPosition(host, 4)

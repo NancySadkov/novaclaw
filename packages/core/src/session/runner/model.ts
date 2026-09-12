@@ -1059,26 +1059,48 @@ export const locationLayer = Layer.effect(
       // ⚠️ TEMPORARY means nothing is written. The colleague's configured model is untouched, so
       // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
       // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
-      // 🔴 **AN EXPLICIT REQUEST THAT CANNOT BE SERVED IS AN ERROR, NEVER A SUBSTITUTION.**
-      // The fallback below exists for a COLLEAGUE whose configured model is temporarily down — the
-      // officer keeps working on the default rather than going silent. It must not swallow
-      // `--model does/not-exist`: the user named that model, and quietly running a different one is
-      // answering a question nobody asked.
+      // 🔴 **A PIN TO A MODEL THE USER HAS SWITCHED OFF IS NOT A REQUEST** (owner, 2026-09-12:
+      // *"Turning model off should short circuit any traffic to it ASAP, switching agents to
+      // available models."*)
       //
-      // Measured 2026-08-23 in the release gate: `novaclaw run --model test/nonexistent-model` had
-      // started exiting 0, defeating `run-process.test.ts`'s regression guard for #27371. The two
-      // rules are both right and the resolver could not tell them apart, because an agent-declared
-      // model and a user-requested one arrive on the same field.
-      if (!selected && session.model && options?.requested === true)
-        return yield* new ModelUnavailableError({
-          providerID: session.model.providerID,
-          modelID: session.model.id,
-        })
+      // `session.model` is where an explicit choice lands — but it is ALSO where a chat's INHERITED
+      // model was written once and then left behind. Measured on a live instance 2026-09-12: every
+      // session, including officer chats whose colleague names no model at all, carried a pin to
+      // whichever model was the instance default on the day that chat was created (the composer
+      // stamped its RESOLVED model on the first prompt; `submit.ts` no longer does). So the row
+      // outranked the officer permanently, and reading it as "the user named this" turned the
+      // switch-off itself into a hard failure: the model is disabled in Settings, the row still asks
+      // for it, and every turn dies with *"the selected model … is unavailable. Pick an available
+      // model in Settings"* — including the turns no composer sends, which is why nothing ever
+      // cleared it and only a restart appeared to help.
+      //
+      // The catalog separates the two cases `requested` conflates, and `enabled` has exactly one
+      // writer in the tree — `config/plugin/provider.ts`, `model.enabled = !config.disabled`, i.e.
+      // the Settings switch and nothing else:
+      //   · present with `enabled === false` → the user SWITCHED IT OFF. That is a state which
+      //     changed underneath a snapshot, not an instruction we failed to honour, so the pin is
+      //     void and the ordinary fallback below serves the turn.
+      //   · absent from the catalog entirely → nothing was ever served under that ref (a typo, a
+      //     `--model` for a model this instance does not have). Still the caller's mistake, and the
+      //     error below still stands for it — that is `run-process.test.ts`'s guard for #27371.
       if (!selected && session.model) {
+        const pinned = yield* catalog.model.get(session.model.providerID, session.model.id)
+        const switchedOff = pinned !== undefined && !pinned.enabled
+        // An explicit caller may still demand a hard failure for a ref the catalog has never heard
+        // of — but never for one the user has deliberately turned off.
+        if (options?.requested === true && !switchedOff)
+          return yield* new ModelUnavailableError({
+            providerID: session.model.providerID,
+            modelID: session.model.id,
+          })
+        // The unavailable catalog entry may not be routable, but its declared capabilities still
+        // define what the replacement must be able to do.
+        const compatible = (entry: ModelV2.Info) =>
+          supported(entry) && ProviderRecovery.capabilitiesMatch(pinned?.capabilities, entry.capabilities)
         const usable = usableFallback({
           fallback: yield* catalog.model.default(),
           available: yield* catalog.model.available(),
-          supported,
+          supported: compatible,
         })
         if (usable) {
           if (report)
@@ -1086,7 +1108,7 @@ export const locationLayer = Layer.effect(
               "session.id": session.id,
               "model.requested": `${session.model.providerID}/${session.model.id}`,
               "model.used": `${usable.providerID}/${usable.id}`,
-              "model.reason": "unavailable",
+              "model.reason": switchedOff ? "disabled" : "unavailable",
             })
           selected = usable
         } else
