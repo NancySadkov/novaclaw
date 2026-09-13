@@ -281,6 +281,71 @@ describe("AgentConfigDialog renders", () => {
     expect(document.querySelectorAll('[data-action="agent-open-memory"]').length).toBe(1)
   })
 
+  test("the restored officer controls each live in their own settings tab", async () => {
+    const writes: unknown[] = []
+    mount({ agents: [AGENT], write: (patch) => writes.push(patch) })
+    await settle()
+
+    const navigation = document.querySelector('nav[aria-label="Officer settings"]')
+    expect(navigation?.classList.contains("overflow-x-auto")).toBe(true)
+    expect(navigation?.classList.contains("md:flex-col")).toBe(true)
+    expect([...navigation!.querySelectorAll("button")].every((button) => button.classList.contains("min-h-10"))).toBe(
+      true,
+    )
+
+    const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
+    expect(mind?.textContent).toContain("Interactive")
+    expect(mind?.textContent).toContain("Unattended")
+    expect(mind?.textContent).toContain("Goal")
+    expect(mind?.textContent).toContain("Mood sampling")
+
+    const work = document.querySelector('[data-section="work"][data-settings-tab="work"]')
+    expect(work?.textContent).toContain("Context guard")
+    expect(work?.textContent).toContain("Edits instead of overwriting")
+    expect(work?.textContent).toContain("Stuck detector")
+    expect(work?.textContent).toContain("Quality gates")
+
+    expect(document.querySelector('[data-section="nudges"][data-settings-tab="nudges"]')).not.toBeNull()
+    const io = document.querySelector('[data-section="input-output"][data-settings-tab="io"]')
+    expect(io?.textContent).toContain("Input / Output")
+    expect(io?.querySelector('[data-section="remote-chat"]')).not.toBeNull()
+
+    const profile = document.querySelector('[data-section="profile"][data-settings-tab="profile"]')
+    expect(profile?.textContent).toContain("Import personality")
+    expect(profile?.textContent).toContain("Export personality")
+    expect(profile?.querySelector('[data-action="agent-personality-import"]')?.classList.contains("w-full")).toBe(true)
+
+    document.querySelector<HTMLInputElement>('input[type="radio"][value="interactive"]')!.click()
+    const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
+    goal.value = "Publish the reviewed manuscript."
+    goal.dispatchEvent(new Event("input", { bubbles: true }))
+    for (const title of [
+      "Context guard",
+      "Edits instead of overwriting",
+      "Stuck detector",
+      "Quality gates",
+      "Mood sampling",
+    ]) {
+      const label = [...document.querySelectorAll("label")].find((row) => row.textContent?.includes(title))
+      label?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
+    }
+    saveButton()!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: {
+        theron: {
+          operationMode: "interactive",
+          goal: "Publish the reviewed manuscript.",
+          contextBudget: false,
+          surgicalEdits: true,
+          introspection: true,
+          quality: true,
+          affective: true,
+        },
+      },
+    })
+  })
+
   test("portrait selection is a readable button with its filename separate", async () => {
     mount({ agents: [AGENT] })
     await settle()

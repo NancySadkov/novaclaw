@@ -4655,16 +4655,72 @@ export const layer = Layer.effect(
               }).pipe(Effect.as([])),
             ),
           )
+          const officerGoal =
+            latest?.agent === undefined ? undefined : (yield* agents.get(AgentV2.ID.make(latest.agent)))?.goal
           const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
             goal:
-              typeof goalEntry?.value === "object" && goalEntry.value !== null && "text" in goalEntry.value
-                ? String(goalEntry.value.text)
-                : undefined,
+              typeof officerGoal === "string" && officerGoal.trim()
+                ? officerGoal
+                : typeof goalEntry?.value === "object" && goalEntry.value !== null && "text" in goalEntry.value
+                  ? String(goalEntry.value.text)
+                  : undefined,
             steps: planEntries.map((entry) => {
               const value = entry.value as SessionComponentRegistry.PlanStep
               return { text: value.text, status: value.status, verdict: value.verdict }
             }),
           })
+          if (decision.kind === "sleep") {
+            const next = Date.now() + decision.milliseconds
+            yield* events
+              .publish(SessionStatusEvent.Status, {
+                sessionID: input.sessionID,
+                status: {
+                  type: "retry",
+                  attempt: 1,
+                  message: "Waiting for the environment to change…",
+                  next,
+                },
+              })
+              .pipe(Effect.ignore)
+            yield* Log.event("session.drive.sleep", {
+              "session.id": input.sessionID,
+              milliseconds: decision.milliseconds,
+            })
+            // No provider request or scheduler slot is held here. Stop interrupts this wait. A new
+            // message wakes it early (the event is instant; the bounded queue probe closes the tiny
+            // check/subscribe race), while an external change with no event is retried at ten minutes.
+            let remaining = decision.milliseconds
+            let wokeForInput = false
+            while (remaining > 0 && !wokeForInput) {
+              const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+              const pendingQueue = pendingSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
+              if (pendingSteer || pendingQueue) {
+                wokeForInput = true
+                break
+              }
+              const slice = Math.min(5_000, remaining)
+              wokeForInput = yield* Effect.race(
+                events.subscribe(SessionEvent.PromptAdmitted).pipe(
+                  Stream.filter((event) => event.data.sessionID === input.sessionID),
+                  Stream.runHead,
+                  Effect.as(true),
+                ),
+                Effect.sleep(Duration.millis(slice)).pipe(Effect.as(false)),
+              )
+              remaining -= slice
+            }
+            driveState.rounds = 0
+            driveState.stagnantRounds = 0
+            if (wokeForInput) {
+              const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+              shouldRun = pendingSteer || (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
+              promotion = shouldRun ? (pendingSteer ? "steer" : "queue") : undefined
+            } else {
+              yield* SessionInput.steer(db, events, input.sessionID, decision.message)
+              shouldRun = true
+              promotion = "steer"
+            }
+          }
           if (decision.kind === "continue") {
             driveState.rounds++
             yield* Log.event("session.drive.continue", {

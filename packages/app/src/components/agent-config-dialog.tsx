@@ -1,5 +1,5 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
-import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { ControlScope } from "@/components/control-scope"
@@ -36,6 +36,10 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
+import { AgentRemoteChat } from "@/components/agent-remote-chat"
+import { PERSONALITY_FORMAT, downloadOfficerPersonality, parseOfficerPersonality } from "@/apps/agent-personality"
+import { switchType } from "@/utils/fs-api"
+import { createSettledResource } from "@/utils/settled-resource"
 
 const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
@@ -109,6 +113,7 @@ export function AgentConfigScreen(props: {
   const [renamed, setRenamed] = createSignal<string | undefined>()
   const [title, setTitle] = createSignal<string | undefined>()
   const [personality, setPersonality] = createSignal<string | undefined>()
+  const [job, setJob] = createSignal<string | undefined>()
   const [avatarFile, setAvatarFile] = createSignal<File | undefined>()
   const [avatarRemoved, setAvatarRemoved] = createSignal(false)
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
@@ -130,6 +135,13 @@ export function AgentConfigScreen(props: {
   const [posture, setPosture] = createSignal<boolean | undefined>()
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
   const [strict, setStrict] = createSignal<boolean | undefined>()
+  const [operationMode, setOperationMode] = createSignal<"interactive" | "unattended" | undefined>()
+  const [goal, setGoal] = createSignal<string | undefined>()
+  const [contextBudget, setContextBudget] = createSignal<boolean | undefined>()
+  const [surgicalEdits, setSurgicalEdits] = createSignal<boolean | undefined>()
+  const [introspection, setIntrospection] = createSignal<boolean | undefined>()
+  const [quality, setQuality] = createSignal<boolean | undefined>()
+  const [affective, setAffective] = createSignal<boolean | undefined>()
   /**
    * Tool-call captions, drafted as the OPT-OUT. `undefined` = untouched; ON is the default, so a
    * stored `false` is the only way this colleague stops paying a model call per shell command for a
@@ -145,14 +157,16 @@ export function AgentConfigScreen(props: {
   const [computerUse, setComputerUse] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
-  type SettingsTab = "profile" | "mind" | "work" | "memory" | "workers" | "chat"
+  type SettingsTab = "profile" | "mind" | "work" | "nudges" | "memory" | "workers" | "io" | "chat"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
   const settingsTabs = createMemo(() => [
     { id: "profile" as const, label: "Profile", icon: "user" as const },
     { id: "mind" as const, label: "Mind", icon: "brain" as const },
     { id: "work" as const, label: "Work", icon: "task" as const },
+    { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
     { id: "memory" as const, label: "Memory", icon: "archive" as const },
     { id: "workers" as const, label: "Workers", icon: "branch" as const },
+    { id: "io" as const, label: "Input / Output", icon: "chats" as const },
     ...(props.tuning ? [{ id: "chat" as const, label: "This chat", icon: "chats" as const }] : []),
   ])
   /**
@@ -167,6 +181,7 @@ export function AgentConfigScreen(props: {
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
   const personalityValue = () => personality() ?? agent()?.personality ?? ""
+  const jobValue = () => job() ?? agent()?.system ?? ""
   // A chat-mode colleague (posture `shortChat`) DEFAULTS off: the runner's own gate
   // (`maintenance.ts` — `ShortChat.enabled(config.shortChat) || !stanceOf("memory", ...)`) never
   // records a thing for it, so an ON toggle there would be a promise the stance cannot keep. Every
@@ -187,6 +202,28 @@ export function AgentConfigScreen(props: {
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
     strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
+  const operationModeValue = () =>
+    operationMode() ??
+    ((agent()?.config?.["operationMode"] as string | undefined) === "interactive" ? "interactive" : "unattended")
+  const goalValue = () => goal() ?? (agent()?.config?.["goal"] as string | undefined) ?? ""
+  // The settings shell can render before the first config snapshot arrives (and the lightweight
+  // browser fixtures deliberately exercise that state). Missing instance config means shipped
+  // defaults, never a reason for the officer screen to crash.
+  const instanceConfig = () => (sync().data.config ?? {}) as Record<string, unknown>
+  const instanceEnabled = (block: string, fallback: boolean) => {
+    const value = instanceConfig()[block]
+    return typeof value === "object" && value !== null && "enabled" in value
+      ? ((value as { enabled?: boolean }).enabled ?? fallback)
+      : fallback
+  }
+  const standingValue = (draft: boolean | undefined, key: string, fallback: boolean) =>
+    draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
+  const contextBudgetValue = () => standingValue(contextBudget(), "contextBudget", instanceEnabled("context", true))
+  const surgicalEditsValue = () => standingValue(surgicalEdits(), "surgicalEdits", false)
+  const introspectionValue = () =>
+    standingValue(introspection(), "introspection", instanceEnabled("introspection", false))
+  const qualityValue = () => standingValue(quality(), "quality", instanceEnabled("quality", false))
+  const affectiveValue = () => standingValue(affective(), "affective", instanceEnabled("affective", false))
 
   // ── Computer Use ───────────────────────────────────────────────────────────────────────────────
   // The switch reads a PERMISSION RULE, not a field of its own, on purpose. A `computerUse: boolean`
@@ -397,11 +434,19 @@ export function AgentConfigScreen(props: {
     renamed() !== undefined ||
     title() !== undefined ||
     personality() !== undefined ||
+    job() !== undefined ||
     memory() !== undefined ||
     directory() !== undefined ||
     posture() !== undefined ||
     permissionMode() !== undefined ||
     strict() !== undefined ||
+    operationMode() !== undefined ||
+    goal() !== undefined ||
+    contextBudget() !== undefined ||
+    surgicalEdits() !== undefined ||
+    introspection() !== undefined ||
+    quality() !== undefined ||
+    affective() !== undefined ||
     toolLabels() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
@@ -420,7 +465,59 @@ export function AgentConfigScreen(props: {
 
   const [busy, setBusy] = createSignal<"clone" | "clear" | "clear-memory" | "retire" | "pause" | undefined>()
 
-  const sdk = () => ctx()?.sdk.client.v2
+  // The shared roster is also used by render/offline states that deliberately have no SDK yet.
+  // Treat that as "not connected", not as a component crash during construction.
+  const sdk = () => ctx()?.sdk?.client?.v2
+  const [sessionRows, sessionActions] = createSettledResource(sdk, (client) => listSessions(client))
+  const [createdSessionID, setCreatedSessionID] = createSignal<string | undefined>()
+  const officerSessionID = () =>
+    createdSessionID() ?? (props.agentID === undefined ? undefined : chatFor(sessionRows() ?? [], props.agentID)?.id)
+  const ensureOfficerSession = async () => {
+    const current = officerSessionID()
+    if (current) return current
+    const client = sdk()
+    const id = props.agentID
+    if (!client || !id) return undefined
+    const created = await startChat(client, { agentID: id, title: name() })
+    if (created) {
+      setCreatedSessionID(created)
+      void sessionActions.refetch()
+    }
+    return created
+  }
+
+  let personalityInput: HTMLInputElement | undefined
+  const exportPersonality = () => {
+    const slug =
+      nameValue()
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "officer"
+    downloadOfficerPersonality(`${slug}-personality.json`, {
+      format: PERSONALITY_FORMAT,
+      version: 1,
+      profile: {
+        name: nameValue(),
+        title: titleValue(),
+        personality: personalityValue(),
+        job: jobValue(),
+      },
+    })
+  }
+  const importPersonality = async (file: File | undefined) => {
+    if (!file) return
+    const parsed = parseOfficerPersonality(await file.text())
+    if (!parsed) {
+      showToast({ variant: "error", title: "That is not a NovaClaw officer personality file" })
+      return
+    }
+    if (parsed.profile.name !== undefined) setRenamed(parsed.profile.name)
+    if (parsed.profile.title !== undefined) setTitle(parsed.profile.title)
+    if (parsed.profile.personality !== undefined) setPersonality(parsed.profile.personality)
+    if (parsed.profile.job !== undefined) setJob(parsed.profile.job)
+    showToast({ variant: "success", title: "Personality loaded — review it, then Save" })
+  }
 
   /** Hire a copy: same brief, new identity (`apps/agent-clone.ts`). */
   const clone = async () => {
@@ -708,6 +805,11 @@ export function AgentConfigScreen(props: {
         workerPrototype?: string
         maxWorkers?: number
         spawnDepth?: number
+        contextBudget?: boolean
+        surgicalEdits?: boolean
+        introspection?: boolean
+        quality?: boolean
+        affective?: boolean
       } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
@@ -722,6 +824,11 @@ export function AgentConfigScreen(props: {
         ...(workerPrototypeValue() === "" ? {} : { workerPrototype: workerPrototypeValue() }),
         ...(maxWorkers() === undefined ? {} : { maxWorkers: parsedMaxWorkers() }),
         ...(spawnDepth() === undefined ? {} : { spawnDepth: parsedSpawnDepth() }),
+        ...(contextBudget() === undefined ? {} : { contextBudget: contextBudget()! }),
+        ...(surgicalEdits() === undefined ? {} : { surgicalEdits: surgicalEdits()! }),
+        ...(introspection() === undefined ? {} : { introspection: introspection()! }),
+        ...(quality() === undefined ? {} : { quality: quality()! }),
+        ...(affective() === undefined ? {} : { affective: affective()! }),
       }
       // 🔴 Nova's fragment is TWO KEYS, never the officer payload. The server refuses a fragment
       // naming the governing agent that carries anything outside `AgentV2.PROTECTED_TUNABLE`, and it
@@ -738,6 +845,7 @@ export function AgentConfigScreen(props: {
                 ...(personality() === undefined && agent()?.personality === undefined
                   ? {}
                   : { personality: personalityValue() }),
+                ...(job() === undefined && agent()?.system === undefined ? {} : { system: jobValue() }),
                 memory: memoryValue(),
                 // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
                 // optional, so an empty string is how a UI says "unset" through a merge patch.
@@ -751,6 +859,8 @@ export function AgentConfigScreen(props: {
                 ...(posture() === undefined ? {} : { shortChat: posture()! }),
                 ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
                 ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+                ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
+                ...(goal() === undefined ? {} : { goal: goalValue() }),
                 ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
                 // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
                 // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
@@ -763,6 +873,18 @@ export function AgentConfigScreen(props: {
               },
         },
       } as never)
+      // Materialise the standing operation choice onto an already-live root immediately. New roots
+      // read it during construction in the kernel.
+      if (operationMode() !== undefined && officerSessionID() !== undefined) {
+        const target = conn()
+        const folder = directoryValue() ?? workspacePath()
+        if (target && folder)
+          await switchType(target.http, {
+            directory: folder,
+            sessionID: officerSessionID()!,
+            type: operationMode() === "interactive" ? "interactive" : "goal-oriented",
+          })
+      }
       // Config patches preserve omitted fields and reject null. Returning to inheritance is a
       // deletion, and only an explicitly changed selector may request it.
       await sync().removeConfig([
@@ -785,6 +907,7 @@ export function AgentConfigScreen(props: {
       setRenamed(undefined)
       setTitle(undefined)
       setPersonality(undefined)
+      setJob(undefined)
       setAvatarFile(undefined)
       setAvatarRemoved(false)
       setMemory(undefined)
@@ -792,6 +915,13 @@ export function AgentConfigScreen(props: {
       setPosture(undefined)
       setPermissionMode(undefined)
       setStrict(undefined)
+      setOperationMode(undefined)
+      setGoal(undefined)
+      setContextBudget(undefined)
+      setSurgicalEdits(undefined)
+      setIntrospection(undefined)
+      setQuality(undefined)
+      setAffective(undefined)
       setComputerUse(undefined)
       setToolLabels(undefined)
       setArchive(undefined)
@@ -1107,6 +1237,48 @@ export function AgentConfigScreen(props: {
                     placeholder={language.t("agentConfig.personalityPlaceholder")}
                   />
                 </label>
+                <label class="mt-3 block text-xs text-v2-text-text-muted">
+                  Job instructions
+                  <textarea
+                    aria-label="Job instructions"
+                    class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    value={jobValue()}
+                    onInput={(event) => setJob(event.currentTarget.value)}
+                    placeholder="What this officer is responsible for, and what a good result looks like."
+                  />
+                </label>
+                <div class="mt-4 flex flex-col gap-2 border-t border-v2-border-border-muted pt-4 sm:flex-row">
+                  <input
+                    ref={(element) => (personalityInput = element)}
+                    type="file"
+                    accept="application/json,.json"
+                    class="hidden"
+                    onChange={(event) => {
+                      void importPersonality(event.currentTarget.files?.[0])
+                      event.currentTarget.value = ""
+                    }}
+                  />
+                  <button
+                    type="button"
+                    data-action="agent-personality-import"
+                    class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium hover:bg-v2-background-bg-layer-02 sm:w-auto"
+                    onClick={() => personalityInput?.click()}
+                  >
+                    Import personality
+                  </button>
+                  <button
+                    type="button"
+                    data-action="agent-personality-export"
+                    class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 sm:w-auto"
+                    onClick={exportPersonality}
+                  >
+                    Export personality
+                  </button>
+                </div>
+                <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
+                  Portable JSON contains the name, job title, personality, and job instructions only. Models, folders,
+                  authority, memories, and chat history stay with this instance.
+                </p>
                 {/* Why this is a profile field and not something you type into the chat. */}
               </Show>
               <div class="mt-3 text-xs text-v2-text-text-muted">
@@ -1211,6 +1383,66 @@ export function AgentConfigScreen(props: {
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.mind")}
               </h3>
+              <div class="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Mode of operation">
+                {(["interactive", "unattended"] as const).map((mode) => (
+                  <label
+                    class={`cursor-pointer rounded-xl border p-3 transition-colors ${
+                      operationModeValue() === mode
+                        ? "border-v2-border-border-focus bg-v2-background-bg-layer-03"
+                        : "border-v2-border-border-base bg-v2-background-bg-layer-01 hover:bg-v2-background-bg-layer-02"
+                    }`}
+                  >
+                    <span class="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="agent-operation-mode"
+                        value={mode}
+                        checked={operationModeValue() === mode}
+                        onChange={() => setOperationMode(mode)}
+                      />
+                      <span>
+                        <span class="block text-sm font-medium">
+                          {mode === "interactive" ? "Interactive" : "Unattended"}
+                        </span>
+                        <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                          {mode === "interactive"
+                            ? "You drive: the agent answers and waits for you."
+                            : "The agent loops toward the goal until it is reached, with the same guardrails as auto-prompting."}
+                        </span>
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <label class="mt-4 block text-xs text-v2-text-text-muted">
+                Goal
+                <textarea
+                  aria-label="Goal"
+                  class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                  value={goalValue()}
+                  onInput={(event) => setGoal(event.currentTarget.value)}
+                  placeholder="What should this officer keep working toward?"
+                />
+              </label>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                In Unattended mode, NovaClaw keeps prompting toward this durable goal. When the plan stops changing, it
+                sleeps for 10 minutes without holding model capacity, then checks the environment again.
+              </p>
+              <label class="mt-4 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affectiveValue()}
+                  onChange={(event) => setAffective(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Mood sampling</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
+                  </span>
+                </span>
+              </label>
+              <div class="my-5 border-t border-v2-border-border-muted" />
               {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
                 same colleague clever in one conversation and poor in the next, for reasons the user
                 could not see. A colleague has one mind. */}
@@ -1404,6 +1636,65 @@ export function AgentConfigScreen(props: {
                   <span>{language.t("agentConfig.strict")}</span>
                 </label>
 
+                <div class="my-2 border-t border-v2-border-border-muted" />
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={contextBudgetValue()}
+                    onChange={(event) => setContextBudget(event.currentTarget.checked)}
+                  />
+                  <span>
+                    <span class="block">Context guard</span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      Keep conversation, recalled memory, knowledge retrieval, and tool output from crowding one another
+                      out.
+                    </span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={surgicalEditsValue()}
+                    onChange={(event) => setSurgicalEdits(event.currentTarget.checked)}
+                  />
+                  <span>
+                    <span class="block">Edits instead of overwriting</span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      Reject overwriting files and nudge the agent toward small, targeted edits.
+                    </span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={introspectionValue()}
+                    onChange={(event) => setIntrospection(event.currentTarget.checked)}
+                  />
+                  <span>
+                    <span class="block">Stuck detector</span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      A judge model periodically checks whether the agent is stuck and nudges it to change approach.
+                    </span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={qualityValue()}
+                    onChange={(event) => setQuality(event.currentTarget.checked)}
+                  />
+                  <span>
+                    <span class="block">Quality gates</span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      Compile and test after code edits, then steer the agent to fix failures before finishing.
+                    </span>
+                  </span>
+                </label>
+
                 {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
                   row only exists where that grant actually reaches. A subagent has no grant to opt out
                   of, and showing it a switch reading "on" would be a control that lies. */}
@@ -1427,7 +1718,7 @@ export function AgentConfigScreen(props: {
 
             <Show when={props.agentID}>
               {(id) => (
-                <section class="agent-settings-card" data-settings-tab="work">
+                <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
                   <SettingsNudgesV2 fixedAgentID={id()} />
                 </section>
               )}
@@ -1603,6 +1894,17 @@ export function AgentConfigScreen(props: {
               </div>
               <div class="mt-5 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 text-xs text-v2-text-text-muted">
                 Worker command captions are always off, keeping presentation-only model calls out of batch work.
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-settings-tab="io" data-section="input-output">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Input / Output</h3>
+              <p class="mt-2 text-xs leading-relaxed text-v2-text-text-faint">
+                Let a messenger conversation feed this officer’s prompt and carry its replies. The selected account
+                determines the messenger tool and identity; trust controls what remote participants may ask it to do.
+              </p>
+              <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
+                <AgentRemoteChat sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
               </div>
             </section>
 

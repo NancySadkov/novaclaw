@@ -25,6 +25,8 @@ export interface DriveSession {
 export interface DriveState {
   rounds: number
   readonly startedAt: number
+  stagnantRounds: number
+  progressKey?: string
 }
 
 export interface GoalContext {
@@ -36,10 +38,11 @@ export interface GoalContext {
   }>
 }
 
-export const initialState = (nowMs: number): DriveState => ({ rounds: 0, startedAt: nowMs })
+export const initialState = (nowMs: number): DriveState => ({ rounds: 0, startedAt: nowMs, stagnantRounds: 0 })
 
 export type DriveDecision =
   | { readonly kind: "continue"; readonly message: string }
+  | { readonly kind: "sleep"; readonly milliseconds: number; readonly message: string }
   | { readonly kind: "idle" }
   | { readonly kind: "terminated" }
 
@@ -80,9 +83,16 @@ const goalContinue = (context: GoalContext | undefined) => {
       : "Create a short ordered `plan` component set, then take its first concrete step.\n") +
     "Keep the goal and plan current through the `session` tool. A step is not verified merely because " +
     "you mark it completed; the kernel records a verdict only after its check runs. If the goal is " +
-    "unreachable, call the `exit` tool with the evidence."
+    "reached, call the `exit` tool. If an external condition prevents progress for now, say what you are " +
+    "waiting for; the harness will pause without consuming model capacity and try again later."
   )
 }
+
+export const UNATTENDED_SLEEP_MS = 10 * 60_000
+const STAGNANT_ROUNDS_BEFORE_SLEEP = 6
+
+const progressKey = (context: GoalContext | undefined): string =>
+  JSON.stringify((context?.steps ?? []).map((step) => [step.status, step.verdict?.check ?? null]))
 
 /**
  * One drive decision at drain-end (queue empty). `continue` keeps an autonomous worker alive;
@@ -92,7 +102,7 @@ const goalContinue = (context: GoalContext | undefined) => {
  */
 export const decide = (
   session: DriveSession | undefined,
-  _state: DriveState,
+  state: DriveState,
   _nowMs: number,
   context?: GoalContext,
 ): DriveDecision => {
@@ -102,5 +112,21 @@ export const decide = (
   if (session !== undefined && session.result !== undefined) return { kind: "terminated" }
   if (session?.type === "sub-agent") return { kind: "continue", message: SUB_AGENT_CONTINUE }
   if (type === undefined) return { kind: "idle" }
+  if (type === "goal-oriented") {
+    const key = progressKey(context)
+    if (state.progressKey === key) state.stagnantRounds++
+    else {
+      state.progressKey = key
+      state.stagnantRounds = 0
+    }
+    if (state.stagnantRounds >= STAGNANT_ROUNDS_BEFORE_SLEEP)
+      return {
+        kind: "sleep",
+        milliseconds: UNATTENDED_SLEEP_MS,
+        message:
+          "Ten minutes have passed. Re-check the environment and the durable goal now. Continue with the next " +
+          "concrete action if progress is possible; if the goal is reached, request completion with `exit`.",
+      }
+  }
   return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
 }

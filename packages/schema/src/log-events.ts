@@ -2100,6 +2100,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.drive.sleep": {
+    level: "info",
+    message: "self-drive paused before an environment recheck",
+    attributes: { "session.id": "correlate", milliseconds: "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   // The harness steered a turn back to the rest of a set it had enumerated itself. INFO: a model
   // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
   // The set-completion check RAN — with the numbers behind its verdict. Distinct from `.continue`,

@@ -34,7 +34,7 @@ describe("a sub-agent runs until explicit exit", () => {
   test("every autonomous type keeps driving regardless of elapsed rounds", () => {
     expect(SessionDrive.decide({ type: "auto-prompting" }, fresh(), now).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, fresh(), now).kind).toBe("continue")
-    const spent = { rounds: Number.MAX_SAFE_INTEGER, startedAt: 0 }
+    const spent = { rounds: Number.MAX_SAFE_INTEGER, startedAt: 0, stagnantRounds: 0 }
     expect(SessionDrive.decide({ type: "auto-prompting" }, spent, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "sub-agent" }, spent, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
   })

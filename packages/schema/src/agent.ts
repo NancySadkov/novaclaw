@@ -94,6 +94,15 @@ export const Info = Schema.Struct({
     wallMinutes: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
+  /** Persistent operation defaults for the colleague's canonical root session. */
+  operationMode: Schema.Literals(["interactive", "unattended"]).pipe(optional),
+  goal: Schema.String.pipe(optional),
+  /** Standing harness preferences, folded below project and chat overrides. */
+  contextBudget: Schema.Boolean.pipe(optional),
+  surgicalEdits: Schema.Boolean.pipe(optional),
+  introspection: Schema.Boolean.pipe(optional),
+  quality: Schema.Boolean.pipe(optional),
+  affective: Schema.Boolean.pipe(optional),
   /** Per-turn reasoning-token ceiling. Absent = selected model default; 0 = reasoning disabled. */
   reasoningBudget: NonNegativeInt.pipe(optional),
   /** Maximum wall time for one tool call in milliseconds. Descendant workers inherit it. */

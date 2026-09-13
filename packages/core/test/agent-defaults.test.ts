@@ -62,6 +62,11 @@ describe("who declared what", () => {
       strict: { enabled: true },
       reasoningBudget: 0,
       maxToolTimeoutMs: 90_000,
+      contextBudget: false,
+      surgicalEdits: true,
+      introspection: true,
+      quality: true,
+      affective: true,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
     const changed = Object.keys(folded).filter(
@@ -105,11 +110,16 @@ describe("a colleague's standing choices", () => {
 
   test("only the standing WORK choices are declarable", () => {
     expect([...AgentDefaults.DECLARABLE].sort()).toEqual([
+      "affective",
+      "contextBudget",
+      "introspection",
       "maxToolTimeoutMs",
       "permissionMode",
+      "quality",
       "reasoningBudget",
       "shortChat",
       "strict",
+      "surgicalEdits",
     ])
     const folded = AgentDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
@@ -138,8 +148,8 @@ describe("a colleague's standing choices", () => {
   })
 })
 
-describe("the colleague sits UNDER the folder, and today they cannot contend", () => {
-  test("the two layers are DISJOINT — measured, not assumed", () => {
+describe("the colleague sits UNDER the folder", () => {
+  test("shared harness fields are explicit, so project narrowing stays visible", () => {
     // 🔴 The ordering was chosen as a security decision (principle 13: a folder may raise a
     // supervision rail and never lower one, so the colleague must not be able to widen it again).
     // Measured while writing this: they cannot contend at all today, because a folder may only
@@ -150,7 +160,7 @@ describe("the colleague sits UNDER the folder, and today they cannot contend", (
     const overlap = AgentDefaults.DECLARABLE.filter((field) =>
       (ProjectDefaults.WIRED as readonly string[]).includes(field),
     )
-    expect(overlap).toEqual([])
+    expect(overlap.sort()).toEqual(["affective", "contextBudget", "introspection", "quality", "surgicalEdits"])
   })
 
   test("the colleague outranks the shipped baseline for what it does declare", () => {
@@ -170,5 +180,19 @@ describe("the colleague sits UNDER the folder, and today they cannot contend", (
     const withFolder = ProjectDefaults.fold(base, { features: { safeMode: true } } as never)
     expect(withFolder.defaults.safeMode).toBe(true)
     expect(withFolder.defaults.strict).toEqual({ enabled: true })
+  })
+
+  test("the five restored officer toggles are real session defaults", () => {
+    const folded = AgentDefaults.fold(
+      EFFECTIVE_CONFIG_DEFAULTS,
+      agent({ contextBudget: false, surgicalEdits: true, introspection: true, quality: true, affective: true }),
+    )
+    expect(folded).toMatchObject({
+      contextBudget: false,
+      surgicalEdits: true,
+      introspection: true,
+      quality: true,
+      affective: true,
+    })
   })
 })

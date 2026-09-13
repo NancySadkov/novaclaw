@@ -3,6 +3,8 @@ import path from "path"
 import { DateTime, Effect, Layer, Stream } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentStatus } from "@novaclaw/core/agent-status"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { asc, eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -44,6 +46,7 @@ const it = testEffect(
       Database.node,
       EventV2.node,
       AgentStatus.node,
+      AgentConfigStore.node,
       SessionProjector.node,
       SessionStore.node,
       SessionV2.node,
@@ -103,6 +106,28 @@ const itCommand = testEffect(
 )
 
 describe("SessionV2.create", () => {
+  it.effect("materialises an officer's standing operation mode while preserving an explicit override", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const store = yield* AgentConfigStore.Service
+      yield* store.setLayers("iris", [ConfigAgent.Info.make({ operationMode: "interactive" })])
+      yield* store.setLayers("daedalus", [ConfigAgent.Info.make({ operationMode: "unattended" })])
+      yield* store.setLayers("theron", [ConfigAgent.Info.make({ operationMode: "unattended" })])
+
+      const interactive = yield* session.create({ location, agent: AgentV2.ID.make("iris") })
+      const unattended = yield* session.create({ location, agent: AgentV2.ID.make("daedalus") })
+      const overridden = yield* session.create({
+        location,
+        agent: AgentV2.ID.make("theron"),
+        type: "interactive",
+      })
+
+      expect(interactive.type).toBe("interactive")
+      expect(unattended.type).toBe("goal-oriented")
+      expect(overridden.type).toBe("interactive")
+    }),
+  )
+
   it.effect("creates a fresh projected session when the ID is omitted", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -737,9 +762,7 @@ describe("SessionV2 setters", () => {
       const history = archived.find((row) => row.agent === officer && row.time.archived !== undefined)
       expect(history).toBeDefined()
 
-      const error = yield* session
-        .restore({ sessionID: history!.id, agent: officer })
-        .pipe(Effect.flip)
+      const error = yield* session.restore({ sessionID: history!.id, agent: officer }).pipe(Effect.flip)
       expect(error._tag).toBe("Session.RestoreUnavailableError")
       expect((yield* session.get(history!.id))?.time.archived).toBeDefined()
       expect((yield* session.get(SessionV2.ID.make("ses_history-officer")))?.time.archived).toBeUndefined()

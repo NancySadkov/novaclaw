@@ -1224,8 +1224,10 @@ body[data-new-layout] [data-slot="dialog-container"] {
 .agent-settings-panels[data-active-tab="profile"] [data-settings-tab="profile"],
 .agent-settings-panels[data-active-tab="mind"] [data-settings-tab="mind"],
 .agent-settings-panels[data-active-tab="work"] [data-settings-tab="work"],
+.agent-settings-panels[data-active-tab="nudges"] [data-settings-tab="nudges"],
 .agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
 .agent-settings-panels[data-active-tab="workers"] [data-settings-tab="workers"],
+.agent-settings-panels[data-active-tab="io"] [data-settings-tab="io"],
 .agent-settings-panels[data-active-tab="chat"] [data-settings-tab="chat"] {
   display: block;
 }

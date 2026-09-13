@@ -69,6 +69,7 @@ import { AppProcess } from "./process"
 import { Shell } from "./shell"
 import { ChildProcess } from "effect/unstable/process"
 import { Identifier } from "./id/id"
+import { AgentConfigStore } from "./agent-config-store"
 
 // The V2 `shell` op caps captured output at the same 1 MB in-memory limit the bash tool uses.
 const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
@@ -878,6 +879,7 @@ export const layer = Layer.effect(
     const attempts = yield* SessionExecutionAttempt.Service
     const scheduler = yield* SessionScheduler.Service
     const store = yield* SessionStore.Service
+    const agentConfigs = yield* AgentConfigStore.Service
     const locations = yield* LocationServiceMap.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
     // The same seam `session/runner/maintenance.ts` uses to reach memory from the session side.
@@ -971,7 +973,23 @@ export const layer = Layer.effect(
       )
 
     const result = Service.of({
-      create: Effect.fn("V2Session.create")((input) => createSessionRecord({ db, events, projects, store }, input)),
+      create: Effect.fn("V2Session.create")(function* (input) {
+        // A named colleague's mode is a standing role choice, materialised onto its canonical root
+        // session because attendance and self-drive are kernel properties. An explicit create-time
+        // type remains the narrower, one-session override.
+        const colleague =
+          input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
+            ? AgentConfigStore.fold((yield* agentConfigs.agents())[input.agent] ?? [])
+            : undefined
+        const type =
+          input.type ??
+          (colleague?.operationMode === "interactive"
+            ? "interactive"
+            : colleague?.operationMode === "unattended"
+              ? "goal-oriented"
+              : undefined)
+        return yield* createSessionRecord({ db, events, projects, store }, { ...input, type })
+      }),
       // The child inherits the PARENT's location, which is also the location whose graph owns the
       // spawner — one lookup, so the two can never disagree.
       spawn: Effect.fn("V2Session.spawn")(function* (input) {
@@ -1804,6 +1822,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(SessionExecutionAttempt.defaultLayer),
   Layer.provide(SessionProjector.defaultLayer),
   Layer.provide(EventV2.defaultLayer),
+  Layer.provide(AgentConfigStore.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(ProjectV2.defaultLayer),
   Layer.provide(SessionCompactionRequest.defaultLayer),
@@ -1840,6 +1859,7 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionProjector.node,
     SessionCompactionRequest.node,
+    AgentConfigStore.node,
     WorldMemory.node,
     // For the boot-recovery resume switch — an INSTANCE setting, so the global store rather than the
     // location-scoped `Config`. See the note at `recoverySettings`.

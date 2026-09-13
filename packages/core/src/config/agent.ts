@@ -131,6 +131,16 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   }).pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = pure Chat, with no project, memory, tools, or harness prompt. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
+  /** How this officer's durable root session behaves. Absent keeps the autonomous officer default. */
+  operationMode: Schema.Literals(["interactive", "unattended"]).pipe(Schema.optional),
+  /** The officer's durable objective. The live goal component may refine its plan, never replace this brief. */
+  goal: Schema.String.pipe(Schema.optional),
+  /** Standing harness preferences. Each is sparse: absent inherits the instance setting. */
+  contextBudget: Schema.Boolean.pipe(Schema.optional),
+  surgicalEdits: Schema.Boolean.pipe(Schema.optional),
+  introspection: Schema.Boolean.pipe(Schema.optional),
+  quality: Schema.Boolean.pipe(Schema.optional),
+  affective: Schema.Boolean.pipe(Schema.optional),
   /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
   nudges: ConfigNudge.List.pipe(Schema.optional),
   /** Absent/true inherits instance nudges; false opts this officer out without affecting its own nudges. */

@@ -3781,6 +3781,13 @@ export type ConfigV2Agent = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  operationMode?: "interactive" | "unattended"
+  goal?: string
+  contextBudget?: boolean
+  surgicalEdits?: boolean
+  introspection?: boolean
+  quality?: boolean
+  affective?: boolean
   nudges?: Array<ConfigV2Nudge>
   globalNudges?: boolean
   reasoningBudget?: number
@@ -4647,6 +4654,13 @@ export type AgentV2Info = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  operationMode?: "interactive" | "unattended"
+  goal?: string
+  contextBudget?: boolean
+  surgicalEdits?: boolean
+  introspection?: boolean
+  quality?: boolean
+  affective?: boolean
   reasoningBudget?: number
   maxToolTimeoutMs?: number
   workerPrototype?: string

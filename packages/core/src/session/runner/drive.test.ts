@@ -71,4 +71,18 @@ describe("SessionDrive.decide", () => {
     expect(accepted.message).toContain("accepted every plan step")
     expect(accepted.message).toContain("explicit `exit` call")
   })
+
+  test("a stagnant unattended plan sleeps ten minutes without declaring completion", () => {
+    const state = SessionDrive.initialState(t0)
+    const context = { goal: "Wait for the network", steps: [] }
+    let decision: SessionDrive.DriveDecision = { kind: "idle" }
+    for (let round = 0; round < 7; round++)
+      decision = SessionDrive.decide({ type: "goal-oriented" }, state, t0 + round, context)
+    expect(decision).toEqual({
+      kind: "sleep",
+      milliseconds: 600_000,
+      message: expect.stringContaining("Re-check the environment"),
+    })
+    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("idle")
+  })
 })

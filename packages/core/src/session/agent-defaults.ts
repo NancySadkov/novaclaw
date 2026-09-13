@@ -31,7 +31,18 @@ import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolv
 /** The fields a colleague may declare. Deliberately small: these are standing WORK choices, not the
  *  whole session config. `reasoningBudget` belongs here because it describes how this officer thinks,
  *  while the older boolean `thinkingBudget` remains a per-chat switch over the controller. */
-export const DECLARABLE = ["permissionMode", "strict", "shortChat", "reasoningBudget", "maxToolTimeoutMs"] as const
+export const DECLARABLE = [
+  "permissionMode",
+  "strict",
+  "shortChat",
+  "reasoningBudget",
+  "maxToolTimeoutMs",
+  "contextBudget",
+  "surgicalEdits",
+  "introspection",
+  "quality",
+  "affective",
+] as const
 export type Declarable = (typeof DECLARABLE)[number]
 
 /** Fold a colleague's standing choices under a base. Absent fields leave the base untouched. */

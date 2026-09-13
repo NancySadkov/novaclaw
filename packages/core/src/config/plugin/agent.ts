@@ -194,6 +194,14 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.permissionMode !== undefined) agent.permissionMode = item.permissionMode
     if (item.strict !== undefined) agent.strict = item.strict
     if (item.shortChat !== undefined) agent.shortChat = item.shortChat
+    const runtime = agent as unknown as Record<string, unknown>
+    if (item.operationMode !== undefined) runtime["operationMode"] = item.operationMode
+    if (item.goal !== undefined) runtime["goal"] = item.goal
+    if (item.contextBudget !== undefined) runtime["contextBudget"] = item.contextBudget
+    if (item.surgicalEdits !== undefined) runtime["surgicalEdits"] = item.surgicalEdits
+    if (item.introspection !== undefined) runtime["introspection"] = item.introspection
+    if (item.quality !== undefined) runtime["quality"] = item.quality
+    if (item.affective !== undefined) runtime["affective"] = item.affective
     if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
     if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
     if (item.workerPrototype !== undefined) {

@@ -35527,6 +35527,28 @@
           "shortChat": {
             "type": "boolean"
           },
+          "operationMode": {
+            "type": "string",
+            "enum": ["interactive", "unattended"]
+          },
+          "goal": {
+            "type": "string"
+          },
+          "contextBudget": {
+            "type": "boolean"
+          },
+          "surgicalEdits": {
+            "type": "boolean"
+          },
+          "introspection": {
+            "type": "boolean"
+          },
+          "quality": {
+            "type": "boolean"
+          },
+          "affective": {
+            "type": "boolean"
+          },
           "nudges": {
             "type": "array",
             "items": {
@@ -38046,6 +38068,28 @@
             "additionalProperties": false
           },
           "shortChat": {
+            "type": "boolean"
+          },
+          "operationMode": {
+            "type": "string",
+            "enum": ["interactive", "unattended"]
+          },
+          "goal": {
+            "type": "string"
+          },
+          "contextBudget": {
+            "type": "boolean"
+          },
+          "surgicalEdits": {
+            "type": "boolean"
+          },
+          "introspection": {
+            "type": "boolean"
+          },
+          "quality": {
+            "type": "boolean"
+          },
+          "affective": {
             "type": "boolean"
           },
           "reasoningBudget": {
