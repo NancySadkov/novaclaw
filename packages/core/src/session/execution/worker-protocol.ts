@@ -149,6 +149,9 @@ export const ColleagueResultMessage = Schema.Struct({
     "retired",
     "organized",
     "organization-refused",
+    "worker-messaged",
+    "worker-killed",
+    "worker-refused",
     "rejected",
   ]),
   /** Why the loop bound refused; present only when `outcome` is "refused". Read by the sender. */
@@ -170,6 +173,8 @@ export const ColleagueResultMessage = Schema.Struct({
   /** The new colleague's id and display name; present only when `outcome` is "hired". */
   hiredID: Schema.String.pipe(Schema.optional),
   hiredName: Schema.String.pipe(Schema.optional),
+  /** Number of transcripts archived by a worker kill, including descendants. */
+  archived: NonNegativeInt.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.ColleagueResult" })
 
 export const SpawnResultMessage = Schema.Struct({
@@ -436,6 +441,10 @@ export const ColleagueRequest = Schema.Struct({
     }),
     Schema.Struct({ op: Schema.Literal("retire"), colleague: Schema.String }),
     Schema.Struct({ op: Schema.Literal("set_superior"), colleague: Schema.String, superior: Schema.String }),
+    /** Address one direct child. The host derives the parent from the worker lease. */
+    Schema.Struct({ op: Schema.Literal("message_worker"), worker: SessionSchema.ID, message: Schema.String }),
+    /** Terminate and archive one direct child's whole descendant branch. */
+    Schema.Struct({ op: Schema.Literal("kill_worker"), worker: SessionSchema.ID }),
     /**
      * Put ONE message to SEVERAL colleagues, as one conversation.
      *

@@ -431,6 +431,8 @@ export interface SessionConfig {
 /** The fully-resolved config a session actually runs with. */
 export interface EffectiveConfig {
   readonly model?: ModelRef
+  /** Separate model for a turn that enters the reasoning controller. */
+  readonly reasoningModel?: ModelRef
   readonly agent?: string
   /** The chain-resolved device affinity (see `SessionConfig.device`); `undefined` = derive it from
    *  the resolved model's endpoint. This is the value `deviceKey = resolvedDevice` refers to. */

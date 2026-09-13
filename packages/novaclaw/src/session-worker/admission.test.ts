@@ -69,6 +69,31 @@ describe("session-worker admission", () => {
     await Promise.all([...fibers, queued, opened, nova].map((fiber) => run(Fiber.join(fiber))))
   })
 
+  test("the normal six-slot process admits four batch workers concurrently", async () => {
+    const gate = await run(SessionWorkerAdmission.make({ capacity: 6 }))
+    const release = Deferred.makeUnsafe<void>()
+    const allEntered = Deferred.makeUnsafe<void>()
+    let entered = 0
+    const fibers = Array.from({ length: 4 }, (_, index) =>
+      Effect.runFork(
+        gate.run(
+          batch(`worker-${index}`),
+          Effect.gen(function* () {
+            if (++entered === 4) Deferred.doneUnsafe(allEntered, Effect.void)
+            yield* Deferred.await(release)
+          }),
+        ),
+      ),
+    )
+
+    await run(Deferred.await(allEntered))
+    expect(gate.snapshot().active).toHaveLength(4)
+    expect(gate.snapshot().waitingBatch).toEqual([])
+
+    await run(Deferred.succeed(release, undefined))
+    await Promise.all(fibers.map((fiber) => run(Fiber.join(fiber))))
+  })
+
   test("opening an active background session immediately frees its batch share", async () => {
     const gate = await run(SessionWorkerAdmission.make({ capacity: 4 }))
     const release = Deferred.makeUnsafe<void>()

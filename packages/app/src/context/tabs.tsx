@@ -23,6 +23,8 @@ export type SessionTab = {
    * colliding every anonymous chat into one tab.
    */
   agent?: string
+  /** Workers are temporary sessions, never the durable chat component of their prototype/officer. */
+  worker?: boolean
 }
 
 export type DraftTab = {
@@ -217,9 +219,20 @@ export const {
         if (existing) {
           // Same chat, and we may now know something about it that we did not before.
           if (next.agent !== undefined) learnAgent(next.sessionId, next.server, next.agent)
+          if (existing.type === "session" && next.worker === true && existing.worker !== true) {
+            setStore(
+              produce((tabs) => {
+                const current = tabs.find(
+                  (item) => item.type === "session" && item.server === next.server && item.sessionId === next.sessionId,
+                )
+                if (current?.type === "session") current.worker = true
+              }),
+            )
+            return { ...existing, worker: true }
+          }
           return existing
         }
-        const open = agentTab(next.server, next.agent)
+        const open = next.worker === true ? -1 : agentTab(next.server, next.agent)
         if (open >= 0) {
           const held = store[open]!
           // 🔴 ONE tab per colleague, pointing at the colleague's CURRENT chat — not at whichever chat
@@ -256,6 +269,7 @@ export const {
               // Re-checked INSIDE the transition: two opens of the same colleague can land in one
               // batch, and the guard above read a store that the first of them had not yet updated.
               if (
+                next.worker !== true &&
                 next.agent !== undefined &&
                 tabs.some((item) => item.type === "session" && item.server === next.server && item.agent === next.agent)
               )
@@ -285,6 +299,7 @@ export const {
         )
         const tab = store[index]
         if (!tab || tab.type !== "session") return
+        if (tab.worker === true) return
         const keeperIndex = agentTab(server, agent, sessionId)
         if (keeperIndex >= 0) {
           const keeper = store[keeperIndex]!

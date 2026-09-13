@@ -1,6 +1,6 @@
-import { A, useNavigate, useSearchParams } from "@solidjs/router"
+import { A, useNavigate } from "@solidjs/router"
 import { Dynamic } from "solid-js/web"
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useGlobal } from "@/context/global"
@@ -32,7 +32,6 @@ import { messageTime } from "@novaclaw/session-ui/v2/message-time"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
-import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
@@ -111,7 +110,6 @@ export function ContactsPage() {
   const [starting, setStarting] = createSignal<string | undefined>()
   const [cloning, setCloning] = createSignal<string | undefined>()
   const navigate = useNavigate()
-  const [routeParams, setRouteParams] = useSearchParams<{ configure?: string }>()
   const sync = useServerSync()
   const dialog = useDialog()
   useRateClock()
@@ -306,40 +304,8 @@ ${copy.detail}`
    * out is which. `showScoped`, not `show`: everything it renders reads THIS page's resources, so
    * navigating away must take the panel with it rather than leave it acting on a frozen copy.
    */
-  const openConfig = (agentID: string, routeOwned = false) => {
-    void dialog.showScoped(
-      () => (
-        // The SAME dialog the composer's Tune button opens — one place to learn what a colleague is
-        // and how it behaves. Contacts passes no `tuning` section: there is no chat here to tune,
-        // and an empty section would imply one.
-        <AgentConfigDialog
-          agentID={agentID}
-          onDismiss={() => dialog.close()}
-          // Both lists: a retirement changes WHO is here, a cleared chat changes what they are on.
-          onChanged={() => {
-            refetchAgents()
-            void refetchSessions()
-          }}
-        />
-      ),
-      () => {
-        // A route-owned dialog is addressable because Memory's Back control must be able to reopen
-        // this exact colleague. Once the dialog closes, remove that instruction so browser history
-        // and reload do not resurrect a panel the user already left.
-        if (routeOwned && routeParams.configure === agentID) setRouteParams({ configure: undefined }, { replace: true })
-      },
-    )
-  }
-
-  // Memory is nested under a colleague, not a sibling app. Its Back link lands on this addressable
-  // form of Configure; the one-shot guard prevents reactive roster updates from stacking dialogs.
-  let openedRouteConfig: string | undefined
-  createEffect(() => {
-    const agentID = routeParams.configure
-    if (!agentID || agentID === openedRouteConfig) return
-    openedRouteConfig = agentID
-    openConfig(agentID, true)
-  })
+  /** Configuration is an addressable app screen, so reload, browser Back and phone navigation work. */
+  const openConfig = (agentID: string) => navigate(`/officers/${encodeURIComponent(agentID)}/settings`)
 
   return (
     <AppPage class="flex flex-col overflow-hidden">

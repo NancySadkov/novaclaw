@@ -6,6 +6,7 @@ import { AgentV2 } from "./agent"
 import { AgentConfigStore } from "./agent-config-store"
 import { AgentRemoval } from "./agent/removal"
 import { AgentReassignment } from "./agent/reassignment"
+import { AgentLifecycle } from "./agent/lifecycle"
 import { AgentWorkspace } from "./agent/workspace"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
@@ -946,6 +947,17 @@ const agentFolders = (names: readonly string[]): Effect.Effect<Map<string, strin
     return folders
   })
 
+const agentPauseStates = (
+  names: readonly string[],
+): Effect.Effect<Map<string, boolean>, never, AgentConfigStore.Service> =>
+  Effect.gen(function* () {
+    const states = new Map<string, boolean>()
+    if (names.length === 0) return states
+    const stored = yield* (yield* AgentConfigStore.Service).agents()
+    for (const name of names) states.set(name, AgentConfigStore.fold(stored[name] ?? [])?.disabled === true)
+    return states
+  })
+
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
@@ -956,6 +968,7 @@ export const apply = (patch: Config.Info) =>
     // only place that can see the change whoever made it. `apply` cannot DELIVER (a store module
     // holds no sessions); it announces, and whatever graph owns sessions has registered to deliver.
     const foldersBefore = yield* agentFolders(Object.keys(patch.agents ?? {}))
+    const pausedBefore = yield* agentPauseStates(Object.keys(patch.agents ?? {}))
     // Same shape as `remove`: succeed WITH the refusal so `orDie` cannot reach it, then re-fail.
     // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
     // `rejectUnknownConfigKeys`-versus-`unroutedKeys` distinction again.
@@ -1008,6 +1021,13 @@ export const apply = (patch: Config.Info) =>
         "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
     yield* refreshDomains(staleDomains(consumed))
+    if (consumed.has("agents")) {
+      const pausedAfter = yield* agentPauseStates([...pausedBefore.keys()])
+      for (const [agentID, paused] of pausedBefore) {
+        const next = pausedAfter.get(agentID) ?? false
+        if (next !== paused) yield* AgentLifecycle.announce({ agentID, paused: next })
+      }
+    }
     return consumed
   })
 

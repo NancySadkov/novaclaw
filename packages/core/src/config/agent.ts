@@ -27,6 +27,10 @@ export type Memory = typeof Memory.Type
 
 export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   model: Schema.String.pipe(Schema.optional),
+  /** Model used for turns whose reasoning controller is enabled. Absent = use `model`. */
+  reasoningModel: Schema.String.pipe(Schema.optional),
+  /** Ordinary model assigned to anonymous workers when no prototype supplies one. */
+  workerModel: Schema.String.pipe(Schema.optional),
   variant: Schema.String.pipe(Schema.optional),
   request: ConfigProvider.Request.pipe(Schema.optional),
   system: Schema.String.pipe(Schema.optional),
@@ -136,6 +140,12 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),
   /** Maximum wall time for one tool call in milliseconds. Absent = 600000. */
   maxToolTimeoutMs: PositiveInt.pipe(Schema.optional),
+  /** Named officer cloned as the persona/config layer for anonymous workers. Absent = this officer. */
+  workerPrototype: Schema.String.pipe(Schema.optional),
+  /** Maximum unfinished workers in this officer's whole descendant tree. Absent = 100. */
+  maxWorkers: NonNegativeInt.pipe(Schema.optional),
+  /** Worker generations permitted below this officer. 0 disables spawning; absent = 1. */
+  spawnDepth: NonNegativeInt.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

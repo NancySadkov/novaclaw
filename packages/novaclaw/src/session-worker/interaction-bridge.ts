@@ -33,6 +33,17 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
+  readonly worker?: {
+    readonly message: (input: {
+      readonly parentID: SessionExecutionAttempt.Lease["sessionID"]
+      readonly childID: SessionExecutionAttempt.Lease["sessionID"]
+      readonly text: string
+    }) => Effect.Effect<boolean>
+    readonly kill: (input: {
+      readonly parentID: SessionExecutionAttempt.Lease["sessionID"]
+      readonly childID: SessionExecutionAttempt.Lease["sessionID"]
+    }) => Effect.Effect<number | undefined>
+  }
   readonly lease: SessionExecutionAttempt.Lease
   readonly message: Request
 }) {
@@ -136,6 +147,41 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
    */
   if (input.message.type === "colleague-request") {
     const request = input.message.input
+    if (request.op === "message_worker") {
+      if (input.worker === undefined) return reject()
+      const delivered = yield* input.worker
+        .message({ parentID: input.lease.sessionID, childID: request.worker, text: request.message })
+        .pipe(Effect.exit)
+      if (!Exit.isSuccess(delivered)) return reject()
+      return delivered.value
+        ? { ...identity(input.message), type: "colleague-result" as const, outcome: "worker-messaged" as const }
+        : {
+            ...identity(input.message),
+            type: "colleague-result" as const,
+            outcome: "worker-refused" as const,
+            reason: "Not sent: name one of your direct spawned workers.",
+          }
+    }
+    if (request.op === "kill_worker") {
+      if (input.worker === undefined) return reject()
+      const killed = yield* input.worker
+        .kill({ parentID: input.lease.sessionID, childID: request.worker })
+        .pipe(Effect.exit)
+      if (!Exit.isSuccess(killed)) return reject()
+      return killed.value === undefined
+        ? {
+            ...identity(input.message),
+            type: "colleague-result" as const,
+            outcome: "worker-refused" as const,
+            reason: "Not terminated: name one of your direct spawned workers.",
+          }
+        : {
+            ...identity(input.message),
+            type: "colleague-result" as const,
+            outcome: "worker-killed" as const,
+            archived: killed.value,
+          }
+    }
     if (request.op === "hire") {
       // 🔴 THE LEASE, never the request. The tool's `mayStaff` check runs INSIDE the worker, so it is
       // the worker checking itself; the host must decide from something the worker cannot choose. The

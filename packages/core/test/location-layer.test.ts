@@ -67,6 +67,7 @@ const residentTools = [
   "glob",
   "grep",
   "js",
+  "kill",
   // ⚠️ `question` is NOT here any more — removed by `bf39088eb` ("a refusal is instant"), which took
   // ASK out as a permission outcome. This ledger kept listing it for days afterwards and went red
   // unnoticed, because the change was verified by its own changed-area suites: exactly the failure
@@ -305,7 +306,20 @@ describe("LocationServiceMap", () => {
           // *Could it be deferred?* No: joining is the immediate next action after a resident spawn,
           // and the result fields are the information the officer needs to decide whether replacement
           // is safe. Hiding the contract until after the call cannot reduce its request-time schema.
-          expect(residentBytes).toBeLessThan(35_650) // observed 35,417 on 2026-09-12 (99.3% of 35,650)
+          //
+          // ── Raised 2026-09-13 for worker `kill` (35,417 → 36,728) ───────────────────────────────
+          //
+          // *Who pays?* Only an officer allowed to own worker limbs. The officer floor grants the
+          // action and the host still restricts it to a direct child of the calling session.
+          //
+          // *What buys the 1,311 bytes?* A stuck or wrong worker can be terminated immediately while
+          // its whole descendant branch is archived for diagnosis. Without a resident kill next to
+          // spawn/wait, remediation is undiscoverable at exactly the moment a supervisor needs it.
+          //
+          // *Could it be deferred?* No: kill is the failure-side complement to resident spawn/wait.
+          // Requiring a discovery turn while a bad worker continues consuming batch capacity defeats
+          // the control and makes the four-worker cap slower to recover.
+          expect(residentBytes).toBeLessThan(37_000) // observed 36,728 on 2026-09-13 (99.3% of 37,000)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the

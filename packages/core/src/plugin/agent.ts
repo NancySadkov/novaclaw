@@ -202,6 +202,9 @@ export const floor = (input: {
   // falling through to `ask`, which the assert path refuses. `agent-floor-horizon.test.ts` drives
   // that distinction through the real predicate so the next person does not have to trust a comment.
   ...(input.officer ? [{ action: "spawn", resource: "inherit", effect: "allow" } as const] : []),
+  // A worker is one of this officer's own temporary limbs. Ending a stuck limb and retaining its
+  // transcript narrows capability; it cannot address another officer or an unrelated session.
+  ...(input.officer ? [{ action: "kill", resource: "*", effect: "allow" } as const] : []),
   // 🔴 **Computer Use is granted to every officer by default, and turned off per officer rather than
   // per grant** (owner directive 2026-09-10). It sits in the floor and not in five `agent_config`
   // rows for the same reason `spawn` does: a per-row grant has to be remembered for every future
@@ -381,6 +384,7 @@ export const Plugin = define({
             // ruleset, so this creates a worker and not a privilege. The spawn tool has no named-agent
             // override; changing roles remains an operator/org-chart operation.
             { action: "spawn", resource: "inherit", effect: "allow" },
+            { action: "kill", resource: "*", effect: "allow" },
           ]),
         )
       })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { findAgentTab } from "./tab-agent"
-import type { Tab } from "./tabs"
+import type { SessionTab, Tab } from "./tabs"
 import type { ServerConnection } from "./server"
 
 /**
@@ -20,7 +20,7 @@ import type { ServerConnection } from "./server"
 const SERVER = "http://localhost:4096" as ServerConnection.Key
 const OTHER = "http://localhost:5000" as ServerConnection.Key
 
-const chat = (sessionId: string, agent?: string, server: ServerConnection.Key = SERVER): Tab => ({
+const chat = (sessionId: string, agent?: string, server: ServerConnection.Key = SERVER): SessionTab => ({
   type: "session",
   server,
   sessionId,
@@ -41,6 +41,12 @@ describe("one tab per colleague", () => {
     // Two tabs, both agent-less. If `undefined` matched, the second would be folded into the first
     // and a directory-based chat could never have a tab of its own.
     expect(findAgentTab(tabs, SERVER, undefined)).toBe(-1)
+  })
+
+  test("a temporary worker never occupies its prototype officer's tab", () => {
+    const worker = { ...chat("ses_worker", "umbris"), worker: true } satisfies Tab
+    expect(findAgentTab([worker], SERVER, "umbris")).toBe(-1)
+    expect(findAgentTab([chat("ses_umbris", "umbris"), worker], SERVER, "umbris")).toBe(0)
   })
 
   test("a tab does not count as its own duplicate", () => {

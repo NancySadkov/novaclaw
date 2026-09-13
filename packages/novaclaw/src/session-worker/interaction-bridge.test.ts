@@ -39,7 +39,65 @@ const colleagueStub = {
   hire: () => Effect.die("unused"),
   setSuperior: () => Effect.die("unused"),
   retire: () => Effect.die("unused"),
+  messageWorker: () => Effect.die("unused"),
+  killWorker: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface
+
+test("worker controls derive the parent from the fenced lease", async () => {
+  const calls: string[] = []
+  const worker = {
+    message: (input: { parentID: SessionSchema.ID; childID: SessionSchema.ID; text: string }) =>
+      Effect.sync(() => {
+        calls.push(`message:${input.parentID}:${input.childID}:${input.text}`)
+        return true
+      }),
+    kill: (input: { parentID: SessionSchema.ID; childID: SessionSchema.ID }) =>
+      Effect.sync(() => {
+        calls.push(`kill:${input.parentID}:${input.childID}`)
+        return 3
+      }),
+  }
+  const childID = SessionSchema.ID.make("ses_child")
+  const messaged = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      spawner: spawnerStub,
+      join: joinStub,
+      colleague: colleagueStub,
+      worker,
+      lease,
+      message: {
+        ...base,
+        type: "colleague-request",
+        requestID: "worker-message",
+        input: { op: "message_worker", worker: childID, message: "check the edge case" },
+      },
+    }),
+  )
+  const killed = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      spawner: spawnerStub,
+      join: joinStub,
+      colleague: colleagueStub,
+      worker,
+      lease,
+      message: {
+        ...base,
+        type: "colleague-request",
+        requestID: "worker-kill",
+        input: { op: "kill_worker", worker: childID },
+      },
+    }),
+  )
+
+  expect(calls).toEqual([
+    `message:${lease.sessionID}:${childID}:check the edge case`,
+    `kill:${lease.sessionID}:${childID}`,
+  ])
+  expect(messaged).toMatchObject({ outcome: "worker-messaged" })
+  expect(killed).toMatchObject({ outcome: "worker-killed", archived: 3 })
+})
 
 test("permission assertions stay in host services", async () => {
   const permission = {

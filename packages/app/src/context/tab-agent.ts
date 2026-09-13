@@ -32,6 +32,11 @@ export function findAgentTab(
 ) {
   if (agent === undefined) return -1
   return tabs.findIndex(
-    (tab) => tab.type === "session" && tab.server === server && tab.agent === agent && tab.sessionId !== exceptSession,
+    (tab) =>
+      tab.type === "session" &&
+      tab.worker !== true &&
+      tab.server === server &&
+      tab.agent === agent &&
+      tab.sessionId !== exceptSession,
   )
 }

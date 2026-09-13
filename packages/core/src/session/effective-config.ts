@@ -19,6 +19,7 @@ import type { ConfigAgent } from "../config/agent"
 import { ProjectDefaults } from "./project-defaults"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
+import { WorkerProfile } from "./worker-profile"
 
 /**
  * THE entry point for "what config is this session running with".
@@ -76,6 +77,8 @@ export interface Resolution {
   readonly agent?: { readonly id: string; readonly applied: readonly string[] }
   /** The root officer that owns durable components; workers proxy this officer's RAG cabinet. */
   readonly memoryOwnerAgent?: string
+  /** Immutable prototype role copied into this anonymous worker; never an ownership identity. */
+  readonly workerProfile?: WorkerProfile.Snapshot
 }
 
 /**
@@ -218,10 +221,19 @@ export const layer = Layer.effect(
       const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
       const agentID = agentOf(chain)
       const memoryOwnerAgent = ownerAgentOf(chain)
-      const colleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
+      const workerProfile = session === undefined ? undefined : WorkerProfile.read(session)
+      const ownerColleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
+      // A prototype is a sparse execution recipe laid OVER the spawning officer, never a second
+      // owner. Keeping the officer underneath matters for every standing choice the snapshot does
+      // not mention today (and for new components added later): absent means inherit, exactly as it
+      // does everywhere else in the parent-chain architecture.
+      const colleague =
+        workerProfile === undefined
+          ? ownerColleague
+          : { ...(ownerColleague ?? {}), ...WorkerProfile.config(workerProfile) }
       const projectFault = ProjectFileCache.fault(found)
       const folded = ProjectDefaults.fold(
-        AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague),
+        AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague as ConfigAgent.Info | undefined),
         projectFault === undefined ? found.tune : undefined,
       )
       const guardedDefaults =
@@ -251,8 +263,11 @@ export const layer = Layer.effect(
         // report read to say "these settings came from Theron" — and for a sub-agent the row is null,
         // so reporting from it said no colleague was involved while the colleague's own model, floor
         // and posture were in force.
-        ...(agentID === undefined ? {} : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague) } }),
+        ...(agentID === undefined
+          ? {}
+          : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague as ConfigAgent.Info | undefined) } }),
         ...(memoryOwnerAgent === undefined ? {} : { memoryOwnerAgent }),
+        ...(workerProfile === undefined ? {} : { workerProfile }),
       } satisfies Resolution
     })
 

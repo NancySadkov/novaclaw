@@ -349,6 +349,30 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           return Effect.die(unavailable("colleague group hand-off"))
         }),
       ),
+    messageWorker: (request) =>
+      Effect.promise(() =>
+        capabilities.colleague({ op: "message_worker", worker: request.worker, message: request.message }),
+      ).pipe(
+        Effect.flatMap(
+          (reply): Effect.Effect<ColleagueHandoff.WorkerAction> =>
+            reply.outcome === "worker-messaged"
+              ? Effect.succeed({ ok: true })
+              : reply.outcome === "worker-refused"
+                ? Effect.succeed({ ok: false, reason: reply.reason ?? "That worker is not your direct child." })
+                : Effect.die(unavailable("worker message")),
+        ),
+      ),
+    killWorker: (request) =>
+      Effect.promise(() => capabilities.colleague({ op: "kill_worker", worker: request.worker })).pipe(
+        Effect.flatMap(
+          (reply): Effect.Effect<ColleagueHandoff.WorkerAction> =>
+            reply.outcome === "worker-killed"
+              ? Effect.succeed({ ok: true, archived: reply.archived ?? 0 })
+              : reply.outcome === "worker-refused"
+                ? Effect.succeed({ ok: false, reason: reply.reason ?? "That worker is not your direct child." })
+                : Effect.die(unavailable("worker termination")),
+        ),
+      ),
   }
 
   /**

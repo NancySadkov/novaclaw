@@ -44,8 +44,8 @@ describe("session scheduler admission gate", () => {
 
   test("interactive admits immediately, even with batch saturated", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))
-    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting" }))
+    for (let i = 1; i <= MAX_BATCH; i++)
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
     // batch full (MAX_BATCH) — interactive still goes straight through
     await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
     const [device] = await run(gate.snapshot())
@@ -71,13 +71,13 @@ describe("session scheduler admission gate", () => {
     expect(admitted).toBe(true)
   })
 
-  test("MAX_BATCH cap: the third batch session waits for a slot", async () => {
+  test("MAX_BATCH cap: the next batch session waits for a slot", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))
-    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting" }))
+    for (let i = 1; i <= MAX_BATCH; i++)
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
     let admitted = false
     const fiber = Effect.runFork(
-      gate.admit({ sessionID: "b3", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
+      gate.admit({ sessionID: "waiting", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
         Effect.map(() => {
           admitted = true
         }),
@@ -163,8 +163,8 @@ describe("session scheduler admission gate", () => {
 
   test("drain picks fairly: the indebted session yields the first freed slot", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))
-    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting" }))
+    for (let i = 1; i <= MAX_BATCH; i++)
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
     const order: string[] = []
     // Queue BOTH waiters first (registration order favors hot), THEN charge hot's
     // debt — with peers registered, virtual time advances slower than hot's vruntime.

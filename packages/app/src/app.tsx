@@ -77,6 +77,9 @@ const SkillsPage = lazy(() => import("@/pages/skills").then(({ SkillsPage }) => 
 const DebugPage = lazy(() => import("@/pages/debug").then(({ DebugPage }) => ({ default: DebugPage })))
 const RegistryPage = lazy(() => import("@/pages/registry").then(({ RegistryPage }) => ({ default: RegistryPage })))
 const ContactsPage = lazy(() => import("@/pages/contacts").then(({ ContactsPage }) => ({ default: ContactsPage })))
+const AgentSettingsPage = lazy(() =>
+  import("@/pages/agent-settings").then(({ AgentSettingsPage }) => ({ default: AgentSettingsPage })),
+)
 const MemoryGraphPage = lazy(() =>
   import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
 )
@@ -229,6 +232,7 @@ function ResolvedTargetSessionRoute() {
       server: serverKey(),
       sessionId: session.root.id,
       ...(session.root.agent === undefined ? {} : { agent: session.root.agent }),
+      ...(session.root.parentID === undefined ? {} : { worker: true }),
     })
     if (opened.type === "session" && opened.sessionId !== session.root.id) tabs.select(opened)
   })
@@ -795,6 +799,7 @@ function Routes() {
           longer routed; deleting its 900 lines and its tests is its own slice, so it is unreferenced
           rather than half-removed. */}
       <Route path="/tasks" component={ContactsPage} />
+      <Route path="/officers/:agentID/settings" component={AgentSettingsPage} />
       {/* The app was renamed Chats → Tasks on 2026-08-13. A dead address is a dead end, and the
           catch-all below would otherwise try to base64-decode "chats" as a directory. */}
       <Route path="/chats" component={() => <Navigate href="/tasks" />} />

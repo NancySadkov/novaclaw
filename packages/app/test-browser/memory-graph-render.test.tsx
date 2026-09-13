@@ -434,7 +434,7 @@ describe("MemoryGraphPage renders", () => {
     expect(document.querySelector('[data-slot="memory-title"]')?.textContent).toBe("Theron")
     const back = document.querySelector('[data-slot="memory-back"]')
     expect(back?.textContent).toContain("memoryGraph.page.back")
-    expect(back?.getAttribute("href")).toBe("/contacts?configure=theron")
+    expect(back?.getAttribute("href")).toBe("/officers/theron/settings")
 
     const reads = memoryRequests.filter(
       (request) => request.url.includes("world-memory/list") || request.url.includes("world-memory/graph"),
