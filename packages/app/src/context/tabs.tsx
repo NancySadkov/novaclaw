@@ -540,17 +540,12 @@ export const {
         const key = tabKey(tab)
         if (recentKey() !== key) setRecentKey(key)
       },
-      toggleHome(input: { home: boolean; current?: Tab }) {
-        if (input.home) {
-          const tab = store.find((tab) => tabKey(tab) === recentKey())
-          if (tab) navigateTab(tab)
-          return
-        }
-        if (input.current) {
-          setRecentKey(tabKey(input.current))
-          navigate("/")
-          return
-        }
+      goHome(current?: Tab) {
+        // Home is a destination, not a two-way toggle. Reopening a persisted "recent" task from the
+        // launcher can target a chat that another window has already retired, turning a harmless
+        // second Home click into the session-gone screen.
+        if (location.pathname === "/") return
+        if (current) setRecentKey(tabKey(current))
         navigate("/")
       },
       state<T>(tab: Tab, name: string, init: () => T) {

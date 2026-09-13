@@ -254,6 +254,19 @@ describe("automatic tab retention", () => {
   })
 })
 
+describe("Home navigation", () => {
+  test("clicking Home on Home cannot reopen a persisted recent tab", async () => {
+    // The directory-wide router mock can report an empty pathname here (documented below), so pin
+    // the store's choke point directly. The Playwright regression exercises the real pointer and
+    // router together.
+    const source = await Bun.file(new URL("../src/context/tabs.tsx", import.meta.url)).text()
+    const body = source.slice(source.indexOf("goHome(current?: Tab)"), source.indexOf("state<T>(tab: Tab"))
+    expect(body).toContain('if (location.pathname === "/") return')
+    expect(body).not.toContain("navigateTab")
+    expect(body).not.toContain("recentKey()")
+  })
+})
+
 /**
  * THE NAVIGATION HALF, asserted over the source.
  *

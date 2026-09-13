@@ -260,13 +260,7 @@ export function Titlebar() {
           tabsStoreActions.followAgentChats(detail.rows)
         })
 
-        // ⚠️ "Am I on the launcher" is the PATHNAME, not `layout.route().type` (owner, 2026-08-13:
-        // Home switched to the last task instead of leaving the app). `currentRoute` only classifies
-        // session-shaped URLs, so every app page — /notes, /files, /recipes, … — falls through to
-        // `{type: "home"}`. The toggle then believed it was already home and ran the other half of
-        // its contract: jump to the most recent task. From inside an app the Home button therefore
-        // did the one thing it must never do — go somewhere that is not home.
-        const toggleHome = () => tabs.toggleHome({ home: location.pathname === "/", current: currentTab() })
+        const goHome = () => tabs.goHome(currentTab())
 
         command.register("titlebar-home", () => [
           {
@@ -275,7 +269,7 @@ export function Titlebar() {
             category: language.t("command.category.view"),
             keybind: "mod+b",
             hidden: true,
-            onSelect: toggleHome,
+            onSelect: goHome,
           },
         ])
 
@@ -332,7 +326,7 @@ export function Titlebar() {
               "md:pl-4": !mac(),
             }}
           >
-            <BrandBadge onToggle={toggleHome} />
+            <BrandBadge onOpenHome={goHome} />
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
             <TitlebarTabStrip
               tabs={tabsStore}
@@ -379,7 +373,7 @@ function TitlebarV2Right() {
 // The top-left brand badge doubles as the Home button — click the NovaClaw logo + version to return
 // to the home launcher from anywhere (Windows Start / macOS Apple-menu metaphor). This replaces the
 // separate Home nav button; the first-run tour calls it out (help.tour.step.home).
-function BrandBadge(props: { onToggle: () => void }) {
+function BrandBadge(props: { onOpenHome: () => void }) {
   const location = useLocation()
   const language = useLanguage()
   const command = useCommand()
@@ -398,11 +392,7 @@ function BrandBadge(props: { onToggle: () => void }) {
       <button
         type="button"
         data-component="brand-home-button"
-        // ⚠️ The TOGGLE, not `navigate("/")`. The keybind (mod+b) has always run `toggleHome`, so
-        // clicking and pressing did different things: the key returned you to the task you came
-        // from, the click only ever went home (owner, 2026-08-12). A control and its shortcut
-        // disagreeing is worse than either behaviour alone — you cannot learn what the button does.
-        onClick={() => props.onToggle()}
+        onClick={() => props.onOpenHome()}
         aria-label={language.t("home.title")}
         aria-pressed={isHome()}
         class="flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-border-border-focus)]"
