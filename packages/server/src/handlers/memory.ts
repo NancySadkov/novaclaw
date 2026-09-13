@@ -1,12 +1,16 @@
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Database } from "@novaclaw/core/database/database"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentStatusDerive } from "@novaclaw/core/agent-status/derive"
 import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
+import { MemoryAtlasCaption } from "@novaclaw/core/kb-graph/memory-atlas-caption"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Log } from "@novaclaw/schema/log"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { MemoryApi, handlerLayer } from "../handler-api"
 
 /** A store fault is a 400 with the store's own reason, never a 500 — the caller can act on it. */
@@ -82,6 +86,7 @@ export const MemoryHandler = handlerLayer(
        * `kb-graph/memory-observed.ts`).
        */
       const { db } = yield* Database.Service
+      const atlasLabeller = yield* AgentStatusDerive.makeLabeller()
 
       /**
        * Hydrate the memories behind a set of ledger rollups, keeping the verdict beside each row.
@@ -93,7 +98,7 @@ export const MemoryHandler = handlerLayer(
        */
       const withUsage = (memory: MemoryClient.Interface, usage: ReadonlyArray<MemoryAccessLedger.Usage>) =>
         Effect.gen(function* () {
-          const rows = yield* memory.byIds(usage.map((row) => row.memoryID)).pipe(Effect.orElseSucceed(() => []))
+          const rows = yield* asBadRequest(memory.byIds(usage.map((row) => row.memoryID)))
           const byID = new Map(usage.map((row) => [row.memoryID, row] as const))
           return rows.map((row) => {
             const found = byID.get(row.id)
@@ -145,6 +150,77 @@ export const MemoryHandler = handlerLayer(
                   ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
                 }),
               )
+            }),
+          )
+          .handle(
+            "world-memory.captions",
+            Effect.fn(function* (ctx) {
+              const scope = ctx.payload.scope
+              const agentID =
+                scope === "global" ? AgentV2.NOVA_ID : scope.startsWith("agent:") ? scope.slice(6) : undefined
+              if (!agentID)
+                return yield* Effect.fail(
+                  new InvalidRequestError({ message: "Atlas captions require one officer-owned cabinet" }),
+                )
+
+              const chat = yield* RosterChat.chatFor(db, agentID)
+              if (!chat) return { status: "unavailable" as const, clusters: [], memories: [] }
+
+              const clusterIDs = ctx.payload.clusters.flatMap((cluster) => cluster.ids)
+              const requestedIDs = [...new Set([...clusterIDs, ...ctx.payload.memories])]
+              const memory = WorldMemory.client(yield* WorldMemory.node.service)
+              const rows = yield* asBadRequest(memory.byIds(requestedIDs))
+              const byID = new Map(rows.map((row) => [row.id, row] as const))
+              // The endpoint has owner authority so it can hydrate ids, but an id supplied beside a
+              // cabinet must never turn into a cross-cabinet caption oracle. Missing/raced rows are
+              // simply absent; a row from another scope makes the whole request invalid.
+              if (rows.some((row) => row.scope !== scope))
+                return yield* Effect.fail(new InvalidRequestError({ message: "A memory is outside this cabinet" }))
+
+              const clusterRecords = ctx.payload.clusters
+                .map((cluster, index) => ({
+                  id: cluster.id,
+                  key: `C${index}`,
+                  kind: "cluster" as const,
+                  excerpts: cluster.ids.map((id) => byID.get(id)?.text ?? "").filter(Boolean),
+                }))
+                .filter((record) => record.excerpts.length > 0)
+              const memoryRecords = ctx.payload.memories
+                .map((id, index) => ({
+                  id,
+                  key: `M${index}`,
+                  kind: "memory" as const,
+                  excerpts: byID.has(id) ? [byID.get(id)!.text] : [],
+                }))
+                .filter((record) => record.excerpts.length > 0)
+              const records = [...clusterRecords, ...memoryRecords]
+              if (records.length === 0) return { status: "unavailable" as const, clusters: [], memories: [] }
+
+              const raw = yield* atlasLabeller.short(chat.id, {
+                system: MemoryAtlasCaption.SYSTEM,
+                text: MemoryAtlasCaption.prompt(records),
+                task: "memory-atlas-captions",
+                // Same presentation-only path as command captions: never spend reasoning tokens to
+                // name UI chrome, even when the officer's ordinary model is a thinking model.
+                reasoningBudget: 0,
+              })
+              if (!raw) return { status: "unavailable" as const, clusters: [], memories: [] }
+
+              const labels = MemoryAtlasCaption.parse(raw, new Set(records.map((record) => record.key)))
+              const clusters = clusterRecords.flatMap((record) => {
+                const label = labels.get(record.key)
+                return label ? [{ id: record.id, label }] : []
+              })
+              const memories = memoryRecords.flatMap((record) => {
+                const label = labels.get(record.key)
+                return label ? [{ id: record.id, label }] : []
+              })
+              const returned = clusters.length + memories.length
+              return {
+                status: returned === records.length ? ("generated" as const) : ("partial" as const),
+                clusters,
+                memories,
+              }
             }),
           )
           .handle(
@@ -293,13 +369,13 @@ export const MemoryHandler = handlerLayer(
                   order: "oldest",
                   limit: scan,
                 })
-                .pipe(Effect.orElseSucceed(() => []))
+                .pipe(asBadRequest)
               const seen = yield* MemoryAccessLedger.everAccessed(
                 db,
                 candidates.map((row) => row.id),
               )
               const unused = candidates.filter((row) => !seen.has(row.id)).slice(0, limit)
-              const rows = yield* memory.byIds(unused.map((row) => row.id)).pipe(Effect.orElseSucceed(() => []))
+              const rows = yield* asBadRequest(memory.byIds(unused.map((row) => row.id)))
               // `partial` is the honest half: a short answer is not proof there are no more.
               return { items: rows, scanned: candidates.length, partial: candidates.length >= scan }
             }),

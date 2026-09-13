@@ -31,7 +31,7 @@ describe("no page owns a second, uncaught roster fetch", () => {
 
   test("🔴 memory-graph reads the server context's shared roster", () => {
     const source = read("memory-graph.tsx")
-    expect(source).toContain("ctx()?.agents.list()")
+    expect(source).toContain("context()?.agents.list()")
     expect(source).not.toContain("listAgents(")
   })
 

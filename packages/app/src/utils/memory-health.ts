@@ -8,9 +8,8 @@ import type { Diagnosis, DiagnosisSignal } from "@/utils/resource-api"
  * into an EMPTY RESULT and answer 200 (`handlers/memory.ts`: `Effect.orElseSucceed(() => ({ nodes:
  * [], edges: [] }))`), which is a deliberate degrade — an outage must not fail a turn. The cost is
  * that "the engine is broken" and "you have no memories" arrive at the UI as the same bytes, so the
- * only thing that can tell them apart is the diagnosis board. The Remembered list already asked it.
- * The Graph did not, so the same broken instance said "memory is unavailable" on one tab and
- * "Nothing remembered yet — the graph fills as you chat" on the next.
+ * only thing that can tell them apart is the diagnosis board. The atlas asks it before it ever calls
+ * an empty response an empty cabinet.
  *
  * ⚠️ A transport fault is a DIFFERENT question, answered by `pages/memory-graph/fault.ts`. That one
  * is "the request did not come back"; this one is "the request came back empty, and here is why".

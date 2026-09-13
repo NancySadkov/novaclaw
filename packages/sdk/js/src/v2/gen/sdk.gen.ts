@@ -781,6 +781,39 @@ class ApiV2WorldMemory extends NovaClawApiClient {
   }
 
   /**
+   * Name a memory atlas
+   *
+   * Generate short semantic labels for memory regions and visible memories through the cabinet owner's local model. A model outage is reported explicitly and excerpts remain usable as fallback labels.
+   */
+  public captions<ThrowOnError extends boolean = false>(
+    parameters: {
+      scope: string
+      clusters: Array<{
+        id: string
+        ids: Array<string>
+      }>
+      memories: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      scope: parameters?.["scope"],
+      clusters: parameters?.["clusters"],
+      memories: parameters?.["memories"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2WorldMemoryCaptionsResponses,
+      T.V2WorldMemoryCaptionsErrors,
+      ThrowOnError
+    >({
+      url: "/api/world-memory/captions",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Clear one agent memory cabinet
    *
    * Delete every automatic memory and usage record in exactly one agent or chat scope.

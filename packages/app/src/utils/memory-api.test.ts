@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import type { ServerConnection } from "@/context/server"
 import {
   memoryProtection,
+  worldMemoryCaptions,
   worldMemoryClearScopeVerified,
   worldMemoryGraph,
   worldMemoryList,
@@ -76,6 +77,26 @@ test("officer list and map reads use the automatic world model contract", async 
     {
       path: "/api/world-memory/graph",
       body: { scopes: ["agent:daedalus"], limit: 600 },
+    },
+  ])
+})
+
+test("atlas captions send opaque topology ids through the world model contract", async () => {
+  answer = () => Response.json({ status: "generated", clusters: [], memories: [] })
+  await worldMemoryCaptions(server, {
+    directory: "C:/work",
+    scope: "agent:daedalus",
+    clusters: [{ id: "region:a", ids: ["m1", "m2"] }],
+    memories: ["m1"],
+  })
+  expect(seen).toEqual([
+    {
+      path: "/api/world-memory/captions",
+      body: {
+        scope: "agent:daedalus",
+        clusters: [{ id: "region:a", ids: ["m1", "m2"] }],
+        memories: ["m1"],
+      },
     },
   ])
 })

@@ -56,6 +56,24 @@ const MemoryGraph = Schema.Struct({
   }),
 })
 
+const AtlasCaptionRequest = Schema.Struct({
+  /** One cabinet only. The handler derives its officer chat; callers never choose a model session. */
+  scope: Schema.String,
+  clusters: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      ids: Schema.Array(Schema.String).check(Schema.isMaxLength(8)),
+    }),
+  ).check(Schema.isMaxLength(18)),
+  memories: Schema.Array(Schema.String).check(Schema.isMaxLength(48)),
+})
+
+const AtlasCaptionResult = Schema.Struct({
+  status: Schema.Literals(["generated", "partial", "unavailable"]),
+  clusters: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })),
+  memories: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })),
+})
+
 const WorldMemoryFilter = Schema.Struct({
   scopes: Schema.optional(Schema.Array(Schema.String)),
   kinds: Schema.optional(Schema.Array(Schema.String)),
@@ -447,6 +465,20 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
         identifier: "v2.world-memory.graph",
         summary: "Map agent memories",
         description: "Return a bounded graph slice from the automatic agent world model.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("world-memory.captions", "/api/world-memory/captions", {
+      payload: AtlasCaptionRequest,
+      success: AtlasCaptionResult,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.world-memory.captions",
+        summary: "Name a memory atlas",
+        description:
+          "Generate short semantic labels for memory regions and visible memories through the cabinet owner's local model. A model outage is reported explicitly and excerpts remain usable as fallback labels.",
       }),
     ),
   )

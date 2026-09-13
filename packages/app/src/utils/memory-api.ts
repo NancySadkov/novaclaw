@@ -7,9 +7,8 @@ import { instanceFetch } from "@/utils/instance-fetch"
 // ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`.
 //
 // The memory engine is a server-GLOBAL singleton (one graph per instance, like the SQLite DB), so
-// `directory` here is only request routing (optional server-side; passed for parity with the other
-// instance APIs). Read ops degrade to empty when memory is off/unavailable — the viewer shows
-// "nothing remembered", never an error; write ops surface a 400 on a MemoryError.
+// `directory` here is only request routing. Read failures reject: the atlas carries that failure as
+// an explicit unavailable state, because an outage and an empty cabinet are different facts.
 
 // Wire types — mirror core kb-graph/memory-client (the client is the source of truth); the HTTP
 // group (server/.../groups/memory.ts) re-declares the same shapes.
@@ -81,6 +80,12 @@ export interface MemoryGraph {
   readonly edges: readonly EdgeRow[]
   /** ⚠️ Optional on the WIRE only: an older instance predates the field. Absent = say nothing. */
   readonly slice?: GraphSlice
+}
+
+export interface AtlasCaptions {
+  readonly status: "generated" | "partial" | "unavailable"
+  readonly clusters: readonly { readonly id: string; readonly label: string }[]
+  readonly memories: readonly { readonly id: string; readonly label: string }[]
 }
 
 export type PathResult = { readonly ids: readonly string[]; readonly hops: number } | null
@@ -261,22 +266,6 @@ export async function memoryProtection(
 }
 
 /** Read an officer-owned RAG component or the household's shared component. */
-/**
- * WHAT COUNTS AS A MEMORY when a surface answers "what does X remember".
- *
- * 🔴 ONE CONSTANT FOR BOTH SURFACES. The cabinet list excluded `passage` and `source` (measured
- * 2026-08-12: ingesting one rulebook put 302 raw chunks into the answer to "what do you remember");
- * the Tune dialog's COUNT asked the same question with no `kinds` filter at all, so a cabinet holding
- * only ingestion chunks read as "200+ memories" while its own list page said nothing. Measured
- * 2026-09-10 on a live store: 2,116 rows, ALL `kind=passage`, count = 200+ (capped), list = 0.
- * A count and a list over the same question may not disagree by construction — the disagreement
- * itself becomes the claim the user reads. Anything that counts toward a "remembers" label or badge
- * passes through this list; the sweep is every `worldMemoryList` caller whose result is SHOWN
- * (the erase-verification callers count everything on purpose — they answer "is it gone", not
- * "what is there", and must NOT gain this filter).
- */
-export const GOVERNED_KINDS = ["entity", "episode", "claim"] as const
-
 export function worldMemoryList(
   server: ServerConnection.HttpBase,
   input: {
@@ -299,6 +288,20 @@ export function worldMemoryGraph(
 ) {
   const { directory, ...payload } = input
   return call<MemoryGraph>(server, "POST", "api/world-memory/graph", directory, payload)
+}
+
+/** Generate presentation-only map labels through the cabinet owner's normal local model. */
+export function worldMemoryCaptions(
+  server: ServerConnection.HttpBase,
+  input: {
+    directory: string
+    scope: string
+    clusters: readonly { readonly id: string; readonly ids: readonly string[] }[]
+    memories: readonly string[]
+  },
+) {
+  const { directory, ...payload } = input
+  return call<AtlasCaptions>(server, "POST", "api/world-memory/captions", directory, payload)
 }
 
 async function worldMemoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {

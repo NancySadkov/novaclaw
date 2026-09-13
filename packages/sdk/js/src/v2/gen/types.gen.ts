@@ -12857,6 +12857,52 @@ export type V2WorldMemoryGraphResponses = {
 
 export type V2WorldMemoryGraphResponse = V2WorldMemoryGraphResponses[keyof V2WorldMemoryGraphResponses]
 
+export type V2WorldMemoryCaptionsData = {
+  body: {
+    scope: string
+    clusters: Array<{
+      id: string
+      ids: Array<string>
+    }>
+    memories: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/api/world-memory/captions"
+}
+
+export type V2WorldMemoryCaptionsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorldMemoryCaptionsError = V2WorldMemoryCaptionsErrors[keyof V2WorldMemoryCaptionsErrors]
+
+export type V2WorldMemoryCaptionsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    status: "generated" | "partial" | "unavailable"
+    clusters: Array<{
+      id: string
+      label: string
+    }>
+    memories: Array<{
+      id: string
+      label: string
+    }>
+  }
+}
+
+export type V2WorldMemoryCaptionsResponse = V2WorldMemoryCaptionsResponses[keyof V2WorldMemoryCaptionsResponses]
+
 export type V2WorldMemoryClearScopeData = {
   body: {
     scope: string
