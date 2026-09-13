@@ -2799,7 +2799,7 @@ export const dict = {
   "agentConfig.retire": "Retire",
   "agentConfig.retiring": "Retiring…",
   // The colleague is already named by this configuration screen; the action names only where it goes.
-  "agentConfig.memoryOpen": "Memory",
+  "agentConfig.memoryOpen": "Memories",
   "agentConfig.retire.confirm.title": "Retire {{name}}?",
   // Names what is DESTROYED, in the order it will be missed — role, chat AND private memories.
   // ⚠️ If this control's blast radius grows again, this sentence grows with it: a control that

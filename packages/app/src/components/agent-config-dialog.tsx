@@ -1174,6 +1174,36 @@ export function AgentConfigScreen(props: {
                   {language.t(memoryDisclosure(memoryValue()).privateKey)}
                   <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
                 </p>
+                {/* The filing cabinet and its destructive action belong beside the switch that
+                    governs it. On a phone these stack into two full-width, easy targets; from `sm`
+                    upward they collapse into one quiet action row. */}
+                <div class="mt-4 flex flex-col gap-2 border-t border-v2-border-border-muted pt-4 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    data-action="agent-open-memory"
+                    class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40 sm:w-auto"
+                    disabled={busy() !== undefined || props.agentID === undefined}
+                    onClick={() => {
+                      const id = props.agentID
+                      if (id === undefined) return
+                      props.onDismiss()
+                      navigate(ownerRoute(id))
+                    }}
+                  >
+                    {language.t("agentConfig.memoryOpen")}
+                  </button>
+                  <button
+                    type="button"
+                    data-action="agent-clear-memory"
+                    class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40 sm:w-auto"
+                    disabled={busy() !== undefined || props.agentID === undefined}
+                    onClick={() => void clearMemory()}
+                  >
+                    {busy() === "clear-memory"
+                      ? language.t("agentConfig.memoryClearing")
+                      : language.t("agentConfig.clearMemory")}
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -1606,37 +1636,11 @@ export function AgentConfigScreen(props: {
         </button>
         <button
           type="button"
-          data-action="agent-clear-memory"
-          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-          disabled={busy() !== undefined || props.agentID === undefined}
-          onClick={() => void clearMemory()}
-        >
-          {busy() === "clear-memory" ? language.t("agentConfig.memoryClearing") : language.t("agentConfig.clearMemory")}
-        </button>
-        <button
-          type="button"
           class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
           disabled={busy() !== undefined || agent() === undefined}
           onClick={() => void clone()}
         >
           {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
-        </button>
-        {/* The door into this colleague's own cabinet. The profile already says whose screen this
-              is, so the action is simply “Memory”; repeating the name turns a destination into a
-              sentence and makes the footer harder to scan. */}
-        <button
-          type="button"
-          data-action="agent-open-memory"
-          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-          disabled={busy() !== undefined || props.agentID === undefined}
-          onClick={() => {
-            const id = props.agentID
-            if (id === undefined) return
-            props.onDismiss()
-            navigate(ownerRoute(id))
-          }}
-        >
-          {language.t("agentConfig.memoryOpen")}
         </button>
         <Show when={!governing()}>
           {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read

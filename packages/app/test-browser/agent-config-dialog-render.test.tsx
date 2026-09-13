@@ -12,6 +12,7 @@ import { TabsContext } from "@/context/tabs"
 import { LanguageContext } from "@/context/language"
 import { SettingsProvider } from "@/context/settings"
 import { PlatformProvider } from "@/context/platform"
+import { dict } from "@/i18n/en"
 
 /**
  * THE FIRST TEST IN THIS REPO THAT RENDERS A CONTEXT-DEPENDENT COMPONENT.
@@ -261,15 +262,23 @@ describe("AgentConfigDialog renders", () => {
     expect(dialogText()).not.toContain("NOTHING was written")
   })
 
-  test("the dialog mounts at all", async () => {
+  test("memory actions live in the Memory tab instead of the lifecycle footer", async () => {
     mount({ agents: [AGENT] })
     await settle()
     // The guard on the instrument: if this is empty every assertion below is vacuous.
     expect(dialogText()).not.toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
     expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
-    expect(document.querySelector('[data-action="agent-clear-memory"]')).not.toBeNull()
-    expect(document.querySelector('[data-action="agent-open-memory"]')?.textContent).toBe("agentConfig.memoryOpen")
+    const memoryCard = document.querySelector('[data-section="memory"][data-settings-tab="memory"]')
+    const clear = document.querySelector('[data-action="agent-clear-memory"]')
+    const open = document.querySelector('[data-action="agent-open-memory"]')
+    expect(memoryCard).not.toBeNull()
+    expect(clear?.closest('[data-settings-tab="memory"]')).toBe(memoryCard)
+    expect(open?.closest('[data-settings-tab="memory"]')).toBe(memoryCard)
+    expect(open?.textContent).toBe("agentConfig.memoryOpen")
+    expect(dict["agentConfig.memoryOpen"]).toBe("Memories")
+    expect(document.querySelectorAll('[data-action="agent-clear-memory"]').length).toBe(1)
+    expect(document.querySelectorAll('[data-action="agent-open-memory"]').length).toBe(1)
   })
 
   test("portrait selection is a readable button with its filename separate", async () => {
