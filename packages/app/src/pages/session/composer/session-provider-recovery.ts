@@ -6,9 +6,10 @@ export type SessionProviderRecovery = {
 export function visibleProviderRecovery(input: {
   recovery: SessionProviderRecovery | undefined
   working: boolean
+  stopped: boolean
   dismissedAttemptID: string | undefined
 }) {
-  if (input.working) return
+  if (input.working || input.stopped) return
   if (!input.recovery || input.dismissedAttemptID === input.recovery.attemptID) return
   return input.recovery
 }

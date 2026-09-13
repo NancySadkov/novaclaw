@@ -71,3 +71,43 @@ test("Shift+Enter inserts a newline before IME and submit handling", () => {
   expect(event.defaultPrevented).toBe(true)
   value.element.remove()
 })
+
+test("one Escape stops working even when a popover is open", () => {
+  const element = document.createElement("div")
+  document.body.append(element)
+  let stops = 0
+  let closes = 0
+  const handle = createPromptInputKeyboardController({
+    state: { mode: () => "normal", popover: () => "slash", historyIndex: () => -1 },
+    editor: {
+      element: () => element,
+      collapseBackspaceAtZeroWidth: () => {},
+      blur: () => {},
+      caret: () => ({ collapsed: true, cursorPosition: 0, textLength: 0 }),
+    },
+    advanced: () => true,
+    composing: () => false,
+    working: () => true,
+    promptText: () => "",
+    attachmentCount: () => 0,
+    commentCount: () => 0,
+    setMode: () => {},
+    closePopover: () => closes++,
+    pickAttachment: () => {},
+    abort: () => stops++,
+    blurOnEscape: () => false,
+    addNewline: () => {},
+    selectPopoverActive: () => {},
+    atKeyDown: () => {},
+    slashKeyDown: () => {},
+    scrollSlashActiveIntoView: () => {},
+    navigateHistory: () => false,
+    submit: () => {},
+  })
+  const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true })
+  handle(event)
+  expect(stops).toBe(1)
+  expect(closes).toBe(0)
+  expect(event.defaultPrevented).toBe(true)
+  element.remove()
+})

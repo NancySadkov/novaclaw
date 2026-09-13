@@ -358,6 +358,7 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.action.resume": "Resume",
 
   "prompt.permissionMode.title": "Permission mode",
   // One word each — these render inside a narrow listbox (and on a phone). The explanations live in
@@ -734,6 +735,8 @@ export const dict = {
   "context.systemPrompt.title": "System Prompt",
   "context.rawMessages.title": "Raw messages",
   "context.compactions.button": "Compaction Events",
+  "context.compactions.compactNow": "Compact Now",
+  "context.compactions.compacting": "Compacting…",
   "context.compactions.title": "Compaction events",
   "context.compactions.empty": "No compaction events in this session yet.",
   "context.compactions.sizeUnknown": "Size was not recorded by this older event.",

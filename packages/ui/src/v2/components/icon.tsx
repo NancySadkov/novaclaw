@@ -77,6 +77,10 @@ const icons = {
     viewBox: "0 0 20 20",
     body: `<rect x="5" y="5" width="10" height="10" fill="currentColor"/>`,
   },
+  play: {
+    viewBox: "0 0 20 20",
+    body: `<path d="M6 3.75L16 10L6 16.25V3.75Z" fill="currentColor"/>`,
+  },
   "arrow-undo-down": {
     viewBox: "0 0 16 16",
     body: `<path d="M4.08333 11.0859L1.75 8.7526L4.08333 6.41927M2.33333 8.7526L12.5417 8.7526L12.5417 3.21094L7 3.21094" stroke="currentColor" stroke-width="1" stroke-linecap="square"/>`,

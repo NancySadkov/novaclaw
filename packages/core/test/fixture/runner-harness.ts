@@ -752,6 +752,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         adopt: coordinator.adopt,
         wake: coordinator.wake,
         interrupt: coordinator.interrupt,
+        stopCommand: () => Effect.succeed(false),
       })
     }),
   ).pipe(Layer.provide(runnerLayer))

@@ -1345,6 +1345,34 @@ class ApiV2SessionRevert extends NovaClawApiClient {
   }
 }
 
+class ApiV2SessionBash extends NovaClawApiClient {
+  /**
+   * Stop a running session command
+   *
+   * Stop one running command without interrupting the agent that launched it.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      callID: string
+      reason: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"], callID: parameters?.["callID"] }
+    const body = { reason: parameters?.["reason"] }
+    return (options?.client ?? this.client).post<T.V2SessionBashStopResponses, T.V2SessionBashStopErrors, ThrowOnError>(
+      {
+        url: "/api/session/{sessionID}/command/{callID}/stop",
+        ...options,
+        path,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+}
+
 class ApiV2SessionPermission extends NovaClawApiClient {
   /**
    * Evaluate permission
@@ -2275,6 +2303,11 @@ class ApiV2Session extends NovaClawApiClient {
   private _revert?: ApiV2SessionRevert
   get revert(): ApiV2SessionRevert {
     return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
+  }
+
+  private _bash?: ApiV2SessionBash
+  get bash(): ApiV2SessionBash {
+    return (this._bash ??= new ApiV2SessionBash({ client: this.client }))
   }
 
   private _permission?: ApiV2SessionPermission

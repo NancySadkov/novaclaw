@@ -30,6 +30,23 @@ const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, BashJobs.node]), [[AppProcess.node, appProcess]]),
 )
 
+const hangingProcess = Layer.succeed(
+  AppProcess.Service,
+  AppProcess.Service.of({
+    spawn: () =>
+      Effect.succeed({
+        all: Stream.never,
+        stdout: Stream.empty,
+        stderr: Stream.empty,
+        exitCode: Effect.never,
+      }) as never,
+    run: () => Effect.die("unused"),
+  } as never),
+)
+const itHanging = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Database.node, BashJobs.node]), [[AppProcess.node, hangingProcess]]),
+)
+
 const launchFailure = Layer.succeed(
   AppProcess.Service,
   AppProcess.Service.of({
@@ -79,6 +96,31 @@ describe("BashJobs durability (live process)", () => {
 })
 
 describe("BashJobs durability", () => {
+  itHanging.effect("a tool-call stop interrupts only the matching command and records its reason", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BashJobs.Service
+      const { db } = yield* Database.Service
+      yield* jobs.start({
+        owner: "ses_command_stop",
+        callID: "call_target",
+        command,
+        commandText: "long command",
+        maxOutputBytes: 4096,
+      })
+      expect(yield* jobs.stopCall("call_other", "ses_command_stop", "wrong one")).toBeUndefined()
+      const stopped = yield* jobs.stopCall("call_target", "ses_command_stop", "No longer needed")
+      expect(stopped).toMatchObject({
+        running: false,
+        interrupted: true,
+        interruptionReason: "No longer needed",
+      })
+      const row = (yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)).find(
+        (item) => item.owner === "ses_command_stop",
+      )
+      expect(row?.status).toBe("interrupted")
+    }),
+  )
+
   itLaunchFailure.effect("returns an OS process launch failure immediately with its cause", () =>
     Effect.gen(function* () {
       const bashJobs = yield* BashJobs.Service

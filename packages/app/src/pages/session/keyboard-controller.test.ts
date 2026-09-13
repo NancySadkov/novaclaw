@@ -9,11 +9,37 @@ const setup = () => {
     composer: () => composer,
     childSession: () => false,
     dialogActive: () => false,
+    working: () => false,
+    abort: () => {},
     terminalOpen: () => false,
     activeTerminal: () => undefined,
   })
   return { composer, handle }
 }
+
+test("one Escape stops a working agent even from a focused button", () => {
+  const composer = document.createElement("div")
+  const button = document.createElement("button")
+  document.body.append(composer, button)
+  button.focus()
+  let stops = 0
+  const handle = createSessionKeyboardController({
+    composer: () => composer,
+    childSession: () => false,
+    dialogActive: () => false,
+    working: () => true,
+    abort: () => stops++,
+    terminalOpen: () => false,
+    activeTerminal: () => undefined,
+  })
+  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+  Object.defineProperty(event, "composedPath", { value: () => [button, document.body, document] })
+  handle(event)
+  expect(stops).toBe(1)
+  expect(event.defaultPrevented).toBe(true)
+  button.remove()
+  composer.remove()
+})
 
 test("a printable key focuses the composer when no protected surface owns focus", () => {
   const value = setup()

@@ -37,6 +37,14 @@ export const Interrupt = Schema.Struct({
   type: Schema.Literal("interrupt"),
 }).annotate({ identifier: "SessionWorker.Interrupt" })
 
+/** Host instruction for one running tool process. Unlike Interrupt, this keeps the worker alive. */
+export const StopCommand = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("stop-command"),
+  callID: Schema.String,
+  reason: Schema.String,
+}).annotate({ identifier: "SessionWorker.StopCommand" })
+
 export const EventPublished = Schema.Struct({
   ...Identity,
   type: Schema.Literal("event-published"),
@@ -259,6 +267,7 @@ export const ExecutionResult = Schema.Struct({
 export const HostMessage = Schema.Union([
   Start,
   Interrupt,
+  StopCommand,
   EventPublished,
   EventRejected,
   DeviceAdmitted,

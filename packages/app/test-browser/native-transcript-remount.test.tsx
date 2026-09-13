@@ -45,7 +45,7 @@ const messages = [
 ] as unknown as SessionMessage[]
 
 function mount(
-  onStopCommand?: (reason: string) => void | Promise<void>,
+  onStopCommand?: (callID: string, reason: string) => void | Promise<void>,
   options?: {
     messages?: SessionMessage[]
     status?: unknown
@@ -85,8 +85,10 @@ describe("native transcript remount", () => {
     dispose?.()
     dispose = undefined
     first.remove()
+    let stoppedCall: string | undefined
     let stoppedFor: string | undefined
-    const reopened = mount((reason) => {
+    const reopened = mount((callID, reason) => {
+      stoppedCall = callID
       stoppedFor = reason
     })
 
@@ -107,6 +109,7 @@ describe("native transcript remount", () => {
     expect(stop.disabled).toBe(false)
     stop.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(stoppedCall).toBe("call_1")
     expect(stoppedFor).toBe("it has made no progress")
   })
 

@@ -133,7 +133,7 @@ type TranscriptActions = {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
-  onStopCommand?: (reason: string) => void | Promise<void>
+  onStopCommand?: (callID: string, reason: string) => void | Promise<void>
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
@@ -172,7 +172,7 @@ export function NativeTranscript(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
-  onStopCommand?: (reason: string) => void | Promise<void>
+  onStopCommand?: (callID: string, reason: string) => void | Promise<void>
   status?: SessionStatus
   /** Durable execution says this turn still has an owner obligation, even while live status reconnects. */
   executionOpen?: boolean
@@ -1302,7 +1302,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
         >
           <ToolBody part={props.part} />
           <Show when={props.part.name === "bash" && props.part.state.status === "running" && actions().onStopCommand}>
-            <CommandStop onStop={(reason) => actions().onStopCommand?.(reason)} />
+            <CommandStop onStop={(reason) => actions().onStopCommand?.(props.part.id, reason)} />
           </Show>
         </BasicToolV2>
       </Match>

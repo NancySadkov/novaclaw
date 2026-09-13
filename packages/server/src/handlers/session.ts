@@ -1127,6 +1127,23 @@ const SessionObservationHandler = handlerLayer(
           }),
         )
         .handle(
+          "session.bash.stop",
+          Effect.fn(function* (ctx) {
+            const reason = ctx.payload.reason.trim() || "The user stopped this command."
+            const stopped = yield* execution.stopCommand(ctx.params.sessionID, ctx.params.callID, reason)
+            if (stopped) {
+              const timestamp = yield* DateTime.now
+              yield* events.publish(SessionEvent.Synthetic, {
+                sessionID: ctx.params.sessionID,
+                messageID: SessionMessage.ID.create(),
+                timestamp,
+                text: `You stopped the running command: ${reason}`,
+              })
+            }
+            return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
           "session.execution.retry",
           Effect.fn(function* (ctx) {
             yield* session.get(ctx.params.sessionID).pipe(

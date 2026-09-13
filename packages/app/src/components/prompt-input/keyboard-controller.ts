@@ -58,6 +58,14 @@ export function createPromptInputKeyboardController(input: Input) {
     }
 
     if (event.key === "Escape") {
+      // Stopping live work is the highest-priority Escape action. A transient composer popover or
+      // shell mode must not consume the first press and force the user to discover a second one.
+      if (input.working()) {
+        void input.abort()
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       if (popover) {
         input.closePopover()
         event.preventDefault()
@@ -66,12 +74,6 @@ export function createPromptInputKeyboardController(input: Input) {
       }
       if (mode === "shell") {
         input.setMode("normal")
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-      if (input.working()) {
-        void input.abort()
         event.preventDefault()
         event.stopPropagation()
         return

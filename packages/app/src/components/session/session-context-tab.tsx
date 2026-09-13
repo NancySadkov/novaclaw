@@ -27,6 +27,7 @@ import {
 } from "./session-context-export"
 import { createSessionContextFormatter } from "./session-context-format"
 import { sessionCompactionEvents } from "./session-compaction-events"
+import { showToast } from "@/utils/toast"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -70,6 +71,24 @@ export function SessionContextTab() {
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
   const compactions = createMemo(() => sessionCompactionEvents(messages()))
   const [showCompactions, setShowCompactions] = createSignal(false)
+  const [compacting, setCompacting] = createSignal(false)
+
+  const compactNow = async () => {
+    const sessionID = params.id
+    if (!sessionID || compacting()) return
+    setCompacting(true)
+    try {
+      await sdk().client.v2.session.compact({ sessionID })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setCompacting(false)
+    }
+  }
 
   const counts = createMemo(() => {
     const all = messages()
@@ -386,7 +405,10 @@ export function SessionContextTab() {
         </Show>
 
         <div class="flex flex-col gap-3">
-          <div>
+          <div class="flex flex-wrap gap-2">
+            <ButtonV2 type="button" variant="gold" disabled={compacting()} onClick={() => void compactNow()}>
+              {language.t(compacting() ? "context.compactions.compacting" : "context.compactions.compactNow")}
+            </ButtonV2>
             <ButtonV2 type="button" variant="outline" onClick={() => setShowCompactions((value) => !value)}>
               {language.t("context.compactions.button")} ({compactions().length.toLocaleString(language.intl())})
             </ButtonV2>

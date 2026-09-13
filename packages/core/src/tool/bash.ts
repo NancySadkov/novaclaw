@@ -548,6 +548,7 @@ export const layer = Layer.effectDiscard(
               )
               const { id } = yield* bashJobs.start({
                 owner: context.sessionID,
+                callID: context.toolCallID,
                 command,
                 commandText,
                 maxOutputBytes: MAX_CAPTURE_BYTES,
@@ -567,6 +568,11 @@ export const layer = Layer.effectDiscard(
                   ...(warnings.length ? { warnings } : {}),
                 }
               }
+
+              if (job.interrupted)
+                return yield* new ToolFailure({
+                  message: `${job.interruptionReason ?? "The user stopped this command."} The agent is still running; reassess the task and continue safely.`,
+                })
 
               const output = job.output || "(no output)"
               const notice = job.truncated

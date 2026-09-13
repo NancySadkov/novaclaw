@@ -40,7 +40,12 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
+import {
+  retrySessionExecution,
+  sessionExecutions,
+  stopSessionCommand,
+  stopSessionExecution,
+} from "@/utils/session-execution-api"
 import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
@@ -350,6 +355,10 @@ export default function Page() {
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
+  const explicitlyStopped = createMemo(() => {
+    const attempt = executionAttempt()
+    return attempt?.state === "interrupted" && attempt.failureClass === "interrupt"
+  })
   const executionOpen = createMemo(() => executionKeepsTurnOpen(executionAttempt()))
   /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
    *  incomplete case in particular must never read as "nothing happened". */
@@ -578,6 +587,8 @@ export default function Page() {
     composer: () => inputRef,
     childSession: isChildSession,
     dialogActive: () => !!dialog.active,
+    working: () => (params.id ? busy(params.id) : false),
+    abort: () => executionAction("stop"),
     terminalOpen: () => view().terminal.opened(),
     activeTerminal: terminal.active,
   })
@@ -965,6 +976,7 @@ export default function Page() {
         const recovery = visibleProviderRecovery({
           recovery: session.providerRecovery,
           working: busy(session.id),
+          stopped: explicitlyStopped(),
           dismissedAttemptID: recoveryDismissed(),
         })
         if (!recovery) return
@@ -998,6 +1010,10 @@ export default function Page() {
               inputRef = el
             }}
             newSessionWorktree={newSessionWorktree()}
+            resume={{
+              available: explicitlyStopped,
+              run: () => executionAction("retry"),
+            }}
             onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
             onSubmit={() => {
               comments.clear()
@@ -1021,9 +1037,7 @@ export default function Page() {
                 <strong class="text-v2-text-text-base">
                   {attempt().state === "recovering"
                     ? "This chat is recovering automatically."
-                    : attempt().state === "interrupted"
-                      ? "This chat was stopped."
-                      : "This chat needs attention."}
+                    : "This chat needs attention."}
                 </strong>{" "}
                 {attempt().failureDetail ??
                   attempt().failureClass ??
@@ -1165,10 +1179,10 @@ export default function Page() {
                           onRetry={retryFailedTurn}
                           onChooseModel={chooseAnotherModel}
                           onUnpinDevice={unpinDevice}
-                          onStopCommand={async (reason) => {
+                          onStopCommand={async (callID, reason) => {
                             const conn = server.current
                             if (!conn) return
-                            await stopSessionExecution(conn.http, _id, sdk().directory, reason)
+                            await stopSessionCommand(conn.http, _id, sdk().directory, callID, reason)
                           }}
                           revertMessageID={revertMessageID()}
                         />

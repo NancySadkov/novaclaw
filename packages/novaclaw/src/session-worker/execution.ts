@@ -16,6 +16,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionContextEpoch } from "@novaclaw/core/session/context-epoch"
 import { SessionExecution } from "@novaclaw/core/session/execution"
+import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionMessage } from "@novaclaw/core/session/message"
@@ -177,6 +178,10 @@ export const layer = Layer.effect(
     // reaches it by RPC and the drain below pins the session for the worker's whole life.
     const driveState = yield* SessionDriveState.Service
     const ownerID = `server_${crypto.randomUUID()}`
+    const liveWorkers = new Map<
+      SessionSchema.ID,
+      { lease: SessionExecutionAttempt.Lease; handle: SessionWorkerSupervisor.Handle }
+    >()
     const command = SessionWorkerCommand.current()
     // Process admission is deliberately OUTSIDE the worker. A child queued here consumes durable
     // session state and no resident process; once admitted, the permit covers the worker's complete
@@ -512,8 +517,19 @@ export const layer = Layer.effect(
                   sessionID: String(sessionID),
                   at: Date.now(),
                 })
+                liveWorkers.set(sessionID, { lease, handle: spawned.value })
+                const releaseLiveWorker = () => {
+                  const current = liveWorkers.get(sessionID)
+                  if (current?.lease.attemptID === lease.attemptID && current.lease.generation === lease.generation)
+                    liveWorkers.delete(sessionID)
+                }
                 outcome = yield* Effect.promise(() => spawned.value.result).pipe(
-                  Effect.ensuring(Effect.sync(releaseWorker)),
+                  Effect.ensuring(
+                    Effect.sync(() => {
+                      releaseWorker()
+                      releaseLiveWorker()
+                    }),
+                  ),
                   Effect.onInterrupt(() =>
                     Effect.promise(() => spawned.value.interrupt()).pipe(
                       Effect.andThen(
@@ -614,6 +630,21 @@ export const layer = Layer.effect(
       adopt: coordinator.adopt,
       wake: coordinator.wake,
       interrupt: (sessionID) => interruptBranch(sessionID, new Set()),
+      stopCommand: (sessionID, callID, reason) =>
+        Effect.sync(() => {
+          const current = liveWorkers.get(sessionID)
+          if (!current) return false
+          current.handle.send({
+            version: SessionWorkerProtocol.VERSION,
+            sessionID,
+            attemptID: current.lease.attemptID,
+            generation: current.lease.generation,
+            type: "stop-command",
+            callID,
+            reason,
+          })
+          return true
+        }),
     })
   }),
 )

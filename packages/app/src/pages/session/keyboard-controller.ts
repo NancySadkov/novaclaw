@@ -4,6 +4,8 @@ type Input = {
   composer: () => HTMLDivElement | undefined
   childSession: () => boolean
   dialogActive: () => boolean
+  working: () => boolean
+  abort: () => unknown
   terminalOpen: () => boolean
   activeTerminal: () => string | undefined
 }
@@ -28,13 +30,22 @@ export function createSessionKeyboardController(input: Input) {
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
     const active = deepActiveElement()
 
+    if (input.dialogActive()) return
+
+    // Escape is a session-level stop even when focus is in a terminal, button, or other editable
+    // surface. The focused composer's controller stops propagation, so this never double-aborts.
+    if (event.key === "Escape" && input.working()) {
+      void input.abort()
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+
     const protectedTarget = path.some(
       (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
     )
     if (protectedTarget || isEditableTarget(target)) return
     if (active && (active.closest("[data-prevent-autofocus]") || isEditableTarget(active))) return
-    if (input.dialogActive()) return
-
     const composer = input.composer()
     if (active === composer) {
       if (event.key === "Escape") composer?.blur()

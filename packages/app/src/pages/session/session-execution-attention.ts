@@ -25,6 +25,9 @@ export const visibleExecutionAttention = <T extends ExecutionAttentionLike>(
   working: boolean,
 ): T | undefined => {
   if (!attempt || !ATTENTION_STATES.has(attempt.state)) return undefined
+  // An operator stop is a quiet, resumable state owned by the composer. Rendering it here created a
+  // second control surface whose warning copy competed with the single play button that resumes it.
+  if (attempt.failureClass === "interrupt") return undefined
   if ((working || executionKeepsTurnOpen(attempt)) && attempt.state !== "recovering") return undefined
   return attempt
 }

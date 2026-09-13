@@ -14924,6 +14924,44 @@ export type V2SessionInterruptResponses = {
 
 export type V2SessionInterruptResponse = V2SessionInterruptResponses[keyof V2SessionInterruptResponses]
 
+export type V2SessionBashStopData = {
+  body: {
+    reason: string
+  }
+  path: {
+    sessionID: string
+    callID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/command/{callID}/stop"
+}
+
+export type V2SessionBashStopErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionBashStopError = V2SessionBashStopErrors[keyof V2SessionBashStopErrors]
+
+export type V2SessionBashStopResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionBashStopResponse = V2SessionBashStopResponses[keyof V2SessionBashStopResponses]
+
 export type V2SessionExecutionRetryData = {
   body?: never
   path: {

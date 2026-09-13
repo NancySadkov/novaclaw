@@ -155,6 +155,33 @@ test("explicit interrupt has a bounded grace period", async () => {
   expect(await worker.interrupt()).toEqual({ type: "interrupted" })
 })
 
+test("stopping one command leaves the worker alive to settle its drain", async () => {
+  let ready!: () => void
+  const becameReady = new Promise<void>((resolve) => (ready = resolve))
+  const worker = spawn({
+    command: [process.execPath, entrypointFixture, "command-stop"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    onMessage: (message) => {
+      if (message.type === "ready") ready()
+    },
+  })
+  await becameReady
+  worker.send({
+    version: SessionWorkerProtocol.VERSION,
+    sessionID: lease.sessionID,
+    attemptID: lease.attemptID,
+    generation: lease.generation,
+    type: "stop-command",
+    callID: "call_fixture",
+    reason: "Enough output",
+  })
+  expect(await worker.result).toEqual({ type: "settled" })
+})
+
 test("event RPCs are acknowledged in request order", async () => {
   const handled: string[] = []
   let sequence = 0

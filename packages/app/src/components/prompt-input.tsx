@@ -153,6 +153,8 @@ export interface PromptInputProps {
   onAbort?: () => void
   onSubmit?: () => void
   toolbar?: JSX.Element
+  /** A stopped durable attempt can resume without manufacturing an empty user message. */
+  resume?: { available: () => boolean; run: () => Promise<void> | void }
 }
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
@@ -308,6 +310,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
   const stopping = createMemo(() => working() && blank())
+  const resuming = createMemo(() => !working() && blank() && !!props.resume?.available())
   const tip = () => {
     if (stopping()) {
       return (
@@ -317,6 +320,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </div>
       )
     }
+
+    if (resuming()) return <span>{language.t("prompt.action.resume")}</span>
 
     return (
       <div class="flex items-center gap-2">
@@ -696,6 +701,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onSubmit: props.onSubmit,
     })
 
+  const submit = (event: Event) => {
+    if (!resuming()) return handleSubmit(event)
+    event.preventDefault()
+    void props.resume?.run()
+  }
+
   const promptText = () =>
     prompt
       .current()
@@ -731,7 +742,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     slashKeyDown: slashOnKeyDown,
     scrollSlashActiveIntoView,
     navigateHistory,
-    submit: handleSubmit,
+    submit,
   })
 
   const providersLoading = () => props.controls.model.loading
@@ -853,7 +864,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         <div class="flex flex-col gap-3">
           <DockShellForm
             data-component={newSession() ? "session-new-composer" : "session-composer"}
-            onSubmit={handleSubmit}
+            onSubmit={submit}
             classList={{
               "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
               "border-icon-info-active border-dashed": store.draggingType !== null,
@@ -901,14 +912,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 controls row, so the pickers below own the full width and never collide with it
                 on narrow / phone widths. */}
               <div class="shrink-0 self-end p-2">
-                <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
+                <TooltipV2 placement="top" inactive={!working() && blank() && !resuming()} value={tip()}>
                   <IconButtonV2
                     data-action="prompt-submit"
                     type="submit"
-                    disabled={!working() && blank()}
+                    disabled={!working() && blank() && !resuming()}
                     tabIndex={store.mode === "normal" ? undefined : -1}
                     icon={
-                      <IconV2 name={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />
+                      <IconV2
+                        name={stopping() ? "stop" : resuming() ? "play" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                      />
                     }
                     variant="contrast"
                     class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
@@ -916,7 +929,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       "background-image":
                         "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
                     }}
-                    aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                    aria-label={
+                      stopping()
+                        ? language.t("prompt.action.stop")
+                        : resuming()
+                          ? language.t("prompt.action.resume")
+                          : language.t("prompt.action.send")
+                    }
                   />
                 </TooltipV2>
               </div>

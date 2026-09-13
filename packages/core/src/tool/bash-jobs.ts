@@ -40,6 +40,8 @@ export interface Snapshot {
   readonly exit?: number
   /** True when a previous process died while this job ran (recovery marked it). */
   readonly interrupted?: boolean
+  /** Present only in the live process; explains an operator stop to the running agent. */
+  readonly interruptionReason?: string
 }
 
 export class JobNotFoundError extends Data.TaggedError("BashJobs.NotFoundError")<{ id: string }> {}
@@ -49,6 +51,7 @@ export class JobLaunchError extends Data.TaggedError("BashJobs.LaunchError")<{ r
 interface JobState {
   readonly id: string
   readonly owner: string
+  readonly callID?: string
   readonly command: string
   readonly startedAt: number
   readonly chunks: Buffer[]
@@ -60,12 +63,14 @@ interface JobState {
   readonly launchDone: Deferred.Deferred<void>
   launchSettled: boolean
   launchError?: string
+  interruptionReason?: string
   fiber?: Fiber.Fiber<unknown, unknown>
 }
 
 export interface Interface {
   readonly start: (input: {
     readonly owner: string
+    readonly callID?: string
     readonly command: ChildProcess.Command
     readonly commandText: string
     readonly maxOutputBytes: number
@@ -74,6 +79,8 @@ export interface Interface {
   readonly wait: (id: string, owner: string, timeoutMs: number) => Effect.Effect<Snapshot, JobNotFoundError>
   readonly status: (id: string, owner: string) => Effect.Effect<Snapshot, JobNotFoundError>
   readonly stop: (id: string, owner: string) => Effect.Effect<Snapshot, JobNotFoundError>
+  /** Stop one live tool call's OS process without interrupting its owning agent. */
+  readonly stopCall: (callID: string, owner: string, reason: string) => Effect.Effect<Snapshot | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/BashJobs") {}
@@ -86,6 +93,9 @@ const snapshot = (job: JobState): Snapshot => ({
   output: Buffer.concat(job.chunks).toString("utf8"),
   truncated: job.truncated,
   ...(job.exit !== undefined ? { exit: job.exit } : {}),
+  ...(job.interruptionReason !== undefined
+    ? { interrupted: true, interruptionReason: job.interruptionReason }
+    : {}),
 })
 
 const rowSnapshot = (row: typeof BashJobTable.$inferSelect): Snapshot => ({
@@ -136,7 +146,11 @@ export const layer = Layer.effect(
           output: Buffer.concat(job.chunks).toString("utf8"),
           truncated: job.truncated,
           ...(job.doneAt !== undefined
-            ? { status: "done" as const, time_done: job.doneAt, ...(job.exit !== undefined ? { exit: job.exit } : {}) }
+            ? {
+                status: job.interruptionReason === undefined ? ("done" as const) : ("interrupted" as const),
+                time_done: job.doneAt,
+                ...(job.exit !== undefined ? { exit: job.exit } : {}),
+              }
             : {}),
         })
         .where(eq(BashJobTable.id, job.id))
@@ -153,6 +167,7 @@ export const layer = Layer.effect(
       const state: JobState = {
         id: "job_" + ascending(),
         owner: input.owner,
+        callID: input.callID,
         command: input.commandText,
         startedAt: Date.now(),
         chunks: [],
@@ -267,13 +282,27 @@ export const layer = Layer.effect(
       const job = jobs.get(id)
       // Not in memory → nothing is running to stop; report the durable status.
       if (!job || job.owner !== owner) return rowSnapshot(yield* findRow(id, owner))
-      if (job.doneAt === undefined && job.fiber) yield* Fiber.interrupt(job.fiber)
+      if (job.doneAt === undefined && job.fiber) {
+        job.interruptionReason = "The command was stopped."
+        yield* Fiber.interrupt(job.fiber)
+      }
       // The ensuring above stamps doneAt + settles the deferred.
       yield* Deferred.await(job.done)
       return snapshot(job)
     })
 
-    return Service.of({ start, wait, status, stop })
+    const stopCall: Interface["stopCall"] = Effect.fn("BashJobs.stopCall")(function* (callID, owner, reason) {
+      const job = [...jobs.values()].find(
+        (candidate) => candidate.owner === owner && candidate.callID === callID && candidate.doneAt === undefined,
+      )
+      if (!job) return
+      job.interruptionReason = reason.trim() || "The user stopped this command."
+      if (job.fiber) yield* Fiber.interrupt(job.fiber)
+      yield* Deferred.await(job.done)
+      return snapshot(job)
+    })
+
+    return Service.of({ start, wait, status, stop, stopCall })
   }),
 )
 

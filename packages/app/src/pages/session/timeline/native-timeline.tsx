@@ -44,7 +44,7 @@ export function NativeTimeline(props: {
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
-  onStopCommand?: (reason: string) => void | Promise<void>
+  onStopCommand?: (callID: string, reason: string) => void | Promise<void>
   /**
    * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
    * after it leave the transcript — a staged revert is a reversible HIDE, so the rows stay in the

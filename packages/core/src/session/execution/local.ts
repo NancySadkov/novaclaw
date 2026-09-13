@@ -178,6 +178,7 @@ export const layer = Layer.effect(
     return SessionExecution.Service.of({
       active: coordinator.active,
       interrupt: interruptTree,
+      stopCommand: () => Effect.succeed(false),
       resume: coordinator.run,
       adopt: coordinator.adopt,
       wake: coordinator.wake,

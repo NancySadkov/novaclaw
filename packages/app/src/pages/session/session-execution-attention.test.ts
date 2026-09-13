@@ -8,7 +8,7 @@ describe("execution recovery attention", () => {
   test("🔴 a stale interrupted attempt disappears while its replacement is working", () => {
     const interrupted = { state: "interrupted", attemptID: "old", failureClass: "interrupt" }
     expect(visibleExecutionAttention(interrupted, true)).toBeUndefined()
-    expect(visibleExecutionAttention(interrupted, false)).toBe(interrupted)
+    expect(visibleExecutionAttention(interrupted, false)).toBeUndefined()
   })
 
   test("paused and failed history cannot outrank live work", () => {
@@ -38,5 +38,10 @@ describe("execution recovery attention", () => {
     const attention = pageSource.indexOf("const executionAttention = createMemo")
     expect(controller).toBeGreaterThan(-1)
     expect(attention).toBeGreaterThan(controller)
+  })
+
+  test("an explicit stop is resumed by the empty composer instead of recovery chrome", () => {
+    expect(pageSource).toContain("available: explicitlyStopped")
+    expect(pageSource).toContain('run: () => executionAction("retry")')
   })
 })

@@ -1102,6 +1102,22 @@ export const makeSessionGroups = <
           ),
       )
       .add(
+        HttpApiEndpoint.post("session.bash.stop", "/api/session/:sessionID/command/:callID/stop", {
+          params: { sessionID: Session.ID, callID: Schema.String },
+          payload: Schema.Struct({ reason: Schema.String }),
+          success: HttpApiSchema.NoContent,
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.bash.stop",
+              summary: "Stop a running session command",
+              description: "Stop one running command without interrupting the agent that launched it.",
+            }),
+          ),
+      )
+      .add(
         HttpApiEndpoint.post("session.execution.retry", "/api/session/:sessionID/execution/retry", {
           params: { sessionID: Session.ID },
           success: HttpApiSchema.NoContent,

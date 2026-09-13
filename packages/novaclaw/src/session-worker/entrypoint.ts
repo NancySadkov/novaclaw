@@ -14,6 +14,8 @@ export interface Context {
   readonly signal: AbortSignal
   readonly capabilities: SessionWorkerCapabilities.Capabilities
   readonly phase: (phase: (typeof SessionWorkerProtocol.Heartbeat.Type)["phase"]) => void
+  /** Register the worker-local handler that stops one command while leaving this drain alive. */
+  readonly registerCommandStop: (handler: (callID: string, reason: string) => Promise<void>) => () => void
 }
 
 export interface Input {
@@ -67,6 +69,7 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
     )
   const client = SessionWorkerClient.make({ lease, send: emit })
   const capabilities = SessionWorkerCapabilities.make({ lease, client })
+  let commandStop: ((callID: string, reason: string) => Promise<void>) | undefined
 
   const pump = async () => {
     for (;;) {
@@ -79,6 +82,14 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
       if (next.message.type === "interrupt") {
         abort.abort(new Error("session worker interrupted"))
         return
+      }
+      if (next.message.type === "stop-command") {
+        const handler = commandStop
+        if (!handler) throw new Error("session worker command stop handler is not ready")
+        void handler(next.message.callID, next.message.reason).catch((error) =>
+          rejectProtocol(error instanceof Error ? error : new Error("command stop failed")),
+        )
+        continue
       }
       if (next.message.type === "start") throw new Error("session worker received a second start envelope")
       if (!client.accept(next.message)) throw new Error(`unexpected host message: ${next.message.type}`)
@@ -103,6 +114,12 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
         capabilities,
         phase: (next) => {
           phase = next
+        },
+        registerCommandStop: (handler) => {
+          commandStop = handler
+          return () => {
+            if (commandStop === handler) commandStop = undefined
+          }
         },
       }),
       protocolFailure,

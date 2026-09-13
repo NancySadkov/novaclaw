@@ -6,6 +6,7 @@ import { Location } from "@novaclaw/core/location"
 import { PluginInternal } from "@novaclaw/core/plugin/internal"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { BuiltInTools } from "@novaclaw/core/tool/builtins"
+import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { ToolPolicyBuiltin } from "@novaclaw/core/tool-policy-builtin"
 import { SessionRunnerLLM } from "@novaclaw/core/session/runner/llm"
 import type { SessionWorkerCapabilities } from "./capabilities"
@@ -37,6 +38,10 @@ export const root = LayerNode.group([
   PluginInternal.node,
   SystemContextBuiltIns.node,
   BuiltInTools.node,
+  // Exposed at the worker root because the host-to-worker command-stop control reaches the live job
+  // registry directly; merely being a hidden dependency of the bash tool does not put it in the
+  // compiled layer's public environment type.
+  BashJobs.node,
   ToolPolicyBuiltin.node,
 ])
 

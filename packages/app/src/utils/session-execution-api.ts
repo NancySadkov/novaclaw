@@ -52,3 +52,19 @@ export async function stopSessionExecution(
     ...(reason?.trim() ? { body: { reason: reason.trim() } } : {}),
   })
 }
+
+export async function stopSessionCommand(
+  server: ServerConnection.HttpBase,
+  sessionID: string,
+  directory: string,
+  callID: string,
+  reason: string,
+) {
+  await instanceFetch(server, {
+    route: `api/session/${encodeURIComponent(sessionID)}/command/${encodeURIComponent(callID)}/stop`,
+    method: "POST",
+    directory,
+    directoryVia: "header",
+    body: { reason: reason.trim() },
+  })
+}

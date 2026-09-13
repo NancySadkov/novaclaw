@@ -18,6 +18,19 @@ await SessionWorkerEntrypoint.run({
       await new Promise<void>((resolve) => context.signal.addEventListener("abort", () => resolve(), { once: true }))
       return
     }
+    if (mode === "command-stop") {
+      await new Promise<void>((resolve, reject) => {
+        const unregister = context.registerCommandStop(async (callID, reason) => {
+          unregister()
+          if (callID !== "call_fixture" || reason !== "Enough output") {
+            reject(new Error(`unexpected command stop: ${callID} / ${reason}`))
+            return
+          }
+          resolve()
+        })
+      })
+      return
+    }
     if (mode === "execution") {
       await Effect.runPromise(
         context.capabilities.execution.toolDispatched({

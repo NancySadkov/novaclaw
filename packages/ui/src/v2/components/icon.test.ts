@@ -9,6 +9,7 @@ describe("the text-field copy affordance", () => {
 
   test("every named product action resolves instead of falling back to plus", () => {
     expect(isIconName("refresh")).toBe(true)
+    expect(isIconName("play")).toBe(true)
     expect(isIconName("not-a-product-action")).toBe(false)
   })
 })
