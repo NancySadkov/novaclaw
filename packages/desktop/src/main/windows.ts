@@ -21,8 +21,16 @@ import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { preloadFailureRecovery } from "./preload-recovery"
+import { mainRuntimeDirectory } from "./runtime-path"
 
-const root = dirname(fileURLToPath(import.meta.url))
+const moduleDirectory = dirname(fileURLToPath(import.meta.url))
+// This module can be extracted to out/main/chunks when another entry point shares its dependencies.
+// Preload and renderer are application assets; their location must not follow a movable JS chunk.
+const root = mainRuntimeDirectory({
+  packaged: app.isPackaged,
+  appPath: app.isPackaged ? app.getAppPath() : "",
+  moduleDirectory,
+})
 const rendererRoot = join(root, "../renderer")
 const rendererProtocol = RENDERER_PROTOCOL
 const rendererHost = RENDERER_HOST
