@@ -7,6 +7,7 @@ import type { EventV2 } from "../event"
 import { CompactionPrune } from "./compaction-prune"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
+import { SessionToolContent } from "./tool-content"
 import { SessionSchema } from "./schema"
 import { ColleagueNote } from "./colleague-note"
 import { isSteerText, stripSteerProvenance, stripAutomatedEcho } from "./steer-provenance"
@@ -256,12 +257,7 @@ export const estimate = (value: unknown, imagePatchPixels?: number) => Token.est
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
-export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"]) =>
-  content
-    .map((item) =>
-      item.type === "text" ? item.text : `[Attached ${item.mime}${item.name === undefined ? "" : `: ${item.name}`}]`,
-    )
-    .join("\n")
+export const serializeToolContent = SessionToolContent.serialize
 
 /**
  * One transcript message → the line(s) that represent it inside the summarization prompt. Exported

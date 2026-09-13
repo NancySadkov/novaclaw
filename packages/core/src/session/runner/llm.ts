@@ -764,13 +764,13 @@ export const layer = Layer.effect(
     const auditExit = Effect.fn("SessionRunner.auditExit")(function* (
       sessionID: SessionSchema.ID,
       model: Parameters<typeof LLM.request>[0]["model"],
-      device: SessionRunnerModel.ScheduledDevice,
+      slot: SessionScheduler.AdmitInput,
       context: readonly SessionMessage.Message[],
       request: FinishAudit.ExitRequest,
     ) {
       const evidence = FinishAudit.excerpt(context, request)
       if (evidence === undefined) return "unknown" as const
-      const reply = yield* ShortAnswer.generate({
+      const reply = yield* ShortAnswer.generateOnSessionLane({
         model,
         llm,
         system: FinishAudit.SYSTEM,
@@ -778,13 +778,7 @@ export const layer = Layer.effect(
         reasoningBudget: 128,
         maxTokens: 512,
         scheduler,
-        maintenance: {
-          ownerID: sessionID,
-          task: "finish-audit",
-          deviceKey: device.key,
-          ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
-          ...(device.locality === undefined ? {} : { locality: device.locality }),
-        },
+        slot,
       })
       return FinishAudit.verdict(reply)
     })
@@ -3374,6 +3368,22 @@ export const layer = Layer.effect(
             offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
             model,
             scheduledDevice,
+            auditModel: reasoningModel ?? model,
+            auditSlot:
+              reasoningScheduledDevice === undefined
+                ? dispatchSlot
+                : {
+                    sessionID: session.id as string,
+                    deviceKey: reasoningScheduledDevice.key,
+                    sessionClass: SessionScheduler.classForSessionType(config.type),
+                    ...(config.priority > 0 ? { priority: config.priority } : {}),
+                    ...(reasoningScheduledDevice.concurrency === undefined
+                      ? {}
+                      : { concurrency: reasoningScheduledDevice.concurrency }),
+                    ...(reasoningScheduledDevice.locality === undefined
+                      ? {}
+                      : { locality: reasoningScheduledDevice.locality }),
+                  },
           }
         })
       const attemptID = EventV2.ID.create()
@@ -3460,6 +3470,10 @@ export const layer = Layer.effect(
         /** The exact route and scheduler placement this turn used; finish audit must judge like-for-like. */
         readonly model: Parameters<typeof LLM.request>[0]["model"]
         readonly scheduledDevice: SessionRunnerModel.ScheduledDevice
+        /** Completion review is reasoning work: use the configured reasoning model when distinct. */
+        readonly auditModel: Parameters<typeof LLM.request>[0]["model"]
+        /** Critical-path audit admission; never the preemptible interactive-idle maintenance lane. */
+        readonly auditSlot: SessionScheduler.AdmitInput
       },
       RunError
     >
@@ -4057,8 +4071,8 @@ export const layer = Layer.effect(
           if (exitRequest !== undefined) {
             const audit = yield* auditExit(
               input.sessionID,
-              result.model,
-              result.scheduledDevice,
+              result.auditModel,
+              result.auditSlot,
               context,
               exitRequest,
             ).pipe(

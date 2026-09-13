@@ -6,6 +6,7 @@ export * as Affective from "./affective"
 // existing callers (`Affective.toSampling`, `Affective.calmMood`, …) are unchanged.
 
 import type { SessionMessage } from "../message"
+import { SessionToolContent } from "../tool-content"
 import { Affective as Core } from "../../affective"
 
 export type { Mood, Observed, SamplingBase, SamplingOverride } from "../../affective"
@@ -29,7 +30,7 @@ export function observe(context: ReadonlyArray<SessionMessage.Message>): Core.Ob
         sawTool = true
         const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
         action = `${part.name}(${input})`
-        if ("output" in part.state && typeof part.state.output === "string") toolResult = part.state.output
+        toolResult = SessionToolContent.stateText(part.state)
       }
       if (part.type === "text" && part.text.trim()) assistantText = part.text
     }

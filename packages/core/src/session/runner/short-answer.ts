@@ -5,6 +5,56 @@ import { LLM, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { ReasoningBudget } from "./reasoning-budget"
 import { SessionScheduler } from "../scheduler"
 
+type GenerateInput<E, R> = {
+  readonly model: Parameters<typeof LLM.request>[0]["model"]
+  /** Typed by its stream so callers retain the stream's exact error and service requirements. */
+  readonly llm: { readonly stream: (request: ReturnType<typeof LLM.request>) => Stream.Stream<LLMEvent, E, R> }
+  readonly system: string
+  readonly text: string
+  /** Reasoning ceiling. Zero disables thinking on the opening request; 128 allows brief deliberation. */
+  readonly reasoningBudget: number
+  /** Answer ceiling. Kept well above the hard stop's measured landing point. */
+  readonly maxTokens: number
+}
+
+const complete = <E, R>(input: GenerateInput<E, R>) =>
+  Effect.gen(function* () {
+    const chunks: string[] = []
+    const request = LLM.request({
+      model: input.model,
+      system: [SystemPart.make(input.system)],
+      messages: [Message.user(input.text)],
+      tools: [],
+      generation: { maxTokens: input.maxTokens },
+      ...(input.reasoningBudget <= 0
+        ? {
+            http: {
+              body: {
+                chat_template_kwargs: { enable_thinking: false },
+              },
+            },
+          }
+        : {}),
+    })
+    const stream =
+      input.reasoningBudget <= 0
+        ? input.llm.stream(request)
+        : ReasoningBudget.stream({
+            request,
+            stream: (next) => input.llm.stream(next),
+            budget: input.reasoningBudget,
+          })
+    yield* stream.pipe(
+      Stream.runForEach((event) => {
+        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+        return Effect.void
+      }),
+    )
+    // Raw by design. Each caller owns its own usability and length policy; an empty completion is
+    // observable here rather than being confused with a legitimate blank answer.
+    return chunks.join("")
+  })
+
 /**
  * ONE short line from a model, with thinking bounded — the shape both the chat titler and the
  * colleague status line need.
@@ -37,20 +87,7 @@ import { SessionScheduler } from "../scheduler"
  * because the hard stop lands far under the cap. If either number moves, this is the pairing to
  * re-check.
  */
-export const generate = <E, R>(input: {
-  readonly model: Parameters<typeof LLM.request>[0]["model"]
-  /**
-   * ⚠️ Typed by its `stream` alone, and GENERIC in that stream's error and requirement. Annotating
-   * this `LLMClient.Interface` flattened both to `unknown`, which no caller can discharge — the
-   * status sweep's `Effect.provide(located)` then could not prove it had satisfied anything.
-   */
-  readonly llm: { readonly stream: (request: ReturnType<typeof LLM.request>) => Stream.Stream<LLMEvent, E, R> }
-  readonly system: string
-  readonly text: string
-  /** Reasoning ceiling. Zero disables thinking on the opening request; 128 allows brief deliberation. */
-  readonly reasoningBudget: number
-  /** Answer ceiling. Kept well above the hard stop's measured landing point. */
-  readonly maxTokens: number
+export const generate = <E, R>(input: GenerateInput<E, R> & {
   /** Decode-shaped utility work always enters through the device's interactive-idle tier. */
   readonly scheduler: SessionScheduler.Interface
   readonly maintenance: SessionScheduler.MaintenanceInput
@@ -62,43 +99,26 @@ export const generate = <E, R>(input: {
   SessionScheduler.runMaintenance(
     input.scheduler,
     input.maintenance,
-    Effect.gen(function* () {
-      const chunks: string[] = []
-      const request = LLM.request({
-        model: input.model,
-        system: [SystemPart.make(input.system)],
-        messages: [Message.user(input.text)],
-        tools: [],
-        generation: { maxTokens: input.maxTokens },
-        ...(input.reasoningBudget <= 0
-          ? {
-              http: {
-                body: {
-                  chat_template_kwargs: { enable_thinking: false },
-                },
-              },
-            }
-          : {}),
-      })
-      const stream =
-        input.reasoningBudget <= 0
-          ? input.llm.stream(request)
-          : ReasoningBudget.stream({
-              request,
-              stream: (next) => input.llm.stream(next),
-              budget: input.reasoningBudget,
-            })
-      yield* stream.pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          return Effect.void
-        }),
-      )
-      // ⚠️ Raw. Every caller has its own idea of what "usable" means — a title tolerates 100
-      // characters, a contacts row 60 — so the cleaning stays with the caller and this returns exactly
-      // what the model said, empty string included. An empty completion is a broken call, and a caller
-      // that cannot tell it from a blank answer cannot say so.
-      return chunks.join("")
-    }),
+    complete(input),
     Effect.succeed(""),
+  )
+
+/**
+ * A short answer that is part of the owning turn's correctness boundary.
+ *
+ * Unlike titles and status labels, this work must not collapse to an empty fallback when foreground
+ * activity arrives. It therefore re-enters through the session scheduler lane after the caller's
+ * generation lease has been released. The same session identity preserves fairness and capacity
+ * accounting without creating an untracked provider request beside the scheduler.
+ */
+export const generateOnSessionLane = <E, R>(
+  input: GenerateInput<E, R> & {
+    readonly scheduler: SessionScheduler.Interface
+    readonly slot: SessionScheduler.AdmitInput
+  },
+) =>
+  Effect.acquireUseRelease(
+    input.scheduler.admit(input.slot),
+    () => complete(input),
+    () => input.scheduler.release(input.slot),
   )

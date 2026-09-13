@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { SessionSchema } from "../session/schema"
 import { SessionMessage } from "../session/message"
-import { deadChildMessage, diagnosticMessage, recentProviderErrors, resolveDirectChildID, sideEffect } from "./wait"
+import {
+  completionAwareDeadChildMessage,
+  deadChildMessage,
+  diagnosticMessage,
+  recentProviderErrors,
+  resolveDirectChildID,
+  sideEffect,
+} from "./wait"
 
 const id = (value: string) => SessionSchema.ID.make(value)
 
@@ -12,10 +19,18 @@ test("wait is recovery-safe because observing a child cannot duplicate its work"
 
 test("an already-halted worker is classified before the blocking join", () => {
   const source = readFileSync(new URL("./wait.ts", import.meta.url), "utf8")
-  const precheck = source.indexOf("const alreadyDead = deadChildMessage")
+  const current = source.indexOf("const currentChild = yield* store.get(childID)")
+  const precheck = source.indexOf("const alreadyDead = completionAwareDeadChildMessage")
   const join = source.indexOf("const joined = yield* join.awaitCompletion")
-  expect(precheck).toBeGreaterThan(0)
+  expect(current).toBeGreaterThan(0)
+  expect(precheck).toBeGreaterThan(current)
   expect(join).toBeGreaterThan(precheck)
+})
+
+test("a durable exit result outranks the runner's settled attempt state", () => {
+  expect(completionAwareDeadChildMessage("ses_child", "settled", "finished")).toBeUndefined()
+  expect(completionAwareDeadChildMessage("ses_child", "settled", "")).toBeUndefined()
+  expect(completionAwareDeadChildMessage("ses_child", "settled", undefined)).toContain("DID NOT FINISH")
 })
 
 test("wait diagnostics state both token activity and deduplicated provider failures", () => {

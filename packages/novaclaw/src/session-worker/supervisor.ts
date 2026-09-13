@@ -660,6 +660,11 @@ export function spawn(input: Input): Handle {
   const commandLaunchTimeoutMs = input.commandLaunchTimeoutMs ?? ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS
   monitor = setInterval(
     () => {
+      // Once the owner asks to stop, that explicit terminal intent owns the outcome. The worker may
+      // be quiet precisely because its in-flight host RPC is unwinding under `lifetime.abort()`; a
+      // heartbeat or launch watchdog racing the interrupt grace must not rewrite "interrupted" into
+      // an automatic timeout diagnosis.
+      if (interruptRequested) return
       const now = Date.now()
       if (!ready && now - startedAt > startupTimeoutMs) finish({ type: "start-timeout" })
       if (ready && now - lastHeartbeatAt > heartbeatTimeoutMs)

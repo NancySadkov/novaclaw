@@ -38,6 +38,7 @@ export const ACTION_LABEL_KEY = {
   external_directory_read: "settings.permissions.tool.external_directory_read.title",
   external_directory_write: "settings.permissions.tool.external_directory_write.title",
   js: "settings.permissions.tool.js.title",
+  kill: "settings.permissions.tool.kill.title",
   "messenger.connect": "settings.permissions.tool.messenger.connect.title",
   "messenger.initiate": "settings.permissions.tool.messenger.initiate.title",
   "messenger.moderate": "settings.permissions.tool.messenger.moderate.title",

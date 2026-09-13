@@ -35325,6 +35325,12 @@
           "model": {
             "type": "string"
           },
+          "reasoningModel": {
+            "type": "string"
+          },
+          "workerModel": {
+            "type": "string"
+          },
           "variant": {
             "type": "string"
           },
@@ -35404,6 +35410,17 @@
           "maxToolTimeoutMs": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "workerPrototype": {
+            "type": "string"
+          },
+          "maxWorkers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spawnDepth": {
+            "type": "integer",
+            "minimum": 0
           },
           "description": {
             "type": "string"
@@ -37814,6 +37831,12 @@
           "model": {
             "$ref": "#/components/schemas/ModelRef"
           },
+          "reasoningModel": {
+            "$ref": "#/components/schemas/ModelRef"
+          },
+          "workerModel": {
+            "$ref": "#/components/schemas/ModelRef"
+          },
           "request": {
             "$ref": "#/components/schemas/ProviderRequest"
           },
@@ -37899,6 +37922,17 @@
           "maxToolTimeoutMs": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "workerPrototype": {
+            "type": "string"
+          },
+          "maxWorkers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spawnDepth": {
+            "type": "integer",
+            "minimum": 0
           },
           "mode": {
             "type": "string",
