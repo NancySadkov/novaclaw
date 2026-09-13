@@ -13,6 +13,7 @@ export type Event =
   | EventSessionUpdated
   | EventSessionDeleted
   | EventSessionNextCompleted
+  | EventSessionNextExitAccepted
   | EventSessionNextAgentSwitched
   | EventSessionNextModelSwitched
   | EventSessionNextResponderSwitched
@@ -338,6 +339,16 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           result?: unknown
+        }
+      }
+    | {
+        id: string
+        type: "session.next.exit.accepted"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          result: string
         }
       }
     | {
@@ -1271,6 +1282,7 @@ export type GlobalEvent = {
     | SyncEventSessionUpdated
     | SyncEventSessionDeleted
     | SyncEventSessionNextCompleted
+    | SyncEventSessionNextExitAccepted
     | SyncEventSessionNextAgentSwitched
     | SyncEventSessionNextModelSwitched
     | SyncEventSessionNextResponderSwitched
@@ -1753,6 +1765,7 @@ export type ServiceUnavailableError = {
 
 export type SessionDurableEvent =
   | SessionNextCompleted
+  | SessionNextExitAccepted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextResponderSwitched
@@ -1920,6 +1933,7 @@ export type V2Event =
   | SessionUpdated
   | SessionDeleted
   | SessionNextCompleted
+  | SessionNextExitAccepted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextResponderSwitched
@@ -2548,6 +2562,11 @@ export type SessionMessageContext = {
   promptAnchor?: SessionMessagePromptAnchor
 }
 
+export type SessionMessageAcceptedExit = {
+  result: string
+  time: number
+}
+
 export type SessionMessageAssistant = {
   id: string
   metadata?: {
@@ -2628,6 +2647,7 @@ export type SessionMessageAssistant = {
       outcome: "running" | "completed" | "failed" | "interrupted" | "retry"
     }>
   }
+  acceptedExit?: SessionMessageAcceptedExit
   error?: SessionErrorUnknown
 }
 
@@ -2769,6 +2789,23 @@ export type SyncEventSessionNextCompleted = {
       timestamp: number
       sessionID: string
       result?: unknown
+    }
+  }
+}
+
+export type SyncEventSessionNextExitAccepted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.exit.accepted.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      result: string
     }
   }
 }
@@ -4784,6 +4821,26 @@ export type SessionNextCompleted = {
     timestamp: number
     sessionID: string
     result?: unknown
+  }
+}
+
+export type SessionNextExitAccepted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.exit.accepted"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    result: string
   }
 }
 
@@ -7206,6 +7263,17 @@ export type EventSessionNextCompleted = {
     timestamp: number
     sessionID: string
     result?: unknown
+  }
+}
+
+export type EventSessionNextExitAccepted = {
+  id: string
+  type: "session.next.exit.accepted"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    result: string
   }
 }
 

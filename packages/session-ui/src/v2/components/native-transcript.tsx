@@ -223,6 +223,7 @@ export function NativeTranscript(props: {
       groupTurns(
         visible(),
         (message) => message.type === "colleague" || (message.type === "user" && !isSteerText(message.text)),
+        (message) => message.type === "assistant" && message.acceptedExit !== undefined,
       ),
     ),
   )
@@ -321,7 +322,9 @@ export function NativeTranscript(props: {
                       group={group}
                       developer={props.developer}
                       liveTiming={liveTiming() !== undefined}
-                      busy={busy() && index() === turns().length - 1}
+                      // A sleeping goal remains session-busy after its accepted checkpoint. That
+                      // status belongs to the next work unit, not to the one the auditor closed.
+                      busy={busy() && !group.completed && index() === turns().length - 1}
                     />
                   )}
                 </For>
@@ -396,20 +399,20 @@ export function NativeTranscript(props: {
  * the reader actually came back for.
  *
  * Three cases deliberately do NOT fold, because folding them would hide the only thing worth
- * showing: a turn still in flight, a turn with no prose to stand in for its work (interrupted, or
- * ended on a tool call), and a plain answer with no work behind it — which would otherwise get a
- * "Done" box containing nothing but its own timings.
+ * showing: a work unit without an accepted exit, a completed unit with neither prose nor an exit
+ * result to stand in for its work, and a plain answer with no work behind it — which would otherwise
+ * get a "Done" box containing nothing but its own timings.
  */
 function Turn(props: {
   group: TurnGroup<SessionMessage>
   developer?: boolean
   liveTiming?: boolean
-  /** This is the last turn and the session is still working — never fold it. */
+  /** This is the last incomplete work unit and the session is still working — never fold it. */
   busy?: boolean
 }) {
   const i18n = useI18n()
   const body = () => props.group.body
-  const running = () => props.busy || body().some(isInFlightAssistant)
+  const running = () => !props.group.completed && (props.busy || body().some(isInFlightAssistant))
   /** The turn's closing assistant message — the only one that can carry the answer. */
   const closing = () => {
     const tail = body().at(-1)
@@ -428,14 +431,14 @@ function Turn(props: {
   /** Is there anything BEHIND the answer worth a fold? Earlier steps, or work in the closing one. */
   const hasWork = () => body().length > 1 || split() > 0
   /**
-   * The stand-in when a settled turn produced no prose — 57% of tool-bearing turns (measured
-   * 2026-08-11). Without it those turns cannot fold, and render their raw internals in full: the
-   * exact wall of tool output the Done control exists to hide. `answerStart`'s contract is *do not
-   * fold a turn that has nothing to show in its place*; this GIVES it something to show, and only
-   * ever states what the transcript knows.
+   * The stand-in when an accepted exit produced no prose. Without it those work units cannot fold
+   * and render their raw internals in full. `answerStart`'s contract is *do not fold a turn that has
+   * nothing to show in its place*; the audited exit result gives it something true to show.
    */
   const outcome = () =>
-    running() || hasAnswer() ? undefined : turnOutcome({ toolCount: toolCount(), lastTool: lastTool() })
+    running() || !props.group.completed || hasAnswer()
+      ? undefined
+      : turnOutcome({ toolCount: toolCount(), acceptedExit: closing()?.acceptedExit })
   /**
    * 🔴 **The fold is BUILT AROUND the closing assistant message, so it may not render without one.**
    *
@@ -449,7 +452,7 @@ function Turn(props: {
    * ⚠️ **Every clause of the old gate passes in exactly that state**, which is why it was reachable
    * rather than theoretical: `hasAnswer()` is false with no closing message, so `outcome()` returns
    * its stand-in and satisfies the third clause; `hasWork()` needs only `body().length > 1`; and
-   * `running()` goes false the moment the turn settles. So a settled multi-row turn ending on a
+   * `running()` goes false when the session goes idle. So a settled multi-row turn ending on a
    * tool call rendered the fold and dereferenced nothing — measured live in session
    * `ses_fbc4201ceffe…`, at `session.finish`.
    *
@@ -460,18 +463,11 @@ function Turn(props: {
     foldClosing({
       closing: closing(),
       running: running(),
+      completed: props.group.completed,
       hasWork: hasWork(),
       hasAnswer: hasAnswer(),
       outcome: outcome(),
     })
-  /** The closing message's last tool, including exit(result), which is the terminal answer. */
-  const lastTool = () => {
-    const parts = closing()?.content.filter((part) => part.type === "tool")
-    const part = parts?.at(-1)
-    if (!part) return undefined
-    const result = toolInput(part.state).result
-    return { name: part.name, result: typeof result === "string" ? result : undefined }
-  }
   const toolCount = () =>
     body().reduce(
       (total, message) =>

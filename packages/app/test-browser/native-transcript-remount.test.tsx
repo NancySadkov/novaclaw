@@ -75,6 +75,82 @@ function mount(
 }
 
 describe("native transcript remount", () => {
+  test("keeps steering in the open work log and folds only after accepted exit", () => {
+    const steered = [
+      { id: "msg_user_start", type: "user", text: "Investigate the failure", time: { created: 1 } },
+      {
+        id: "msg_assistant_probe",
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created: 2, completed: 5 },
+        content: [
+          {
+            id: "call_probe",
+            type: "tool",
+            name: "bash",
+            time: { created: 3, ran: 4, completed: 5 },
+            state: {
+              status: "completed",
+              input: { command: "bun test" },
+              structured: {},
+              content: [],
+              outputPaths: [],
+              result: "still running",
+            },
+          },
+        ],
+      },
+      { id: "msg_user_steer", type: "user", text: "Also inspect the event boundary", time: { created: 6 } },
+    ] as unknown as SessionMessage[]
+
+    const open = mount(undefined, { messages: steered, status: { type: "idle" } })
+    expect(open.querySelectorAll('[data-slot="native-turn"]')).toHaveLength(1)
+    expect(open.querySelector('[data-slot="native-turn-work"]')).toBeNull()
+    expect(open.querySelector('[data-slot="native-turn-outcome"]')).toBeNull()
+
+    dispose?.()
+    dispose = undefined
+    open.remove()
+    const completed = mount(undefined, {
+      messages: [
+        ...steered,
+        {
+          id: "msg_assistant_exit",
+          type: "assistant",
+          agent: "hecate",
+          model: { providerID: "spark", id: "current" },
+          acceptedExit: { result: "The steered investigation is complete.", time: 9 },
+          time: { created: 7, completed: 9 },
+          content: [
+            {
+              id: "call_exit",
+              type: "tool",
+              name: "exit",
+              time: { created: 8, ran: 8, completed: 9 },
+              state: {
+                status: "completed",
+                input: { result: "The steered investigation is complete." },
+                structured: {},
+                content: [],
+                outputPaths: [],
+                result: "The steered investigation is complete.",
+              },
+            },
+          ],
+        } as unknown as SessionMessage,
+      ],
+      // A goal-oriented officer stays operationally busy while its accepted work unit sleeps.
+      status: { type: "retry", attempt: 1, message: "Waiting for the environment to change…", next: 600_009 },
+    })
+    expect(completed.querySelectorAll('[data-slot="native-turn"]')).toHaveLength(1)
+    expect(completed.querySelector('[data-slot="native-turn-work"]')).not.toBeNull()
+    expect(completed.querySelector('[data-slot="native-turn-work"]')?.hasAttribute("open")).toBe(false)
+    expect(completed.querySelector('[data-slot="native-turn-outcome"]')?.textContent).toContain(
+      "The steered investigation is complete.",
+    )
+  })
+
   test("keeps the complete persisted turn visible after leaving and reopening Chat", async () => {
     const first = mount()
     expect(first.textContent).toContain("Keep the complete log")

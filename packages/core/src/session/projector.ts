@@ -182,6 +182,23 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
           return message.type === "assistant" && !message.time.completed ? message : undefined
         })
       },
+      getLatestAssistant() {
+        return Effect.gen(function* () {
+          const row = yield* db
+            .select()
+            .from(SessionMessageTable)
+            .where(
+              and(eq(SessionMessageTable.session_id, event.data.sessionID), eq(SessionMessageTable.type, "assistant")),
+            )
+            .orderBy(desc(SessionMessageTable.seq))
+            .limit(1)
+            .get()
+            .pipe(Effect.orDie)
+          if (!row) return
+          const message = decodeRow(row)
+          return message.type === "assistant" ? message : undefined
+        })
+      },
       getAssistant(messageID) {
         return Effect.gen(function* () {
           const row = yield* db
@@ -408,6 +425,7 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie),
     )
+    yield* events.project(SessionEvent.ExitAccepted, (event) => run(db, event))
     yield* events.project(SessionEvent.Moved, (event) =>
       Effect.gen(function* () {
         yield* db

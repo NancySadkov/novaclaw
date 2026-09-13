@@ -154,24 +154,23 @@ describe("durable turn activity", () => {
   })
 })
 
-describe("turnOutcome — the stand-in when a settled turn wrote no prose", () => {
-  // The case that unblocks the fold: 57% of tool-bearing turns end here.
-  test("treats an absent answer as an unknown harness wait, never as proof of termination", () => {
-    expect(turnOutcome({ toolCount: 3 })).toBe("Waiting for the harness…")
-    expect(turnOutcome({ toolCount: 1 })).toBe("Waiting for the harness…")
+describe("turnOutcome — the stand-in when an accepted exit wrote no prose", () => {
+  test("absence of an accepted exit is never treated as completion", () => {
+    expect(turnOutcome({ toolCount: 3 })).toBeUndefined()
+    expect(turnOutcome({ toolCount: 1 })).toBeUndefined()
   })
 
   // ⚠️ `exit` ENDS the drain by design (llm.ts), so calling it "without writing a reply" would
   // describe a fault that is not one — ruling 2, on the surface a user reads.
   test("a turn that ended on exit reads as finished, not as stopped short", () => {
-    expect(turnOutcome({ toolCount: 2, lastTool: { name: "exit", result: undefined } })).toBe("Finished.")
+    expect(turnOutcome({ toolCount: 2, acceptedExit: { result: "" } })).toBe("Finished.")
   })
 
   test("an exit result is the answer, not cruft hidden behind a generic finish line", () => {
     expect(
       turnOutcome({
         toolCount: 125,
-        lastTool: { name: "exit", result: "  Project accepted and complete.\n\n100 tests passed.  " },
+        acceptedExit: { result: "  Project accepted and complete.\n\n100 tests passed.  " },
       }),
     ).toBe("Project accepted and complete.\n\n100 tests passed.")
   })
@@ -185,7 +184,7 @@ describe("turnOutcome — the stand-in when a settled turn wrote no prose", () =
 
   // It may only state what the transcript knows. No cause, no blame, no guess.
   test("never speculates about WHY", () => {
-    const line = turnOutcome({ toolCount: 4 })!
+    const line = turnOutcome({ toolCount: 4, acceptedExit: { result: "Finished." } })!
     for (const forbidden of ["error", "failed", "crash", "stuck", "probably", "may have"])
       expect(line.toLowerCase()).not.toContain(forbidden)
   })

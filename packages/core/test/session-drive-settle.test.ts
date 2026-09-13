@@ -39,6 +39,14 @@ describe("a sub-agent runs until explicit exit", () => {
     expect(SessionDrive.decide({ type: "sub-agent" }, spent, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
   })
 
+  test("an accepted exit makes a goal-oriented officer sleep, never terminate", () => {
+    const decision = SessionDrive.decide({ type: "goal-oriented" }, fresh(), now, {
+      acceptedExit: true,
+      steps: [],
+    })
+    expect(decision).toMatchObject({ kind: "sleep", milliseconds: SessionDrive.UNATTENDED_SLEEP_MS })
+  })
+
   test("an unknown thread type is stopped, not settled", () => {
     // Only `sub-agent` has a parent that might be blocked. A future type must opt in deliberately
     // rather than inherit completion semantics by falling through.

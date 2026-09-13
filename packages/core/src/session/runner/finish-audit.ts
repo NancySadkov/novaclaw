@@ -17,6 +17,7 @@ export const CONTINUE_NUDGE =
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
 
 export interface ExitRequest {
+  readonly messageID: SessionMessage.ID
   readonly result: string
 }
 
@@ -40,7 +41,7 @@ export const exitRequest = (context: readonly SessionMessage.Message[]): ExitReq
       typeof input === "object" && input !== null && "result" in input && typeof input.result === "string"
         ? input.result
         : ""
-    return { result }
+    return { messageID: assistant.id, result }
   }
   return undefined
 }

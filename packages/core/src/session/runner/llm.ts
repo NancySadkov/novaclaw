@@ -3973,6 +3973,9 @@ export const layer = Layer.effect(
       const alreadyExited =
         (yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined)))?.result !== undefined
       let exitedMidDrain = false
+      // A goal-oriented officer treats accepted exit as a checkpoint, not death. It sleeps after
+      // closing the current work unit, and any newly admitted prompt wakes that sleep immediately.
+      let acceptedGoalExit = false
       let providerHalted = false
       while (shouldRun) {
         let needsContinuation = true
@@ -4132,6 +4135,18 @@ export const layer = Layer.effect(
               "session.finish.audit.no": audit === "no",
             })
             if (audit === "yes") {
+              yield* events.publish(SessionEvent.ExitAccepted, {
+                sessionID: input.sessionID,
+                messageID: exitRequest.messageID,
+                timestamp: yield* DateTime.now,
+                result: exitRequest.result,
+              })
+              const completionTarget = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+              if (completionTarget?.type === "goal-oriented") {
+                acceptedGoalExit = true
+                needsContinuation = false
+                break
+              }
               yield* events.publish(SessionEvent.Completed, {
                 sessionID: input.sessionID,
                 timestamp: yield* DateTime.now,
@@ -4648,9 +4663,9 @@ export const layer = Layer.effect(
           if (ShortChat.enabled(driveConfig.shortChat)) break
           // The auto-prompt SELF-DRIVE (architecture.md "run until exit()"): an auto-prompting /
           // goal-oriented session whose queue ran dry keeps working — the harness injects the next
-          // prompt as a provenance-prefixed steer — until `exit(result)` lands on the session row
-          // or the round/wall caps trip (todo.md Vision: goal agents carry budget/step caps + a
-          // watchdog). Keyed on the session's OWN declared type (never the inherited walk) so
+          // prompt as a provenance-prefixed steer. Accepted exit terminates an auto-prompting run;
+          // for a goal-oriented officer it closes the visible work unit and starts an interruptible
+          // ten-minute sleep instead. Keyed on the session's OWN declared type (never the inherited walk) so
           // spawned children and forks don't silently self-drive; Stop interrupts this very
           // fiber, so it remains the unconditional kill switch. See runner/drive.ts.
           const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
@@ -4673,6 +4688,7 @@ export const layer = Layer.effect(
           const officerGoal =
             latest?.agent === undefined ? undefined : (yield* agents.get(AgentV2.ID.make(latest.agent)))?.goal
           const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
+            acceptedExit: acceptedGoalExit,
             goal:
               typeof officerGoal === "string" && officerGoal.trim()
                 ? officerGoal
@@ -4726,6 +4742,7 @@ export const layer = Layer.effect(
             }
             driveState.rounds = 0
             driveState.stagnantRounds = 0
+            acceptedGoalExit = false
             if (wokeForInput) {
               const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
               shouldRun = pendingSteer || (yield* SessionInput.hasPending(db, input.sessionID, "queue"))

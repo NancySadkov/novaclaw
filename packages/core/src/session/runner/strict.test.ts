@@ -6,6 +6,7 @@ import os from "node:os"
 import path from "node:path"
 import { SessionStrict } from "./strict"
 import { AgentJail } from "../../agent-jail"
+import { HostExec } from "../../host-exec"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
 import type { JhEngine } from "../../jh/engine"
@@ -523,7 +524,11 @@ describe("SessionStrict.commandPlan (the host-execution gate, as Strict consumes
     expect(p.shell).toBeUndefined()
     expect(p.denied).toBeUndefined()
     const args = p.args ?? []
-    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "set -o pipefail\nmake all"])
+    expect(args.slice(args.indexOf("--") + 1)).toEqual([
+      "/bin/bash",
+      "-c",
+      HostExec.shellProgram("/bin/bash", "make all"),
+    ])
     expect(p.inherit).toBe(false)
   })
 

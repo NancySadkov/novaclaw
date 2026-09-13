@@ -35,12 +35,10 @@ const exitPart = (input: unknown, status: "completed" | "error" = "completed") =
 
 describe("exit completion audit", () => {
   test("finds only a successfully executed exit on the newest assistant turn", () => {
-    expect(FinishAudit.exitRequest([user("work"), assistant([exitPart({ result: "done" })])])).toEqual({
-      result: "done",
-    })
-    expect(FinishAudit.exitRequest([assistant([exitPart(JSON.stringify({ result: "encoded" }))])])).toEqual({
-      result: "encoded",
-    })
+    const first = assistant([exitPart({ result: "done" })])
+    expect(FinishAudit.exitRequest([user("work"), first])).toEqual({ messageID: first.id, result: "done" })
+    const encoded = assistant([exitPart(JSON.stringify({ result: "encoded" }))])
+    expect(FinishAudit.exitRequest([encoded])).toEqual({ messageID: encoded.id, result: "encoded" })
     expect(FinishAudit.exitRequest([assistant([exitPart({ result: "no" }, "error")])])).toBeUndefined()
     expect(
       FinishAudit.exitRequest([
@@ -59,7 +57,7 @@ describe("exit completion audit", () => {
         assistant([{ type: "text", id: "text", text: "I verified it" }]),
         assistant([exitPart({ result: "all requested work landed" })]),
       ],
-      { result: "all requested work landed" },
+      { messageID: SessionMessage.ID.make("msg_exit_evidence"), result: "all requested work landed" },
     )
     expect(evidence).toContain("old task")
     expect(evidence).toContain("current task")
@@ -86,7 +84,7 @@ describe("exit completion audit", () => {
           } as unknown as SessionMessage.Assistant["content"][number],
         ]),
       ],
-      { result: "complete" },
+      { messageID: SessionMessage.ID.make("msg_exit_structured"), result: "complete" },
     )
     expect(evidence).toContain("verified 10 files and 100 headings")
   })

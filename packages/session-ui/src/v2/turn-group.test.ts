@@ -5,38 +5,56 @@ interface Msg {
   readonly type: string
   readonly id: string
   readonly steer?: boolean
+  readonly complete?: boolean
 }
 
 const user = (id: string): Msg => ({ type: "user", id })
 const steer = (id: string): Msg => ({ type: "user", id, steer: true })
-const assistant = (id: string): Msg => ({ type: "assistant", id })
+const assistant = (id: string, complete = false): Msg => ({ type: "assistant", id, complete })
 const isTurnStart = (m: Msg) => m.type === "user" && !m.steer
+const isTurnComplete = (m: Msg) => m.complete === true
 const ids = (messages: readonly Msg[]) => messages.map((m) => m.id)
 
 describe("groupTurns", () => {
   test("one prompt and its response is one turn", () => {
-    const groups = groupTurns([user("u1"), assistant("a1"), assistant("a2")], isTurnStart)
+    const groups = groupTurns([user("u1"), assistant("a1"), assistant("a2")], isTurnStart, isTurnComplete)
     expect(groups).toHaveLength(1)
     expect(groups[0]!.lead!.id).toBe("u1")
     expect(ids(groups[0]!.body)).toEqual(["a1", "a2"])
   })
 
-  test("a second prompt opens a second turn", () => {
-    const groups = groupTurns([user("u1"), assistant("a1"), user("u2"), assistant("a2")], isTurnStart)
+  test("a prompt after accepted exit opens a second work unit", () => {
+    const groups = groupTurns(
+      [user("u1"), assistant("a1", true), user("u2"), assistant("a2")],
+      isTurnStart,
+      isTurnComplete,
+    )
     expect(groups.map((g) => g.lead!.id)).toEqual(["u1", "u2"])
     expect(ids(groups[1]!.body)).toEqual(["a2"])
+  })
+
+  test("a new user prompt while work is open steers the same work log", () => {
+    const groups = groupTurns(
+      [user("u1"), assistant("a1"), user("progress"), assistant("a2", true)],
+      isTurnStart,
+      isTurnComplete,
+    )
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.lead!.id).toBe("u1")
+    expect(ids(groups[0]!.body)).toEqual(["a1", "progress", "a2"])
+    expect(groups[0]!.completed).toBe(true)
   })
 
   test("a harness steer stays INSIDE the turn it nudged", () => {
     // The regression this module exists to prevent: a steer rides the user role, so a naive
     // type-based split would cut this into two turns and strand the answer in the second.
-    const groups = groupTurns([user("u1"), assistant("a1"), steer("s1"), assistant("a2")], isTurnStart)
+    const groups = groupTurns([user("u1"), assistant("a1"), steer("s1"), assistant("a2")], isTurnStart, isTurnComplete)
     expect(groups).toHaveLength(1)
     expect(ids(groups[0]!.body)).toEqual(["a1", "s1", "a2"])
   })
 
   test("agent-initiated messages before any prompt form a leadless group", () => {
-    const groups = groupTurns([assistant("a0"), user("u1"), assistant("a1")], isTurnStart)
+    const groups = groupTurns([assistant("a0", true), user("u1"), assistant("a1")], isTurnStart, isTurnComplete)
     expect(groups).toHaveLength(2)
     expect(groups[0]!.lead).toBeUndefined()
     expect(ids(groups[0]!.body)).toEqual(["a0"])
@@ -44,18 +62,20 @@ describe("groupTurns", () => {
   })
 
   test("a prompt with no response yet is still a turn", () => {
-    const groups = groupTurns([user("u1")], isTurnStart)
+    const groups = groupTurns([user("u1")], isTurnStart, isTurnComplete)
     expect(groups).toHaveLength(1)
     expect(groups[0]!.body).toEqual([])
   })
 
-  test("two prompts in a row are two turns, not one", () => {
-    const groups = groupTurns([user("u1"), user("u2")], isTurnStart)
-    expect(groups.map((g) => g.lead!.id)).toEqual(["u1", "u2"])
+  test("two prompts before accepted exit are one steered work unit", () => {
+    const groups = groupTurns([user("u1"), user("u2")], isTurnStart, isTurnComplete)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.lead!.id).toBe("u1")
+    expect(ids(groups[0]!.body)).toEqual(["u2"])
   })
 
   test("an empty transcript has no turns", () => {
-    expect(groupTurns([], isTurnStart)).toEqual([])
+    expect(groupTurns([], isTurnStart, isTurnComplete)).toEqual([])
   })
 })
 
@@ -101,7 +121,7 @@ describe("answerStart", () => {
 
 describe("stableGroups — why the chat jumped to the top after a tool result", () => {
   const msg = (id: string) => ({ id })
-  const group = (lead: unknown, body: unknown[]) => ({ lead, body }) as never
+  const group = (lead: unknown, body: unknown[], completed = false) => ({ lead, body, completed }) as never
 
   // The regression itself: recomputing produces equal-but-new objects, and `<For>` keys by
   // reference — so without this every turn is destroyed and rebuilt, the transcript's height
@@ -143,7 +163,6 @@ describe("stableGroups — why the chat jumped to the top after a tool result", 
   })
 })
 
-
 // 🔴 The shape that crashed shipped 0.1.67 and took the WHOLE app down: a SETTLED turn whose last
 // row is not an assistant message, so there is no closing message for the fold to render — while
 // every other clause of the gate is satisfied. `native-transcript.tsx` used to paper over it with
@@ -152,6 +171,7 @@ describe("foldClosing — a fold never renders without the message it is made of
   const settledTurnEndingInATool = {
     closing: undefined,
     running: false,
+    completed: true,
     hasWork: true,
     // No closing message means no answer, so `outcome` supplies its stand-in — which is exactly
     // what satisfied the old gate's third clause and let the branch be entered.
@@ -175,6 +195,10 @@ describe("foldClosing — a fold never renders without the message it is made of
 
   test("a running turn never folds, message or not", () => {
     expect(foldClosing({ ...settledTurnEndingInATool, closing: { id: "msg_a" }, running: true })).toBeUndefined()
+  })
+
+  test("an idle or interrupted turn never folds without accepted exit", () => {
+    expect(foldClosing({ ...settledTurnEndingInATool, closing: { id: "msg_a" }, completed: false })).toBeUndefined()
   })
 
   test("a turn with nothing behind the answer never folds", () => {

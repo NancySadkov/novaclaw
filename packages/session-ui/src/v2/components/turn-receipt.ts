@@ -172,36 +172,18 @@ export const turnIsRunning = (status: string | undefined, executionOpen: boolean
   executionOpen === true || status === "busy" || status === "retry"
 
 /**
- * What stands in for the ANSWER when a settled turn produced no prose.
- *
- * ## The defect this closes
- *
- * 57% of tool-bearing turns end without a closing message (measured 2026-08-11 over stored history,
- * `tests/turn-closing-history.ts`). The transcript refuses to fold those — `Turn`'s `folds()` requires
- * `hasAnswer()`, because `answerStart`'s contract is *do not fold a turn that has nothing to show in
- * its place*. Correct as far as it goes, and the result is the opposite of the owner's ruling: more
- * than half of all tool-bearing turns render their raw internals in full, which is precisely the wall
- * of tool output the Done fold exists to hide.
- *
- * ⚠️ **The other repair was tried and failed.** A kernel instruction telling the model to always
- * close with prose shipped and was CUT the same day when its pre-registered kill rule fired — median
- * answer length rose, no-answer rose. `system-compose.ts` records why, and says not to re-add a
- * "be brief" line. So this is the renderer's problem, and the renderer solves it without asking the
- * model for anything: give the fold something TRUE to show, and it may fold.
+ * What stands in for the ANSWER when an accepted exit produced no trailing prose.
  *
  * ## What it may say
  *
- * Only what the transcript actually knows: the visible projection has no prose yet and it ran N
- * tools. Absence of a live-status signal is not evidence that the agent ended; the durable harness
- * may still be recovering or reconciling the completed row. A turn that ends on `exit(result)` ended
- * deliberately and already carries its terminal answer, so that result is shown; a bare `exit()`
- * falls back to a truthful finish line rather than being described as stopping short (ruling 2).
+ * Only what the transcript actually knows: the completion auditor accepted this exact exit and the
+ * durable marker carries its result. A successful exit tool without that marker may have been
+ * rejected and is not completion evidence. Absence of a live-status signal is never substituted.
  */
 export const turnOutcome = (input: {
   readonly toolCount: number
-  readonly lastTool?: { readonly name: string; readonly result: string | undefined }
+  readonly acceptedExit?: { readonly result: string }
 }): string | undefined => {
-  if (input.toolCount <= 0) return undefined
-  if (input.lastTool?.name === "exit") return input.lastTool.result?.trim() || "Finished."
-  return "Waiting for the harness…"
+  if (input.toolCount <= 0 || input.acceptedExit === undefined) return undefined
+  return input.acceptedExit.result.trim() || "Finished."
 }

@@ -85,7 +85,12 @@ describe("public event manifest", () => {
       durable: EventManifest.Durable.size,
       // 2026-09-08: durable compaction progress keeps its visible counter across navigation/restart.
       // 2026-09-09: agent.status.removed closes worker-list cleanup over the public stream.
-    }).toEqual({ server: 94, all: 94, latest: 94, durable: 50 })
+      // 2026-09-14: +1 durable `session.next.exit.accepted`. It carries only session/message ids,
+      // accepted result prose already present in the exit call, and a timestamp. It is served because
+      // the transcript projector needs the exact accepted boundary live and after reconnect; it adds
+      // no reach beyond the authenticated session event stream. `Completed` remains the distinct
+      // process-terminal event.
+    }).toEqual({ server: 95, all: 95, latest: 95, durable: 51 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

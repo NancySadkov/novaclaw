@@ -476,6 +476,13 @@ export const TurnTiming = Schema.Struct({
 })
 export type TurnTiming = typeof TurnTiming.Type
 
+/** The durable boundary created only after the completion auditor accepts `exit(result)`. */
+export const AcceptedExit = Schema.Struct({
+  result: Schema.String,
+  time: DateTimeUtcFromMillis,
+}).annotate({ identifier: "Session.Message.AcceptedExit" })
+export type AcceptedExit = typeof AcceptedExit.Type
+
 export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
@@ -498,6 +505,11 @@ export const Assistant = Schema.Struct({
   }).pipe(optional),
   context: Context.pipe(optional),
   timing: TurnTiming.pipe(optional),
+  /**
+   * Present only when this exact assistant step's `exit(result)` passed the completion audit.
+   * Provider finish reasons and successfully executed exit tools are not completion authority.
+   */
+  acceptedExit: AcceptedExit.pipe(optional),
   error: UnknownError.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,

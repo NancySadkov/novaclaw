@@ -10,6 +10,7 @@ export type MemoryState = {
 
 export interface Adapter {
   readonly getCurrentAssistant: () => Effect.Effect<SessionMessage.Assistant | undefined>
+  readonly getLatestAssistant: () => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getAssistant: (messageID: SessionMessage.ID) => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getCurrentShell: (callID: string) => Effect.Effect<SessionMessage.Shell | undefined>
   readonly getCompactionStatus: (
@@ -38,6 +39,13 @@ export function memory(state: MemoryState): Adapter {
         if (index < 0) return
         const assistant = state.messages[index]
         return assistant?.type === "assistant" && !assistant.time.completed ? assistant : undefined
+      })
+    },
+    getLatestAssistant() {
+      return Effect.sync(() => {
+        const index = latestAssistantIndex()
+        const assistant = state.messages[index]
+        return assistant?.type === "assistant" ? assistant : undefined
       })
     },
     getAssistant(messageID) {
@@ -127,6 +135,13 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       const assistant = yield* adapter.getAssistant(messageID)
       if (assistant) yield* adapter.updateAssistant(produce(assistant, recipe))
     })
+
+  const markAcceptedExit = (assistant: SessionMessage.Assistant, result: string, time: typeof event.data.timestamp) =>
+    adapter.updateAssistant(
+      produce(assistant, (draft) => {
+        draft.acceptedExit = { result, time }
+      }),
+    )
 
   const updateCompaction = (messageID: SessionMessage.ID, recipe: (draft: DraftCompaction) => void) =>
     Effect.gen(function* () {
@@ -553,7 +568,24 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.revert.staged": () => Effect.void,
       "session.next.revert.cleared": () => Effect.void,
       "session.next.revert.committed": () => Effect.void,
-      "session.next.completed": () => Effect.void, // session lifecycle, not a message — projected to the session row
+      "session.next.exit.accepted": (event) =>
+        Effect.gen(function* () {
+          const assistant = yield* adapter.getAssistant(event.data.messageID)
+          if (assistant) yield* markAcceptedExit(assistant, event.data.result, event.data.timestamp)
+        }),
+      "session.next.completed": (event) =>
+        // Backward projection for completion events written before ExitAccepted existed. Event replay
+        // is ordered, so the newest assistant at this point is the exact accepted exit step. New
+        // writes already carry the marker and this is an idempotent no-op.
+        Effect.gen(function* () {
+          const assistant = yield* adapter.getLatestAssistant()
+          if (assistant && assistant.acceptedExit === undefined)
+            yield* markAcceptedExit(
+              assistant,
+              typeof event.data.result === "string" ? event.data.result : "",
+              event.data.timestamp,
+            )
+        }),
     })
   })
 }

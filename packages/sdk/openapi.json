@@ -23308,6 +23308,9 @@
             "$ref": "#/components/schemas/EventSessionNextCompleted"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextExitAccepted"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextAgentSwitched"
           },
           {
@@ -24294,6 +24297,42 @@
                       "result": {}
                     },
                     "required": ["timestamp", "sessionID"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.exit.accepted"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "result": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID", "result"],
                     "additionalProperties": false
                   }
                 },
@@ -27656,6 +27695,9 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextCompleted"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextExitAccepted"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextAgentSwitched"
               },
               {
@@ -29207,6 +29249,9 @@
             "$ref": "#/components/schemas/SessionNextCompleted"
           },
           {
+            "$ref": "#/components/schemas/SessionNextExitAccepted"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextAgentSwitched"
           },
           {
@@ -29689,6 +29734,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextCompleted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextExitAccepted"
           },
           {
             "$ref": "#/components/schemas/SessionNextAgentSwitched"
@@ -31518,6 +31566,19 @@
         "required": ["window", "estimatedTokens", "droppedMessages", "elidedOutputs", "findings"],
         "additionalProperties": false
       },
+      "SessionMessageAcceptedExit": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string"
+          },
+          "time": {
+            "type": "number"
+          }
+        },
+        "required": ["result", "time"],
+        "additionalProperties": false
+      },
       "SessionMessageAssistant": {
         "type": "object",
         "properties": {
@@ -31768,6 +31829,9 @@
             },
             "required": ["startedAt", "phases", "providerAttempts"],
             "additionalProperties": false
+          },
+          "acceptedExit": {
+            "$ref": "#/components/schemas/SessionMessageAcceptedExit"
           },
           "error": {
             "$ref": "#/components/schemas/SessionErrorUnknown"
@@ -32220,6 +32284,63 @@
                   "result": {}
                 },
                 "required": ["timestamp", "sessionID"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextExitAccepted": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.exit.accepted.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "result": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID", "result"],
                 "additionalProperties": false
               }
             },
@@ -38603,6 +38724,64 @@
               "result": {}
             },
             "required": ["timestamp", "sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextExitAccepted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.exit.accepted"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "result": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "result"],
             "additionalProperties": false
           }
         },
@@ -45854,6 +46033,42 @@
               "result": {}
             },
             "required": ["timestamp", "sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextExitAccepted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.exit.accepted"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "result": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "result"],
             "additionalProperties": false
           }
         },

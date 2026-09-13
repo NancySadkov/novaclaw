@@ -67,6 +67,26 @@ describe("appendMessage", () => {
 })
 
 describe("applySessionNextEvent", () => {
+  test("exit.accepted marks the exact assistant immediately on the live stream", () => {
+    const messages = [assistantMsg("msg_1", 1, { completed: 2 }), assistantMsg("msg_2", 3, { completed: 4 })]
+    fold(
+      messages,
+      ev("session.next.exit.accepted", {
+        timestamp: 5,
+        sessionID: "s",
+        messageID: "msg_1",
+        result: "First work unit complete.",
+      }),
+    )
+    const first = messages[0]
+    const second = messages[1]
+    expect(first?.type === "assistant" ? first.acceptedExit : undefined).toEqual({
+      result: "First work unit complete.",
+      time: 5,
+    })
+    expect(second?.type === "assistant" ? second.acceptedExit : undefined).toBeUndefined()
+  })
+
   test("revert.committed prunes messages after the boundary, keeping the boundary itself", () => {
     const messages = [userMsg("msg_1", 1), assistantMsg("msg_2", 2), userMsg("msg_3", 3), assistantMsg("msg_4", 4)]
     fold(messages, reverted("s", "msg_2"))

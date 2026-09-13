@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { SessionDrive } from "./drive"
 
-// The self-drive decision (architecture.md "run until exit()"): drive only sessions that DECLARE
-// an unattended type and stop the moment exit's projected result lands.
+// The self-drive decision: drive only sessions that DECLARE an unattended type. Accepted exit ends
+// auto-prompting sessions; a goal-oriented officer stays alive until Stop.
 
 const t0 = 1_000_000
 
@@ -17,10 +17,10 @@ describe("SessionDrive.decide", () => {
     expect(SessionDrive.decide(undefined, state, t0).kind).toBe("idle") // missing row = never drive
   })
 
-  test("exit(result) is terminal — even a bare exit's empty-string result stops the drive", () => {
+  test("a terminal result stops auto-prompting but never kills a goal-oriented officer", () => {
     const state = SessionDrive.initialState(t0)
     expect(SessionDrive.decide({ type: "auto-prompting", result: "done" }, state, t0).kind).toBe("terminated")
-    expect(SessionDrive.decide({ type: "goal-oriented", result: "" }, state, t0).kind).toBe("terminated")
+    expect(SessionDrive.decide({ type: "goal-oriented", result: "" }, state, t0).kind).toBe("continue")
   })
 
   test("long-horizon work has no round or wall-clock completion authority", () => {

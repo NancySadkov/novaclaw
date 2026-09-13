@@ -257,6 +257,27 @@ export const Completed = Event.define({
 })
 export type Completed = typeof Completed.Type
 
+/**
+ * The completion auditor accepted one explicit `exit(result)` request.
+ *
+ * This is deliberately separate from `Completed`. Most sessions publish both: `ExitAccepted`
+ * closes the visible work unit and `Completed` settles the process. A goal-oriented officer is the
+ * exception: its accepted exit closes one work unit, then the officer sleeps and re-checks the goal
+ * later instead of terminating. Keeping the two facts separate prevents the transcript from having
+ * to infer acceptance from a tool call, and prevents a periodic officer from becoming mortal merely
+ * because the model judged one pass complete.
+ */
+export const ExitAccepted = Event.define({
+  type: "session.next.exit.accepted",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    result: Schema.String,
+  },
+})
+export type ExitAccepted = typeof ExitAccepted.Type
+
 export const Prompted = Event.define({
   type: "session.next.prompted",
   ...options,
@@ -736,6 +757,7 @@ export namespace RevertEvent {
 
 export const DurableDefinitions = Event.inventory(
   Completed,
+  ExitAccepted,
   AgentSwitched,
   ModelSwitched,
   ResponderSwitched,
@@ -786,6 +808,7 @@ export const DurableDefinitions = Event.inventory(
 
 export const Definitions = Event.inventory(
   Completed,
+  ExitAccepted,
   AgentSwitched,
   ModelSwitched,
   ResponderSwitched,

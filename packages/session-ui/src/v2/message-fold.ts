@@ -478,6 +478,15 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       }
       break
     }
+    case "session.next.exit.accepted": {
+      const assistant = findAssistant(messages, event.data.messageID)
+      if (assistant)
+        assistant.acceptedExit = {
+          result: event.data.result,
+          time: event.data.timestamp,
+        }
+      break
+    }
     case "session.next.revert.committed": {
       // A committed revert truncates the transcript: the core deletes every message AFTER the
       // boundary (seq > boundary), keeping the boundary message itself. Message ids are ascending,

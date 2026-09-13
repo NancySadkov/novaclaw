@@ -1,10 +1,10 @@
 export * as SessionDrive from "./drive"
 
-// The auto-prompt SELF-DRIVE (architecture.md "run until exit()"; todo.md Vision — sessions
-// "auto-prompt themselves until they call exit()"). When an auto-prompting or goal-oriented
-// session's drain runs out of input, the harness injects the next prompt itself — a
-// provenance-prefixed steer (1N) — so the agent keeps working with nobody at the keyboard.
-// The loop ends only when the agent calls `exit(result)` or an authority interrupts the drain.
+// The auto-prompt SELF-DRIVE (architecture.md "run until exit()"). When an auto-prompting or
+// goal-oriented session's drain runs out of input, the harness injects the next prompt itself — a
+// provenance-prefixed steer — so the agent keeps working with nobody at the keyboard. Auto-prompting
+// sessions end on accepted `exit(result)`. Goal-oriented officers do not: accepted exit closes one
+// work unit and sleeps them, while only Stop (an authority interrupt) ends the officer.
 // Resource governors may pace, reroute, or restart work; they do not acquire completion authority.
 //
 // The drive keys on the session's OWN declared `type` column, never the resolved/inherited
@@ -31,6 +31,8 @@ export interface DriveState {
 
 export interface GoalContext {
   readonly goal?: string
+  /** This drain just accepted an explicit exit, closing one goal-check cycle without killing it. */
+  readonly acceptedExit?: boolean
   readonly steps: ReadonlyArray<{
     readonly text: string
     readonly status: string
@@ -73,7 +75,7 @@ const goalContinue = (context: GoalContext | undefined) => {
   if (goal && context?.steps.length && !next)
     return (
       `The evaluation record has accepted every plan step for this goal: ${goal}\n` +
-      "Completion still requires your explicit `exit` call. Call the `exit` tool now with a concise result summary."
+      "Close this work unit with an explicit `exit` call and a concise result summary. The officer will sleep until new steering arrives or the ten-minute recheck wakes it."
     )
   return (
     "You are an unattended goal-oriented session — no user is present and none will reply. " +
@@ -83,8 +85,9 @@ const goalContinue = (context: GoalContext | undefined) => {
       : "Create a short ordered `plan` component set, then take its first concrete step.\n") +
     "Keep the goal and plan current through the `session` tool. A step is not verified merely because " +
     "you mark it completed; the kernel records a verdict only after its check runs. If the goal is " +
-    "reached, call the `exit` tool. If an external condition prevents progress for now, say what you are " +
-    "waiting for; the harness will pause without consuming model capacity and try again later."
+    "reached, call the `exit` tool to checkpoint this work unit. The officer remains alive until Stop. " +
+    "If an external condition prevents progress for now, say what you are waiting for; the harness will " +
+    "pause without consuming model capacity and try again later."
   )
 }
 
@@ -97,8 +100,9 @@ const progressKey = (context: GoalContext | undefined): string =>
 /**
  * One drive decision at drain-end (queue empty). `continue` keeps an autonomous worker alive;
  * `idle` means an ordinary interactive turn has drained without terminating the session;
- * `terminated` means `exit(result)` already landed. Keeping those states distinct prevents a
- * missing live signal from being relabelled as an agent ending.
+ * `terminated` means a terminal result already exists on the session row. A goal-oriented accepted
+ * exit never writes that result. Keeping those states distinct prevents a missing live signal from
+ * being relabelled as an agent ending.
  */
 export const decide = (
   session: DriveSession | undefined,
@@ -107,12 +111,20 @@ export const decide = (
   context?: GoalContext,
 ): DriveDecision => {
   const type = driveType(session)
-  // exit(result) called — the terminal test (exit records "" for a bare exit, so `!== undefined`).
-  // Checked before every self-drive arm: `exit` already published the sole completion event.
-  if (session !== undefined && session.result !== undefined) return { kind: "terminated" }
+  // A terminal result ends auto-prompting runs. It cannot end a goal-oriented officer: that type is
+  // alive until Stop, even if a stale result survived a type switch or an older build.
+  if (session !== undefined && session.result !== undefined && session.type !== "goal-oriented")
+    return { kind: "terminated" }
   if (session?.type === "sub-agent") return { kind: "continue", message: SUB_AGENT_CONTINUE }
   if (type === undefined) return { kind: "idle" }
   if (type === "goal-oriented") {
+    if (context?.acceptedExit === true)
+      return {
+        kind: "sleep",
+        milliseconds: UNATTENDED_SLEEP_MS,
+        message:
+          "Ten minutes have passed since your last accepted exit. Re-check the environment and the durable goal now, then continue with the next concrete action or request another checkpoint with `exit`.",
+      }
     const key = progressKey(context)
     if (state.progressKey === key) state.stagnantRounds++
     else {
@@ -125,7 +137,7 @@ export const decide = (
         milliseconds: UNATTENDED_SLEEP_MS,
         message:
           "Ten minutes have passed. Re-check the environment and the durable goal now. Continue with the next " +
-          "concrete action if progress is possible; if the goal is reached, request completion with `exit`.",
+          "concrete action if progress is possible; if the goal is reached, checkpoint the work unit with `exit`.",
       }
   }
   return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }

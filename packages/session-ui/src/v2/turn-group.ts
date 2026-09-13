@@ -17,33 +17,44 @@ export interface TurnGroup<T> {
   readonly lead: T | undefined
   /** The response, in transcript order — assistant steps, notices, shell rows, compactions. */
   readonly body: readonly T[]
+  /** True only when the completion auditor accepted an explicit exit in this group. */
+  readonly completed: boolean
 }
 
 /**
- * Split a flat transcript into turns.
+ * Split a flat transcript into accepted-exit-bounded work units.
  *
- * ⚠️ **A harness steer is a `user` message and must NOT open a turn.** Doom-loop redirects,
- * affective nudges and denial redirects reach the model on the user role, so a naive
- * `type === "user"` split cuts one turn into several and strands the answer in a group of its own.
- * The caller supplies the predicate because only it can tell the two apart (the 1N provenance
- * prefix), and getting this wrong is invisible until a turn happens to be nudged.
+ * A user message opens a group only when there is no work unit already open. Prompts arriving while
+ * an agent is working are steering: they stay inside that work log, whether they offer a hint, ask
+ * for progress, or redirect the task. The group closes only on the durable accepted-exit marker.
+ * This mirrors process lifetime instead of guessing from transient busy/idle status.
  */
-export function groupTurns<T>(messages: readonly T[], isTurnStart: (message: T) => boolean): readonly TurnGroup<T>[] {
+export function groupTurns<T>(
+  messages: readonly T[],
+  isTurnStart: (message: T) => boolean,
+  isTurnComplete: (message: T) => boolean,
+): readonly TurnGroup<T>[] {
   const groups: TurnGroup<T>[] = []
   let lead: T | undefined
   let body: T[] = []
   let started = false
   for (const message of messages) {
     if (isTurnStart(message)) {
-      if (started || body.length > 0) groups.push({ lead, body })
-      lead = message
-      body = []
-      started = true
-      continue
+      if (!started && body.length === 0) {
+        lead = message
+        started = true
+        continue
+      }
     }
     body.push(message)
+    if (isTurnComplete(message)) {
+      groups.push({ lead, body, completed: true })
+      lead = undefined
+      body = []
+      started = false
+    }
   }
-  if (started || body.length > 0) groups.push({ lead, body })
+  if (started || body.length > 0) groups.push({ lead, body, completed: false })
   return groups
 }
 
@@ -106,6 +117,7 @@ export function stableGroups<T>(
     if (
       old !== undefined &&
       old.lead === group.lead &&
+      old.completed === group.completed &&
       old.body.length === group.body.length &&
       old.body.every((message, i) => message === group.body[i])
     )
@@ -142,12 +154,13 @@ export function stableGroups<T>(
 export function foldClosing<T>(input: {
   readonly closing: T | undefined
   readonly running: boolean
+  readonly completed: boolean
   readonly hasWork: boolean
   readonly hasAnswer: boolean
   readonly outcome: unknown
 }): T | undefined {
   if (input.closing === undefined) return undefined
-  if (input.running || !input.hasWork) return undefined
+  if (input.running || !input.completed || !input.hasWork) return undefined
   if (!input.hasAnswer && input.outcome === undefined) return undefined
   return input.closing
 }
