@@ -48,6 +48,18 @@ test("keeps launcher routes responsive across repeated app transitions", async (
   }
 })
 
+test("clicking Home while the launcher is already open does nothing", async ({ page }) => {
+  await page.goto("/")
+  const home = page.locator('[data-component="brand-home-button"]')
+  await expectAppVisible(home)
+
+  await home.click()
+
+  await expect(page).toHaveURL(/\/$/)
+  await expectAppVisible(page.getByRole("button", { name: "Contacts" }))
+  await expect(page.getByText("This chat was deleted or has expired")).toHaveCount(0)
+})
+
 test("does not let a lost shell pointer gesture disable launcher buttons", async ({ page }) => {
   // The regression: the guard armed on ANY window pointerdown and only disarmed on pointerup, so a
   // gesture that never completed left every tile inert.
