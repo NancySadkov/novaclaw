@@ -110,7 +110,7 @@ export const DialogSettings: Component<{
                           {/* 🔴 The Memory tab is RETIRED (owner, 2026-08-20: *"we still have Memory
                         tab in the settings, instead of everything migrated to the app"*). Everything it
                         held — consent, the embedding and judge rows, export/import, document ingest,
-                        the Remembered list — now lives in the Memory APP as its third view, rendered
+                        the memory atlas — now lives in the officer's Memory screen, rendered
                         from the same component. Settings keeps what is instance CONFIGURATION; what
                         Nova knows about you is a thing you go and look at, not a preference. */}
                           {/* Models sits right under General — adding/configuring/importing models is the

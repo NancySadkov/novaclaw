@@ -11086,6 +11086,139 @@
         ]
       }
     },
+    "/api/world-memory/captions": {
+      "post": {
+        "tags": ["memory lifecycle"],
+        "operationId": "v2.world-memory.captions",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["generated", "partial", "unavailable"]
+                    },
+                    "clusters": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "label"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "memories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "label"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["status", "clusters", "memories"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Generate short semantic labels for memory regions and visible memories through the cabinet owner's local model. A model outage is reported explicitly and excerpts remain usable as fallback labels.",
+        "summary": "Name a memory atlas",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  },
+                  "clusters": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 8
+                        }
+                      },
+                      "required": ["id", "ids"],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 18
+                  },
+                  "memories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 48
+                  }
+                },
+                "required": ["scope", "clusters", "memories"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.world-memory.captions({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/world-memory/clear-scope": {
       "post": {
         "tags": ["memory lifecycle"],
