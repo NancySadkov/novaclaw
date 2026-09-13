@@ -377,8 +377,7 @@
   container-type: inline-size;
 }
 
-/* Model rows have two semantic lines at every width: identity, then controls/status. Six controls
-   plus an arbitrary endpoint or failure sentence do not have a safe one-line breakpoint. */
+/* Compact panels stack; roomy panels earn a true one-line model bar below. */
 .settings-v2-models [data-component="settings-v2-row"] {
   flex-direction: column;
   align-items: stretch;
@@ -433,44 +432,44 @@
   gap: 8px;
 }
 
-.settings-v2-models-identity > span:first-of-type {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.settings-v2-models-drag-handle {
+.settings-v2-models-drag-target {
   display: inline-flex;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  min-width: 0;
   align-items: center;
-  justify-content: center;
-  margin: -5px 0 -5px -7px;
+  gap: 8px;
+  margin: -4px -6px;
+  padding: 4px 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--v2-text-text-faint);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: grab;
   touch-action: none;
 }
 
-.settings-v2-models-drag-handle:is(:hover, :focus-visible) {
-  color: var(--v2-icon-icon-accent);
+.settings-v2-models-drag-target:is(:hover, :focus-visible) {
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
-.settings-v2-models-drag-handle:focus-visible {
+.settings-v2-models-drag-target:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
 }
 
-.settings-v2-models-drag-handle:active {
+.settings-v2-models-drag-target:active {
   cursor: grabbing;
 }
 
-.settings-v2-models-drag-handle:disabled {
+.settings-v2-models-drag-target:disabled {
   cursor: wait;
   opacity: 0.5;
+}
+
+.settings-v2-models-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-v2-models-default-badge {
@@ -652,6 +651,32 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+@container (min-width: 46rem) {
+  .settings-v2-models [data-component="settings-v2-row"] {
+    flex-direction: row;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .settings-v2-models [data-slot="settings-v2-row-copy"] {
+    flex: 1 1 14rem;
+  }
+
+  .settings-v2-models [data-slot="settings-v2-row-control"],
+  .settings-v2-models-row-actions {
+    width: auto;
+  }
+
+  .settings-v2-models-row-actions {
+    flex: 0 1 auto;
+    align-items: flex-end;
+  }
+
+  .settings-v2-models-row-controls {
+    flex-wrap: nowrap;
+  }
 }
 
 .settings-v2-models-probe-result {

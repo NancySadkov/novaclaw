@@ -2605,7 +2605,7 @@ export const layer = Layer.effect(
       let steerInterrupt = false
       let sawToolCall = false
       let lastSteerCheck = Date.now()
-      const providerStream = ProviderStreamLiveness.runForEach(
+      const runProviderStream = ProviderStreamLiveness.runForEach(
         budgetedSource.pipe(Stream.takeUntil(() => steerInterrupt)),
         harness.providerStallTimeoutMs,
         publisher.hasAssistantStarted,
@@ -2849,6 +2849,18 @@ export const layer = Layer.effect(
               .pipe(Effect.ensuring(Effect.sync(imageBudget.release)), FiberSet.run(toolFibers))
           }),
       ).pipe(Effect.ensuring(withPublication(publisher.flush())))
+
+      // A session worker may outlive the host process's in-memory catalog reload. Gate EVERY
+      // network attempt (including ProviderDispatch retries) against the shared SQLite switch at
+      // the last possible seam. When the chosen model was switched off, re-enter this same step so
+      // model resolution selects an enabled substitute; no request reaches the disabled endpoint.
+      const providerStream = models
+        .guardDispatch(attemptModelRef, runProviderStream)
+        .pipe(
+          Effect.catchTag("SessionRunnerModel.ModelUnavailableError", () =>
+            Effect.die(retryOnReplacedModel(currentStep)),
+          ),
+        )
 
       // `ProviderDispatch.run` owns scheduler admission, bounded pre-output retry, fairness
       // accounting and unconditional release for BOTH engines. Its slot covers generation only;

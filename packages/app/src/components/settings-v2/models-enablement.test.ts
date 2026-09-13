@@ -20,6 +20,8 @@ import { dict as en } from "@/i18n/en"
  */
 const tab = fs.readFileSync(path.join(import.meta.dir, "models.tsx"), "utf8")
 const context = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "models.tsx"), "utf8")
+const dialog = fs.readFileSync(path.join(import.meta.dir, "dialog-model-config.tsx"), "utf8")
+const styles = fs.readFileSync(path.join(import.meta.dir, "settings-v2.css"), "utf8")
 
 describe("Models tab — enablement is a server fact, not a browser preference", () => {
   test("🔴 the switch reads and writes ENABLEMENT, not picker visibility", () => {
@@ -70,8 +72,6 @@ describe("Models tab — enablement is a server fact, not a browser preference",
 })
 
 describe("Model Configure — the default model finally has a writer", () => {
-  const dialog = fs.readFileSync(path.join(import.meta.dir, "dialog-model-config.tsx"), "utf8")
-
   test("🔴 Make Default writes config's `model` key, which is the instance default", () => {
     /**
      * `catalog.model.default()` falls back to the newest RELEASED model when nothing sets the key —
@@ -89,5 +89,23 @@ describe("Model Configure — the default model finally has a writer", () => {
     expect(en["settings.models.config.default.make"]).toBeTruthy()
     expect(en["settings.models.config.default.isDefault"]).toBeTruthy()
     expect(en["settings.models.config.toast.defaultSet"]).toContain("{{model}}")
+  })
+})
+
+describe("Models tab — quiet overview, details on demand", () => {
+  test("moves model size into Configure and keeps endpoint URLs out of the list", () => {
+    expect(tab).not.toContain("<DialogModelTier")
+    expect(dialog).toContain("<DialogModelTier")
+    expect(dialog).toContain("current={props.tier}")
+    expect(tab).toContain("description={modelProviderLabel(props.item.provider.name)}")
+    expect(tab).toContain("return /^https?:\\/\\//i.test")
+  })
+
+  test("the model name is the legible drag target, with a roomy one-line control bar", () => {
+    expect(tab).toContain('class="settings-v2-models-drag-target"')
+    expect(tab).not.toContain('name="dot-grid"')
+    expect(en["settings.models.order.hint"]).toContain("model name")
+    expect(styles).toContain("@container (min-width: 46rem)")
+    expect(styles).toMatch(/\.settings-v2-models-row-controls\s*\{\s*flex-wrap: nowrap;/)
   })
 })

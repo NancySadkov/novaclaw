@@ -26,7 +26,6 @@ import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { DialogModelTier } from "./dialog-model-tier"
 import { DialogModelConfig } from "./dialog-model-config"
 import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
@@ -47,6 +46,12 @@ const naturalModelSort = (a: ModelItem, b: ModelItem) => {
   return a.provider.name.localeCompare(b.provider.name) || a.name.localeCompare(b.name)
 }
 
+/** Keep the overview human: endpoint URLs belong in Configure, not in every model row. */
+export const modelProviderLabel = (name: string): string | undefined => {
+  const label = name.trim()
+  return /^https?:\/\//i.test(label) ? undefined : label || undefined
+}
+
 const SortableModelRow: Component<{
   item: ModelItem
   isDefault: boolean
@@ -59,22 +64,21 @@ const SortableModelRow: Component<{
 }> = (props) => {
   // eslint-disable-next-line solid/reactivity -- a catalog key is stable for this keyed row's lifetime
   const sortable = createSortable(modelOrderRef(props.item))
-  let handle: HTMLButtonElement | undefined
+  let dragTarget: HTMLButtonElement | undefined
 
-  // Register the pointer sensor ONLY on the visible grip. Registering `use:sortable` on the whole
-  // row makes every Configure/Test/Switch press a potential drag, which is a broken control surface.
-  // The row itself is still both the measured draggable and droppable through `sortable.ref`.
+  // The model name is the drag target: it is already the object the user means to move. Keeping the
+  // activator off the row protects Configure/Test/Switch, without asking anyone to decipher a dot
+  // glyph or hold a tiny handle.
   createEffect(() => {
-    if (!handle) return
+    if (!dragTarget) return
     const activators = sortable.dragActivators
-    const listeners = Object.entries(activators).map(([name, listener]) => [
-      name.startsWith("on") ? name.slice(2) : name,
-      listener as EventListener,
-    ] as const)
-    for (const [name, listener] of listeners) handle.addEventListener(name, listener)
+    const listeners = Object.entries(activators).map(
+      ([name, listener]) => [name.startsWith("on") ? name.slice(2) : name, listener as EventListener] as const,
+    )
+    for (const [name, listener] of listeners) dragTarget.addEventListener(name, listener)
     onCleanup(() => {
-      if (!handle) return
-      for (const [name, listener] of listeners) handle.removeEventListener(name, listener)
+      if (!dragTarget) return
+      for (const [name, listener] of listeners) dragTarget.removeEventListener(name, listener)
     })
   })
 
@@ -96,26 +100,25 @@ const SortableModelRow: Component<{
         title={
           <div class="settings-v2-models-identity">
             <button
-              ref={handle}
+              ref={dragTarget}
               type="button"
-              class="settings-v2-models-drag-handle"
+              class="settings-v2-models-drag-target"
               aria-label={props.dragLabel}
               title={props.dragHint}
               disabled={props.saving}
               onKeyDown={onKeyDown}
             >
-              <Icon name="dot-grid" size="normal" />
+              <span class="settings-v2-models-name">{props.item.name}</span>
+              <Show when={props.isDefault}>
+                <span class="settings-v2-models-default-badge">
+                  <Icon name="circle-check" size="small" />
+                  {props.defaultLabel}
+                </span>
+              </Show>
             </button>
-            <span>{props.item.name}</span>
-            <Show when={props.isDefault}>
-              <span class="settings-v2-models-default-badge">
-                <Icon name="circle-check" size="small" />
-                {props.defaultLabel}
-              </span>
-            </Show>
           </div>
         }
-        description={props.item.provider.name}
+        description={modelProviderLabel(props.item.provider.name)}
       >
         {props.children}
       </SettingsRowV2>
@@ -442,22 +445,6 @@ export const SettingsModelsV2: Component = () => {
                             <div class="settings-v2-models-row-controls">
                               <ButtonV2
                                 size="small"
-                                variant="neutral"
-                                aria-label={language.t("settings.models.tier.pick")}
-                                onClick={() =>
-                                  dialog.push(() => (
-                                    <DialogModelTier
-                                      modelName={item.name}
-                                      current={models.tier.get(key)}
-                                      onSelect={(tier) => models.tier.set(key, tier)}
-                                    />
-                                  ))
-                                }
-                              >
-                                {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
-                              </ButtonV2>
-                              <ButtonV2
-                                size="small"
                                 variant="ghost-muted"
                                 aria-label={language.t("settings.models.config.open")}
                                 onClick={() => {
@@ -476,6 +463,8 @@ export const SettingsModelsV2: Component = () => {
                                       modelName={item.name}
                                       apiModelID={item.api.id}
                                       providerApi={item.provider.api}
+                                      tier={models.tier.get(key)}
+                                      onTierSelect={(tier) => models.tier.set(key, tier)}
                                       defaults={{
                                         capabilities: {
                                           tools: item.capabilities.tools,

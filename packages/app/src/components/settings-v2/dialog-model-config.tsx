@@ -24,6 +24,8 @@ import { PresetFieldV2 } from "./parts/preset-field"
 import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-value"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
+import { DialogModelTier } from "./dialog-model-tier"
+import type { ModelTier } from "@/context/models"
 
 // Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
@@ -98,6 +100,8 @@ export const DialogModelConfig: Component<{
   modelName: string
   apiModelID: string
   providerApi: ProviderApi
+  tier: ModelTier
+  onTierSelect: (tier: ModelTier) => void
   defaults?: Pick<ModelConfig, "capabilities">
   /**
    * The connection to probe through, passed in like `DialogNewModel`'s.
@@ -526,6 +530,23 @@ export const DialogModelConfig: Component<{
                 onInput={(event) => setForm("modelName", event.currentTarget.value)}
                 aria-label={language.t("settings.models.config.modelName.name")}
               />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.tier.label")}
+              description={language.t(`settings.models.tier.${props.tier}.blurb`)}
+            >
+              <ButtonV2
+                size="small"
+                variant="neutral"
+                aria-label={language.t("settings.models.tier.pick")}
+                onClick={() =>
+                  dialog.push(() => (
+                    <DialogModelTier modelName={props.modelName} current={props.tier} onSelect={props.onTierSelect} />
+                  ))
+                }
+              >
+                {language.t(`settings.models.tier.${props.tier}.name`)}
+              </ButtonV2>
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.deviceConcurrency.name")}

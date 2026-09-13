@@ -14,7 +14,9 @@ import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Log } from "@novaclaw/schema/log"
 import { Catalog } from "../../catalog"
+import { CatalogStore } from "../../catalog-store"
 import { Config } from "../../config"
+import { ConfigProvider } from "../../config/provider"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { LocalModelManager } from "../../local-model-manager"
@@ -201,6 +203,17 @@ export interface Interface {
   /** A successful reconnect clears that route's backoff counter. */
   readonly providerSucceeded: (model: ModelV2.Ref) => Effect.Effect<void>
   /**
+   * Last gate before a provider request. Reads the instance-wide model switch from SQLite rather
+   * than trusting this worker's catalog snapshot, and reloads that snapshot when it is stale.
+   * False means the caller must re-resolve the turn; it must not contact this model.
+   */
+  readonly dispatchAllowed: (model: ModelV2.Ref) => Effect.Effect<boolean>
+  /** Run an outbound attempt only while its model remains enabled in the shared source of truth. */
+  readonly guardDispatch: <A, E, R>(
+    model: ModelV2.Ref,
+    attempt: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | ModelUnavailableError, R>
+  /**
    * The instance's DEFAULT model, resolved without a session.
    *
    * For work that has no conversation behind it — document ingestion is the case this exists for.
@@ -357,6 +370,28 @@ export const usableFallback = <M>(input: {
     : input.available.find(input.supported)
 
 /**
+ * The effective Settings switch for one stored model after its config layers are merged.
+ *
+ * `undefined` means the CatalogStore has no opinion: bundled/plugin catalogs may legitimately own
+ * the model. Once a stored layer names it, absence of `disabled` means enabled and the last explicit
+ * `disabled` value wins, matching `config/plugin/provider.ts`'s ordered transform.
+ */
+export const storedModelEnabled = (
+  providers: Record<string, readonly ConfigProvider.Info[]>,
+  model: ModelV2.Ref,
+): boolean | undefined => {
+  let seen = false
+  let enabled = true
+  for (const layer of providers[model.providerID] ?? []) {
+    const configured = layer.models?.[model.id]
+    if (configured === undefined) continue
+    seen = true
+    if (configured.disabled !== undefined) enabled = !configured.disabled
+  }
+  return seen ? enabled : undefined
+}
+
+/**
  * The healthiest model to route to when the SELECTED one is failing.
  *
  * ⚠️ Never routes onto a model that is also sick, and never returns the selected model itself — a
@@ -405,6 +440,10 @@ export const layerWith = (
   providerFailed: Interface["providerFailed"] = () => Effect.succeed(false),
   providerSucceeded: Interface["providerSucceeded"] = () => Effect.void,
   providerRecoveryFailures: Interface["providerRecoveryFailures"] = () => Effect.succeed(0),
+  /** ⚠️ Added LAST. A seam with no CatalogStore permits its synthetic route. */
+  dispatchAllowed: Interface["dispatchAllowed"] = () => Effect.succeed(true),
+  /** ⚠️ Added LAST. Synthetic seams have no persisted switch to consult. */
+  guardDispatch: Interface["guardDispatch"] = (_model, attempt) => attempt,
 ) =>
   Layer.succeed(
     Service,
@@ -437,6 +476,8 @@ export const layerWith = (
       providerFailed,
       providerSucceeded,
       providerRecoveryFailures,
+      dispatchAllowed,
+      guardDispatch,
     }),
   )
 
@@ -799,6 +840,7 @@ export const locationLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const catalogStore = yield* CatalogStore.Service
     const config = yield* Config.Service
     const devices = yield* DeviceRegistry.Service
     const integrations = yield* Integration.Service
@@ -810,7 +852,7 @@ export const locationLayer = Layer.effect(
     // tool-call turn on 2026-08-06.
     const settings = yield* SettingsConfigStore.Service
 
-    const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
+    const selectSnapshot = Effect.fnUntraced(function* (session: SessionSchema.Info) {
       const defaultModel = session.model ? undefined : yield* catalog.model.default()
       return session.model
         ? (yield* catalog.model.available()).find(
@@ -819,6 +861,39 @@ export const locationLayer = Layer.effect(
         : defaultModel && supported(defaultModel)
           ? defaultModel
           : (yield* catalog.model.available()).find(supported)
+    })
+
+    /**
+     * A session worker is a separate, long-lived process. ConfigStoreWrite's reload callback is
+     * intentionally process-local, so the host can update SQLite while this worker still holds the
+     * old catalog. Reconcile the exact choice against the shared store before it becomes a route.
+     */
+    const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
+      let selected = yield* selectSnapshot(session)
+      const stored = yield* catalogStore.providers()
+      const storedDefault = session.model === undefined ? yield* catalogStore.getDefault() : undefined
+      const parsedDefault = storedDefault === undefined ? undefined : ModelV2.parse(storedDefault)
+      const expected = session.model
+        ? { providerID: session.model.providerID, id: session.model.id }
+        : parsedDefault === undefined
+          ? undefined
+          : { providerID: parsedDefault.providerID, id: parsedDefault.modelID }
+      const loaded = expected === undefined ? undefined : yield* catalog.model.get(expected.providerID, expected.id)
+      const switched = expected === undefined ? undefined : storedModelEnabled(stored, expected)
+      const selectedRef = selected === undefined ? undefined : `${selected.providerID}/${selected.id}`
+      // A disabled configured default is SUPPOSED to resolve to another enabled model; do not
+      // reload forever merely because the stored preference and its live fallback differ.
+      const defaultChanged =
+        session.model === undefined &&
+        storedDefault !== undefined &&
+        storedDefault !== selectedRef &&
+        switched !== false &&
+        (switched !== undefined || loaded !== undefined)
+      if (defaultChanged || (switched !== undefined && (loaded === undefined || loaded.enabled !== switched))) {
+        yield* catalog.reload()
+        selected = yield* selectSnapshot(session)
+      }
+      return selected
     })
 
     /**
@@ -907,6 +982,19 @@ export const locationLayer = Layer.effect(
           .update("provider_recovery", (current) => ProviderRecovery.succeeded(ProviderRecovery.decode(current), model))
           .pipe(Effect.ignore)
       }),
+      dispatchAllowed: Effect.fn("SessionRunnerModel.dispatchAllowed")(function* (model) {
+        const stored = storedModelEnabled(yield* catalogStore.providers(), model)
+        const loaded = yield* catalog.model.get(model.providerID, model.id)
+        if (stored !== undefined && (loaded === undefined || loaded.enabled !== stored)) yield* catalog.reload()
+        return (yield* catalog.model.available()).some(
+          (entry) => entry.providerID === model.providerID && entry.id === model.id,
+        )
+      }),
+      guardDispatch: (model, attempt) =>
+        Effect.gen(function* () {
+          if (yield* base.dispatchAllowed(model)) return yield* attempt
+          return yield* new ModelUnavailableError({ providerID: model.providerID, modelID: model.id })
+        }),
       /**
        * The route for a turn, AND the catalog entry it was built from.
        *
@@ -1342,6 +1430,7 @@ export const node = makeLocationNode({
   layer: locationLayer,
   deps: [
     Catalog.node,
+    CatalogStore.node,
     Config.node,
     DeviceRegistry.node,
     Integration.node,

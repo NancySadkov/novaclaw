@@ -98,7 +98,7 @@ test("marks the effective default and saves keyboard reordering through instance
   ])
   expect(document.querySelector('[data-default="true"]')?.textContent).toContain("Alpha")
 
-  const handle = document.querySelector<HTMLButtonElement>('button[aria-label="Move Alpha"]')!
+  const handle = document.querySelector<HTMLButtonElement>('button[aria-label="Reorder Alpha"]')!
   handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
   await settle()
 

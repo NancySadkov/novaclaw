@@ -79,6 +79,15 @@ describe("ProviderDispatch", () => {
     }
   })
 
+  test("normal and every long-lived Strict dispatch consult the persisted model switch", () => {
+    const ordinary = fs.readFileSync(path.join(import.meta.dir, "llm.ts"), "utf8")
+    const strict = fs.readFileSync(path.join(import.meta.dir, "strict-drain.ts"), "utf8")
+
+    expect(ordinary).toContain("guardDispatch(attemptModelRef, runProviderStream)")
+    expect(ordinary).toContain("retryOnReplacedModel(currentStep)")
+    expect(strict.match(/attempt: guardAttempt\(attempt\)/g)?.length).toBe(2)
+  })
+
   test("prepares one cache-keyed, context-packed request", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const prepared = ProviderDispatch.prepare({

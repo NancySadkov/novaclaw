@@ -153,8 +153,7 @@ const deleteTheModel = async () => {
   await settle()
 }
 
-const rowNames = () =>
-  [...document.querySelectorAll(".settings-v2-models-identity > span:first-of-type")].map((n) => n.textContent)
+const rowNames = () => [...document.querySelectorAll(".settings-v2-models-name")].map((n) => n.textContent)
 
 describe("a failed model delete", () => {
   test("is named on screen, and the row stays", async () => {

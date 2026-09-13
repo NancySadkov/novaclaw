@@ -203,6 +203,14 @@ export const make = (dependencies: Dependencies) => {
       )
     if (selected === undefined) return "handled" as const
     const model = selected.model
+    // A Strict run can hold one resolved route across many autonomous calls. The ordinary runner
+    // resolves once per step, but this engine's `completeOnce` closure may live for minutes; consult
+    // the instance-wide switch before every provider attempt so a later OFF cannot leak another
+    // request from this worker's stale route. `ran` is absent only behind synthetic test seams.
+    const guardAttempt = <A, E, R>(attempt: Effect.Effect<A, E, R>): Effect.Effect<A, E | Error, R> =>
+      selected.ran === undefined
+        ? attempt
+        : models.guardDispatch({ providerID: selected.ran.providerID, id: selected.ran.id }, attempt)
     // The route's HONORED context window. `completeOnce` below already hands it to
     // `ProviderDispatch.prepare` as `contextSize`, but packing cannot save the Strict route — the engine's
     // prompt is ONE `Message.user`, so there is nothing to evict and `dropped` is always 0. So the same
@@ -325,7 +333,7 @@ export const make = (dependencies: Dependencies) => {
           maxAttempts: maxProviderAttempts,
           hasOutput: () => text.length > 0 || reasoning.length > 0,
           costTokens: () => costTokens,
-          attempt,
+          attempt: guardAttempt(attempt),
         })
         if (result._tag === "Failure") return yield* Effect.failCause(result.cause)
         // A1: a reasoning model can put the whole reply in the think channel — fall back rather
@@ -783,7 +791,7 @@ export const make = (dependencies: Dependencies) => {
               const settlement = publisher.stepSettlement()
               return settlement === undefined ? undefined : settlement.tokens.input + settlement.tokens.output
             },
-            attempt,
+            attempt: guardAttempt(attempt),
           })
           if (dispatched._tag === "Failure") yield* Effect.failCause(dispatched.cause)
           const settlement = publisher.stepSettlement()

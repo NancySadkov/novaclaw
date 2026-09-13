@@ -2073,8 +2073,8 @@ export const dict = {
 
   "settings.models.title": "Models",
   "settings.models.default.badge": "Default",
-  "settings.models.order.drag": "Move {{model}}",
-  "settings.models.order.hint": "Drag to reorder · Arrow keys also work",
+  "settings.models.order.drag": "Reorder {{model}}",
+  "settings.models.order.hint": "Drag the model name to reorder · Arrow keys also work",
   "settings.models.order.failed": "Could not save model order",
   "settings.models.probe.test": "Test",
   "settings.models.probe.probing": "Testing…",

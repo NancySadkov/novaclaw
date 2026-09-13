@@ -97,6 +97,8 @@ function mount(failRemoval = false, inheritedLimits = false) {
               modelName="Test"
               apiModelID="test"
               providerApi={config.providers.local.api}
+              tier="guess"
+              onTierSelect={() => {}}
               http={{ url: "http://localhost:8000" } as never}
               directory="/tmp/test"
             />

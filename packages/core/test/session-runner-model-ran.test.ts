@@ -1,6 +1,8 @@
 import { describe, expect } from "bun:test"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { Catalog } from "@novaclaw/core/catalog"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
@@ -53,6 +55,7 @@ const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
       ApplicationTools.node,
+      CatalogStore.node,
       Database.node,
       EventV2.node,
       SettingsConfigStore.node,
@@ -96,7 +99,21 @@ const sessionOn = (location: Location.Ref) =>
     location,
   })
 
+const defaultSessionOn = (location: Location.Ref) => SessionV2.Info.make({ ...sessionOn(location), model: undefined })
+
 const named = (model: ModelV2.Info | undefined) => (model === undefined ? undefined : `${model.providerID}/${model.id}`)
+
+const configuredProvider = (url: string, modelID: string, disabled = false) =>
+  Schema.decodeUnknownSync(ConfigProvider.Info)({
+    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: {} },
+    models: {
+      [modelID]: {
+        name: modelID,
+        disabled,
+        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+      },
+    },
+  })
 
 /**
  * Two providers whose per-turn facts DIFFER in every field the runner reads. A shared value would
@@ -217,6 +234,90 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             Effect.provide(LocationServiceMap.Service.get(location)),
             Effect.ensuring(Effect.sync(() => ModelHealth.reset())),
           )
+        }),
+      ),
+    ),
+  )
+})
+
+describe("SessionRunnerModel — a Settings switch outranks a worker's stale catalog", () => {
+  it.live("immediately substitutes the enabled default when the former default is switched off", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const store = yield* CatalogStore.Service
+          yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION))])
+          yield* store.setLayers(SCRIBE, [configuredProvider("http://127.0.0.1:9102/v1", String(TEXT))])
+          yield* store.setDefault(`${SEER}/${VISION}`)
+
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const session = defaultSessionOn(location)
+          yield* Effect.gen(function* () {
+            yield* Reference.Service
+            const catalog = yield* Catalog.Service
+            const models = yield* SessionRunnerModel.Service
+
+            expect(named((yield* models.resolveWithDevice(session)).ran)).toBe("seer/vision")
+
+            // Simulate a host-process Settings write. This worker receives no process-local reload
+            // callback, so its catalog remains observably stale until the model module reconciles it.
+            yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION), true)])
+            yield* store.setDefault(`${SCRIBE}/${TEXT}`)
+            expect((yield* catalog.model.get(SEER, VISION))?.enabled).toBe(true)
+
+            const switched = yield* models.resolveWithDevice(session)
+            expect(named(switched.ran)).toBe("scribe/text")
+            expect((yield* catalog.model.get(SEER, VISION))?.enabled).toBe(false)
+            expect(yield* models.dispatchAllowed({ providerID: SEER, id: VISION })).toBe(false)
+            expect(yield* models.dispatchAllowed({ providerID: SCRIBE, id: TEXT })).toBe(true)
+            expect(
+              yield* models.guardDispatch({ providerID: SCRIBE, id: TEXT }, Effect.succeed("contacted substitute")),
+            ).toBe("contacted substitute")
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
+        }),
+      ),
+    ),
+  )
+
+  it.live("refuses dispatch when the switched-off model has no enabled substitute", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const store = yield* CatalogStore.Service
+          yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION))])
+          yield* store.setDefault(`${SEER}/${VISION}`)
+
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const session = defaultSessionOn(location)
+          yield* Effect.gen(function* () {
+            yield* Reference.Service
+            const catalog = yield* Catalog.Service
+            const models = yield* SessionRunnerModel.Service
+            expect(named((yield* models.resolveWithDevice(session)).ran)).toBe("seer/vision")
+
+            yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION), true)])
+            expect((yield* catalog.model.get(SEER, VISION))?.enabled).toBe(true)
+            let contacted = false
+            const blocked = yield* Effect.flip(
+              models.guardDispatch(
+                { providerID: SEER, id: VISION },
+                Effect.sync(() => {
+                  contacted = true
+                }),
+              ),
+            )
+            expect(blocked._tag).toBe("SessionRunnerModel.ModelUnavailableError")
+            expect(contacted).toBe(false)
+
+            const error = yield* Effect.flip(models.resolveWithDevice(session))
+            expect(error._tag).toBe("SessionRunnerModel.ModelNotSelectedError")
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),
     ),
