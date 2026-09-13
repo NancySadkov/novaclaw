@@ -29,8 +29,8 @@ const exitPart = (input: unknown, status: "completed" | "error" = "completed") =
     name: "exit",
     state:
       status === "completed"
-        ? { status, input, output: "reviewing", structured: { completed: false } }
-        : { status, input, error: "failed" },
+        ? { status, input, content: [{ type: "text", text: "reviewing" }], structured: { completed: false } }
+        : { status, input, error: { name: "ToolFailure", message: "failed" } },
   }) as unknown as SessionMessage.Assistant["content"][number]
 
 describe("exit completion audit", () => {
@@ -66,6 +66,29 @@ describe("exit completion audit", () => {
     expect(evidence).not.toContain("automated redirect")
     expect(evidence).toContain("explicitly requested exit")
     expect(evidence).toContain("all requested work landed")
+  })
+
+  test("reads durable structured tool content as completion evidence", () => {
+    const evidence = FinishAudit.excerpt(
+      [
+        user("write the artifact and verify it"),
+        assistant([
+          {
+            type: "tool",
+            id: "verify-call",
+            name: "bash",
+            state: {
+              status: "completed",
+              input: { command: "verify" },
+              content: [{ type: "text", text: "verified 10 files and 100 headings" }],
+              structured: { exit: 0 },
+            },
+          } as unknown as SessionMessage.Assistant["content"][number],
+        ]),
+      ],
+      { result: "complete" },
+    )
+    expect(evidence).toContain("verified 10 files and 100 headings")
   })
 
   test("accepts only an affirmative audit", () => {

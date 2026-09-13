@@ -55,8 +55,8 @@ const SESSION = ["todowrite", "resource_status"] as const
 /** Durable or privileged surfaces: memory, skills, recipes, quality commands, new tools, apps. */
 const CAPABILITY = ["skill", "recipe", "revert", "provision", "define_tool", "register-app"] as const
 
-/** Delegation: staffing sub-agents and handing work to a colleague. */
-const DELEGATION = ["spawn", "colleague"] as const
+/** Delegation: staffing, directing, and stopping sub-agents, plus handing work to a colleague. */
+const DELEGATION = ["spawn", "kill", "colleague"] as const
 
 /** The community network and the messengers, which speak as the user to other people. */
 const SOCIAL = [

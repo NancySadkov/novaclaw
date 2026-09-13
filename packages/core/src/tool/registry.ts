@@ -301,6 +301,14 @@ const registryLayer = Layer.effect(
         const deadline = ToolDeadline.resolve(input.call.name, screened.input, screened.maxToolTimeoutMs)
         const expiresAt = startedAt + deadline.timeoutMs
         const remainingMs = Math.max(0, expiresAt - Date.now())
+        // Bash's `timeout` is a SOFT command wait, not a promise that policy, durable job
+        // registration and OS launch can all finish inside that number. Give the whole tool the
+        // independently bounded launch window as overhead; the context deadline below stays at the
+        // requested soft edge, so Bash returns immediately after a late launch instead of waiting
+        // twice. Reusing one deadline for both meanings made a perfectly valid 10 ms soft wait race
+        // the database row that makes the still-running job observable.
+        const executionRemainingMs =
+          input.call.name === "bash" ? remainingMs + ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS : remainingMs
         const execution = settle(
           registration.tool,
           screened.input === input.call.input ? input.call : { ...input.call, input: screened.input },
@@ -325,7 +333,7 @@ const registryLayer = Layer.effect(
           },
         ).pipe(
           Effect.timeoutOrElse({
-            duration: remainingMs,
+            duration: executionRemainingMs,
             orElse: () =>
               Effect.fail(new ToolFailure({ message: ToolDeadline.expired(input.call.name, deadline.timeoutMs) })),
           }),

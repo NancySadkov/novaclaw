@@ -9,6 +9,7 @@
 import type { ConfigIntrospection } from "../../config/introspection"
 import { isRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
+import { SessionToolContent } from "../tool-content"
 import { Model } from "@novaclaw/schema/model"
 
 export interface Resolved {
@@ -82,12 +83,7 @@ export function judgeExcerpt(context: ReadonlyArray<SessionMessage.Message>): st
     for (const part of message.content) {
       if (part.type !== "tool") continue
       const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
-      const output =
-        part.state.status === "completed" || part.state.status === "error"
-          ? "output" in part.state && typeof part.state.output === "string"
-            ? part.state.output
-            : ""
-          : `(${part.state.status})`
+      const output = SessionToolContent.stateText(part.state) ?? `(${part.state.status})`
       tools.push(`tool ${part.name}(${clip(input, 200)}) -> ${clip(output, 300) || "(no output)"}`)
     }
   }

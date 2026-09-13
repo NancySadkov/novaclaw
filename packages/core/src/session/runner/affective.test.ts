@@ -17,7 +17,7 @@ const tool = (name: string, input: unknown, output: string) => ({
   type: "tool",
   id: "call_1",
   name,
-  state: { status: "completed", input, output, time: { start: 0, end: 1 } },
+  state: { status: "completed", input, content: [{ type: "text", text: output }], structured: {} },
 })
 
 const text = (value: string) => ({ type: "text", id: "text-0", text: value })

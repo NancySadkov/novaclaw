@@ -2684,6 +2684,8 @@ export const dict = {
   "settings.permissions.tool.register-app.description": "Put a new tile on the Home launcher",
   "settings.permissions.tool.spawn.title": "Start a Sub-agent",
   "settings.permissions.tool.spawn.description": "Hand part of the task to a helper it creates",
+  "settings.permissions.tool.kill.title": "Stop a Worker",
+  "settings.permissions.tool.kill.description": "Terminate a worker it spawned and archive that worker’s transcript",
   "settings.permissions.tool.colleague.title": "Hand Off to a Colleague",
   "settings.permissions.tool.colleague.description": "Give work to another named agent on the roster",
   "settings.permissions.tool.community_ask.title": "Ask the Community",

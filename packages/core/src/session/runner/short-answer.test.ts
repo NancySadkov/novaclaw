@@ -3,7 +3,7 @@ import { Effect, Fiber, Stream } from "effect"
 import { LLMEvent, Model } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { make } from "../scheduler"
-import { generate } from "./short-answer"
+import { generate, generateOnSessionLane } from "./short-answer"
 
 const model = Model.make({ id: "utility", provider: "test", route: OpenAIChat.route })
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
@@ -70,5 +70,36 @@ describe("ShortAnswer interactive-idle admission", () => {
 
     expect(answer).toBe("Search the project")
     expect(body?.["chat_template_kwargs"]).toEqual({ enable_thinking: false })
+  })
+
+  test("turn-critical answers use the session lane instead of preempting to empty", async () => {
+    const scheduler = make()
+    await run(scheduler.admit({ sessionID: "ui", deviceKey: "device", sessionClass: "interactive-focused" }))
+    let requests = 0
+    const answer = await run(
+      generateOnSessionLane({
+        model,
+        llm: {
+          stream: () => {
+            requests++
+            return Stream.fromIterable([
+              LLMEvent.textDelta({ id: "answer", text: "YES" }),
+              LLMEvent.finish({ reason: "stop" }),
+            ])
+          },
+        },
+        system: "Audit completion.",
+        text: "Is the task complete?",
+        reasoningBudget: 128,
+        maxTokens: 512,
+        scheduler,
+        slot: { sessionID: "audit", deviceKey: "device", sessionClass: "interactive-focused" },
+      }),
+    )
+
+    expect(answer).toBe("YES")
+    expect(requests).toBe(1)
+    expect((await run(scheduler.snapshot()))[0]!.inFlightInteractive).toEqual(["ui"])
+    await run(scheduler.release({ sessionID: "ui", deviceKey: "device" }))
   })
 })

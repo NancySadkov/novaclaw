@@ -3759,6 +3759,8 @@ export type ConfigV2Nudge = {
 
 export type ConfigV2Agent = {
   model?: string
+  reasoningModel?: string
+  workerModel?: string
   variant?: string
   request?: ConfigV2ProviderRequest
   system?: string
@@ -3783,6 +3785,9 @@ export type ConfigV2Agent = {
   globalNudges?: boolean
   reasoningBudget?: number
   maxToolTimeoutMs?: number
+  workerPrototype?: string
+  maxWorkers?: number
+  spawnDepth?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4615,6 +4620,8 @@ export type AgentColor = string | "primary" | "secondary" | "accent" | "success"
 export type AgentV2Info = {
   id: string
   model?: ModelRef
+  reasoningModel?: ModelRef
+  workerModel?: ModelRef
   request: ProviderRequest
   system?: string
   name?: string
@@ -4642,6 +4649,9 @@ export type AgentV2Info = {
   shortChat?: boolean
   reasoningBudget?: number
   maxToolTimeoutMs?: number
+  workerPrototype?: string
+  maxWorkers?: number
+  spawnDepth?: number
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   paused?: boolean

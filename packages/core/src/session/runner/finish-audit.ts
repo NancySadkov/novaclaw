@@ -1,6 +1,7 @@
 export * as FinishAudit from "./finish-audit"
 
 import { SessionMessage } from "../message"
+import { SessionToolContent } from "../tool-content"
 import { isRealUserTurn } from "../steer-provenance"
 import { Introspection } from "./introspection"
 
@@ -63,12 +64,7 @@ export const excerpt = (context: readonly SessionMessage.Message[], request: Exi
     for (const part of message.content) {
       if (part.type === "tool") {
         const state = part.state.status
-        const output =
-          (state === "completed" || state === "error") &&
-          "output" in part.state &&
-          typeof part.state.output === "string"
-            ? clip(part.state.output.trim(), 220)
-            : ""
+        const output = clip(SessionToolContent.stateText(part.state)?.trim() ?? "", 220)
         activity.push(`tool ${part.name} [${state}]${output ? `: ${output}` : ""}`)
       }
       if (part.type === "text" && part.text.trim()) activity.push(`assistant: ${clip(part.text.trim(), 500)}`)

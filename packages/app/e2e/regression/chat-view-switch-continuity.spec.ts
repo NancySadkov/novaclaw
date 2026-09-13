@@ -27,7 +27,7 @@ test("a session-tab switch preserves the long-chat viewport and prompt caret", a
   const review = page.getByRole("dialog", { name: "Review and files" })
   await review.getByRole("button", { name: "Close" }).click()
   await expect(page.locator('[data-component="native-timeline"]')).toBeVisible()
-  await expect(page.locator('[data-message-id="msg_switch_user_0059"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Message 59: long session history/)).toBeVisible({ timeout: 30_000 })
   await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThanOrEqual(2)
   const prompt = page.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
   await prompt.fill("hello")

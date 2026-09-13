@@ -88,6 +88,17 @@ export const deadChildMessage = (childID: string, state: string | undefined): st
 }
 
 /**
+ * The session result is the authoritative completion fact; an execution attempt only says how the
+ * runner stopped. A worker that called `exit` normally has both `result !== undefined` and a
+ * `settled` attempt, so classifying the attempt first turns successful work into a false failure.
+ */
+export const completionAwareDeadChildMessage = (
+  childID: string,
+  state: string | undefined,
+  result: unknown,
+): string | undefined => (result === undefined ? deadChildMessage(childID, state) : undefined)
+
+/**
  * Opaque session ids are copy-hostile model input. A one-character transcription error must not
  * strand an otherwise unambiguous join, but authority may never widen: candidates come exclusively
  * from this parent's direct-child set, and ambiguity still refuses.
@@ -255,7 +266,8 @@ export const layer = Layer.effectDiscard(
               // can replace them. Inspect that durable terminal state BEFORE subscribing: checking
               // only after the bounded join made an already-dead worker look slow for seven minutes.
               const before = yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
-              const alreadyDead = deadChildMessage(childID, before?.state)
+              const currentChild = yield* store.get(childID).pipe(Effect.orElseSucceed(() => undefined))
+              const alreadyDead = completionAwareDeadChildMessage(childID, before?.state, currentChild?.result)
               if (alreadyDead) {
                 const messages = yield* store.context(childID).pipe(Effect.orElseSucceed(() => []))
                 const priorDiagnostics = {
