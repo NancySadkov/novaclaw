@@ -96,6 +96,40 @@ describe("BashJobs durability (live process)", () => {
 })
 
 describe("BashJobs durability", () => {
+  itHanging.effect("lists running jobs only for the requested session tree", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BashJobs.Service
+      const { db } = yield* Database.Service
+      const root = yield* jobs.start({
+        owner: "ses_root",
+        command,
+        commandText: "root command",
+        maxOutputBytes: 4096,
+      })
+      const worker = yield* jobs.start({
+        owner: "ses_worker",
+        command,
+        commandText: "worker command",
+        maxOutputBytes: 4096,
+      })
+      const foreign = yield* jobs.start({
+        owner: "ses_foreign",
+        command,
+        commandText: "foreign command",
+        maxOutputBytes: 4096,
+      })
+
+      expect((yield* BashJobs.listRunning(db, ["ses_root", "ses_worker"])).map((job) => job.command).sort()).toEqual([
+        "root command",
+        "worker command",
+      ])
+
+      yield* jobs.stop(root.id, "ses_root")
+      yield* jobs.stop(worker.id, "ses_worker")
+      yield* jobs.stop(foreign.id, "ses_foreign")
+    }),
+  )
+
   itHanging.effect("a tool-call stop interrupts only the matching command and records its reason", () =>
     Effect.gen(function* () {
       const jobs = yield* BashJobs.Service

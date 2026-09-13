@@ -37,6 +37,7 @@ import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { resolveConfigView } from "./session-config"
+import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -1034,6 +1035,7 @@ const SessionObservationHandler = handlerLayer(
       const attempts = yield* SessionExecutionAttempt.Service
       const execution = yield* SessionExecution.Service
       const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
 
       return handlers
         .handle(
@@ -1124,6 +1126,36 @@ const SessionObservationHandler = handlerLayer(
               })
             }
             return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
+          "session.bash.list",
+          Effect.fn(function* (ctx) {
+            // A chat's work includes nested workers. Walk the authoritative parent relation rather
+            // than asking the browser to guess which cached session rows form today's worker tree.
+            const sessionIDs = [ctx.params.sessionID]
+            const seen = new Set<string>(sessionIDs)
+            for (let index = 0; index < sessionIDs.length; index++) {
+              const children = yield* session.children(sessionIDs[index]!).pipe(
+                Effect.catchTag("Session.NotFoundError", (error) =>
+                  Effect.fail(
+                    new SessionNotFoundError({
+                      sessionID: error.sessionID,
+                      message: `Session not found: ${error.sessionID}`,
+                    }),
+                  ),
+                ),
+              )
+              for (const child of children) {
+                if (seen.has(child.id)) continue
+                seen.add(child.id)
+                sessionIDs.push(child.id)
+              }
+            }
+            const jobs = yield* BashJobs.listRunning(db, sessionIDs)
+            return {
+              data: jobs.map((job) => ({ ...job, sessionID: SessionSchema.ID.make(job.sessionID) })),
+            }
           }),
         )
         .handle(

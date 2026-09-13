@@ -34,9 +34,9 @@ import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { sessionExecutions, type SessionExecutionInfo } from "@/utils/session-execution-api"
 import { formatTokensPerSecond } from "@/utils/token-rate"
+import { WorkerListDialog } from "@/components/worker-list-dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -111,7 +111,6 @@ export function ContactsPage() {
   const [cloning, setCloning] = createSignal<string | undefined>()
   const navigate = useNavigate()
   const sync = useServerSync()
-  const dialog = useDialog()
   useRateClock()
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
@@ -544,34 +543,11 @@ function ContactRow(props: {
     const rows = workers()
     if (rows.length === 0 || props.serverKey === undefined) return
     void dialog.showScoped(() => (
-      <Dialog size="normal" fit>
-        <DialogHeader>
-          <DialogTitle>{language.t("contacts.workers.title", { name: props.view.name })}</DialogTitle>
-        </DialogHeader>
-        <DialogBody class="max-h-[70vh] overflow-y-auto p-2">
-          <For each={rows}>
-            {(worker, index) => (
-              <A
-                href={sessionHref(props.serverKey!, worker.id)}
-                onClick={() => dialog.close()}
-                class="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-v2-background-bg-layer-02"
-              >
-                <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-v2-background-bg-layer-03 text-xs">
-                  {index() + 1}
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm">
-                    {worker.title?.trim() || language.t("contacts.workers.untitled", { number: String(index() + 1) })}
-                  </span>
-                  <span class="block truncate text-[11px] text-v2-text-text-faint">
-                    {language.t("contacts.workers.open")}
-                  </span>
-                </span>
-              </A>
-            )}
-          </For>
-        </DialogBody>
-      </Dialog>
+      <WorkerListDialog
+        title={language.t("contacts.workers.title", { name: props.view.name })}
+        workers={rows}
+        href={(sessionID) => sessionHref(props.serverKey!, sessionID)}
+      />
     ))
   }
   // The transcript's own formatter, so a timestamp reads the same in both places. Ticked by `nowTick`

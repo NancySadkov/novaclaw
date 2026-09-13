@@ -317,7 +317,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `ConfigV2Nudge`, so the emitter reaches Nudge one entry earlier. Measured against HEAD: 510 pairs
 // before and after, the sets are identical, and no source/emitted pair was added, removed or
 // repointed. This is walk order only; the Nudge and Agent wire shapes change in the spec itself.
-const SCHEMA_NAME_FINGERPRINT = "3db462348342a36d6625a486a776e15b72ccf5da5001f408b87ef6589f22570d"
+const SCHEMA_NAME_FINGERPRINT = "196a358c4d3c83a7f3ff64199d5277353fafd7c57b301a175f469e7ebeaf56fe"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

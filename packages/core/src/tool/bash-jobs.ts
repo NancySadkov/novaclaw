@@ -15,7 +15,7 @@ export * as BashJobs from "./bash-jobs"
 // back to the table when the memory entry is gone (finished long ago, or a
 // pre-restart job) — no re-attach to dead PIDs, just honest status + output.
 
-import { and, eq, lt } from "drizzle-orm"
+import { and, desc, eq, inArray, lt } from "drizzle-orm"
 import { Cause, Context, Data, Deferred, Duration, Effect, Fiber, Layer, Stream } from "effect"
 import type { ChildProcess } from "effect/unstable/process"
 import { ascending } from "@novaclaw/schema/identifier"
@@ -43,6 +43,34 @@ export interface Snapshot {
   /** Present only in the live process; explains an operator stop to the running agent. */
   readonly interruptionReason?: string
 }
+
+export interface RunningJob {
+  readonly id: string
+  readonly sessionID: string
+  readonly command: string
+  readonly startedAt: number
+}
+
+/** The durable, process-independent answer used by UI status surfaces. */
+export const listRunning = Effect.fn("BashJobs.listRunning")(function* (
+  db: Database.Interface["db"],
+  sessionIDs: readonly string[],
+) {
+  if (sessionIDs.length === 0) return [] as RunningJob[]
+  const rows = yield* db
+    .select({
+      id: BashJobTable.id,
+      sessionID: BashJobTable.owner,
+      command: BashJobTable.command,
+      startedAt: BashJobTable.time_started,
+    })
+    .from(BashJobTable)
+    .where(and(eq(BashJobTable.status, "running"), inArray(BashJobTable.owner, sessionIDs)))
+    .orderBy(desc(BashJobTable.time_started))
+    .all()
+    .pipe(Effect.orDie)
+  return rows satisfies RunningJob[]
+})
 
 export class JobNotFoundError extends Data.TaggedError("BashJobs.NotFoundError")<{ id: string }> {}
 export class JobLimitError extends Data.TaggedError("BashJobs.LimitError")<{ limit: number }> {}

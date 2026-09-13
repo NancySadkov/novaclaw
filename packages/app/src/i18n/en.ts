@@ -359,6 +359,15 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
   "prompt.action.resume": "Resume",
+  "session.activity.workers.count.one": "{{count}} running worker",
+  "session.activity.workers.count.other": "{{count}} running workers",
+  "session.activity.workers.title": "Running workers",
+  "session.activity.shells.count.one": "{{count}} background shell command",
+  "session.activity.shells.count.other": "{{count}} background shell commands",
+  "session.activity.shells.title": "Background shell commands",
+  "session.activity.shells.thisChat": "This chat",
+  "session.activity.shells.workerChat": "Worker chat",
+  "session.activity.shells.started": "Started {{time}}",
 
   "prompt.permissionMode.title": "Permission mode",
   // One word each — these render inside a narrow listbox (and on a phone). The explanations live in

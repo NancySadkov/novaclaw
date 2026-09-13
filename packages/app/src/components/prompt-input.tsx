@@ -29,6 +29,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { SessionActivityIndicators } from "@/components/session/session-activity-indicators"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
@@ -977,6 +978,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   agent: agentControlState(),
                 }}
               />
+              {/* The project name is the last element inside ComposerControlsRow. Keep live work
+                  shortcuts immediately after it and before the context gauge. */}
+              <Show when={props.controls.session?.id}>
+                {(sessionID) => <SessionActivityIndicators sessionID={sessionID()} />}
+              </Show>
               <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                 <ComposerVariantControl
                   state={{

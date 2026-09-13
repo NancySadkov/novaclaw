@@ -1273,6 +1273,53 @@ class ApiV2SessionExecution extends NovaClawApiClient {
   }
 }
 
+class ApiV2SessionBash extends NovaClawApiClient {
+  /**
+   * List running session commands
+   *
+   * List running shell commands owned by this session and its active worker tree.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionBashListResponses, T.V2SessionBashListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/command",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Stop a running session command
+   *
+   * Stop one running command without interrupting the agent that launched it.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      callID: string
+      reason: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"], callID: parameters?.["callID"] }
+    const body = { reason: parameters?.["reason"] }
+    return (options?.client ?? this.client).post<T.V2SessionBashStopResponses, T.V2SessionBashStopErrors, ThrowOnError>(
+      {
+        url: "/api/session/{sessionID}/command/{callID}/stop",
+        ...options,
+        path,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+}
+
 class ApiV2SessionRevert extends NovaClawApiClient {
   /**
    * Stage session revert
@@ -1342,34 +1389,6 @@ class ApiV2SessionRevert extends NovaClawApiClient {
       ...options,
       path,
     })
-  }
-}
-
-class ApiV2SessionBash extends NovaClawApiClient {
-  /**
-   * Stop a running session command
-   *
-   * Stop one running command without interrupting the agent that launched it.
-   */
-  public stop<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      callID: string
-      reason: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], callID: parameters?.["callID"] }
-    const body = { reason: parameters?.["reason"] }
-    return (options?.client ?? this.client).post<T.V2SessionBashStopResponses, T.V2SessionBashStopErrors, ThrowOnError>(
-      {
-        url: "/api/session/{sessionID}/command/{callID}/stop",
-        ...options,
-        path,
-        body,
-        headers: { "Content-Type": "application/json", ...options?.headers },
-      },
-    )
   }
 }
 
@@ -2300,14 +2319,14 @@ class ApiV2Session extends NovaClawApiClient {
     return (this._execution ??= new ApiV2SessionExecution({ client: this.client }))
   }
 
-  private _revert?: ApiV2SessionRevert
-  get revert(): ApiV2SessionRevert {
-    return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
-  }
-
   private _bash?: ApiV2SessionBash
   get bash(): ApiV2SessionBash {
     return (this._bash ??= new ApiV2SessionBash({ client: this.client }))
+  }
+
+  private _revert?: ApiV2SessionRevert
+  get revert(): ApiV2SessionRevert {
+    return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
   }
 
   private _permission?: ApiV2SessionPermission

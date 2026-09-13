@@ -235,6 +235,13 @@ export class SessionHistoryResponse extends Schema.Class<SessionHistoryResponse>
   hasMore: Schema.Boolean,
 }) {}
 
+export const SessionBashJob = Schema.Struct({
+  id: Schema.String,
+  sessionID: Session.ID,
+  command: Schema.String,
+  startedAt: NonNegativeInt,
+}).annotate({ identifier: "SessionBashJob" })
+
 const SessionsQueryCursor = SessionsCursor.annotate({
   description: "Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response.",
 })
@@ -1098,6 +1105,21 @@ export const makeSessionGroups = <
               identifier: "v2.session.interrupt",
               summary: "Interrupt session execution",
               description: "Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.",
+            }),
+          ),
+      )
+      .add(
+        HttpApiEndpoint.get("session.bash.list", "/api/session/:sessionID/command", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({ data: Schema.Array(SessionBashJob) }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.bash.list",
+              summary: "List running session commands",
+              description: "List running shell commands owned by this session and its active worker tree.",
             }),
           ),
       )

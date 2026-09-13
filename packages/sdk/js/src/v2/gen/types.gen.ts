@@ -1807,6 +1807,13 @@ export type SessionHistory = {
 
 export type SessionDurableEventStream = string
 
+export type SessionBashJob = {
+  id: string
+  sessionID: string
+  command: string
+  startedAt: number
+}
+
 export type SessionExportResponse = {
   path: string
   messageCount: number
@@ -14524,6 +14531,43 @@ export type V2SessionCommandResponses = {
 }
 
 export type V2SessionCommandResponse = V2SessionCommandResponses[keyof V2SessionCommandResponses]
+
+export type V2SessionBashListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/command"
+}
+
+export type V2SessionBashListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionBashListError = V2SessionBashListErrors[keyof V2SessionBashListErrors]
+
+export type V2SessionBashListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<SessionBashJob>
+  }
+}
+
+export type V2SessionBashListResponse = V2SessionBashListResponses[keyof V2SessionBashListResponses]
 
 export type V2SessionPromptData = {
   body: {
