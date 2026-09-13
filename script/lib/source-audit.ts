@@ -28,8 +28,8 @@ export type SourceAudit = {
 /** Every one must be present at the drop root: the attribution and the thing `bun` reads first. */
 export const REQUIRED_ENTRIES = ["NOTICE", "package.json"] as const
 
-/** Two classes that must never reach a source drop, however tidy the rest of it looks. */
-export const FORBIDDEN_MARKERS = ["/node_modules/", "/.git/"] as const
+/** Content classes that must never reach a source drop, however tidy the rest of it looks. */
+export const FORBIDDEN_MARKERS = ["/node_modules/", "/.git/", "/tmp/"] as const
 
 /**
  * @param listing One path per line, as `tar -tf` prints it.

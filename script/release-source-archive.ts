@@ -81,6 +81,6 @@ if (listed.status !== 0) {
 }
 const audit = auditSourceListing(listed.stdout ?? "", path.basename(outFile, ".7z"))
 if (!audit.ok) refuse(`the source drop is not releasable:\n${audit.problems.map((p) => `  - ${p}`).join("\n")}`)
-console.log(`audited ${audit.entries} entries: obligations present, no node_modules, no .git`)
+console.log(`audited ${audit.entries} entries: obligations present, no node_modules, no .git, no tmp`)
 
 fs.rmSync(tarFile, { force: true })

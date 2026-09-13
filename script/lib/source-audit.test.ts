@@ -60,6 +60,17 @@ describe("source drop audit", () => {
     expect(audit.problems.join("\n")).toContain("/.git/")
   })
 
+  test("🔴 a forced-tracked tmp file is caught even though tmp is gitignored", () => {
+    // `.gitignore` prevents new ordinary additions; it cannot untrack a file that was committed
+    // before the rule existed, nor stop `git add -f`. The source boundary is the second lock.
+    const audit = auditSourceListing(
+      listing(`${ROOT}/NOTICE`, `${ROOT}/package.json`, `${ROOT}/tmp/release-draft.md`),
+      ROOT,
+    )
+    expect(audit.ok).toBe(false)
+    expect(audit.problems.join("\n")).toContain("/tmp/")
+  })
+
   test("NEGATIVE CONTROL: a marker is a path SEGMENT, not a substring panic", () => {
     // A folder someone legitimately named must not fail the build, or the guard gets switched off
     // for being noisy — which is how a check dies.
@@ -78,6 +89,6 @@ describe("source drop audit", () => {
   test("the vocabularies are the ones the batch file used", () => {
     // The bat once spelled these four things inline. If either list drifts, this is where it surfaces.
     expect(REQUIRED_ENTRIES).toEqual(["NOTICE", "package.json"])
-    expect(FORBIDDEN_MARKERS).toEqual(["/node_modules/", "/.git/"])
+    expect(FORBIDDEN_MARKERS).toEqual(["/node_modules/", "/.git/", "/tmp/"])
   })
 })
