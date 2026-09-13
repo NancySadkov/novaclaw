@@ -122,7 +122,7 @@ describe("a config write that fails must not change what the API authenticates a
       const exit = yield* ConfigStoreWrite.remove([
         ["server", "password"],
         // Never set, so this path is refused — and a refused path refuses the WHOLE remove.
-        ["shell"],
+        ["snapshots", "nested"],
       ]).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
 

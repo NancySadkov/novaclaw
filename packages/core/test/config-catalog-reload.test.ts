@@ -253,7 +253,7 @@ describe("the catalog reload is per-key, like every other domain", () => {
       // A reload fired on "something was written" rather than on the key would show up here. It is
       // not merely wasteful for this domain: the registration chains an `integration.reload()`, and
       // integrations are what carry credential/connection state.
-      yield* ConfigStoreWrite.apply(decodeInfo({ shell: "/bin/churn-probe" }))
+      yield* ConfigStoreWrite.apply(decodeInfo({ snapshots: false }))
       expect(seen).toEqual([])
 
       yield* ConfigStoreWrite.apply(decodeInfo({ providers: { [PROBE]: { name: "n" } } }))

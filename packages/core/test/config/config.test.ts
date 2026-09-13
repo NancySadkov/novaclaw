@@ -145,11 +145,11 @@ describe("Config", () => {
             expect(documents).toHaveLength(1)
             expect(documents[0]?.path).toBeUndefined()
             expect(Config.latest(entries, "username")).toBe("store-user")
-            expect(Config.latest(entries, "shell")).toBe("store-shell")
+            expect(Config.latest(entries, "snapshots")).toBe(false)
           }).pipe(
             Effect.provide(
               testLayer(tmp.path, undefined, tmp.path, {
-                settings: { username: "store-user", shell: "store-shell" },
+                settings: { username: "store-user", snapshots: false },
               }),
             ),
           )

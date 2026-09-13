@@ -1562,11 +1562,6 @@ export const dict = {
   "settings.storage.resources.stop": "Stop / cancel",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
-  "settings.general.row.shell.title": "Terminal Shell",
-  "settings.general.row.shell.description":
-    "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
-  "settings.general.row.shell.autoDefault": "Auto (Default)",
-  "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.colorScheme.title": "Mode",
   "settings.general.row.colorScheme.description":
     "Dark for now. A light preset is on the way; this unlocks when it lands.",

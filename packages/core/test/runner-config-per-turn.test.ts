@@ -26,7 +26,7 @@ import { SettingsConfigStore } from "../src/settings-config-store"
  * The first half (app `3757af64a`) made `Config.entries()` read through to `SettingsConfigStore` per
  * call. That changed nothing for the harness, because `runner/llm.ts` called it ONCE at
  * `Layer.effect` scope and hung the harness derivations off the result — persona, expertise hint, quality,
- * shell, strict, affective, introspection and the compactor were all frozen at location boot. A user
+ * strict, affective, introspection and the compactor were all frozen at location boot. A user
  * who edited any of them in Settings still needed a restart.
  *
  * ⚠️ WHY THIS FILE IS SHAPED LIKE THIS. `runner/llm.ts` is the one file the default gate never
@@ -57,14 +57,13 @@ const document = (info: ConstructorParameters<typeof Config.Info>[0]) =>
 
 describe("HarnessConfig.derive", () => {
   test("an empty config yields the compiled defaults the runner used to hardcode", () => {
-    const derived = HarnessConfig.derive([], { platform: "linux" })
+    const derived = HarnessConfig.derive([])
     expect(derived.persona).toContain("pragmatic")
     expect(derived.persona).not.toContain("Nova")
     expect(derived.expertiseHint).toBeUndefined()
     expect(derived.quality.enabled).toBe(false)
     expect(derived.quality.cadence).toBe(2)
-    expect(derived.configuredShell).toBeUndefined()
-    expect(derived.shell).toBe("/bin/sh")
+    expect(derived.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
     expect(derived.strict).toBeUndefined()
     expect(derived.affective).toBeUndefined()
     expect(derived.introspection.enabled).toBe(false)
@@ -75,11 +74,10 @@ describe("HarnessConfig.derive", () => {
   test("every key is picked up, and later documents win (the `latest` fold)", () => {
     const derived = HarnessConfig.derive(
       [
-        document({ persona: { prompt: "Ignored style" }, expertise: "developer", shell: "/bin/first" }),
+        document({ persona: { prompt: "Ignored style" }, expertise: "developer" }),
         document({
           persona: { prompt: "Probe style" },
           expertise: "normal",
-          shell: "/bin/second",
           quality: { enabled: true, cadence: 7 },
           strict: { enabled: true, attempts: 3 },
           affective: { enabled: true, temperature: 0.42 },
@@ -93,14 +91,13 @@ describe("HarnessConfig.derive", () => {
           provider_connection: new ConfigProviderConnection.Info({ stall_timeout_ms: 420_000 }),
         }),
       ],
-      { platform: "linux", notesDir: "/home/u/notes" },
+      { notesDir: "/home/u/notes", shell: "/bin/supplied" },
     )
     expect(derived.persona).toContain("Probe")
     expect(derived.persona).toContain("/home/u/notes")
     expect(derived.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
     expect(derived.quality).toMatchObject({ enabled: true, cadence: 7 })
-    expect(derived.configuredShell).toBe("/bin/second")
-    expect(derived.shell).toBe("/bin/second")
+    expect(derived.shell).toBe("/bin/supplied")
     expect(derived.strict).toMatchObject({ enabled: true, attempts: 3 })
     expect(derived.affective).toMatchObject({ enabled: true, temperature: 0.42 })
     expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
@@ -115,20 +112,9 @@ describe("HarnessConfig.derive", () => {
     ).toBeUndefined()
   })
 
-  test("the shell fallback is platform-shaped, and the RAW value stays undefined for the host gate", () => {
-    // `configuredShell` feeds `HostExec.SessionHost`, which must be able to tell "not configured"
-    // from "configured to the platform default" — the gate picks its own default otherwise.
-    const win = HarnessConfig.derive([], { platform: "win32", comspec: "C:\\probe\\cmd.exe" })
-    expect(win.shell).toBe("C:\\probe\\cmd.exe")
-    expect(win.configuredShell).toBeUndefined()
-    expect(HarnessConfig.derive([], { platform: "win32" }).shell).toBe(
-      process.env["COMSPEC"] ?? HarnessConfig.DEFAULT_WINDOWS_SHELL,
-    )
-    expect(HarnessConfig.derive([], { platform: "darwin" }).shell).toBe(HarnessConfig.DEFAULT_POSIX_SHELL)
-    // Configured wins on every platform, and reaches BOTH fields.
-    const configured = HarnessConfig.derive([document({ shell: "/bin/zsh" })], { platform: "win32" })
-    expect(configured.shell).toBe("/bin/zsh")
-    expect(configured.configuredShell).toBe("/bin/zsh")
+  test("the supplied shell wins over the pure-test default", () => {
+    expect(HarnessConfig.derive([]).shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
+    expect(HarnessConfig.derive([], { shell: "/bin/supplied" }).shell).toBe("/bin/supplied")
   })
 
   test("it holds no state — two derivations from different entries never share an answer", () => {
@@ -162,7 +148,6 @@ const HARNESS_KEYS = [
   "persona",
   "expertise",
   "quality",
-  "shell",
   "strict",
   "affective",
   "introspection",
@@ -182,7 +167,7 @@ describe("the harness derivation follows the settings store", () => {
             // the whole harness frozen, which is the trap this file exists to avoid.
             const config = yield* Config.Service
             const derive = Effect.fnUntraced(function* () {
-              return HarnessConfig.derive(yield* config.entries(), { platform: "linux", notesDir: "/n" })
+              return HarnessConfig.derive(yield* config.entries(), { notesDir: "/n" })
             })
 
             for (const key of HARNESS_KEYS) yield* store.remove(key)
@@ -191,7 +176,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.persona).not.toContain("Nova")
             expect(before.expertiseHint).toBeUndefined()
             expect(before.quality.enabled).toBe(false)
-            expect(before.shell).toBe("/bin/sh")
+            expect(before.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
             expect(before.strict?.enabled).toBeUndefined()
             expect(before.affective?.enabled).toBeUndefined()
             expect(before.introspection.enabled).toBe(false)
@@ -201,7 +186,6 @@ describe("the harness derivation follows the settings store", () => {
             yield* store.set("persona", { prompt: "Probe style" })
             yield* store.set("expertise", "normal")
             yield* store.set("quality", { enabled: true, cadence: 7 })
-            yield* store.set("shell", "/bin/harness-probe")
             yield* store.set("strict", { enabled: true })
             yield* store.set("affective", { enabled: true, temperature: 0.42 })
             yield* store.set("introspection", { enabled: true, cadence: 5 })
@@ -212,8 +196,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(after.persona).toContain("Probe")
             expect(after.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
             expect(after.quality).toMatchObject({ enabled: true, cadence: 7 })
-            expect(after.shell).toBe("/bin/harness-probe")
-            expect(after.configuredShell).toBe("/bin/harness-probe")
+            expect(after.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
             expect(after.strict?.enabled).toBe(true)
             expect(after.affective?.temperature).toBe(0.42)
             expect(after.introspection).toMatchObject({ enabled: true, cadence: 5 })
@@ -227,7 +210,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(restored.persona).not.toContain("Nova")
             expect(restored.expertiseHint).toBeUndefined()
             expect(restored.quality.enabled).toBe(false)
-            expect(restored.shell).toBe("/bin/sh")
+            expect(restored.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
             expect(restored.strict?.enabled).toBeUndefined()
             expect(restored.introspection.enabled).toBe(false)
             expect(restored.context).toBeUndefined()

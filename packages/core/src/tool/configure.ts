@@ -46,7 +46,7 @@
  *    rule — `{action: "configure", resource: "*", effect: "allow"}` — while granting no privileged
  *    one. That is the whole mechanical difference between the two gated tiers, and it is the
  *    difference that matters: it is the only way to give an UNATTENDED run a repair capability
- *    without also giving it `plugins`, `mcp`, `shell` and `permissions`.
+ *    without also giving it `plugins`, `mcp`, `model` and `permissions`.
  *
  * Both actions are absent from `AMBIENT_SAFE_BASELINE`, so on a default install they fall through to
  * `evaluate`'s `ask`. Under an UNATTENDED chain that ask is converted to an immediate refusal by
@@ -252,7 +252,7 @@ export const formatWrite = (input: {
     discarded.length > 0
       ? `Accepted and DISCARDED (this instance stores no value for ${discarded.join(", ")}, so nothing changed there).`
       : "",
-    'Read it back with {"op":"read","keys":["' + (stored[0] ?? input.requested[0] ?? "shell") + '"]}.',
+    'Read it back with {"op":"read","keys":["' + (stored[0] ?? input.requested[0] ?? "model") + '"]}.',
   ]
     .filter(Boolean)
     .join("\n")
@@ -666,7 +666,7 @@ export const layer = Layer.effectDiscard(
                 const requested = Object.keys(input.config).filter((key) => input.config[key] !== undefined)
                 if (requested.length === 0)
                   return yield* failure(
-                    'Nothing was written: `config` was empty. Name at least one key, e.g. {"op":"set","config":{"shell":"bash"}}.',
+                    'Nothing was written: `config` was empty. Name at least one key, e.g. {"op":"set","config":{"offline":true}}.',
                   )
                 // Refuse an undeclared key BY NAME before anything else runs. The schema decode below
                 // would silently drop it (`onExcessProperty: "ignore"`), which is precisely the ruling-2

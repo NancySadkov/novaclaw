@@ -80,7 +80,6 @@ export const shellHandlers = HttpApiBuilder.group(InstanceHttpApi, "shell", (han
           // running server picks them up without a restart.
           Shell.agentDefault.reset()
           Shell.preferred.reset()
-          Shell.acceptable.reset()
           Git.binary.reset()
           return status()
         }),

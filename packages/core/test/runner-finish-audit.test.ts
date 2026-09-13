@@ -4,6 +4,8 @@ import { LLMEvent } from "@novaclaw/llm"
 import { FinishAudit } from "@novaclaw/core/session/runner/finish-audit"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { Database } from "@novaclaw/core/database/database"
+import { BashJobTable } from "@novaclaw/core/tool/bash-jobs.sql"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 const exitTurn = (result: string): LLMEvent[] => [
@@ -58,6 +60,54 @@ describe("exit requests are reviewed before completion", () => {
     expect(
       transcript.some(
         (message) => message.type === "assistant" && JSON.stringify(message).includes("Continued after rejection"),
+      ),
+    ).toBe(true)
+  })
+
+  test("a running background shell refuses exit before the completion auditor", async () => {
+    const harness = makeRunnerHarness({
+      withExitTool: true,
+      turns: [exitTurn("done"), completeTurn("continued", "I will settle the background job first.")],
+      utilityTurns: [completeTurn("audit", "YES")],
+    })
+    let transcript: { type: string; text?: string }[] = []
+    let result: unknown
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Run the build in the background, then finish." }),
+          resume: false,
+        })
+        const { db } = yield* Database.Service
+        yield* db
+          .insert(BashJobTable)
+          .values({
+            id: "job_build",
+            owner: HARNESS_SESSION,
+            command: "bun run build",
+            status: "running",
+            time_started: Date.now(),
+          })
+          .run()
+          .pipe(Effect.orDie)
+        yield* session.resume(HARNESS_SESSION)
+        transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
+        result = (yield* session.get(HARNESS_SESSION)).result
+      }),
+      "running shell blocks exit",
+    )
+
+    expect(harness.utilityRequests).toHaveLength(0)
+    expect(result).toBeUndefined()
+    expect(
+      transcript.some(
+        (message) =>
+          message.type === "user" &&
+          message.text?.includes("background shell command is still running") &&
+          message.text.includes('"job":"job_build"'),
       ),
     ).toBe(true)
   })

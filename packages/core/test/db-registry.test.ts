@@ -29,7 +29,7 @@ describe("DbRegistry", () => {
   it.effect("pages rows and edits + deletes by rowid, visible to the owning store", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
-      yield* store.set("shell", "bash")
+      yield* store.set("snapshots", false)
       yield* store.set("username", "before-edit")
 
       const page = yield* DbRegistry.rows({ table: "runtime_setting", limit: 10 })
@@ -155,7 +155,7 @@ describe("DbRegistry", () => {
         }),
         insert: DbRegistry.insertRow({
           table: "runtime_setting",
-          values: { key: "shell", value: JSON.stringify("bash") },
+          values: { key: "snapshots", value: JSON.stringify(false) },
           writer: "agent",
         }),
         delete: DbRegistry.deleteRow({ table: "runtime_setting", rowid: row.rowid, writer: "agent" }),

@@ -16,6 +16,21 @@ describe("shell approval reduction", () => {
       status: "parsed",
       segments: [`printf 'a && b'`, "git status", "wc -l", "notify"],
       redirects: [],
+      background: true,
+    })
+  })
+
+  test("recognizes a trailing POSIX background operator without mistaking redirects or quotes for one", () => {
+    expect(ShellApproval.analyze("serve >/dev/null 2>&1 &", "/bin/bash")).toEqual({
+      status: "parsed",
+      segments: ["serve >/dev/null 2>&1"],
+      redirects: [],
+      background: true,
+    })
+    expect(ShellApproval.analyze(`printf '%s' '&' 2>&1`, "/bin/bash")).toEqual({
+      status: "parsed",
+      segments: [`printf '%s' '&' 2>&1`],
+      redirects: [],
     })
   })
 

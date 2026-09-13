@@ -394,20 +394,6 @@ describe("HttpApi Server.listen", () => {
     const listener = await startListener()
     let stopped = false
     try {
-      const response = await fetch(new URL(PtyPaths.shells, listener.url), {
-        headers: { authorization: authorization(), "x-novaclaw-directory": tmp.path },
-      })
-      expect(response.status).toBe(200)
-      expect(await response.json()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: expect.any(String),
-            name: expect.any(String),
-            acceptable: expect.any(Boolean),
-          }),
-        ]),
-      )
-
       const info = await createCat(listener, tmp.path)
       const ticket = await connectTicket(listener, info.id, tmp.path)
       expect(ticket.expires_in).toBeGreaterThan(0)
@@ -549,7 +535,7 @@ describe("HttpApi Server.listen", () => {
     await withTimeout(listener.stop(), 10_000, "timed out waiting for graceful listener.stop()")
     await withTimeout(listener.stop(), 5_000, "timed out waiting for repeated graceful listener.stop()")
     await expect(
-      fetch(new URL(PtyPaths.shells, listener.url), { headers: { authorization: authorization() } }),
+      fetch(new URL(PtyPaths.list, listener.url), { headers: { authorization: authorization() } }),
     ).rejects.toThrow()
   })
 

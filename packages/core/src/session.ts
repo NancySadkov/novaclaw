@@ -1073,7 +1073,7 @@ export const layer = Layer.effect(
       // projector + message-updater build the rendered message from those two events).
       // Unlike the V1 path there is no user/assistant bookkeeping and no streaming
       // (there is no Shell.Delta event); output is delivered whole in Ended. The
-      // process runs against the session's Location (cwd + configured shell); the
+      // process runs against the session's Location (cwd + supplied shell); the
       // spawner is provided directly so this does not depend on it being in the
       // Location output context.
       shell: Effect.fn("V2Session.shell")(function* (input) {
@@ -1088,16 +1088,9 @@ export const layer = Layer.effect(
           timestamp: yield* DateTime.now,
         })
         const output = yield* Effect.gen(function* () {
-          const config = yield* Config.Service
           const loc = yield* Location.Service
           const appProcess = yield* AppProcess.Service
-          const entries = yield* config.entries()
-          const configuredShell = (
-            Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))) as {
-              shell?: string
-            }
-          ).shell
-          const shellPath = Shell.preferred(configuredShell)
+          const shellPath = Shell.preferred()
           const command = ChildProcess.make(shellPath, Shell.args(shellPath, input.command, loc.directory), {
             cwd: loc.directory,
             extendEnv: true,
@@ -1135,7 +1128,7 @@ export const layer = Layer.effect(
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
-        // shell run mirrors the `shell` op (configured shell + cwd; AppProcess provided directly).
+        // shell run mirrors the `shell` op (supplied shell + cwd; AppProcess provided directly).
         const resolved = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
           const cmd: CommandV2.Info = yield* commands.get(input.command).pipe(
@@ -1166,16 +1159,9 @@ export const layer = Layer.effect(
           let text = expandCommandTemplate(cmd.template, input.arguments)
           const bashMatches = [...text.matchAll(COMMAND_BASH_REGEX)]
           if (bashMatches.length > 0) {
-            const config = yield* Config.Service
             const loc = yield* Location.Service
             const appProcess = yield* AppProcess.Service
-            const entries = yield* config.entries()
-            const configuredShell = (
-              Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))) as {
-                shell?: string
-              }
-            ).shell
-            const shellPath = Shell.preferred(configuredShell)
+            const shellPath = Shell.preferred()
             const results = yield* Effect.forEach(bashMatches, (match) =>
               Effect.gen(function* () {
                 const command = ChildProcess.make(shellPath, Shell.args(shellPath, match[1], loc.directory), {

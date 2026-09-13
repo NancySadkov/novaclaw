@@ -319,7 +319,18 @@ describe("LocationServiceMap", () => {
           // *Could it be deferred?* No: kill is the failure-side complement to resident spawn/wait.
           // Requiring a discovery turn while a bad worker continues consuming batch capacity defeats
           // the control and makes the four-worker cap slower to recover.
-          expect(residentBytes).toBeLessThan(37_000) // observed 36,728 on 2026-09-13 (99.3% of 37,000)
+          //
+          // ── Raised 2026-09-13 for explicit background shell launch (36,728 → 37,045) ──────────
+          //
+          // *Who pays?* Every working officer, because `bash` is resident and backgrounding must be
+          // discoverable on its input schema before a long-lived service is launched.
+          //
+          // *What buys the 317 bytes?* The model can deliberately yield a service as an owner-bound
+          // job instead of waiting for an accidental timeout, then join or stop it before exit.
+          //
+          // *Could it be deferred?* No: discovery after launch is too late, and hiding the flag
+          // would return to shell-level `&`, outside the durable job supervisor.
+          expect(residentBytes).toBeLessThan(37_500) // observed 37,045 on 2026-09-13 (98.8% of 37,500)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the

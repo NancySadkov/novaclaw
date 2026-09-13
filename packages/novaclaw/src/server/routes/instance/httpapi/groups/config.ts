@@ -17,8 +17,8 @@ const root = "/config"
  * ⚠️ **This guard cannot live in the payload schema, which is exactly why the bug survived.**
  * `HttpApiEndpoint.patch(…, { payload: ConfigV2.Info })` decodes with Effect Schema's default
  * `onExcessProperty: "ignore"`, so an unknown key is erased BEFORE any handler or store sees it.
- * Measured 2026-07-29: `decodeUnknownSync(Config.Info)({ shell: "bash", provider_preset: {…} })`
- * yields `{ shell }` — i.e. a caller who typed `provider_preset` for `provider_presets` got **200
+ * Measured 2026-07-29: `decodeUnknownSync(Config.Info)({ snapshots: false, provider_preset: {…} })`
+ * yields `{ snapshots }` — i.e. a caller who typed `provider_preset` for `provider_presets` got **200
  * and no write**. That is todo.md ruling 2 (*a failed mutation never reports success*) broken on the
  * one surface AGENTS.md's self-healing law depends on: an agent that PATCHes, gets a 200, re-reads
  * and finds nothing cannot tell "I typed the wrong key" from "this instance is broken", so it loops.

@@ -765,7 +765,7 @@ export interface RunArgs {
   /**
    * The host-execution context for every command this run executes (ruling 6, `src/host-exec.ts`).
    * Only the session runner can know these — the chain-ROOT session type, whether an untrusted
-   * messenger chat drives the turn, the operator's configured shell, and the live offline policy —
+   * messenger chat drives the turn, NovaClaw's supplied shell, and the live offline policy —
    * so they are injected here rather than re-derived.
    *
    * ⚠️ When it is omitted the run still executes, and still gets the CREDENTIAL half of the gate:
@@ -860,12 +860,9 @@ export interface StrictReport extends JhEngine.Report {
 
 export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
   const nowFn = args.now ?? (() => Date.now())
-  // ONE shell for the whole product, resolved by the ONE host-execution gate: `config.shell` when
-  // the operator set one, else the agent default (bundled PortableGit / system git-bash / COMSPEC).
-  // A Strict run and a normal turn on the same host must not speak different shells — half of the
-  // COMSPEC divergence was exactly that Strict ignored `config.shell` while `tool/bash.ts` honoured
-  // it. `environmentFor` below follows this value, so what the model is TOLD tracks what runs.
-  const agentShell = HostExec.resolveShell(args.host?.shell)
+  // ONE supplied shell for the whole product. `environmentFor` below follows this value, so what
+  // the model is told tracks what actually runs.
+  const agentShell = HostExec.resolveShell()
   // `bash -c` is not a login shell, so an MSYS bash needs its own userland prepended or `ls`/`head`
   // don't resolve (no-op for non-MSYS shells).
   const shellEnv = HostExec.bundleOverlay(agentShell)

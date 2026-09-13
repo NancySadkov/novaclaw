@@ -12,6 +12,8 @@ export type Analysis =
       readonly status: "parsed"
       readonly segments: ReadonlyArray<string>
       readonly redirects: ReadonlyArray<Redirect>
+      /** A real POSIX `&` operator occurred outside quotes and redirections. */
+      readonly background?: true
     }
   | { readonly status: "unparseable"; readonly reason: string }
 
@@ -164,6 +166,8 @@ function analyzeFamily(command: string, family: Exclude<Family, "unknown">, shel
   const segments: string[] = []
   const nestedSegments: string[] = []
   const redirects: Redirect[] = []
+  let background = false
+  let lastSeparator: string | undefined
   let start = 0
   let quote: "'" | '"' | undefined
   let escaped = false
@@ -179,6 +183,7 @@ function analyzeFamily(command: string, family: Exclude<Family, "unknown">, shel
     if (parsed.status === "unparseable") return parsed
     nestedSegments.push(...parsed.segments)
     redirects.push(...parsed.redirects)
+    background ||= parsed.background === true
     return undefined
   }
 
@@ -270,12 +275,17 @@ function analyzeFamily(command: string, family: Exclude<Family, "unknown">, shel
           : undefined
     if (!separator || (family === "cmd" && separator === ";")) continue
     if (!push(index)) return { status: "unparseable", reason: "empty-chain-segment" }
+    if (separator === "&") background = true
+    lastSeparator = separator
     index += separator.length - 1
     start = index + 1
   }
 
   if (quote || escaped) return { status: "unparseable", reason: "unterminated-quote-or-escape" }
-  if (!push(command.length)) return { status: "unparseable", reason: "empty-chain-segment" }
+  // A trailing POSIX `&` is a complete command followed by a background operator, not an empty
+  // chain segment. Every other trailing operator remains malformed and therefore unparseable.
+  if (!push(command.length) && lastSeparator !== "&")
+    return { status: "unparseable", reason: "empty-chain-segment" }
   for (const segment of [...segments, ...nestedSegments]) {
     const commandWrites = commandRedirects(segment, family)
     if (commandWrites === "dynamic") return { status: "unparseable", reason: "dynamic-redirect-target" }
@@ -285,5 +295,6 @@ function analyzeFamily(command: string, family: Exclude<Family, "unknown">, shel
     status: "parsed",
     segments: [...new Set([...segments, ...nestedSegments])],
     redirects: [...new Map(redirects.map((item) => [item.target, item])).values()],
+    ...(background ? { background: true as const } : {}),
   }
 }

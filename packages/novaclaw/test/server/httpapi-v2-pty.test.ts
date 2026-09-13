@@ -65,21 +65,6 @@ afterEach(async () => {
 })
 
 describe("v2 pty HttpApi", () => {
-  test("lists human terminal shells through the canonical surface", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
-    const response = await request("/api/pty/shells", tmp.path)
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: expect.any(String),
-          name: expect.any(String),
-          acceptable: expect.any(Boolean),
-        }),
-      ]),
-    )
-  })
-
   test("stops all PTYs idempotently through the canonical surface", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const response = await request("/api/pty", tmp.path, { method: "DELETE" })

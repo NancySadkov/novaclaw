@@ -211,8 +211,7 @@ describe("agent default shell (B11)", () => {
     expect(env?.Path?.split(path.delimiter).at(-1)).toBe(path.join(w64devkit, "bin"))
     expect(env?.W64DEVKIT_HOME).toBe(w64devkit)
     expect(env?.W64DEVKIT).toBe("2.9.0")
-    expect(Shell.agentShellIsPosix()).toBe(true)
-    expect(Shell.shellFallbackNote()).toBeUndefined()
+    expect(Shell.posix(Shell.agentDefault())).toBe(true)
   })
 
   test("keeps Git Bash userland ahead of w64devkit while adding GCC last", async () => {

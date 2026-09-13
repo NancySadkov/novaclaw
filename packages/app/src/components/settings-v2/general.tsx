@@ -32,18 +32,6 @@ import { SettingsExplainV2 } from "./explain"
 import { scopedDirectory } from "@/utils/routing-directory"
 import { ControlScope } from "../control-scope"
 
-type ShellOption = {
-  path: string
-  name: string
-  acceptable: boolean
-}
-
-type ShellSelectOption = {
-  id: string
-  value: string
-  label: string
-}
-
 export const SettingsGeneralV2: Component<{
   sessionID?: string
   /**
@@ -67,15 +55,6 @@ export const SettingsGeneralV2: Component<{
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const desktop = createMemo(() => platform.platform === "desktop")
-
-  const [shells] = createResource(
-    () =>
-      serverSdk()
-        .client.v2.pty.shells()
-        .then((res) => res.data ?? [])
-        .catch(() => [] as ShellOption[]),
-    { initialValue: [] as ShellOption[] },
-  )
 
   // B11 — bundled-shell substrate status + provisioner (raw-fetch endpoints, not in the SDK).
   const globalCtx = useGlobal()
@@ -186,7 +165,6 @@ export const SettingsGeneralV2: Component<{
       : language.t("settings.general.row.offline.inactive")
   })
 
-  const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   // 1K: the default-permission-mode options reuse the composer droplist's labels.
   //
   // Every mode is offered at EVERY expertise level, and that is a standing decision, not an omission.
@@ -206,39 +184,6 @@ export const SettingsGeneralV2: Component<{
       label: language.t(`prompt.permissionMode.${mode}`),
     })),
   )
-  const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
-
-  const shellOptions = createMemo<ShellSelectOption[]>(() => {
-    const list = shells.latest
-    const current = serverSync().data.config.shell
-
-    const nameCounts = new Map<string, number>()
-    for (const s of list) {
-      nameCounts.set(s.name, (nameCounts.get(s.name) || 0) + 1)
-    }
-
-    const options = [
-      autoOption,
-      ...list.map((s) => {
-        const ambiguousName = (nameCounts.get(s.name) || 0) > 1
-        const text = ambiguousName ? s.path : s.name
-        const label = s.acceptable ? text : `${text} (${language.t("settings.general.row.shell.terminalOnly")})`
-        return {
-          id: s.path,
-          // Prefer name over path - "bash" is much cleaner than the explicit full route even when it may change due to PATH.
-          value: ambiguousName ? s.path : s.name,
-          label,
-        }
-      }),
-    ]
-
-    if (current && !options.some((o) => o.value === current)) {
-      options.push({ id: current, value: current, label: current })
-    }
-
-    return options
-  })
-
   const languageOptions = createMemo(() =>
     language.locales.map((locale) => ({
       value: locale,
@@ -330,28 +275,6 @@ export const SettingsGeneralV2: Component<{
             />
           </SettingsRowV2>
         </Show>
-
-        <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.shell.title")}
-          description={language.t("settings.general.row.shell.description")}
-        >
-          <SelectV2
-            appearance="inline"
-            data-action="settings-shell"
-            options={shellOptions()}
-            current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
-            placement="bottom-end"
-            gutter={6}
-            value={(o) => o.id}
-            label={(o) => o.label}
-            onSelect={(option) => {
-              if (!option) return
-              if (option.value === currentShell()) return
-              void writeConfig({ shell: option.value })
-            }}
-          />
-        </SettingsRowV2>
 
         <SettingsRowV2
           minLevel="developer"

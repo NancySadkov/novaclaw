@@ -283,8 +283,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // `password` is this instance's own incoming API token; `hostname` and `cors` decide who can reach
   // it at all.
   server: "privileged",
-  // The shell every terminal and `bash` call runs through. Ruling 4 names it.
-  shell: "privileged",
   // Which SCREEN the `computer` tool drives. An execution surface in ruling 4's sense, and the
   // sharpest one we have: moving it from a sandbox display to `:0` promotes the agent from clicking
   // inside a disposable container to clicking on the operator's real desktop -- which is P6, and the

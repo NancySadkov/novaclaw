@@ -9,7 +9,6 @@ import { ToastRegion } from "@/utils/toast"
 import { languageStub } from "./language-stub"
 
 const CASES = [
-  ["shell", { shell: "bash" }],
   ["offline", { offline: true }],
   ["virtual-fs", { virtualFs: true }],
   ["telemetry", { telemetry: { enabled: false } }],

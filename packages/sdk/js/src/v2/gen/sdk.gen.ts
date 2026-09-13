@@ -4088,18 +4088,6 @@ class ApiV2Event extends NovaClawApiClient {
 
 class ApiV2Pty extends NovaClawApiClient {
   /**
-   * List available shells
-   *
-   * List shells available for human terminal sessions on this NovaClaw instance.
-   */
-  public shells<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2PtyShellsResponses, T.V2PtyShellsErrors, ThrowOnError>({
-      url: "/api/pty/shells",
-      ...options,
-    })
-  }
-
-  /**
    * List PTY sessions
    *
    * List PTY sessions for a location, including exited sessions retained until removal.

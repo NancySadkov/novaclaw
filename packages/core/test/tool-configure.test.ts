@@ -227,7 +227,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "watcher",
     ])
 
-    // The execution surfaces ruling 4 names by hand (`shell`, `mcp`), the prompt-text surfaces its
+    // The execution surfaces ruling 4 names by hand (`mcp`, `commands`), the prompt-text surfaces its
     // fourth test names (`persona`, `adhoc_tools`, `introspection`), and the ones only reading the
     // code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models` (whose
     // per-model `prePrompt` is prepended to the system context).
@@ -263,7 +263,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "quality",
       "references",
       "server",
-      "shell",
       "skills",
       "telemetry",
       // Which pre-action policies are switched off. PRIVILEGED because switching one off is the only
@@ -429,13 +428,13 @@ describe("ruling 4: an operational write proceeds, a consequential one asks, a p
     const asserted: Asserted[] = []
     return withTool(recording(asserted), ({ registry, settings }) =>
       Effect.gen(function* () {
-        const result = yield* call(registry, { op: "set", config: { shell: "pwsh" } })
+        const result = yield* call(registry, { op: "set", config: { username: "Nova Operator" } })
         expect(result.type).toBe("text")
 
         expect(asserted).toHaveLength(1)
         expect(asserted[0]!.action).toBe("configure_privileged")
-        expect(asserted[0]!.resources).toEqual(["shell"])
-        expect((yield* settings.all()).shell).toBe("pwsh")
+        expect(asserted[0]!.resources).toEqual(["username"])
+        expect((yield* settings.all()).username).toBe("Nova Operator")
       }),
     )
   })
@@ -447,13 +446,13 @@ describe("ruling 4: an operational write proceeds, a consequential one asks, a p
         // One key of each tier in a single call. Two cards, never one merged card and never three.
         const result = yield* call(registry, {
           op: "set",
-          config: { tool_output: { max_bytes: 1024 }, model: "spark/qwen", shell: "bash" },
+          config: { tool_output: { max_bytes: 1024 }, model: "spark/qwen", username: "Nova Operator" },
         })
         expect(result.type).toBe("text")
 
         expect(asserted.map((entry) => entry.action)).toEqual(["configure", "configure_privileged"])
         expect(asserted[0]!.resources).toEqual(["model"])
-        expect(asserted[1]!.resources).toEqual(["shell"])
+        expect(asserted[1]!.resources).toEqual(["username"])
         // The operational key appears on NEITHER card — it is not "asked about quietly", it is not
         // asked about.
         for (const entry of asserted) expect(entry.resources).not.toContain("tool_output")
@@ -464,7 +463,7 @@ describe("ruling 4: an operational write proceeds, a consequential one asks, a p
         // All three landed, from one transaction.
         const all = yield* settings.all()
         expect(all.tool_output).toEqual({ max_bytes: 1024 })
-        expect(all.shell).toBe("bash")
+        expect(all.username).toBe("Nova Operator")
         expect(yield* catalog.getDefault()).toBe("spark/qwen")
       }),
     )
@@ -569,16 +568,16 @@ describe("ruling 2: a write that did not happen never reports success", () => {
   it.live("a refused write changes NOTHING, and reports the kernel's own denial", () =>
     withTool(denying, ({ registry, settings }) =>
       Effect.gen(function* () {
-        yield* settings.set("shell", "before-the-refused-write")
+        yield* settings.set("username", "before-the-refused-write")
 
-        const result = yield* call(registry, { op: "set", config: { shell: "after-the-refused-write" } })
+        const result = yield* call(registry, { op: "set", config: { username: "after-the-refused-write" } })
         expect(result.type).toBe("error")
         expect(textOf(result)).toContain("Nothing was written")
         // The PRODUCT's wording, not the mock's — asserting a string the mock invented would prove
         // only that some error propagated.
         expect(textOf(result)).toContain("Permission denied by policy")
 
-        expect((yield* settings.all()).shell).toBe("before-the-refused-write")
+        expect((yield* settings.all()).username).toBe("before-the-refused-write")
       }),
     ),
   )
@@ -597,7 +596,7 @@ describe("ruling 2: a write that did not happen never reports success", () => {
         })
         expect(result.type).toBe("error")
         expect(textOf(result)).toContain('"shel"')
-        expect(textOf(result)).toContain("shell") // the message lists the keys that DO exist
+        expect(textOf(result)).toContain("snapshots") // the message lists keys that DO exist
 
         // Refused BEFORE anything ran: no card was raised and the valid half of the patch is not stored.
         expect(asserted).toEqual([])
@@ -721,16 +720,16 @@ describe("ruling 2: a write that did not happen never reports success", () => {
         // and nothing stores it. Reporting it as saved would be a repair the agent never made.
         const result = yield* call(registry, {
           op: "set",
-          config: { $schema: "https://novaclaw.app/config.json", shell: "zsh" },
+          config: { $schema: "https://novaclaw.app/config.json", username: "Nova Operator" },
         })
         expect(result.type).toBe("text")
-        expect(textOf(result)).toContain("Saved to this instance's configuration: shell")
+        expect(textOf(result)).toContain("Saved to this instance's configuration: username")
         expect(textOf(result)).toContain("DISCARDED")
         expect(textOf(result)).toContain("$schema")
 
-        // `$schema` is operational, `shell` is privileged, so exactly one card was raised.
+        // `$schema` is operational, `username` is privileged, so exactly one card was raised.
         expect(asserted.map((entry) => entry.action)).toEqual(["configure_privileged"])
-        expect((yield* settings.all()).shell).toBe("zsh")
+        expect((yield* settings.all()).username).toBe("Nova Operator")
       }),
     )
   })
@@ -745,7 +744,7 @@ describe("read: no consent card, and no credentials", () => {
       Effect.gen(function* () {
         const survey = yield* call(registry, { op: "read" })
         expect(survey.type).toBe("text")
-        expect(textOf(survey)).toContain("shell [privileged]")
+        expect(textOf(survey)).toContain("username [privileged]")
         expect(textOf(survey)).toContain("tool_output [operational]")
         expect(textOf(survey)).toContain("model [consequential]")
         expect(asserted).toEqual([])
@@ -909,7 +908,7 @@ describe("schema: an agent can discover what is settable", () => {
         expect(missing).toEqual([])
         expect(ConfigProjection.keys().length).toBeGreaterThan(40)
         // …with the price of the write, which is the fact a model needs before it plans a repair.
-        expect(text).toContain("shell [privileged]")
+        expect(text).toContain("username [privileged]")
         expect(text).toContain("tool_output [operational]")
         expect(text).toContain("model [consequential]")
         // It points at the next call rather than dead-ending, and separates the two verbs.
@@ -925,20 +924,20 @@ describe("schema: an agent can discover what is settable", () => {
   it.live("the survey describes the SCHEMA and never the stored values", () =>
     withTool(recording([]), ({ registry, settings }) =>
       Effect.gen(function* () {
-        yield* settings.set("shell", "a-value-only-this-instance-has")
+        yield* settings.set("username", "a-value-only-this-instance-has")
         yield* settings.set("server", { port: 4096, password: "hunter2" })
 
-        for (const input of [{ op: "schema" }, { op: "schema", keys: ["shell", "server"], depth: 2 }]) {
+        for (const input of [{ op: "schema" }, { op: "schema", keys: ["username", "server"], depth: 2 }]) {
           const text = textOf(yield* call(registry, input))
           // ⚠️ PRESENCE CONTROL: `read` over the same store DOES print the non-secret value, so the
           // two absences below are a property of `schema` rather than of an empty store.
-          expect(textOf(yield* call(registry, { op: "read", keys: ["shell"] }))).toContain(
+          expect(textOf(yield* call(registry, { op: "read", keys: ["username"] }))).toContain(
             "a-value-only-this-instance-has",
           )
           expect(text).not.toContain("a-value-only-this-instance-has")
           expect(text).not.toContain("hunter2")
           // …and it did describe the key it was asked about, so the absences are not an empty reply.
-          expect(text).toContain("shell")
+          expect(text).toContain("username")
         }
       }),
     ),
@@ -989,7 +988,7 @@ describe("schema: an agent can discover what is settable", () => {
           // The survey line, not a key rendering: a header promising fields over zero lines would be
           // a report that describes itself falsely.
           expect(text).toContain("configuration schema")
-          expect(text).toContain("shell [privileged]")
+          expect(text).toContain("username [privileged]")
         }
       }),
     ),
@@ -1155,8 +1154,8 @@ describe("redactSecrets", () => {
       providers: { token: { name: "A provider called token" } },
     })
     // …and a plain document passes through untouched, so the walk is not silently replacing values.
-    expect(ConfigureTool.redactSecrets({ shell: "bash", tool_output: { max_lines: 5 } })).toEqual({
-      shell: "bash",
+    expect(ConfigureTool.redactSecrets({ snapshots: false, tool_output: { max_lines: 5 } })).toEqual({
+      snapshots: false,
       tool_output: { max_lines: 5 },
     })
   })
@@ -1165,15 +1164,15 @@ describe("redactSecrets", () => {
 describe("formatWrite", () => {
   test("separates what was stored from what was accepted and discarded", () => {
     const message = ConfigureTool.formatWrite({
-      requested: ["$schema", "shell"],
-      consumed: new Set(["shell"]),
+      requested: ["$schema", "snapshots"],
+      consumed: new Set(["snapshots"]),
     })
-    expect(message).toContain("Saved to this instance's configuration: shell")
+    expect(message).toContain("Saved to this instance's configuration: snapshots")
     expect(message).toContain("DISCARDED")
     expect(message).toContain("$schema")
     // NEGATIVE CONTROL: with nothing discarded the line is absent, so its presence above is a
     // report of the router's answer rather than boilerplate printed either way.
-    expect(ConfigureTool.formatWrite({ requested: ["shell"], consumed: new Set(["shell"]) })).not.toContain("DISCARDED")
+    expect(ConfigureTool.formatWrite({ requested: ["snapshots"], consumed: new Set(["snapshots"]) })).not.toContain("DISCARDED")
     // And a write that stored nothing says so instead of claiming a save.
     expect(ConfigureTool.formatWrite({ requested: ["$schema"], consumed: new Set() })).toContain("Nothing was stored")
   })

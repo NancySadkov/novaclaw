@@ -2207,6 +2207,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.finish.shells.restart": {
+    level: "info",
+    message: "steered back to running background shell jobs",
+    attributes: { "session.id": "correlate", "session.shells.running": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.drive.goal.unavailable": {
     level: "warn",
     message: "durable self-drive goal unavailable",

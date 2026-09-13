@@ -7,7 +7,7 @@ import { SETTINGS_KEYS, settingsInfoFromStore } from "./settings-config-seed"
 // B5 — per-key fallback in `settingsInfoFromStore`.
 //
 // The defect this file pins: the store snapshot used to be decoded as ONE document, so a single
-// bad row silently discarded ALL of SETTINGS_KEYS — reverting `permissions`, `offline`, `shell`,
+// bad row silently discarded ALL of SETTINGS_KEYS — reverting `permissions`, `offline`,
 // `persona`, `mcp` and the telemetry choice to compiled defaults together, with nothing logged.
 // Losing `permissions` that way is a LOOSENING, which is what makes this a safety item.
 
@@ -26,7 +26,6 @@ const wholeDocumentDecode = (values: Record<string, unknown>) =>
  * table cannot silently drift out of sync with SETTINGS_KEYS.
  */
 const VALID: Record<string, unknown> = {
-  shell: "bash",
   model_order: ["spark-holo/holo3.1"],
   expertise: "normal",
   virtualFs: false,
@@ -159,7 +158,7 @@ describe("settingsInfoFromStore — per-key fallback (B5)", () => {
     for (const key of SETTINGS_KEYS) if (key !== "mcp") expect(present(info, key)).toBe(true)
     expect(info?.offline).toBe(true)
     expect(info?.telemetry?.enabled).toBe(false)
-    expect(info?.shell).toBe("bash")
+    expect(info?.snapshots).toBe(false)
 
     // ...and the user is told exactly which key was lost, from where, and why.
     expect(skipped.map((entry) => entry.key)).toEqual(["mcp"])

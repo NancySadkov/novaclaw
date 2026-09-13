@@ -56,9 +56,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
   }),
-  shell: Schema.String.pipe(Schema.optional).annotate({
-    description: "Default shell to use for terminal and shell tool execution",
-  }),
   model: Schema.String.pipe(Schema.optional).annotate({
     description: "Default model to use when no session or agent model is selected",
   }),

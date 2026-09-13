@@ -4264,7 +4264,6 @@ export type ConfigV2ModelEntry = {
 
 export type ConfigInfo = {
   $schema?: string
-  shell?: string
   model?: string
   model_order?: Array<string>
   default_agent?: string
@@ -17775,39 +17774,6 @@ export type V2EventSubscribeResponses = {
 }
 
 export type V2EventSubscribeResponse = V2EventSubscribeResponses[keyof V2EventSubscribeResponses]
-
-export type V2PtyShellsData = {
-  body?: never
-  path?: never
-  query?: never
-  url: "/api/pty/shells"
-}
-
-export type V2PtyShellsErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2PtyShellsError = V2PtyShellsErrors[keyof V2PtyShellsErrors]
-
-export type V2PtyShellsResponses = {
-  /**
-   * Success
-   */
-  200: Array<{
-    path: string
-    name: string
-    acceptable: boolean
-  }>
-}
-
-export type V2PtyShellsResponse = V2PtyShellsResponses[keyof V2PtyShellsResponses]
 
 export type V2PtyListData = {
   body?: never

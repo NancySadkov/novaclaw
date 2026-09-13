@@ -2,7 +2,6 @@ import { Pty } from "@novaclaw/core/pty"
 import { PtyProtocol } from "@novaclaw/core/pty/protocol"
 import { Ticket } from "@novaclaw/core/ticket"
 import { Location } from "@novaclaw/core/location"
-import { Shell } from "@novaclaw/core/shell"
 import { Deferred, Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -34,12 +33,6 @@ export const PtyHandler = handlerLayer(
       const cors = yield* CorsConfig
 
       return handlers
-        .handle(
-          "pty.shells",
-          Effect.fn(function* () {
-            return yield* Effect.promise(() => Shell.list())
-          }),
-        )
         .handle(
           "pty.list",
           Effect.fn(function* () {

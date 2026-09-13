@@ -40,9 +40,8 @@ export const NUDGE =
   "(active for future sessions). If the scan finds nothing, re-call it passing explicit commands. Then continue your task."
 
 /**
- * Syntax family of the shell the provisioned commands will RUN in — `Shell.agentShellIsPosix()`
- * at the call site, NOT `process.platform`: the agent shell is Git Bash on Windows whenever one
- * is found, and cmd.exe only as the documented fallback. It decides `./gradlew` vs `gradlew.bat`.
+ * Syntax family of the supplied shell the provisioned commands will RUN in. Production supplies a
+ * POSIX shell on every platform; the `cmd` arm remains an injectable pure-test input for scanners.
  */
 export type ShellFamily = "posix" | "cmd"
 
@@ -51,7 +50,7 @@ export interface ScanInput {
   readonly files: readonly string[]
   /** Reads a top-level file's text; undefined when missing/unreadable. */
   readonly read: (name: string) => string | undefined
-  /** Defaults to "posix" — the agent shell is bash wherever one exists. */
+  /** Defaults to "posix" — NovaClaw supplies the agent shell. */
   readonly shell?: ShellFamily
 }
 

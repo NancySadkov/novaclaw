@@ -33,7 +33,6 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  * wins — mergeDeep replaced arrays). Its allow-list twin `enabled_providers` was retired 2026-09-03.
  */
 export const SETTINGS_KEYS = [
-  "shell",
   // Presentation order for the instance model catalog. A whole-value list: drag-reordering writes
   // one authoritative arrangement, while readers ignore vanished refs and append new models.
   "model_order",
@@ -140,7 +139,7 @@ const PERMISSIONS_BACKSTOP = { action: "*", resource: "*", effect: "ask" } as co
  *
  * PER-KEY, like `decodeText` below — and for the same reason, only worse on this path. A whole-
  * document decode meant ONE bad row silently discarded all of `SETTINGS_KEYS` at once, reverting
- * `permissions`, `offline`, `shell`, `persona`, `mcp` and the telemetry choice to compiled defaults
+ * `permissions`, `offline`, `persona`, `mcp` and the telemetry choice to compiled defaults
  * together, with nothing logged. So: whole-document fast path (the overwhelmingly common all-valid
  * snapshot, byte-for-byte the old behaviour), then a salvage that keeps every key which decodes on
  * its own and NAMES the rest in `skipped`.

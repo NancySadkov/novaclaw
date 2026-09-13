@@ -95,7 +95,7 @@ describe("PATCH /config refuses an unknown top-level key", () => {
         // `serverSync().updateConfig` — and therefore every Settings toggle and the Import button —
         // goes to `global.config.update`, not the instance route. A guard on only one of the two
         // would leave the product's own write path silently dropping keys.
-        const res = yield* request(GlobalPaths.config, json({ shell: "bash", totally_unknown_key: 1 }))
+        const res = yield* request(GlobalPaths.config, json({ snapshots: false, totally_unknown_key: 1 }))
         const body: Record<string, unknown> = JSON.parse(yield* res.text)
 
         expect(res.status).toBe(400)
@@ -137,9 +137,9 @@ describe("PATCH /config refuses an unknown top-level key", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
 
-        // `shell` is declared and takes a string. A number is a payload-schema rejection, handled by
+        // `snapshots` is declared and takes a boolean. A number is a payload-schema rejection, handled by
         // `ExperimentalSchemaErrorMiddleware` — a completely different arm from the guard above.
-        const res = yield* requestInDirectory("/config", test.directory, json({ shell: 42 }))
+        const res = yield* requestInDirectory("/config", test.directory, json({ snapshots: 42 }))
         const body: Record<string, unknown> = JSON.parse(yield* res.text)
 
         expect(res.status).toBe(400)
@@ -248,16 +248,16 @@ describe("the guard actually bites (negative control)", () => {
   test("the payload schema STILL ignores excess — the guard is what rejects, not the decode", () => {
     // The measurement the whole fix rests on (2026-07-29). If this ever stops holding, the guard has
     // become dead code and the tests above would pass for the wrong reason.
-    const decoded = Schema.decodeUnknownSync(ConfigV2.Info)({ shell: "bash", totally_unknown_key: 1 })
-    expect(Object.keys(decoded)).toEqual(["shell"])
+    const decoded = Schema.decodeUnknownSync(ConfigV2.Info)({ snapshots: false, totally_unknown_key: 1 })
+    expect(Object.keys(decoded)).toEqual(["snapshots"])
   })
 
   test("the predicate names the offender and stays silent on everything legitimate", () => {
     // The HTTP tests assert an EMPTY offender list in the happy cases, which alone cannot show a
     // non-empty one is reachable, and a 400 in the sad case, which alone cannot show a valid patch
     // is untouched. Exercise the predicate directly in both directions.
-    expect(unknownConfigKeys({ shell: "bash", provider_presets: {} })).toEqual([])
-    expect(unknownConfigKeys({ shell: "bash", provider_preset: {} })).toEqual(["provider_preset"])
+    expect(unknownConfigKeys({ snapshots: false, provider_presets: {} })).toEqual([])
+    expect(unknownConfigKeys({ snapshots: false, provider_preset: {} })).toEqual(["provider_preset"])
     expect(unknownConfigKeys({ alpha: 1, beta: 2 }).sort()).toEqual(["alpha", "beta"])
     // `$schema` is declared, so the guard is silent about it — the round trip is protected by the
     // schema, not by a special case that could rot.

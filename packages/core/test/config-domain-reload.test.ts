@@ -178,11 +178,11 @@ describe("the reload guard is per-key, and a failed reload is described honestly
           }),
         )
 
-      // `shell` is a settings key that routes through the same transaction as `agents` does. A
+      // `tool_output` is a settings key that routes through the same transaction as `agents` does. A
       // reload fired on "something was written" rather than on the key would show up here — and for
       // `references` that is not merely wasteful, it is a git fetch per remote alias on every
       // unrelated preference save. That is the bug the per-key guard exists to avoid.
-      yield* ConfigStoreWrite.apply(decodeInfo({ shell: "/bin/churn-probe" }))
+      yield* ConfigStoreWrite.apply(decodeInfo({ tool_output: { max_lines: 17 } }))
       expect(seen).toEqual([])
 
       yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [PROBE]: { description: "d" } } }))

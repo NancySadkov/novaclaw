@@ -41,6 +41,8 @@ export interface SpawnPlan {
   /** …or run the command string through this shell binary (the raw path — the runtime's own shell
    *  handling, which is the only thing that gets `cmd.exe /d /s /c` right). */
   readonly shell?: string
+  /** Host-gate lifecycle wrapper for a raw shell command. */
+  readonly command?: string
   readonly env?: Record<string, string>
   /** `false` REPLACES the parent environment (no inheritance); `true` merges over it. */
   readonly inherit?: boolean
@@ -98,7 +100,7 @@ function runOnce(
       child =
         plan.file !== undefined
           ? spawn(plan.file, [...(plan.args ?? [])], base)
-          : spawn(input.command, [], { ...base, shell: plan.shell ?? defaultShell() })
+          : spawn(plan.command ?? input.command, [], { ...base, shell: plan.shell ?? defaultShell() })
     } catch (e) {
       finish({ exitCode: undefined, output: messageOf(e), timedOut: false })
       return

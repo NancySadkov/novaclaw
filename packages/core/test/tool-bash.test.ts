@@ -17,6 +17,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { AppProcess } from "@novaclaw/core/process"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { Shell } from "@novaclaw/core/shell"
 import { BashTool } from "@novaclaw/core/tool/bash"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
@@ -254,7 +255,7 @@ describe("BashTool", () => {
           Effect.gen(function* () {
             const definitions = yield* toolDefinitions(registry)
             expect(definitions.map((tool) => tool.name)).toEqual(["bash"])
-            expect(definitions[0]?.inputSchema).not.toHaveProperty("properties.background")
+            expect(definitions[0]?.inputSchema).toHaveProperty("properties.background")
             expect(definitions[0]?.inputSchema).not.toHaveProperty("properties.description")
             expect(definitions[0]?.outputSchema).not.toHaveProperty("properties.output")
             expect(definitions[0]?.outputSchema).not.toHaveProperty("properties.command")
@@ -279,7 +280,9 @@ describe("BashTool", () => {
                 ],
               },
             })
-            expect(runs).toMatchObject([{ command: "pwd", cwd: realpathSync(tmp.path) }])
+            expect(runs).toHaveLength(1)
+            expect(runs[0]?.command).toEndWith("\npwd")
+            expect(runs[0]?.cwd).toBe(realpathSync(tmp.path))
             expect(assertions).toMatchObject([{ sessionID, action: "bash", resources: ["pwd"], save: ["pwd"] }])
           }),
         )
@@ -784,6 +787,103 @@ describe("BashTool", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+
+  it.live("starts an explicit background job without spending the soft deadline", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        hang = true
+        return withTool(tmp.path, (registry) =>
+          settleTool(registry, call({ command: "serve forever", background: true, timeout: 60_000 })),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.content[1]).toMatchObject({
+                type: "text",
+                text: expect.stringContaining("Started in the background"),
+              })
+              expect(settled.output?.structured).toMatchObject({
+                background: true,
+                running: true,
+                truncated: false,
+                job: expect.stringMatching(/^job_/),
+              })
+              expect(settled.output?.structured).not.toHaveProperty("timeout")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("treats a POSIX ampersand as supervised background work", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        hang = true
+        return withTool(tmp.path, (registry) =>
+          settleTool(registry, call({ command: "serve forever >/dev/null 2>&1 &", timeout: 60_000 })),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.structured).toMatchObject({
+                background: true,
+                running: true,
+                job: expect.stringMatching(/^job_/),
+              })
+              expect(settled.output?.structured).not.toHaveProperty("timeout")
+              expect(runs).toHaveLength(1)
+              expect(runs[0]?.command).toContain("trap __novaclaw_wait_for_owned_children EXIT")
+              expect(runs[0]?.command).toContain("serve forever >/dev/null 2>&1 &")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  if (Shell.posix(Shell.agentDefault())) {
+    it.live(
+      "keeps the real shell job alive until an ampersand child with closed pipes exits",
+      () =>
+        Effect.acquireUseRelease(
+          Effect.promise(() => tmpdir()),
+          (tmp) => {
+            reset()
+            return withTool(
+              tmp.path,
+              (registry) =>
+                Effect.gen(function* () {
+                  const startedAt = Date.now()
+                  const started = yield* settleTool(
+                    registry,
+                    call({ command: "sleep 1 >/dev/null 2>&1 &", timeout: 60_000 }, "call-ampersand-live"),
+                  )
+                  const structured = started.output?.structured as { readonly job?: unknown } | undefined
+                  const job = structured?.job
+                  expect(started.output?.structured).toMatchObject({ background: true, running: true })
+                  expect(Date.now() - startedAt).toBeLessThan(900)
+                  expect(typeof job).toBe("string")
+                  if (typeof job !== "string") throw new Error("background launch returned no job id")
+
+                  const finished = yield* settleTool(
+                    registry,
+                    call({ job, action: "wait", timeout: 3_000 }, "call-ampersand-wait"),
+                  )
+                  expect(finished.output?.structured).toMatchObject({ running: false, exit: 0 })
+                }),
+              LayerNode.compile(AppProcess.node),
+            )
+          },
+          (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+        ),
+      10_000,
+    )
+  }
 })
 
 test("keeps locked deferred parity TODOs visible", async () => {
@@ -795,7 +895,6 @@ test("keeps locked deferred parity TODOs visible", async () => {
     // a pinned TODO must name what is still wanted, never a module that no longer exists.
     "Reusable command-prefix approvals — approve `git commit` once, not each full command string.",
     "Replace token-based command-argument external-directory advisories with parser-based detection.",
-    "Restore PowerShell and cmd-specific invocation/path handling on Windows.",
     // Was "Add plugin shell.env environment augmentation once V2 plugin hooks exist." — the V1
     // `shell.env` hook is deleted (nothing outside `packages/plugin/src/example.ts` ever implemented
     // it) and re-adding a per-tool env hook would violate ruling 6. The remaining want is env
@@ -806,8 +905,6 @@ test("keeps locked deferred parity TODOs visible", async () => {
     "Compose spawn environment in the ONE host-execution gate (`core/host-exec.ts`, ruling 6) so\n" +
       "// bash, ptys and every other spawn share one composed env — this must NOT come back as a per-tool hook.",
     "Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.",
-    "Persist background job status and define restart recovery before exposing remote observation.",
-    "Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.",
     "Revisit binary output handling if stdout/stderr decoding is text-only.",
     "Stream full shell output into managed storage while retaining only a bounded in-memory preview.",
   ]) {

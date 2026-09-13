@@ -243,7 +243,6 @@ it.instance("serves runtime settings from the settings store", () =>
     yield* withStores(
       Effect.gen(function* () {
         const settings = yield* SettingsConfigStore.Service
-        yield* settings.set("shell", "store-shell")
         yield* settings.set("username", "store-user")
         yield* settings.set("snapshots", true)
       }),
@@ -251,12 +250,11 @@ it.instance("serves runtime settings from the settings store", () =>
     yield* Config.use.invalidate()
 
     const config = yield* Config.use.get()
-    expect(config.shell).toBe("store-shell")
     expect(config.username).toBe("store-user")
     expect(config.snapshots).toBe(true)
 
     const globalView = yield* Config.use.getGlobal()
-    expect(globalView.shell).toBe("store-shell")
+    expect(globalView.snapshots).toBe(true)
   }),
 )
 
@@ -294,7 +292,6 @@ it.instance("routes every updateConfig key into the stores — instructions + pr
         Schema.decodeUnknownSync(ConfigV2.Info)({
           instructions: ["docs/rules.md"],
           disabled_providers: ["openai"],
-          shell: "routed-shell",
         }),
       ),
     )
@@ -305,7 +302,6 @@ it.instance("routes every updateConfig key into the stores — instructions + pr
     const config = yield* Config.use.get()
     expect(config.instructions).toEqual(["docs/rules.md"])
     expect(config.disabled_providers).toEqual(["openai"])
-    expect(config.shell).toBe("routed-shell")
   }),
 )
 
@@ -751,7 +747,7 @@ describe("NOVACLAW_DISABLE_PROJECT_CONFIG", () => {
       yield* withStores(
         Effect.gen(function* () {
           const settings = yield* SettingsConfigStore.Service
-          yield* settings.set("shell", "flag-shell")
+          yield* settings.set("snapshots", false)
         }),
       )
       yield* Config.use.invalidate()
@@ -760,7 +756,7 @@ describe("NOVACLAW_DISABLE_PROJECT_CONFIG", () => {
         "true",
         Effect.gen(function* () {
           const config = yield* Config.use.get()
-          expect(config.shell).toBe("flag-shell")
+          expect(config.snapshots).toBe(false)
           expect(config.username).toBeDefined()
         }),
       )

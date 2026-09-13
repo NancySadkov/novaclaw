@@ -5,7 +5,7 @@ export * as HarnessConfig from "./harness-config"
 //
 // The harness derivations below used to sit at `Layer.effect` construction scope in
 // `runner/llm.ts`: one `config.entries()` per location boot, and persona / expertise / quality /
-// shell / strict / affective / introspection / compaction resolved from it once and closed over for
+// strict / affective / introspection / compaction resolved from it once and closed over for
 // the life of the location. Making `Config.entries()` read THROUGH to the settings store (app
 // `3757af64a`) changed nothing for any of them — a frozen array projected from a live store is
 // still a frozen array, and a user who edited persona or Strict mode in Settings still needed a
@@ -44,21 +44,18 @@ import { Quality } from "./quality"
 export const EXPERTISE_HINT =
   "The user is not a technical expert. Explain what you do in plain language, avoid unexplained jargon, and prefer simple summaries over technical detail."
 
-/** The fallback used when the operator has configured no `shell`. */
-export const DEFAULT_WINDOWS_SHELL = "cmd.exe"
-export const DEFAULT_POSIX_SHELL = "/bin/sh"
+/** Pure-test fallback; production always supplies `Shell.agentDefault()`. */
+export const DEFAULT_AGENT_SHELL = "bash"
 
 /**
  * Environment facts the derivation needs but must not read for itself — passing them in is what
- * keeps `derive` pure, and what lets the shell fallback be asserted for both platforms from one box.
+ * keeps `derive` pure, and what lets the supplied shell be asserted from one box.
  */
 export interface Options {
   /** The shared-notes folder (B6). Absent ⇒ the persona carries no notes line. */
   readonly notesDir?: string
-  /** `process.platform`. */
-  readonly platform?: string
-  /** `process.env.COMSPEC`. */
-  readonly comspec?: string
+  /** NovaClaw's supplied agent shell. The runner passes `Shell.agentDefault()`; tests may pin it. */
+  readonly shell?: string
 }
 
 /** Everything the V2 drain loop derives from instance settings for one turn. */
@@ -75,13 +72,7 @@ export interface Derived {
   readonly chatPersona: string | undefined
   readonly expertiseHint: string | undefined
   readonly quality: Quality.Config
-  /**
-   * The operator's configured shell VERBATIM — `undefined` means "not configured", which is what the
-   * ruling-6 host-execution gate must be told (it decides its own default, and inventing one here
-   * would silently answer a question `HostExec` is entitled to answer differently).
-   */
-  readonly configuredShell: string | undefined
-  /** …and the same value with the platform fallback applied, for spawning quality checks. */
+  /** The supplied shell used for spawning quality checks. */
   readonly shell: string
   readonly strict: Config.Info["strict"]
   readonly affective: Config.Info["affective"]
@@ -93,11 +84,6 @@ export interface Derived {
   readonly providerStallTimeoutMs: number
 }
 
-const fallbackShell = (options: Options): string =>
-  (options.platform ?? process.platform) === "win32"
-    ? (options.comspec ?? process.env["COMSPEC"] ?? DEFAULT_WINDOWS_SHELL)
-    : DEFAULT_POSIX_SHELL
-
 /**
  * Fold one `Config.entries()` read into the turn's harness configuration.
  *
@@ -106,7 +92,6 @@ const fallbackShell = (options: Options): string =>
  * every caller and every type stays identical.
  */
 export const derive = (entries: readonly Config.Entry[], options: Options = {}): Derived => {
-  const configuredShell = Config.latest(entries, "shell")
   return {
     entries,
     persona: Persona.resolve(
@@ -116,8 +101,7 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     chatPersona: Persona.resolve(Config.latest(entries, "persona")),
     expertiseHint: Config.latest(entries, "expertise") === "normal" ? EXPERTISE_HINT : undefined,
     quality: Quality.resolve(Config.latest(entries, "quality")),
-    configuredShell,
-    shell: configuredShell ?? fallbackShell(options),
+    shell: options.shell ?? DEFAULT_AGENT_SHELL,
     strict: Config.latest(entries, "strict"),
     affective: Config.latest(entries, "affective"),
     introspection: Introspection.resolve(Config.latest(entries, "introspection")),

@@ -38,7 +38,7 @@ import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { PromptEstimate } from "./prompt-estimate"
 import { Token } from "../../util/token"
 
-type Harness = Pick<HarnessConfig.Derived, "configuredShell" | "context" | "quality" | "strict">
+type Harness = Pick<HarnessConfig.Derived, "context" | "quality" | "strict">
 
 export interface Dependencies {
   readonly events: EventV2.Interface
@@ -480,7 +480,6 @@ export const make = (dependencies: Dependencies) => {
       })
       // Probe once; the same answer decides the run below and plans every command inside it.
       const backend = HostExec.probe()
-      const configuredShell = harness.configuredShell
       // SAFE MODE (owner 2026-07-30): the per-session switch that restores the unattended deny
       // arm. Passed here for the same reason the shell and the offline policy are — the gate
       // decides nothing it was not told, and an unwired caller would silently get the permissive
@@ -489,7 +488,6 @@ export const make = (dependencies: Dependencies) => {
       const strictHost: HostExec.SessionHost = {
         rootType,
         hostileInput,
-        ...(configuredShell === undefined ? {} : { shell: configuredShell }),
         safeMode: stanceOf("safeMode", resolved.safeMode),
         egress: offline.egressEnv(),
         backend,

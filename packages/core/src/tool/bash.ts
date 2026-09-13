@@ -45,6 +45,10 @@ export const Input = Schema.Struct({
   timeout: PositiveInt.pipe(Schema.optional).annotate({
     description: `Soft deadline in milliseconds (default ${DEFAULT_TIMEOUT_MS}; officer maximum defaults to ${MAX_TIMEOUT_MS} and is configurable). A command that outlives it is NOT killed — it keeps running as a job and control returns to you. For \`action:"wait"\` this is how long to wait.`,
   }),
+  background: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Start the command as a background job and return immediately with its job id. Use this for services and other work that should continue while you do something else. Commands using a real POSIX & operator are recognized and supervised the same way.",
+  }),
   job: Schema.String.pipe(Schema.optional).annotate({
     description: "A job id previously returned by this tool (a command that outlived its soft deadline)",
   }),
@@ -57,6 +61,7 @@ const StructuredOutput = Schema.Struct({
   exit: Schema.Number.pipe(Schema.optional),
   truncated: Schema.Boolean,
   timeout: Schema.Boolean.pipe(Schema.optional),
+  background: Schema.Boolean.pipe(Schema.optional),
   job: Schema.String.pipe(Schema.optional),
   running: Schema.Boolean.pipe(Schema.optional),
 })
@@ -76,7 +81,7 @@ const modelOutput = (output: Output) => {
   const prefix = `${warnings.trimStart()}${warnings ? "\n\n" : ""}`
   if (output.running && output.job)
     return (
-      `${prefix}Still running after the soft deadline — the command was NOT killed; it continues as job "${output.job}". ` +
+      `${prefix}${output.background ? "Started in the background" : "Still running after the soft deadline — the command was NOT killed"}; it continues as job "${output.job}". ` +
       `The output above is a partial capture. Do not conclude from it. ` +
       `Continue other work, or check on it: {"job": "${output.job}"} for an instant status, ` +
       `{"job": "${output.job}", "action": "wait", "timeout": 30000} to block up to 30 s for completion, ` +
@@ -102,13 +107,9 @@ const jobSnapshotOutput = (job: BashJobs.Snapshot): Output => ({
  */
 // TODO: Reusable command-prefix approvals — approve `git commit` once, not each full command string.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
-// TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
 // TODO: Compose spawn environment in the ONE host-execution gate (`core/host-exec.ts`, ruling 6) so
 // bash, ptys and every other spawn share one composed env — this must NOT come back as a per-tool hook.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
-// TODO: Persist background job status and define restart recovery before exposing remote observation.
-// TODO: Re-add model-facing background launch only with owner-bound get/wait/cancel tools and completion delivery.
-// TODO: Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.
 // TODO: Revisit binary output handling if stdout/stderr decoding is text-only.
 // TODO: Stream full shell output into managed storage while retaining only a bounded in-memory preview.
 
@@ -198,7 +199,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           sideEffect: "external-unknown",
-          description: `Execute one shell command string with the host user's filesystem, process, and network authority. Prefer the dedicated \`read\`/\`edit\`/\`glob\`/\`grep\` tools over cat/sed/find/grep — they page and report limits safely. Output is capped at ${Math.round(MAX_CAPTURE_BYTES / 1024 / 1024)} MB: when the result says it was truncated, do not conclude from the missing span — re-run narrower (grep/head/tail). The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. The timeout is a SOFT deadline in milliseconds (default: ${DEFAULT_TIMEOUT_MS}; officer maximum defaults to ${MAX_TIMEOUT_MS} and is configurable): a command that outlives it is NOT killed — it keeps running as a job and you get its id plus output-so-far; poll with {"job": "<id>"}, block with {"job": "<id>", "action": "wait", "timeout": 30000}, or terminate with {"job": "<id>", "action": "stop"}. Never re-run a command that yielded to a job — poll the job instead. Uses the configured shell when set; otherwise bash when available (the bundled shell or system bash), falling back to /bin/sh on POSIX and COMSPEC or cmd.exe on Windows.`,
+          description: `Execute one shell command string with the host user's filesystem, process, and network authority. Prefer the dedicated \`read\`/\`edit\`/\`glob\`/\`grep\` tools over cat/sed/find/grep — they page and report limits safely. Output is capped at ${Math.round(MAX_CAPTURE_BYTES / 1024 / 1024)} MB: when the result says it was truncated, do not conclude from the missing span — re-run narrower (grep/head/tail). The active Location is the default working directory. Relative workdir values resolve from that Location. External workdir values require external_directory approval; best-effort command-argument path warnings are advisory only. Set \`background:true\` to start a service or other concurrent command and get its job id immediately. A command using a real POSIX \`&\` operator is recognized and supervised as background work too. Otherwise timeout is a SOFT deadline in milliseconds (default: ${DEFAULT_TIMEOUT_MS}; officer maximum defaults to ${MAX_TIMEOUT_MS} and is configurable): a command that outlives it is NOT killed — it keeps running as a job and you get its id plus output-so-far. Poll with {"job": "<id>"}, block with {"job": "<id>", "action": "wait", "timeout": 30000}, or terminate with {"job": "<id>", "action": "stop"}. Never re-run a command that yielded to a job — poll the job instead. NovaClaw selects its supplied POSIX shell and keeps the owning shell alive until all child processes settle.`,
           input: Input,
           output: Output,
           structured: StructuredOutput,
@@ -206,6 +207,7 @@ export const layer = Layer.effectDiscard(
             truncated: output.truncated,
             ...(output.exit === undefined ? {} : { exit: output.exit }),
             ...(output.timeout === undefined ? {} : { timeout: output.timeout }),
+            ...(output.background === undefined ? {} : { background: output.background }),
             ...(output.job === undefined ? {} : { job: output.job }),
             ...(output.running === undefined ? {} : { running: output.running }),
           }),
@@ -350,12 +352,7 @@ export const layer = Layer.effectDiscard(
 
               // Resolve the executing shell BEFORE interpreting any path authored for it. On
               // Windows a POSIX shell's `/c/...` is absolute even though `node:path` says it is not.
-              const entries = yield* config.entries()
-              const mergedConfig = Object.assign(
-                {},
-                ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
-              ) as { shell?: string }
-              const shell = HostExec.resolveShell(mergedConfig.shell)
+              const shell = HostExec.resolveShell()
 
               const external = target.externalDirectory
               if (external)
@@ -386,6 +383,8 @@ export const layer = Layer.effectDiscard(
               )
 
               const approval = ShellApproval.analyze(commandText, shell)
+              const background =
+                input.background === true || (approval.status === "parsed" && approval.background === true)
               const approvalSegments = approval.status === "parsed" ? approval.segments : [commandText]
               for (const segment of approvalSegments)
                 yield* permission.assert({
@@ -452,9 +451,8 @@ export const layer = Layer.effectDiscard(
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
 
-              // B11: agents default to bash (bundled PortableGit or system git-bash on Windows;
-              // system bash on POSIX); `config.shell` wins when the operator set one. Resolved above
-              // the approval reduction so parsing and execution use the exact same shell.
+              // Agents use NovaClaw's supplied POSIX shell. Resolved above the approval reduction so
+              // parsing and execution use the exact same shell.
               // `bash -c` is not a login shell: prepend the bash's own userland to PATH
               // so git + coreutils resolve even on a machine with neither installed
               // (no-op for non-MSYS shells — bundleOverlay returns undefined for them).
@@ -532,7 +530,11 @@ export const layer = Layer.effectDiscard(
               const command =
                 spawnPlan.via === "exec"
                   ? ChildProcess.make(spawnPlan.file, [...spawnPlan.args], { ...baseSpawn, ...envOptions })
-                  : ChildProcess.make(commandText, [], { ...baseSpawn, shell: spawnPlan.shell, ...envOptions })
+                  : ChildProcess.make(spawnPlan.command, [], {
+                      ...baseSpawn,
+                      shell: spawnPlan.shell,
+                      ...envOptions,
+                    })
               // 1H: run as a JOB and wait up to the soft deadline. A command that
               // outlives it is NOT killed — the model gets the job id + partial
               // output and decides: keep working, wait, or stop.
@@ -553,7 +555,10 @@ export const layer = Layer.effectDiscard(
                 maxOutputBytes: MAX_CAPTURE_BYTES,
               })
               context.commandLaunch?.succeeded()
-              const job = yield* bashJobs.wait(id, context.sessionID, timeout).pipe(
+              const job = yield* (background
+                ? bashJobs.status(id, context.sessionID)
+                : bashJobs.wait(id, context.sessionID, timeout)
+              ).pipe(
                 // start→wait on our own fresh id cannot miss; normalize the typed error away.
                 Effect.catchTag("BashJobs.NotFoundError", () => Effect.die("bash job vanished between start and wait")),
               )
@@ -561,7 +566,7 @@ export const layer = Layer.effectDiscard(
                 return {
                   output: job.output,
                   truncated: job.truncated,
-                  timeout: true,
+                  ...(background ? { background: true } : { timeout: true }),
                   job: job.id,
                   running: true,
                   ...(warnings.length ? { warnings } : {}),

@@ -98,12 +98,6 @@ const builtIns = Layer.effectDiscard(
           // for a folder line to be missing from.
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          // The agent shell is bash almost everywhere, and the tool descriptions + the shipped recipes
-          // all assume it. When the fallback fires (Windows without the provisioned bundle or a system
-          // git-bash) the model MUST be told, or it writes POSIX at cmd.exe and the task dies of
-          // unrelated-looking errors — measured 2026-07-26: the same π prompt scored 1/100 digits under
-          // a silent cmd.exe and 100/100 under bash.
-          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           // 🔴 The image toolkit, NAMED (owner, 2026-08-23). A binary the model does not know about
           // is a binary that never gets used — the "built, tested and never called" shape. One line,
           // and it is the line that turns 32 MB on disk into a capability: without it a colleague

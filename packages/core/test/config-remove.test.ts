@@ -298,9 +298,9 @@ describe("ConfigStoreWrite.remove — settings keys and default refs", () => {
   it.effect("removes a whole settings key", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service
-      yield* settings.set("shell", "bash")
-      yield* ConfigStoreWrite.remove([["shell"]])
-      expect((yield* settings.all()).shell).toBeUndefined()
+      yield* settings.set("snapshots", false)
+      yield* ConfigStoreWrite.remove([["snapshots"]])
+      expect((yield* settings.all()).snapshots).toBeUndefined()
     }),
   )
 

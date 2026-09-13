@@ -6,6 +6,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { Pty } from "@novaclaw/core/pty"
+import { Shell } from "@novaclaw/core/shell"
 import type { PtyID } from "@novaclaw/core/pty/schema"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { location } from "../fixture/location"
@@ -239,35 +240,15 @@ describe("pty", () => {
   )
 })
 
-const configuredShell = process.platform === "win32" ? undefined : Bun.which("bash")
-const configuredIt = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Pty.node, EventV2.node]), [
-    [
-      Config.node,
-      Layer.mock(Config.Service)({
-        entries: () =>
-          Effect.succeed(
-            configuredShell
-              ? [new Config.Document({ type: "document", info: new Config.Info({ shell: configuredShell }) })]
-              : [],
-          ),
-      }),
-    ],
-    [Location.node, locationLayer],
-  ]),
-)
-const configuredTest = process.platform === "win32" ? configuredIt.live.skip : configuredIt.live
-
 describe("pty create defaults", () => {
-  configuredTest("defaults command, login args, and cwd from config and location", () =>
+  ptyTest("defaults command, login args, and cwd from the supplied shell and location", () =>
     Effect.gen(function* () {
-      if (!configuredShell) return
       const pty = yield* Pty.Service
       const info = yield* Effect.acquireRelease(pty.create({ title: "configured" }), (created) =>
         pty.remove(created.id).pipe(Effect.ignore),
       )
-      expect(info.command).toBe(configuredShell)
-      expect(info.args).toEqual(["-l"])
+      expect(info.command).toBe(Shell.preferred())
+      expect(info.args).toEqual(Shell.login(Shell.preferred()) ? ["-l"] : [])
       expect(info.cwd).toBe("/tmp")
       expect(info.title).toBe("configured")
     }),

@@ -120,8 +120,8 @@ describe("RESTART_REQUIRED_KEYS — the keys this instance admits it cannot appl
     // An empty ledger makes every assertion above vacuous — `restartRequired` returning `[]` proves
     // nothing when there is nothing to return. Drive the same pure function over a synthetic ledger
     // so the mechanism, not just today's contents, is what passed.
-    const synthetic: ReadonlyMap<string, string> = new Map([["shell", "a synthetic reason"]])
-    expect(ConfigStoreWrite.restartRequired(new Set(["shell", "username"]), synthetic)).toEqual(["shell"])
+    const synthetic: ReadonlyMap<string, string> = new Map([["future_key", "a synthetic reason"]])
+    expect(ConfigStoreWrite.restartRequired(new Set(["future_key", "username"]), synthetic)).toEqual(["future_key"])
     expect(ConfigStoreWrite.restartRequired(new Set(["username"]), synthetic)).toEqual([])
   })
 })

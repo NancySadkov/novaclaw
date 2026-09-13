@@ -48,7 +48,7 @@ describe("config seeding ignores the launch directory", () => {
         await fs.writeFile(path.join(configDir, "novaclaw.jsonc"), JSON.stringify({ username: "from-config-dir" }))
         await fs.writeFile(
           path.join(cwdDir, "novaclaw.jsonc"),
-          JSON.stringify({ username: "from-cwd", shell: "/bin/definitely-not-this" }),
+          JSON.stringify({ username: "from-cwd", snapshots: false }),
         )
       })
 

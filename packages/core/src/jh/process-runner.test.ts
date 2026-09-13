@@ -121,4 +121,20 @@ describe("JhProcessRunner.plannedRunner", () => {
     expect(res.exitCode).toBe(0)
     expect(res.output).toContain("gated")
   }, 25_000)
+
+  test("the gate keeps a closed-pipe ampersand child owned until it exits", async () => {
+    const runner = JhProcessRunner.plannedRunner({
+      plan: (input) =>
+        HostExec.spawnPlan({
+          shape: { kind: "shell-command", shell: HostExec.resolveShell(), command: input.command },
+          cwd: input.cwd,
+          worktree: input.cwd,
+          consent: "none",
+        }),
+    })
+    const startedAt = Date.now()
+    const res = await run(runner, { command: "sleep 1 >/dev/null 2>&1 &", cwd, timeoutMs: 5_000 })
+    expect(res.exitCode).toBe(0)
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(900)
+  }, 10_000)
 })

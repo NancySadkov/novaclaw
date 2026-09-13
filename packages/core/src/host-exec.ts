@@ -15,7 +15,7 @@ export * as HostExec from "./host-exec"
  * The module is PURE: no Effect services, no I/O beyond `AgentJail.probe()` (itself cached), so it
  * is unit-testable on any platform and can be called from a plain callback inside the jh runner's
  * plan seam. Everything a caller knows and the gate cannot — the chain-root type, the messenger
- * trust of a turn, the configured shell, the live offline policy, the peer tokens — is INPUT.
+ * trust of a turn, the supplied shell, the live offline policy, the peer tokens — is INPUT.
  * (`chainHasHostileBinding` returns an Effect, but it holds no service either: both lookups are
  * handed in, so the walk is the same code for the `bash` tool and for the Strict runner.)
  *
@@ -75,7 +75,29 @@ export type Shape =
 /** Bash pipelines report the first failing stage. Without this, `python failing.py | tail` exits
  * zero and the harness records a failed verification as green — observed in Geryon's live run. */
 export function shellProgram(shell: string, command: string): string {
-  return Shell.name(shell) === "bash" ? `set -o pipefail\n${command}` : command
+  const owned = ownedShellCommand(shell, command)
+  return Shell.name(shell) === "bash" ? `set -o pipefail\n${owned}` : owned
+}
+
+/**
+ * Keep the owning shell alive until every child it launched has settled. A bare POSIX `&` must not
+ * turn an owned command into an orphan: the Bash job remains live, observable and stoppable while
+ * that child runs. The EXIT trap also covers an explicit `exit` in the authored command; stopping
+ * the job still interrupts the scoped process and routes through the canonical tree-kill.
+ *
+ * This is deliberately execution wrapping, not source rewriting. Permission and path analysis see
+ * the exact command the model authored, while the host boundary adds lifecycle ownership.
+ */
+export function ownedShellCommand(shell: string, command: string): string {
+  if (!Shell.posix(shell)) return command
+  return `__novaclaw_wait_for_owned_children() {
+  __novaclaw_owned_exit_status=$?
+  trap - EXIT
+  wait
+  exit "$__novaclaw_owned_exit_status"
+}
+trap __novaclaw_wait_for_owned_children EXIT
+${command}`
 }
 
 /**
@@ -214,8 +236,6 @@ export interface SessionHost {
   /** `Hostility`, not `boolean` — a runner that could not read the messenger database hands over
    *  `"unknown"`, and the gate refuses rather than guessing. */
   readonly hostileInput?: Hostility
-  /** `config.shell` when the operator set one — the divergence this gate closes. */
-  readonly shell?: string
   /** `Offline.egressEnv()` from the shared service. */
   readonly egress?: Record<string, string> | undefined
   readonly backend?: AgentJail.BackendInfo
@@ -227,11 +247,9 @@ export type Decision = AgentJail.BashDecision
 
 // ── the gate ────────────────────────────────────────────────────────────────────────────────────
 
-/** `config.shell` when set, else the agent default (bundled PortableGit / system bash / COMSPEC).
- *  ONE resolution for the whole product: a Strict run and a normal turn must not speak different
- *  shells on the same host. */
-export function resolveShell(configured?: string): string {
-  return configured ?? Shell.agentDefault()
+/** ONE supplied agent shell for the whole product. */
+export function resolveShell(): string {
+  return Shell.agentDefault()
 }
 
 /** The MSYS-bash userland PATH prefix (`bash -c` is not a login shell), or undefined for any other
@@ -593,6 +611,8 @@ export interface SpawnPlan {
   readonly args?: readonly string[]
   /** …or run the command string through this shell binary (the raw path). */
   readonly shell?: string
+  /** Lifecycle-wrapped command for the raw shell path. */
+  readonly command?: string
   readonly env?: Record<string, string>
   /** `false` REPLACES the parent environment; `true` merges over it. */
   readonly inherit?: boolean
@@ -602,5 +622,5 @@ export function spawnPlan(request: Request): SpawnPlan {
   const p = plan(request)
   if (p.via === "none") return { denied: p.message }
   if (p.via === "exec") return { file: p.file, args: p.args, env: p.env.vars, inherit: p.env.inherit }
-  return { shell: p.shell, env: p.env.vars, inherit: p.env.inherit }
+  return { shell: p.shell, command: p.command, env: p.env.vars, inherit: p.env.inherit }
 }

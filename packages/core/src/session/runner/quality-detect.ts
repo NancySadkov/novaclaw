@@ -3,7 +3,6 @@ export * as QualityDetect from "./quality-detect"
 import { Effect } from "effect"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Shell } from "../../shell"
 import { QualityProvision } from "./quality-provision"
 
 /**
@@ -39,9 +38,7 @@ export const detect = (directory: string): Effect.Effect<QualityProvision.Propos
     return QualityProvision.scan({
       files: entries,
       read: (file) => contents.get(file),
-      // The family of the shell these commands will actually run in — Git Bash on Windows whenever
-      // one is found, cmd.exe only as the documented fallback. It decides `./gradlew` vs
-      // `gradlew.bat`; guessing from `process.platform` would get the common Windows case backwards.
-      shell: Shell.agentShellIsPosix() ? "posix" : "cmd",
+      // NovaClaw supplies one POSIX agent shell on every platform.
+      shell: "posix",
     })
   })

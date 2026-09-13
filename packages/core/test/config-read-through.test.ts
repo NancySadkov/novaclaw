@@ -49,13 +49,13 @@ describe("Config.entries reads through to the store", () => {
             // after the write would pass even with the value frozen at construction.
             const config = yield* Config.Service
 
-            const before = Config.latest(yield* config.entries(), "shell")
-            expect(before).not.toBe("/bin/read-through-probe")
+            const before = Config.latest(yield* config.entries(), "snapshots")
+            expect(before).not.toBe(false)
 
-            yield* store.set("shell", "/bin/read-through-probe")
+            yield* store.set("snapshots", false)
 
-            const after = Config.latest(yield* config.entries(), "shell")
-            expect(after).toBe("/bin/read-through-probe")
+            const after = Config.latest(yield* config.entries(), "snapshots")
+            expect(after).toBe(false)
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),
@@ -69,12 +69,12 @@ describe("Config.entries reads through to the store", () => {
           const store = yield* SettingsConfigStore.Service
           yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            yield* store.set("shell", "/bin/transient")
-            expect(Config.latest(yield* config.entries(), "shell")).toBe("/bin/transient")
+            yield* store.set("snapshots", false)
+            expect(Config.latest(yield* config.entries(), "snapshots")).toBe(false)
 
             // A cache keyed on "have I read yet" would pass the write test and fail this one.
-            yield* store.remove("shell")
-            expect(Config.latest(yield* config.entries(), "shell")).not.toBe("/bin/transient")
+            yield* store.remove("snapshots")
+            expect(Config.latest(yield* config.entries(), "snapshots")).not.toBe(false)
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),

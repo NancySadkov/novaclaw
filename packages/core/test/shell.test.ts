@@ -8,14 +8,12 @@ const withShell = async (shell: string | undefined, fn: () => void | Promise<voi
   const prev = process.env.SHELL
   if (shell === undefined) delete process.env.SHELL
   else process.env.SHELL = shell
-  Shell.acceptable.reset()
   Shell.preferred.reset()
   try {
     await fn()
   } finally {
     if (prev === undefined) delete process.env.SHELL
     else process.env.SHELL = prev
-    Shell.acceptable.reset()
     Shell.preferred.reset()
   }
 }
@@ -40,18 +38,11 @@ describe("shell", () => {
     expect(Shell.posix("C:/tools/pwsh.exe")).toBe(false)
   })
 
-  test("falls back when configured shell cannot be resolved", async () => {
+  test("falls back when the environment shell cannot be resolved", async () => {
     await withShell(undefined, async () => {
       const preferred = Shell.preferred()
-      const acceptable = Shell.acceptable()
-      expect(Shell.preferred("novaclaw-missing-shell")).toBe(preferred)
-      expect(Shell.acceptable("novaclaw-missing-shell")).toBe(acceptable)
+      await withShell("novaclaw-missing-shell", () => expect(Shell.preferred()).toBe(preferred))
     })
-  })
-
-  test("falls back for terminal-only acceptable shells", () => {
-    expect(Shell.name(Shell.acceptable("fish"))).not.toBe("fish")
-    expect(Shell.name(Shell.acceptable("nu"))).not.toBe("nu")
   })
 
   test("builds command args per shell family", () => {
@@ -64,12 +55,6 @@ describe("shell", () => {
   })
 
   if (process.platform === "win32") {
-    test("rejects blacklisted shells case-insensitively", async () => {
-      await withShell("NU.EXE", async () => {
-        expect(Shell.name(Shell.acceptable())).not.toBe("nu")
-      })
-    })
-
     test("normalizes Git Bash shell paths from env", async () => {
       // preferred() resolves + stats the shell, so use the REAL installed git bash (skip if
       // none) rather than a hardcoded path: set its cygwin form as SHELL, expect it normalized.
@@ -86,7 +71,6 @@ describe("shell", () => {
       const bash = Shell.gitbash()
       if (!bash) return
       await withShell("/usr/bin/bash", async () => {
-        expect(Shell.acceptable()).toBe(bash)
         expect(Shell.preferred()).toBe(bash)
       })
     })
@@ -94,10 +78,7 @@ describe("shell", () => {
     test("resolves bare bash to Git Bash before PATH", async () => {
       const bash = Shell.gitbash()
       if (!bash) return
-      expect(Shell.acceptable("bash")).toBe(bash)
-      expect(Shell.preferred("bash")).toBe(bash)
       await withShell("bash", async () => {
-        expect(Shell.acceptable()).toBe(bash)
         expect(Shell.preferred()).toBe(bash)
       })
     })
@@ -123,14 +104,8 @@ describe("shell", () => {
       expect(Shell.name(bash!)).toBe("bash")
     })
 
-    test("an agent shell that is not POSIX-compatible is reported, never silent", () => {
-      const isPosix = Shell.agentShellIsPosix()
-      expect(isPosix).toBe(Shell.posix(Shell.agentDefault()))
-      // The note exists exactly when the fallback fired — that is what the system prompt appends so
-      // the model stops writing POSIX at a shell that cannot run it.
-      const note = Shell.shellFallbackNote()
-      if (isPosix) expect(note).toBeUndefined()
-      else expect(note).toContain(Shell.agentDefault())
+    test("the supplied agent shell is always POSIX-compatible", () => {
+      expect(Shell.posix(Shell.agentDefault())).toBe(true)
     })
   }
 })

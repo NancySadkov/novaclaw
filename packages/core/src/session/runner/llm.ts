@@ -133,6 +133,8 @@ import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
 import { UnfinishedSet } from "./unfinished-set"
 import { UnjoinedChildren } from "./unjoined-children"
+import { UnfinishedShells } from "./unfinished-shells"
+import { BashJobs } from "../../tool/bash-jobs"
 import { SessionTitle } from "../title"
 import { SessionMapRetention } from "./session-map-retention"
 import { SessionDriveState } from "./drive-state"
@@ -144,6 +146,7 @@ import { ToolOutputSummary } from "./tool-output-summary"
 import { Nudge } from "../../nudge"
 import { NudgeService } from "../../nudge-service"
 import { ResourcePressureContext } from "../../resource-pressure-context"
+import { Shell } from "../../shell"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -413,8 +416,7 @@ export const layer = Layer.effect(
     const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* () {
       const derived = HarnessConfig.derive(yield* config.entries(), {
         notesDir: path.join(Global.Path.data, "notes"),
-        platform: process.platform,
-        ...(process.env.COMSPEC === undefined ? {} : { comspec: process.env.COMSPEC }),
+        shell: Shell.agentDefault(),
       })
       // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
       // turn could hand the compactor a different snapshot than the system prompt was composed from.
@@ -4096,6 +4098,19 @@ export const layer = Layer.effect(
           // leaves the session open without inventing a verdict.
           const exitRequest = FinishAudit.exitRequest(context)
           if (exitRequest !== undefined) {
+            // A background command is child work. Refuse completion mechanically before asking the
+            // semantic auditor: a reviewer can judge the prose complete while an owned process is
+            // still mutating the world. The next turn receives exact join/stop calls for every job.
+            const runningShells = yield* BashJobs.listRunning(db, [input.sessionID])
+            if (runningShells.length > 0) {
+              yield* Log.event("session.finish.shells.restart", {
+                "session.id": input.sessionID,
+                "session.shells.running": runningShells.length,
+              })
+              yield* SessionInput.steer(db, events, input.sessionID, UnfinishedShells.exitNudge(runningShells))
+              needsContinuation = true
+              continue
+            }
             const audit = yield* auditExit(
               input.sessionID,
               result.auditModel,

@@ -7,16 +7,9 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/un
 import { ForbiddenError, PtyNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
-export const PtyShell = Schema.Struct({
-  path: Schema.String,
-  name: Schema.String,
-  acceptable: Schema.Boolean,
-})
-
 const PTY_CONNECT_PATH = /^\/api\/pty\/[^/]+\/connect$/
 
 export const PtyPaths = {
-  shells: "/api/pty/shells",
   list: "/api/pty",
   create: "/api/pty",
   removeAll: "/api/pty",
@@ -52,17 +45,6 @@ export function hasPtyConnectTicketURL(url: URL) {
 }
 
 export const PtyGroup = HttpApiGroup.make("server.pty")
-  .add(
-    HttpApiEndpoint.get("pty.shells", PtyPaths.shells, {
-      success: Schema.Array(PtyShell),
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.pty.shells",
-        summary: "List available shells",
-        description: "List shells available for human terminal sessions on this NovaClaw instance.",
-      }),
-    ),
-  )
   .add(
     HttpApiEndpoint.get("pty.list", PtyPaths.list, {
       query: LocationQuery,

@@ -82,16 +82,16 @@ describe("ConfigStoreWrite.apply", () => {
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
           quality: { enabled: false },
-          shell: "bash",
+          snapshots: false,
           model_order: ["spark/m2", "spark/m1"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["model_order", "quality", "shell"])
+      expect([...consumed].sort()).toEqual(["model_order", "quality", "snapshots"])
 
       const all = yield* settings.all()
       // Deep merge: the patch flips `enabled`, the stored `checks` survives.
       expect(all.quality).toEqual({ enabled: false, checks: { build: "make" } })
-      expect(all.shell).toBe("bash")
+      expect(all.snapshots).toBe(false)
       // `SettingsConfigStore` reads the runtime_setting SQLite table. This is the persistence gate:
       // ordering is instance data, not a browser-only preference that another client contradicts.
       expect(all.model_order).toEqual(["spark/m2", "spark/m1"])
@@ -263,7 +263,7 @@ describe("ConfigStoreWrite.apply", () => {
       const skills = yield* SkillConfigStore.Service
       const settings = yield* SettingsConfigStore.Service
       yield* skills.addSource("/survives/skills")
-      yield* settings.set("shell", "before-the-failed-write")
+      yield* settings.set("snapshots", false)
       yield* settings.set("log", { level: "info" })
       yield* settings.all() // hydrate the synchronous log projection from the committed baseline
       const skillsBefore = yield* skills.sources()
@@ -279,7 +279,7 @@ describe("ConfigStoreWrite.apply", () => {
 
       const exit = yield* ConfigStoreWrite.apply(
         decodeInfo({
-          shell: "after-the-failed-write",
+          snapshots: true,
           log: { level: "error" },
           skills: ["/replacement/skills"],
         }),
@@ -289,7 +289,7 @@ describe("ConfigStoreWrite.apply", () => {
       // Nothing the failed patch touched survives — not the settings write, and (the sharp edge)
       // not the skills DELETE that ran before the failure.
       expect(yield* skills.sources()).toEqual(skillsBefore)
-      expect((yield* settings.all()).shell).toBe("before-the-failed-write")
+      expect((yield* settings.all()).snapshots).toBe(false)
       expect(LogSettings.level()).toBe("info")
     }),
   )
@@ -330,7 +330,7 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
       // Populate every store the way real usage does.
       yield* ConfigStoreWrite.apply(
         decodeInfo({
-          shell: "pwsh",
+          snapshots: false,
           strict: { enabled: true, attempts: 2 },
           model: "spark/m1",
           default_agent: "build",

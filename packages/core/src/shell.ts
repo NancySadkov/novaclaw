@@ -1,7 +1,6 @@
 export * as Shell from "./shell"
 
 import path from "path"
-import { readFile } from "fs/promises"
 import { readFileSync, statSync } from "fs"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
@@ -22,22 +21,16 @@ import { which } from "./util/which"
 export { SIGKILL_TIMEOUT_MS, descendants, descendantsOf, killTree, killTreeSync } from "./util/kill-tree"
 export type { KillTreeOptions, KillTreeTarget } from "./util/kill-tree"
 
-const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
+const META: Record<string, { login?: boolean; posix?: boolean; ps?: boolean }> = {
   bash: { login: true, posix: true },
   dash: { login: true, posix: true },
-  fish: { deny: true, login: true },
+  fish: { login: true },
   ksh: { login: true, posix: true },
-  nu: { deny: true },
+  nu: {},
   powershell: { ps: true },
   pwsh: { ps: true },
   sh: { login: true, posix: true },
   zsh: { login: true, posix: true },
-}
-
-export type Item = {
-  path: string
-  name: string
-  acceptable: boolean
 }
 
 function stat(file: string) {
@@ -57,10 +50,6 @@ function full(file: string) {
 
 function meta(file: string) {
   return META[name(file)]
-}
-
-function ok(file: string) {
-  return meta(file)?.deny !== true
 }
 
 function rooted(file: string) {
@@ -86,14 +75,8 @@ function win() {
   )
 }
 
-async function unix() {
-  const text = await readFile("/etc/shells", "utf8").catch(() => "")
-  if (text) return Array.from(new Set(text.split("\n").filter((line) => line.trim() && !line.startsWith("#"))))
-  return ["/bin/bash", "/bin/zsh", "/bin/sh"]
-}
-
-function select(file: string | undefined, opts?: { acceptable?: boolean }) {
-  if (file && (!opts?.acceptable || ok(file))) {
+function select(file: string | undefined) {
+  if (file) {
     const shell = resolve(file)
     if (shell) return shell
   }
@@ -247,16 +230,6 @@ export function ps(file: string) {
   return meta(file)?.ps === true
 }
 
-function info(file: string): Item {
-  const item = full(file)
-  const n = name(item)
-  return {
-    path: item,
-    name: resolve(n) ? n : item,
-    acceptable: ok(item),
-  }
-}
-
 export function args(file: string, command: string, cwd: string) {
   const n = name(file)
   if (n === "nu" || n === "fish") return ["-c", command]
@@ -294,81 +267,34 @@ export function args(file: string, command: string, cwd: string) {
 }
 
 let defaultPreferred: string | undefined
-let defaultAcceptable: string | undefined
 let defaultAgent: string | undefined
 
 /**
  * B11 — the AGENT default shell: bash wherever one exists (the bundled PortableGit
  * first on Windows, then system git-bash), because small models are trained
- * overwhelmingly on bash. Platform fallbacks (COMSPEC / /bin/sh) apply only when no
- * bash is found. The HUMAN terminal default (`preferred`) is deliberately unchanged.
+ * overwhelmingly on bash. Packaged Windows builds carry Git Bash and w64devkit; `bash` is the
+ * honest final spelling during development if those assets are damaged or absent. The HUMAN
+ * terminal default (`preferred`) is deliberately unchanged.
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
     // Git Bash owns path translation and filesystem semantics on Windows. w64devkit remains the
     // compiler payload at the end of PATH; using its BusyBox sh as the shell made native tools and
     // `ls` disagree about the very same cwd in a live delegated build.
-    if (process.platform === "win32") return gitbash() ?? w64devkitShell() ?? process.env.COMSPEC ?? "cmd.exe"
+    if (process.platform === "win32") return gitbash() ?? w64devkitShell() ?? "bash"
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent
 }
 agentDefault.reset = () => {
   defaultAgent = undefined
-  warnedFallback = false
 }
 
-let warnedFallback = false
-/**
- * TRUE when the agent shell accepts POSIX syntax. The embedded w64devkit shell is BusyBox ash,
- * deliberately not Bash, but it supports the command language agents need. A silent cmd fallback
- * is the expensive failure: the
- * model writes POSIX, cmd.exe answers, and the task dies of unrelated-looking errors. Callers that
- * hand the shell to a model surface this instead of guessing (`shellFallbackNote`), and the first
- * call also logs it once for the server operator.
- */
-export function agentShellIsPosix(): boolean {
-  return posix(agentDefault())
-}
-
-/** One line for the agent's system prompt when its shell is not POSIX-compatible, else undefined. */
-export function shellFallbackNote(): string | undefined {
-  if (agentShellIsPosix()) return undefined
-  const shell = agentDefault()
-  if (!warnedFallback) {
-    warnedFallback = true
-    console.warn(
-      `[shell] no POSIX shell found — agent commands will run in ${shell}. Repair the bundled shell ` +
-        `(Settings → General → Shell) or set NOVACLAW_GIT_BASH_PATH; POSIX syntax will fail until then.`,
-    )
-  }
-  return (
-    `⚠️ Shell: this host has NO POSIX shell — your \`bash\` tool runs \`${shell}\`. POSIX syntax (\`ls\`, ` +
-    `pipes, \`2>/dev/null\`, \`VAR=x cmd\`, forward slashes) will FAIL here; use that shell's own ` +
-    `syntax, and prefer the native read/edit/write/glob/grep tools over shell commands.`
-  )
-}
-
-export function preferred(configShell?: string) {
-  if (configShell) return select(configShell)
+export function preferred() {
   defaultPreferred ??=
     process.platform === "win32" ? (w64devkitShell() ?? select(process.env.SHELL)) : select(process.env.SHELL)
   return defaultPreferred
 }
 preferred.reset = () => {
   defaultPreferred = undefined
-}
-
-export function acceptable(configShell?: string) {
-  if (configShell) return select(configShell, { acceptable: true })
-  defaultAcceptable ??= select(process.env.SHELL, { acceptable: true })
-  return defaultAcceptable
-}
-acceptable.reset = () => {
-  defaultAcceptable = undefined
-}
-
-export async function list(): Promise<Item[]> {
-  const shells = process.platform === "win32" ? win() : await unix()
-  return shells.filter((s) => resolve(s)).map(info)
 }

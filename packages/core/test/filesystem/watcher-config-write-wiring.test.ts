@@ -150,11 +150,11 @@ describe("a config write reaches the watcher", () => {
           yield* Watcher.reload()
           const before = fake.calls.length
 
-          // `shell` is a settings key like `watcher` is, and it routes through the same transaction.
+          // `snapshots` is a settings key like `watcher` is, and it routes through the same transaction.
           // The guard is `consumed.has("watcher")`, so this must cost nothing — a watch torn down and
           // rebuilt on every unrelated preference save would be the stop-the-world teardown B7 is
           // removing, wearing a smaller footprint.
-          yield* ConfigStoreWrite.apply(decodeInfo({ shell: "/bin/wiring-probe" }))
+          yield* ConfigStoreWrite.apply(decodeInfo({ snapshots: false }))
 
           expect(fake.calls.length, "an unrelated config key must not re-subscribe").toBe(before)
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))

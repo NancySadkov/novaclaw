@@ -102,7 +102,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           "</env>",
         ].join("\n"),
       )
@@ -126,7 +125,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           "</env>",
         ].join("\n"),
       )
@@ -198,7 +196,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
           "</env>",
           "",
           `Instructions from: ${instructionFile}\nBe precise.`,

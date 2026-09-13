@@ -150,7 +150,7 @@ describe("both Settings panels render one release-notes status", () => {
 //   • Render both panels in happy-dom under a stubbed `desktop()` and diff the DOM. Strictly stronger —
 //     it would see gates this resolver cannot express (`&&`, ternaries, a gate inside `SettingsRowV2`).
 //     It needs the whole provider tree (settings, platform, language, expertise, permission, dialog,
-//     server-sync, server-sdk, an SDK client for `pty.shells()`) stood up twice against two different
+//     server-sync, server-sdk, and their SDK clients) stood up twice against two different
 //     component libraries. That fixture is larger than both panels and fails for reasons unrelated to
 //     the invariant; it is the right shape once a panel-level render harness exists, and there is none.
 //   • Assert a literal string like `"<Show when={desktop()}>\n          <UpdatesSection />"`. Passes and

@@ -167,7 +167,7 @@ describe("SettingsConfigStore", () => {
         // Pre-detachment footgun that used to discard the ENTIRE document.
         await fs.writeFile(
           path.join(globalDir, "novaclaw.jsonc"),
-          JSON.stringify({ username: "seed-user", snapshots: false, shell: "bash", mcp: "not-a-valid-mcp-config" }),
+          JSON.stringify({ username: "seed-user", snapshots: false, mcp: "not-a-valid-mcp-config" }),
         )
       })
 
@@ -177,7 +177,6 @@ describe("SettingsConfigStore", () => {
       const all = yield* store.all()
       expect(all.username).toBe("seed-user")
       expect(all.snapshots).toBe(false)
-      expect(all.shell).toBe("bash")
       // The bad key did NOT land.
       expect(all.mcp).toBeUndefined()
       // ...and the user is told exactly which key was dropped, and from where (the notice payload).
@@ -197,12 +196,12 @@ describe("SettingsConfigStore", () => {
       expect(skipped).toEqual([]) // an all-valid snapshot takes the whole-document fast path
       expect(info?.username).toBe("store-user")
       const entries = [
-        new Config.Document({ type: "document", info: new Config.Info({ username: "doc-user", shell: "bash" }) }),
+        new Config.Document({ type: "document", info: new Config.Info({ username: "doc-user", offline: true }) }),
         new Config.Document({ type: "document", info: info! }),
       ]
       expect(Config.latest(entries, "username")).toBe("store-user") // store beats the doc
       expect(Config.latest(entries, "snapshots")).toBe(false)
-      expect(Config.latest(entries, "shell")).toBe("bash") // a key absent from the store falls through
+      expect(Config.latest(entries, "offline")).toBe(true) // a key absent from the store falls through
     }),
   )
 })
@@ -264,7 +263,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
         // button are the only jsonc consumers).
         await fs.writeFile(
           path.join(projectDir, "novaclaw.jsonc"),
-          JSON.stringify({ username: "file-user", shell: "file-shell" }),
+          JSON.stringify({ username: "file-user", snapshots: false }),
         )
         await fs.writeFile(path.join(globalDir, "novaclaw.json"), JSON.stringify({ username: "global-file-user" }))
       })
@@ -279,7 +278,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
         expect(documents[0]?.path).toBeUndefined()
 
         expect(Config.latest(entries, "username")).toBe("store-user") // the decoy files never load
-        expect(Config.latest(entries, "shell")).toBeUndefined()
+        expect(Config.latest(entries, "offline")).toBeUndefined()
         // The concat keys ride the same synthetic document (8c moved them with the file cut).
         expect(documents.flatMap((doc) => doc.info.permissions ?? [])).toEqual([
           { action: "bash", resource: "*", effect: "ask" },

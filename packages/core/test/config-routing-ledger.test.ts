@@ -215,12 +215,12 @@ describe("the router refuses an unrouted key at runtime", () => {
   it.effect("faults the whole write BY NAME, and nothing it already wrote survives", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service
-      yield* settings.set("shell", "before-the-refused-write")
+      yield* settings.set("snapshots", false)
 
       // A test cannot add a field to `Config.Info`, so it builds the exact shape the check reads:
       // a decoded patch carrying one extra own key that no arm consumes — which is what a newly
       // declared field with no router arm looks like to `unroutedKeys`.
-      const patch = decodeInfo({ shell: "after-the-refused-write" })
+      const patch = decodeInfo({ snapshots: true })
       ;(patch as unknown as Record<string, unknown>).future_key = { some: "value" }
 
       const exit = yield* ConfigStoreWrite.apply(patch).pipe(Effect.exit)
@@ -232,7 +232,7 @@ describe("the router refuses an unrouted key at runtime", () => {
       // …and it is a refusal, not a partial apply. The settings arm runs BEFORE the check, so an
       // un-transacted guard would leave this write committed under a reported failure — ruling 2's
       // problem in the mirror.
-      expect((yield* settings.all()).shell).toBe("before-the-refused-write")
+      expect((yield* settings.all()).snapshots).toBe(false)
     }),
   )
 
@@ -243,10 +243,10 @@ describe("the router refuses an unrouted key at runtime", () => {
       // hand-authored one normally opens with `$schema`. Refusing it would break importing the
       // archive the product tells people to import.
       const consumed = yield* ConfigStoreWrite.apply(
-        decodeInfo({ $schema: "https://novaclaw.app/config.json", shell: "pwsh" }),
+        decodeInfo({ $schema: "https://novaclaw.app/config.json", snapshots: false }),
       )
-      expect([...consumed]).toEqual(["shell"])
-      expect((yield* settings.all()).shell).toBe("pwsh")
+      expect([...consumed]).toEqual(["snapshots"])
+      expect((yield* settings.all()).snapshots).toBe(false)
     }),
   )
 
@@ -276,17 +276,17 @@ describe("the guard actually bites (negative control)", () => {
     // The runtime tests above assert an EMPTY offender list in the happy cases, which alone cannot
     // show that a non-empty one is reachable. This exercises the predicate directly.
     const patch = {
-      shell: "bash",
+      snapshots: false,
       $schema: "https://novaclaw.app/config.json",
       future_key: { some: "value" },
       never_set: undefined,
     } as unknown as Config.Info
 
-    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["shell"]))).toEqual(["future_key"])
+    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["snapshots"]))).toEqual(["future_key"])
     // A key the router did consume is not an offender…
-    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["shell", "future_key"]))).toEqual([])
+    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["snapshots", "future_key"]))).toEqual([])
     // …and neither is an absent optional field, which is an own key on a class instance.
-    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["shell", "future_key"]))).not.toContain("never_set")
+    expect(ConfigStoreWrite.unroutedKeys(patch, new Set(["snapshots", "future_key"]))).not.toContain("never_set")
     // The ledgered key is excused on its own, with nothing consumed at all.
     expect(ConfigStoreWrite.unroutedKeys(decodeInfo({ $schema: "x" }), new Set())).toEqual([])
   })

@@ -36,11 +36,19 @@ const base = {
 }
 
 describe("HostExec.argvOf — the gate is not `-c`-shaped", () => {
+  test("an owned shell waits for background children even when the authored command exits", () => {
+    const program = HostExec.ownedShellCommand("/bin/bash", "serve &\nexit 7")
+    expect(program).toContain("trap __novaclaw_wait_for_owned_children EXIT")
+    expect(program).toContain("wait")
+    expect(program).toContain('exit "$__novaclaw_owned_exit_status"')
+    expect(program).toEndWith("serve &\nexit 7")
+  })
+
   test("a bash command enables pipefail before the model's program", () => {
     expect(HostExec.argvOf({ kind: "shell-command", shell: "/bin/bash", command: "echo hi" })).toEqual([
       "/bin/bash",
       "-c",
-      "set -o pipefail\necho hi",
+      HostExec.shellProgram("/bin/bash", "echo hi"),
     ])
   })
   test("a runtime eval becomes `<runtime> -e <program>` — the shape wrapArgs could never express", () => {
@@ -283,7 +291,7 @@ describe("HostExec.plan", () => {
     expect(p.via).toBe("shell")
     if (p.via !== "shell") throw new Error("unreachable")
     expect(p.shell).toBe("/bin/bash")
-    expect(p.command).toBe("set -o pipefail\nmake")
+    expect(p.command).toBe(HostExec.shellProgram("/bin/bash", "make"))
     expect(p.env.inherit).toBe(true)
   })
 
@@ -303,7 +311,7 @@ describe("HostExec.plan", () => {
     expect(p.args.slice(p.args.indexOf("--") + 1)).toEqual([
       "/bin/bash",
       "-c",
-      "set -o pipefail\nrm -rf /",
+      HostExec.shellProgram("/bin/bash", "rm -rf /"),
     ])
     expect(p.args.slice(p.args.indexOf("--bind"), p.args.indexOf("--bind") + 3)).toEqual([
       "--bind",
@@ -395,6 +403,7 @@ describe("HostExec.spawnPlan — the jh-runner wire shape", () => {
       HostExec.spawnPlan({ ...base, shape: shellShape(), consent: "none", rootType: "interactive", backend: NONE }),
     )
     expect(p.shell).toBe("/bin/bash")
+    expect(p.command).toBe(HostExec.shellProgram("/bin/bash", "make"))
     expect(p.file).toBeUndefined()
     expect(p.inherit).toBe(false)
     expect(p.denied).toBeUndefined()
@@ -407,7 +416,11 @@ describe("HostExec.spawnPlan — the jh-runner wire shape", () => {
     expect(p.file).toBe("bwrap")
     expect(p.shell).toBeUndefined()
     const args = p.args ?? []
-    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "set -o pipefail\nmake"])
+    expect(args.slice(args.indexOf("--") + 1)).toEqual([
+      "/bin/bash",
+      "-c",
+      HostExec.shellProgram("/bin/bash", "make"),
+    ])
   })
 
   test("a denied plan says so instead of describing a process", () => {
@@ -647,10 +660,9 @@ describe("an unanswerable trust question does not run raw", () => {
 })
 
 describe("HostExec.resolveShell", () => {
-  test("config.shell wins; otherwise the agent default (the COMSPEC divergence, closed)", () => {
-    expect(HostExec.resolveShell("/opt/homebrew/bin/fish")).toBe("/opt/homebrew/bin/fish")
-    expect(HostExec.resolveShell(undefined)).toBe(HostExec.resolveShell(undefined))
-    expect(typeof HostExec.resolveShell(undefined)).toBe("string")
+  test("the supplied agent shell is the one execution default", () => {
+    expect(HostExec.resolveShell()).toBe(HostExec.resolveShell())
+    expect(typeof HostExec.resolveShell()).toBe("string")
   })
 })
 

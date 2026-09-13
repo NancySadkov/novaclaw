@@ -507,11 +507,6 @@ export const dict = {
 
   "settings.general.row.language.title": "Мова",
   "settings.general.row.language.description": "Змінити мову інтерфейсу NovaClaw",
-  "settings.general.row.shell.title": "Командна оболонка термінала",
-  "settings.general.row.shell.description":
-    "Виберіть оболонку для термінала. Сумісні оболонки також використовуються для викликів інструментів агента.",
-  "settings.general.row.shell.autoDefault": "Авто (за замовчуванням)",
-  "settings.general.row.shell.terminalOnly": "тільки термінал",
   "settings.general.row.colorScheme.title": "Кольорова схема",
   "settings.general.row.theme.title": "Тема",
   "settings.general.row.theme.description": "Налаштуйте тему NovaClaw.",
