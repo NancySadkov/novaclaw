@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect"
 import { LLM, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { ReasoningBudget } from "./reasoning-budget"
 import { SessionScheduler } from "../scheduler"
+import type { SessionRunnerModel } from "./model"
 
 type GenerateInput<E, R> = {
   readonly model: Parameters<typeof LLM.request>[0]["model"]
@@ -15,6 +16,8 @@ type GenerateInput<E, R> = {
   readonly reasoningBudget: number
   /** Answer ceiling. Kept well above the hard stop's measured landing point. */
   readonly maxTokens: number
+  /** Every phase/retry rechecks the persisted switch immediately before subscription. */
+  readonly guard: SessionRunnerModel.DispatchGuard
 }
 
 const complete = <E, R>(input: GenerateInput<E, R>) =>
@@ -36,12 +39,14 @@ const complete = <E, R>(input: GenerateInput<E, R>) =>
           }
         : {}),
     })
+    const guardedStream = (next: ReturnType<typeof LLM.request>) =>
+      Stream.unwrap(input.guard(Effect.sync(() => input.llm.stream(next))))
     const stream =
       input.reasoningBudget <= 0
-        ? input.llm.stream(request)
+        ? guardedStream(request)
         : ReasoningBudget.stream({
             request,
-            stream: (next) => input.llm.stream(next),
+            stream: guardedStream,
             budget: input.reasoningBudget,
           })
     yield* stream.pipe(
@@ -87,21 +92,18 @@ const complete = <E, R>(input: GenerateInput<E, R>) =>
  * because the hard stop lands far under the cap. If either number moves, this is the pairing to
  * re-check.
  */
-export const generate = <E, R>(input: GenerateInput<E, R> & {
-  /** Decode-shaped utility work always enters through the device's interactive-idle tier. */
-  readonly scheduler: SessionScheduler.Interface
-  readonly maintenance: SessionScheduler.MaintenanceInput
-}) =>
+export const generate = <E, R>(
+  input: GenerateInput<E, R> & {
+    /** Decode-shaped utility work always enters through the device's interactive-idle tier. */
+    readonly scheduler: SessionScheduler.Interface
+    readonly maintenance: SessionScheduler.MaintenanceInput
+  },
+) =>
   // ⚠️ The return type is INFERRED, deliberately. Annotating it `Effect<string>` claimed the call
   // needs nothing; annotating it `unknown` made it undischargeable by any caller. What it actually
   // requires is whatever `ReasoningBudget` requires — a location's services — which the status
   // sweep discharges with `Effect.provide(located)` and the titler already has in scope.
-  SessionScheduler.runMaintenance(
-    input.scheduler,
-    input.maintenance,
-    complete(input),
-    Effect.succeed(""),
-  )
+  SessionScheduler.runMaintenance(input.scheduler, input.maintenance, complete(input), Effect.succeed(""))
 
 /**
  * A short answer that is part of the owning turn's correctness boundary.

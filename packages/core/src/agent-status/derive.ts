@@ -54,19 +54,17 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
   const scheduler = yield* SessionScheduler.Service
 
   /** The common short-answer path for lifecycle presentation labels. */
-  const short = (
-    sessionID: string,
-    input: { system: string; text: string; task: string; reasoningBudget?: number },
-  ) =>
+  const short = (sessionID: string, input: { system: string; text: string; task: string; reasoningBudget?: number }) =>
     Effect.gen(function* () {
       const session = yield* store.get(sessionID as never)
       if (!session) return undefined
       const located = locations.get(session.location)
       return yield* Effect.gen(function* () {
         const models = yield* SessionRunnerModel.Service
-        const { model, device } = yield* models.resolveWithDevice(session)
+        const { model, device, ran } = yield* models.resolveWithDevice(session)
         return yield* ShortAnswer.generate({
           model,
+          guard: SessionRunnerModel.dispatchGuard(models, ran),
           llm,
           system: input.system,
           text: input.text,

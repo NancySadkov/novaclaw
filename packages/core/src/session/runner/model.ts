@@ -290,6 +290,18 @@ export interface ScheduledDevice extends DeviceRegistry.SchedulingProfile {
   readonly key: string
 }
 
+/** A reusable last-mile switch check for helpers that may issue more than one provider request. */
+export type DispatchGuard = <A, E, R>(attempt: Effect.Effect<A, E, R>) => Effect.Effect<A, E | ModelUnavailableError, R>
+
+/** Bind the persisted switch gate to the exact catalog row a resolved route came from. */
+export const dispatchGuard = (
+  models: Pick<Interface, "guardDispatch">,
+  model: Pick<ModelV2.Info, "providerID" | "id"> | ModelV2.Ref | undefined,
+): DispatchGuard =>
+  model === undefined
+    ? (attempt) => attempt
+    : (attempt) => models.guardDispatch({ providerID: model.providerID, id: model.id }, attempt)
+
 /**
  * ONE turn's model decision: the wire route, the scheduler identity, and the catalog entry both were
  * built from.

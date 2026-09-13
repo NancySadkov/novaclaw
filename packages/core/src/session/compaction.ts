@@ -19,6 +19,7 @@ import { PromptEstimate } from "./runner/prompt-estimate"
 import { Flag } from "../flag/flag"
 import { SessionScheduler } from "./scheduler"
 import { PostfixPrompt } from "./runner/postfix-prompt"
+import type { SessionRunnerModel } from "./runner/model"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -166,6 +167,8 @@ type Input = {
   readonly contextWindowTokens?: number
   /** Admission identity for this decode-shaped maintenance pass. */
   readonly maintenance?: SessionScheduler.MaintenanceInput
+  /** Last-mile switch check; production supplies it, while isolated compactor seams may omit it. */
+  readonly guard?: SessionRunnerModel.DispatchGuard
   /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
   readonly overflowPromptTokens?: number
   /** One fixed post-compaction target derived from that rejected prompt. */
@@ -482,6 +485,7 @@ export const make = (dependencies: Dependencies) => {
     readonly sessionID: SessionSchema.ID
     readonly messageID: SessionMessage.ID
     readonly maintenance?: SessionScheduler.MaintenanceInput
+    readonly guard?: SessionRunnerModel.DispatchGuard
   }) {
     const chunks: string[] = []
     let generatedChars = 0
@@ -491,12 +495,16 @@ export const make = (dependencies: Dependencies) => {
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
     const deltaTimestamp = yield* DateTime.now
+    const guardedStream = (request: LLMRequest) => {
+      if (input.guard === undefined) return dependencies.llm.stream(request)
+      return Stream.unwrap(input.guard(Effect.sync(() => dependencies.llm.stream(request))))
+    }
     const generation = ReasoningBudget.stream({
       request: input.request,
       // The request already contains the working turn's reasoning envelope. Appending another
       // system part here would move the divergence point to token zero and defeat postfix framing.
       ...(input.preservesWorkingPrefix ? { preparedOpening: input.request } : {}),
-      stream: (request) => dependencies.llm.stream(request),
+      stream: guardedStream,
       budget: COMPACTION_REASONING_BUDGET,
       // This request is itself a postfix operation. Keep its exact instruction last; token
       // checkpoints and the hard stop still apply without the informational opening prime.
@@ -535,7 +543,10 @@ export const make = (dependencies: Dependencies) => {
         return Effect.void
       }),
       Effect.as(true),
-      Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+      Effect.catchTags({
+        "LLM.Error": () => Effect.succeed(false),
+        "SessionRunnerModel.ModelUnavailableError": () => Effect.succeed(false),
+      }),
     )
     const completed = yield* dependencies.scheduler !== undefined && input.maintenance !== undefined
       ? SessionScheduler.runMaintenance(dependencies.scheduler, input.maintenance, generation, Effect.succeed(false))
@@ -641,8 +652,7 @@ export const make = (dependencies: Dependencies) => {
       "compaction.anchor.low-confidence": triggerEstimate.confidence === "low",
       "compaction.anchor.fallback": triggerEstimate.fallback,
       // The provider-rejected size when there was one; otherwise the estimate the trigger compared.
-      "compaction.before.tokens":
-        input.overflowPromptTokens ?? PromptEstimate.withMargin(triggerEstimate),
+      "compaction.before.tokens": input.overflowPromptTokens ?? PromptEstimate.withMargin(triggerEstimate),
       "compaction.entries": input.entries.length,
     } as const
     const entries = yield* pruneCheapTier(input.entries, input.imagePatchPixels)
@@ -778,6 +788,7 @@ export const make = (dependencies: Dependencies) => {
       sessionID: input.sessionID,
       messageID,
       maintenance: input.maintenance,
+      guard: input.guard,
     })
     if (!first.completed || first.failed || !first.text.trim())
       return yield* fail("summarizer-unavailable", first.generatedChars)

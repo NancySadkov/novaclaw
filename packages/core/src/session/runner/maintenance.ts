@@ -202,7 +202,7 @@ export const layer = Layer.effect(
       if (!SessionTitle.isDefault(session.title)) return
       const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
       if (!text) return
-      const { model, device } = yield* models.resolveWithDevice(session)
+      const { model, device, ran } = yield* models.resolveWithDevice(session)
       // ⚠️ **This pass deliberately does NOT take the `UtilityCap` ladder the two extraction passes
       // and the introspection pass use, and the reason is worth keeping.** `ReasoningBudget` already
       // owns a bounded multi-phase recovery for exactly this failure: it counts reasoning tokens
@@ -224,6 +224,7 @@ export const layer = Layer.effect(
       // reasoning model). One caller could keep it as a local shape; two cannot.
       const raw = yield* ShortAnswer.generate({
         model,
+        guard: SessionRunnerModel.dispatchGuard(models, ran),
         llm,
         system: SessionTitle.SYSTEM,
         text,
@@ -287,10 +288,11 @@ export const layer = Layer.effect(
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
-      const { model, device } = yield* models.resolveWithDevice({
+      const { model, device, ran } = yield* models.resolveWithDevice({
         ...session,
         model: config.model as typeof session.model,
       })
+      const guard = SessionRunnerModel.dispatchGuard(models, ran)
       // ONE re-ask with a doubled budget when the pass spends everything and answers nothing.
       //
       // Measured 2026-08-06: a reasoning model cut off mid-think returns ZERO content chars, not a
@@ -312,24 +314,28 @@ export const layer = Layer.effect(
         yield* SessionScheduler.runMaintenance(
           scheduler,
           maintenanceInput(sessionID, "memory-extract", device),
-          llm
-            .stream(
-              LLM.request({
-                model,
-                system: [SystemPart.make(SessionExtract.SYSTEM)],
-                messages: [Message.user(exchange)],
-                tools: [],
-                generation: { maxTokens: attemptCap },
-                http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-              }),
-            )
-            .pipe(
-              Stream.runForEach((event) => {
-                if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-                else if (event.type === "finish") finish = event.reason
-                return Effect.void
-              }),
+          guard(
+            Effect.suspend(() =>
+              llm
+                .stream(
+                  LLM.request({
+                    model,
+                    system: [SystemPart.make(SessionExtract.SYSTEM)],
+                    messages: [Message.user(exchange)],
+                    tools: [],
+                    generation: { maxTokens: attemptCap },
+                    http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+                  }),
+                )
+                .pipe(
+                  Stream.runForEach((event) => {
+                    if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+                    else if (event.type === "finish") finish = event.reason
+                    return Effect.void
+                  }),
+                ),
             ),
+          ),
           Effect.void,
         )
         const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
@@ -455,24 +461,28 @@ export const layer = Layer.effect(
                 yield* SessionScheduler.runMaintenance(
                   scheduler,
                   maintenanceInput(sessionID, "memory-link", device),
-                  llm
-                    .stream(
-                      LLM.request({
-                        model,
-                        system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
-                        messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
-                        tools: [],
-                        generation: { maxTokens: attemptCap },
-                        http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-                      }),
-                    )
-                    .pipe(
-                      Stream.runForEach((event) => {
-                        if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
-                        else if (event.type === "finish") finish = event.reason
-                        return Effect.void
-                      }),
+                  guard(
+                    Effect.suspend(() =>
+                      llm
+                        .stream(
+                          LLM.request({
+                            model,
+                            system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
+                            messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
+                            tools: [],
+                            generation: { maxTokens: attemptCap },
+                            http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+                          }),
+                        )
+                        .pipe(
+                          Stream.runForEach((event) => {
+                            if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
+                            else if (event.type === "finish") finish = event.reason
+                            return Effect.void
+                          }),
+                        ),
                     ),
+                  ),
                   Effect.void,
                 )
                 const verdict = UtilityCap.decide({ finish, text: linkChunks.join(""), attempt, cap: attemptCap })

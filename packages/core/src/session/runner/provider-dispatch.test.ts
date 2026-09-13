@@ -82,10 +82,23 @@ describe("ProviderDispatch", () => {
   test("normal and every long-lived Strict dispatch consult the persisted model switch", () => {
     const ordinary = fs.readFileSync(path.join(import.meta.dir, "llm.ts"), "utf8")
     const strict = fs.readFileSync(path.join(import.meta.dir, "strict-drain.ts"), "utf8")
+    const short = fs.readFileSync(path.join(import.meta.dir, "short-answer.ts"), "utf8")
+    const compaction = fs.readFileSync(path.join(import.meta.dir, "..", "compaction.ts"), "utf8")
+    const maintenance = fs.readFileSync(path.join(import.meta.dir, "maintenance.ts"), "utf8")
 
     expect(ordinary).toContain("guardDispatch(attemptModelRef, runProviderStream)")
     expect(ordinary).toContain("retryOnReplacedModel(currentStep)")
     expect(strict.match(/attempt: guardAttempt\(attempt\)/g)?.length).toBe(2)
+    expect(short).toContain("readonly guard: SessionRunnerModel.DispatchGuard")
+    expect(short.match(/guardedStream/g)?.length).toBe(3)
+    expect(compaction).toContain("Stream.unwrap(input.guard(Effect.sync(() => dependencies.llm.stream(request))))")
+    expect(maintenance.match(/guard\(\s*Effect\.suspend/g)?.length).toBe(2)
+
+    // Each production compaction door carries the bound catalog identity. Isolated compactor unit
+    // seams may omit it; the live runner may not.
+    for (const call of ordinary.split(/\.compact(?:IfNeeded|AfterOverflow)\(\{/).slice(1))
+      expect(call.slice(0, 300)).toContain("guard:")
+    expect(ordinary.split("recoverOverflow({")[1]?.slice(0, 300)).toContain("guard:")
   })
 
   test("prepares one cache-keyed, context-packed request", () => {

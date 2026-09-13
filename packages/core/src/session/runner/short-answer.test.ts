@@ -4,11 +4,48 @@ import { LLMEvent, Model } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { make } from "../scheduler"
 import { generate, generateOnSessionLane } from "./short-answer"
+import { ModelUnavailableError } from "./model"
+import { ModelV2 } from "../../model"
+import { ProviderV2 } from "../../provider"
 
 const model = Model.make({ id: "utility", provider: "test", route: OpenAIChat.route })
-const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 
 describe("ShortAnswer interactive-idle admission", () => {
+  test("a switched-off model is refused before a utility stream can start", async () => {
+    const scheduler = make()
+    let requests = 0
+    const blocked = await Effect.runPromise(
+      Effect.flip(
+        generate({
+          model,
+          guard: () =>
+            Effect.fail(
+              new ModelUnavailableError({
+                providerID: ProviderV2.ID.make("test"),
+                modelID: ModelV2.ID.make("utility"),
+              }),
+            ),
+          llm: {
+            stream: () => {
+              requests++
+              return Stream.empty
+            },
+          },
+          system: "Return one label.",
+          text: "A long conversation",
+          reasoningBudget: 0,
+          maxTokens: 512,
+          scheduler,
+          maintenance: { ownerID: "owner", task: "title", deviceKey: "device" },
+        }),
+      ),
+    )
+
+    expect(blocked._tag).toBe("SessionRunnerModel.ModelUnavailableError")
+    expect(requests).toBe(0)
+  })
+
   test("the provider stream cannot start while an interactive turn holds the same device", async () => {
     const scheduler = make()
     await run(scheduler.admit({ sessionID: "ui", deviceKey: "device", sessionClass: "interactive-focused" }))
@@ -16,6 +53,7 @@ describe("ShortAnswer interactive-idle admission", () => {
     const answer = Effect.runFork(
       generate({
         model,
+        guard: (attempt) => attempt,
         llm: {
           stream: () => {
             requests++
@@ -50,6 +88,7 @@ describe("ShortAnswer interactive-idle admission", () => {
     const answer = await run(
       generate({
         model,
+        guard: (attempt) => attempt,
         llm: {
           stream: (request) => {
             body = request.http?.body
@@ -79,6 +118,7 @@ describe("ShortAnswer interactive-idle admission", () => {
     const answer = await run(
       generateOnSessionLane({
         model,
+        guard: (attempt) => attempt,
         llm: {
           stream: () => {
             requests++

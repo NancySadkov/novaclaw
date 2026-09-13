@@ -708,12 +708,14 @@ export const layer = Layer.effect(
      */
     const completeToolOutputSummary = Effect.fn("SessionRunner.toolOutputSummary")(function* (
       model: Parameters<typeof LLM.request>[0]["model"],
+      guard: SessionRunnerModel.DispatchGuard,
       sessionID: SessionSchema.ID,
       device: SessionRunnerModel.ScheduledDevice,
       input: ToolOutputSummary.CompletionInput,
     ) {
       const text = yield* ShortAnswer.generate({
         model,
+        guard,
         llm,
         system: TOOL_SUMMARY_SYSTEM,
         text: input.prompt,
@@ -742,6 +744,7 @@ export const layer = Layer.effect(
     const summarizeToolSettlement = Effect.fn("SessionRunner.summarizeToolSettlement")(function* (
       settlement: ToolRegistry.Settlement,
       model: Parameters<typeof LLM.request>[0]["model"],
+      guard: SessionRunnerModel.DispatchGuard,
       sessionID: SessionSchema.ID,
       device: SessionRunnerModel.ScheduledDevice,
     ) {
@@ -750,9 +753,12 @@ export const layer = Layer.effect(
         source: settlement.semanticSummarySource,
         boundedOutput: settlement.output,
         contextTokens: model.route.defaults.limits?.context ?? 0,
-        complete: (input) => completeToolOutputSummary(model, sessionID, device, input),
+        complete: (input) => completeToolOutputSummary(model, guard, sessionID, device, input),
       }).pipe(
-        Effect.catchTag("LLM.Error", () => Effect.succeed(undefined)),
+        Effect.catchTags({
+          "LLM.Error": () => Effect.succeed(undefined),
+          "SessionRunnerModel.ModelUnavailableError": () => Effect.succeed(undefined),
+        }),
         Effect.timeoutOrElse({
           duration: CalloutPolicy.summarizer.timeoutMs,
           orElse: () => Effect.succeed(undefined),
@@ -764,6 +770,7 @@ export const layer = Layer.effect(
     const auditExit = Effect.fn("SessionRunner.auditExit")(function* (
       sessionID: SessionSchema.ID,
       model: Parameters<typeof LLM.request>[0]["model"],
+      guard: SessionRunnerModel.DispatchGuard,
       slot: SessionScheduler.AdmitInput,
       context: readonly SessionMessage.Message[],
       request: FinishAudit.ExitRequest,
@@ -772,6 +779,7 @@ export const layer = Layer.effect(
       if (evidence === undefined) return "unknown" as const
       const reply = yield* ShortAnswer.generateOnSessionLane({
         model,
+        guard,
         llm,
         system: FinishAudit.SYSTEM,
         text: FinishAudit.prompt(evidence),
@@ -1242,6 +1250,7 @@ export const layer = Layer.effect(
         modelSession,
         model,
         reasoningModel: distinctReasoning?.model,
+        reasoningRan: distinctReasoning?.ran,
         reasoningScheduledDevice: distinctReasoning?.device,
         // 🔴 The catalog entry the route above was built from — the model that ACTUALLY RUNS this
         // turn, after `resolve`'s unavailable- and unhealthy-model fallbacks. Carried so the turn's
@@ -1369,6 +1378,7 @@ export const layer = Layer.effect(
         ran,
         scheduledDevice,
         reasoningModel,
+        reasoningRan,
         reasoningScheduledDevice,
         entries,
       } = prepared
@@ -1473,6 +1483,8 @@ export const layer = Layer.effect(
               imageLimit: yield* models.imageLimit(modelSession),
             }
           : SessionRunnerModel.perTurnFacts(ran)
+      const modelGuard = SessionRunnerModel.dispatchGuard(models, facts.ref)
+      const auditGuard = SessionRunnerModel.dispatchGuard(models, reasoningRan ?? ran)
       // A route gets one quick reconnect before its circuit opens. Once a durable recovery row
       // exists, each deadline admits exactly one probe so the exponential cadence remains 4 s,
       // 8 s, 16 s … rather than sneaking an extra 2 s request into every interval.
@@ -1771,32 +1783,29 @@ export const layer = Layer.effect(
                     id: ModelV2.ID.make(harness.introspection.model.id),
                   },
                 }
-          const rerankModel = yield* models.resolve(rerankSession)
-          const rerankDevice = yield* models.device(rerankSession)
-          const reply =
-            rerankDevice === undefined
-              ? ""
-              : yield* ShortAnswer.generate({
-                  model: rerankModel,
-                  llm,
-                  system: prompt.system,
-                  text: prompt.user,
-                  // No deliberation wanted: the ask is a list of numbers, and thinking about the order
-                  // of five passages is how a 0.4 s call becomes a 4 s one.
-                  reasoningBudget: 0,
-                  maxTokens: RERANK_ANSWER_TOKENS,
-                  scheduler,
-                  maintenance: {
-                    ownerID: session.id,
-                    task: "memory-rerank",
-                    deviceKey: rerankDevice.key,
-                    ...(rerankDevice.concurrency === undefined ? {} : { concurrency: rerankDevice.concurrency }),
-                    ...(rerankDevice.locality === undefined ? {} : { locality: rerankDevice.locality }),
-                  },
-                }).pipe(
-                  Effect.timeoutOrElse({ duration: RERANK_DEADLINE, orElse: () => Effect.succeed("") }),
-                  Effect.orElseSucceed(() => ""),
-                )
+          const rerank = yield* models.resolveWithDevice(rerankSession)
+          const reply = yield* ShortAnswer.generate({
+            model: rerank.model,
+            guard: SessionRunnerModel.dispatchGuard(models, rerank.ran),
+            llm,
+            system: prompt.system,
+            text: prompt.user,
+            // No deliberation wanted: the ask is a list of numbers, and thinking about the order
+            // of five passages is how a 0.4 s call becomes a 4 s one.
+            reasoningBudget: 0,
+            maxTokens: RERANK_ANSWER_TOKENS,
+            scheduler,
+            maintenance: {
+              ownerID: session.id,
+              task: "memory-rerank",
+              deviceKey: rerank.device.key,
+              ...(rerank.device.concurrency === undefined ? {} : { concurrency: rerank.device.concurrency }),
+              ...(rerank.device.locality === undefined ? {} : { locality: rerank.device.locality }),
+            },
+          }).pipe(
+            Effect.timeoutOrElse({ duration: RERANK_DEADLINE, orElse: () => Effect.succeed("") }),
+            Effect.orElseSucceed(() => ""),
+          )
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           // `rerankRan` now means the model ACTUALLY ordered the pack, not that we asked — a call
           // preempted by the user's own turn is a fallback, and the receipt must not claim otherwise.
@@ -2310,6 +2319,7 @@ export const layer = Layer.effect(
           sessionID: session.id,
           entries,
           model,
+          guard: modelGuard,
           request: preparedDispatch.request,
           promptEstimate,
           imagePatchPixels: routeProfile.imagePatchPixels,
@@ -2763,6 +2773,7 @@ export const layer = Layer.effect(
                     const modelSettlement = yield* summarizeToolSettlement(
                       settlement,
                       model,
+                      modelGuard,
                       session.id,
                       scheduledDevice,
                     )
@@ -2982,6 +2993,7 @@ export const layer = Layer.effect(
                 sessionID: session.id,
                 entries,
                 model,
+                guard: modelGuard,
                 request,
                 imagePatchPixels: routeProfile.imagePatchPixels,
                 overflowPromptTokens: recoveryPlan.originalPromptTokens,
@@ -3381,6 +3393,7 @@ export const layer = Layer.effect(
             model,
             scheduledDevice,
             auditModel: reasoningModel ?? model,
+            auditGuard,
             auditSlot:
               reasoningScheduledDevice === undefined
                 ? dispatchSlot
@@ -3484,6 +3497,7 @@ export const layer = Layer.effect(
         readonly scheduledDevice: SessionRunnerModel.ScheduledDevice
         /** Completion review is reasoning work: use the configured reasoning model when distinct. */
         readonly auditModel: Parameters<typeof LLM.request>[0]["model"]
+        readonly auditGuard: SessionRunnerModel.DispatchGuard
         /** Critical-path audit admission; never the preemptible interactive-idle maintenance lane. */
         readonly auditSlot: SessionScheduler.AdmitInput
       },
@@ -3656,6 +3670,7 @@ export const layer = Layer.effect(
           sessionID: session.id,
           entries,
           model,
+          guard: SessionRunnerModel.dispatchGuard(models, prepared.ran),
           request,
           imagePatchPixels: routeProfile.imagePatchPixels,
           maintenance: {
@@ -4084,6 +4099,7 @@ export const layer = Layer.effect(
             const audit = yield* auditExit(
               input.sessionID,
               result.auditModel,
+              result.auditGuard,
               result.auditSlot,
               context,
               exitRequest,
