@@ -3,6 +3,7 @@ import { render } from "solid-js/web"
 import { createMemoryHistory, MemoryRouter, Route } from "@solidjs/router"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { ContactsPage } from "@/pages/contacts"
+import { AgentSettingsPage } from "@/pages/agent-settings"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
 import { ServerSyncContext } from "@/context/server-sync"
@@ -41,9 +42,9 @@ const settle = async (times = 5) => {
   for (let i = 0; i < times; i++) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** Memory's Back target is not just a pretty URL: Contacts consumes it and opens that colleague's
- * real Configure dialog. Closing the dialog also consumes the instruction, so it stays closed. */
-test("the addressable configure route reopens the selected colleague", async () => {
+/** Settings is a real screen with a stable address. Back returns to the explicit source route
+ * instead of closing a modal whose ownership depended on whichever page happened to be beneath it. */
+test("the addressable settings screen opens the selected colleague and returns to its source", async () => {
   host = document.createElement("div")
   document.body.appendChild(host)
 
@@ -102,34 +103,30 @@ test("the addressable configure route reopens the selected colleague", async () 
   }
 
   const history = createMemoryHistory()
-  history.set({ value: "/?configure=theron", replace: true, scroll: false })
+  history.set({ value: "/officers/theron/settings?returnTo=/tasks", replace: true, scroll: false })
   dispose = render(
     () => (
       <PlatformProvider value={{ platform: "web" } as never}>
-        <MemoryRouter history={history}>
-          <Route
-            path="/"
-            component={() => (
-              <SettingsProvider>
-                <LanguageContext.Provider value={languageStub as never}>
-                  <GlobalContext.Provider value={globalStub as never}>
-                    <ServerContext.Provider value={{ current: connection } as never}>
-                      <ServerSyncContext.Provider value={syncStub as never}>
-                        <ModelsContext.Provider value={modelsStub as never}>
-                          <TabsContext.Provider value={tabsStub as never}>
-                            <DialogProvider>
-                              <ContactsPage />
-                            </DialogProvider>
-                          </TabsContext.Provider>
-                        </ModelsContext.Provider>
-                      </ServerSyncContext.Provider>
-                    </ServerContext.Provider>
-                  </GlobalContext.Provider>
-                </LanguageContext.Provider>
-              </SettingsProvider>
-            )}
-          />
-        </MemoryRouter>
+        <SettingsProvider>
+          <LanguageContext.Provider value={languageStub as never}>
+            <GlobalContext.Provider value={globalStub as never}>
+              <ServerContext.Provider value={{ current: connection } as never}>
+                <ServerSyncContext.Provider value={syncStub as never}>
+                  <ModelsContext.Provider value={modelsStub as never}>
+                    <TabsContext.Provider value={tabsStub as never}>
+                      <DialogProvider>
+                        <MemoryRouter history={history}>
+                          <Route path="/tasks" component={ContactsPage} />
+                          <Route path="/officers/:agentID/settings" component={AgentSettingsPage} />
+                        </MemoryRouter>
+                      </DialogProvider>
+                    </TabsContext.Provider>
+                  </ModelsContext.Provider>
+                </ServerSyncContext.Provider>
+              </ServerContext.Provider>
+            </GlobalContext.Provider>
+          </LanguageContext.Provider>
+        </SettingsProvider>
       </PlatformProvider>
     ),
     host,
@@ -140,5 +137,5 @@ test("the addressable configure route reopens the selected colleague", async () 
   expect(document.body.textContent).toContain("Theron")
   ;(document.querySelector('[data-action="agent-config-back"]') as HTMLButtonElement).click()
   await settle()
-  expect(history.get()).toBe("/")
+  expect(history.get()).toBe("/tasks")
 })

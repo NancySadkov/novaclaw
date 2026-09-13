@@ -120,6 +120,7 @@ export const superiorCandidates = (roster: readonly AgentLike[], selfID: string)
     (candidate) =>
       candidate.id !== selfID &&
       candidate.id !== GOVERNING_ID &&
+      !POSTURE_AGENTS.has(candidate.id) &&
       candidate.mode !== "subagent" &&
       !candidate.hidden &&
       candidate.paused !== true &&

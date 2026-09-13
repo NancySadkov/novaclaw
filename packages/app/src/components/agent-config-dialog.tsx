@@ -7,7 +7,6 @@ import { useConfirm } from "@/components/dialog-confirm"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { displayName as folderDisplayName } from "@/pages/layout/helpers"
 import { Icon } from "@novaclaw/ui/v2/icon"
-import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -41,7 +40,7 @@ import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
 
-// ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
+// ONE addressable officer-settings screen, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
 //
 // 🔴 **This is where the composer's Tune button now leads.** Tune used to be a chat-scoped popover
@@ -55,14 +54,14 @@ const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass
 // read-only here and say why. Offering an input whose value goes nowhere is worse than offering
 // nothing: the user does the work, sees no error, and learns not to trust the surface.
 
-export function AgentConfigDialog(props: {
+export function AgentConfigScreen(props: {
   /** Which colleague. `undefined` while a chat is still resolving its agent. */
   agentID: string | undefined
   onDismiss: () => void
   /**
    * Something about the roster CHANGED — a hire, a retirement, a cleared chat, a saved profile.
    *
-   * ⚠️ The dialog cannot refetch the list it was opened from, and without this it does not try:
+   * ⚠️ The screen cannot refetch the list it was opened from, and without this it does not try:
    * measured 2026-08-21, retiring a colleague removed it from the server and left its row on screen
    * until a manual reload. The durable change with the stale view, one more time.
    */
@@ -115,8 +114,13 @@ export function AgentConfigDialog(props: {
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
+  const [reasoningModel, setReasoningModel] = createSignal<string | undefined>()
+  const [workerModel, setWorkerModel] = createSignal<string | undefined>()
   const [reasoningBudget, setReasoningBudget] = createSignal<string | undefined>()
   const [maxToolTimeoutMinutes, setMaxToolTimeoutMinutes] = createSignal<string | undefined>()
+  const [workerPrototype, setWorkerPrototype] = createSignal<string | undefined>()
+  const [maxWorkers, setMaxWorkers] = createSignal<string | undefined>()
+  const [spawnDepth, setSpawnDepth] = createSignal<string | undefined>()
   const [needsTier, setNeedsTier] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
@@ -141,6 +145,16 @@ export function AgentConfigDialog(props: {
   const [computerUse, setComputerUse] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
+  type SettingsTab = "profile" | "mind" | "work" | "memory" | "workers" | "chat"
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
+  const settingsTabs = createMemo(() => [
+    { id: "profile" as const, label: "Profile", icon: "user" as const },
+    { id: "mind" as const, label: "Mind", icon: "brain" as const },
+    { id: "work" as const, label: "Work", icon: "task" as const },
+    { id: "memory" as const, label: "Memory", icon: "archive" as const },
+    { id: "workers" as const, label: "Workers", icon: "branch" as const },
+    ...(props.tuning ? [{ id: "chat" as const, label: "This chat", icon: "chats" as const }] : []),
+  ])
   /**
    * ⚠️ Through the dialog STACK, not as a nested `<Dialog>`. The first attempt rendered
    * `<AgentHelpDialog>` inside this component's tree and nothing appeared: the shell's content is a
@@ -246,6 +260,18 @@ export function AgentConfigDialog(props: {
     const bound = agent()?.model
     return bound ? modelRef(bound) : ""
   }
+  const reasoningModelValue = () => {
+    const chosen = reasoningModel()
+    if (chosen !== undefined) return chosen
+    const stored = agent()?.config?.["reasoningModel"]
+    return typeof stored === "string" ? stored : ""
+  }
+  const workerModelValue = () => {
+    const chosen = workerModel()
+    if (chosen !== undefined) return chosen
+    const stored = agent()?.config?.["workerModel"]
+    return typeof stored === "string" ? stored : ""
+  }
   const modelOptions = createMemo(() => [
     { key: "inherit", value: "", label: language.t("agentConfig.modelInherit") },
     ...models.list().map((item) => ({
@@ -254,6 +280,49 @@ export function AgentConfigDialog(props: {
       label: item.name ?? item.id,
     })),
   ])
+  const reasoningModelOptions = createMemo(() => [
+    { key: "ordinary", value: "", label: "Use the ordinary model" },
+    ...modelOptions().slice(1),
+  ])
+  const workerModelOptions = createMemo(() => [
+    { key: "officer", value: "", label: "Use this officer’s model" },
+    ...modelOptions().slice(1),
+  ])
+  const workerPrototypeValue = () => {
+    const chosen = workerPrototype()
+    if (chosen !== undefined) return chosen
+    const stored = agent()?.config?.["workerPrototype"]
+    return typeof stored === "string" ? stored : ""
+  }
+  const workerPrototypeOptions = createMemo(() => [
+    { key: "default", value: "", label: "Use this officer’s recipe" },
+    ...(agents() ?? [])
+      .filter(
+        (candidate) =>
+          candidate.id !== props.agentID &&
+          candidate.id !== "nova" &&
+          isColleague(candidate) &&
+          candidate.paused !== true,
+      )
+      .map((candidate) => ({
+        key: candidate.id,
+        value: candidate.id,
+        label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+      })),
+  ])
+  const integerValue = (draft: string | undefined, key: string, fallback: number) => {
+    if (draft !== undefined) return draft
+    const stored = agent()?.config?.[key]
+    return typeof stored === "number" ? String(stored) : String(fallback)
+  }
+  const maxWorkersValue = () => integerValue(maxWorkers(), "maxWorkers", 100)
+  const spawnDepthValue = () => integerValue(spawnDepth(), "spawnDepth", 1)
+  const parseNonNegative = (value: string) => {
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN
+  }
+  const parsedMaxWorkers = () => parseNonNegative(maxWorkersValue())
+  const parsedSpawnDepth = () => parseNonNegative(spawnDepthValue())
   const reasoningBudgetValue = () => {
     const chosen = reasoningBudget()
     if (chosen !== undefined) return chosen
@@ -338,8 +407,13 @@ export function AgentConfigDialog(props: {
     archive() !== undefined ||
     needsTier() !== undefined ||
     model() !== undefined ||
+    reasoningModel() !== undefined ||
+    workerModel() !== undefined ||
     reasoningBudget() !== undefined ||
     maxToolTimeoutMinutes() !== undefined ||
+    workerPrototype() !== undefined ||
+    maxWorkers() !== undefined ||
+    spawnDepth() !== undefined ||
     superior() !== undefined ||
     avatarFile() !== undefined ||
     avatarRemoved()
@@ -627,10 +701,17 @@ export function AgentConfigDialog(props: {
       // what was loaded or touched closes the class.
       const tier = needsTierValue()
       const binding: Pick<ConfigV2Agent, "model" | "needsTier"> & {
+        reasoningModel?: string
+        workerModel?: string
         reasoningBudget?: number
         maxToolTimeoutMs?: number
+        workerPrototype?: string
+        maxWorkers?: number
+        spawnDepth?: number
       } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
+        ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
+        ...(workerModelValue() === "" ? {} : { workerModel: workerModelValue() }),
         ...(needsTier() === undefined || !isTier(tier) ? {} : { needsTier: tier }),
         ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
           ? {}
@@ -638,6 +719,9 @@ export function AgentConfigDialog(props: {
         ...(maxToolTimeoutMinutes() === undefined || parsedMaxToolTimeoutMs() === undefined
           ? {}
           : { maxToolTimeoutMs: parsedMaxToolTimeoutMs() }),
+        ...(workerPrototypeValue() === "" ? {} : { workerPrototype: workerPrototypeValue() }),
+        ...(maxWorkers() === undefined ? {} : { maxWorkers: parsedMaxWorkers() }),
+        ...(spawnDepth() === undefined ? {} : { spawnDepth: parsedSpawnDepth() }),
       }
       // 🔴 Nova's fragment is TWO KEYS, never the officer payload. The server refuses a fragment
       // naming the governing agent that carries anything outside `AgentV2.PROTECTED_TUNABLE`, and it
@@ -683,10 +767,13 @@ export function AgentConfigDialog(props: {
       // deletion, and only an explicitly changed selector may request it.
       await sync().removeConfig([
         ...(model() === "" ? [["agents", id, "model"]] : []),
+        ...(reasoningModel() === "" ? [["agents", id, "reasoningModel"]] : []),
+        ...(workerModel() === "" ? [["agents", id, "workerModel"]] : []),
         ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
         ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
         ...(maxToolTimeoutMinutes() === "" ? [["agents", id, "maxToolTimeoutMs"]] : []),
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
+        ...(workerPrototype() === "" ? [["agents", id, "workerPrototype"]] : []),
         // Switched back ON and nothing else was ever refused: the field goes away entirely, so the
         // officer inherits the floor's grant the same as a colleague that was never configured.
         ...(computerUse() !== undefined && computerRuleset().length === 0 ? [["agents", id, "permissions"]] : []),
@@ -709,8 +796,13 @@ export function AgentConfigDialog(props: {
       setToolLabels(undefined)
       setArchive(undefined)
       setModel(undefined)
+      setReasoningModel(undefined)
+      setWorkerModel(undefined)
       setReasoningBudget(undefined)
       setMaxToolTimeoutMinutes(undefined)
+      setWorkerPrototype(undefined)
+      setMaxWorkers(undefined)
+      setSpawnDepth(undefined)
       setSuperior(undefined)
       setNeedsTier(undefined)
       props.onChanged?.()
@@ -732,204 +824,11 @@ export function AgentConfigDialog(props: {
   // back.
   if (governing()) {
     return (
-      <Dialog size="full">
-        <div
-          class="flex h-full w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
-          data-agent-profile="governing-readonly"
-        >
-          <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-3">
-            <button
-              type="button"
-              data-action="agent-config-back"
-              class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-              aria-label={language.t("agentConfig.back")}
-              title={language.t("agentConfig.back")}
-              onClick={props.onDismiss}
-            >
-              <Icon name="chevron-left" size="normal" />
-            </button>
-            <AgentPortrait
-              id={props.agentID ?? ""}
-              name={name()}
-              avatar={agent()?.avatar}
-              class="size-9 border border-v2-border-border-strong text-base"
-            />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-semibold">{name()}</span>
-              <span class="block truncate text-xs text-v2-text-text-muted">
-                {agent()?.title ?? language.t("agentConfig.noTitle")}
-              </span>
-            </span>
-            <ControlScope kind="colleague" class="hidden sm:inline-flex" />
-            <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
-              {language.t("agentConfig.close")}
-            </button>
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-            <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
-              <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
-                <p class="text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
-                <dl class="mt-5 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.name")}</dt>
-                    <dd class="mt-1 text-sm">{nameValue()}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.jobTitle")}</dt>
-                    <dd class="mt-1 text-sm">{titleValue() || language.t("agentConfig.noTitle")}</dd>
-                  </div>
-                  <Show when={personalityValue()}>
-                    {(value) => (
-                      <div class="sm:col-span-2">
-                        <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.personality")}</dt>
-                        <dd class="mt-1 whitespace-pre-wrap text-sm">{value()}</dd>
-                      </div>
-                    )}
-                  </Show>
-                </dl>
-              </section>
-              {/* 🔴 The two switches Nova DOES own. Everything above is the charter and is read-only
-                  by law; these two are components, not identity — what Nova keeps between chats, and
-                  whether Nova pays a model call to caption each shell command. They were absent
-                  entirely, which read as "Nova has no settings" and, worse, gave the owner no way to
-                  switch captioning off on the one colleague they actually talk to. The write is
-                  refused server-side if it carries anything else (AgentV2.PROTECTED_TUNABLE), so
-                  offering these cannot widen anything. */}
-              <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
-                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                  {language.t("agentConfig.memory")}
-                </h3>
-                <label class="mt-2 flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={memoryValue() === "own"}
-                    onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
-                  />
-                  <span>{language.t("agentConfig.memoryRag")}</span>
-                </label>
-                <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(memoryDisclosure(memoryValue()).privateKey)}
-                  <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
-                </p>
-              </section>
-              <section
-                class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5"
-                data-section="model"
-              >
-                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                  {language.t("agentConfig.mind")}
-                </h3>
-                <label class="mt-2 flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={toolLabelsValue()}
-                    onChange={(event) => setToolLabels(event.currentTarget.checked)}
-                  />
-                  <span>{language.t("agentConfig.toolLabels")}</span>
-                </label>
-                <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
-                </p>
-              </section>
-              <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
-            </div>
-          </div>
-          {/* Nova's charter is immutable; Nova's conversation is not. Clear therefore remains an
-              ordinary chat lifecycle action here, beside the deliberately instructive Clone door. */}
-          <div class="flex items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
-            <button
-              type="button"
-              data-action="agent-clear-chat"
-              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={busy() !== undefined || props.agentID === undefined}
-              onClick={() => void clearChat()}
-            >
-              {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
-            </button>
-            <button
-              type="button"
-              data-action="agent-clear-memory"
-              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={busy() !== undefined || props.agentID === undefined}
-              onClick={() => void clearMemory()}
-            >
-              {busy() === "clear-memory"
-                ? language.t("agentConfig.memoryClearing")
-                : language.t("agentConfig.clearMemory")}
-            </button>
-            {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
-                while `planClone` remains the enforcement seam for every caller. */}
-            <button
-              type="button"
-              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-              onClick={() => void clone()}
-            >
-              {language.t("agentConfig.clone")}
-            </button>
-            {/* 🔴 The door into Nova's OWN cabinet. It sat in the officer footer only, so the one
-                colleague a user actually wonders about — "what has Nova been remembering about me" —
-                had no answer: Clear Memory was there, but nothing to look at before pressing it. The
-                cabinet exists whether or not the switch above is on, which is exactly why the officer
-                footer made this button unconditional. */}
-            <button
-              type="button"
-              data-action="agent-open-memory"
-              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={busy() !== undefined || props.agentID === undefined}
-              onClick={() => {
-                const id = props.agentID
-                if (id === undefined) return
-                props.onDismiss()
-                navigate(ownerRoute(id))
-              }}
-            >
-              {language.t("agentConfig.memoryOpen")}
-            </button>
-            {/* Save, for the two switches above and nothing else. Without it the checkboxes were a
-                surface that lied: they moved, the toast never came, and the value reverted on reopen.
-                Pause and Retire stay absent — pausing Nova is a different act from tuning it, and the
-                charter makes it impossible anyway. */}
-            <button
-              type="button"
-              data-action="agent-save"
-              class="ml-auto rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              disabled={!dirty() || saving() || props.agentID === undefined || agent() === undefined}
-              onClick={() => void save()}
-            >
-              {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-            </button>
-          </div>
-        </div>
-      </Dialog>
-    )
-  }
-
-  return (
-    // 🔴 A real MODAL, through the v2 `Dialog` shell — not a bare `<div>` (owner, 2026-08-23).
-    //
-    // Two different symptoms, one cause. The dialog stack mounts its layer with
-    // `pointer-events: none` and relies on the dialog's own container to set `pointer-events: auto`
-    // (`dialog-v2.css`); a bare div INHERITS the `none`, so every click on this panel fell through
-    // to the overlay underneath and closed it — Tune opened and shut the instant you touched it.
-    // And in Contacts, where it was rendered inline in the page flow instead, the same bare div
-    // squeezed the roster sideways rather than covering it. The shell fixes both, and brings the
-    // focus trap and the labelled surface a modal is supposed to have.
-    <Dialog size="full">
-      {/* 🔴 FULL SCREEN (owner, 2026-08-27). It was a 560px box with `max-h-[80vh]`, and a colleague's
-          configuration does not fit one: the profile, memory, model, the folder assignment and this
-          chat's own switches are five sections deep, so the controls below the fold were reachable
-          only by scrolling a panel that did not look scrollable. The owner reported the folder picker
-          as MISSING — it was rendered the whole time, three sections down. A surface people conclude
-          is absent is not a layout preference.
-          ⚠️ The Back button in the header is what makes this safe: full screen with only an overlay
-          click to leave would be the dead end §1.4 warns about. It was already there. */}
-      <div class="flex h-full w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
+      <div
+        class="flex h-full w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+        data-agent-profile="governing-readonly"
+      >
         <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-3">
-          {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
-              the roster, or the chat you were tuning — so the gesture out of it is "return", and
-              labelling it that way is the difference between a dead end and a step. */}
           <button
             type="button"
             data-action="agent-config-back"
@@ -952,115 +851,52 @@ export function AgentConfigDialog(props: {
               {agent()?.title ?? language.t("agentConfig.noTitle")}
             </span>
           </span>
-          <ControlScope kind="colleague" class="hidden sm:inline-flex" />
-          {/* HELP, beside Close: the one door to everything this screen used to explain inline. It sits
-              in the header rather than by a control because it explains the MODEL, not this field. */}
-          <button
-            type="button"
-            class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
-            aria-label={language.t("agentHelp.title")}
-            title={language.t("agentHelp.title")}
-            onClick={() => openHelp()}
-          >
-            <Icon name="help" class="size-4" />
-          </button>
+          <span class="hidden sm:block">
+            <ControlScope kind="colleague" />
+          </span>
           <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
             {language.t("agentConfig.close")}
           </button>
         </div>
-
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <section data-section="profile">
-            <Show
-              when={!governing()}
-              fallback={<p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}</p>}
-            >
-              <label class="block text-xs text-v2-text-text-muted">
-                {language.t("agentConfig.name")}
-                <TextInputV2
-                  class="mt-1"
-                  value={nameValue()}
-                  onInput={(event) => setRenamed(event.currentTarget.value)}
-                />
-              </label>
-              {/* Why a rename is safe, said once where someone is about to do it. */}
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
-                {language.t("agentConfig.jobTitle")}
-                <TextInputV2
-                  class="mt-1"
-                  value={titleValue()}
-                  onInput={(event) => setTitle(event.currentTarget.value)}
-                  placeholder={language.t("agentConfig.jobTitlePlaceholder")}
-                />
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
-                {language.t("agentConfig.personality")}
-                <textarea
-                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  value={personalityValue()}
-                  onInput={(event) => setPersonality(event.currentTarget.value)}
-                  placeholder={language.t("agentConfig.personalityPlaceholder")}
-                />
-              </label>
-              {/* Why this is a profile field and not something you type into the chat. */}
-            </Show>
-            <div class="mt-3 text-xs text-v2-text-text-muted">
-              {language.t("agentConfig.portrait")}
-              <span class="mt-1 block text-[11px] text-v2-text-text-faint">
-                {language.t("agentConfig.portraitHint")}
-              </span>
-              <div class="mt-2 flex min-w-0 items-center gap-2">
-                <label
-                  for="agent-portrait-file"
-                  class="inline-flex shrink-0 cursor-pointer items-center rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
-                >
-                  {language.t("agentConfig.portraitChoose")}
-                </label>
-                <span class="min-w-0 truncate text-xs text-v2-text-text-faint">
-                  {avatarFile()?.name ?? language.t("agentConfig.portraitNone")}
-                </span>
-                <input
-                  id="agent-portrait-file"
-                  class="sr-only"
-                  type="file"
-                  accept={[...AGENT_AVATAR_TYPES].join(",")}
-                  onChange={(event) => {
-                    setAvatarFile(event.currentTarget.files?.[0])
-                    setAvatarRemoved(false)
-                  }}
-                />
-              </div>
-              <Show when={!avatarRemoved() && isAgentPortraitURL(agent()?.avatar)}>
-                <button
-                  type="button"
-                  class="mt-2 text-xs text-v2-text-text-accent hover:underline"
-                  onClick={() => {
-                    setAvatarFile(undefined)
-                    setAvatarRemoved(true)
-                  }}
-                >
-                  {language.t("agentConfig.portraitRemove")}
-                </button>
-              </Show>
-            </div>
-          </section>
-
-          <section class="mt-5" data-section="memory">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.memory")}
-            </h3>
-            <div class="mt-2 flex flex-col gap-1.5">
-              {/* ONE switch, not a pair of radios: "persistent memory" and "throwaway" are the same
-                  switch seen from two sides, and the radios made the negative half read like a
-                  feature to shop for. The line under it says WHICH SIDE IS IN FORCE right now, in
-                  both halves — this is the surface where someone decides what a colleague keeps, so
-                  it is the last place that should describe only the private half. */}
-              <label class="flex items-start gap-2 text-xs">
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+          <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
+            <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
+              <p class="text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
+              <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.name")}</dt>
+                  <dd class="mt-1 text-sm">{nameValue()}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.jobTitle")}</dt>
+                  <dd class="mt-1 text-sm">{titleValue() || language.t("agentConfig.noTitle")}</dd>
+                </div>
+                <Show when={personalityValue()}>
+                  {(value) => (
+                    <div class="sm:col-span-2">
+                      <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.personality")}</dt>
+                      <dd class="mt-1 whitespace-pre-wrap text-sm">{value()}</dd>
+                    </div>
+                  )}
+                </Show>
+              </dl>
+            </section>
+            {/* 🔴 The two switches Nova DOES own. Everything above is the charter and is read-only
+                  by law; these two are components, not identity — what Nova keeps between chats, and
+                  whether Nova pays a model call to caption each shell command. They were absent
+                  entirely, which read as "Nova has no settings" and, worse, gave the owner no way to
+                  switch captioning off on the one colleague they actually talk to. The write is
+                  refused server-side if it carries anything else (AgentV2.PROTECTED_TUNABLE), so
+                  offering these cannot widen anything. */}
+            <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.memory")}
+              </h3>
+              <label class="mt-2 flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"
                   class="mt-0.5"
                   checked={memoryValue() === "own"}
-                  disabled={governing()}
                   onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
                 />
                 <span>{language.t("agentConfig.memoryRag")}</span>
@@ -1069,329 +905,33 @@ export function AgentConfigDialog(props: {
                 {language.t(memoryDisclosure(memoryValue()).privateKey)}
                 <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
               </p>
-            </div>
-          </section>
-
-          <section class="mt-5" data-section="model">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.mind")}
-            </h3>
-            {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
-                same colleague clever in one conversation and poor in the next, for reasons the user
-                could not see. A colleague has one mind. */}
-            <SelectV2
-              aria-label={language.t("agentConfig.mind")}
-              class="mt-2 w-full"
-              disabled={governing()}
-              options={modelOptions()}
-              current={modelOptions().find((option) => option.value === modelValue()) ?? modelOptions()[0]}
-              value={(option) => option.key}
-              label={(option) => option.label}
-              onSelect={(option) => option && setModel(option.value)}
-            />
-            <label class="mt-3 flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                class="mt-0.5"
-                checked={toolLabelsValue()}
-                disabled={governing()}
-                onChange={(event) => setToolLabels(event.currentTarget.checked)}
-              />
-              <span>{language.t("agentConfig.toolLabels")}</span>
-            </label>
-            <p class="text-[11px] text-v2-text-text-faint">
-              {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
-            </p>
-            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
-              {language.t("agentConfig.reasoningBudget")}
-            </label>
-            <input
-              id="agent-reasoning-budget"
-              aria-label={language.t("agentConfig.reasoningBudget")}
-              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-              type="number"
-              min="0"
-              step="1"
-              value={reasoningBudgetValue()}
-              placeholder={language.t("agentConfig.reasoningBudgetModel")}
-              onInput={(event) => setReasoningBudget(event.currentTarget.value)}
-            />
-            <p class="mt-1 text-[11px] text-v2-text-text-faint">
-              {reasoningBudgetValue().trim() === ""
-                ? language.t("agentConfig.reasoningBudgetDefault")
-                : parsedReasoningBudget() === 0
-                  ? language.t("agentConfig.reasoningBudgetOff")
-                  : language.t("agentConfig.reasoningBudgetCustom", { tokens: reasoningBudgetValue() })}
-            </p>
-            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
-              {language.t("agentConfig.maxToolTimeout")}
-            </label>
-            <input
-              id="agent-tool-timeout"
-              aria-label={language.t("agentConfig.maxToolTimeout")}
-              class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-              type="number"
-              min="1"
-              step="1"
-              value={maxToolTimeoutMinutesValue()}
-              placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
-              onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
-            />
-            <p class="mt-1 text-[11px] text-v2-text-text-faint">
-              {maxToolTimeoutMinutesValue().trim() === ""
-                ? language.t("agentConfig.maxToolTimeoutHelpDefault")
-                : language.t("agentConfig.maxToolTimeoutHelpCustom", {
-                    minutes: maxToolTimeoutMinutesValue(),
-                  })}
-            </p>
-            {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
-                sometimes the right one. */}
-            <Show when={mindTooSmall()}>
-              <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
-            </Show>
-            {/* 🔴 The floor this ROLE needs, which is a different statement from the model bound above.
-                A colleague can end up on the instance default without anyone choosing it — its own
-                model may be unavailable or have been failing — and a bookkeeper written for a frontier
-                model quietly thinking with a micro one does not error, it just gets things wrong. The
-                floor is what lets the colleague notice and SAY so. */}
-            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-tier">
-              {language.t("agentConfig.needsTier")}
-            </label>
-            <SelectV2
-              id="agent-needs-tier"
-              class="mt-1 w-full"
-              disabled={governing()}
-              options={needsTierOptions()}
-              current={needsTierOptions().find((option) => option.value === needsTierValue()) ?? needsTierOptions()[0]}
-              value={(option) => option.key}
-              label={(option) => option.label}
-              onSelect={(option) => option && setNeedsTier(option.value)}
-            />
-            <Show when={belowFloor()}>
-              <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
-            </Show>
-            <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
-              {language.t("agentConfig.superior")}
-            </label>
-            <SelectV2
-              id="agent-superior"
-              aria-label={language.t("agentConfig.superior")}
-              class="mt-1 w-full"
-              options={superiorOptions()}
-              current={
-                superiorOptions().find((option) =>
-                  superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
-                ) ?? superiorOptions()[0]
-              }
-              value={(option) => option.key}
-              label={(option) => option.label}
-              onSelect={(option) => option && setSuperior(option.value)}
-            />
-            <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
-          </section>
-
-          <section class="mt-5" data-section="work">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.work")}
-            </h3>
-            {/* 🔴 The three standing WORK choices, moved off the composer 2026-08-21 (owner: the
-                Chat/Agent drop-down, Strict and permissions "should be part of the agent too"). They
-                describe the ROLE: a bookkeeper that needs Analyze mode needs it every time you talk to
-                it, and re-choosing per chat is a question asked again for a decision that never
-                changes. A chat can still differ — these are a LAYER, and the chat's own row wins. */}
-            <div class="mt-2 flex flex-col gap-2">
-              <div class="flex items-center justify-between gap-2 text-xs">
-                <span>{language.t("agentConfig.posture")}</span>
-                <SelectV2
-                  appearance="inline"
-                  aria-label={language.t("agentConfig.posture")}
-                  disabled={governing()}
-                  options={POSTURE_CHOICES}
-                  current={postureValue() ? "chat" : "agent"}
-                  label={(value) =>
-                    language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")
-                  }
-                  onSelect={(value) => {
-                    if (!value) return
-                    setPosture(value === "chat")
-                    if (value === "chat") setDirectory("")
-                  }}
-                />
-              </div>
-              <p class="text-[11px] text-v2-text-text-faint">
-                {language.t(postureValue() ? "prompt.posture.chat.description" : "prompt.posture.agent.description")}
-              </p>
-
-              <div class="flex items-center justify-between gap-2 text-xs">
-                <span>{language.t("prompt.permissionMode.title")}</span>
-                <SelectV2
-                  appearance="inline"
-                  aria-label={language.t("prompt.permissionMode.title")}
-                  disabled={governing()}
-                  options={PERMISSION_MODE_CHOICES}
-                  current={
-                    PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ?? PERMISSION_MODE_CHOICES[1]
-                  }
-                  label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
-                  onSelect={(mode) => mode && setPermissionMode(mode)}
-                />
-              </div>
-
-              <label class="flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={strictValue()}
-                  disabled={governing()}
-                  onChange={(event) => setStrict(event.currentTarget.checked)}
-                />
-                <span>{language.t("agentConfig.strict")}</span>
-              </label>
-
-              {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
-                  row only exists where that grant actually reaches. A subagent has no grant to opt out
-                  of, and showing it a switch reading "on" would be a control that lies. */}
-              <Show when={agent() !== undefined && isColleague(agent()!)}>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={computerUseValue()}
-                    disabled={governing()}
-                    onChange={(event) => setComputerUse(event.currentTarget.checked)}
-                  />
-                  <span>{language.t("agentConfig.computerUse")}</span>
-                </label>
-                <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off")}
-                </p>
-              </Show>
-            </div>
-          </section>
-
-          <Show when={props.agentID}>
-            {(id) => (
-              <section class="mt-5">
-                <SettingsNudgesV2 fixedAgentID={id()} />
-              </section>
-            )}
-          </Show>
-
-          <Show when={!postureValue()}>
-            <section class="mt-5">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                {language.t("agentConfig.folder")}
-              </h3>
-              {/* 🔴 The colleague's PROJECT, and it lives here rather than in the prompt area (owner,
-                2026-08-21). Asking which folder a chat runs in made "where does this work happen" a
-                per-conversation question and left a named officer with no project of its own; under the
-                roster it is part of the job — you assign the bookkeeper to the books once. */}
-              <div class="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
-                  disabled={governing()}
-                  onClick={() => pickFolder()}
-                >
-                  <Icon name="folder" class="size-3.5 shrink-0" />
-                  <span class="truncate">{folderLabel()}</span>
-                </button>
-                <Show when={directoryValue() !== undefined}>
-                  {/* Back to its own workspace — the one way out of a project, and it is a change like any
-                    other: the colleague is told (`AgentReassignment`). */}
-                  <button
-                    type="button"
-                    class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                    onClick={() => setDirectory("")}
-                  >
-                    {language.t("agentConfig.folderOwn")}
-                  </button>
-                </Show>
-              </div>
-              {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
-                ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
-                even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
-                `SystemCompose.workspaceSection` tells the colleague about it — so the notes, drafts and
-                probe scripts it writes there were real files nobody had a way to open.
-
-                ⚠️ Rendered whether or not a project is assigned, because the workspace exists either
-                way: when there is no project it IS the working folder, and when there is one it is the
-                place the colleague keeps everything that is not the project's. Hiding it in the second
-                case would hide exactly the files the user has no other route to. */}
-              <Show when={workspacePath()}>
-                {(path) => (
-                  /**
-                   * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
-                   * browse link "also closes the Tune for some reason").
-                   *
-                   * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
-                   * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
-                   * way back. The vision settles which half to fix: Files is THE file surface, an app in
-                   * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
-                   * a second file browser living inside this dialog would be the wrong answer to a
-                   * question the launcher already answers.
-                   *
-                   * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
-                   * the user takes — Tune, then Files — instead of a dialog that evaporates behind
-                   * them, which is the same rule the Back button in this header exists for: the gesture
-                   * out of a panel is "return", and an unannounced one is a dead end wearing a link.
-                   */
-                  <a
-                    data-action="browse-workspace"
-                    href={`/files?path=${encodeURIComponent(path())}`}
-                    onClick={() => props.onDismiss()}
-                    class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
-                  >
-                    <Icon name="folder" class="size-3 shrink-0" />
-                    {language.t("agentConfig.browseWorkspace", { name: name() })}
-                  </a>
-                )}
-              </Show>
             </section>
-          </Show>
-
-          <section class="mt-5">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("agentConfig.archive")}
-            </h3>
-            <div class="mt-2 flex flex-col gap-1.5">
-              {/* A chat that never ends gets compacted; this decides whether the compressed-away half
-                  stays searchable or is gone but for a summary. */}
-              <label class="flex items-start gap-2 text-xs">
+            <section
+              class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5"
+              data-section="model"
+            >
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.mind")}
+              </h3>
+              <label class="mt-2 flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"
                   class="mt-0.5"
-                  checked={archiveValue()}
-                  disabled={governing() || memoryValue() === "none"}
-                  onChange={(event) => setArchive(event.currentTarget.checked)}
+                  checked={toolLabelsValue()}
+                  onChange={(event) => setToolLabels(event.currentTarget.checked)}
                 />
-                <span>{language.t("agentConfig.archiveKeep")}</span>
+                <span>{language.t("agentConfig.toolLabels")}</span>
               </label>
-              <Show when={memoryValue() === "none"}>
-                {/* Said rather than silently ignored: a throwaway keeps nothing, so the control above
-                    would be a promise this colleague cannot make. */}
-                <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.archiveThrowaway")}</p>
-              </Show>
-            </div>
-          </section>
-
-          <Show when={props.tuning}>
-            {(tuning) => (
-              <section class="mt-5 border-t border-v2-border-border-muted pt-4">
-                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                  {language.t("agentConfig.thisChat")}
-                </h3>
-                {/* The distinction the two sections exist to teach: above is who this colleague IS
-                    everywhere, below is how this one conversation runs. */}
-                <div class="mt-2">{tuning()()}</div>
-              </section>
-            )}
-          </Show>
+              <p class="text-[11px] text-v2-text-text-faint">
+                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
+              </p>
+            </section>
+            <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
+          </div>
         </div>
-
-        {/* Lifecycle, kept apart from the profile fields: these do something the moment they are
-            pressed, while everything above waits for Save. */}
-        <div class="flex flex-wrap items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
+        {/* Nova's charter is immutable; Nova's conversation is not. Clear therefore remains an
+              ordinary chat lifecycle action here, beside the deliberately instructive Clone door. */}
+        <div class="flex items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
           <button
             type="button"
             data-action="agent-clear-chat"
@@ -1412,17 +952,20 @@ export function AgentConfigDialog(props: {
               ? language.t("agentConfig.memoryClearing")
               : language.t("agentConfig.clearMemory")}
           </button>
+          {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
+                while `planClone` remains the enforcement seam for every caller. */}
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || agent() === undefined}
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
             onClick={() => void clone()}
           >
-            {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+            {language.t("agentConfig.clone")}
           </button>
-          {/* The door into this colleague's own cabinet. The profile already says whose screen this
-              is, so the action is simply “Memory”; repeating the name turns a destination into a
-              sentence and makes the footer harder to scan. */}
+          {/* 🔴 The door into Nova's OWN cabinet. It sat in the officer footer only, so the one
+                colleague a user actually wonders about — "what has Nova been remembering about me" —
+                had no answer: Clear Memory was there, but nothing to look at before pressing it. The
+                cabinet exists whether or not the switch above is on, which is exactly why the officer
+                footer made this button unconditional. */}
           <button
             type="button"
             data-action="agent-open-memory"
@@ -1437,63 +980,725 @@ export function AgentConfigDialog(props: {
           >
             {language.t("agentConfig.memoryOpen")}
           </button>
-          <Show when={!governing()}>
-            {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
+          {/* Save, for the two switches above and nothing else. Without it the checkboxes were a
+                surface that lied: they moved, the toast never came, and the value reverted on reopen.
+                Pause and Retire stay absent — pausing Nova is a different act from tuning it, and the
+                charter makes it impossible anyway. */}
+          <button
+            type="button"
+            data-action="agent-save"
+            class="ml-auto rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            disabled={!dirty() || saving() || props.agentID === undefined || agent() === undefined}
+            onClick={() => void save()}
+          >
+            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
+      <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
+        {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
+              the roster, or the chat you were tuning — so the gesture out of it is "return", and
+              labelling it that way is the difference between a dead end and a step. */}
+        <button
+          type="button"
+          data-action="agent-config-back"
+          class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+          aria-label={language.t("agentConfig.back")}
+          title={language.t("agentConfig.back")}
+          onClick={props.onDismiss}
+        >
+          <Icon name="chevron-left" size="normal" />
+        </button>
+        <AgentPortrait
+          id={props.agentID ?? ""}
+          name={name()}
+          avatar={agent()?.avatar}
+          class="size-9 border border-v2-border-border-strong text-base"
+        />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold">{name()}</span>
+          <span class="block truncate text-xs text-v2-text-text-muted">
+            {agent()?.title ?? language.t("agentConfig.noTitle")}
+          </span>
+        </span>
+        <span class="hidden sm:block">
+          <ControlScope kind="colleague" />
+        </span>
+        {/* HELP, beside Close: the one door to everything this screen used to explain inline. It sits
+              in the header rather than by a control because it explains the MODEL, not this field. */}
+        <button
+          type="button"
+          class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+          aria-label={language.t("agentHelp.title")}
+          title={language.t("agentHelp.title")}
+          onClick={() => openHelp()}
+        >
+          <Icon name="help" class="size-4" />
+        </button>
+        <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
+          {language.t("agentConfig.close")}
+        </button>
+      </div>
+
+      <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
+        <nav
+          class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-2 md:w-52 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
+          aria-label="Officer settings"
+        >
+          <For each={settingsTabs()}>
+            {(tab) => (
+              <button
+                type="button"
+                class={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors ${
+                  activeTab() === tab.id
+                    ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
+                    : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
+                }`}
+                aria-current={activeTab() === tab.id ? "page" : undefined}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <Icon name={tab.icon} class="hidden size-4 shrink-0 sm:block" />
+                <span>{tab.label}</span>
+              </button>
+            )}
+          </For>
+        </nav>
+        <div
+          class="agent-settings-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 md:px-8 md:py-7"
+          data-active-tab={activeTab()}
+        >
+          <div class="mx-auto w-full max-w-3xl">
+            <section class="agent-settings-card" data-section="profile" data-settings-tab="profile">
+              <Show
+                when={!governing()}
+                fallback={
+                  <p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}</p>
+                }
+              >
+                <label class="block text-xs text-v2-text-text-muted">
+                  {language.t("agentConfig.name")}
+                  <TextInputV2
+                    class="mt-1"
+                    value={nameValue()}
+                    onInput={(event) => setRenamed(event.currentTarget.value)}
+                  />
+                </label>
+                {/* Why a rename is safe, said once where someone is about to do it. */}
+                <label class="mt-3 block text-xs text-v2-text-text-muted">
+                  {language.t("agentConfig.jobTitle")}
+                  <TextInputV2
+                    class="mt-1"
+                    value={titleValue()}
+                    onInput={(event) => setTitle(event.currentTarget.value)}
+                    placeholder={language.t("agentConfig.jobTitlePlaceholder")}
+                  />
+                </label>
+                <label class="mt-3 block text-xs text-v2-text-text-muted">
+                  {language.t("agentConfig.personality")}
+                  <textarea
+                    class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    value={personalityValue()}
+                    onInput={(event) => setPersonality(event.currentTarget.value)}
+                    placeholder={language.t("agentConfig.personalityPlaceholder")}
+                  />
+                </label>
+                {/* Why this is a profile field and not something you type into the chat. */}
+              </Show>
+              <div class="mt-3 text-xs text-v2-text-text-muted">
+                {language.t("agentConfig.portrait")}
+                <span class="mt-1 block text-[11px] text-v2-text-text-faint">
+                  {language.t("agentConfig.portraitHint")}
+                </span>
+                <div class="mt-2 flex min-w-0 items-center gap-2">
+                  <label
+                    for="agent-portrait-file"
+                    class="inline-flex shrink-0 cursor-pointer items-center rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
+                  >
+                    {language.t("agentConfig.portraitChoose")}
+                  </label>
+                  <span class="min-w-0 truncate text-xs text-v2-text-text-faint">
+                    {avatarFile()?.name ?? language.t("agentConfig.portraitNone")}
+                  </span>
+                  <input
+                    id="agent-portrait-file"
+                    class="sr-only"
+                    type="file"
+                    accept={[...AGENT_AVATAR_TYPES].join(",")}
+                    onChange={(event) => {
+                      setAvatarFile(event.currentTarget.files?.[0])
+                      setAvatarRemoved(false)
+                    }}
+                  />
+                </div>
+                <Show when={!avatarRemoved() && isAgentPortraitURL(agent()?.avatar)}>
+                  <button
+                    type="button"
+                    class="mt-2 text-xs text-v2-text-text-accent hover:underline"
+                    onClick={() => {
+                      setAvatarFile(undefined)
+                      setAvatarRemoved(true)
+                    }}
+                  >
+                    {language.t("agentConfig.portraitRemove")}
+                  </button>
+                </Show>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="memory" data-settings-tab="memory">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.memory")}
+              </h3>
+              <div class="mt-2 flex flex-col gap-1.5">
+                {/* ONE switch, not a pair of radios: "persistent memory" and "throwaway" are the same
+                  switch seen from two sides, and the radios made the negative half read like a
+                  feature to shop for. The line under it says WHICH SIDE IS IN FORCE right now, in
+                  both halves — this is the surface where someone decides what a colleague keeps, so
+                  it is the last place that should describe only the private half. */}
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={memoryValue() === "own"}
+                    disabled={governing()}
+                    onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
+                  />
+                  <span>{language.t("agentConfig.memoryRag")}</span>
+                </label>
+                <p class="text-[11px] text-v2-text-text-faint">
+                  {language.t(memoryDisclosure(memoryValue()).privateKey)}
+                  <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
+                </p>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="model" data-settings-tab="mind">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.mind")}
+              </h3>
+              {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
+                same colleague clever in one conversation and poor in the next, for reasons the user
+                could not see. A colleague has one mind. */}
+              <SelectV2
+                aria-label={language.t("agentConfig.mind")}
+                class="mt-2 w-full"
+                disabled={governing()}
+                options={modelOptions()}
+                current={modelOptions().find((option) => option.value === modelValue()) ?? modelOptions()[0]}
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setModel(option.value)}
+              />
+              <label class="mt-4 block text-xs font-medium text-v2-text-text-muted">Reasoning model</label>
+              <SelectV2
+                aria-label="Reasoning model"
+                class="mt-1 w-full"
+                disabled={governing()}
+                options={reasoningModelOptions()}
+                current={
+                  reasoningModelOptions().find((option) => option.value === reasoningModelValue()) ??
+                  reasoningModelOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setReasoningModel(option.value)}
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                Nova opens a private thinking phase on this model, then gives the checked result to the ordinary model
+                for tool calls and the answer. Choose “Use the ordinary model” to keep both phases on one model.
+              </p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={toolLabelsValue()}
+                  disabled={governing()}
+                  onChange={(event) => setToolLabels(event.currentTarget.checked)}
+                />
+                <span>{language.t("agentConfig.toolLabels")}</span>
+              </label>
+              <p class="text-[11px] text-v2-text-text-faint">
+                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
+              </p>
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
+                {language.t("agentConfig.reasoningBudget")}
+              </label>
+              <input
+                id="agent-reasoning-budget"
+                aria-label={language.t("agentConfig.reasoningBudget")}
+                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                type="number"
+                min="0"
+                step="1"
+                value={reasoningBudgetValue()}
+                placeholder={language.t("agentConfig.reasoningBudgetModel")}
+                onInput={(event) => setReasoningBudget(event.currentTarget.value)}
+              />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                {reasoningBudgetValue().trim() === ""
+                  ? language.t("agentConfig.reasoningBudgetDefault")
+                  : parsedReasoningBudget() === 0
+                    ? language.t("agentConfig.reasoningBudgetOff")
+                    : language.t("agentConfig.reasoningBudgetCustom", { tokens: reasoningBudgetValue() })}
+              </p>
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
+                {language.t("agentConfig.maxToolTimeout")}
+              </label>
+              <input
+                id="agent-tool-timeout"
+                aria-label={language.t("agentConfig.maxToolTimeout")}
+                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                type="number"
+                min="1"
+                step="1"
+                value={maxToolTimeoutMinutesValue()}
+                placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
+                onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+              />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                {maxToolTimeoutMinutesValue().trim() === ""
+                  ? language.t("agentConfig.maxToolTimeoutHelpDefault")
+                  : language.t("agentConfig.maxToolTimeoutHelpCustom", {
+                      minutes: maxToolTimeoutMinutesValue(),
+                    })}
+              </p>
+              {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
+                sometimes the right one. */}
+              <Show when={mindTooSmall()}>
+                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
+              </Show>
+              {/* 🔴 The floor this ROLE needs, which is a different statement from the model bound above.
+                A colleague can end up on the instance default without anyone choosing it — its own
+                model may be unavailable or have been failing — and a bookkeeper written for a frontier
+                model quietly thinking with a micro one does not error, it just gets things wrong. The
+                floor is what lets the colleague notice and SAY so. */}
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-tier">
+                {language.t("agentConfig.needsTier")}
+              </label>
+              <SelectV2
+                id="agent-needs-tier"
+                class="mt-1 w-full"
+                disabled={governing()}
+                options={needsTierOptions()}
+                current={
+                  needsTierOptions().find((option) => option.value === needsTierValue()) ?? needsTierOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setNeedsTier(option.value)}
+              />
+              <Show when={belowFloor()}>
+                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
+              </Show>
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
+                {language.t("agentConfig.superior")}
+              </label>
+              <SelectV2
+                id="agent-superior"
+                aria-label={language.t("agentConfig.superior")}
+                class="mt-1 w-full"
+                options={superiorOptions()}
+                current={
+                  superiorOptions().find((option) =>
+                    superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
+                  ) ?? superiorOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setSuperior(option.value)}
+              />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
+            </section>
+
+            <section class="agent-settings-card" data-section="work" data-settings-tab="work">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.work")}
+              </h3>
+              {/* 🔴 The three standing WORK choices, moved off the composer 2026-08-21 (owner: the
+                Chat/Agent drop-down, Strict and permissions "should be part of the agent too"). They
+                describe the ROLE: a bookkeeper that needs Analyze mode needs it every time you talk to
+                it, and re-choosing per chat is a question asked again for a decision that never
+                changes. A chat can still differ — these are a LAYER, and the chat's own row wins. */}
+              <div class="mt-2 flex flex-col gap-2">
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span>{language.t("agentConfig.posture")}</span>
+                  <SelectV2
+                    appearance="inline"
+                    aria-label={language.t("agentConfig.posture")}
+                    disabled={governing()}
+                    options={POSTURE_CHOICES}
+                    current={postureValue() ? "chat" : "agent"}
+                    label={(value) =>
+                      language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")
+                    }
+                    onSelect={(value) => {
+                      if (!value) return
+                      setPosture(value === "chat")
+                      if (value === "chat") setDirectory("")
+                    }}
+                  />
+                </div>
+                <p class="text-[11px] text-v2-text-text-faint">
+                  {language.t(postureValue() ? "prompt.posture.chat.description" : "prompt.posture.agent.description")}
+                </p>
+
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span>{language.t("prompt.permissionMode.title")}</span>
+                  <SelectV2
+                    appearance="inline"
+                    aria-label={language.t("prompt.permissionMode.title")}
+                    disabled={governing()}
+                    options={PERMISSION_MODE_CHOICES}
+                    current={
+                      PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ??
+                      PERMISSION_MODE_CHOICES[1]
+                    }
+                    label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
+                    onSelect={(mode) => mode && setPermissionMode(mode)}
+                  />
+                </div>
+
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictValue()}
+                    disabled={governing()}
+                    onChange={(event) => setStrict(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("agentConfig.strict")}</span>
+                </label>
+
+                {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
+                  row only exists where that grant actually reaches. A subagent has no grant to opt out
+                  of, and showing it a switch reading "on" would be a control that lies. */}
+                <Show when={agent() !== undefined && isColleague(agent()!)}>
+                  <label class="flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      checked={computerUseValue()}
+                      disabled={governing()}
+                      onChange={(event) => setComputerUse(event.currentTarget.checked)}
+                    />
+                    <span>{language.t("agentConfig.computerUse")}</span>
+                  </label>
+                  <p class="text-[11px] text-v2-text-text-faint">
+                    {language.t(computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off")}
+                  </p>
+                </Show>
+              </div>
+            </section>
+
+            <Show when={props.agentID}>
+              {(id) => (
+                <section class="agent-settings-card" data-settings-tab="work">
+                  <SettingsNudgesV2 fixedAgentID={id()} />
+                </section>
+              )}
+            </Show>
+
+            <Show when={!postureValue()}>
+              <section class="agent-settings-card" data-settings-tab="work">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                  {language.t("agentConfig.folder")}
+                </h3>
+                {/* 🔴 The colleague's PROJECT, and it lives here rather than in the prompt area (owner,
+                2026-08-21). Asking which folder a chat runs in made "where does this work happen" a
+                per-conversation question and left a named officer with no project of its own; under the
+                roster it is part of the job — you assign the bookkeeper to the books once. */}
+                <div class="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
+                    disabled={governing()}
+                    onClick={() => pickFolder()}
+                  >
+                    <Icon name="folder" class="size-3.5 shrink-0" />
+                    <span class="truncate">{folderLabel()}</span>
+                  </button>
+                  <Show when={directoryValue() !== undefined}>
+                    {/* Back to its own workspace — the one way out of a project, and it is a change like any
+                    other: the colleague is told (`AgentReassignment`). */}
+                    <button
+                      type="button"
+                      class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                      onClick={() => setDirectory("")}
+                    >
+                      {language.t("agentConfig.folderOwn")}
+                    </button>
+                  </Show>
+                </div>
+                {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
+                ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
+                even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
+                `SystemCompose.workspaceSection` tells the colleague about it — so the notes, drafts and
+                probe scripts it writes there were real files nobody had a way to open.
+
+                ⚠️ Rendered whether or not a project is assigned, because the workspace exists either
+                way: when there is no project it IS the working folder, and when there is one it is the
+                place the colleague keeps everything that is not the project's. Hiding it in the second
+                case would hide exactly the files the user has no other route to. */}
+                <Show when={workspacePath()}>
+                  {(path) => (
+                    /**
+                     * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
+                     * browse link "also closes the Tune for some reason").
+                     *
+                     * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
+                     * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
+                     * way back. The vision settles which half to fix: Files is THE file surface, an app in
+                     * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
+                     * a second file browser living inside this dialog would be the wrong answer to a
+                     * question the launcher already answers.
+                     *
+                     * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
+                     * the user takes — Tune, then Files — instead of a dialog that evaporates behind
+                     * them, which is the same rule the Back button in this header exists for: the gesture
+                     * out of a panel is "return", and an unannounced one is a dead end wearing a link.
+                     */
+                    <a
+                      data-action="browse-workspace"
+                      href={`/files?path=${encodeURIComponent(path())}`}
+                      onClick={() => props.onDismiss()}
+                      class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
+                    >
+                      <Icon name="folder" class="size-3 shrink-0" />
+                      {language.t("agentConfig.browseWorkspace", { name: name() })}
+                    </a>
+                  )}
+                </Show>
+              </section>
+            </Show>
+
+            <section class="agent-settings-card" data-settings-tab="memory">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.archive")}
+              </h3>
+              <div class="mt-2 flex flex-col gap-1.5">
+                {/* A chat that never ends gets compacted; this decides whether the compressed-away half
+                  stays searchable or is gone but for a summary. */}
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={archiveValue()}
+                    disabled={governing() || memoryValue() === "none"}
+                    onChange={(event) => setArchive(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("agentConfig.archiveKeep")}</span>
+                </label>
+                <Show when={memoryValue() === "none"}>
+                  {/* Said rather than silently ignored: a throwaway keeps nothing, so the control above
+                    would be a promise this colleague cannot make. */}
+                  <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.archiveThrowaway")}</p>
+                </Show>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-settings-tab="workers" data-section="workers">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Worker fleet</h3>
+              <p class="mt-2 text-xs leading-relaxed text-v2-text-text-faint">
+                These limits cover every unfinished worker below this officer, including workers spawned by workers.
+              </p>
+              <label class="mt-4 block text-xs text-v2-text-text-muted">Worker prototype</label>
+              <SelectV2
+                aria-label="Worker prototype"
+                class="mt-1 w-full"
+                options={workerPrototypeOptions()}
+                current={
+                  workerPrototypeOptions().find((option) => option.value === workerPrototypeValue()) ??
+                  workerPrototypeOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setWorkerPrototype(option.value)}
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                A worker copies this officer’s role and model settings, but remains an anonymous temporary session. If
+                no prototype is selected, it inherits this officer’s recipe. Either way it shares this officer’s memory
+                and authority, and reports to the session that spawned it—not to the prototype’s superior.
+              </p>
+              <label class="mt-4 block text-xs text-v2-text-text-muted">Worker model</label>
+              <SelectV2
+                aria-label="Worker model"
+                class="mt-1 w-full"
+                options={workerModelOptions()}
+                current={
+                  workerModelOptions().find((option) => option.value === workerModelValue()) ?? workerModelOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setWorkerModel(option.value)}
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                Used for workers when no prototype is selected. Inherit uses this officer’s ordinary model.
+              </p>
+              <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                <label class="block text-xs text-v2-text-text-muted">
+                  Maximum active workers
+                  <input
+                    aria-label="Maximum active workers"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={maxWorkersValue()}
+                    onInput={(event) => setMaxWorkers(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">
+                    Across the entire worker tree. Default 100.
+                  </span>
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Spawn depth
+                  <input
+                    aria-label="Spawn depth"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={spawnDepthValue()}
+                    onInput={(event) => setSpawnDepth(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">
+                    0 disables workers; 1 allows only this officer to spawn. Default 1.
+                  </span>
+                </label>
+              </div>
+              <div class="mt-5 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 text-xs text-v2-text-text-muted">
+                Worker command captions are always off, keeping presentation-only model calls out of batch work.
+              </div>
+            </section>
+
+            <Show when={props.tuning}>
+              {(tuning) => (
+                <section class="agent-settings-card" data-settings-tab="chat">
+                  <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                    {language.t("agentConfig.thisChat")}
+                  </h3>
+                  {/* The distinction the two sections exist to teach: above is who this colleague IS
+                    everywhere, below is how this one conversation runs. */}
+                  <div class="mt-2">{tuning()()}</div>
+                </section>
+              )}
+            </Show>
+          </div>
+        </div>
+      </div>
+
+      {/* Lifecycle, kept apart from the profile fields: these do something the moment they are
+            pressed, while everything above waits for Save. */}
+      <div class="flex min-w-0 flex-wrap items-center gap-1 border-t border-v2-border-border-muted px-2 py-2 sm:gap-2 sm:px-4 sm:py-2.5">
+        <button
+          type="button"
+          data-action="agent-clear-chat"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || props.agentID === undefined}
+          onClick={() => void clearChat()}
+        >
+          {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
+        </button>
+        <button
+          type="button"
+          data-action="agent-clear-memory"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || props.agentID === undefined}
+          onClick={() => void clearMemory()}
+        >
+          {busy() === "clear-memory" ? language.t("agentConfig.memoryClearing") : language.t("agentConfig.clearMemory")}
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || agent() === undefined}
+          onClick={() => void clone()}
+        >
+          {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+        </button>
+        {/* The door into this colleague's own cabinet. The profile already says whose screen this
+              is, so the action is simply “Memory”; repeating the name turns a destination into a
+              sentence and makes the footer harder to scan. */}
+        <button
+          type="button"
+          data-action="agent-open-memory"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || props.agentID === undefined}
+          onClick={() => {
+            const id = props.agentID
+            if (id === undefined) return
+            props.onDismiss()
+            navigate(ownerRoute(id))
+          }}
+        >
+          {language.t("agentConfig.memoryOpen")}
+        </button>
+        <Show when={!governing()}>
+          {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
                 as the same kind of act. Pausing is reversible and keeps everything; retiring
                 archives the chats and sets the cabinet aside. */}
-            <button
-              type="button"
-              data-action="agent-pause"
-              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={busy() !== undefined || agent() === undefined}
-              onClick={() => void setPaused(agent()?.paused !== true)}
-            >
-              {busy() === "pause"
-                ? language.t("agentConfig.pausing")
-                : agent()?.paused === true
-                  ? language.t("agentConfig.resume")
-                  : language.t("agentConfig.pause")}
-            </button>
-            <button
-              type="button"
-              class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={busy() !== undefined || props.agentID === undefined}
-              onClick={() => void retire()}
-            >
-              {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
-            </button>
-          </Show>
-        </div>
-        <Show when={!governing()}>
-          <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
-            <button
-              type="button"
-              class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-              onClick={props.onDismiss}
-            >
-              {language.t("agentConfig.cancel")}
-            </button>
-            <button
-              type="button"
-              class="rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
-              // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
-              // without it a save fired before the roster landed wrote the fields it had not read yet.
-              disabled={
-                !dirty() ||
-                !reasoningBudgetValid() ||
-                !maxToolTimeoutValid() ||
-                saving() ||
-                props.agentID === undefined ||
-                agent() === undefined
-              }
-              onClick={() => void save()}
-            >
-              {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-            </button>
-          </div>
+          <button
+            type="button"
+            data-action="agent-pause"
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={busy() !== undefined || agent() === undefined}
+            onClick={() => void setPaused(agent()?.paused !== true)}
+          >
+            {busy() === "pause"
+              ? language.t("agentConfig.pausing")
+              : agent()?.paused === true
+                ? language.t("agentConfig.resume")
+                : language.t("agentConfig.pause")}
+          </button>
+          <button
+            type="button"
+            class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={busy() !== undefined || props.agentID === undefined}
+            onClick={() => void retire()}
+          >
+            {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
+          </button>
         </Show>
       </div>
-    </Dialog>
+      <Show when={!governing()}>
+        <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
+          <button
+            type="button"
+            class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+            onClick={props.onDismiss}
+          >
+            {language.t("agentConfig.cancel")}
+          </button>
+          <button
+            type="button"
+            class="rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
+            // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
+            // without it a save fired before the roster landed wrote the fields it had not read yet.
+            disabled={
+              !dirty() ||
+              !reasoningBudgetValid() ||
+              !maxToolTimeoutValid() ||
+              Number.isNaN(parsedMaxWorkers()) ||
+              Number.isNaN(parsedSpawnDepth()) ||
+              saving() ||
+              props.agentID === undefined ||
+              agent() === undefined
+            }
+            onClick={() => void save()}
+          >
+            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
+          </button>
+        </div>
+      </Show>
+    </div>
   )
 }
+
+/** Transitional source-compatible name; the component itself is now an addressable app screen. */
+export const AgentConfigDialog = AgentConfigScreen

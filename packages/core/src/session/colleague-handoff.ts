@@ -216,6 +216,12 @@ export interface Hired {
   readonly name: string
 }
 
+export interface WorkerAction {
+  readonly ok: boolean
+  readonly reason?: string | undefined
+  readonly archived?: number | undefined
+}
+
 export interface Interface {
   /**
    * Staff the organization: write the role and make it LIVE.
@@ -293,6 +299,17 @@ export interface Interface {
     readonly colleagues: ReadonlyArray<string>
     readonly message: string
   }) => Effect.Effect<GroupDelivery>
+  /** Message one direct spawned worker. Direct-child authority is checked host-side. */
+  readonly messageWorker: (input: {
+    readonly from: SessionSchema.ID
+    readonly worker: SessionSchema.ID
+    readonly message: string
+  }) => Effect.Effect<WorkerAction>
+  /** Stop and archive one direct worker and every worker beneath it. */
+  readonly killWorker: (input: {
+    readonly from: SessionSchema.ID
+    readonly worker: SessionSchema.ID
+  }) => Effect.Effect<WorkerAction>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ColleagueHandoff") {}
@@ -473,6 +490,11 @@ export const fromParts = (input: {
   readonly paused?: (colleague: string) => Effect.Effect<boolean>
   /** Live roster used to reject missing, self-referential and cyclic reporting lines. */
   readonly roster?: Effect.Effect<ReadonlyArray<AgentV2.Info>>
+  /** Host-owned child controls. Absent in graphs that never execute model tools. */
+  readonly worker?: {
+    readonly message: Interface["messageWorker"]
+    readonly kill: Interface["killWorker"]
+  }
 }): Interface => ({
   hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
     // 🔴 The org chart itself, enforced where every door reaches it — see `by` on the interface.
@@ -792,6 +814,12 @@ export const fromParts = (input: {
     // and only it can judge whether that still answers the question.
     return { conversation, delivered: reachable, missing: [...missing, ...cycling], started }
   }),
+  messageWorker: (request) =>
+    input.worker?.message(request) ??
+    Effect.succeed({ ok: false, reason: "Worker messaging is unavailable in this execution graph." }),
+  killWorker: (request) =>
+    input.worker?.kill(request) ??
+    Effect.succeed({ ok: false, reason: "Worker termination is unavailable in this execution graph." }),
 })
 
 export const layer = Layer.effect(

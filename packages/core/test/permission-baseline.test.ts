@@ -202,6 +202,7 @@ describe("the built-in agents the plugin actually builds", () => {
       // 2026-08-22 nobody could — `spawn` is absent from the ambient baseline, so it fell to `ask`,
       // and asking was removed, so every ask denies. The capability was gone rather than gated.
       expect(effectFor(agents.get("nova")!, "spawn", "inherit")).toBe("allow")
+      expect(effectFor(agents.get("nova")!, "kill", "*")).toBe("allow")
 
       // ⚠️ THE SAFETY CLAIM, asserted rather than described. `inherit` means the child runs as THIS
       // agent under THIS ruleset, so the grant creates a session and not one unit of authority.

@@ -60,6 +60,11 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
       ...(typeof variant === "string" && variant.trim() !== "" ? { variant } : {}),
     } as EffectiveConfig["model"]
   }
+  const declaredReasoningModel = (agent as unknown as Record<string, unknown>)["reasoningModel"]
+  if (typeof declaredReasoningModel === "string" && declaredReasoningModel.trim() !== "") {
+    const parsed = ModelV2.parse(declaredReasoningModel)
+    next.reasoningModel = { providerID: parsed.providerID, id: parsed.modelID } as EffectiveConfig["reasoningModel"]
+  }
   for (const field of DECLARABLE) {
     const value = (agent as unknown as Record<string, unknown>)[field]
     if (value === undefined)
@@ -83,6 +88,8 @@ export const declaredBy = (agent: ConfigAgent.Info | undefined): readonly string
   const record = agent as unknown as Record<string, unknown>
   const declared: string[] = DECLARABLE.filter((field) => record[field] !== undefined)
   if (typeof record["model"] === "string" && record["model"].trim() !== "") declared.push("model")
+  if (typeof record["reasoningModel"] === "string" && record["reasoningModel"].trim() !== "")
+    declared.push("reasoningModel")
   return declared
 }
 

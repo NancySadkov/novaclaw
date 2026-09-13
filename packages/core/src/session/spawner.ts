@@ -1,6 +1,6 @@
 export * as SessionSpawner from "./spawner"
 
-import { and, count, eq, gt, isNull } from "drizzle-orm"
+import { and, count, eq, gt } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
@@ -21,6 +21,7 @@ import { SessionSchema } from "./schema"
 import { SessionMessage } from "./message"
 import { FileAttachment, Prompt } from "./prompt"
 import { Log } from "@novaclaw/schema/log"
+import { WorkerProfile } from "./worker-profile"
 
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
 // `fork` (architecture.md Phase 3 step 6). It deliberately depends ONLY on the cycle-free primitives
@@ -40,11 +41,13 @@ import { Log } from "@novaclaw/schema/log"
 // attached the spawn still succeeds — the input is durable — but it reports `started: false` so the
 // caller can say so rather than promising a run that will not happen.
 
-/** Recursion-depth cap: a child deeper than this is refused (fork-bomb guard, must ship with spawn). */
-export const MAX_SPAWN_DEPTH = 8
+/** Shipped officer policy: workers may not spawn another generation unless the user opts in. */
+export const DEFAULT_SPAWN_DEPTH = 1
 
-/** Active fan-out cap: one parent may have at most this many unfinished direct children (K1 quota). */
-export const MAX_SPAWN_CHILDREN = 16
+/** Shipped officer policy: maximum unfinished workers across the whole worker tree. */
+export const DEFAULT_MAX_WORKERS = 100
+/** Compatibility name for callers/tests that display the shipped worker limit. */
+export const MAX_SPAWN_CHILDREN = DEFAULT_MAX_WORKERS
 
 /** Rate cap: one parent may spawn at most this many children per rolling minute (K1 quota). */
 export const MAX_SPAWNS_PER_MINUTE = 10
@@ -132,6 +135,7 @@ export const layer = Layer.effect(
     const projects = yield* ProjectV2.Service
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
+    const agents = yield* AgentV2.Service
     const wake = yield* SessionRunCoordinator.Wake
     // The ad-hoc store's root through the SERVICE, composed with `storeRootIn` — the same
     // resolution `adhoc-tools/guidance.ts`, `tool/tool-manual.ts` and `tool/define-tool.ts` use, so
@@ -145,9 +149,25 @@ export const layer = Layer.effect(
     return Service.of({
       spawn: Effect.fn("SessionSpawner.spawn")(function* (input) {
         const parentID = input.parentID
+        // Find the ROOT before taking the lock. Parent links are immutable, so this answer cannot
+        // change while we wait. Quotas belong to the officer's whole worker tree; locking the
+        // immediate parent let two siblings both observe the same free final slot.
+        const lineage: SessionSchema.Info[] = []
+        if (parentID !== undefined) {
+          let ancestor: SessionSchema.ID | undefined = parentID
+          const seen = new Set<string>()
+          while (ancestor !== undefined && !seen.has(ancestor)) {
+            seen.add(ancestor)
+            const found: SessionSchema.Info | undefined = yield* store.get(ancestor)
+            if (!found) break
+            lineage.push(found)
+            ancestor = found.parentID
+          }
+        }
+        const root = lineage.at(-1)
         // Rootless launches serialise on one shared key rather than per-parent: they take no quota
         // decision, so the lock is only keeping `createSessionRecord` orderly.
-        const child = yield* spawnLocks.withLock(parentID ?? "@rootless")(
+        const child = yield* spawnLocks.withLock(root?.id ?? "@rootless")(
           Effect.gen(function* () {
             // The instance-wide host verdict comes first, including for rootless calendar launches.
             // A schedule has no parent quota to inspect, but it still creates a worker on this host.
@@ -185,28 +205,47 @@ export const layer = Layer.effect(
                   location,
                 },
               )
-            let depth = 0
-            let ancestor: SessionSchema.ID | undefined = parentID
-            const seen = new Set<string>()
-            while (ancestor !== undefined && !seen.has(ancestor)) {
-              seen.add(ancestor)
-              const parent: SessionSchema.Info | undefined = yield* store.get(ancestor)
-              if (!parent) break
-              depth++
-              ancestor = parent.parentID
-            }
-            if (depth >= MAX_SPAWN_DEPTH)
-              return yield* Effect.fail(new SpawnLimitError({ reason: "depth", depth, limit: MAX_SPAWN_DEPTH }))
-
-            const active = yield* db
-              .select({ n: count() })
-              .from(SessionTable)
-              .where(and(eq(SessionTable.parent_id, parentID), isNull(SessionTable.result)))
-              .get()
-              .pipe(Effect.orDie)
-            if ((active?.n ?? 0) >= MAX_SPAWN_CHILDREN)
+            const ownerID = [...lineage].reverse().find((row) => row.agent !== undefined)?.agent
+            const owner = ownerID === undefined ? undefined : yield* agents.resolve(ownerID)
+            const ownerConfig = owner as unknown as Record<string, unknown> | undefined
+            const spawnDepth =
+              typeof ownerConfig?.["spawnDepth"] === "number" ? ownerConfig["spawnDepth"] : DEFAULT_SPAWN_DEPTH
+            // lineage length 1 means the officer itself is spawning. A depth of zero therefore
+            // refuses immediately; one allows that worker but refuses the worker's own spawn.
+            if (lineage.length > spawnDepth)
               return yield* Effect.fail(
-                new SpawnLimitError({ reason: "children", depth: active?.n ?? 0, limit: MAX_SPAWN_CHILDREN }),
+                new SpawnLimitError({ reason: "depth", depth: lineage.length - 1, limit: spawnDepth }),
+              )
+
+            const rows = yield* db
+              .select({ id: SessionTable.id, parentID: SessionTable.parent_id, result: SessionTable.result })
+              .from(SessionTable)
+              .all()
+              .pipe(Effect.orDie)
+            const children = new Map<string, typeof rows>()
+            for (const row of rows) {
+              if (row.parentID === null) continue
+              const bucket = children.get(row.parentID) ?? []
+              bucket.push(row)
+              children.set(row.parentID, bucket)
+            }
+            let activeWorkers = 0
+            const pending = root ? [root.id as string] : []
+            const visited = new Set<string>()
+            while (pending.length > 0) {
+              const current = pending.pop()!
+              if (visited.has(current)) continue
+              visited.add(current)
+              for (const row of children.get(current) ?? []) {
+                if (row.result === null) activeWorkers++
+                pending.push(row.id)
+              }
+            }
+            const maxWorkers =
+              typeof ownerConfig?.["maxWorkers"] === "number" ? ownerConfig["maxWorkers"] : DEFAULT_MAX_WORKERS
+            if (activeWorkers >= maxWorkers)
+              return yield* Effect.fail(
+                new SpawnLimitError({ reason: "children", depth: activeWorkers, limit: maxWorkers }),
               )
 
             const now = Date.now()
@@ -221,12 +260,45 @@ export const layer = Layer.effect(
                 new SpawnLimitError({ reason: "rate", depth: recent?.n ?? 0, limit: MAX_SPAWNS_PER_MINUTE }),
               )
 
+            const configuredPrototype =
+              typeof ownerConfig?.["workerPrototype"] === "string"
+                ? AgentV2.ID.make(ownerConfig["workerPrototype"])
+                : undefined
+            const resolvedPrototype =
+              configuredPrototype === undefined ? undefined : yield* agents.resolve(configuredPrototype)
+            // A prototype contributes a role snapshot, never its identity. In particular, Nova may
+            // not be cloned into a child: that would turn a presentation choice into CEO authority.
+            const prototype =
+              input.agent === undefined &&
+              resolvedPrototype !== undefined &&
+              AgentV2.isColleague(resolvedPrototype) &&
+              !AgentV2.isProtected(String(resolvedPrototype.id)) &&
+              resolvedPrototype.paused !== true
+                ? resolvedPrototype
+                : undefined
+            const configuredWorkerModel = ownerConfig?.["workerModel"]
+            const workerModel =
+              typeof configuredWorkerModel === "object" &&
+              configuredWorkerModel !== null &&
+              typeof (configuredWorkerModel as Record<string, unknown>)["providerID"] === "string" &&
+              typeof (configuredWorkerModel as Record<string, unknown>)["id"] === "string"
+                ? (() => {
+                    const parsed = ModelV2.parse(
+                      `${(configuredWorkerModel as Record<string, string>)["providerID"]!}/${(configuredWorkerModel as Record<string, string>)["id"]!}`,
+                    )
+                    return { providerID: parsed.providerID, id: parsed.modelID }
+                  })()
+                : undefined
+            const workerProfile = prototype === undefined ? undefined : WorkerProfile.capture(prototype)
             return yield* createSessionRecord(
               { db, events, projects, store },
               {
                 parentID,
+                // Undefined is the architectural ownership rule: anonymous workers inherit the
+                // spawning officer through the parent chain. A named prototype lives only in the
+                // profile snapshot below and therefore cannot steal the worker's cabinet or scope.
                 agent: input.agent,
-                model: input.model,
+                model: input.model ?? (prototype === undefined ? workerModel : undefined),
                 controlBinding: input.controlBinding,
                 systemPromptOverride: input.systemPromptOverride,
                 // A spawned session is a sub-agent thread unless the caller says otherwise (Vision).
@@ -234,7 +306,10 @@ export const layer = Layer.effect(
                 priority: input.priority,
                 permissionMode: input.permissionMode,
                 title: input.title,
-                metadata: input.metadata,
+                metadata:
+                  workerProfile === undefined
+                    ? input.metadata
+                    : { ...(input.metadata ?? {}), [WorkerProfile.KEY]: workerProfile },
                 openingPrompt,
                 location, // the parent's location = this seam's location
               },
@@ -272,6 +347,7 @@ export const node = makeLocationNode({
     SessionStore.node,
     Location.node,
     SessionRunCoordinator.wakeNode,
+    AgentV2.node,
     // Global only — a dependency-free hoisted global (`Global.node` declares `deps: []`), so it adds
     // no edge to the cycle-free set the header above is protecting.
     Global.node,

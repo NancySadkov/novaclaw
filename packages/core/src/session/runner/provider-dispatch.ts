@@ -1,7 +1,16 @@
 export * as ProviderDispatch from "./provider-dispatch"
 
 import { Cause, Duration, Effect, Exit, Option, Stream } from "effect"
-import { LLM, LLMEvent, type LLMClientShape, type LLMError, type LLMRequest, type Usage } from "@novaclaw/llm"
+import {
+  LLM,
+  LLMEvent,
+  Message,
+  type LLMClientShape,
+  type LLMError,
+  type LLMRequest,
+  type Model,
+  type Usage,
+} from "@novaclaw/llm"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
@@ -12,6 +21,8 @@ import { ContextBudget } from "./context-budget"
 import { ContextPack } from "./context-pack"
 import { ProviderRetry } from "./provider-retry"
 import { ReasoningBudget } from "./reasoning-budget"
+import { Token } from "../../util/token"
+import { applySteerProvenance } from "../steer-provenance"
 
 const thinkingEnabled = (request: LLMRequest): boolean => {
   const body = request.http?.body as { chat_template_kwargs?: { enable_thinking?: boolean } } | undefined
@@ -101,6 +112,18 @@ interface StreamInput {
   readonly preparedOpening?: LLMRequest
   readonly enabled: boolean
   readonly budget: number
+  /** A distinct model for the private reasoning phase. The harness owns the phase boundary. */
+  readonly reasoningModel?: Model
+  /** Move the scheduler lease with the provider request. A split-model turn never holds the
+   * ordinary device while the reasoner is generating, and the ordinary stream cannot begin until
+   * its own device has been reacquired. */
+  readonly reasoningPhase?: {
+    readonly enter: Effect.Effect<void>
+    readonly leave: (costTokens: number | undefined) => Effect.Effect<void>
+  }
+  /** Refit the answer after private reasoning has been appended. The original request was packed
+   * before that text existed, so reusing it verbatim can exceed the ordinary model's context. */
+  readonly prepareAnswer?: (request: LLMRequest) => LLMRequest
   /** Observe the exact request/usage pair for every provider response, before a controller can
    * collapse several reasoning phases into one synthetic settlement. */
   readonly onProviderStep?: (step: {
@@ -110,6 +133,7 @@ interface StreamInput {
     readonly providerMetadata: Readonly<Record<string, unknown>> | undefined
     /** Whether this ordinary opening request can become a durable usage anchor. */
     readonly anchorable: boolean
+    readonly phase: "reasoning" | "answer"
   }) => Effect.Effect<void>
 }
 
@@ -120,7 +144,10 @@ export const openingRequest = (input: Pick<StreamInput, "request" | "enabled" | 
     : input.request
 
 export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
-  const source = (request: LLMRequest, observation: { readonly anchorable: boolean }) => {
+  const source = (
+    request: LLMRequest,
+    observation: { readonly anchorable: boolean; readonly phase?: "reasoning" | "answer" },
+  ) => {
     const stream = input.llm.stream(request)
     if (input.onProviderStep === undefined) return stream
     return stream.pipe(
@@ -131,10 +158,117 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
               usage: event.usage,
               providerMetadata: event.providerMetadata,
               anchorable: observation.anchorable,
+              phase: observation.phase ?? "answer",
             })
           : Effect.void,
       ),
     )
+  }
+  if (input.enabled && input.budget > 0 && input.reasoningModel !== undefined) {
+    let reasoning = ""
+    let done = false
+    // Step-finish and finish normally repeat one usage value. Keep the last terminal observation,
+    // exactly as ReasoningBudget does, so one provider phase is charged once rather than twice.
+    let reasoningUsage: Usage | undefined
+    const maxChars = Token.charsFromTokens(input.budget)
+    const reasonInput = LLM.requestInput(input.request)
+    // The controller, not the model, opens the private envelope. This makes the handoff deterministic
+    // even for a model that would otherwise answer directly, while each provider request remains
+    // bound to exactly one model and one KV cache.
+    const reasonRequest = LLM.request({
+      ...reasonInput,
+      model: input.reasoningModel,
+      tools: [],
+      toolChoice: "none",
+      messages: [...input.request.messages, Message.assistant("<think>\n")],
+      http: {
+        ...(reasonInput.http ?? {}),
+        body: {
+          ...(reasonInput.http?.body ?? {}),
+          chat_template_kwargs: {
+            ...((reasonInput.http?.body?.["chat_template_kwargs"] as Record<string, unknown> | undefined) ?? {}),
+            enable_thinking: true,
+          },
+          continue_final_message: true,
+          add_generation_prompt: false,
+        },
+      },
+    })
+    const rawReasoningSource = source(reasonRequest, { anchorable: false, phase: "reasoning" }).pipe(
+      Stream.flatMap((event) => {
+        if (LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event)) {
+          if (event.usage !== undefined) reasoningUsage = event.usage
+          return Stream.empty
+        }
+        if (!LLMEvent.is.reasoningDelta(event) && !LLMEvent.is.textDelta(event)) return Stream.empty
+        const room = maxChars - reasoning.length
+        if (room <= 0) {
+          done = true
+          return Stream.empty
+        }
+        const text = event.text.slice(0, room)
+        reasoning += text
+        // Text means the reasoner closed the envelope and started drafting its own answer. Keep the
+        // first conclusion as evidence, then hand answer/tool generation to the ordinary model.
+        if (LLMEvent.is.textDelta(event) || reasoning.length >= maxChars) done = true
+        // This phase is private controller state, not assistant output. Publishing it would both
+        // expose scratch work and make an answer failure look non-retryable because durable output
+        // had already begun.
+        return Stream.empty
+      }),
+      Stream.takeUntil((event) => done && LLMEvent.is.reasoningDelta(event)),
+      // A prototype may point at a model/provider that cannot accept continuation prefills. The
+      // officer still answers on its ordinary model; the failed private phase is never a dead end.
+      Stream.catchCause(() => Stream.empty),
+    )
+    const reasoningSource =
+      input.reasoningPhase === undefined
+        ? rawReasoningSource
+        : Stream.unwrap(input.reasoningPhase.enter.pipe(Effect.as(rawReasoningSource))).pipe(
+            // Defer the read until the provider stream has actually produced its terminal usage.
+            Stream.ensuring(Effect.suspend(() => input.reasoningPhase!.leave(reasoningUsage?.totalTokens))),
+          )
+    const answerSource = Stream.unwrap(
+      Effect.sync(() => {
+        const tail = reasoning.trim()
+          ? applySteerProvenance(
+              `A separate reasoning model produced the private work below. Use it as evidence, check it, then answer or call a tool. Do not repeat or expose the private reasoning.\n<thinking>\n${reasoning}\n</thinking>`,
+            )
+          : undefined
+        const unpackedAnswer = withoutReasoning(
+          LLM.request({
+            ...LLM.requestInput(input.request),
+            messages: [...input.request.messages, ...(tail === undefined ? [] : [Message.user(tail)])],
+          }),
+        )
+        const answer = input.prepareAnswer?.(unpackedAnswer) ?? unpackedAnswer
+        return source(answer, { anchorable: false, phase: "answer" }).pipe(
+            Stream.map((event) => {
+              if (!LLMEvent.is.stepFinish(event) && !LLMEvent.is.finish(event)) return event
+              const usage = ReasoningBudget.aggregateUsage(
+                [
+                  ...(reasoningUsage === undefined ? [] : [reasoningUsage]),
+                  ...(event.usage === undefined ? [] : [event.usage]),
+                ],
+                0,
+              )
+              return LLMEvent.is.stepFinish(event)
+                ? LLMEvent.stepFinish({
+                    index: event.index,
+                    reason: event.reason,
+                    usage,
+                    providerMetadata: event.providerMetadata,
+                  })
+                : LLMEvent.finish({
+                    reason: event.reason,
+                    usage,
+                    providerMetadata: event.providerMetadata,
+                  })
+            }),
+          )
+      }),
+    )
+    return Stream.concat(reasoningSource, answerSource)
   }
   return input.enabled && input.budget > 0 && thinkingEnabled(input.request)
     ? ReasoningBudget.stream({

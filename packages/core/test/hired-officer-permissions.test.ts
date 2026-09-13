@@ -140,6 +140,8 @@ describe("a colleague the user hired", () => {
       // The metaphor's other half: *"…and spawn the nameless sub-agents"*. A hired officer gets this
       // from the officer floor, the same door `colleague` comes through.
       expect(effectFor(hired, "spawn", "inherit")).toBe("allow")
+      // Terminating one of this session's own direct children is the narrowing complement to spawn.
+      expect(effectFor(hired, "kill", "*")).toBe("allow")
       // 🔴 AND NO FURTHER. `inherit` runs the child as Theron under Theron's own ruleset, so it can
       // do nothing Theron could not. Naming another agent is the form that WOULD widen — a narrow
       // colleague reaching for a broader one's standing — and it stays ungranted. This assertion is

@@ -40,6 +40,7 @@ import { SpawnTool } from "./spawn"
 import * as CommunityTool from "./deferred/community.gen"
 import { ExitTool } from "./exit"
 import { WaitTool } from "./wait"
+import { KillTool } from "./kill"
 import { WriteTool } from "./write"
 import * as WriteHexTool from "./deferred/write-hex.gen"
 
@@ -87,5 +88,6 @@ export const node = makeLocationNode({
     CommunityTool.node,
     ExitTool.node,
     WaitTool.node,
+    KillTool.node,
   ],
 })

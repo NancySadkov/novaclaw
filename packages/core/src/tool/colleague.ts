@@ -51,6 +51,14 @@ const AskOp = Schema.Struct({
   }),
 })
 
+const MessageWorkerOp = Schema.Struct({
+  op: Schema.Literal("message_worker"),
+  worker: Schema.String.annotate({ description: "The direct child session id returned by `spawn`." }),
+  message: Schema.String.annotate({
+    description: "The correction or additional context to put into that worker's current task.",
+  }),
+})
+
 /**
  * ⚠️ A SEPARATE OP rather than letting `ask` take a list.
  *
@@ -102,7 +110,16 @@ const SetSuperiorOp = Schema.Struct({
   superior: Schema.String.annotate({ description: "Their new superior, by id. Use `nova` for the CEO." }),
 })
 
-export const Input = Schema.Union([ListOp, IdentityOp, AskOp, AskGroupOp, HireOp, RetireOp, SetSuperiorOp])
+export const Input = Schema.Union([
+  ListOp,
+  IdentityOp,
+  AskOp,
+  AskGroupOp,
+  MessageWorkerOp,
+  HireOp,
+  RetireOp,
+  SetSuperiorOp,
+])
 
 /**
  * The key for the turn's narrowed surface at the colleague-loop cap.
@@ -118,7 +135,7 @@ export const Input = Schema.Union([ListOp, IdentityOp, AskOp, AskGroupOp, HireOp
 export const CAPPED = "capped"
 
 /** What `colleague` offers at the cap: everything the loop bound has nothing to do with. */
-export const CappedInput = Schema.Union([ListOp, IdentityOp, HireOp, RetireOp, SetSuperiorOp])
+export const CappedInput = Schema.Union([ListOp, IdentityOp, MessageWorkerOp, HireOp, RetireOp, SetSuperiorOp])
 
 const PortraitImage = Schema.Struct({ mime: Schema.String, data: Schema.String, hash: Schema.String })
 const ModelOutput = Schema.Struct({
@@ -200,6 +217,7 @@ export const layer = Layer.effectDiscard(
             "`list` shows who works here and what they own. `ask` hands one of them a piece of work; they answer " +
             "in their own chat, in their own time, and this does not wait for them. Use it instead of doing " +
             "someone else's job, and instead of `spawn` when the work belongs to a role that already exists. " +
+            "`message_worker` sends a correction or more context to one of your direct spawned workers without waiting. " +
             "`identity` returns a colleague's exact instance-owned portrait so you can recognise who you are " +
             "working with. " +
             "`hire` and `retire` staff the organization and are Nova's alone — a hire is given a name from the " +
@@ -259,6 +277,25 @@ export const layer = Layer.effectDiscard(
                           },
                         }),
                 }
+              }
+
+              if (input.op === "message_worker") {
+                const worker = input.worker.trim()
+                if (worker === "")
+                  return yield* new ToolFailure({ message: "Name the worker session id returned by `spawn`." })
+                const outcome = yield* handoff.messageWorker({
+                  from: context.sessionID,
+                  worker: worker as never,
+                  message: input.message,
+                })
+                if (!outcome.ok)
+                  return yield* new ToolFailure({
+                    message: outcome.reason ?? "That session is not one of your direct spawned workers.",
+                  })
+                return {
+                  ok: true,
+                  message: `Sent the update to worker ${worker}. It will read it at the next safe turn boundary.`,
+                } satisfies Output
               }
 
               if (input.op === "hire" || input.op === "retire" || input.op === "set_superior") {

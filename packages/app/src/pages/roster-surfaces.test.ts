@@ -46,17 +46,13 @@ describe("no page owns a second, uncaught roster fetch", () => {
 })
 
 describe("a rename made from a CHAT", () => {
-  const source = fs.readFileSync(
-    path.join(import.meta.dir, "..", "components", "composer", "features-control.tsx"),
-    "utf8",
-  )
+  const source = read("agent-settings.tsx")
 
-  test("🔴 the composer's Tune refreshes the roster on save", () => {
+  test("🔴 the addressable officer screen refreshes the shared roster on save", () => {
     // It used to omit `onChanged` deliberately — "opened from a CHAT, there is no roster on screen to
     // refresh" — which was true until the composer's own chip started reading the roster for a display
     // NAME. After that, a rename left the chip showing the old one and the save looked like it failed.
     expect(source).toContain("agents.refetch()")
-    expect(source).not.toContain("No `onChanged` here on purpose")
   })
 })
 

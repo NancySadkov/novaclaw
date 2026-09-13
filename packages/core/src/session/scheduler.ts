@@ -34,7 +34,7 @@ import type { ConfigDevice } from "../config/device"
 import { makeGlobalNode } from "../effect/app-node"
 import { KernelEevdf } from "../kernel/eevdf"
 
-export const MAX_BATCH = 2
+export const MAX_BATCH = 4
 /** Warmth granted to the most-recently-dispatched session (v1 recency model). */
 export const RECENCY_WARMTH_TOKENS = 6_000
 

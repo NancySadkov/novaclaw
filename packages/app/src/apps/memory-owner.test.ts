@@ -91,7 +91,7 @@ describe("opening ONE colleague's cabinet by link", () => {
   test("Back has one addressable route to this colleague's configuration", () => {
     expect(agentIDFromOwnerKey("agent:trader")).toBe("trader")
     expect(agentIDFromOwnerKey("global")).toBeUndefined()
-    expect(agentConfigureRoute("talent scout")).toBe("/contacts?configure=talent%20scout")
+    expect(agentConfigureRoute("talent scout")).toBe("/officers/talent%20scout/settings")
   })
 })
 

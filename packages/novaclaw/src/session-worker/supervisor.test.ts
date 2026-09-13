@@ -400,6 +400,8 @@ test("permission assertions execute in host-owned services", async () => {
           colleague: {
             deliver: () => Effect.die("unused"),
             deliverGroup: () => Effect.die("unused"),
+            messageWorker: () => Effect.die("unused"),
+            killWorker: () => Effect.die("unused"),
             hire: () => Effect.die("unused"),
             setSuperior: () => Effect.die("unused"),
             retire: () => Effect.die("unused"),

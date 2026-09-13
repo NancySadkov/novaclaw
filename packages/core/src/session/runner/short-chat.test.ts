@@ -28,7 +28,7 @@ describe("ShortChat policy", () => {
   test("the runner consumes the policy at every expensive boundary", () => {
     const runner = readFileSync(path.join(import.meta.dir, "llm.ts"), "utf8")
     expect(runner).toContain("? Effect.succeed(SystemContext.empty)")
-    expect(runner).toContain("agentSystem: agent.info?.personality")
+    expect(runner).toContain("agentSystem: prototypeBrief ?? agent.info?.personality")
     expect(runner).not.toContain("ShortChat.GUIDANCE")
     expect(runner).toContain("ShortChat.offered(config.shortChat, name)")
     expect(runner).toContain("const startSnapshot = ShortChat.enabled(config.shortChat)")

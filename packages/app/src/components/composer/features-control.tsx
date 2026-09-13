@@ -4,12 +4,10 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
-import { AgentConfigDialog } from "@/components/agent-config-dialog"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { ControlScope } from "@/components/control-scope"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import { useLanguage } from "@/context/language"
-import { useGlobal } from "@/context/global"
-import { useServer } from "@/context/server"
 import { pathKey } from "@/utils/path-key"
 import { inForceState, makeDefaultPayload, planMakeDefault } from "./make-default"
 
@@ -782,7 +780,7 @@ function MakeDefaultSection(props: {
  *
  * 🔴 **The button is gone; the chip that names the colleague opens this instead** (owner,
  * 2026-08-27: *"the 'which colleague this is for' icon … does nothing. Instead it should have the
- * agent name near it, and clicking any of them should open the Tune dialogue. The `Tune` button
+ * agent name near it, and clicking any of them should open Tune. The `Tune` button
  * itself is no longer needed."*). Two controls sat side by side in the composer — one showed WHO the
  * chat belongs to and did nothing, the other was a verb with no subject. Merging them costs a chip's
  * width and removes the question *"tune what?"*.
@@ -801,13 +799,13 @@ export function useTunePanelOpener(state: () => ComposerFeaturesControlState) {
 }
 
 function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
-  // The ONE shared roster, refreshed after a Tune save — see the dialog mount below for why. Resolved
+  // The ONE shared roster, refreshed after a Tune save. Resolved
   // here rather than threaded in as a prop: it is a singleton per connection, so every surface that
   // needs it reaches for the same one, and a prop would make each caller responsible for remembering.
-  const rosterServer = useServer()
-  const rosterGlobal = useGlobal()
   const language = useLanguage()
   const dialog = useDialog()
+  const navigate = useNavigate()
+  const location = useLocation()
   const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
 
   const unattended = () => props.state.mode !== "interactive"
@@ -833,12 +831,10 @@ function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
   // "This folder has no project file yet. Saving creates one here.", and pressing Save as folder
   // default creates `novaclaw.json` in the OLD folder while the new one stays empty. `showScoped`
   // binds the panel's life to this composer, so a route change takes it with it.
-  // 🔴 Tune now opens the COLLEAGUE'S CONFIG, with this chat's controls as a section inside it
+  // 🔴 Tune now opens the COLLEAGUE'S SETTINGS SCREEN, with this chat's controls as a section inside it
   // (AGENTS.md — the structural metaphor). The old panel said settings belong to a conversation;
   // under the roster they belong to whoever you are talking to, and only "how this chat runs" is
-  // the conversation's own. Same dialog the Contacts app opens, so there is one place to learn.
-  //
-  // `showScoped` is unchanged and still load-bearing — see the note below on the mis-targeted write.
+  // the conversation's own. The Contacts app opens the same route, so there is one place to learn.
   //
   // ⚠️ `onDismiss` CLOSES THE DIALOG, it does not merely fire the composer's hook. It used to call
   // only `props.state.onClose()`, which re-reads the session record and leaves the panel standing —
@@ -846,27 +842,18 @@ function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
   // accident on every click (it rendered a bare `<div>` under the stack's `pointer-events: none`
   // layer, so clicks fell through to the overlay). Fixing the modal made the dead button visible.
   // `stack.close` runs the `onClose` passed below, so the composer's hook still fires exactly once.
-  const openPanel = () =>
-    void dialog.showScoped(
-      () => (
-        <AgentConfigDialog
-          agentID={props.state.agent}
-          // 🔴 It DOES refresh the roster, and the comment that used to sit here explains why nobody
-          // noticed: *"opened from a CHAT, there is no roster on screen to refresh."* That was true
-          // until the composer's own agent chip started reading the roster for a display NAME. After
-          // that, renaming a colleague here left the chip showing the old one — so the save looked
-          // like it had failed, which is the one impression `agentConfig.saveFailed` exists to
-          // reserve for saves that actually did.
-          onChanged={() => {
-            const conn = rosterServer.current
-            if (conn) rosterGlobal.ensureServerCtx(conn).agents.refetch()
-          }}
-          onDismiss={() => dialog.close()}
-          tuning={() => <TuningPanel state={props.state} onDismiss={() => dialog.close()} embedded />}
-        />
-      ),
-      () => props.state.onClose(),
-    )
+  const openPanel = () => {
+    const agentID = props.state.agent
+    if (!agentID) {
+      void dialog.showScoped(
+        () => <TuningPanel state={props.state} onDismiss={() => dialog.close()} />,
+        () => props.state.onClose(),
+      )
+      return
+    }
+    const returnTo = `${location.pathname}${location.search}`
+    navigate(`/officers/${encodeURIComponent(agentID)}/settings?returnTo=${encodeURIComponent(returnTo)}`)
+  }
   /**
    * ⚠️ **The unattended-mode marker travels WITH the trigger.** It rode the old button's label and
    * would have died with it, and the note that put it there is explicit about why it earns its width

@@ -764,6 +764,9 @@ const NO_EXTERNAL = [
   "http-body.ts",
   "js-run.ts",
   "js.ts",
+  // Terminates and archives a worker session owned by this instance. It returns only NovaClaw's
+  // own outcome text and never reads content from the archived transcript.
+  "kill.ts",
   // Reads only this instance's nudge configuration. Script stdout is produced by a user-authored
   // local command in the session folder and is framed by the Nudge provenance message, not fetched
   // from another party by this tool.

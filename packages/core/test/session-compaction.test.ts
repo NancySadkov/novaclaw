@@ -299,7 +299,7 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
 
   expect(dispatch).toContain("LLMEvent.is.stepFinish(event)")
   expect(dispatch).toContain("providerMetadata: event.providerMetadata")
-  const callback = "onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable })"
+  const callback = "onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable, phase })"
   expect(runner).toContain(callback)
   expect(runner).toContain("PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)")
   expect(runner).toContain("anchoredResidualRatios: routeProfile.promptResidualRatios")

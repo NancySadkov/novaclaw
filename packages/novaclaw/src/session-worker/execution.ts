@@ -19,6 +19,7 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionRunCoordinator } from "@novaclaw/core/session/run-coordinator"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionScratchFolder from "./scratch-folder"
@@ -395,6 +396,46 @@ export const layer = Layer.effect(
                               at: Date.now(),
                             }),
                         }),
+                        worker: {
+                          message: ({ parentID, childID, text }) =>
+                            Effect.gen(function* () {
+                              const child = yield* store.get(childID)
+                              if (child?.parentID !== parentID || child.time.archived !== undefined) return false
+                              yield* SessionInput.steer(database.db, events, childID, text)
+                              yield* coordinator.wake(childID)
+                              return true
+                            }),
+                          kill: ({ parentID, childID }) =>
+                            Effect.gen(function* () {
+                              const child = yield* store.get(childID)
+                              if (child?.parentID !== parentID) return undefined
+                              const branch: SessionSchema.ID[] = []
+                              const collect = (id: SessionSchema.ID): Effect.Effect<void> =>
+                                Effect.gen(function* () {
+                                  branch.push(id)
+                                  const children = yield* store.children(id)
+                                  yield* Effect.forEach(children, collect, { discard: true, concurrency: "unbounded" })
+                                })
+                              yield* collect(childID)
+                              // The same recursive interrupt used by Stop closes the late-spawn race.
+                              yield* interruptBranch(childID, new Set())
+                              const archived = DateTime.makeUnsafe(Date.now())
+                              yield* Effect.forEach(
+                                branch,
+                                (id) =>
+                                  SessionPatch.patchSessionRecord({ db: database.db, events }, id, (info) =>
+                                    info.time.archived === undefined
+                                      ? SessionSchema.Info.make({
+                                          ...info,
+                                          time: { ...info.time, archived },
+                                        })
+                                      : undefined,
+                                  ),
+                                { discard: true },
+                              )
+                              return branch.length
+                            }),
+                        },
                         lease,
                         message,
                       })

@@ -6,6 +6,7 @@ import {
   memoryDisclosure,
   roster,
   searchRoster,
+  superiorCandidates,
   type AgentLike,
 } from "./contacts"
 
@@ -136,15 +137,33 @@ describe("search", () => {
 // people; a setting wearing a name breaks it.
 describe("postures are not colleagues", () => {
   test("build and plan are off the roster", () => {
-    const ids = roster([agent({ id: "nova" }), agent({ id: "build" }), agent({ id: "plan" }), agent({ id: "theron" })]).map((v) => v.id)
+    const ids = roster([
+      agent({ id: "nova" }),
+      agent({ id: "build" }),
+      agent({ id: "plan" }),
+      agent({ id: "theron" }),
+    ]).map((v) => v.id)
     expect(ids).not.toContain("build")
     expect(ids).not.toContain("plan")
   })
 
   test("…and everyone else is still on it", () => {
     // The exclusion is by id and must not catch a colleague who happens to be named similarly.
-    const ids = roster([agent({ id: "nova" }), agent({ id: "theron" }), agent({ id: "builder" }), agent({ id: "planner" })]).map((v) => v.id)
+    const ids = roster([
+      agent({ id: "nova" }),
+      agent({ id: "theron" }),
+      agent({ id: "builder" }),
+      agent({ id: "planner" }),
+    ]).map((v) => v.id)
     expect(ids.sort()).toEqual(["builder", "nova", "planner", "theron"])
+  })
+
+  test("build and plan cannot be selected as an officer's superior", () => {
+    const choices = superiorCandidates(
+      [agent({ id: "nova" }), agent({ id: "build" }), agent({ id: "plan" }), agent({ id: "aris" })],
+      "theron",
+    )
+    expect(choices.map((choice) => choice.id)).toEqual(["aris"])
   })
 })
 

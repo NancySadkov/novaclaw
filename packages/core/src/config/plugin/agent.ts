@@ -154,6 +154,20 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       const model = ModelV2.parse(item.model)
       agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }
     }
+    if (item.reasoningModel !== undefined) {
+      const model = ModelV2.parse(item.reasoningModel)
+      ;(agent as unknown as Record<string, unknown>)["reasoningModel"] = {
+        id: model.modelID,
+        providerID: model.providerID,
+      }
+    }
+    if (item.workerModel !== undefined) {
+      const model = ModelV2.parse(item.workerModel)
+      ;(agent as unknown as Record<string, unknown>)["workerModel"] = {
+        id: model.modelID,
+        providerID: model.providerID,
+      }
+    }
     if (item.variant !== undefined && agent.model !== undefined) {
       agent.model.variant = ModelV2.VariantID.make(item.variant)
     }
@@ -182,6 +196,11 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.shortChat !== undefined) agent.shortChat = item.shortChat
     if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
     if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
+    if (item.workerPrototype !== undefined) {
+      ;(agent as unknown as Record<string, unknown>)["workerPrototype"] = AgentV2.ID.make(item.workerPrototype)
+    }
+    if (item.maxWorkers !== undefined) (agent as unknown as Record<string, unknown>)["maxWorkers"] = item.maxWorkers
+    if (item.spawnDepth !== undefined) (agent as unknown as Record<string, unknown>)["spawnDepth"] = item.spawnDepth
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

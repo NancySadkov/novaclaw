@@ -260,6 +260,10 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const session = yield* store.get(input.sessionID as never)
         if (!session) return
+        // Anonymous workers are temporary implementation detail. Their shell-heavy work must not
+        // queue a presentation-only model call for every command, regardless of the prototype's
+        // setting. The officer's own spawn caption is still generated in the officer's root chat.
+        if (session.parentID !== undefined) return
         // 🔴 The per-agent opt-out. This sample is a MODEL CALL PER TOOL CALL on the device the
         // agent's own turns are waiting for, and its only consumer is a caption in the surface — the
         // title never reaches the provider wire. A colleague that declares `toolLabels: false` is

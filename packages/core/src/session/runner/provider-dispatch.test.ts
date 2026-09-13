@@ -235,7 +235,12 @@ describe("ProviderDispatch", () => {
   test("routes an enabled completion through the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
-    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
+    const observed: Array<{
+      request: LLMRequest
+      usage: unknown
+      anchorable: boolean
+      phase: "reasoning" | "answer"
+    }> = []
     const usage = {
       inputTokens: 42,
       outputTokens: 2,
@@ -274,6 +279,7 @@ describe("ProviderDispatch", () => {
     expect(observed[0]!.request).toBe(requests[0])
     expect(observed[0]!.usage).toEqual(usage)
     expect(observed[0]!.anchorable).toBe(true)
+    expect(observed[0]!.phase).toBe("answer")
   })
 
   test("keeps per-phase observations while the controller emits honest aggregate usage and servedBy", async () => {
@@ -365,7 +371,12 @@ describe("ProviderDispatch", () => {
   test("observes a settled response even when the provider reports no usage", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = LLM.request({ model, messages: [Message.user("answer")] })
-    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
+    const observed: Array<{
+      request: LLMRequest
+      usage: unknown
+      anchorable: boolean
+      phase: "reasoning" | "answer"
+    }> = []
     const llm = {
       stream: () => Stream.fromIterable([LLMEvent.stepFinish({ index: 0, reason: "stop" })]),
     } as never
@@ -383,13 +394,18 @@ describe("ProviderDispatch", () => {
       }).pipe(Stream.runDrain),
     )
 
-    expect(observed).toEqual([{ request, usage: undefined, anchorable: true }])
+    expect(observed).toEqual([{ request, usage: undefined, anchorable: true, phase: "answer" }])
   })
 
   test("observes the exact settled continuation request below the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
-    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
+    const observed: Array<{
+      request: LLMRequest
+      usage: unknown
+      anchorable: boolean
+      phase: "reasoning" | "answer"
+    }> = []
     const usage = { inputTokens: 50, outputTokens: 2, nonCachedInputTokens: 50 }
     const llm = {
       stream: (request: LLMRequest) => {
@@ -417,8 +433,68 @@ describe("ProviderDispatch", () => {
     )
 
     expect(requests).toHaveLength(2)
-    expect(observed).toEqual([{ request: requests[1], usage, anchorable: false }])
+    expect(observed).toEqual([{ request: requests[1], usage, anchorable: false, phase: "answer" }])
     expect(requests[1]!.http?.body?.continue_final_message).toBe(true)
+  })
+
+  test("a distinct reasoning model runs in a harness-opened phase before the ordinary answer", async () => {
+    const ordinary = Model.make({ id: "small", provider: "fake", route: OpenAIChat.route })
+    const reasoner = Model.make({ id: "large", provider: "fake", route: OpenAIChat.route })
+    const requests: LLMRequest[] = []
+    const events: LLMEvent[] = []
+    const phases: string[] = []
+    let repacked = false
+    const reasoningUsage = new Usage({ inputTokens: 8, outputTokens: 4, totalTokens: 12 })
+    const answerUsage = new Usage({ inputTokens: 10, outputTokens: 3, totalTokens: 13 })
+    const llm = {
+      stream: (request: LLMRequest) => {
+        requests.push(request)
+        return request.model.id === reasoner.id
+          ? Stream.fromIterable([
+              LLMEvent.reasoningDelta({ id: "raw-reasoning", text: "check the two constraints" }),
+              LLMEvent.stepFinish({ index: 0, reason: "stop", usage: reasoningUsage }),
+            ])
+          : Stream.fromIterable([
+              LLMEvent.textDelta({ id: "text-0", text: "Final answer" }),
+              LLMEvent.stepFinish({ index: 0, reason: "stop", usage: answerUsage }),
+            ])
+      },
+    } as never
+
+    await Effect.runPromise(
+      ProviderDispatch.stream({
+        llm,
+        request: LLM.request({ model: ordinary, messages: [Message.user("solve this")] }),
+        enabled: true,
+        budget: 128,
+        reasoningModel: reasoner,
+        reasoningPhase: {
+          enter: Effect.sync(() => phases.push("reasoning-admitted")),
+          leave: (cost) => Effect.sync(() => phases.push(`reasoning-released:${cost}`)),
+        },
+        prepareAnswer: (answer) => {
+          repacked = true
+          return answer
+        },
+      }).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            events.push(event)
+          }),
+        ),
+      ),
+    )
+
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.model.id).toBe(reasoner.id)
+    expect(requests[0]!.messages.at(-1)).toEqual(Message.assistant("<think>\n"))
+    expect(requests[1]!.model.id).toBe(ordinary.id)
+    expect(requests[1]!.http?.body?.chat_template_kwargs).toMatchObject({ enable_thinking: false })
+    expect(JSON.stringify(requests[1]!.messages.at(-1))).toContain("check the two constraints")
+    expect(repacked).toBe(true)
+    expect(phases).toEqual(["reasoning-admitted", "reasoning-released:12"])
+    const terminal = events.find(LLMEvent.is.stepFinish)
+    expect(terminal?.usage).toMatchObject({ inputTokens: 18, outputTokens: 7, totalTokens: 25 })
   })
 
   test("admits once, retries before output, and always releases", async () => {

@@ -24,6 +24,18 @@ const it = testEffect(
 const sessionID = SessionV2.ID.make("ses_application_tool")
 const agent = AgentV2.ID.make("build")
 const assistantMessageID = SessionMessage.ID.make("msg_application_tool")
+const expectContext = (contexts: Tool.Context[], toolCallID: string) => {
+  expect(contexts).toHaveLength(1)
+  expect(contexts[0]).toMatchObject({
+    sessionID,
+    agent,
+    assistantMessageID,
+    toolCallID,
+    attachmentPaths: new Set(),
+    deadline: { limitMs: 600_000, timeoutMs: 600_000 },
+  })
+  expect(contexts[0]!.deadline!.expiresAt - contexts[0]!.deadline!.startedAt).toBe(600_000)
+}
 const contextual = (contexts: Tool.Context[]) =>
   Tool.make({
     description: "Read application context",
@@ -80,9 +92,7 @@ describe("ApplicationTools", () => {
           { type: "file", uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "result.png" },
         ],
       })
-      expect(contexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-opaque", attachmentPaths: new Set() },
-      ])
+      expectContext(contexts, "call-opaque")
     }),
   )
 
@@ -121,9 +131,7 @@ describe("ApplicationTools", () => {
           call: { type: "tool-call", id: "call-denied", name: "application_context", input: { query: "hello" } },
         }),
       ).toMatchObject({ result: { type: "content" } })
-      expect(contexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-denied", attachmentPaths: new Set() },
-      ])
+      expectContext(contexts, "call-denied")
     }),
   )
 
@@ -161,9 +169,7 @@ describe("ApplicationTools", () => {
           ],
         },
       })
-      expect(contexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-context", attachmentPaths: new Set() },
-      ])
+      expectContext(contexts, "call-context")
     }),
   )
 
@@ -278,12 +284,8 @@ describe("ApplicationTools", () => {
         call: { type: "tool-call", id: "call-first", name: "contextual", input: { query: "first" } },
       })
 
-      expect(secondContexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-second", attachmentPaths: new Set() },
-      ])
-      expect(firstContexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-first", attachmentPaths: new Set() },
-      ])
+      expectContext(secondContexts, "call-second")
+      expectContext(firstContexts, "call-first")
     }),
   )
 
@@ -310,9 +312,7 @@ describe("ApplicationTools", () => {
           call: { type: "tool-call", id: "call-shared", name: "shared", input: { query: "location" } },
         }),
       ).toMatchObject({ result: { type: "content" } })
-      expect(locationContexts).toEqual([
-        { sessionID, agent, assistantMessageID, toolCallID: "call-shared", attachmentPaths: new Set() },
-      ])
+      expectContext(locationContexts, "call-shared")
       expect(applicationContexts).toEqual([])
     }),
   )

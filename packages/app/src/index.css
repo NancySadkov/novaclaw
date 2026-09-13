@@ -290,12 +290,10 @@ body[data-new-layout] {
     0px 0px 0px 1px color-mix(in srgb, var(--nc-panel-line) 80%, transparent),
     0px -0.5px 0px 0px color-mix(in srgb, var(--nc-panel-line-top) 85%, transparent);
   --v2-elevation-overlay:
-    0px 24px 80px 0px rgba(0, 0, 0, 0.5), 0px 8px 24px 0px rgba(3, 1, 8, 0.4),
-    0px 0px 0px 1px var(--nc-panel-line),
+    0px 24px 80px 0px rgba(0, 0, 0, 0.5), 0px 8px 24px 0px rgba(3, 1, 8, 0.4), 0px 0px 0px 1px var(--nc-panel-line),
     0px -0.5px 0px 0px var(--nc-panel-line-top);
   --v2-elevation-button-neutral:
-    0px 1px 2px 0px rgba(3, 1, 8, 0.4),
-    0px 0px 0px 0.5px color-mix(in srgb, var(--nc-panel-line) 85%, transparent),
+    0px 1px 2px 0px rgba(3, 1, 8, 0.4), 0px 0px 0px 0.5px color-mix(in srgb, var(--nc-panel-line) 85%, transparent),
     0px -0.5px 0px 0px color-mix(in srgb, var(--nc-panel-line-top) 75%, transparent);
   --v2-elevation-button-contrast:
     0px 1px 2px 0px rgba(3, 1, 8, 0.4), 0px 0px 0px 0.5px var(--nc-panel-line),
@@ -431,6 +429,36 @@ body[data-new-layout] main::after {
    frame already comes from --v2-elevation-overlay. */
 body[data-new-layout] [data-slot="dialog-container"] {
   background-image: var(--nc-panel-gradient), var(--nc-grain-image);
-  background-size: auto, 420px 420px;
+  background-size:
+    auto,
+    420px 420px;
   border-radius: 16px;
+}
+/* Officer settings is an app screen. Only the selected family is mounted visually; the horizontal
+   phone rail becomes a stable left navigation on wider screens. */
+.agent-settings-panels [data-settings-tab] {
+  display: none;
+}
+.agent-settings-panels[data-active-tab="profile"] [data-settings-tab="profile"],
+.agent-settings-panels[data-active-tab="mind"] [data-settings-tab="mind"],
+.agent-settings-panels[data-active-tab="work"] [data-settings-tab="work"],
+.agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
+.agent-settings-panels[data-active-tab="workers"] [data-settings-tab="workers"],
+.agent-settings-panels[data-active-tab="chat"] [data-settings-tab="chat"] {
+  display: block;
+}
+.agent-settings-card {
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--v2-background-bg-base) 82%, var(--v2-background-bg-layer-01));
+  padding: 1rem;
+  box-shadow: 0 16px 45px rgb(0 0 0 / 0.06);
+}
+.agent-settings-card + .agent-settings-card {
+  margin-top: 1rem;
+}
+@media (min-width: 640px) {
+  .agent-settings-card {
+    padding: 1.5rem;
+  }
 }

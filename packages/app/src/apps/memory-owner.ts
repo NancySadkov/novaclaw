@@ -67,7 +67,7 @@ export const ownerRoute = (agentID: string): string => `/memory-graph?owner=${en
 
 /** The addressable door back into one colleague's configuration. Memory is a child of that
  * colleague, so its Back control returns here rather than to the launcher or the bare roster. */
-export const agentConfigureRoute = (agentID: string): string => `/contacts?configure=${encodeURIComponent(agentID)}`
+export const agentConfigureRoute = (agentID: string): string => `/officers/${encodeURIComponent(agentID)}/settings`
 
 /** Recover an agent id from an owner key without letting raw string slicing spread across routes. */
 export const agentIDFromOwnerKey = (key: string): string | undefined => {

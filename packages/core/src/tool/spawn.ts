@@ -13,9 +13,9 @@ import { Tools } from "./tools"
 // the `SessionSpawner` seam: the child carries this session as its `parentID` (so it inherits
 // agent/model/system-prompt/permissions via `resolveSessionConfig` unless overridden), its opening
 // prompt is enqueued, and the seam hands it straight to this instance's executor. Guarded by the
-// seam's fork-bomb depth/active-fan-out/rate caps (`MAX_SPAWN_DEPTH` 8 · `MAX_SPAWN_CHILDREN` 16 ·
-// `MAX_SPAWNS_PER_MINUTE` 10, all enforced in `session/spawner.ts` — the K1 quotas SHIPPED, so no
-// TODO here asks for them any more).
+// seam's officer-configured whole-tree count and depth caps (shipped defaults: 100 unfinished
+// descendants and one worker generation), plus the fixed ten-spawns-per-minute rate bound. All are
+// enforced in `session/spawner.ts`, so every path into the seam gets the same fork-bomb protection.
 //
 // ⚠️ The message this tool returns is a CONTRACT with the model, and it was false until B1
 // (2026-07-28): it said the child "will run its prompt on the next scheduler cycle" when no
@@ -104,7 +104,7 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.make({
           description:
             "Spawn a child agent session (a fork) with its own context that runs the given prompt. The child " +
-            "inherits this session's agent, model, system prompt and permission mode. Returns the child session " +
+            "inherits this session's authority and uses its configured worker model or anonymous prototype profile. Returns the child session " +
             "id. Use it to delegate an independent sub-task.",
           input: Input,
           output: Output,
@@ -157,7 +157,7 @@ export const layer = Layer.effectDiscard(
                         limited: true,
                         message: {
                           depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
-                          children: `Spawn refused: this session already has ${error.depth} unfinished children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
+                          children: `Spawn refused: this officer's worker tree already has ${error.depth} unfinished workers (max ${error.limit}). Reuse, kill, or wait on existing workers instead of spawning more.`,
                           rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
                           // ⚠️ Says the HOST is short, not that the model misbehaved — the other
                           // three are fork-bomb bounds this session tripped, and telling a model to

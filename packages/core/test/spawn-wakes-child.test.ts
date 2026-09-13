@@ -30,6 +30,7 @@ import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SpawnAdmission } from "@novaclaw/core/session/spawn-admission"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { WorkerProfile } from "@novaclaw/core/session/worker-profile"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { testEffect } from "./lib/effect"
 import { settleTool, toolIdentity } from "./lib/tool"
@@ -301,6 +302,78 @@ describe("wait — a durable, owned join", () => {
 })
 
 describe("SessionSpawner quotas use durable session facts", () => {
+  it.live("the default depth lets the officer spawn, but not its worker", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, parentID: parent.id })
+
+      const error = yield* spawnChildEffect(child.id, location).pipe(Effect.flip)
+      expect(error._tag).toBe("SessionSpawner.LimitError")
+      if (error._tag !== "SessionSpawner.LimitError") return
+      expect(error.reason).toBe("depth")
+      expect(error.limit).toBe(SessionSpawner.DEFAULT_SPAWN_DEPTH)
+    }),
+  )
+
+  it.live("counts unfinished descendants across sibling branches against the officer's total", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const locations = yield* LocationServiceMap.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, parentID: parent.id })
+      yield* session.create({ location, parentID: child.id })
+      yield* AgentV2.Service.use((agents) =>
+        agents.transform((editor) =>
+          editor.update(rootAgent, (agent) => {
+            agent.maxWorkers = 2
+            agent.spawnDepth = 3
+          }),
+        ),
+      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+
+      const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      expect(error._tag).toBe("SessionSpawner.LimitError")
+      if (error._tag !== "SessionSpawner.LimitError") return
+      expect(error.reason).toBe("children")
+      expect(error.depth).toBe(2)
+      expect(error.limit).toBe(2)
+    }),
+  )
+
+  it.live("stores a prototype as an anonymous role snapshot, not as the worker's agent id", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const locations = yield* LocationServiceMap.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      yield* AgentV2.Service.use((agents) =>
+        agents.transform((editor) => {
+          editor.update(rootAgent, (agent) => {
+            agent.workerPrototype = AgentV2.ID.make("researcher")
+          })
+          editor.update(AgentV2.ID.make("researcher"), (agent) => {
+            agent.name = "Researcher"
+            agent.system = "Find evidence."
+            agent.model = { providerID: "local", id: "worker-4b" } as never
+            agent.reasoningModel = { providerID: "local", id: "reasoner-32b" } as never
+          })
+        }),
+      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+
+      const spawned = yield* spawnChild(parent.id, location)
+      const worker = yield* session.get(spawned.id)
+      expect(worker.agent).toBeUndefined()
+      expect(WorkerProfile.read(worker)).toMatchObject({
+        prototypeID: "researcher",
+        model: "local/worker-4b",
+        reasoningModel: "local/reasoner-32b",
+      })
+    }),
+  )
+
   it.live("completed direct children release the active fan-out slot", () =>
     Effect.gen(function* () {
       const location = yield* workspace
@@ -364,7 +437,7 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
       const { db } = yield* Database.Service
       const parent = yield* session.create({ location, agent: rootAgent })
 
-      // Sixteen children created OFF-SEAM — exactly what the messenger dispatcher used to do. The
+      // A full tree allowance created OFF-SEAM — exactly what the messenger dispatcher used to do. The
       // cap is a DB count on `parent_id`, so it does not care who wrote the row.
       for (let index = 0; index < SessionSpawner.MAX_SPAWN_CHILDREN; index++) {
         yield* session.create({ location, agent: rootAgent, parentID: parent.id })

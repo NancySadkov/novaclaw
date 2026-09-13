@@ -25,6 +25,9 @@ export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
   model: Model.Ref.pipe(optional),
+  /** Model used for reasoning-enabled turns. Absent = the ordinary model. */
+  reasoningModel: Model.Ref.pipe(optional),
+  workerModel: Model.Ref.pipe(optional),
   request: Provider.Request,
   system: Schema.String.pipe(optional),
   /** Roster profile — the durable half of a named agent's identity (AGENTS.md, the structural metaphor).
@@ -95,6 +98,12 @@ export const Info = Schema.Struct({
   reasoningBudget: NonNegativeInt.pipe(optional),
   /** Maximum wall time for one tool call in milliseconds. Descendant workers inherit it. */
   maxToolTimeoutMs: PositiveInt.pipe(optional),
+  /** Named officer whose role is used as the template for spawned anonymous workers. */
+  workerPrototype: ID.pipe(optional),
+  /** Total unfinished workers allowed in this officer's worker tree. */
+  maxWorkers: NonNegativeInt.pipe(optional),
+  /** Number of worker generations allowed below this officer. */
+  spawnDepth: NonNegativeInt.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   /**

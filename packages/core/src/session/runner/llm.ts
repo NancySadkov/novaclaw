@@ -1198,6 +1198,14 @@ export const layer = Layer.effect(
       // chain decided rather than what this row happens to declare. `device` joins `model` here for
       // exactly the reason `model` is here: a sub-agent that declared neither must inherit both, and
       // `SessionRunnerModel.device` is where the declaration is cashed into a scheduler key.
+      // Resolve both sides of a split mind up front. The ordinary model owns answer/tool generation;
+      // the optional reasoning model gets a separate harness-opened private phase. Each provider
+      // request still has exactly one model/KV cache — the harness owns the boundary between them.
+      const reasoningTurn =
+        config.reasoningModel !== undefined &&
+        config.reasoningBudget !== 0 &&
+        stanceOf("thinkingBudget", config.thinkingBudget) &&
+        !ShortChat.enabled(config.shortChat)
       const modelSession = {
         ...session,
         model: config.model as typeof session.model,
@@ -1217,16 +1225,30 @@ export const layer = Layer.effect(
         }),
       )
       const model = resolvedModel.model
+      const resolvedReasoning = reasoningTurn
+        ? yield* models.resolveWithDevice(
+            { ...modelSession, model: config.reasoningModel as typeof session.model },
+            { requested: false, recoveryWait: options.recoveryWait },
+          )
+        : undefined
+      const distinctReasoning =
+        resolvedReasoning !== undefined &&
+        `${resolvedReasoning.model.provider}/${resolvedReasoning.model.id}` !== `${model.provider}/${model.id}`
+          ? resolvedReasoning
+          : undefined
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq, system.compaction)
       return {
         session,
         config,
         memoryOwnerAgent: resolution.memoryOwnerAgent,
         memoryOwner,
+        workerProfile: resolution.workerProfile,
         agent,
         system,
         modelSession,
         model,
+        reasoningModel: distinctReasoning?.model,
+        reasoningScheduledDevice: distinctReasoning?.device,
         // 🔴 The catalog entry the route above was built from — the model that ACTUALLY RUNS this
         // turn, after `resolve`'s unavailable- and unhealthy-model fallbacks. Carried so the turn's
         // model FACTS are read off it (`SessionRunnerModel.perTurnFacts`) instead of from a second
@@ -1345,12 +1367,15 @@ export const layer = Layer.effect(
         config,
         memoryOwnerAgent,
         memoryOwner,
+        workerProfile,
         agent,
         system,
         modelSession,
         model,
         ran,
         scheduledDevice,
+        reasoningModel,
+        reasoningScheduledDevice,
         entries,
       } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
@@ -1483,9 +1508,10 @@ export const layer = Layer.effect(
       // "warned once" flag would leave a compacted colleague confidently unaware.
       //
       // ⚠️ Best-effort. A notice that cannot be published must never cost the turn it was about.
+      const roleNeedsTier = prepared.workerProfile?.needsTier ?? prepared.agent.info?.needsTier
       if (
-        AgentModelFit.below({ needs: prepared.agent.info?.needsTier, bound: tier }) &&
-        prepared.agent.info?.needsTier !== undefined &&
+        AgentModelFit.below({ needs: roleNeedsTier, bound: tier }) &&
+        roleNeedsTier !== undefined &&
         tier !== undefined
       ) {
         // ⚠️ The CATALOG identity (`models.ref`), not the wire id. Two reasons, and the second is the
@@ -1505,7 +1531,7 @@ export const layer = Layer.effect(
               messageID: SessionMessage.ID.create(),
               timestamp: yield* DateTime.now,
               text: AgentModelFit.notice({
-                needs: prepared.agent.info.needsTier,
+                needs: roleNeedsTier,
                 bound: tier,
                 model: boundName,
               }),
@@ -2004,6 +2030,12 @@ export const layer = Layer.effect(
       }
       // The resolved profile is the ONE identity source the model sees. It precedes the standing job
       // brief in both postures; Short Chat changes tools/memory/project reach, never who the officer is.
+      const profile = workerProfile
+      const prototypeBrief =
+        profile === undefined
+          ? undefined
+          : [profile.personality, profile.system].filter((part): part is string => part !== undefined).join("\n\n") ||
+            undefined
       const agentIdentity = SystemCompose.agentIdentitySection({
         id: String(agent.id),
         name: agent.info?.name,
@@ -2038,7 +2070,7 @@ export const layer = Layer.effect(
             // A pure-chat officer has exactly the instructions visible in its Personality field.
             // Ignoring the legacy `system` column here makes an empty field an actually empty
             // system prompt, including for existing instances seeded before that invariant landed.
-            agentSystem: agent.info?.personality,
+            agentSystem: prototypeBrief ?? agent.info?.personality,
           }
         : {
             persona: harness.persona,
@@ -2047,7 +2079,7 @@ export const layer = Layer.effect(
             tierHint,
             systemPromptOverride: config.systemPromptOverride,
             agentIdentity,
-            agentSystem: agent.info?.system,
+            agentSystem: prototypeBrief ?? agent.info?.system,
             organization,
             // The tool list the model is about to receive is `toolMaterialization.definitions`; the
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
@@ -2191,7 +2223,11 @@ export const layer = Layer.effect(
         providerID: ProviderV2.ID.make(model.provider),
         ...(modelSession.model?.variant === undefined ? {} : { variant: modelSession.model.variant }),
       }
-      const thinkingBudget = config.reasoningBudget ?? model.route.defaults.limits?.thinkingBudget ?? 0
+      const thinkingBudget =
+        config.reasoningBudget ??
+        reasoningModel?.route.defaults.limits?.thinkingBudget ??
+        model.route.defaults.limits?.thinkingBudget ??
+        0
       const budgetEnforced =
         stanceOf("thinkingBudget", config.thinkingBudget) &&
         (config.reasoningBudget !== undefined || !ShortChat.enabled(config.shortChat))
@@ -2421,7 +2457,85 @@ export const layer = Layer.effect(
               preparedOpening: request,
               enabled: budgetEnforced && !isLastStep,
               budget: thinkingBudget,
-              onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
+              ...(reasoningModel === undefined ? {} : { reasoningModel }),
+              ...(reasoningModel === undefined
+                ? {}
+                : {
+                    prepareAnswer: (answer) =>
+                      ProviderDispatch.prepare({
+                        request: answer,
+                        promptCacheKey,
+                        contextSize: model.route.defaults.limits?.context,
+                        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
+                        profile: ContextBudget.enabled(harness.context, config.contextBudget)
+                          ? ContextBudget.resolve(harness.context, config.type)
+                          : undefined,
+                        memoryRecall: recallMessage,
+                        promptCorrectionTokens: promptEstimate.correctionTokens,
+                        promptMarginTokens: promptEstimate.marginTokens,
+                        imagePatchPixels: routeProfile.imagePatchPixels,
+                      }).request,
+                  }),
+              ...(reasoningScheduledDevice === undefined || reasoningScheduledDevice.key === scheduledDevice.key
+                ? {}
+                : {
+                    reasoningPhase: {
+                      // The outer dispatch owns the ordinary device. Move that lease, rather than
+                      // holding two devices or attributing one model's work to the other's queue.
+                      enter: scheduler
+                        .release({ sessionID: session.id as string, deviceKey: scheduledDevice.key })
+                        .pipe(
+                          Effect.andThen(
+                            scheduler.admit({
+                              sessionID: session.id as string,
+                              deviceKey: reasoningScheduledDevice.key,
+                              sessionClass: SessionScheduler.classForSessionType(config.type),
+                              ...(config.priority > 0 ? { priority: config.priority } : {}),
+                              ...(reasoningScheduledDevice.concurrency === undefined
+                                ? {}
+                                : { concurrency: reasoningScheduledDevice.concurrency }),
+                              ...(reasoningScheduledDevice.locality === undefined
+                                ? {}
+                                : { locality: reasoningScheduledDevice.locality }),
+                            }),
+                          ),
+                        ),
+                      leave: (costTokens: number | undefined) =>
+                        (costTokens === undefined
+                          ? Effect.void
+                          : scheduler.report({
+                              sessionID: session.id as string,
+                              deviceKey: reasoningScheduledDevice.key,
+                              costTokens,
+                            })
+                        ).pipe(
+                          Effect.andThen(
+                            scheduler.release({
+                              sessionID: session.id as string,
+                              deviceKey: reasoningScheduledDevice.key,
+                            }),
+                          ),
+                          Effect.andThen(
+                            scheduler.admit({
+                              sessionID: session.id as string,
+                              deviceKey: scheduledDevice.key,
+                              sessionClass: SessionScheduler.classForSessionType(config.type),
+                              ...(config.priority > 0 ? { priority: config.priority } : {}),
+                              ...(scheduledDevice.concurrency === undefined
+                                ? {}
+                                : { concurrency: scheduledDevice.concurrency }),
+                              ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
+                            }),
+                          ),
+                          Effect.uninterruptible,
+                        ),
+                    },
+                  }),
+              onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable, phase }) => {
+                // The reasoning request has a different model, prompt shape and cache history. Its
+                // usage is aggregated into the turn below, but feeding it into the ordinary route's
+                // calibration would poison the next prompt estimate.
+                if (phase === "reasoning") return Effect.void
                 const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
                 const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
                 const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)

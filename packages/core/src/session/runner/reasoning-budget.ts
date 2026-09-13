@@ -132,7 +132,7 @@ const sumComplete = (usage: readonly Usage[], select: (value: Usage) => number |
  * When a checkpoint aborted a request, attach a controller fact to the usage escape hatch so the
  * reported subtotal cannot masquerade as the whole turn's cost.
  */
-const aggregateUsage = (reported: readonly Usage[], unreportedPhases: number): Usage | undefined => {
+export const aggregateUsage = (reported: readonly Usage[], unreportedPhases: number): Usage | undefined => {
   if (reported.length === 0 && unreportedPhases === 0) return undefined
   if (reported.length === 1 && unreportedPhases === 0) return reported[0]
   const lastMetadata = reported.at(-1)?.providerMetadata

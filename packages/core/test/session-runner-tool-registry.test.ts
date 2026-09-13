@@ -282,7 +282,15 @@ describe("ToolRegistry", () => {
       // `attachmentPaths` defaults to an EMPTY set rather than being absent, so a tool never has to
       // distinguish "no attachments" from "the runner forgot to pass them" — the `?? new Set()` in
       // `registry.ts` is what makes `context.attachmentPaths` safe to read unconditionally.
-      expect(contexts).toEqual([{ sessionID, ...identity, toolCallID: "call-context", attachmentPaths: new Set() }])
+      expect(contexts).toHaveLength(1)
+      expect(contexts[0]).toMatchObject({
+        sessionID,
+        ...identity,
+        toolCallID: "call-context",
+        attachmentPaths: new Set(),
+        deadline: { limitMs: 600_000, timeoutMs: 600_000 },
+      })
+      expect(contexts[0]!.deadline!.expiresAt - contexts[0]!.deadline!.startedAt).toBe(600_000)
     }),
   )
 
