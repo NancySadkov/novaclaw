@@ -796,10 +796,11 @@ export const layer = Layer.effect(
       const reply = yield* judge(128)
       const verdict = FinishAudit.verdict(reply)
       if (verdict !== "unknown") return verdict
-      // An unusable reply is NOT a "no", and it must not be silent either. Measured 2026-09-14: four
-      // exit requests (three from Geryon, one from Nova) were logged with yes:false AND no:false, so
-      // no ExitAccepted was published, no steer was sent, and each officer was left waiting on a
-      // reviewer that never answered.
+      // An unusable reply is NOT a "no", and it must not be silent either. Measured in the packaged
+      // app's own logs (2026-09-11..14): 35 of 46 exit-request audits logged yes:false AND no:false —
+      // 76%, and concentrated in long-lived goal sessions (Nova 20 of 26, Geryon 8 of 8, while
+      // Daedalus and Sopitis parsed every time). Each such audit published no ExitAccepted and sent
+      // no steer, leaving the officer waiting on a reviewer that never answered.
       //
       // The cause is a reply that is empty or unparsed: a thinking model can spend the whole 128-token
       // budget inside its <think> block and then emit nothing in either channel, which short-answer.ts
