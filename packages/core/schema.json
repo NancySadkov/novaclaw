@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "0f1880ad-8aa7-4d74-86db-af46ba082262",
-  "prevIds": ["5721cd5f-3533-4770-897d-86bd8736b56c"],
+  "id": "229e796c-4eed-480c-bca0-959ad3c0bc65",
+  "prevIds": ["0f1880ad-8aa7-4d74-86db-af46ba082262"],
   "ddl": [
     {
       "name": "agent_token_minute",
@@ -38,6 +38,10 @@
     },
     {
       "name": "memory_usage",
+      "entityType": "tables"
+    },
+    {
+      "name": "model_prefix_cache",
       "entityType": "tables"
     },
     {
@@ -845,6 +849,66 @@
       "name": "corrections",
       "entityType": "columns",
       "table": "memory_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bytes",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "model_prefix_cache"
     },
     {
       "type": "text",
@@ -5018,6 +5082,13 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "model_prefix_cache_pk",
+      "table": "model_prefix_cache",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "calendar_fire_pk",
       "table": "calendar_fire",
       "entityType": "pks"
@@ -5428,6 +5499,24 @@
       "name": "memory_usage_last_idx",
       "entityType": "indexes",
       "table": "memory_usage"
+    },
+    {
+      "columns": [
+        {
+          "value": "model",
+          "isExpression": false
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "model_prefix_cache_model_expires_idx",
+      "entityType": "indexes",
+      "table": "model_prefix_cache"
     },
     {
       "columns": [

@@ -6,7 +6,6 @@ import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } fro
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useProviders } from "@/hooks/use-providers"
 import { useServerSync } from "@/context/server-sync"
-import type { Tier } from "@/apps/agent-model"
 import { pruneCovers } from "./models-covers"
 import { modelStoreTarget } from "./models-store"
 import { persisted } from "@/utils/persist"
@@ -14,18 +13,11 @@ import { persisted } from "@/utils/persist"
 export type ModelKey = { providerID: string; modelID: string }
 
 type Visibility = "show" | "hide"
-// Rough capability class (by parameter count) the user assigns — or "guess" to let NovaClaw
-// estimate it later by probing (see notes/guesstimation.md). Kept client-side like `variant`;
-// wiring it into the system prompt is future work.
-// The ladder itself is `AgentModelFit.LADDER` (re-exported as `TIERS`), never re-spelled: a fifth
-// hand-kept copy of the same order is a tier the schema knows and this screen cannot show.
-export type ModelTier = "guess" | Tier
 type User = ModelKey & { visibility: Visibility; favorite?: boolean }
 type Store = {
   user: User[]
   recent: ModelKey[]
   variant?: Record<string, string | undefined>
-  tier?: Record<string, ModelTier>
   removed?: string[]
 }
 
@@ -57,7 +49,7 @@ export const {
      * tab and in every agent's Tune dialog again. A destructive write, performed on one instance's
      * data by a different instance, with nothing on any screen saying it happened.
      *
-     * `user` (visibility), `recent`, `variant` and `tier` are the same kind of claim — a model id
+     * `user` (visibility), `recent` and `variant` are the same kind of claim — a model id
      * only means anything next to the instance that serves it — so the whole store moves, not just
      * `removed`.
      *
@@ -294,17 +286,6 @@ export const {
       setStore("variant", key, value)
     }
 
-    const tierKey = (model: ModelKey) => `${model.providerID}/${model.modelID}`
-    const getTier = (model: ModelKey): ModelTier => store.tier?.[tierKey(model)] ?? "guess"
-    const setTier = (model: ModelKey, value: ModelTier) => {
-      const key = tierKey(model)
-      if (!store.tier) {
-        setStore("tier", { [key]: value })
-        return
-      }
-      setStore("tier", key, value)
-    }
-
     const remove = (model: ModelKey) => {
       const key = modelKey(model)
       if ((store.removed ?? []).includes(key)) return
@@ -336,10 +317,6 @@ export const {
       variant: {
         get: getVariant,
         set: setVariant,
-      },
-      tier: {
-        get: getTier,
-        set: setTier,
       },
       remove,
     }

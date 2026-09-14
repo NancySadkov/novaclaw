@@ -134,7 +134,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
     editor.model.update(SEER, VISION, (model) => {
       model.name = "Vision"
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
-      model.tier = "large"
+      model.benchmark = { name: "terminal-bench-4.0", score: 75, source: "user" }
       model.prePrompt = "SEER PRE-PROMPT"
       model.retry = { attempts: 7 }
       model.limit = { context: 4096, output: 512, images: 9 }
@@ -154,7 +154,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
       // A fallback must cover the unavailable model's architectural capabilities. This substitute
       // retains vision while changing every other per-turn fact exercised below.
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
-      model.tier = "micro"
+      model.benchmark = { name: "terminal-bench-4.0", score: 8, source: "user" }
       model.prePrompt = "SCRIBE PRE-PROMPT"
       model.retry = { attempts: 2 }
       model.limit = { context: 2048, output: 256, images: 3 }

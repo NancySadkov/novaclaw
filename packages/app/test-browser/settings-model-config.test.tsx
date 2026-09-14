@@ -178,6 +178,26 @@ test("unrelated model edits preserve inherited limits and retire connection-atte
   expect(saved().retry).toBeUndefined()
 })
 
+test("benchmark score and prefix-cache lifetime survive save and reopening", async () => {
+  const saved = mount()
+  click(button("Configure test"))
+  await settle()
+  fill("Terminal-Bench 4.0 score (%)", "42.5")
+  const switches = document.querySelectorAll('input[role="switch"]')
+  expect(switches).toHaveLength(2)
+  click(switches[1]!)
+  fill("Prefix lifetime (minutes)", "7")
+  click(button("Save"))
+  await settle()
+  expect(saved().benchmark).toEqual({ name: "terminal-bench-4.0", score: 42.5, source: "user" })
+  expect(saved().prefixCache).toEqual({ enabled: true, ttlMinutes: 7 })
+
+  click(button("Configure test"))
+  await settle()
+  expect(field("Terminal-Bench 4.0 score (%)").value).toBe("42.5")
+  expect(field("Prefix lifetime (minutes)").value).toBe("7")
+})
+
 test("device concurrency round-trips through the endpoint's Device entry", async () => {
   const saved = mount()
   click(button("Configure test"))

@@ -59,11 +59,43 @@ export const DEFAULT_LIMIT = { context: 65_536, output: 16_384 } as const
 // lifting this floor.
 export const DEFAULT_IMAGE_LIMIT = 1
 
-// Models-primary capability tier: scaffolds the harness harder for
-// weaker models (Micro..Frontier). Distinct from the COST context-tier on `Cost.tier`. "guess"
-// stays a CLIENT-only sentinel (app context/models.tsx), never on the wire.
+// Internal harness band derived from a measured coding score. It is deliberately not shown as a
+// model-size rating: parameter count is not a capability measurement. `scoreBand` below is the only
+// conversion, so selection, fit warnings and scaffold intensity cannot invent different ladders.
 export const Tier = Schema.Literals(["micro", "tiny", "small", "medium", "large", "frontier"])
 export type Tier = typeof Tier.Type
+
+export const BENCHMARK_NAME = "terminal-bench-4.0" as const
+export const Score = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }))
+export type Score = typeof Score.Type
+
+export const Benchmark = Schema.Struct({
+  name: Schema.Literal(BENCHMARK_NAME),
+  /** Percentage score, 0..100. */
+  score: Score,
+  /** Whether a person supplied the result or NovaClaw ran the raw benchmark. */
+  source: Schema.Literals(["user", "measured"]),
+  measuredAt: Schema.Finite.pipe(optional),
+}).annotate({ identifier: "Model.Benchmark" })
+export type Benchmark = typeof Benchmark.Type
+
+/** Score bands tune harness help; they do not claim a parameter count or architecture. */
+export const scoreBand = (score: number | undefined): Tier | undefined => {
+  if (score === undefined || !Number.isFinite(score)) return undefined
+  if (score < 10) return "micro"
+  if (score < 20) return "tiny"
+  if (score < 35) return "small"
+  if (score < 50) return "medium"
+  if (score < 70) return "large"
+  return "frontier"
+}
+
+export const PrefixCache = Schema.Struct({
+  enabled: Schema.Boolean,
+  /** Human-authored minutes; absent uses the conservative five-minute default. */
+  ttlMinutes: Schema.Finite.check(Schema.isGreaterThan(0)).pipe(optional),
+}).annotate({ identifier: "Model.PrefixCache" })
+export type PrefixCache = typeof PrefixCache.Type
 
 export interface Capabilities extends Schema.Schema.Type<typeof Capabilities> {}
 export const Capabilities = Schema.Struct({
@@ -106,6 +138,8 @@ export const Info = Schema.Struct({
   providerID: Provider.ID,
   family: Family.pipe(optional),
   tier: Tier.pipe(optional),
+  benchmark: Benchmark.pipe(optional),
+  prefixCache: PrefixCache.pipe(optional),
   // Optional user-authored per-model PRE-PROMPT (owner ruling, 2026-07-29): a correction
   // for THIS model's known behaviour, prepended to the system context for every session that
   // resolves to it. It rides here — beside `tier`, which the property mirrors — because the defect

@@ -618,6 +618,14 @@ export type GlobalEvent = {
           agent: string
           model: ModelRef
           snapshot?: string
+          prefixCache?: {
+            promptBytes: number
+            matchedPrefixBytes: number
+            expectedCachedTokens: number
+            comparedEntries: number
+            ttlMinutes: number
+            observedAt: number
+          }
         }
       }
     | {
@@ -2665,6 +2673,14 @@ export type SessionMessageAssistant = {
       outcome: "running" | "completed" | "failed" | "interrupted" | "retry"
     }>
   }
+  prefixCache?: {
+    promptBytes: number
+    matchedPrefixBytes: number
+    expectedCachedTokens: number
+    comparedEntries: number
+    ttlMinutes: number
+    observedAt: number
+  }
   acceptedExit?: SessionMessageAcceptedExit
   error?: SessionErrorUnknown
 }
@@ -3267,6 +3283,14 @@ export type SyncEventSessionNextStepStarted = {
       agent: string
       model: ModelRef
       snapshot?: string
+      prefixCache?: {
+        promptBytes: number
+        matchedPrefixBytes: number
+        expectedCachedTokens: number
+        comparedEntries: number
+        ttlMinutes: number
+        observedAt: number
+      }
     }
   }
 }
@@ -3850,7 +3874,7 @@ export type ConfigV2Agent = {
   memory?: "own" | "none"
   archiveChats?: boolean
   toolLabels?: boolean
-  needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  needsScore?: number
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
@@ -4209,6 +4233,18 @@ export type ConfigV2ModelCost = {
   cache?: ConfigV2ModelCostCache
 }
 
+export type ModelBenchmark = {
+  name: "terminal-bench-4.0"
+  score: number
+  source: "user" | "measured"
+  measuredAt?: number
+}
+
+export type ModelPrefixCache = {
+  enabled: boolean
+  ttlMinutes?: number
+}
+
 export type ConfigV2ModelRetry = {
   attempts: number
 }
@@ -4265,6 +4301,8 @@ export type ConfigV2Model = {
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  benchmark?: ModelBenchmark
+  prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
   disabled?: boolean
@@ -4327,6 +4365,8 @@ export type ConfigV2ModelEntry = {
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  benchmark?: ModelBenchmark
+  prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
   disabled?: boolean
@@ -4651,6 +4691,8 @@ export type ModelV2Info = {
   providerID: string
   family?: string
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  benchmark?: ModelBenchmark
+  prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: {
     attempts: number
@@ -4716,7 +4758,7 @@ export type AgentV2Info = {
   memory?: AgentMemory
   archiveChats?: boolean
   toolLabels?: boolean
-  needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  needsScore?: number
   description?: string
   directory?: string
   workspace?: string
@@ -5393,6 +5435,14 @@ export type SessionNextStepStarted = {
     agent: string
     model: ModelRef
     snapshot?: string
+    prefixCache?: {
+      promptBytes: number
+      matchedPrefixBytes: number
+      expectedCachedTokens: number
+      comparedEntries: number
+      ttlMinutes: number
+      observedAt: number
+    }
   }
 }
 
@@ -7620,6 +7670,14 @@ export type EventSessionNextStepStarted = {
     agent: string
     model: ModelRef
     snapshot?: string
+    prefixCache?: {
+      promptBytes: number
+      matchedPrefixBytes: number
+      expectedCachedTokens: number
+      comparedEntries: number
+      ttlMinutes: number
+      observedAt: number
+    }
   }
 }
 
@@ -9239,12 +9297,24 @@ export type UsageSummaryResponses = {
         tokens: {
           input: number
           output: number
+          reasoning: number
           cache: {
             read: number
             write: number
           }
         }
         cost: number
+        typical: {
+          outputTokensPerSecond?: number
+          promptTokensPerSecond?: number
+          timeToFirstTokenMs?: number
+        }
+        prefixCache: {
+          observations: number
+          expectedCachedTokens: number
+          matchedPrefixBytes: number
+          promptBytes: number
+        }
       }
     }
     dateRange: {

@@ -16,6 +16,14 @@ export const DEFAULT_IMAGE_LIMIT = Model.DEFAULT_IMAGE_LIMIT
 
 export const Tier = Model.Tier
 export type Tier = Model.Tier
+export const Benchmark = Model.Benchmark
+export type Benchmark = Model.Benchmark
+export const BENCHMARK_NAME = Model.BENCHMARK_NAME
+export const Score = Model.Score
+export type Score = Model.Score
+export const scoreBand = Model.scoreBand
+export const PrefixCache = Model.PrefixCache
+export type PrefixCache = Model.PrefixCache
 
 export const Capabilities = Model.Capabilities
 export type Capabilities = Model.Capabilities

@@ -49,6 +49,60 @@ const model = (api: Api, variants: ModelV2.Info["variants"] = []) =>
   })
 
 describe("SessionRunnerModel", () => {
+  test("automatic selection chooses the least loaded capable model that clears the role score", () => {
+    const candidate = (id: string, score: number, tools = true) =>
+      ModelV2.Info.make({
+        ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: `http://${id}.test/v1` }),
+        id: ModelV2.ID.make(id),
+        api: {
+          id: ModelV2.ID.make(id),
+          type: "aisdk",
+          package: "@ai-sdk/openai-compatible",
+          url: `http://${id}.test/v1`,
+          settings: {},
+        },
+        capabilities: { tools, input: ["text"], output: ["text"] },
+        benchmark: { name: "terminal-bench-4.0", score, source: "user" },
+      })
+    const preferred = candidate("preferred", 80)
+    const idle = candidate("idle", 72)
+    const tooWeak = candidate("weak", 30)
+    const noTools = candidate("chat", 90, false)
+    const snapshot = (model: ModelV2.Info, work: number) =>
+      ({
+        deviceKey: SessionRunnerModel.deviceKeyFor(model),
+        concurrency: 2,
+        inFlightInteractive: Array.from({ length: work }, (_, index) => `s${index}`),
+        inFlightBatch: [],
+        inFlightMaintenance: [],
+        waiting: [],
+        waitingMaintenance: [],
+        ledger: [],
+      }) as never
+
+    expect(
+      String(
+        SessionRunnerModel.leastLoaded({
+          available: [preferred, idle, tooWeak, noTools],
+          preferred,
+          requiredScore: 70,
+          tools: true,
+          devices: [snapshot(preferred, 2), snapshot(idle, 0)],
+        })?.id,
+      ),
+    ).toBe("idle")
+  })
+
+  test("a score floor never vetoes work when no capable model clears it", () => {
+    const weak = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://weak.test/v1" }),
+      benchmark: { name: "terminal-bench-4.0", score: 12, source: "user" },
+    })
+    expect(SessionRunnerModel.leastLoaded({ available: [weak], requiredScore: 90, tools: true, devices: [] })).toBe(
+      weak,
+    )
+  })
+
   it.effect("asks the managed runtime to prepare the selected model before the provider request", () =>
     Effect.gen(function* () {
       const calls: LocalModelManager.ModelRequest[] = []

@@ -476,6 +476,16 @@ export const TurnTiming = Schema.Struct({
 })
 export type TurnTiming = typeof TurnTiming.Type
 
+export const PrefixCacheObservation = Schema.Struct({
+  promptBytes: NonNegativeInt,
+  matchedPrefixBytes: NonNegativeInt,
+  expectedCachedTokens: NonNegativeInt,
+  comparedEntries: NonNegativeInt,
+  ttlMinutes: Schema.Finite,
+  observedAt: NonNegativeInt,
+})
+export type PrefixCacheObservation = typeof PrefixCacheObservation.Type
+
 /** The durable boundary created only after the completion auditor accepts `exit(result)`. */
 export const AcceptedExit = Schema.Struct({
   result: Schema.String,
@@ -505,6 +515,8 @@ export const Assistant = Schema.Struct({
   }).pipe(optional),
   context: Context.pipe(optional),
   timing: TurnTiming.pipe(optional),
+  /** Harness-side byte-prefix expectation for this exact provider prompt (opt-in per model). */
+  prefixCache: PrefixCacheObservation.pipe(optional),
   /**
    * Present only when this exact assistant step's `exit(result)` passed the completion audit.
    * Provider finish reasons and successfully executed exit tools are not completion authority.

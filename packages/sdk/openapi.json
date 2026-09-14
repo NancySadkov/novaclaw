@@ -1935,6 +1935,9 @@
                               "output": {
                                 "type": "number"
                               },
+                              "reasoning": {
+                                "type": "number"
+                              },
                               "cache": {
                                 "type": "object",
                                 "properties": {
@@ -1949,14 +1952,48 @@
                                 "additionalProperties": false
                               }
                             },
-                            "required": ["input", "output", "cache"],
+                            "required": ["input", "output", "reasoning", "cache"],
                             "additionalProperties": false
                           },
                           "cost": {
                             "type": "number"
+                          },
+                          "typical": {
+                            "type": "object",
+                            "properties": {
+                              "outputTokensPerSecond": {
+                                "type": "number"
+                              },
+                              "promptTokensPerSecond": {
+                                "type": "number"
+                              },
+                              "timeToFirstTokenMs": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "prefixCache": {
+                            "type": "object",
+                            "properties": {
+                              "observations": {
+                                "type": "number"
+                              },
+                              "expectedCachedTokens": {
+                                "type": "number"
+                              },
+                              "matchedPrefixBytes": {
+                                "type": "number"
+                              },
+                              "promptBytes": {
+                                "type": "number"
+                              }
+                            },
+                            "required": ["observations", "expectedCachedTokens", "matchedPrefixBytes", "promptBytes"],
+                            "additionalProperties": false
                           }
                         },
-                        "required": ["messages", "tokens", "cost"],
+                        "required": ["messages", "tokens", "cost", "typical", "prefixCache"],
                         "additionalProperties": false
                       }
                     },
@@ -25444,6 +25481,43 @@
                       },
                       "snapshot": {
                         "type": "string"
+                      },
+                      "prefixCache": {
+                        "type": "object",
+                        "properties": {
+                          "promptBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "matchedPrefixBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "expectedCachedTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "comparedEntries": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "ttlMinutes": {
+                            "type": "number"
+                          },
+                          "observedAt": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "promptBytes",
+                          "matchedPrefixBytes",
+                          "expectedCachedTokens",
+                          "comparedEntries",
+                          "ttlMinutes",
+                          "observedAt"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": ["timestamp", "sessionID", "assistantMessageID", "agent", "model"],
@@ -31976,6 +32050,43 @@
             "required": ["startedAt", "phases", "providerAttempts"],
             "additionalProperties": false
           },
+          "prefixCache": {
+            "type": "object",
+            "properties": {
+              "promptBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "matchedPrefixBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCachedTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "comparedEntries": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "ttlMinutes": {
+                "type": "number"
+              },
+              "observedAt": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "promptBytes",
+              "matchedPrefixBytes",
+              "expectedCachedTokens",
+              "comparedEntries",
+              "ttlMinutes",
+              "observedAt"
+            ],
+            "additionalProperties": false
+          },
           "acceptedExit": {
             "$ref": "#/components/schemas/SessionMessageAcceptedExit"
           },
@@ -34033,6 +34144,43 @@
                   },
                   "snapshot": {
                     "type": "string"
+                  },
+                  "prefixCache": {
+                    "type": "object",
+                    "properties": {
+                      "promptBytes": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "matchedPrefixBytes": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "expectedCachedTokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "comparedEntries": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "ttlMinutes": {
+                        "type": "number"
+                      },
+                      "observedAt": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "promptBytes",
+                      "matchedPrefixBytes",
+                      "expectedCachedTokens",
+                      "comparedEntries",
+                      "ttlMinutes",
+                      "observedAt"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": ["timestamp", "sessionID", "assistantMessageID", "agent", "model"],
@@ -35938,9 +36086,10 @@
           "toolLabels": {
             "type": "boolean"
           },
-          "needsTier": {
-            "type": "string",
-            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          "needsScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
           },
           "directory": {
             "type": "string"
@@ -37043,6 +37192,43 @@
         "required": ["input", "output"],
         "additionalProperties": false
       },
+      "ModelBenchmark": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["terminal-bench-4.0"]
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "source": {
+            "type": "string",
+            "enum": ["user", "measured"]
+          },
+          "measuredAt": {
+            "type": "number"
+          }
+        },
+        "required": ["name", "score", "source"],
+        "additionalProperties": false
+      },
+      "ModelPrefixCache": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ttlMinutes": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": ["enabled"],
+        "additionalProperties": false
+      },
       "ConfigV2ModelRetry": {
         "type": "object",
         "properties": {
@@ -37196,6 +37382,12 @@
           "tier": {
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
+          "benchmark": {
+            "$ref": "#/components/schemas/ModelBenchmark"
+          },
+          "prefixCache": {
+            "$ref": "#/components/schemas/ModelPrefixCache"
           },
           "prePrompt": {
             "type": "string"
@@ -37367,6 +37559,12 @@
           "tier": {
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
+          "benchmark": {
+            "$ref": "#/components/schemas/ModelBenchmark"
+          },
+          "prefixCache": {
+            "$ref": "#/components/schemas/ModelPrefixCache"
           },
           "prePrompt": {
             "type": "string"
@@ -38256,6 +38454,12 @@
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
           },
+          "benchmark": {
+            "$ref": "#/components/schemas/ModelBenchmark"
+          },
+          "prefixCache": {
+            "$ref": "#/components/schemas/ModelPrefixCache"
+          },
           "prePrompt": {
             "type": "string"
           },
@@ -38459,9 +38663,10 @@
           "toolLabels": {
             "type": "boolean"
           },
-          "needsTier": {
-            "type": "string",
-            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          "needsScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
           },
           "description": {
             "type": "string"
@@ -40544,6 +40749,43 @@
               },
               "snapshot": {
                 "type": "string"
+              },
+              "prefixCache": {
+                "type": "object",
+                "properties": {
+                  "promptBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "matchedPrefixBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "expectedCachedTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "comparedEntries": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "ttlMinutes": {
+                    "type": "number"
+                  },
+                  "observedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "promptBytes",
+                  "matchedPrefixBytes",
+                  "expectedCachedTokens",
+                  "comparedEntries",
+                  "ttlMinutes",
+                  "observedAt"
+                ],
+                "additionalProperties": false
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "agent", "model"],
@@ -47336,6 +47578,43 @@
               },
               "snapshot": {
                 "type": "string"
+              },
+              "prefixCache": {
+                "type": "object",
+                "properties": {
+                  "promptBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "matchedPrefixBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "expectedCachedTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "comparedEntries": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "ttlMinutes": {
+                    "type": "number"
+                  },
+                  "observedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "promptBytes",
+                  "matchedPrefixBytes",
+                  "expectedCachedTokens",
+                  "comparedEntries",
+                  "ttlMinutes",
+                  "observedAt"
+                ],
+                "additionalProperties": false
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "agent", "model"],

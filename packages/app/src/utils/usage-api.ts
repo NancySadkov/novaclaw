@@ -7,9 +7,21 @@ export interface UsageModel {
   readonly tokens: {
     readonly input: number
     readonly output: number
+    readonly reasoning: number
     readonly cache: { readonly read: number; readonly write: number }
   }
   readonly cost: number
+  readonly typical: {
+    readonly outputTokensPerSecond?: number
+    readonly promptTokensPerSecond?: number
+    readonly timeToFirstTokenMs?: number
+  }
+  readonly prefixCache: {
+    readonly observations: number
+    readonly expectedCachedTokens: number
+    readonly matchedPrefixBytes: number
+    readonly promptBytes: number
+  }
 }
 
 export interface UsageSummary {

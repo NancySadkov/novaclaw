@@ -93,10 +93,11 @@ describe("Model Configure — the default model finally has a writer", () => {
 })
 
 describe("Models tab — quiet overview, details on demand", () => {
-  test("moves model size into Configure and keeps endpoint URLs out of the list", () => {
+  test("moves measured quality and prefix diagnostics into Configure and keeps endpoint URLs out of the list", () => {
     expect(tab).not.toContain("<DialogModelTier")
-    expect(dialog).toContain("<DialogModelTier")
-    expect(dialog).toContain("current={props.tier}")
+    expect(dialog).toContain("settings.models.config.benchmark.name")
+    expect(dialog).toContain("prefixCacheEnabled")
+    expect(tab).toContain("<DialogModelStats")
     expect(tab).toContain("description={modelProviderLabel(props.item.provider.name)}")
     expect(tab).toContain("return /^https?:\\/\\//i.test")
   })

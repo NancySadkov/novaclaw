@@ -312,6 +312,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
               time: { created: event.data.timestamp },
               content: [],
               snapshot: event.data.snapshot ? { start: event.data.snapshot } : undefined,
+              prefixCache: event.data.prefixCache,
             }),
           )
         })

@@ -28,6 +28,7 @@ import { ProviderCapability } from "../../provider-capability"
 import { ProviderCapabilityStore } from "../../provider-capability-store"
 import { ProviderV2 } from "../../provider"
 import { DeviceRegistry } from "../device-registry"
+import { SessionScheduler } from "../scheduler"
 import { SessionSchema } from "../schema"
 
 export class ModelNotSelectedError extends Schema.TaggedErrorClass<ModelNotSelectedError>()(
@@ -165,6 +166,10 @@ export type Error =
 
 export interface ResolveOptions {
   readonly requested?: boolean
+  /** Automatic/default selection prefers models at or above this raw Terminal-Bench 4.0 score. */
+  readonly requiredScore?: number
+  /** Hard protocol needs for this turn. Unknown is never invented: catalog capabilities are exact. */
+  readonly requiredCapabilities?: { readonly tools?: boolean }
   /** Exact visibility around the durable provider-backoff sleep; absent callers keep it silent. */
   readonly recoveryWait?: {
     readonly started: (delayMs: number) => Effect.Effect<void>
@@ -237,6 +242,8 @@ export interface Interface {
   /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
    *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
   readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
+  /** Raw Terminal-Bench 4.0 score for role-fit diagnostics. */
+  readonly benchmarkScore: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /** The resolved catalog model's optional user-authored pre-prompt (owner 2026-07-29). Read the
    *  same best-effort way as `tier`: it only decorates the system prompt, so an unresolvable model
    *  yields `undefined` rather than failing the turn. */
@@ -337,6 +344,7 @@ export const perTurnFacts = (
 ): {
   readonly ref: ModelV2.Ref
   readonly tier: ModelV2.Tier | undefined
+  readonly benchmarkScore: number | undefined
   readonly prePrompt: string | undefined
   readonly retryAttempts: number | undefined
   readonly capabilities: ModelV2.Capabilities | undefined
@@ -344,7 +352,8 @@ export const perTurnFacts = (
 } => ({
   /** Catalog identity — the stable user-facing id, NOT the wire `api.id`. */
   ref: { providerID: model.providerID, id: model.id },
-  tier: model.tier,
+  tier: ModelV2.scoreBand(model.benchmark?.score),
+  benchmarkScore: model.benchmark?.score,
   prePrompt: model.prePrompt,
   retryAttempts: model.retry?.attempts,
   capabilities: model.capabilities,
@@ -456,6 +465,8 @@ export const layerWith = (
   dispatchAllowed: Interface["dispatchAllowed"] = () => Effect.succeed(true),
   /** ⚠️ Added LAST. Synthetic seams have no persisted switch to consult. */
   guardDispatch: Interface["guardDispatch"] = (_model, attempt) => attempt,
+  /** ⚠️ Added LAST. Synthetic seams may expose a measured score without fabricating a catalog row. */
+  benchmarkScore: Interface["benchmarkScore"] = () => Effect.succeed(undefined),
 ) =>
   Layer.succeed(
     Service,
@@ -478,6 +489,7 @@ export const layerWith = (
       learnedImageLimit,
       rememberImageLimit,
       tier,
+      benchmarkScore,
       prePrompt,
       retryAttempts,
       capabilities,
@@ -831,6 +843,50 @@ export const supported = (model: ModelV2.Info) =>
     model.api.package === "@ai-sdk/anthropic" ||
     (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))
 
+export const leastLoaded = (input: {
+  readonly available: readonly ModelV2.Info[]
+  readonly preferred?: ModelV2.Info
+  readonly requiredScore?: number
+  readonly tools?: boolean
+  readonly endpoints?: DeviceRegistry.EndpointMap
+  readonly devices: readonly SessionScheduler.DeviceSnapshot[]
+}): ModelV2.Info | undefined => {
+  const capable = input.available.filter(
+    (model) => supported(model) && (input.tools === undefined || model.capabilities.tools === input.tools),
+  )
+  const adequate =
+    input.requiredScore === undefined
+      ? capable
+      : capable.filter((model) => model.benchmark !== undefined && model.benchmark.score >= input.requiredScore!)
+  const measured = capable.filter((model) => model.benchmark !== undefined)
+  // A role score is guidance, never a veto. If nothing measured clears it, keep the officer working
+  // on the measured capable pool and let the existing in-chat fit notice explain the shortfall.
+  // Unknown scores are used only when there is no measurement at all; silence must not outrank evidence.
+  const candidates =
+    adequate.length > 0 ? adequate : input.requiredScore !== undefined && measured.length > 0 ? measured : capable
+  const snapshots = new Map(input.devices.map((snapshot) => [snapshot.deviceKey, snapshot]))
+  const load = (model: ModelV2.Info) => {
+    const snapshot = snapshots.get(deviceKeyFor(model, input))
+    if (snapshot === undefined) return { ratio: 0, work: 0 }
+    const work =
+      snapshot.inFlightInteractive.length +
+      snapshot.inFlightBatch.length +
+      snapshot.inFlightMaintenance.length +
+      snapshot.waiting.length
+    return { ratio: work / Math.max(1, snapshot.concurrency), work }
+  }
+  return candidates.toSorted((left, right) => {
+    const a = load(left)
+    const b = load(right)
+    if (a.ratio !== b.ratio) return a.ratio - b.ratio
+    if (a.work !== b.work) return a.work - b.work
+    const leftPreferred = left.providerID === input.preferred?.providerID && left.id === input.preferred.id
+    const rightPreferred = right.providerID === input.preferred?.providerID && right.id === input.preferred.id
+    if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1
+    return `${left.providerID}/${left.id}`.localeCompare(`${right.providerID}/${right.id}`)
+  })[0]
+}
+
 export const ensureManagedModel = (
   manager: LocalModelManager.Interface,
   selected: ModelV2.Info,
@@ -855,6 +911,7 @@ export const locationLayer = Layer.effect(
     const catalogStore = yield* CatalogStore.Service
     const config = yield* Config.Service
     const devices = yield* DeviceRegistry.Service
+    const scheduler = yield* SessionScheduler.Service
     const integrations = yield* Integration.Service
     const localModels = yield* LocalModelManager.Service
     const plugins = yield* PluginV2.Service
@@ -864,15 +921,23 @@ export const locationLayer = Layer.effect(
     // tool-call turn on 2026-08-06.
     const settings = yield* SettingsConfigStore.Service
 
-    const selectSnapshot = Effect.fnUntraced(function* (session: SessionSchema.Info) {
+    const selectSnapshot = Effect.fnUntraced(function* (session: SessionSchema.Info, options?: ResolveOptions) {
       const defaultModel = session.model ? undefined : yield* catalog.model.default()
+      const available = yield* catalog.model.available()
       return session.model
-        ? (yield* catalog.model.available()).find(
-            (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
-          )
-        : defaultModel && supported(defaultModel)
-          ? defaultModel
-          : (yield* catalog.model.available()).find(supported)
+        ? available.find((model) => model.providerID === session.model?.providerID && model.id === session.model.id)
+        : options?.requiredScore !== undefined || options?.requiredCapabilities !== undefined
+          ? leastLoaded({
+              available,
+              preferred: defaultModel,
+              requiredScore: options.requiredScore,
+              tools: options.requiredCapabilities?.tools,
+              endpoints: yield* devices.endpoints(),
+              devices: yield* scheduler.snapshot(),
+            })
+          : defaultModel && supported(defaultModel)
+            ? defaultModel
+            : available.find(supported)
     })
 
     /**
@@ -880,8 +945,8 @@ export const locationLayer = Layer.effect(
      * intentionally process-local, so the host can update SQLite while this worker still holds the
      * old catalog. Reconcile the exact choice against the shared store before it becomes a route.
      */
-    const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
-      let selected = yield* selectSnapshot(session)
+    const select = Effect.fnUntraced(function* (session: SessionSchema.Info, options?: ResolveOptions) {
+      let selected = yield* selectSnapshot(session, options)
       const stored = yield* catalogStore.providers()
       const storedDefault = session.model === undefined ? yield* catalogStore.getDefault() : undefined
       const parsedDefault = storedDefault === undefined ? undefined : ModelV2.parse(storedDefault)
@@ -903,7 +968,7 @@ export const locationLayer = Layer.effect(
         (switched !== undefined || loaded !== undefined)
       if (defaultChanged || (switched !== undefined && (loaded === undefined || loaded.enabled !== switched))) {
         yield* catalog.reload()
-        selected = yield* selectSnapshot(session)
+        selected = yield* selectSnapshot(session, options)
       }
       return selected
     })
@@ -1077,7 +1142,12 @@ export const locationLayer = Layer.effect(
       // fallback that is not the model the turn runs on — which is how six of these accessors came
       // to describe a model that served nothing.
       tier: Effect.fn("SessionRunnerModel.tier")(function* (session) {
-        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.tier
+        return ModelV2.scoreBand(
+          (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.benchmark?.score,
+        )
+      }),
+      benchmarkScore: Effect.fn("SessionRunnerModel.benchmarkScore")(function* (session) {
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.benchmark?.score
       }),
       // The optional per-model pre-prompt, read the same best-effort way as `tier` — it only
       // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
@@ -1183,10 +1253,10 @@ export const locationLayer = Layer.effect(
       // EMPTY catalog and misreport a configured model as unavailable. Only when the first
       // look fails: await the boot latch (bounded — some test graphs never open it) and look
       // again before failing. The healthy path pays nothing.
-      let selected = yield* select(session)
+      let selected = yield* select(session, options)
       if (!selected && options?.latch === true) {
         yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
-        selected = yield* select(session)
+        selected = yield* select(session, options)
       }
       // 🔴 FALL BACK to the instance default rather than killing the turn (owner, 2026-08-21: *"if
       // the agent's chosen model is unavailable / gives errors, we temporarily auto switch to the
@@ -1350,10 +1420,10 @@ export const locationLayer = Layer.effect(
         // unavailable integration even when the pinned placement was healthy. A pin is an explicit
         // placement decision, so it also does not inherit the automatic model-health fallback.
         if (session.device !== undefined && session.device !== "") {
-          let selected = yield* select(session)
+          let selected = yield* select(session, options)
           if (!selected) {
             yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
-            selected = yield* select(session)
+            selected = yield* select(session, options)
           }
           const declaredProfile = yield* devices.profile(session.device)
           if (selected === undefined && session.model && options?.requested === true)
@@ -1445,6 +1515,7 @@ export const node = makeLocationNode({
     CatalogStore.node,
     Config.node,
     DeviceRegistry.node,
+    SessionScheduler.node,
     Integration.node,
     LocalModelManager.node,
     PluginV2.node,

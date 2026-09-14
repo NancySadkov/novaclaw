@@ -13,6 +13,7 @@ type Input = {
   readonly agent: string
   readonly model: ModelV2.Ref
   readonly snapshot?: string
+  readonly prefixCache?: SessionMessage.PrefixCacheObservation
   readonly executionBoundary?: (
     phase: SessionExecutionAttempt.Phase,
     checkpoint: "clear" | "mark" | "keep",

@@ -27,6 +27,7 @@ import { EventV2 } from "../../event"
 import { Location } from "../../location"
 import { ProviderCapability } from "../../provider-capability"
 import { ModelV2 } from "../../model"
+import { ModelPrefixCache } from "../../model-prefix-cache"
 import { ProviderV2 } from "../../provider"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
@@ -1225,6 +1226,10 @@ export const layer = Layer.effect(
       const resolvedModel = yield* tap(
         models.resolveWithDevice(modelSession, {
           requested: session.model !== undefined,
+          requiredScore: resolution.workerProfile?.needsScore ?? agent.info?.needsScore,
+          // An empty requirement still marks this as an automatic interactive pick. Tool support is
+          // a one-way need: a tool-capable model is also perfectly valid for a tool-free short chat.
+          requiredCapabilities: ShortChat.enabled(config.shortChat) ? {} : { tools: true },
           recoveryWait: options.recoveryWait,
         }),
       )
@@ -1479,6 +1484,7 @@ export const layer = Layer.effect(
           ? {
               ref: yield* models.ref(modelSession),
               tier: yield* models.tier(modelSession),
+              benchmarkScore: yield* models.benchmarkScore(modelSession),
               prePrompt: yield* models.prePrompt(modelSession),
               retryAttempts: yield* models.retryAttempts(modelSession),
               capabilities: yield* models.capabilities(modelSession),
@@ -1516,11 +1522,11 @@ export const layer = Layer.effect(
       // "warned once" flag would leave a compacted colleague confidently unaware.
       //
       // ⚠️ Best-effort. A notice that cannot be published must never cost the turn it was about.
-      const roleNeedsTier = prepared.workerProfile?.needsTier ?? prepared.agent.info?.needsTier
+      const roleNeedsScore = prepared.workerProfile?.needsScore ?? prepared.agent.info?.needsScore
       if (
-        AgentModelFit.below({ needs: roleNeedsTier, bound: tier }) &&
-        roleNeedsTier !== undefined &&
-        tier !== undefined
+        AgentModelFit.below({ needs: roleNeedsScore, bound: facts.benchmarkScore }) &&
+        roleNeedsScore !== undefined &&
+        facts.benchmarkScore !== undefined
       ) {
         // ⚠️ The CATALOG identity (`models.ref`), not the wire id. Two reasons, and the second is the
         // one that made this a bug worth avoiding: the catalog id is what the user sees in Settings,
@@ -1539,8 +1545,8 @@ export const layer = Layer.effect(
               messageID: SessionMessage.ID.create(),
               timestamp: yield* DateTime.now,
               text: AgentModelFit.notice({
-                needs: roleNeedsTier,
-                bound: tier,
+                needs: roleNeedsScore,
+                bound: facts.benchmarkScore,
                 model: boundName,
               }),
             })
@@ -2390,6 +2396,15 @@ export const layer = Layer.effect(
       const outboundPromptTokens = Math.ceil(
         PromptEstimate.whole(request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
       )
+      const prefixCacheObservation =
+        prepared.ran?.prefixCache?.enabled === true
+          ? yield* ModelPrefixCache.observe(db, {
+              model: `${prepared.ran.providerID}/${prepared.ran.id}`,
+              prompt: ModelPrefixCache.serialize(request),
+              promptTokens: outboundPromptTokens,
+              ttlMinutes: prepared.ran.prefixCache.ttlMinutes,
+            }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+          : undefined
       const retryAuthorization =
         overflowRecovery === undefined
           ? undefined
@@ -2427,6 +2442,7 @@ export const layer = Layer.effect(
         agent: agent.id,
         model: attemptModelRef,
         snapshot: startSnapshot,
+        prefixCache: prefixCacheObservation,
         executionBoundary: SessionExecutionAttempt.advanceCurrent,
         providerToolProtocol: SessionExecutionAttempt.providerToolProtocolCurrent,
         toolSideEffects: toolMaterialization?.sideEffects,

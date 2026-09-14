@@ -47,12 +47,24 @@ export interface SessionStats {
       tokens: {
         input: number
         output: number
+        reasoning: number
         cache: {
           read: number
           write: number
         }
       }
       cost: number
+      typical: {
+        outputTokensPerSecond?: number
+        promptTokensPerSecond?: number
+        timeToFirstTokenMs?: number
+      }
+      prefixCache: {
+        observations: number
+        expectedCachedTokens: number
+        matchedPrefixBytes: number
+        promptBytes: number
+      }
     }
   >
   dateRange: {
@@ -64,6 +76,25 @@ export interface SessionStats {
   tokensPerSession: number
   medianTokensPerSession: number
 }
+
+const median = (values: readonly number[]): number | undefined => {
+  if (values.length === 0) return undefined
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]
+}
+
+const phaseDuration = (
+  message: {
+    readonly timing?: {
+      readonly phases: readonly { readonly phase: string; readonly startedAt: number; readonly completedAt?: number }[]
+    }
+  },
+  phase: string,
+) =>
+  (message.timing?.phases ?? [])
+    .filter((item) => item.phase === phase && item.completedAt !== undefined)
+    .reduce((total, item) => total + Math.max(0, item.completedAt! - item.startedAt), 0)
 
 export const allSessions = Effect.fnUntraced(function* () {
   const { db } = yield* Database.Service
@@ -166,8 +197,17 @@ export const aggregate = Effect.fn("UsageStats.aggregate")(function* (
           string,
           {
             messages: number
-            tokens: { input: number; output: number; cache: { read: number; write: number } }
+            tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
             cost: number
+            outputRates: number[]
+            promptRates: number[]
+            firstTokenMs: number[]
+            prefixCache: {
+              observations: number
+              expectedCachedTokens: number
+              matchedPrefixBytes: number
+              promptBytes: number
+            }
           }
         > = {}
 
@@ -177,8 +217,12 @@ export const aggregate = Effect.fn("UsageStats.aggregate")(function* (
             if (!sessionModelUsage[modelKey]) {
               sessionModelUsage[modelKey] = {
                 messages: 0,
-                tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+                tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
                 cost: 0,
+                outputRates: [],
+                promptRates: [],
+                firstTokenMs: [],
+                prefixCache: { observations: 0, expectedCachedTokens: 0, matchedPrefixBytes: 0, promptBytes: 0 },
               }
             }
             sessionModelUsage[modelKey].messages++
@@ -188,8 +232,27 @@ export const aggregate = Effect.fn("UsageStats.aggregate")(function* (
               sessionModelUsage[modelKey].tokens.input += message.tokens.input || 0
               sessionModelUsage[modelKey].tokens.output +=
                 (message.tokens.output || 0) + (message.tokens.reasoning || 0)
+              sessionModelUsage[modelKey].tokens.reasoning += message.tokens.reasoning || 0
               sessionModelUsage[modelKey].tokens.cache.read += message.tokens.cache?.read || 0
               sessionModelUsage[modelKey].tokens.cache.write += message.tokens.cache?.write || 0
+              const generated = (message.tokens.output || 0) + (message.tokens.reasoning || 0)
+              const generationMs = phaseDuration(message, "generation")
+              if (generated > 0 && generationMs > 0)
+                sessionModelUsage[modelKey].outputRates.push(generated / (generationMs / 1_000))
+              const prefillMs = phaseDuration(message, "provider-prefill")
+              if ((message.tokens.input || 0) > 0 && prefillMs > 0)
+                sessionModelUsage[modelKey].promptRates.push(message.tokens.input / (prefillMs / 1_000))
+            }
+
+            for (const attempt of message.timing?.providerAttempts ?? [])
+              if (attempt.firstTokenAt !== undefined)
+                sessionModelUsage[modelKey].firstTokenMs.push(Math.max(0, attempt.firstTokenAt - attempt.dispatchedAt))
+
+            if (message.prefixCache) {
+              sessionModelUsage[modelKey].prefixCache.observations++
+              sessionModelUsage[modelKey].prefixCache.expectedCachedTokens += message.prefixCache.expectedCachedTokens
+              sessionModelUsage[modelKey].prefixCache.matchedPrefixBytes += message.prefixCache.matchedPrefixBytes
+              sessionModelUsage[modelKey].prefixCache.promptBytes += message.prefixCache.promptBytes
             }
 
             for (const item of message.content) {
@@ -240,17 +303,54 @@ export const aggregate = Effect.fn("UsageStats.aggregate")(function* (
       if (!stats.modelUsage[model]) {
         stats.modelUsage[model] = {
           messages: 0,
-          tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           cost: 0,
+          typical: {},
+          prefixCache: { observations: 0, expectedCachedTokens: 0, matchedPrefixBytes: 0, promptBytes: 0 },
         }
       }
       stats.modelUsage[model].messages += usage.messages
       stats.modelUsage[model].tokens.input += usage.tokens.input
       stats.modelUsage[model].tokens.output += usage.tokens.output
+      stats.modelUsage[model].tokens.reasoning += usage.tokens.reasoning
       stats.modelUsage[model].tokens.cache.read += usage.tokens.cache.read
       stats.modelUsage[model].tokens.cache.write += usage.tokens.cache.write
       stats.modelUsage[model].cost += usage.cost
+      const aggregate = stats.modelUsage[model] as (typeof stats.modelUsage)[string] & {
+        _outputRates?: number[]
+        _promptRates?: number[]
+        _firstTokenMs?: number[]
+      }
+      aggregate._outputRates = [...(aggregate._outputRates ?? []), ...usage.outputRates]
+      aggregate._promptRates = [...(aggregate._promptRates ?? []), ...usage.promptRates]
+      aggregate._firstTokenMs = [...(aggregate._firstTokenMs ?? []), ...usage.firstTokenMs]
+      stats.modelUsage[model].prefixCache.observations += usage.prefixCache.observations
+      stats.modelUsage[model].prefixCache.expectedCachedTokens += usage.prefixCache.expectedCachedTokens
+      stats.modelUsage[model].prefixCache.matchedPrefixBytes += usage.prefixCache.matchedPrefixBytes
+      stats.modelUsage[model].prefixCache.promptBytes += usage.prefixCache.promptBytes
     }
+  }
+
+  for (const usage of Object.values(stats.modelUsage)) {
+    const samples = usage as typeof usage & {
+      _outputRates?: number[]
+      _promptRates?: number[]
+      _firstTokenMs?: number[]
+    }
+    usage.typical = {
+      ...(median(samples._outputRates ?? []) === undefined
+        ? {}
+        : { outputTokensPerSecond: median(samples._outputRates ?? [])! }),
+      ...(median(samples._promptRates ?? []) === undefined
+        ? {}
+        : { promptTokensPerSecond: median(samples._promptRates ?? [])! }),
+      ...(median(samples._firstTokenMs ?? []) === undefined
+        ? {}
+        : { timeToFirstTokenMs: median(samples._firstTokenMs ?? [])! }),
+    }
+    delete samples._outputRates
+    delete samples._promptRates
+    delete samples._firstTokenMs
   }
 
   const rangeDays = Math.max(1, Math.ceil((latestTime - earliestTime) / MS_IN_DAY))

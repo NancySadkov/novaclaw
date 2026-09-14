@@ -27,6 +27,7 @@ import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { DialogModelConfig } from "./dialog-model-config"
+import { DialogModelStats } from "./dialog-model-stats"
 import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
 import { useConfirm } from "@/components/dialog-confirm"
@@ -427,6 +428,23 @@ export const SettingsModelsV2: Component = () => {
                       const key = { providerID: item.provider.id, modelID: item.id }
                       const ref = modelOrderRef(item)
                       const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
+                      const configuredModel = () =>
+                        (
+                          serverSync().data.config?.providers as
+                            | Record<
+                                string,
+                                {
+                                  models?: Record<
+                                    string,
+                                    {
+                                      benchmark?: { name: string; score: number; source: string }
+                                      prefixCache?: { enabled: boolean; ttlMinutes?: number }
+                                    }
+                                  >
+                                }
+                              >
+                            | undefined
+                        )?.[key.providerID]?.models?.[key.modelID]
                       const probeResult = () => {
                         const state = probeState()
                         return state && state !== "probing" ? state : undefined
@@ -443,6 +461,26 @@ export const SettingsModelsV2: Component = () => {
                         >
                           <div class="settings-v2-models-row-actions">
                             <div class="settings-v2-models-row-controls">
+                              <ButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.stats.open")}
+                                onClick={() => {
+                                  const cn = conn()
+                                  if (!cn) return
+                                  dialog.push(() => (
+                                    <DialogModelStats
+                                      http={cn.http}
+                                      modelRef={ref}
+                                      modelName={item.name}
+                                      benchmark={configuredModel()?.benchmark ?? item.benchmark}
+                                      prefixCache={configuredModel()?.prefixCache ?? item.prefixCache}
+                                    />
+                                  ))
+                                }}
+                              >
+                                {language.t("settings.models.stats.open")}
+                              </ButtonV2>
                               <ButtonV2
                                 size="small"
                                 variant="ghost-muted"
@@ -463,8 +501,6 @@ export const SettingsModelsV2: Component = () => {
                                       modelName={item.name}
                                       apiModelID={item.api.id}
                                       providerApi={item.provider.api}
-                                      tier={models.tier.get(key)}
-                                      onTierSelect={(tier) => models.tier.set(key, tier)}
                                       defaults={{
                                         capabilities: {
                                           tools: item.capabilities.tools,

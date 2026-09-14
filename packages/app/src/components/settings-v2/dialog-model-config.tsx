@@ -24,8 +24,6 @@ import { PresetFieldV2 } from "./parts/preset-field"
 import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-value"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
-import { DialogModelTier } from "./dialog-model-tier"
-import type { ModelTier } from "@/context/models"
 
 // Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
@@ -35,6 +33,11 @@ type DeviceConfig = {
   readonly endpoints: readonly string[]
   readonly concurrency?: number
   readonly locality?: "local" | "lan" | "remote"
+}
+
+type ExtendedModelConfig = ModelConfig & {
+  benchmark?: { name: "terminal-bench-4.0"; score: number; source: "user" | "measured"; measuredAt?: number }
+  prefixCache?: { enabled: boolean; ttlMinutes?: number }
 }
 
 const endpointOrigin = (url: string): string | undefined => {
@@ -100,8 +103,6 @@ export const DialogModelConfig: Component<{
   modelName: string
   apiModelID: string
   providerApi: ProviderApi
-  tier: ModelTier
-  onTierSelect: (tier: ModelTier) => void
   defaults?: Pick<ModelConfig, "capabilities">
   /**
    * The connection to probe through, passed in like `DialogNewModel`'s.
@@ -119,7 +120,7 @@ export const DialogModelConfig: Component<{
   const serverSync = useServerSync()
 
   const providerCfg = (): ProviderConfig => serverSync().data.config?.providers?.[props.providerID] ?? {}
-  const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}
+  const savedModel = (): ExtendedModelConfig => (providerCfg().models?.[props.modelID] ?? {}) as ExtendedModelConfig
 
   const init = savedModel()
 
@@ -176,6 +177,9 @@ export const DialogModelConfig: Component<{
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
     deviceConcurrency: nstr(initialDevice?.device.concurrency),
+    benchmarkScore: nstr(init.benchmark?.score),
+    prefixCacheEnabled: init.prefixCache?.enabled ?? false,
+    prefixCacheTtlMinutes: nstr(init.prefixCache?.ttlMinutes),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
     prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
@@ -251,14 +255,31 @@ export const DialogModelConfig: Component<{
 
     // Connection recovery is a kernel policy, not a model tuning knob. Strip legacy per-model
     // attempt counts whenever this row is saved so old config cannot silently retain the retired UI.
-    const { retry: _retiredRetry, ...savedWithoutRetry } = saved
-    const model: ModelConfig = {
+    const { retry: _retiredRetry, tier: _retiredSizeTier, ...savedWithoutRetry } = saved
+    const benchmarkScore = num(form.benchmarkScore)
+    if (benchmarkScore !== undefined && (benchmarkScore < 0 || benchmarkScore > 100)) {
+      showToast({ variant: "error", title: language.t("settings.models.config.benchmark.invalid") })
+      return
+    }
+    const prefixCacheTtlMinutes = num(form.prefixCacheTtlMinutes)
+    if (prefixCacheTtlMinutes !== undefined && prefixCacheTtlMinutes <= 0) {
+      showToast({ variant: "error", title: language.t("settings.models.config.prefixCache.ttl.invalid") })
+      return
+    }
+    const model: ExtendedModelConfig = {
       ...savedWithoutRetry,
       name: form.modelName.trim() || props.modelName,
       api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID },
       limit,
       capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
+      ...(benchmarkScore === undefined
+        ? {}
+        : { benchmark: { name: "terminal-bench-4.0", score: benchmarkScore, source: "user" } }),
+      prefixCache: {
+        enabled: form.prefixCacheEnabled,
+        ...(prefixCacheTtlMinutes === undefined ? {} : { ttlMinutes: prefixCacheTtlMinutes }),
+      },
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
@@ -337,6 +358,9 @@ export const DialogModelConfig: Component<{
       const base = ["providers", props.providerID, "models", props.modelID]
       await serverSync().removeConfig([
         [...base, "retry"],
+        [...base, "tier"],
+        ...(benchmarkScore === undefined ? [[...base, "benchmark"]] : []),
+        ...(prefixCacheTtlMinutes === undefined ? [[...base, "prefixCache", "ttlMinutes"]] : []),
         ...(deviceID !== undefined && concurrency === undefined ? [["devices", deviceID, "concurrency"]] : []),
         ...[...SAMPLING, "thinkingBudget", "reasoning_effort"]
           .filter((key) => body[key] === undefined)
@@ -532,21 +556,24 @@ export const DialogModelConfig: Component<{
               />
             </SettingsRowV2>
             <SettingsRowV2
-              title={language.t("settings.models.tier.label")}
-              description={language.t(`settings.models.tier.${props.tier}.blurb`)}
+              title={language.t("settings.models.config.benchmark.name")}
+              description={
+                <>
+                  {language.t("settings.models.config.benchmark.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.benchmark.name")}>
+                    {language.t("settings.models.config.benchmark.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
-              <ButtonV2
-                size="small"
-                variant="neutral"
-                aria-label={language.t("settings.models.tier.pick")}
-                onClick={() =>
-                  dialog.push(() => (
-                    <DialogModelTier modelName={props.modelName} current={props.tier} onSelect={props.onTierSelect} />
-                  ))
-                }
-              >
-                {language.t(`settings.models.tier.${props.tier}.name`)}
-              </ButtonV2>
+              <TextInputV2
+                class="w-24 max-w-full"
+                value={form.benchmarkScore}
+                onInput={(event) => setForm("benchmarkScore", event.currentTarget.value)}
+                inputmode="decimal"
+                placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                aria-label={language.t("settings.models.config.benchmark.name")}
+              />
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.deviceConcurrency.name")}
@@ -593,6 +620,27 @@ export const DialogModelConfig: Component<{
             >
               <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
             </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.prefixCache.name")}
+              description={language.t("settings.models.config.prefixCache.desc")}
+            >
+              <Switch checked={form.prefixCacheEnabled} onChange={(value) => setForm("prefixCacheEnabled", value)} />
+            </SettingsRowV2>
+            <Show when={form.prefixCacheEnabled}>
+              <SettingsRowV2
+                title={language.t("settings.models.config.prefixCache.ttl.name")}
+                description={language.t("settings.models.config.prefixCache.ttl.desc")}
+              >
+                <TextInputV2
+                  class="w-24 max-w-full"
+                  value={form.prefixCacheTtlMinutes}
+                  onInput={(event) => setForm("prefixCacheTtlMinutes", event.currentTarget.value)}
+                  inputmode="decimal"
+                  placeholder="5"
+                  aria-label={language.t("settings.models.config.prefixCache.ttl.name")}
+                />
+              </SettingsRowV2>
+            </Show>
             {modalityRow("in")}
             {modalityRow("out")}
             {paramRow("context")}

@@ -307,6 +307,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      *  what almost every hand-added local model reports. Set it to exercise anything that reads a
      *  tier — `TierScaffold`, and the role/model fit notice (`agent/model-fit.ts`). */
     modelTier: undefined as ModelV2.Tier | undefined,
+    modelBenchmarkScore: undefined as number | undefined,
     /**
      * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch
      * before emitting anything. That window — turn in flight, nothing emitted yet — is where steering
@@ -620,6 +621,22 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     // ⚠️ Read through `controls` on every call rather than captured, like every other control here:
     // a test that changes the tier mid-run is exactly the shape the fit notice is about.
     () => Effect.succeed(controls.modelTier),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => Effect.succeed(controls.modelBenchmarkScore),
   )
 
   const systemContextKey = SystemContext.Key.make("test/harness-context")

@@ -5,45 +5,40 @@ import { AgentModelFit } from "./model-fit"
 
 describe("the floor comparison", () => {
   test("a model beneath the declared floor is below it", () => {
-    expect(AgentModelFit.below({ needs: "large", bound: "micro" })).toBe(true)
-    expect(AgentModelFit.below({ needs: "medium", bound: "small" })).toBe(true)
+    expect(AgentModelFit.below({ needs: 70, bound: 12 })).toBe(true)
+    expect(AgentModelFit.below({ needs: 50, bound: 35 })).toBe(true)
   })
 
   test("meeting the floor exactly is NOT below it", () => {
     // Off-by-one here warns every single turn on a correctly configured colleague, which trains the
     // user to ignore the warning that matters.
-    expect(AgentModelFit.below({ needs: "medium", bound: "medium" })).toBe(false)
+    expect(AgentModelFit.below({ needs: 50, bound: 50 })).toBe(false)
   })
 
   test("a stronger model is never a complaint", () => {
-    expect(AgentModelFit.below({ needs: "small", bound: "frontier" })).toBe(false)
+    expect(AgentModelFit.below({ needs: 25, bound: 80 })).toBe(false)
   })
 
-  // 🔴 The two silences, which are different from a low tier and from each other.
-  test("no declared floor is SILENCE, not a floor of micro", () => {
-    expect(AgentModelFit.below({ needs: undefined, bound: "micro" })).toBe(false)
+  // 🔴 The two silences, which are different from a low score and from each other.
+  test("no declared floor is SILENCE, not a score of zero", () => {
+    expect(AgentModelFit.below({ needs: undefined, bound: 5 })).toBe(false)
   })
 
-  test("an UNKNOWN model tier is not a low one", () => {
-    // ⚠️ Most models on a local-first install are hand-added and carry no tier. Treating "we do not
+  test("an UNKNOWN model score is not a low one", () => {
+    // ⚠️ Most models on a local-first install are hand-added and may carry no score. Treating "we do not
     // know" as "too weak" would warn on nearly every endpoint the owner actually runs — a warning
     // that fires on normal is not a warning.
-    expect(AgentModelFit.below({ needs: "frontier", bound: undefined })).toBe(false)
-  })
-
-  test("the ladder is ORDERED, and that ordering is the whole module", () => {
-    // `ModelV2.Tier` is a union of strings; nothing in the schema says `small` is beneath `large`.
-    expect(AgentModelFit.LADDER).toEqual(["micro", "tiny", "small", "medium", "large", "frontier"])
+    expect(AgentModelFit.below({ needs: 80, bound: undefined })).toBe(false)
   })
 })
 
 describe("what the colleague is told", () => {
-  const spoken = AgentModelFit.notice({ needs: "large", bound: "tiny", model: "spark-holo/holo3.1" })
+  const spoken = AgentModelFit.notice({ needs: 70, bound: 18.2, model: "spark-holo/holo3.1" })
 
-  test("names both tiers, the model, and what to DO about it", () => {
+  test("names both scores, the model, and what to DO about it", () => {
     expect(spoken).toContain("spark-holo/holo3.1")
-    expect(spoken).toContain("tiny")
-    expect(spoken).toContain("large")
+    expect(spoken).toContain("18.2%")
+    expect(spoken).toContain("70.0%")
     // "It warns; it never refuses" — the text must not tell a model to stop.
     expect(spoken.toLowerCase()).toContain("carry on")
   })

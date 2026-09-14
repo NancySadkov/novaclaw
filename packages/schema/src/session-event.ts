@@ -413,6 +413,7 @@ export namespace Step {
       agent: Schema.String,
       model: Model.Ref,
       snapshot: Schema.String.pipe(optional),
+      prefixCache: SessionMessage.PrefixCacheObservation.pipe(optional),
     },
   })
   export type Started = typeof Started.Type

@@ -32,9 +32,21 @@ const ModelUsage = Schema.Struct({
   tokens: Schema.Struct({
     input: Schema.Finite,
     output: Schema.Finite,
+    reasoning: Schema.Finite,
     cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
   }),
   cost: Schema.Finite,
+  typical: Schema.Struct({
+    outputTokensPerSecond: Schema.optional(Schema.Finite),
+    promptTokensPerSecond: Schema.optional(Schema.Finite),
+    timeToFirstTokenMs: Schema.optional(Schema.Finite),
+  }),
+  prefixCache: Schema.Struct({
+    observations: Schema.Finite,
+    expectedCachedTokens: Schema.Finite,
+    matchedPrefixBytes: Schema.Finite,
+    promptBytes: Schema.Finite,
+  }),
 })
 
 export const UsageSummary = Schema.Struct({

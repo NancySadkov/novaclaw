@@ -100,6 +100,8 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
   }).pipe(Schema.Array, Schema.optional),
   cost: Schema.Union([Cost, Cost.pipe(Schema.Array)]).pipe(Schema.optional),
   tier: Tier.pipe(Schema.optional),
+  benchmark: ModelV2.Benchmark.pipe(Schema.optional),
+  prefixCache: ModelV2.PrefixCache.pipe(Schema.optional),
   // Optional per-model pre-prompt (owner 2026-07-29): a user-authored correction for THIS model's
   // known behaviour, prepended to the system context. Declared beside `tier`, and carried onto
   // ModelV2.Info by the catalog plugin the same way. Optional ⇒ no on-read migration, no DB break.
@@ -139,6 +141,8 @@ export class ModelEntry extends Schema.Class<ModelEntry>("ConfigV2.ModelEntry")(
   }).pipe(Schema.Array, Schema.optional),
   cost: Schema.Union([Cost, Cost.pipe(Schema.Array)]).pipe(Schema.optional),
   tier: Tier.pipe(Schema.optional),
+  benchmark: ModelV2.Benchmark.pipe(Schema.optional),
+  prefixCache: ModelV2.PrefixCache.pipe(Schema.optional),
   // See the nested `Model.prePrompt` above — the flat models-primary entry carries the same optional
   // field, so a config authored either way (nested `providers` or flat `models`) reaches the catalog.
   prePrompt: Schema.String.pipe(Schema.optional),

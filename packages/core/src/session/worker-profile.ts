@@ -25,7 +25,7 @@ export interface Snapshot {
   readonly shortChat?: boolean
   readonly reasoningBudget?: number
   readonly maxToolTimeoutMs?: number
-  readonly needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  readonly needsScore?: number
 }
 
 const modelString = (model: AgentV2.Info["model"]): string | undefined =>
@@ -44,7 +44,7 @@ export const capture = (prototype: AgentV2.Info): Snapshot => ({
   shortChat: prototype.shortChat,
   reasoningBudget: prototype.reasoningBudget,
   maxToolTimeoutMs: prototype.maxToolTimeoutMs,
-  needsTier: prototype.needsTier,
+  needsScore: prototype.needsScore,
 })
 
 const optionalString = (value: unknown): string | undefined =>
@@ -65,7 +65,6 @@ export const read = (session: {
   const prototypeID = optionalString(value["prototypeID"])
   if (prototypeID === undefined) return undefined
   const permissionMode = value["permissionMode"]
-  const needsTier = value["needsTier"]
   return {
     version: 1,
     prototypeID,
@@ -85,15 +84,7 @@ export const read = (session: {
     shortChat: typeof value["shortChat"] === "boolean" ? value["shortChat"] : undefined,
     reasoningBudget: optionalNumber(value["reasoningBudget"]),
     maxToolTimeoutMs: optionalNumber(value["maxToolTimeoutMs"]),
-    needsTier:
-      needsTier === "micro" ||
-      needsTier === "tiny" ||
-      needsTier === "small" ||
-      needsTier === "medium" ||
-      needsTier === "large" ||
-      needsTier === "frontier"
-        ? needsTier
-        : undefined,
+    needsScore: optionalNumber(value["needsScore"]),
   }
 }
 

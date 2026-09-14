@@ -68,7 +68,11 @@ export const Plugin = define({
             for (const [modelID, config] of Object.entries(item.models ?? {})) {
               catalog.model.update(providerID, modelID, (model) => {
                 if (config.family !== undefined) model.family = config.family
-                if (config.tier !== undefined) model.tier = config.tier
+                if (config.benchmark !== undefined) {
+                  model.benchmark = config.benchmark
+                  model.tier = ModelV2.scoreBand(config.benchmark.score)
+                } else if (config.tier !== undefined) model.tier = config.tier
+                if (config.prefixCache !== undefined) model.prefixCache = config.prefixCache
                 if (config.prePrompt !== undefined) model.prePrompt = config.prePrompt
                 if (config.retry !== undefined) Object.assign(model, { retry: { attempts: config.retry.attempts } })
                 if (config.name !== undefined) model.name = config.name

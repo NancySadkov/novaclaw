@@ -13,7 +13,7 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { listSessions, startChat } from "@/apps/agent-list"
-import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } from "@/apps/agent-model"
+import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
@@ -126,7 +126,7 @@ export function AgentConfigScreen(props: {
   const [workerPrototype, setWorkerPrototype] = createSignal<string | undefined>()
   const [maxWorkers, setMaxWorkers] = createSignal<string | undefined>()
   const [spawnDepth, setSpawnDepth] = createSignal<string | undefined>()
-  const [needsTier, setNeedsTier] = createSignal<string | undefined>()
+  const [needsScore, setNeedsScore] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
@@ -387,24 +387,27 @@ export function AgentConfigScreen(props: {
   }
   const maxToolTimeoutValid = () => !Number.isNaN(parsedMaxToolTimeoutMs())
   const superiorValue = () => superior() ?? agent()?.superior ?? ""
-  const boundTier = createMemo(() => {
+  const boundScore = createMemo(() => {
     const ref = parseModelRef(modelValue())
     if (ref === undefined) return undefined
     const found = models.list().find((item) => item.id === ref.id && item.provider.id === ref.providerID) as
-      | { tier?: unknown }
+      | { benchmark?: { score?: unknown } }
       | undefined
-    return isTier(found?.tier) ? found.tier : undefined
+    return typeof found?.benchmark?.score === "number" ? found.benchmark.score : undefined
   })
-  const needsTierValue = () => {
-    const chosen = needsTier()
+  const needsScoreValue = () => {
+    const chosen = needsScore()
     if (chosen !== undefined) return chosen
-    const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsTier"]
-    return typeof declared === "string" ? declared : ""
+    const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsScore"]
+    return typeof declared === "number" ? String(declared) : ""
   }
-  const needsTierOptions = createMemo(() => [
-    { key: "none", value: "", label: language.t("agentConfig.needsTierNone") },
-    ...TIER_CHOICES.map((tier) => ({ key: tier, value: tier, label: language.t(`agentConfig.tier.${tier}`) })),
-  ])
+  const parsedNeedsScore = () => {
+    const value = needsScoreValue().trim()
+    if (value === "") return undefined
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : Number.NaN
+  }
+  const needsScoreValid = () => !Number.isNaN(parsedNeedsScore())
   const superiorOptions = createMemo(() => [
     { key: "nova", value: "", label: language.t("agentConfig.superiorNova") },
     ...superiorCandidates(agents() ?? [], props.agentID ?? "").map((candidate) => ({
@@ -417,19 +420,10 @@ export function AgentConfigScreen(props: {
    *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
    *  for the model but the wrong place for the person setting this up. */
   const belowFloor = createMemo(() => {
-    const needs = needsTierValue()
-    const bound = boundTier()
-    if (needs === "" || bound === undefined) return false
-    return TIER_CHOICES.indexOf(bound as (typeof TIER_CHOICES)[number]) < TIER_CHOICES.indexOf(needs as never)
+    const needs = parsedNeedsScore()
+    const bound = boundScore()
+    return needs !== undefined && !Number.isNaN(needs) && bound !== undefined && bound < needs
   })
-  // The one thing a product whose user picks the model can say, and a vendor-chosen one cannot.
-  const mindTooSmall = createMemo(() =>
-    briefTooBigForTier({
-      brief: personalityValue() || agent()?.system,
-      personality: personalityValue(),
-      tier: boundTier(),
-    }),
-  )
   const dirty = () =>
     renamed() !== undefined ||
     title() !== undefined ||
@@ -450,7 +444,7 @@ export function AgentConfigScreen(props: {
     toolLabels() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
-    needsTier() !== undefined ||
+    needsScore() !== undefined ||
     model() !== undefined ||
     reasoningModel() !== undefined ||
     workerModel() !== undefined ||
@@ -796,8 +790,8 @@ export function AgentConfigScreen(props: {
       // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
-      const tier = needsTierValue()
-      const binding: Pick<ConfigV2Agent, "model" | "needsTier"> & {
+      const score = parsedNeedsScore()
+      const binding: Pick<ConfigV2Agent, "model" | "needsScore"> & {
         reasoningModel?: string
         workerModel?: string
         reasoningBudget?: number
@@ -814,7 +808,7 @@ export function AgentConfigScreen(props: {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
         ...(workerModelValue() === "" ? {} : { workerModel: workerModelValue() }),
-        ...(needsTier() === undefined || !isTier(tier) ? {} : { needsTier: tier }),
+        ...(needsScore() === undefined || score === undefined || Number.isNaN(score) ? {} : { needsScore: score }),
         ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
           ? {}
           : { reasoningBudget: parsedReasoningBudget() }),
@@ -891,7 +885,7 @@ export function AgentConfigScreen(props: {
         ...(model() === "" ? [["agents", id, "model"]] : []),
         ...(reasoningModel() === "" ? [["agents", id, "reasoningModel"]] : []),
         ...(workerModel() === "" ? [["agents", id, "workerModel"]] : []),
-        ...(needsTier() === "" ? [["agents", id, "needsTier"]] : []),
+        ...(needsScore() === "" ? [["agents", id, "needsScore"]] : []),
         ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
         ...(maxToolTimeoutMinutes() === "" ? [["agents", id, "maxToolTimeoutMs"]] : []),
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
@@ -934,7 +928,7 @@ export function AgentConfigScreen(props: {
       setMaxWorkers(undefined)
       setSpawnDepth(undefined)
       setSuperior(undefined)
-      setNeedsTier(undefined)
+      setNeedsScore(undefined)
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
@@ -1529,33 +1523,30 @@ export function AgentConfigScreen(props: {
                       minutes: maxToolTimeoutMinutesValue(),
                     })}
               </p>
-              {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
-                sometimes the right one. */}
-              <Show when={mindTooSmall()}>
-                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
-              </Show>
               {/* 🔴 The floor this ROLE needs, which is a different statement from the model bound above.
                 A colleague can end up on the instance default without anyone choosing it — its own
-                model may be unavailable or have been failing — and a bookkeeper written for a frontier
-                model quietly thinking with a micro one does not error, it just gets things wrong. The
+                model may be unavailable or have been failing — and a demanding role on a model with a
+                low measured score does not error, it just gets things wrong. The
                 floor is what lets the colleague notice and SAY so. */}
-              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-tier">
-                {language.t("agentConfig.needsTier")}
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-score">
+                {language.t("agentConfig.needsScore")}
               </label>
-              <SelectV2
-                id="agent-needs-tier"
-                class="mt-1 w-full"
+              <input
+                id="agent-needs-score"
+                aria-label={language.t("agentConfig.needsScore")}
+                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
                 disabled={governing()}
-                options={needsTierOptions()}
-                current={
-                  needsTierOptions().find((option) => option.value === needsTierValue()) ?? needsTierOptions()[0]
-                }
-                value={(option) => option.key}
-                label={(option) => option.label}
-                onSelect={(option) => option && setNeedsTier(option.value)}
+                value={needsScoreValue()}
+                placeholder={language.t("agentConfig.needsScoreNone")}
+                onInput={(event) => setNeedsScore(event.currentTarget.value)}
               />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.needsScoreHelp")}</p>
               <Show when={belowFloor()}>
-                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
+                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsScoreBelow")}</p>
               </Show>
               <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
                 {language.t("agentConfig.superior")}
@@ -1990,6 +1981,7 @@ export function AgentConfigScreen(props: {
               !dirty() ||
               !reasoningBudgetValid() ||
               !maxToolTimeoutValid() ||
+              !needsScoreValid() ||
               Number.isNaN(parsedMaxWorkers()) ||
               Number.isNaN(parsedSpawnDepth()) ||
               saving() ||

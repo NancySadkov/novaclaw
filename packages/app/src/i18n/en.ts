@@ -1106,7 +1106,6 @@ export const dict = {
   "session.header.open.app.powershell": "PowerShell",
   "session.header.open.app.sublimeText": "Sublime Text",
 
-
   "session.share.popover.title": "Publish on web",
   "session.share.popover.description.shared":
     "This session is public on the web. It is accessible to anyone with the link.",
@@ -2079,6 +2078,34 @@ export const dict = {
   "settings.models.order.hint": "Drag the model name to reorder · Arrow keys also work",
   "settings.models.order.failed": "Could not save model order",
   "settings.models.probe.test": "Test",
+  "settings.models.stats.open": "Stats",
+  "settings.models.stats.title": "{{model}} statistics",
+  "settings.models.stats.description": "All-time measurements from completed NovaClaw turns on this instance.",
+  "settings.models.stats.failed": "Statistics could not be read from this instance.",
+  "settings.models.stats.generated": "Tokens generated",
+  "settings.models.stats.generated.desc": "Visible answer and reasoning tokens together.",
+  "settings.models.stats.prompts": "Completed prompts",
+  "settings.models.stats.prompts.desc": "Assistant turns included in this model's totals.",
+  "settings.models.stats.outputRate": "Typical generation speed",
+  "settings.models.stats.outputRate.desc": "Median across turns with measured generation timing.",
+  "settings.models.stats.promptRate": "Typical uncached prompt speed",
+  "settings.models.stats.promptRate.desc": "Median non-cached input tokens per second during provider prefill.",
+  "settings.models.stats.ttft": "Typical time to first token",
+  "settings.models.stats.ttft.desc": "Median delay from dispatch to the first semantic output.",
+  "settings.models.stats.cacheActual": "Cache-read tokens reported by server",
+  "settings.models.stats.cacheActual.desc": "What the inference endpoint reported as a real cache hit.",
+  "settings.models.stats.cacheExpected": "Tokens expected to hit prefix cache",
+  "settings.models.stats.cacheExpected.on":
+    "Token estimate scaled from the exact matching bytes in live entries ({{minutes}} minute lifetime).",
+  "settings.models.stats.cacheExpected.off": "Prefix measurement is off. Enable it in Configure.",
+  "settings.models.stats.prefixBytes": "Matching prefix bytes",
+  "settings.models.stats.prefixBytes.desc":
+    "Exact common bytes across measured outgoing prompts, with their share of all prompt bytes.",
+  "settings.models.stats.benchmark": "Coding test score",
+  "settings.models.stats.benchmark.desc": "Raw, unharnessed Terminal-Bench 4.0 result; parameter count is not used.",
+  "settings.models.stats.benchmark.user": "entered",
+  "settings.models.stats.benchmark.measured": "measured",
+  "settings.models.stats.unscored": "Not scored",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "Endpoint and generation are healthy",
   "settings.models.probe.unreachable": "Couldn't connect",
@@ -2091,41 +2118,6 @@ export const dict = {
   "settings.models.probe.tools.prompted": "tools prompted",
   "settings.models.probe.tools.chat-only": "no working tools",
   "settings.models.probe.tools.unknown": "tools inconclusive",
-  // Capability tier — a rough size class NovaClaw uses to decide how much to scaffold a model
-  // (and, later, to note in the system prompt). "Guess" = let NovaClaw probe and estimate it.
-  "settings.models.tier.label": "Tier",
-  "settings.models.tier.pick": "Set capability tier",
-  "settings.models.tier.guess.name": "Guess",
-  "settings.models.tier.guess.range": "auto",
-  "settings.models.tier.guess.blurb":
-    "Let NovaClaw estimate the tier by probing the model. Choose a specific tier if you already know its size.",
-  "settings.models.tier.micro.name": "Micro",
-  "settings.models.tier.micro.range": "under 7B",
-  "settings.models.tier.micro.blurb":
-    "Phone- and edge-sized models (e.g. Gemma 3 4B, Qwen3 4B, Llama 3.2 3B). Fast and cheap, but need small, well-scoped steps and heavy guidance.",
-  "settings.models.tier.tiny.name": "Tiny",
-  "settings.models.tier.tiny.range": "7B–24B",
-  "settings.models.tier.tiny.blurb":
-    "Small local models (e.g. Qwen3 8B/14B, Gemma 3 12B, Mistral Small). Good for everyday tasks with clear instructions; still benefit from being broken into steps.",
-  "settings.models.tier.small.name": "Small",
-  "settings.models.tier.small.range": "~24B–~64B",
-  "settings.models.tier.small.blurb":
-    "Capable local models (e.g. Qwen3 32B, Gemma 3 27B). Solid general assistants that can follow a multi-step plan with light scaffolding.",
-  "settings.models.tier.medium.name": "Medium",
-  "settings.models.tier.medium.range": "~64B–~128B",
-  "settings.models.tier.medium.blurb":
-    "Strong open models (e.g. Llama 3.3 70B, gpt-oss 120B). Reliable reasoning and tool use across most tasks.",
-  "settings.models.tier.large.name": "Large",
-  "settings.models.tier.large.range": "~128B–~256B",
-  "settings.models.tier.large.blurb":
-    "Near-frontier open models (e.g. DeepSeek V3, GLM-4.6, Qwen3 235B). Roughly Claude Sonnet class — they handle complex, long-running work with little hand-holding.",
-  "settings.models.tier.frontier.name": "Frontier",
-  "settings.models.tier.frontier.range": "256B+ / closed",
-  "settings.models.tier.frontier.blurb":
-    "The strongest models (e.g. Claude Opus & Sonnet, GPT-5, Gemini 2.5 Pro). Best judgment and reliability; they need the least guidance.",
-  "settings.models.tier.dialog.title": "Model size",
-  "settings.models.tier.dialog.description":
-    "About how large is {{model}}? NovaClaw uses this to give it the right amount of guidance — smaller models get more scaffolding.",
   "settings.models.config.open": "Configure",
   "settings.models.config.title": "Configure {{model}}",
   "settings.models.config.description":
@@ -2151,6 +2143,17 @@ export const dict = {
   "settings.models.config.modelID.desc": "The exact model identifier Nova sends to the API.",
   "settings.models.config.modelName.name": "Model name",
   "settings.models.config.modelName.desc": "The friendly name shown in Nova.",
+  "settings.models.config.benchmark.name": "Terminal-Bench 4.0 score (%)",
+  "settings.models.config.benchmark.desc": "A raw, unharnessed coding-agent test score.",
+  "settings.models.config.benchmark.desc.more":
+    "Use the Terminal-Bench 4.0 percentage, not parameter count. Enter a score you trust or one Nova measured with the raw model; Codex skills and other harness help must not be included.",
+  "settings.models.config.benchmark.invalid": "The Terminal-Bench score must be between 0 and 100.",
+  "settings.models.config.prefixCache.name": "Measure prompt prefixes",
+  "settings.models.config.prefixCache.desc": "Keep a short local diagnostic cache of exact outgoing prompt bytes.",
+  "settings.models.config.prefixCache.ttl.name": "Prefix lifetime (minutes)",
+  "settings.models.config.prefixCache.ttl.desc":
+    "How long a recent prompt is considered available to the model server cache.",
+  "settings.models.config.prefixCache.ttl.invalid": "Prefix lifetime must be greater than zero.",
   "settings.models.config.deviceConcurrency.name": "Device concurrency",
   "settings.models.config.deviceConcurrency.desc": "Parallel background requests Nova schedules here.",
   "settings.models.config.section.sampling": "Sampling",
@@ -2873,18 +2876,12 @@ export const dict = {
   "agentConfig.superiorNova": "Nova — CEO (default)",
   "agentConfig.superiorDescription":
     "This colleague asks its superior to resolve overlapping work and conflicts. Reporting lines cannot form a loop.",
-  "agentConfig.needsTier": "This job needs at least",
-  "agentConfig.needsTierNone": "No requirement — any model is fine",
-  "agentConfig.needsTierBelow":
+  "agentConfig.needsScore": "Minimum Terminal-Bench 4.0 score",
+  "agentConfig.needsScoreNone": "No minimum",
+  "agentConfig.needsScoreHelp":
+    "When Default Model is selected, NovaClaw routes each turn to the least loaded model that meets this score and can do the job.",
+  "agentConfig.needsScoreBelow":
     "The model chosen above is below this. Nothing is blocked, and they will say so themselves.",
-  "agentConfig.tier.micro": "Micro — very small local model",
-  "agentConfig.tier.tiny": "Tiny",
-  "agentConfig.tier.small": "Small",
-  "agentConfig.tier.medium": "Medium",
-  "agentConfig.tier.large": "Large",
-  "agentConfig.tier.frontier": "Frontier — the strongest available",
-  "agentConfig.modelTooSmall":
-    "This colleague has a long standing brief for a model this small — it may lose the end of its own instructions. It will still try.",
   // The colleague's PROJECT. Named for the relationship ("works on"), not for the mechanism ("cwd"):
   // the user is assigning a person to a job, and the folder is how that is expressed.
   // The standing WORK choices — how this colleague operates, every time. Moved off the composer

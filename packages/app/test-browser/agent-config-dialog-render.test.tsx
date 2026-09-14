@@ -483,15 +483,16 @@ test("returning a colleague to default model and no requirement deletes both ove
   const writes: unknown[] = []
   const removals: string[][][] = []
   mount({
-    agents: [{ ...AGENT, config: { needsTier: "medium", reasoningBudget: 512 } }],
+    agents: [{ ...AGENT, config: { needsScore: 50, reasoningBudget: 512 } }],
     write: (patch) => writes.push(patch),
     remove: (paths) => removals.push(paths),
   })
   await settle()
   const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
-  const tier = document.querySelector<HTMLElement>("#agent-needs-tier")!
+  const score = document.querySelector<HTMLInputElement>("#agent-needs-score")!
   await choose(model, "inherit")
-  await choose(tier, "none")
+  score.value = ""
+  score.dispatchEvent(new Event("input", { bubbles: true }))
   const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
   budget.value = ""
   budget.dispatchEvent(new Event("input", { bubbles: true }))
@@ -499,11 +500,11 @@ test("returning a colleague to default model and no requirement deletes both ove
   await settle()
   const patch = writes[0] as { agents: { theron: Record<string, unknown> } }
   expect(patch.agents.theron.model).toBeUndefined()
-  expect(patch.agents.theron.needsTier).toBeUndefined()
+  expect(patch.agents.theron.needsScore).toBeUndefined()
   expect(removals).toEqual([
     [
       ["agents", "theron", "model"],
-      ["agents", "theron", "needsTier"],
+      ["agents", "theron", "needsScore"],
       ["agents", "theron", "reasoningBudget"],
     ],
   ])

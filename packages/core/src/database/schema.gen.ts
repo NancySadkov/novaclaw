@@ -101,6 +101,16 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`model_prefix_cache\` (
+          \`id\` text PRIMARY KEY,
+          \`model\` text NOT NULL,
+          \`prompt\` text NOT NULL,
+          \`bytes\` integer NOT NULL,
+          \`expires_at\` integer NOT NULL,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_nudge_delivery\` (
           \`session_id\` text NOT NULL,
           \`nudge_id\` text NOT NULL,
@@ -741,6 +751,9 @@ export default {
       yield* tx.run(`CREATE INDEX \`memory_usage_scope_idx\` ON \`memory_usage\` (\`scope\`);`)
       yield* tx.run(`CREATE INDEX \`memory_usage_conflict_idx\` ON \`memory_usage\` (\`conflict_key\`);`)
       yield* tx.run(`CREATE INDEX \`memory_usage_last_idx\` ON \`memory_usage\` (\`last_accessed_at\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`model_prefix_cache_model_expires_idx\` ON \`model_prefix_cache\` (\`model\`,\`expires_at\`);`,
+      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,
       )

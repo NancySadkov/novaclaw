@@ -68,7 +68,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   toolLabels: Schema.Boolean.pipe(Schema.optional),
   /**
-   * The capability floor this role needs, as a model tier (`agent/model-fit.ts`).
+   * The capability floor this role needs, as a Terminal-Bench 4.0 percentage (`agent/model-fit.ts`).
    *
    * 🔴 A role can outrun its model SILENTLY, and the fallback added on 2026-08-22 is why: when a
    * colleague's chosen model is unavailable or has been failing, the turn runs on the instance
@@ -82,7 +82,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    *
    * Absent = no floor declared, which is silence, not "micro".
    */
-  needsTier: ModelV2.Tier.pipe(Schema.optional),
+  needsScore: ModelV2.Score.pipe(Schema.optional),
   /**
    * The FOLDER this colleague works on — its project (owner, 2026-08-21).
    *
