@@ -215,13 +215,19 @@ describe("lost wakeups and ordering", () => {
     await Promise.all(racers.map((f) => run(Fiber.interrupt(f))))
   })
 
-  test("an interactive turn is never queued behind batch work", async () => {
-    // Priority inversion in the other direction: a person waiting on saturated background work.
+  test("an interactive turn takes the first safe slot without exceeding device capacity", async () => {
+    // Foreground priority is ordering, not permission to exceed a physical device limit.
     const gate = make()
     for (let i = 0; i < MAX_BATCH; i++) await run(gate.admit(slotFor(`bg${i}`, "sub-agent")))
     const ui = forkTracked(gate.admit(slotFor("ui", "interactive-focused")))
     await tick()
+    expect(ui.state.done).toBe(false)
+    await run(gate.release(slotFor("bg0", "sub-agent")))
+    await tick()
     expect(ui.state.done).toBe(true)
+    const [device] = await run(gate.snapshot())
+    expect(device!.inFlightInteractive).toEqual(["ui"])
+    expect(device!.inFlightBatch).toHaveLength(MAX_BATCH - 1)
   })
 })
 

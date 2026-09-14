@@ -42,15 +42,25 @@ describe("session scheduler admission gate", () => {
     expect(admitted).toBe(true)
   })
 
-  test("interactive admits immediately, even with batch saturated", async () => {
+  test("foreground is next without exceeding a saturated device's hard cap", async () => {
     const gate = make()
     for (let i = 1; i <= MAX_BATCH; i++)
       await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
-    // batch full (MAX_BATCH) — interactive still goes straight through
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" }))
+    let admitted = false
+    const ui = Effect.runFork(
+      gate
+        .admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused" })
+        .pipe(Effect.map(() => (admitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(admitted).toBe(false)
+    expect((await run(gate.snapshot()))[0]!.waiting).toContain("ui")
+    await run(gate.release({ sessionID: "b1", deviceKey: "d" }))
+    await run(Fiber.await(ui))
     const [device] = await run(gate.snapshot())
     expect(device!.inFlightInteractive).toEqual(["ui"])
-    expect(device!.inFlightBatch.length).toBe(MAX_BATCH)
+    expect(device!.inFlightBatch.length).toBe(MAX_BATCH - 1)
+    expect(device!.waiting).toEqual([])
   })
 
   test("batch waits while an interactive turn is generating; drains on release", async () => {
@@ -159,6 +169,22 @@ describe("session scheduler admission gate", () => {
     await run(Fiber.await(old))
     await run(Fiber.await(newcomer))
     expect(newAdmitted).toBe(true)
+  })
+
+  test("foreground takes a newly opened slot before an older background waiter", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "running", deviceKey: "d", sessionClass: "sub-agent", concurrency: 1 }))
+    const old = Effect.runFork(
+      gate.admit({ sessionID: "old", deviceKey: "d", sessionClass: "sub-agent", concurrency: 1 }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused", concurrency: 2 }))
+    const [device] = await run(gate.snapshot())
+    expect(device!.inFlightInteractive).toEqual(["ui"])
+    expect(device!.inFlightBatch).toEqual(["running"])
+    expect(device!.waiting).toEqual(["old"])
+    await run(Fiber.interrupt(old))
   })
 
   test("drain picks fairly: the indebted session yields the first freed slot", async () => {
@@ -310,9 +336,14 @@ describe("interactive-idle maintenance", () => {
     expect(device!.waitingMaintenance).toHaveLength(1)
     expect(device!.waitingMaintenance[0]).not.toBe(device!.inFlightMaintenance[0])
 
-    // Interactive work is never queued behind already-running background work. Its admission
-    // preempts the acquired maintenance effect and closes every further maintenance admission.
-    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused", concurrency: 2 }))
+    // Interactive work takes the next safe slot. Its admission preempts the acquired maintenance
+    // effect and closes every further maintenance admission without exceeding the device cap.
+    const uiAdmission = Effect.runFork(
+      gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive-focused", concurrency: 2 }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await run(gate.snapshot()))[0]).toMatchObject({ inFlightInteractive: ["ui"] })
+    await run(Fiber.await(uiAdmission))
     await run(gate.release({ sessionID: "batch", deviceKey: "d" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     ;[device] = await run(gate.snapshot())
