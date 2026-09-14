@@ -5,7 +5,8 @@
  *   - Nova always owns the governing lane; on a chat screen the human-visible chat is next, while
  *     Home grants no ordinary chat foreground priority (vLLM still continuously batches them);
  *   - batch-class sessions (sub-agent, auto-prompting, goal-oriented, cron) wait while
- *     the human-visible foreground turn is generating, and are capped at MAX_BATCH concurrent turns
+ *     the human-visible foreground turn is generating, and all generation classes together are
+ *     capped at the device's concurrency limit
  *     — "background agents run on idle device cycles", enforced at the only preemption
  *     point a non-preemptible turn has: before dispatch;
  *   - among waiting batch sessions the TG-EEVDF ledger picks (fair share by class
@@ -78,7 +79,7 @@ export interface AdmitInput {
   readonly sessionClass: SessionClass
   /** K1 priority: > 0 overrides the class weight (EEVDF share). */
   readonly priority?: number
-  /** Device-declared concurrent background generation cap; defaults to the conservative floor. */
+  /** Device-declared concurrent generation cap; defaults to the conservative floor. */
   readonly concurrency?: number
   /** Operator-declared placement fact, exposed in snapshots for routing and diagnosis. */
   readonly locality?: ConfigDevice.Locality
@@ -102,7 +103,7 @@ export interface MaintenanceInput {
   readonly ownerID: string
   readonly task: string
   readonly deviceKey: string
-  /** Shares the device's background-generation ceiling with batch session turns. */
+  /** Shares the device's generation ceiling with session turns. */
   readonly concurrency?: number
   readonly locality?: ConfigDevice.Locality
 }
@@ -152,7 +153,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 interface Waiter {
   readonly deferred: Deferred.Deferred<void>
-  readonly kind: "batch" | "maintenance"
+  readonly kind: "interactive" | "batch" | "maintenance"
 }
 
 interface DeviceState {
@@ -222,13 +223,23 @@ export const make = (options?: Options): Interface => {
         device.waiters.has(id),
     )
 
+  const inFlight = (device: DeviceState) =>
+    device.inFlightInteractive.size + device.inFlightBatch.size + device.inFlightMaintenance.size
+
+  const interactiveWaiters = (device: DeviceState) =>
+    [...device.waiters].filter(([, waiter]) => waiter.kind === "interactive").map(([id]) => id)
+
   const batchCapacity = (device: DeviceState) =>
     device.inFlightInteractive.size === 0 &&
-    device.inFlightBatch.size + device.inFlightMaintenance.size < device.concurrency
+    interactiveWaiters(device).length === 0 &&
+    inFlight(device) < device.concurrency
 
   const drain = (device: DeviceState) => {
-    while (batchCapacity(device) && device.waiters.size > 0) {
-      const candidates = [...device.waiters.keys()].map((id) => ({
+    while (inFlight(device) < device.concurrency && device.waiters.size > 0) {
+      const foreground = interactiveWaiters(device)
+      if (foreground.length === 0 && !batchCapacity(device)) return
+      const eligible = foreground.length > 0 ? foreground : [...device.waiters.keys()]
+      const candidates = eligible.map((id) => ({
         id,
         warmthTokens: id === device.lastDispatched ? RECENCY_WARMTH_TOKENS : 0,
       }))
@@ -236,11 +247,28 @@ export const make = (options?: Options): Interface => {
       if (!pick) return
       const waiter = device.waiters.get(pick)!
       device.waiters.delete(pick)
-      if (waiter.kind === "maintenance") device.inFlightMaintenance.add(pick)
+      if (waiter.kind === "interactive") device.inFlightInteractive.add(pick)
+      else if (waiter.kind === "maintenance") device.inFlightMaintenance.add(pick)
       else device.inFlightBatch.add(pick)
       device.lastDispatched = pick
       Deferred.doneUnsafe(waiter.deferred, Effect.void)
     }
+  }
+
+  const queue = (device: DeviceState, input: AdmitInput, kind: Waiter["kind"]): Effect.Effect<void> => {
+    const deferred = Deferred.makeUnsafe<void>()
+    device.waiters.set(input.sessionID, { deferred, kind })
+    return Deferred.await(deferred).pipe(
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          device.waiters.delete(input.sessionID)
+          device.maintenanceOwners.delete(input.sessionID)
+          // A cancelled queued turn never reaches `release`, so stamp the block here too —
+          // otherwise its entry sits unblocked forever and no sweep can ever see it.
+          device.ledger.onBlock(input.sessionID, now())
+        }),
+      ),
+    )
   }
 
   const admitKind = (
@@ -259,8 +287,9 @@ export const make = (options?: Options): Interface => {
       device.locality = input.locality
       sweep(device)
       // A raised cap belongs to the device, not to the newcomer that happened to carry it. Give
-      // already-waiting sessions first claim through EEVDF before considering this admission.
-      drain(device)
+      // already-waiting sessions first claim through EEVDF before considering another background
+      // admission. Foreground is the exception: it owns the next available safe slot.
+      if (!isFocused(input.sessionClass)) drain(device)
       device.ledger.ensure(
         input.sessionID,
         input.sessionClass,
@@ -281,38 +310,38 @@ export const make = (options?: Options): Interface => {
         // interactive chat's first token by 150 seconds. Signal every acquired maintenance lease;
         // `runMaintenance` races its provider effect against this signal and aborts the request.
         const preempt = [...device.inFlightMaintenance]
-        // Publish the interactive owner BEFORE waking another fiber. `Deferred.doneUnsafe` may
-        // resume that fiber synchronously; its maintenance finalizer calls `drain`, which must see
-        // the foreground owner and leave queued maintenance queued. Snapshot the ids too, so a
-        // re-entrant drain cannot append a fresh lease to the Set iteration and cancel work that
-        // never overlapped this arrival.
-        device.inFlightInteractive.add(input.sessionID)
-        device.lastDispatched = input.sessionID
+        // The device cap is a HARD capacity fact, not merely a background suggestion. The old
+        // foreground bypass admitted one viewed chat on top of an already-full batch. On the
+        // 121-GiB Spark's mmap-backed Flash-Next deployment that turned two healthy requests into
+        // 1-2 aggregate token/s through PLE page churn. Foreground still wins the NEXT safe
+        // boundary, but a non-preemptible batch is allowed to finish instead of oversubscribing the
+        // backend it already owns.
+        if (inFlight(device) < device.concurrency) {
+          device.inFlightInteractive.add(input.sessionID)
+          device.lastDispatched = input.sessionID
+          for (const maintenanceID of preempt) {
+            const preemption = device.maintenancePreemptions.get(maintenanceID)
+            if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
+          }
+          return Effect.void
+        }
+        // Queue BEFORE signalling maintenance. Completing a preemption may run its release
+        // finalizer synchronously; if the foreground waiter is not visible yet, that release hands
+        // the freed slot to another maintenance request and creates a priority inversion.
+        const waiting = queue(device, input, "interactive")
         for (const maintenanceID of preempt) {
           const preemption = device.maintenancePreemptions.get(maintenanceID)
           if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
         }
-        return Effect.void
+        return waiting
       }
-      if (batchCapacity(device)) {
+      if (!isFocused(input.sessionClass) && batchCapacity(device)) {
         if (kind === "maintenance") device.inFlightMaintenance.add(input.sessionID)
         else device.inFlightBatch.add(input.sessionID)
         device.lastDispatched = input.sessionID
         return Effect.void
       }
-      const deferred = Deferred.makeUnsafe<void>()
-      device.waiters.set(input.sessionID, { deferred, kind })
-      return Deferred.await(deferred).pipe(
-        Effect.onInterrupt(() =>
-          Effect.sync(() => {
-            device.waiters.delete(input.sessionID)
-            device.maintenanceOwners.delete(input.sessionID)
-            // A cancelled queued turn never reaches `release`, so stamp the block here too —
-            // otherwise its entry sits unblocked forever and no sweep can ever see it.
-            device.ledger.onBlock(input.sessionID, now())
-          }),
-        ),
-      )
+      return queue(device, input, kind)
     })
 
   const admit = (input: AdmitInput): Effect.Effect<void> => admitKind(input, "batch")
@@ -400,7 +429,7 @@ export const make = (options?: Options): Interface => {
         // Maintenance has its own unique task ids. Once the owner is evicted, neither a queued pass
         // nor an acquired lease may survive: worker-exit reclaim reaches this path after the worker
         // (and therefore its provider fiber) is gone, so leaving an acquired id here would consume
-        // background capacity forever. Session removal interrupts execution before eviction too.
+        // generation capacity forever. Session removal interrupts execution before eviction too.
         for (const [taskID, ownerID] of device.maintenanceOwners) {
           if (ownerID !== sessionID) continue
           const maintenanceWaiter = device.waiters.get(taskID)

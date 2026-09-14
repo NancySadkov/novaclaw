@@ -21,8 +21,9 @@ import { Schema } from "effect"
  * shape: an operational fact lives in a runtime-editable store, not compiled in.
  *
  * `concurrency` and `locality` live here, rather than on a model: several models and several endpoint
- * processes may share this one backend. Concurrency is the scheduler's batch-generation cap; it is
- * carried on every admission request so a runtime config edit takes effect on the next turn.
+ * processes may share this one backend. Concurrency is the scheduler's hard generation cap across
+ * foreground, background and maintenance work; it is carried on every admission request so a
+ * runtime config edit takes effect on the next turn.
  */
 export const Locality = Schema.Literals(["local", "lan", "remote"])
 export type Locality = typeof Locality.Type
@@ -36,7 +37,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Device")({
    * schedule would be a worse one).
    */
   endpoints: Schema.Array(Schema.String),
-  /** Concurrent background generations admitted when no interactive turn is active. */
+  /** Maximum concurrent generations across foreground, background, and maintenance work. */
   concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
   /** Where this backend runs relative to the instance. Informational; never inferred from a URL. */
   locality: Locality.pipe(Schema.optional),

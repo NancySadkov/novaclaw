@@ -2155,7 +2155,7 @@ export const dict = {
     "How long a recent prompt is considered available to the model server cache.",
   "settings.models.config.prefixCache.ttl.invalid": "Prefix lifetime must be greater than zero.",
   "settings.models.config.deviceConcurrency.name": "Device concurrency",
-  "settings.models.config.deviceConcurrency.desc": "Parallel background requests Nova schedules here.",
+  "settings.models.config.deviceConcurrency.desc": "Maximum parallel model requests on this device.",
   "settings.models.config.section.sampling": "Sampling",
   "settings.models.config.section.capabilities": "Capabilities",
   "settings.models.config.section.corrections": "Behaviour corrections",
