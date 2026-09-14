@@ -1,13 +1,22 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
+import { Database } from "@novaclaw/core/database/database"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionExecutionTable, SessionTable } from "@novaclaw/core/session/sql"
 import { WorkerPurpose } from "@novaclaw/core/session/worker-purpose"
 import { SystemContext } from "@novaclaw/core/system-context"
-import { it } from "./lib/effect"
+import { it, testEffect } from "./lib/effect"
 
 const MINUTE = 60_000
-const observation = (observedAt: number, purpose = "Build the four character assets") => ({
+const itDatabase = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node])))
+const observation = (
+  observedAt: number,
+  purpose = "Build the four character assets",
+): OwnedRuntimeContext.Observation => ({
   observedAt,
   heartbeatMinutes: 60,
   workers: [
@@ -29,6 +38,78 @@ const observation = (observedAt: number, purpose = "Build the four character ass
 })
 
 describe("OwnedRuntimeContext", () => {
+  itDatabase.effect("reconstructs living workers from durable rows without a browser cache", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const root = SessionSchema.ID.make("ses_officer")
+      const living = SessionSchema.ID.make("ses_living")
+      const stopped = SessionSchema.ID.make("ses_stopped")
+      yield* db
+        .insert(SessionTable)
+        .values([
+          { id: root, slug: root, directory: "/project", title: "Officer", version: "test", type: "goal-oriented" },
+          {
+            id: living,
+            parent_id: root,
+            slug: living,
+            directory: "/project",
+            title: "Build characters",
+            version: "test",
+            type: "sub-agent",
+          },
+          {
+            id: stopped,
+            parent_id: root,
+            slug: stopped,
+            directory: "/project",
+            title: "Old worker",
+            version: "test",
+            type: "sub-agent",
+          },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionExecutionTable)
+        .values([
+          {
+            session_id: living,
+            attempt_id: "exe_living",
+            generation: 1,
+            owner_id: "host",
+            state: "busy",
+            phase: "drain",
+            heartbeat_at: 20 * MINUTE,
+            started_at: 10 * MINUTE,
+            time_updated: 20 * MINUTE,
+          },
+          {
+            session_id: stopped,
+            attempt_id: "exe_stopped",
+            generation: 1,
+            owner_id: "host",
+            state: "interrupted",
+            phase: "drain",
+            heartbeat_at: 12 * MINUTE,
+            started_at: 10 * MINUTE,
+            time_updated: 12 * MINUTE,
+          },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+
+      const observed = yield* OwnedRuntimeContext.observe({
+        db,
+        sessionID: root,
+        heartbeatMinutes: 60,
+        now: 20 * MINUTE,
+      })
+      expect(observed.workers).toEqual([
+        { id: living, purpose: "Build characters", state: "busy", startedAt: expect.any(Number) },
+      ])
+    }),
+  )
+
   it.effect("renders durable worker identity, purpose, shell ownership, and exact stop controls", () =>
     Effect.gen(function* () {
       const generated = yield* SystemContext.initialize(OwnedRuntimeContext.make(observation(65 * MINUTE)))

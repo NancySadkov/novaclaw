@@ -38,6 +38,7 @@ import { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
+import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -1173,6 +1174,37 @@ const SessionObservationHandler = handlerLayer(
                 })
             }
             return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
+          "session.worker.list",
+          Effect.fn(function* (ctx) {
+            yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
+            // One durable answer for both the model's owned-work heartbeat and the UI. In
+            // particular, never reconstruct this from the browser's bounded session cache: after a
+            // restart that cache contains the open chat, not every worker the officer still owns.
+            const observation = yield* OwnedRuntimeContext.observe({
+              db,
+              sessionID: ctx.params.sessionID,
+              heartbeatMinutes: OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES,
+            })
+            return {
+              data: observation.workers.map((worker) => ({
+                id: SessionSchema.ID.make(worker.id),
+                title: worker.purpose,
+                state: worker.state,
+                startedAt: worker.startedAt,
+              })),
+            }
           }),
         )
         .handle(

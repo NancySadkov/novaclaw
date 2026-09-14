@@ -11,9 +11,15 @@ test("activity shortcuts render only for non-empty worker and shell lists", () =
 })
 
 test("both activity shortcuts open list dialogs from authoritative live stores", () => {
-  expect(activity).toContain("workersOf(sync().data.session")
+  expect(activity).toContain("client.v2.session.worker.list")
   expect(activity).toContain("client.v2.session.bash.list")
   expect(activity.match(/dialog\.showScoped/g)).toHaveLength(2)
+})
+
+test("a restart-empty browser cache cannot hide durable workers from the prompt", () => {
+  expect(activity).not.toContain("workersOf(sync().data.session")
+  expect(activity).toContain('queryKey: ["session-living-workers"')
+  expect(activity).toContain("const workers = createMemo(() => workerQuery.data ?? [])")
 })
 
 test("a worker stop requires a reason and sends it through the execution API", () => {

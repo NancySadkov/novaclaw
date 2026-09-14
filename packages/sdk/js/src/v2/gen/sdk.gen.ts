@@ -1392,6 +1392,31 @@ class ApiV2SessionRevert extends NovaClawApiClient {
   }
 }
 
+class ApiV2SessionWorker extends NovaClawApiClient {
+  /**
+   * List living direct workers
+   *
+   * List direct worker sessions that still have a non-terminal durable execution, including after restart.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<
+      T.V2SessionWorkerListResponses,
+      T.V2SessionWorkerListErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/worker",
+      ...options,
+      path,
+    })
+  }
+}
+
 class ApiV2SessionPermission extends NovaClawApiClient {
   /**
    * Evaluate permission
@@ -2351,6 +2376,11 @@ class ApiV2Session extends NovaClawApiClient {
   private _revert?: ApiV2SessionRevert
   get revert(): ApiV2SessionRevert {
     return (this._revert ??= new ApiV2SessionRevert({ client: this.client }))
+  }
+
+  private _worker?: ApiV2SessionWorker
+  get worker(): ApiV2SessionWorker {
+    return (this._worker ??= new ApiV2SessionWorker({ client: this.client }))
   }
 
   private _permission?: ApiV2SessionPermission

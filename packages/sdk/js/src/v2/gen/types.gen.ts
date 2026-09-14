@@ -15211,6 +15211,48 @@ export type V2SessionInterruptResponses = {
 
 export type V2SessionInterruptResponse = V2SessionInterruptResponses[keyof V2SessionInterruptResponses]
 
+export type V2SessionWorkerListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/worker"
+}
+
+export type V2SessionWorkerListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionWorkerListError = V2SessionWorkerListErrors[keyof V2SessionWorkerListErrors]
+
+export type V2SessionWorkerListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<{
+      id: string
+      title: string
+      state: "starting" | "busy" | "recovering" | "paused" | "queued"
+      startedAt: number
+    }>
+  }
+}
+
+export type V2SessionWorkerListResponse = V2SessionWorkerListResponses[keyof V2SessionWorkerListResponses]
+
 export type V2SessionBashStopData = {
   body: {
     reason: string

@@ -235,6 +235,13 @@ export class SessionHistoryResponse extends Schema.Class<SessionHistoryResponse>
   hasMore: Schema.Boolean,
 }) {}
 
+export const SessionWorker = Schema.Struct({
+  id: Session.ID,
+  title: Schema.String,
+  state: Schema.Literals(["starting", "busy", "recovering", "paused", "queued"]),
+  startedAt: NonNegativeInt,
+})
+
 export const SessionBashJob = Schema.Struct({
   id: Schema.String,
   sessionID: Session.ID,
@@ -1124,6 +1131,22 @@ export const makeSessionGroups = <
               identifier: "v2.session.interrupt",
               summary: "Interrupt session execution",
               description: "Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.",
+            }),
+          ),
+      )
+      .add(
+        HttpApiEndpoint.get("session.worker.list", "/api/session/:sessionID/worker", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({ data: Schema.Array(SessionWorker) }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.worker.list",
+              summary: "List living direct workers",
+              description:
+                "List direct worker sessions that still have a non-terminal durable execution, including after restart.",
             }),
           ),
       )

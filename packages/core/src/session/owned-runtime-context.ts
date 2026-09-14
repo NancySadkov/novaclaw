@@ -11,10 +11,13 @@ import { WorkerPurpose } from "./worker-purpose"
 
 export const DEFAULT_HEARTBEAT_MINUTES = 60
 
+export const WorkerState = Schema.Literals(["starting", "busy", "recovering", "paused", "queued"])
+export type WorkerState = typeof WorkerState.Type
+
 export const Worker = Schema.Struct({
   id: Schema.String,
   purpose: Schema.String,
-  state: Schema.String,
+  state: WorkerState,
   startedAt: Schema.Number,
 })
 export type Worker = typeof Worker.Type
@@ -100,7 +103,13 @@ export const make = (value: Observation) =>
     removed: () => "All worker sessions and background shells previously listed in your live-work ledger have stopped.",
   })
 
-const terminal = new Set(["settled", "failed", "interrupted"])
+const livingWorkerState = (
+  state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled" | null,
+): WorkerState | undefined => {
+  if (state === null) return "queued"
+  if (state === "settled" || state === "failed" || state === "interrupted") return undefined
+  return state
+}
 
 export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input: {
   readonly db: Database.Interface["db"]
@@ -144,21 +153,18 @@ export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input
   }
 
   const workers = (byParent.get(input.sessionID) ?? [])
-    .filter(
-      (row) =>
-        row.type === "sub-agent" &&
-        row.archivedAt === null &&
-        row.result === null &&
-        (row.state === null || !terminal.has(row.state)),
-    )
-    .map(
-      (row): Worker => ({
-        id: row.id,
-        purpose: WorkerPurpose.fromMetadata(row.metadata) ?? row.title,
-        state: row.state ?? "queued",
-        startedAt: row.createdAt,
-      }),
-    )
+    .flatMap((row): Worker[] => {
+      const state = livingWorkerState(row.state)
+      if (row.type !== "sub-agent" || row.archivedAt !== null || row.result !== null || state === undefined) return []
+      return [
+        {
+          id: row.id,
+          purpose: WorkerPurpose.fromMetadata(row.metadata) ?? row.title,
+          state,
+          startedAt: row.createdAt,
+        },
+      ]
+    })
     .sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
 
   const shells = (yield* BashJobs.listRunning(input.db, descendants))
