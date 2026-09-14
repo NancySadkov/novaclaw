@@ -636,13 +636,28 @@ export const createSessionRecord = (
       return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
     const colleagueRoot =
       input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
-    // A named officer is an autonomous process, not an anonymous one-answer chat. Its lifecycle
-    // kind must therefore be durable at construction: omission used to leave old colleague roots
-    // with `type=NULL`, and `SessionDrive` quite correctly interpreted that as an interactive idle
-    // boundary after one provider reply. A later peer prompt happened to wake the process, but no
-    // deterministic continuation existed. Explicit `interactive` remains a user choice; only the
-    // absent constructor value is repaired.
-    const colleagueType = colleagueRoot ? (input.type ?? "goal-oriented") : input.type
+    // A named officer's lifecycle kind must be durable at construction: omission used to leave old
+    // colleague roots with `type=NULL`, and `SessionDrive` quite correctly interpreted that as an
+    // interactive idle boundary after one provider reply. A later peer prompt happened to wake the
+    // process, but no deterministic continuation existed.
+    //
+    // 🔴 **THE ABSENT VALUE IS REPAIRED TO `interactive`, AND THAT IS THE OWNER'S RULING** (2026-09-15:
+    // *"switching from Interactive<->Unattended is a toggle switch (default Interactive)"*). It read
+    // `"goal-oriented"`, which meant a colleague nobody had configured was BORN unattended while the
+    // Mind tab's switch showed Interactive — the control and the agent disagreeing about the same
+    // fact, which is how *"`* Goal` is still shown after the agent's name even in Interactive mode"*
+    // became possible at all. The kernel is now the third place that agrees, after the composer
+    // (`modeCurrent`'s own `?? "interactive"`) and the dialog.
+    //
+    // ⚠️ What this does NOT change: `type = NULL` is still repaired rather than left absent, so the
+    // `SessionDrive` bug above stays fixed. Only WHICH type it is repaired to moved. And an explicit
+    // `type` from the caller still wins, which is how the messenger gateway and the scheduler still
+    // get their goal-oriented roots.
+    //
+    // ⚠️ Unattended is now the opt-in: an officer that should keep working on its own is switched on
+    // in its own Mind tab (or created with an explicit type), and its chat says so with a `· Goal`
+    // marker. One line to reverse if the owner wants autonomous-by-default back.
+    const colleagueType = colleagueRoot ? (input.type ?? "interactive") : input.type
     const ensureColleagueLifecycle = (session: SessionSchema.Info) =>
       !colleagueRoot || session.type !== undefined
         ? Effect.succeed(session)

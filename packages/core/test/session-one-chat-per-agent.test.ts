@@ -169,27 +169,33 @@ describe("one chat per colleague", () => {
       // The SAME chat, not a sibling — an answer, not an error (the product rule is "you already
       // have that conversation").
       expect(String(created.id)).toBe("ses_theron")
-      expect(created.type).toBe("goal-oriented")
+      // ⚠️ The seeded row carries NO type, so this also pins the REPAIR: an absent constructor value
+      // is filled in rather than left NULL. It reads `interactive` since the 2026-09-15 ruling that
+      // made the kernel agree with the Mind tab's own default; see `colleagueType` in `session.ts`.
+      expect(created.type).toBe("interactive")
       const roots_theron = yield* rootsFor(d.db, "theron")
       expect(roots_theron.length).toBe(1)
     }),
   )
 
-  it.effect("a new colleague is born autonomous, while an explicit interactive choice remains explicit", () =>
+  it.effect("a new colleague is born interactive, and an explicit unattended choice is what stands out", () =>
     Effect.gen(function* () {
       const d = yield* deps
-      const autonomous = yield* createSessionRecord(d, {
+      const byDefault = yield* createSessionRecord(d, {
         agent: "eris",
         location: { directory: here() },
       } as never)
-      const interactive = yield* createSessionRecord(d, {
+      const autonomous = yield* createSessionRecord(d, {
         agent: "selene",
-        type: "interactive",
+        type: "goal-oriented",
         location: { directory: here() },
       } as never)
 
+      // Owner ruling 2026-09-15: Interactive is the default, and Unattended is the opt-in — which is
+      // the only arrangement in which the composer's `· Goal` marker means anything. It is also what
+      // the Mind tab's switch and the composer's own `?? "interactive"` already assumed.
+      expect(byDefault.type).toBe("interactive")
       expect(autonomous.type).toBe("goal-oriented")
-      expect(interactive.type).toBe("interactive")
     }),
   )
 

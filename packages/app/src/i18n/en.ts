@@ -2833,6 +2833,20 @@ export const dict = {
   "agentConfig.memory": "What it remembers",
   "agentConfig.memoryRag": "Persistent Agent Memory (RAG)",
   "agentConfig.mind": "Model",
+  // The Mind tab's one switch. Named for the mode that is NOT the default (Interactive), because a
+  // switch labelled with its own off-position says nothing; the line under it states which mode is in
+  // force in BOTH positions, which is the rule a control has to obey to be readable when it is off.
+  "agentConfig.unattended": "Unattended",
+  "agentConfig.unattended.on":
+    "On — the agent loops toward the goal below on its own. When the plan stops changing it sleeps for 10 minutes without holding model capacity, then checks the environment again. Its shell commands run under the same guardrails as auto-prompting.",
+  "agentConfig.unattended.off":
+    "Off — you drive. The agent answers and waits for you. The goal below is kept for when you switch this on.",
+  // Said when the mode was saved onto the colleague but the chat ON SCREEN could not be switched with
+  // it. The two halves really are separate: the profile write has already committed, and a sentence
+  // that claimed the whole thing worked would be false about the thing the user is looking at.
+  "agentConfig.modeNotApplied": "Mode saved, but this chat kept its old one",
+  "agentConfig.modeNotAppliedWhy":
+    "The colleague's standing choice is stored and its NEXT chat starts in it. This conversation could not be switched in place — start a new chat with this colleague, or switch it from the mode control in the prompt area.",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
   // Behind one Help button, and written about the MODEL rather than this dialog's fields: a help
   // page that narrates the form goes stale the day a control moves, one that explains the ideas is
@@ -2906,10 +2920,15 @@ export const dict = {
   // is Theron's and nobody else's.
   "agentConfig.browseWorkspace": "Browse {{name}}'s workspace",
   "agentConfig.folderPick": "Choose the folder this colleague works on",
+  "agentConfig.folderGoverning": "The instance itself — not a folder",
   "agentConfig.archive": "When the chat gets long",
   "agentConfig.archiveKeep": "Keep the older conversation in memory.",
   "agentConfig.archiveThrowaway": "A throwaway keeps nothing, so there is nothing to archive.",
-  "agentConfig.governingLocked": "Nova's profile is fixed.",
+  // 🔴 Replaces `agentConfig.governingLocked` ("Nova's profile is fixed"), which stopped being true on
+  // 2026-09-15: the profile is the user's to shape, and what is fixed is exactly three things. The
+  // sentence names them rather than leaving the user to discover a refusal.
+  "agentConfig.governingNote":
+    "Nova is the CEO of this instance, so its profile is yours to shape like any other colleague's — but it has no project folder, it cannot be cloned, and it cannot be retired.",
   "agentConfig.thisChat": "How this chat runs",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write

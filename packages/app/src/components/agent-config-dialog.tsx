@@ -2,6 +2,7 @@ import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
+import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { ControlScope } from "@/components/control-scope"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -53,9 +54,12 @@ const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass
 // only carries how this particular conversation runs. So the button opens the colleague's config,
 // with the chat's own controls as a section inside it rather than the whole of it.
 //
-// ⚠️ **A field the system would discard is not rendered as editable.** The governing agent's profile
-// is fixed in code and a config write naming it is dropped at materialisation, so those inputs are
-// read-only here and say why. Offering an input whose value goes nowhere is worse than offering
+// ⚠️ **A field the system would discard is not rendered as editable.** What makes a field
+// discardable is the RULE, not the colleague: an agent's own `configure` tool may not rewrite the
+// governing agent's charter, so that arm is closed where writes happen. The operator's surface is a
+// different actor, and Nova is edited here exactly as any other officer is — with exactly three
+// things absent, because the store refuses them: no project folder, no clone, no retirement
+// (owner ruling 2026-09-15). Offering an input whose value goes nowhere is worse than offering
 // nothing: the user does the work, sees no error, and learns not to trust the surface.
 
 export function AgentConfigScreen(props: {
@@ -203,9 +207,13 @@ export function AgentConfigScreen(props: {
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
     strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
+  // ⚠️ DEFAULT INTERACTIVE (owner ruling 2026-09-15). This read `=== "interactive" ? "interactive" :
+  // "unattended"`, i.e. anything not explicitly interactive — including "never set" — displayed as
+  // Unattended. So a colleague nobody had configured showed a switch in the ON position for a mode
+  // it was not actually in, and the person reading it had no way to tell "chosen" from "unset".
   const operationModeValue = () =>
     operationMode() ??
-    ((agent()?.config?.["operationMode"] as string | undefined) === "interactive" ? "interactive" : "unattended")
+    ((agent()?.config?.["operationMode"] as string | undefined) === "unattended" ? "unattended" : "interactive")
   const goalValue = () => goal() ?? (agent()?.config?.["goal"] as string | undefined) ?? ""
   // The settings shell can render before the first config snapshot arrives (and the lightweight
   // browser fixtures deliberately exercise that state). Missing instance config means shipped
@@ -734,7 +742,11 @@ export function AgentConfigScreen(props: {
    */
   const setPaused = async (paused: boolean) => {
     const id = props.agentID
-    if (id === undefined || governing()) return
+    // ⚠️ No `governing()` clause: pausing the CEO is allowed (owner ruling 2026-09-15 — the three
+    // exceptions are the project folder, cloning and retirement, and `AgentV2`'s own note has always
+    // said the user "may still pause or ignore Nova"). It is one reversible boolean, and
+    // `permission.ts` already answers a paused agent with deny-`*`-on-`*`.
+    if (id === undefined) return
     setBusy("pause")
     try {
       await sync().updateConfig({ agents: { [id]: { disabled: paused } } } as never)
@@ -835,59 +847,88 @@ export function AgentConfigScreen(props: {
         ...(quality() === undefined ? {} : { quality: quality()! }),
         ...(affective() === undefined ? {} : { affective: affective()! }),
       }
-      // 🔴 Nova's fragment is TWO KEYS, never the officer payload. The server refuses a fragment
-      // naming the governing agent that carries anything outside `AgentV2.PROTECTED_TUNABLE`, and it
-      // refuses the WHOLE write — so one stray `name` from this accessor chain would have thrown away
-      // the user's caption switch alongside it. The charter fields are not rendered for Nova at all;
-      // they are not sent either, so the two statements cannot drift.
+      // 🔴 ONE payload for every colleague, including the governing agent (owner ruling 2026-09-15).
+      // Nova used to get a TWO-KEY fragment because the server refused anything outside
+      // `AgentV2.PROTECTED_TUNABLE` for it; that refusal is now about WHO is writing, and this is the
+      // operator's own surface, so Nova is saved exactly as any other officer is.
+      //
+      // ⚠️ The ONE field that stays out is the project folder: `directory` is refused for the
+      // governing agent at the store, so sending it — including the `""` that means "clear it" — would
+      // turn a legitimate save into an all-or-nothing refusal and lose the rest of the user's edits
+      // with it. The picker is not rendered for Nova either, so the two statements agree.
       await sync().updateConfig({
         agents: {
-          [id]: governing()
-            ? { memory: memoryValue(), ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }) }
-            : {
-                ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
-                ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
-                ...(personality() === undefined && agent()?.personality === undefined
+          [id]: {
+            ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
+            ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
+            ...(personality() === undefined && agent()?.personality === undefined
+              ? {}
+              : { personality: personalityValue() }),
+            ...(job() === undefined && agent()?.system === undefined ? {} : { system: jobValue() }),
+            memory: memoryValue(),
+            // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
+            // optional, so an empty string is how a UI says "unset" through a merge patch.
+            // A pure Chat role has no project component. Clear an old assignment even when this
+            // save changed another field, so a stale hidden folder cannot spring back later.
+            ...(governing()
+              ? {}
+              : postureValue()
+                ? { directory: "" }
+                : directory() === undefined
                   ? {}
-                  : { personality: personalityValue() }),
-                ...(job() === undefined && agent()?.system === undefined ? {} : { system: jobValue() }),
-                memory: memoryValue(),
-                // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
-                // optional, so an empty string is how a UI says "unset" through a merge patch.
-                // A pure Chat role has no project component. Clear an old assignment even when this
-                // save changed another field, so a stale hidden folder cannot spring back later.
-                ...(postureValue()
-                  ? { directory: "" }
-                  : directory() === undefined
-                    ? {}
-                    : { directory: directory()!.trim() }),
-                ...(posture() === undefined ? {} : { shortChat: posture()! }),
-                ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
-                ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
-                ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
-                ...(goal() === undefined ? {} : { goal: goalValue() }),
-                ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
-                // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
-                // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
-                ...(computerUse() === undefined || computerRuleset().length === 0
-                  ? {}
-                  : { permissions: computerRuleset() }),
-                archiveChats: archiveValue(),
-                ...(superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
-                ...binding,
-              },
+                  : { directory: directory()!.trim() }),
+            ...(posture() === undefined ? {} : { shortChat: posture()! }),
+            ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
+            ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+            ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
+            ...(goal() === undefined ? {} : { goal: goalValue() }),
+            ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
+            // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
+            // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
+            ...(computerUse() === undefined || computerRuleset().length === 0
+              ? {}
+              : { permissions: computerRuleset() }),
+            archiveChats: archiveValue(),
+            // The governing agent reports to nobody (`AgentV2.resolveSuperior` answers undefined for
+            // it), so the selector is not rendered and the key is not sent: a field the system would
+            // discard is not written either.
+            ...(governing() || superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
+            ...binding,
+          },
         },
       } as never)
-      // Materialise the standing operation choice onto an already-live root immediately. New roots
-      // read it during construction in the kernel.
-      if (operationMode() !== undefined && officerSessionID() !== undefined) {
+      // Materialise the standing operation choice onto the colleague's own root chat immediately. A
+      // NEW root reads it during construction in the kernel; an EXISTING one keeps the type it was
+      // stamped with, so without this the switch changes what the NEXT chat would be and nothing the
+      // user can see.
+      //
+      // 🔴 **That silent half is the reported bug** (owner, 2026-09-15: *"it actually affects the
+      // agent's goal mode — as of now `* Goal` is still shown after agent's name in the chat's prompt
+      // area even in Interactive mode"*). Two things made it silent, and both are fixed here:
+      //   · the target came from `chatFor`, which EXCLUDES archived rows — so a colleague whose chat
+      //     had been filed (a documented, reachable state — see `roster-live.ts`) resolved to
+      //     `undefined` and the switch was skipped without a word. `chatToClear` is the helper that
+      //     answers "which transcript does the user mean", archived or not, and it is what Clear
+      //     already uses for exactly this reason;
+      //   · every guard was an `&&`, so "no connection", "no chat" and "no folder" all took the same
+      //     silent path. The config write above has already committed by then, so the answer is not to
+      //     fail the save — it is to SAY what did not happen, which is the rule a success sentence
+      //     obeys.
+      if (operationMode() !== undefined) {
         const target = conn()
+        const chat = chatToClear(sessionRows() ?? [], id, location.pathname)
         const folder = directoryValue() ?? workspacePath()
-        if (target && folder)
+        if (target && chat && folder)
           await switchType(target.http, {
             directory: folder,
-            sessionID: officerSessionID()!,
+            sessionID: chat.id,
             type: operationMode() === "interactive" ? "interactive" : "goal-oriented",
+          })
+        else
+          showToast({
+            variant: "error",
+            title: language.t("agentConfig.modeNotApplied"),
+            description: language.t("agentConfig.modeNotAppliedWhy"),
           })
       }
       // Config patches preserve omitted fields and reject null. Returning to inheritance is a
@@ -950,188 +991,6 @@ export function AgentConfigScreen(props: {
     } finally {
       setSaving(false)
     }
-  }
-
-  // Nova's charter is compiled into the instance, so it is a different kind of surface from an
-  // officer profile: a projection, never a disabled edit form. Keeping the editable tree mounted
-  // behind disabled controls still advertises values the store will refuse and leaves future
-  // controls one forgotten `disabled` away from repeating the same defect. This branch makes the
-  // forbidden write structurally unreachable and leaves a calm, useful surface with an obvious way
-  // back.
-  if (governing()) {
-    return (
-      <div
-        class="flex h-full w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
-        data-agent-profile="governing-readonly"
-      >
-        <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-3">
-          <button
-            type="button"
-            data-action="agent-config-back"
-            class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-            aria-label={language.t("agentConfig.back")}
-            title={language.t("agentConfig.back")}
-            onClick={props.onDismiss}
-          >
-            <Icon name="chevron-left" size="normal" />
-          </button>
-          <AgentPortrait
-            id={props.agentID ?? ""}
-            name={name()}
-            avatar={agent()?.avatar}
-            class="size-9 border border-v2-border-border-strong text-base"
-          />
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-semibold">{name()}</span>
-            <span class="block truncate text-xs text-v2-text-text-muted">
-              {agent()?.title ?? language.t("agentConfig.noTitle")}
-            </span>
-          </span>
-          <span class="hidden sm:block">
-            <ControlScope kind="colleague" />
-          </span>
-          <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
-            {language.t("agentConfig.close")}
-          </button>
-        </div>
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-          <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
-            <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
-              <p class="text-sm text-v2-text-text-base">{language.t("agentConfig.governingLocked")}</p>
-              <dl class="mt-5 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.name")}</dt>
-                  <dd class="mt-1 text-sm">{nameValue()}</dd>
-                </div>
-                <div>
-                  <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.jobTitle")}</dt>
-                  <dd class="mt-1 text-sm">{titleValue() || language.t("agentConfig.noTitle")}</dd>
-                </div>
-                <Show when={personalityValue()}>
-                  {(value) => (
-                    <div class="sm:col-span-2">
-                      <dt class="text-xs text-v2-text-text-muted">{language.t("agentConfig.personality")}</dt>
-                      <dd class="mt-1 whitespace-pre-wrap text-sm">{value()}</dd>
-                    </div>
-                  )}
-                </Show>
-              </dl>
-            </section>
-            {/* 🔴 The two switches Nova DOES own. Everything above is the charter and is read-only
-                  by law; these two are components, not identity — what Nova keeps between chats, and
-                  whether Nova pays a model call to caption each shell command. They were absent
-                  entirely, which read as "Nova has no settings" and, worse, gave the owner no way to
-                  switch captioning off on the one colleague they actually talk to. The write is
-                  refused server-side if it carries anything else (AgentV2.PROTECTED_TUNABLE), so
-                  offering these cannot widen anything. */}
-            <section class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                {language.t("agentConfig.memory")}
-              </h3>
-              <label class="mt-2 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={memoryValue() === "own"}
-                  onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
-                />
-                <span>{language.t("agentConfig.memoryRag")}</span>
-              </label>
-              <p class="text-[11px] text-v2-text-text-faint">
-                {language.t(memoryDisclosure(memoryValue()).privateKey)}
-                <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
-              </p>
-            </section>
-            <section
-              class="rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-5"
-              data-section="model"
-            >
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                {language.t("agentConfig.mind")}
-              </h3>
-              <label class="mt-2 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={toolLabelsValue()}
-                  onChange={(event) => setToolLabels(event.currentTarget.checked)}
-                />
-                <span>{language.t("agentConfig.toolLabels")}</span>
-              </label>
-              <p class="text-[11px] text-v2-text-text-faint">
-                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
-              </p>
-            </section>
-            <Show when={props.tuning}>{(tuning) => tuning()()}</Show>
-          </div>
-        </div>
-        {/* Nova's charter is immutable; Nova's conversation is not. Clear therefore remains an
-              ordinary chat lifecycle action here, beside the deliberately instructive Clone door. */}
-        <div class="flex items-center gap-2 border-t border-v2-border-border-muted px-4 py-2.5">
-          <button
-            type="button"
-            data-action="agent-clear-chat"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || props.agentID === undefined}
-            onClick={() => void clearChat()}
-          >
-            {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
-          </button>
-          <button
-            type="button"
-            data-action="agent-clear-memory"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || props.agentID === undefined}
-            onClick={() => void clearMemory()}
-          >
-            {busy() === "clear-memory"
-              ? language.t("agentConfig.memoryClearing")
-              : language.t("agentConfig.clearMemory")}
-          </button>
-          {/* Kept visible on purpose: pressing it teaches why a second Nova is a second INSTANCE,
-                while `planClone` remains the enforcement seam for every caller. */}
-          <button
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-            onClick={() => void clone()}
-          >
-            {language.t("agentConfig.clone")}
-          </button>
-          {/* 🔴 The door into Nova's OWN cabinet. It sat in the officer footer only, so the one
-                colleague a user actually wonders about — "what has Nova been remembering about me" —
-                had no answer: Clear Memory was there, but nothing to look at before pressing it. The
-                cabinet exists whether or not the switch above is on, which is exactly why the officer
-                footer made this button unconditional. */}
-          <button
-            type="button"
-            data-action="agent-open-memory"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || props.agentID === undefined}
-            onClick={() => {
-              const id = props.agentID
-              if (id === undefined) return
-              props.onDismiss()
-              navigate(ownerRoute(id))
-            }}
-          >
-            {language.t("agentConfig.memoryOpen")}
-          </button>
-          {/* Save, for the two switches above and nothing else. Without it the checkboxes were a
-                surface that lied: they moved, the toast never came, and the value reverted on reopen.
-                Pause and Retire stay absent — pausing Nova is a different act from tuning it, and the
-                charter makes it impossible anyway. */}
-          <button
-            type="button"
-            data-action="agent-save"
-            class="ml-auto rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-            disabled={!dirty() || saving() || props.agentID === undefined || agent() === undefined}
-            onClick={() => void save()}
-          >
-            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -1210,12 +1069,19 @@ export function AgentConfigScreen(props: {
         >
           <div class="mx-auto w-full max-w-3xl">
             <section class="agent-settings-card" data-section="profile" data-settings-tab="profile">
-              <Show
-                when={!governing()}
-                fallback={
-                  <p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}</p>
-                }
-              >
+              {/* 🔴 NOVA'S PROFILE IS THE USER'S TO SHAPE, exactly like any other colleague's (owner
+                  ruling 2026-09-15). The tree root is not a locked record — the whole editable form is
+                  mounted for it. What IS fixed is named here rather than discovered by pressing a
+                  control that refuses: the governing agent cannot be given a project folder, retired
+                  or cloned. */}
+              <Show when={governing()}>
+                <p
+                  data-section="governing-note"
+                  class="mt-2 rounded-md bg-v2-background-bg-layer-02 px-3 py-2 text-[11px] leading-relaxed text-v2-text-text-faint"
+                >
+                  {language.t("agentConfig.governingNote")}
+                </p>
+              </Show>
                 <label class="block text-xs text-v2-text-text-muted">
                   {language.t("agentConfig.name")}
                   <TextInputV2
@@ -1286,7 +1152,6 @@ export function AgentConfigScreen(props: {
                   authority, memories, and chat history stay with this instance.
                 </p>
                 {/* Why this is a profile field and not something you type into the chat. */}
-              </Show>
               <div class="mt-3 text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.portrait")}
                 <span class="mt-1 block text-[11px] text-v2-text-text-faint">
@@ -1343,7 +1208,6 @@ export function AgentConfigScreen(props: {
                     type="checkbox"
                     class="mt-0.5"
                     checked={memoryValue() === "own"}
-                    disabled={governing()}
                     onChange={(event) => setMemory(event.currentTarget.checked ? "own" : "none")}
                   />
                   <span>{language.t("agentConfig.memoryRag")}</span>
@@ -1389,36 +1253,31 @@ export function AgentConfigScreen(props: {
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.mind")}
               </h3>
-              <div class="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Mode of operation">
-                {(["interactive", "unattended"] as const).map((mode) => (
-                  <label
-                    class={`cursor-pointer rounded-xl border p-3 transition-colors ${
-                      operationModeValue() === mode
-                        ? "border-v2-border-border-focus bg-v2-background-bg-layer-03"
-                        : "border-v2-border-border-base bg-v2-background-bg-layer-01 hover:bg-v2-background-bg-layer-02"
-                    }`}
-                  >
-                    <span class="flex items-start gap-2">
-                      <input
-                        type="radio"
-                        name="agent-operation-mode"
-                        value={mode}
-                        checked={operationModeValue() === mode}
-                        onChange={() => setOperationMode(mode)}
-                      />
-                      <span>
-                        <span class="block text-sm font-medium">
-                          {mode === "interactive" ? "Interactive" : "Unattended"}
-                        </span>
-                        <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                          {mode === "interactive"
-                            ? "You drive: the agent answers and waits for you."
-                            : "The agent loops toward the goal until it is reached, with the same guardrails as auto-prompting."}
-                        </span>
-                      </span>
-                    </span>
-                  </label>
-                ))}
+              {/* 🔴 ONE SWITCH, NOT TWO CARDS (owner ruling 2026-09-15: *"switching from
+                  Interactive<->Unattended is a toggle switch (default Interactive), instead of being
+                  two buttons"*).
+
+                  The pair read as two features to shop for, when the two are one decision seen from
+                  two sides — the same defect the Memory section already fixed for
+                  persistent-vs-throwaway. So: the switch names the mode that is NOT the default, and
+                  the line beneath says WHICH ONE IS IN FORCE right now, in both positions, because a
+                  switch with one labelled end tells you nothing when it is off. */}
+              <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
+                <div class="flex items-start justify-between gap-3">
+                  <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
+                  <SwitchToggle
+                    aria-label={language.t("agentConfig.unattended")}
+                    checked={operationModeValue() === "unattended"}
+                    onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
+                  />
+                </div>
+                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                  {language.t(
+                    operationModeValue() === "unattended"
+                      ? "agentConfig.unattended.on"
+                      : "agentConfig.unattended.off",
+                  )}
+                </p>
               </div>
               <label class="mt-4 block text-xs text-v2-text-text-muted">
                 Goal
@@ -1430,9 +1289,12 @@ export function AgentConfigScreen(props: {
                   placeholder="What should this officer keep working toward?"
                 />
               </label>
+              {/* ⚠️ The paragraph that used to sit here repeated the Unattended sentence verbatim —
+                  "keeps prompting toward this durable goal… sleeps for 10 minutes" — one control above
+                  the switch that now says it. What is left is the part the switch cannot say: the goal
+                  is DURABLE, and it survives compaction, which is why it is worth typing. */}
               <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In Unattended mode, NovaClaw keeps prompting toward this durable goal. When the plan stops changing, it
-                sleeps for 10 minutes without holding model capacity, then checks the environment again.
+                The goal survives compaction, so this officer keeps it even after a long chat is trimmed.
               </p>
               <label class="mt-4 flex items-start gap-2 text-xs">
                 <input
@@ -1455,7 +1317,6 @@ export function AgentConfigScreen(props: {
               <SelectV2
                 aria-label={language.t("agentConfig.mind")}
                 class="mt-2 w-full"
-                disabled={governing()}
                 options={modelOptions()}
                 current={modelOptions().find((option) => option.value === modelValue()) ?? modelOptions()[0]}
                 value={(option) => option.key}
@@ -1466,7 +1327,6 @@ export function AgentConfigScreen(props: {
               <SelectV2
                 aria-label="Reasoning model"
                 class="mt-1 w-full"
-                disabled={governing()}
                 options={reasoningModelOptions()}
                 current={
                   reasoningModelOptions().find((option) => option.value === reasoningModelValue()) ??
@@ -1485,7 +1345,6 @@ export function AgentConfigScreen(props: {
                   type="checkbox"
                   class="mt-0.5"
                   checked={toolLabelsValue()}
-                  disabled={governing()}
                   onChange={(event) => setToolLabels(event.currentTarget.checked)}
                 />
                 <span>{language.t("agentConfig.toolLabels")}</span>
@@ -1551,7 +1410,6 @@ export function AgentConfigScreen(props: {
                 min="0"
                 max="100"
                 step="0.1"
-                disabled={governing()}
                 value={needsScoreValue()}
                 placeholder={language.t("agentConfig.needsScoreNone")}
                 onInput={(event) => setNeedsScore(event.currentTarget.value)}
@@ -1560,24 +1418,32 @@ export function AgentConfigScreen(props: {
               <Show when={belowFloor()}>
                 <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsScoreBelow")}</p>
               </Show>
-              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
-                {language.t("agentConfig.superior")}
-              </label>
-              <SelectV2
-                id="agent-superior"
-                aria-label={language.t("agentConfig.superior")}
-                class="mt-1 w-full"
-                options={superiorOptions()}
-                current={
-                  superiorOptions().find((option) =>
-                    superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
-                  ) ?? superiorOptions()[0]
-                }
-                value={(option) => option.key}
-                label={(option) => option.label}
-                onSelect={(option) => option && setSuperior(option.value)}
-              />
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
+              {/* 🔴 NOVA REPORTS TO NOBODY, so the selector is not rendered for it. `resolveSuperior`
+                  answers `undefined` for the governing agent by construction, which makes this field
+                  inert for Nova — and the rule this dialog already states is that a field the system
+                  would discard is not rendered as editable. */}
+              <Show when={!governing()}>
+                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
+                  {language.t("agentConfig.superior")}
+                </label>
+                <SelectV2
+                  id="agent-superior"
+                  aria-label={language.t("agentConfig.superior")}
+                  class="mt-1 w-full"
+                  options={superiorOptions()}
+                  current={
+                    superiorOptions().find((option) =>
+                      superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
+                    ) ?? superiorOptions()[0]
+                  }
+                  value={(option) => option.key}
+                  label={(option) => option.label}
+                  onSelect={(option) => option && setSuperior(option.value)}
+                />
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                  {language.t("agentConfig.superiorDescription")}
+                </p>
+              </Show>
             </section>
 
             <section class="agent-settings-card" data-section="work" data-settings-tab="work">
@@ -1595,7 +1461,6 @@ export function AgentConfigScreen(props: {
                   <SelectV2
                     appearance="inline"
                     aria-label={language.t("agentConfig.posture")}
-                    disabled={governing()}
                     options={POSTURE_CHOICES}
                     current={postureValue() ? "chat" : "agent"}
                     label={(value) =>
@@ -1617,7 +1482,6 @@ export function AgentConfigScreen(props: {
                   <SelectV2
                     appearance="inline"
                     aria-label={language.t("prompt.permissionMode.title")}
-                    disabled={governing()}
                     options={PERMISSION_MODE_CHOICES}
                     current={
                       PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ??
@@ -1633,7 +1497,6 @@ export function AgentConfigScreen(props: {
                     type="checkbox"
                     class="mt-0.5"
                     checked={strictValue()}
-                    disabled={governing()}
                     onChange={(event) => setStrict(event.currentTarget.checked)}
                   />
                   <span>{language.t("agentConfig.strict")}</span>
@@ -1727,7 +1590,6 @@ export function AgentConfigScreen(props: {
                       type="checkbox"
                       class="mt-0.5"
                       checked={computerUseValue()}
-                      disabled={governing()}
                       onChange={(event) => setComputerUse(event.currentTarget.checked)}
                     />
                     <span>{language.t("agentConfig.computerUse")}</span>
@@ -1757,25 +1619,38 @@ export function AgentConfigScreen(props: {
                 per-conversation question and left a named officer with no project of its own; under the
                 roster it is part of the job — you assign the bookkeeper to the books once. */}
                 <div class="mt-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
-                    disabled={governing()}
-                    onClick={() => pickFolder()}
+                  {/* 🔴 NOVA HAS NO PROJECT FOLDER, by construction (`AgentV2.PROTECTED_NEVER`), and the
+                      owner named it as one of exactly three things the user cannot do to the governing
+                      agent. Said plainly rather than shown as a disabled picker: a greyed control
+                      invites the user to wonder what would unlock it, and the answer is "nothing". */}
+                  <Show
+                    when={!governing()}
+                    fallback={
+                      <span class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-02 px-2 py-1.5 text-xs text-v2-text-text-faint">
+                        <Icon name="folder" class="size-3.5 shrink-0" />
+                        <span class="truncate">{language.t("agentConfig.folderGoverning")}</span>
+                      </span>
+                    }
                   >
-                    <Icon name="folder" class="size-3.5 shrink-0" />
-                    <span class="truncate">{folderLabel()}</span>
-                  </button>
-                  <Show when={directoryValue() !== undefined}>
-                    {/* Back to its own workspace — the one way out of a project, and it is a change like any
-                    other: the colleague is told (`AgentReassignment`). */}
                     <button
                       type="button"
-                      class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                      onClick={() => setDirectory("")}
+                      class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
+                      onClick={() => pickFolder()}
                     >
-                      {language.t("agentConfig.folderOwn")}
+                      <Icon name="folder" class="size-3.5 shrink-0" />
+                      <span class="truncate">{folderLabel()}</span>
                     </button>
+                    <Show when={directoryValue() !== undefined}>
+                      {/* Back to its own workspace — the one way out of a project, and it is a change like any
+                      other: the colleague is told (`AgentReassignment`). */}
+                      <button
+                        type="button"
+                        class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                        onClick={() => setDirectory("")}
+                      >
+                        {language.t("agentConfig.folderOwn")}
+                      </button>
+                    </Show>
                   </Show>
                 </div>
                 {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
@@ -1832,7 +1707,7 @@ export function AgentConfigScreen(props: {
                     type="checkbox"
                     class="mt-0.5"
                     checked={archiveValue()}
-                    disabled={governing() || memoryValue() === "none"}
+                    disabled={memoryValue() === "none"}
                     onChange={(event) => setArchive(event.currentTarget.checked)}
                   />
                   <span>{language.t("agentConfig.archiveKeep")}</span>
@@ -1959,31 +1834,44 @@ export function AgentConfigScreen(props: {
         >
           {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
         </button>
-        <button
-          type="button"
-          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-          disabled={busy() !== undefined || agent() === undefined}
-          onClick={() => void clone()}
-        >
-          {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
-        </button>
+        {/* 🔴 CLONE IS NOT OFFERED FOR THE GOVERNING AGENT (owner ruling 2026-09-15: the user cannot
+              clone Nova). `planClone` has always refused it server-side, and the button used to stay
+              visible on purpose so pressing it taught *why* a second Nova is a second instance. That
+              teaching now lives in the note at the top of Nova's Profile tab, and a control whose only
+              outcome is a refusal is worse than the sentence that replaces it. */}
         <Show when={!governing()}>
-          {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
-                as the same kind of act. Pausing is reversible and keeps everything; retiring
-                archives the chats and sets the cabinet aside. */}
           <button
             type="button"
-            data-action="agent-pause"
             class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
             disabled={busy() !== undefined || agent() === undefined}
-            onClick={() => void setPaused(agent()?.paused !== true)}
+            onClick={() => void clone()}
           >
-            {busy() === "pause"
-              ? language.t("agentConfig.pausing")
-              : agent()?.paused === true
-                ? language.t("agentConfig.resume")
-                : language.t("agentConfig.pause")}
+            {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
           </button>
+        </Show>
+        {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
+              as the same kind of act. Pausing is reversible and keeps everything; retiring
+              archives the chats and sets the cabinet aside.
+              ⚠️ Pause IS offered for the governing agent: the owner's exceptions are exactly three —
+              no project folder, no clone, no retire — and `AgentV2`'s own note has always said the
+              user "may still pause or ignore Nova". */}
+        <button
+          type="button"
+          data-action="agent-pause"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || agent() === undefined}
+          onClick={() => void setPaused(agent()?.paused !== true)}
+        >
+          {busy() === "pause"
+            ? language.t("agentConfig.pausing")
+            : agent()?.paused === true
+              ? language.t("agentConfig.resume")
+              : language.t("agentConfig.pause")}
+        </button>
+        {/* 🔴 RETIRE IS THE THIRD THING THE USER CANNOT DO TO THE TREE ROOT. `DELETE /api/agent/:id`
+              answers 400 for it, so this is the control being told the truth rather than a hole in
+              the UI. */}
+        <Show when={!governing()}>
           <button
             type="button"
             class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
@@ -1994,8 +1882,9 @@ export function AgentConfigScreen(props: {
           </button>
         </Show>
       </div>
-      <Show when={!governing()}>
-        <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
+      {/* The Save/Cancel row is unconditional now: the governing agent's profile is edited on this
+            surface like any other officer's, so it needs the same door out and the same commit. */}
+      <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
           <button
             type="button"
             class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
@@ -2026,7 +1915,6 @@ export function AgentConfigScreen(props: {
             {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
           </button>
         </div>
-      </Show>
     </div>
   )
 }

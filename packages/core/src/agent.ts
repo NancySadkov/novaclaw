@@ -67,49 +67,96 @@ export const DEFAULT_COLLEAGUE_ID = NOVA_ID
 export const MESSENGER_ID = ID.make("messenger")
 export const RECIPE_ID = ID.make("recipe")
 
-/** Agent ids the user may not redefine, rename or delete through any surface.
+/** Agent ids the user may not delete through any surface.
  *
- *  🔴 Nova is on this list because *"the charter is not editable from inside"*: an instance whose
- *  governing agent can be neutered by a stray prompt — or by an agent editing config on the user's
- *  behalf — has no floor to stand on. The protection is enforced where WRITES happen (the agent-config
- *  store and the HTTP surface above it), never merely hidden in the UI, because the UI is not the only
- *  door: the config store is reachable from `PATCH /config`, from a plugin and from an agent's own
- *  `reconfigure`.
+ *  🔴 Nova is on this list because the tree root cannot be deleted without deleting the tree. The
+ *  protection is enforced where the LIFECYCLE happens (`DELETE /api/agent/:id`, `planClone`), never
+ *  merely hidden in the UI, because the UI is not the only door.
  *
- *  ⚠️ This protects Nova's IDENTITY, not the user's freedom to work: the user shapes every other
- *  officer freely, and may still pause or ignore Nova. It is a floor, not a lock on the product. */
+ *  ⚠️ **This is a floor under the org chart, not a lock on the user's own instance.** Owner ruling,
+ *  2026-09-15: *"ensure Nova's profile is as editable by user as any other officer, except user
+ *  can't assign Nova a project folder, clone or retire Nova — just like the tree root can't be
+ *  deleted without the entire instance of the tree."* So Nova's PROFILE is the user's to shape,
+ *  exactly as every other officer's is; what stays fixed is that Nova exists (no retirement), that
+ *  it stays the one CEO (no clone), and that it governs from the instance rather than from a project
+ *  folder ({@link PROTECTED_NEVER}). */
 export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
 
 export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 
 /**
- * The CLOSED vocabulary of config fields a stored layer may set for a protected agent.
+ * Who is writing a config fragment.
  *
- * `PROTECTED_IDS` protects Nova's identity and authority — its name, brief, model, permissions,
- * whether it exists at all. That is the charter, and the charter is not editable from inside. It was
- * enforced by dropping a stored `nova` layer WHOLE, which also silently swallowed the two knobs that
- * are not the charter: whether Nova captions its shell commands, and whether Nova keeps memories.
- * Both are components on the ECS lens (AGENTS.md, the structural metaphor), not governing agent
- * redefinition — neither grants a capability, alters a prompt, nor touches who exists.
+ * 🔴 **The distinction is the whole protection, and it is a REAL boundary rather than a courtesy.**
+ * AGENTS.md's *"the charter is not editable from inside"* is about a stray prompt neutering the
+ * instance's governing agent — an agent reaching the config store through its own `configure` tool,
+ * or third-party plugin code calling `ConfigStoreWrite.apply` in process. The operator at the UI is
+ * a different actor: they own the instance, and the shareholder's right to shape their own org chart
+ * is not the threat the rule exists for.
  *
- * So the rule is now: a fragment naming Nova may carry these keys and nothing else. Closed rather than
- * "everything except the dangerous ones", for the reason principle 13 gives — an open vocabulary is
- * the charter with extra steps, and an exclusion list is only as good as whoever last imagined the
- * threat. Adding a key here is a security decision, not a convenience: it must not be able to widen
- * what Nova can do or rewrite what Nova is told.
+ *  · `"operator"` — a person driving a NovaClaw surface. Reaches config only over HTTP, with the
+ *    instance's own credentials, which nothing hands to a session (`tool/configure.ts` header).
+ *  · `"instance"` — anything running inside the instance: the `configure` tool, a plugin, an
+ *    in-process caller. This is the DEFAULT, so a new caller that forgets to say who it is gets the
+ *    untrusted arm rather than the privileged one.
+ */
+export type ConfigWriter = "operator" | "instance"
+
+/**
+ * The CLOSED vocabulary of config fields an IN-INSTANCE writer may set for a protected agent.
+ *
+ * An agent editing config on the user's behalf must not be able to rewrite the governing agent's
+ * brief, model, permissions or prompts: that is the stray-prompt escalation AGENTS.md names. It was
+ * enforced by dropping a stored `nova` layer WHOLE, which also silently swallowed two knobs that are
+ * not the charter at all — whether Nova captions its shell commands, and whether Nova keeps
+ * memories. Both are components on the ECS lens (AGENTS.md, the structural metaphor), not governing
+ * agent redefinition — neither grants a capability, alters a prompt, nor touches who exists.
+ *
+ * So the rule is: an in-instance fragment naming Nova may carry these keys and nothing else. Closed
+ * rather than "everything except the dangerous ones", for the reason principle 13 gives — an open
+ * vocabulary is the charter with extra steps, and an exclusion list is only as good as whoever last
+ * imagined the threat. Adding a key here is a security decision, not a convenience: it must not be
+ * able to widen what Nova can do or rewrite what Nova is told.
  *
  * ⚠️ `memory` is here because keeping-or-not-keeping memories is the user's call about their own
  * machine, not a property of the charter. Turning it off costs Nova its recall; it grants nothing.
+ *
+ * ⚠️ The operator's arm is NOT this set — see {@link protectedRefusedKeys}. A write from the user's
+ * own surface carries the whole officer profile, which is what makes Nova as editable as any other
+ * colleague.
  */
 export const PROTECTED_TUNABLE: ReadonlySet<string> = new Set(["memory", "toolLabels"])
+
+/**
+ * Keys NOBODY may set on a protected agent, whoever is writing.
+ *
+ * The tree root does not live in a folder. Nova governs from the instance, and `directory` is the one
+ * profile field that would move its working root onto a project the user picked — which is the
+ * exception the owner named explicitly alongside retirement and cloning. Everything else in the
+ * officer profile is editable.
+ *
+ * ⚠️ `""` is refused too, and that is not an accident: the field's own contract is "unset means the
+ * agent's scratch", so an empty string is how the UI clears it. Nova never has one to clear.
+ */
+export const PROTECTED_NEVER: ReadonlySet<string> = new Set(["directory"])
 
 /** Which of {@link PROTECTED_TUNABLE} a fragment actually carries. Empty = it carries only charter. */
 export const protectedTunableKeys = (fragment: Record<string, unknown>): string[] =>
   Object.keys(fragment).filter((key) => PROTECTED_TUNABLE.has(key))
 
-/** Which keys of a fragment naming a protected agent this rule refuses. */
-export const protectedRefusedKeys = (fragment: Record<string, unknown>): string[] =>
-  Object.keys(fragment).filter((key) => !PROTECTED_TUNABLE.has(key))
+/**
+ * Which keys of a fragment naming a protected agent this rule refuses.
+ *
+ * ⚠️ `writer` DEFAULTS TO `"instance"`, the narrow arm. A caller that does not know who it is is
+ * not the operator, and the safe answer has to be the one you get by doing nothing.
+ */
+export const protectedRefusedKeys = (
+  fragment: Record<string, unknown>,
+  writer: ConfigWriter = "instance",
+): string[] =>
+  Object.keys(fragment).filter(
+    (key) => PROTECTED_NEVER.has(key) || (writer !== "operator" && !PROTECTED_TUNABLE.has(key)),
+  )
 
 /**
  * May this agent STAFF the roster — hire and retire?

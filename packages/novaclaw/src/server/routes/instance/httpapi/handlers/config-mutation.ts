@@ -25,7 +25,7 @@ export const mutateConfig = Effect.fn("ConfigHttpApi.mutate")(function* (input: 
   yield* rejectUnknownConfigKeys(input.request)
   yield* rejectNullConfigValues(input.request)
 
-  const consumed = yield* ConfigStoreWrite.apply(input.payload).pipe(
+  const consumed = yield* ConfigStoreWrite.apply(input.payload, { writer: "operator" }).pipe(
     Effect.catchTag(
       "ConfigStoreWrite.ConfigWriteRefused",
       (error) => new InvalidRequestError({ kind: CONFIG_WRITE_REFUSED_KIND, message: error.message }),

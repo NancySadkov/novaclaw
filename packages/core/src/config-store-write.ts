@@ -391,34 +391,54 @@ const LIST_ARMS = [
  * readable line; it must NEVER be called directly — un-transacted, a failure part-way through
  * leaves the stores in a half-written state (see `apply`).
  */
-const applyToStores = (patch: Config.Info) =>
+const applyToStores = (patch: Config.Info, writer: AgentV2.ConfigWriter) =>
   Effect.gen(function* () {
     // 🔴 PRE-FLIGHT, before a single store is touched: a fragment naming the governing agent is
     // refused rather than written-and-ignored. One place, no per-arm plumbing, and all-or-nothing —
     // the rest of the patch is NOT applied, matching the remove verb's rule that a refused request
     // never half-lands.
     //
-    // ⚠️ It refuses the CHARTER keys, not the whole fragment. `AgentV2.PROTECTED_TUNABLE` is the
-    // closed set of knobs that are components rather than identity (captions, memory), and a write
-    // carrying only those is legitimate — which is how the config dialog can offer Nova the same two
-    // switches every officer has without offering anyone a door into Nova's brief or permissions.
-    // A fragment mixing the two is refused WHOLE, so nobody learns to half-write a charter edit.
+    // ⚠️ WHAT is refused depends on WHO is writing, and that is the owner's 2026-09-15 ruling:
+    // Nova's profile is the user's to shape exactly as any other officer's is, while an IN-INSTANCE
+    // writer (the `configure` tool, a plugin) may still set only the closed tuning vocabulary. So
+    // the operator's arm refuses the one field nobody may set — the project folder — and the
+    // in-instance arm additionally refuses the charter, which is what stops a stray prompt neutering
+    // the instance's governing agent.
+    //
+    // A fragment carrying a refused key is refused WHOLE, so nobody learns to half-write a charter
+    // edit.
     const protectedAgents = Object.keys(patch.agents ?? {}).filter(
       (name) =>
         AgentV2.isProtected(name) &&
-        AgentV2.protectedRefusedKeys((patch.agents![name] ?? {}) as Record<string, unknown>).length > 0,
+        AgentV2.protectedRefusedKeys((patch.agents![name] ?? {}) as Record<string, unknown>, writer).length > 0,
     )
-    if (protectedAgents.length > 0)
+    if (protectedAgents.length > 0) {
+      const named = protectedAgents.map((name) => `"${name}"`).join(", ")
+      // Name the OFFENDING keys, not just the agent. A refusal that says only "Nova" over a write
+      // whose only crime is the folder sends the caller hunting through a whole profile.
+      const offenders = [
+        ...new Set(
+          protectedAgents.flatMap((name) =>
+            AgentV2.protectedRefusedKeys((patch.agents![name] ?? {}) as Record<string, unknown>, writer),
+          ),
+        ),
+      ]
+      const tunable = [...AgentV2.PROTECTED_TUNABLE].map((key) => `"${key}"`).join(", ")
       return yield* Effect.fail(
         new ConfigWriteRefused({
           keys: protectedAgents,
           message:
-            `config: NOTHING was written — ${protectedAgents.map((name) => `"${name}"`).join(", ")} ` +
-            `is this instance's governing agent and its profile is fixed in code. Its memory and ` +
-            `command-caption switches can be set; its name, brief, model and permissions cannot. ` +
-            `Every other agent on the roster can be edited, and you can create your own.`,
+            writer === "operator"
+              ? `config: NOTHING was written — ${offenders.map((key) => `"${key}"`).join(", ")} ` +
+                `cannot be set on ${named}. It is this instance's governing agent: it is edited like ` +
+                `any other officer, but it cannot be given a project folder, retired or cloned.`
+              : `config: NOTHING was written — ${named} is this instance's governing agent, and a ` +
+                `write from inside the instance may only set ${tunable}. Its name, brief, model and ` +
+                `permissions are the operator's to change, from their own surface. Every other agent ` +
+                `on the roster can be edited from here, and you can create your own.`,
         }),
       )
+    }
     const consumed = new Set<string>()
     const plain = encodeInfo(patch)
 
@@ -958,9 +978,12 @@ const agentPauseStates = (
     return states
   })
 
-export const apply = (patch: Config.Info) =>
+export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.ConfigWriter } = {}) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    // ⚠️ Defaults to `"instance"` — the narrow arm. See `AgentV2.ConfigWriter`: a caller that does
+    // not say who it is gets the untrusted answer, so forgetting this is safe rather than a hole.
+    const writer = options.writer ?? "instance"
     // 🔴 Read the folders BEFORE the write, because a colleague whose project changed has to be told
     // (owner, 2026-08-21: *"reassigning agent to another folder should auto send a message to it, so
     // it won't be thinking it still works on the old project"*). This is the one door every config
@@ -973,7 +996,7 @@ export const apply = (patch: Config.Info) =>
     // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
     // `rejectUnknownConfigKeys`-versus-`unroutedKeys` distinction again.
     const outcome = yield* db
-      .transaction(() => applyToStores(patch))
+      .transaction(() => applyToStores(patch, writer))
       .pipe(
         Effect.catchTag("ConfigStoreWrite.ConfigWriteRefused", (error) => Effect.succeed(error)),
         Effect.orDie,

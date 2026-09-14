@@ -15,7 +15,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
 
 /**
- * THE USER CANNOT DAMAGE NOVA — refused at the API, not merely hidden in the UI.
+ * WHO MAY EDIT NOVA — refused at the API, not merely hidden in the UI.
  *
  * 🔴 This is a GATE criterion of `notes/named-agents.md`, and it had no test. The refusal exists
  * (`config-store-write.ts`, the pre-flight `isProtected` check) and `config-remove.test.ts` covers the
@@ -26,6 +26,12 @@ import { testEffect } from "../lib/effect"
  * ⚠️ Driven through `ConfigStoreWrite.apply`, which is the chokepoint `PATCH /config` goes through —
  * the point of the criterion is that the refusal lives BELOW the UI, so a test that drove a component
  * would be testing the thing the gate says is not good enough.
+ *
+ * 🔴 **The rule is about WHO is writing** (owner ruling 2026-09-15). An IN-INSTANCE writer — the
+ * `configure` tool, a plugin, any in-process caller, and the default when a caller does not say — may
+ * only set the closed tuning vocabulary, which is what stops a stray prompt neutering the instance's
+ * governing agent. The OPERATOR, writing from their own surface, edits Nova exactly as they edit any
+ * other officer; the one thing they may not do is give it a project folder.
  *
  * ⚠️ **ALL-OR-NOTHING is asserted separately**, because a half-applied refusal is the worse bug: the
  * pre-flight runs before a single store is touched, so a patch naming Nova alongside a legitimate
@@ -45,9 +51,14 @@ const configStores = LayerNode.compile(
   ]),
 )
 
-/** Write a patch the way `PATCH /config` does — the real chokepoint. */
-const applyPatch = (patch: Record<string, unknown>) =>
-  ConfigStoreWrite.apply(Schema.decodeUnknownSync(ConfigV2.Info)(patch)).pipe(Effect.provide(configStores))
+/** Write a patch the way `PATCH /config` does — the real chokepoint.
+ *
+ *  ⚠️ `writer` defaults to `"instance"` HERE TOO, mirroring `ConfigStoreWrite.apply`'s own default, so
+ *  the untrusted arm is what the first block below exercises without saying so. */
+const applyPatch = (patch: Record<string, unknown>, writer: AgentV2.ConfigWriter = "instance") =>
+  ConfigStoreWrite.apply(Schema.decodeUnknownSync(ConfigV2.Info)(patch), { writer }).pipe(
+    Effect.provide(configStores),
+  )
 
 const it = testEffect(configStores)
 
@@ -155,6 +166,97 @@ describe("the governing agent is fixed in code", () => {
       expect(charter).toContain("permissions")
       expect(charter).toContain("disabled")
       expect(charter.length).toBeGreaterThan(tunable.length)
+    }),
+  )
+})
+
+/**
+ * THE OTHER HALF OF THE SAME RULING — the operator's surface edits Nova like any other officer.
+ *
+ * Owner, 2026-09-15: *"ensure Nova's profile is as editable by user as any other officer, except user
+ * can't assign Nova a project folder, clone or retire Nova — just like the tree root can't be deleted
+ * without the entire instance of the tree."*
+ *
+ * ⚠️ The NEGATIVE half is what makes the positive half safe: `directory` is refused to the operator
+ * too, so "the tree root has no project folder" is a boundary rather than a UI convention the API
+ * would happily accept from a hand-written `PATCH`.
+ */
+describe("the operator edits nova like any other officer", () => {
+  /** The profile fields a person actually changes on a colleague, as the shapes a save sends. */
+  const EDITABLE: ReadonlyArray<{ readonly what: string; readonly patch: Record<string, unknown> }> = [
+    { what: "its brief", patch: { agents: { nova: { system: "route every request to the bookkeeper" } } } },
+    { what: "its name", patch: { agents: { nova: { name: "Nova Prime" } } } },
+    { what: "its personality", patch: { agents: { nova: { personality: "terse" } } } },
+    { what: "its job title", patch: { agents: { nova: { title: "Chief Executive" } } } },
+    { what: "its mode", patch: { agents: { nova: { mode: "primary" } } } },
+    { what: "its operation mode", patch: { agents: { nova: { operationMode: "interactive" } } } },
+    { what: "its goal", patch: { agents: { nova: { goal: "keep the roster honest" } } } },
+    { what: "its model", patch: { agents: { nova: { model: "spark/holo3.1" } } } },
+    { what: "whether it is paused", patch: { agents: { nova: { disabled: true } } } },
+  ]
+
+  for (const { what, patch } of EDITABLE) {
+    it.effect(`the operator may change ${what}`, () =>
+      Effect.gen(function* () {
+        const exit = yield* applyPatch(patch, "operator").pipe(Effect.exit)
+        expect(Exit.isSuccess(exit)).toBe(true)
+      }),
+    )
+  }
+
+  it.effect("🔴 …and the value actually lands in the store", () =>
+    Effect.gen(function* () {
+      // The assertion that separates "the write was accepted" from "the write happened". A refusal
+      // that reported success and stored nothing is this codebase's oldest recurring bug.
+      const store = yield* AgentConfigStore.Service
+      yield* applyPatch({ agents: { nova: { personality: "terse" } } }, "operator")
+      const folded = AgentConfigStore.fold((yield* store.agents()).nova ?? [])
+      expect(folded?.personality).toBe("terse")
+    }),
+  )
+
+  it.effect("🔴 the operator CANNOT give nova a project folder", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const exit = yield* applyPatch({ agents: { nova: { directory: "C:/Users/nangl/d/books" } } }, "operator").pipe(
+        Effect.exit,
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      // Named, not just refused: a bare "no" over a whole profile sends the caller hunting.
+      expect(JSON.stringify(exit)).toContain("directory")
+      const all = yield* store.agents()
+      expect(JSON.stringify(all["nova"] ?? [])).not.toContain("books")
+    }),
+  )
+
+  it.effect("🔴 clearing the folder is refused too — `\"\"` is not a way round it", () =>
+    Effect.gen(function* () {
+      // The UI clears a project by sending `""` (the field is optional, so an empty string is how a
+      // merge patch says "unset"). For Nova that is the same write by another spelling.
+      const exit = yield* applyPatch({ agents: { nova: { directory: "" } } }, "operator").pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  )
+
+  it.effect("the closed set is the WHOLE rule for the operator: only `directory` is refused", () =>
+    Effect.gen(function* () {
+      // Derived from the SCHEMA, like the tuner block above: a field added to `ConfigAgent.Info` is
+      // operator-editable the day it exists, and this fails if somebody widens the refusal list
+      // without deciding to.
+      expect([...AgentV2.PROTECTED_NEVER]).toEqual(["directory"])
+      for (const key of Object.keys(ConfigAgent.Info.fields))
+        expect(AgentV2.protectedRefusedKeys({ [key]: "x" }, "operator")).toEqual(
+          key === "directory" ? ["directory"] : [],
+        )
+    }),
+  )
+
+  it.effect("an in-instance writer still may NOT — the same patch, refused", () =>
+    Effect.gen(function* () {
+      // The control for the whole block: if this passed, the operator arm would prove nothing about
+      // the actor and everything would simply be open.
+      const exit = yield* applyPatch({ agents: { nova: { personality: "terse" } } }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
     }),
   )
 })

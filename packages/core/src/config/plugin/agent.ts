@@ -56,41 +56,124 @@ export const Plugin = define({
   }),
 })
 
+/** The mutable agent record a draft callback hands out. */
+type AgentRecord = Parameters<Parameters<AgentDraft["update"]>[1]>[0]
+
+/** Apply ONE fragment's FIELDS onto an agent record.
+ *
+ *  🔴 SHARED by the ordinary path and the protected-agent path, and that sharing is load-bearing: a
+ *  hand-kept second copy of this mapping is exactly the shape that dropped `steps` on the way to a
+ *  clone (`apps/agent-clone.ts`). A field added to `ConfigAgent.Info` must reach Nova the day it
+ *  exists, not the day somebody remembers this branch.
+ *
+ *  The CALLER owns everything that is not a field: the non-existent-agent floor, the pause verb, and
+ *  which keys a protected agent may carry at all. */
+function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.Info) {
+  if (item.model !== undefined) {
+    const model = ModelV2.parse(item.model)
+    agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }
+  }
+  if (item.reasoningModel !== undefined) {
+    const model = ModelV2.parse(item.reasoningModel)
+    ;(agent as unknown as Record<string, unknown>)["reasoningModel"] = {
+      id: model.modelID,
+      providerID: model.providerID,
+    }
+  }
+  if (item.workerModel !== undefined) {
+    const model = ModelV2.parse(item.workerModel)
+    ;(agent as unknown as Record<string, unknown>)["workerModel"] = {
+      id: model.modelID,
+      providerID: model.providerID,
+    }
+  }
+  if (item.variant !== undefined && agent.model !== undefined) {
+    agent.model.variant = ModelV2.VariantID.make(item.variant)
+  }
+  if (item.request !== undefined) {
+    Object.assign(agent.request.headers, item.request.headers ?? {})
+    Object.assign(agent.request.body, item.request.body ?? {})
+  }
+  if (item.system !== undefined) agent.system = item.system
+  if (item.name !== undefined) agent.name = item.name
+  if (item.title !== undefined) agent.title = item.title
+  if (item.personality !== undefined) agent.personality = item.personality
+  if (item.superior !== undefined) agent.superior = AgentV2.ID.make(item.superior)
+  if (item.avatar !== undefined) agent.avatar = item.avatar
+  if (item.memory !== undefined) agent.memory = item.memory
+  if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
+  if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
+  if (item.needsScore !== undefined) agent.needsScore = item.needsScore
+  if (item.description !== undefined) agent.description = item.description
+  if (item.directory !== undefined) agent.directory = item.directory
+  // The standing work choices. Mapped onto the RECORD as well as read from the store by
+  // `SessionEffectiveConfig`: the store is what a headless turn resolves through, the record is
+  // what the config dialog renders — and a dialog that cannot show the current value is the same
+  // defect `directory` had.
+  if (item.permissionMode !== undefined) agent.permissionMode = item.permissionMode
+  if (item.strict !== undefined) agent.strict = item.strict
+  if (item.shortChat !== undefined) agent.shortChat = item.shortChat
+  const runtime = agent as unknown as Record<string, unknown>
+  if (item.operationMode !== undefined) runtime["operationMode"] = item.operationMode
+  if (item.goal !== undefined) runtime["goal"] = item.goal
+  if (item.contextBudget !== undefined) runtime["contextBudget"] = item.contextBudget
+  if (item.surgicalEdits !== undefined) runtime["surgicalEdits"] = item.surgicalEdits
+  if (item.introspection !== undefined) runtime["introspection"] = item.introspection
+  if (item.quality !== undefined) runtime["quality"] = item.quality
+  if (item.affective !== undefined) runtime["affective"] = item.affective
+  if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
+  if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
+  if (item.workerPrototype !== undefined) {
+    ;(agent as unknown as Record<string, unknown>)["workerPrototype"] = AgentV2.ID.make(item.workerPrototype)
+  }
+  if (item.maxWorkers !== undefined) (agent as unknown as Record<string, unknown>)["maxWorkers"] = item.maxWorkers
+  if (item.spawnDepth !== undefined) (agent as unknown as Record<string, unknown>)["spawnDepth"] = item.spawnDepth
+  if (item.runtimeHeartbeatMinutes !== undefined)
+    (agent as unknown as Record<string, unknown>)["runtimeHeartbeatMinutes"] = item.runtimeHeartbeatMinutes
+  if (item.mode !== undefined) agent.mode = item.mode
+  if (item.hidden !== undefined) agent.hidden = item.hidden
+  if (item.color !== undefined) agent.color = item.color
+  if (item.steps !== undefined) agent.steps = item.steps
+  if (item.permissions !== undefined) agent.permissions.push(...item.permissions)
+  // 🔴 The agent's own scratch is DERIVED from the id this row is being applied to, never inherited
+  // from whatever the row happens to store. `floor` above bakes a literal path, so a stored layer
+  // can carry a grant minted for a different officer — measured 2026-09-10, `geryon` carried
+  // `…/scratch/daedalus/*`, which both leaked one officer's private workspace to another and
+  // refused the owner its own. See `AgentPlugin.withOwnScratch` for why filtering alone is not
+  // enough, and why this runs AFTER the stored layer is pushed rather than beside it.
+  agent.permissions = AgentPlugin.withOwnScratch(agentID, agent.permissions)
+}
+
 /** Apply ONE config fragment for one agent onto the draft (the historical per-document merge body).
  *
- *  🔴 A PROTECTED agent's fragment is dropped whole. Nova is this instance's governing agent and its
- *  identity is seeded in code (`plugin/agent.ts`), so a stored layer named `nova`
- *  must not be able to rewrite its brief, hide it, disable it or hand it a different permission set —
- *  *"the charter is not editable from inside"* (AGENTS.md, the structural metaphor). Dropped rather
- *  than merged field-by-field: a partial override is the shape that looks harmless and still lands the
- *  one field that matters. The refusal is LOUD — a silent drop is how a user concludes the product is
- *  broken rather than that the write was refused. */
+ *  🔴 A PROTECTED agent gets the ORDINARY field mapping — Nova is edited like any other colleague
+ *  (owner ruling 2026-09-15; `AgentV2.PROTECTED_IDS`) — minus {@link AgentV2.PROTECTED_NEVER}, the
+ *  one field nobody may set: the project folder. What an IN-INSTANCE writer may not do to Nova is
+ *  enforced where the writer is known, in `ConfigStoreWrite.apply`; this arm is the
+ *  defence-in-depth against a `nova` row that arrived by a door which never saw an actor at all
+ *  (the boot-time `novaclaw.jsonc` seed, a direct store write).
+ *
+ *  ⚠️ It is still not merged blindly: a fragment carrying a refused key is DROPPED and said so
+ *  LOUDLY, because a silent drop is how a user concludes the product is broken rather than that the
+ *  write was refused. */
 function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
   // `item.nudges` and `item.globalNudges` are intentionally consumed by NudgeService straight from
   // AgentConfigStore. They are harness-delivery components, not fields on the AgentV2 identity row.
   if (AgentV2.isProtected(agentID)) {
-    // ⚠️ Only the CLOSED tuning vocabulary survives (AgentV2.PROTECTED_TUNABLE). This used to drop the
-    // fragment whole, "rather than merged field-by-field" on the theory that a partial override lands
-    // the one field that matters. That holds for the charter and silently cost the user two switches:
-    // Nova's caption and memory settings were storable, refused HERE, and shown as nothing at all.
-    // The narrow rule keeps the security property — the vocabulary is closed at its definition site,
-    // so a charter key cannot sneak through — and stops punishing the two knobs that are components,
-    // not identity.
-    const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>)
-    // And only onto a row that EXISTS: `Draft.update` MINTS a blank `Info.empty` agent for an id that
-    // has none, so a stored `nova` layer arriving before the code seed would create a ghost rather
-    // than tune the real one.
-    if (draft.get(agentID) !== undefined && (item.memory !== undefined || item.toolLabels !== undefined)) {
-      draft.update(agentID, (agent) => {
-        if (item.memory !== undefined) agent.memory = item.memory
-        if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
-      })
-    }
-    if (refused.length > 0)
+    const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>, "operator")
+    // ⚠️ A fragment carrying a refused key is refused WHOLE. A partial override is the shape that
+    // looks harmless and still lands the one field that matters — and here the one field that
+    // matters is the project folder the operator was told they cannot assign.
+    if (refused.length === 0) {
+      // And only onto a row that EXISTS: `Draft.update` MINTS a blank `Info.empty` agent for an id
+      // that has none, so a stored `nova` layer arriving before the code seed would create a ghost
+      // rather than tune the real one.
+      if (draft.get(agentID) !== undefined) draft.update(agentID, (agent) => applyFields(agent, agentID, item))
+    } else
       console.warn(
         `config: ignoring ${refused.map((key) => `"${key}"`).join(", ")} for "${agentID}" — it is this ` +
-          `instance's governing agent and its profile is fixed in code. Its memory and caption ` +
-          `switches do apply; its identity and permissions do not.`,
+          `instance's governing agent. It is edited like any other officer, but it cannot be given a ` +
+          `project folder, retired or cloned.`,
       )
     return
   }
@@ -150,78 +233,6 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       agent.permissions.push(...AgentPlugin.floor({ scratchDirs: AgentPlugin.scratchDirsFor(agentID), officer }))
       agent.permissions.push(...global)
     }
-    if (item.model !== undefined) {
-      const model = ModelV2.parse(item.model)
-      agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }
-    }
-    if (item.reasoningModel !== undefined) {
-      const model = ModelV2.parse(item.reasoningModel)
-      ;(agent as unknown as Record<string, unknown>)["reasoningModel"] = {
-        id: model.modelID,
-        providerID: model.providerID,
-      }
-    }
-    if (item.workerModel !== undefined) {
-      const model = ModelV2.parse(item.workerModel)
-      ;(agent as unknown as Record<string, unknown>)["workerModel"] = {
-        id: model.modelID,
-        providerID: model.providerID,
-      }
-    }
-    if (item.variant !== undefined && agent.model !== undefined) {
-      agent.model.variant = ModelV2.VariantID.make(item.variant)
-    }
-    if (item.request !== undefined) {
-      Object.assign(agent.request.headers, item.request.headers ?? {})
-      Object.assign(agent.request.body, item.request.body ?? {})
-    }
-    if (item.system !== undefined) agent.system = item.system
-    if (item.name !== undefined) agent.name = item.name
-    if (item.title !== undefined) agent.title = item.title
-    if (item.personality !== undefined) agent.personality = item.personality
-    if (item.superior !== undefined) agent.superior = AgentV2.ID.make(item.superior)
-    if (item.avatar !== undefined) agent.avatar = item.avatar
-    if (item.memory !== undefined) agent.memory = item.memory
-    if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
-    if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
-    if (item.needsScore !== undefined) agent.needsScore = item.needsScore
-    if (item.description !== undefined) agent.description = item.description
-    if (item.directory !== undefined) agent.directory = item.directory
-    // The standing work choices. Mapped onto the RECORD as well as read from the store by
-    // `SessionEffectiveConfig`: the store is what a headless turn resolves through, the record is
-    // what the config dialog renders — and a dialog that cannot show the current value is the same
-    // defect `directory` had.
-    if (item.permissionMode !== undefined) agent.permissionMode = item.permissionMode
-    if (item.strict !== undefined) agent.strict = item.strict
-    if (item.shortChat !== undefined) agent.shortChat = item.shortChat
-    const runtime = agent as unknown as Record<string, unknown>
-    if (item.operationMode !== undefined) runtime["operationMode"] = item.operationMode
-    if (item.goal !== undefined) runtime["goal"] = item.goal
-    if (item.contextBudget !== undefined) runtime["contextBudget"] = item.contextBudget
-    if (item.surgicalEdits !== undefined) runtime["surgicalEdits"] = item.surgicalEdits
-    if (item.introspection !== undefined) runtime["introspection"] = item.introspection
-    if (item.quality !== undefined) runtime["quality"] = item.quality
-    if (item.affective !== undefined) runtime["affective"] = item.affective
-    if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
-    if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
-    if (item.workerPrototype !== undefined) {
-      ;(agent as unknown as Record<string, unknown>)["workerPrototype"] = AgentV2.ID.make(item.workerPrototype)
-    }
-    if (item.maxWorkers !== undefined) (agent as unknown as Record<string, unknown>)["maxWorkers"] = item.maxWorkers
-    if (item.spawnDepth !== undefined) (agent as unknown as Record<string, unknown>)["spawnDepth"] = item.spawnDepth
-    if (item.runtimeHeartbeatMinutes !== undefined)
-      (agent as unknown as Record<string, unknown>)["runtimeHeartbeatMinutes"] = item.runtimeHeartbeatMinutes
-    if (item.mode !== undefined) agent.mode = item.mode
-    if (item.hidden !== undefined) agent.hidden = item.hidden
-    if (item.color !== undefined) agent.color = item.color
-    if (item.steps !== undefined) agent.steps = item.steps
-    if (item.permissions !== undefined) agent.permissions.push(...item.permissions)
-    // 🔴 The agent's own scratch is DERIVED from the id this row is being applied to, never inherited
-    // from whatever the row happens to store. `floor` above bakes a literal path, so a stored layer
-    // can carry a grant minted for a different officer — measured 2026-09-10, `geryon` carried
-    // `…/scratch/daedalus/*`, which both leaked one officer's private workspace to another and
-    // refused the owner its own. See `AgentPlugin.withOwnScratch` for why filtering alone is not
-    // enough, and why this runs AFTER the stored layer is pushed rather than beside it.
-    agent.permissions = AgentPlugin.withOwnScratch(agentID, agent.permissions)
+    applyFields(agent, agentID, item)
   })
 }

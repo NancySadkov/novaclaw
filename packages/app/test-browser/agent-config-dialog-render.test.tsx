@@ -215,22 +215,25 @@ const saveButton = () =>
     | undefined
 /**
  * Controls that could rewrite the CHARTER: a text field, a textarea, a picker. Counted, not returned
- * — see the note at `agentConfig.governingLocked` below on what handing a failing assertion an
+ * — see the note at `charterControls`'s first use below on what handing a failing assertion an
  * ELEMENT costs. A checkbox is deliberately NOT one of these.
  */
 const charterControls = () =>
   document.querySelectorAll('input[type="text"], input:not([type]), textarea, [data-component="select-v2"]').length
-/** Every control the dialog left ENABLED, as its KIND rather than as its node. */
-const enabledControlKinds = () =>
-  [
-    ...document.querySelectorAll(
-      'input:not([disabled]), textarea:not([disabled]), [data-component="select-v2"]:not([data-disabled])',
-    ),
-  ].map((el) => (el as HTMLInputElement).type ?? el.tagName.toLowerCase())
 const dialogText = () => document.body.textContent ?? ""
+/**
+ * How many times one i18n KEY was rendered, counted on the STRING rather than on a node.
+ *
+ * ⚠️ `\\b` is load-bearing: the translator echoes the key, so a plain `includes` would count
+ * `agentConfig.clone` inside `agentConfig.cloneNovaTitle` — a toast this dialog never renders, which
+ * would make "Clone is absent" pass for the wrong reason. After a word boundary, `clone` followed by
+ * `N` is not a match and `clone` followed by `.` (the bare label) is.
+ */
+const labelCount = (key: string) =>
+  (dialogText().match(new RegExp(`${key.replace(/\./g, "\\.")}\\b`, "g")) ?? []).length
 
 describe("AgentConfigDialog renders", () => {
-  test("VR-001 · the governing colleague is read-only before a write can be attempted", async () => {
+  test("VR-001 · the governing colleague is edited like any other, minus the three fixed things", async () => {
     const writes: unknown[] = []
     mount({
       agentID: "nova",
@@ -239,25 +242,34 @@ describe("AgentConfigDialog renders", () => {
     })
     await settle()
 
-    expect(dialogText()).toContain("agentConfig.governingLocked")
-    // 🔴 Re-pinned 2026-09-11 to the contract `e2a19b533` changed, and pinned by MEASUREMENT rather
-    // than by reading that commit. The guard this test used to run — "the governing colleague has NO
-    // enabled control" — encoded a rule the server no longer applies: `AgentV2.PROTECTED_TUNABLE`
-    // admits exactly two components for a protected agent, so Nova now legitimately has two
-    // checkboxes and a Save. What the test actually protects is NARROWER and still true: nobody can
-    // rewrite a CHARTER from this dialog, and opening it writes nothing.
-    //
-    // ⚠️ Both halves assert on NUMBERS and STRINGS. Handing `expect()` an ELEMENT here is what took
-    // 407 s and 11.38 GB to say one sentence — see `happydom.ts`.
-    expect(charterControls()).toBe(0)
-    expect(enabledControlKinds()).toEqual(["checkbox", "checkbox"])
-    expect(dialogText()).toContain("agentConfig.memoryRag")
-    expect(dialogText()).toContain("agentConfig.toolLabels")
-    expect(document.querySelector('[data-action="agent-clear-chat"]') !== null).toBe(true)
-    expect(dialogText()).toContain("agentConfig.clearChat")
-    expect(dialogText()).toContain("agentConfig.clone")
-    // The claim VR-001 was always about: a Save may EXIST now, but the dialog wrote nothing merely
-    // for being opened.
+    // 🔴 Re-pinned 2026-09-15 to the owner's ruling — *"ensure Nova's profile is as editable by user as
+    // any other officer, except user can't assign Nova a project folder, clone or retire Nova"*. The
+    // read-only projection screen (`data-agent-profile="governing-readonly"`) is GONE; the ordinary
+    // editable form is what renders, and the note that replaced the old lock sentence names the three
+    // exceptions rather than leaving the user to discover a refusal.
+    expect(dialogText()).toContain("agentConfig.governingNote")
+    // The form really is editable: text fields and pickers are mounted, not the old two checkboxes.
+    // ⚠️ A NUMBER, never the nodes — handing `expect()` an element here is what took 407 s and
+    // 11.38 GB to say one sentence; see `happydom.ts`.
+    expect(charterControls()).toBeGreaterThan(0)
+    // …and exactly three things are absent, because the store refuses them.
+    expect(labelCount("agentConfig.clone")).toBe(0)
+    expect(labelCount("agentConfig.retire")).toBe(0)
+    expect(dialogText()).toContain("agentConfig.folderGoverning")
+    // The lifecycle actions that still apply ARE present — pausing is not one of the three exceptions,
+    // and Save is now unconditional because the profile above it is editable.
+    // ⚠️ ONE object comparison rather than two `toBe(true)`s, so a failure NAMES the control that is
+    // missing instead of reporting a bare `false`. Asserting on booleans, never on the nodes.
+    expect({
+      pause: document.querySelector('[data-action="agent-pause"]') !== null,
+      // ⚠️ Found by its LABEL, not by a `data-action`: the ordinary footer's Save has never carried
+      // one (only the deleted governing screen did), and inventing an attribute to satisfy a test is
+      // the tail wagging the dog. `saveButton()` is the helper the rest of this file already uses.
+      save: saveButton() !== undefined,
+      clearChat: document.querySelector('[data-action="agent-clear-chat"]') !== null,
+    }).toEqual({ pause: true, save: true, clearChat: true })
+    // The claim VR-001 was always about: a Save may exist, but the dialog wrote nothing merely for
+    // being opened.
     expect(writes).toEqual([])
     expect(dialogText()).not.toContain("NOTHING was written")
   })
@@ -294,8 +306,16 @@ describe("AgentConfigDialog renders", () => {
     )
 
     const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
-    expect(mind?.textContent).toContain("Interactive")
-    expect(mind?.textContent).toContain("Unattended")
+    // 🔴 Re-pinned 2026-09-15: the Interactive/Unattended PAIR became ONE switch, so the two literal
+    // words are gone. The translator echoes keys, so what is asserted is that the Mind tab reaches for
+    // the switch and its state line — which is the claim this test is actually about, namely that the
+    // mode control lives HERE and not somewhere else.
+    expect(mind?.textContent).toContain("agentConfig.unattended")
+    expect(mind?.textContent).toContain("agentConfig.unattended.off")
+    // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
+    // element; see the note at `charterControls` above.
+    expect((mind?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
+    expect((mind?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
     expect(mind?.textContent).toContain("Goal")
     expect(mind?.textContent).toContain("Mood sampling")
 
@@ -315,7 +335,11 @@ describe("AgentConfigDialog renders", () => {
     expect(profile?.textContent).toContain("Export personality")
     expect(profile?.querySelector('[data-action="agent-personality-import"]')?.classList.contains("w-full")).toBe(true)
 
-    document.querySelector<HTMLInputElement>('input[type="radio"][value="interactive"]')!.click()
+    // 🔴 The mode control is a SWITCH now (owner ruling 2026-09-15), so this drives it the way a
+    // person does: one click turns Unattended ON. It used to click the "interactive" radio, which was
+    // the old default's resting state — a control that is already off proves nothing about being
+    // wired, so the assertion below reads "unattended" rather than "interactive".
+    document.querySelector<HTMLInputElement>('[data-section="model"] [data-component="switch"] input')!.click()
     const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
     goal.value = "Publish the reviewed manuscript."
     goal.dispatchEvent(new Event("input", { bubbles: true }))
@@ -334,7 +358,9 @@ describe("AgentConfigDialog renders", () => {
     expect(writes.at(-1)).toMatchObject({
       agents: {
         theron: {
-          operationMode: "interactive",
+          // One click on the Mind tab's switch, and it reaches the save payload as the unattended
+          // mode. This is the half that proves the control is WIRED rather than merely rendered.
+          operationMode: "unattended",
           goal: "Publish the reviewed manuscript.",
           contextBudget: false,
           surgicalEdits: true,
