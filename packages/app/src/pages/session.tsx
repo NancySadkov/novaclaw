@@ -57,7 +57,11 @@ import {
 } from "@/pages/session/composer"
 import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
 import { createSessionKeyboardController } from "@/pages/session/keyboard-controller"
-import { NativeTimeline, type NativeTimelineController } from "@/pages/session/timeline/native-timeline"
+import {
+  NativeTimeline,
+  type NativeTimelineController,
+  type NativeTimelineViewport,
+} from "@/pages/session/timeline/native-timeline"
 import { unpinSessionDevice } from "@/pages/session/timeline/device-repair"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { createSessionRevertController } from "@/pages/session/revert-controller"
@@ -251,6 +255,26 @@ export default function Page() {
   const activeFileTab = tabState.activeFileTab
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const timeline = createTimelineModel({ sessionID: () => params.id, revertMessageID })
+  const createTimelineViewport = (key: string): NativeTimelineViewport => {
+    const state = layout.view(key)
+    return {
+      ready: layout.ready,
+      read: () => {
+        const position = state.scroll("timeline")
+        return position
+          ? { y: position.y, ...(position.messageAnchor ? { anchor: position.messageAnchor } : {}) }
+          : undefined
+      },
+      write: (position) =>
+        position
+          ? state.setScroll("timeline", {
+              x: 0,
+              y: position.y,
+              ...(position.anchor ? { messageAnchor: position.anchor } : {}),
+            })
+          : state.clearScroll("timeline"),
+    }
+  }
   const messagesReady = timeline.ready
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
@@ -1171,6 +1195,7 @@ export default function Page() {
                       >
                         <NativeTimeline
                           sessionID={_id}
+                          viewport={createTimelineViewport(sessionKey())}
                           executionOpen={executionOpen()}
                           executionAttempt={executionAttempt()}
                           setController={(controller) => (timelineController = controller)}

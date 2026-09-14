@@ -25,6 +25,12 @@ export type NativeTimelineController = {
   scrollToBottom: () => void
 }
 
+export type NativeTimelineViewport = {
+  ready: () => boolean
+  read: () => { y: number; anchor?: { id: string; offset: number } } | undefined
+  write: (position: { y: number; anchor?: { id: string; offset: number } } | undefined) => void
+}
+
 // Level-aware reasoning fold (UIX residue b / C4, uix.md §6 teach-don't-gatekeep): a non-expert
 // sees the answer with reasoning folded; Advanced watches it think then it tidies away; a
 // Developer keeps the full trace open.
@@ -70,8 +76,12 @@ export function NativeTimeline(props: {
   directory?: string
   /** Effective officer ceiling used by command/wait progress labels. */
   maxToolTimeoutMs?: number
+  viewport?: NativeTimelineViewport
   setController?: (controller: NativeTimelineController | undefined) => void
 }) {
+  // This component is keyed by chat. Capture its viewport owner once so route parameters changing
+  // before teardown cannot redirect the departing chat's final save into the arriving chat.
+  const viewport = props.viewport
   const serverSync = useServerSync()
   const server = useServer()
   const sessionDirectory = () => props.directory
@@ -202,7 +212,13 @@ export function NativeTimeline(props: {
   // Chat auto-scroll: keep the newest content in view while the user is at the bottom;
   // unpin once they scroll up. Reactive so the scroll-to-bottom affordance can show when
   // unpinned. (F-b's virtualizer.scrollToEnd later supersedes the stick mechanism.)
-  const [pinned, setPinned] = createSignal(true)
+  // A missing saved position means the natural chat edge: the latest message. While the persisted
+  // layout is still hydrating, start unpinned so a premature mount cannot paint the bottom and then
+  // jump back to the reader's saved place.
+  const initialPosition = viewport?.ready() ? viewport.read() : undefined
+  const [pinned, setPinned] = createSignal(viewport?.ready() === false ? false : !initialPosition)
+  let viewportInitialized = false
+  let restoreFrame: number | undefined
   let pinController: ReturnType<typeof createBottomPinController> | undefined
   const stick = () => {
     pinController?.stick()
@@ -211,19 +227,82 @@ export function NativeTimeline(props: {
     if (pinController) pinController.scrollToBottom()
     else setPinned(true)
   }
-  // Solid reuses this component when one chat route changes to another, so its signal is not a
-  // per-chat value unless we make it one. A reader who scrolled up in chat A must not make chat B's
-  // asynchronous history load start unpinned and strand it at B's first message.
-  let pinnedSession: string | undefined
+
+  const captureAnchor = (root: HTMLElement) => {
+    const box = root.getBoundingClientRect()
+    const rows = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
+    const row = rows.findLast((item) => item.getBoundingClientRect().top <= box.top) ?? rows[0]
+    if (!row?.dataset.messageId) return
+    return { id: row.dataset.messageId, offset: box.top - row.getBoundingClientRect().top }
+  }
+
+  const saveViewport = (position = { y: scroller?.scrollTop ?? 0, pinned: pinned() }) => {
+    if (!viewportInitialized || !viewport?.ready()) return
+    viewport.write(
+      position.pinned
+        ? undefined
+        : {
+            y: position.y,
+            ...(scroller ? { anchor: captureAnchor(scroller) } : {}),
+          },
+    )
+  }
+
+  const applySavedViewport = (saved: NonNullable<ReturnType<NativeTimelineViewport["read"]>>) => {
+    const root = scroller
+    if (!root) return
+    const row = saved.anchor
+      ? [...root.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+          (item) => item.dataset.messageId === saved.anchor?.id,
+        )
+      : undefined
+    if (!row || !saved.anchor) {
+      root.scrollTop = saved.y
+      return
+    }
+    const box = root.getBoundingClientRect()
+    const rect = row.getBoundingClientRect()
+    root.scrollTop = Math.max(0, root.scrollTop + rect.top - box.top + saved.anchor.offset)
+  }
+
+  const restoreViewport = () => {
+    if (viewportInitialized || !pinController) return
+    if (!viewport) {
+      viewportInitialized = true
+      scrollToBottom()
+      return
+    }
+    if (!viewport.ready()) return
+    viewportInitialized = true
+    const saved = viewport.read()
+    if (!saved) {
+      scrollToBottom()
+      return
+    }
+
+    setPinned(false)
+    applySavedViewport(saved)
+    // Markdown and custom message cards can finish their first layout after onMount. Re-apply once
+    // after that paint, but only until the first explicit user input changes the saved position.
+    restoreFrame = requestAnimationFrame(() => {
+      restoreFrame = undefined
+      if (!pinned()) applySavedViewport(saved)
+    })
+  }
+
+  const cancelViewportRestore = () => {
+    if (restoreFrame === undefined) return
+    cancelAnimationFrame(restoreFrame)
+    restoreFrame = undefined
+  }
+
   createEffect(() => {
-    const sid = props.sessionID
-    if (sid === pinnedSession) return
-    pinnedSession = sid
-    scrollToBottom()
-    queueMicrotask(scrollToBottom)
+    viewport?.ready()
+    restoreViewport()
   })
 
   const navigateUser = (offset: number) => {
+    cancelViewportRestore()
     const root = scroller
     if (!root) return
     const rows = [...root.querySelectorAll<HTMLElement>("[data-slot='native-user']:not([data-queued])")]
@@ -250,6 +329,7 @@ export function NativeTimeline(props: {
   }
 
   const scrollToUser = (messageID: string | undefined) => {
+    cancelViewportRestore()
     if (!messageID) {
       scrollToBottom()
       return
@@ -306,14 +386,21 @@ export function NativeTimeline(props: {
     props.setController?.({ navigateUser, scrollToUser, scrollToBottom })
     onCleanup(() => props.setController?.(undefined))
     if (!content || !scroller) return
-    pinController = createBottomPinController({ scroller, content, pinned, setPinned })
+    pinController = createBottomPinController({
+      scroller,
+      content,
+      pinned,
+      setPinned,
+      onPositionChange: saveViewport,
+      onUserIntent: cancelViewportRestore,
+    })
+    restoreViewport()
     onCleanup(() => {
+      saveViewport()
+      if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
       pinController?.dispose()
       pinController = undefined
     })
-    // Re-entering Chat mounts an already-populated list: the length effect may have run before the
-    // refs existed, so establish the pin here rather than waiting for content to change.
-    stick()
   })
 
   return (

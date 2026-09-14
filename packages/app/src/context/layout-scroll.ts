@@ -4,6 +4,7 @@ export type SessionScroll = {
   x: number
   y: number
   anchor?: { file: string; offset: number }
+  messageAnchor?: { id: string; offset: number }
 }
 
 type ScrollMap = Record<string, SessionScroll>
@@ -27,13 +28,22 @@ export function createScrollPersistence(opts: Options) {
     for (const key of Object.keys(input)) {
       const pos = input[key]
       if (!pos) continue
-      out[key] = { x: pos.x, y: pos.y, ...(pos.anchor ? { anchor: { ...pos.anchor } } : {}) }
+      out[key] = {
+        x: pos.x,
+        y: pos.y,
+        ...(pos.anchor ? { anchor: { ...pos.anchor } } : {}),
+        ...(pos.messageAnchor ? { messageAnchor: { ...pos.messageAnchor } } : {}),
+      }
     }
 
     return out
   }
 
   function seed(sessionKey: string) {
+    // A dirty cache is already newer than its persisted snapshot. In particular, an intentionally
+    // empty map means a position was cleared; reseeding it here would resurrect the stale value
+    // before the debounced flush can commit the deletion.
+    if (dirty.has(sessionKey)) return
     const next = clone(opts.getSnapshot(sessionKey))
     const current = cache[sessionKey]
     if (!current) {
@@ -48,6 +58,7 @@ export function createScrollPersistence(opts: Options) {
 
   function scroll(sessionKey: string, tab: string) {
     seed(sessionKey)
+    if (dirty.has(sessionKey)) return cache[sessionKey]?.[tab]
     return cache[sessionKey]?.[tab] ?? opts.getSnapshot(sessionKey)?.[tab]
   }
 
@@ -68,11 +79,32 @@ export function createScrollPersistence(opts: Options) {
       prev?.x === pos.x &&
       prev?.y === pos.y &&
       prev?.anchor?.file === pos.anchor?.file &&
-      prev?.anchor?.offset === pos.anchor?.offset
+      prev?.anchor?.offset === pos.anchor?.offset &&
+      prev?.messageAnchor?.id === pos.messageAnchor?.id &&
+      prev?.messageAnchor?.offset === pos.messageAnchor?.offset
     )
       return
 
-    setCache(sessionKey, tab, { x: pos.x, y: pos.y, ...(pos.anchor ? { anchor: { ...pos.anchor } } : {}) })
+    setCache(sessionKey, tab, {
+      x: pos.x,
+      y: pos.y,
+      ...(pos.anchor ? { anchor: { ...pos.anchor } } : {}),
+      ...(pos.messageAnchor ? { messageAnchor: { ...pos.messageAnchor } } : {}),
+    })
+    dirty.add(sessionKey)
+    schedule(sessionKey)
+  }
+
+  function clearScroll(sessionKey: string, tab: string) {
+    seed(sessionKey)
+    if (!cache[sessionKey]?.[tab] && !opts.getSnapshot(sessionKey)?.[tab]) return
+
+    setCache(
+      produce((draft) => {
+        const scroll = draft[sessionKey]
+        if (scroll) delete scroll[tab]
+      }),
+    )
     dirty.add(sessionKey)
     schedule(sessionKey)
   }
@@ -122,6 +154,7 @@ export function createScrollPersistence(opts: Options) {
 
   return {
     cache,
+    clearScroll,
     drop,
     flush,
     flushAll,

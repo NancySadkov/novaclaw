@@ -84,4 +84,32 @@ describe("createScrollPersistence", () => {
     })
     scroll.dispose()
   })
+
+  test("clears a saved position instead of resurrecting it from the persisted snapshot", () => {
+    vi.useFakeTimers()
+    try {
+      const snapshot = {
+        session: {
+          timeline: { x: 0, y: 420 },
+          review: { x: 0, y: 80 },
+        },
+      } as Record<string, Record<string, { x: number; y: number }>>
+      const scroll = createScrollPersistence({
+        debounceMs: 10,
+        getSnapshot: (sessionKey) => snapshot[sessionKey],
+        onFlush: (sessionKey, next) => (snapshot[sessionKey] = next),
+      })
+
+      expect(scroll.scroll("session", "timeline")).toEqual({ x: 0, y: 420 })
+      scroll.clearScroll("session", "timeline")
+      expect(scroll.scroll("session", "timeline")).toBeUndefined()
+      vi.advanceTimersByTime(10)
+
+      expect(snapshot.session.timeline).toBeUndefined()
+      expect(snapshot.session.review).toEqual({ x: 0, y: 80 })
+      scroll.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

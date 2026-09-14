@@ -396,7 +396,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return
         }
 
-        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...prev, ...next }))
+        // The cache is a complete clone of this session's scroll map, not a patch. Replacing it is
+        // what lets a view clear a position when it returns to its natural edge (the transcript's
+        // latest message); merging would resurrect the deleted key from the persisted snapshot.
+        setStore("sessionView", sessionKey, "scroll", next)
         prune(keep)
       },
     })
@@ -783,6 +786,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           setScroll(tab: string, pos: SessionScroll) {
             scroll.setScroll(key(), tab, pos)
+          },
+          clearScroll(tab: string) {
+            scroll.clearScroll(key(), tab)
           },
           todoCollapsed: {
             get: () => s().todoCollapsed ?? false,

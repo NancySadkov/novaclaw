@@ -51,6 +51,8 @@ export function createBottomPinController(input: {
   content: HTMLElement
   pinned: () => boolean
   setPinned: (value: boolean) => void
+  onPositionChange?: (position: { y: number; pinned: boolean }) => void
+  onUserIntent?: () => void
 }) {
   let touchY: number | undefined
   let layoutFrame: number | undefined
@@ -61,34 +63,45 @@ export function createBottomPinController(input: {
   const scrollToBottom = () => {
     input.setPinned(true)
     stick()
+    input.onPositionChange?.({ y: input.scroller.scrollTop, pinned: true })
   }
   const onScroll = () => {
     const next = nextPinned(input.pinned(), input.scroller)
     input.setPinned(next)
     if (next) stick()
+    input.onPositionChange?.({ y: input.scroller.scrollTop, pinned: next })
   }
   const onWheel = (event: WheelEvent) => {
-    if (event.deltaY < 0) input.setPinned(false)
+    if (event.deltaY >= 0) return
+    input.onUserIntent?.()
+    input.setPinned(false)
   }
   const onTouchStart = (event: TouchEvent) => {
     touchY = event.touches[0]?.clientY
   }
   const onTouchMove = (event: TouchEvent) => {
     const y = event.touches[0]?.clientY
-    if (y !== undefined && touchY !== undefined && y > touchY) input.setPinned(false)
+    if (y !== undefined && touchY !== undefined && y > touchY) {
+      input.onUserIntent?.()
+      input.setPinned(false)
+    }
     touchY = y
   }
   const onTouchEnd = () => {
     touchY = undefined
   }
   const onKeyDown = (event: KeyboardEvent) => {
-    if (keyboardUnpins(event.key)) input.setPinned(false)
+    if (!keyboardUnpins(event.key)) return
+    input.onUserIntent?.()
+    input.setPinned(false)
   }
   // Pointer events on the scrollbar target the scroll container itself; content clicks target a
   // descendant. This gives native scrollbar dragging an explicit intent seam without treating a
   // later browser-generated scroll event as proof that the user moved it.
   const onPointerDown = (event: PointerEvent) => {
-    if (event.target === input.scroller) input.setPinned(false)
+    if (event.target !== input.scroller) return
+    input.onUserIntent?.()
+    input.setPinned(false)
   }
 
   input.scroller.addEventListener("scroll", onScroll)

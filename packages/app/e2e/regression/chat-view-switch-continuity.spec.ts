@@ -6,7 +6,44 @@ import { expectSessionTitle } from "../utils/waits"
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
-test("a session-tab switch preserves the long-chat viewport and prompt caret", async ({ page }) => {
+test("chat and Home switches preserve a reader's place in a long transcript", async ({ page }) => {
+  const messageLoads: string[] = []
+  await mockNovaClawServer(page, {
+    sessions: fixture.sessions,
+    provider: fixture.provider,
+    directory: fixture.directory,
+    project: fixture.project,
+    pageMessages: nativePageMessages,
+    messageDelay: 500,
+    onMessages: ({ sessionID, phase }) => messageLoads.push(`${sessionID}:${phase}`),
+  })
+  await configureTabs(page)
+
+  await page.goto(sessionHref(fixture.sourceID))
+  await expectSessionTitle(page, fixture.expected.sourceTitle)
+  const review = page.getByRole("dialog", { name: "Review and files" })
+  await review.getByRole("button", { name: "Close" }).click()
+  const timeline = page.locator('[data-component="native-timeline"]')
+  await expect(timeline).toBeVisible()
+  await expect(page.getByText(/Message 59: long session history/)).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThanOrEqual(2)
+
+  const tabPosition = await scrollTimelineToMiddle(page, 0.42)
+  await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible()
+  await switchSession(page, fixture.targetID)
+  const sourceLoadsBeforeReturn = loadCount(messageLoads, fixture.sourceID, "end")
+  await switchSession(page, fixture.sourceID)
+  await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThan(sourceLoadsBeforeReturn)
+  await expectTimelinePosition(page, tabPosition)
+
+  const homePosition = await scrollTimelineToMiddle(page, 0.61)
+  await page.getByRole("button", { name: "Home" }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await switchSession(page, fixture.sourceID)
+  await expectTimelinePosition(page, homePosition)
+})
+
+test("a session-tab switch preserves the bottom pin and prompt caret", async ({ page }) => {
   const messageLoads: string[] = []
   await mockNovaClawServer(page, {
     sessions: fixture.sessions,
@@ -39,9 +76,7 @@ test("a session-tab switch preserves the long-chat viewport and prompt caret", a
   const sourceLoadsBeforeReturn = loadCount(messageLoads, fixture.sourceID, "end")
   await startTimelineSampling(page)
   await switchSession(page, fixture.sourceID)
-  await expect
-    .poll(() => loadCount(messageLoads, fixture.sourceID, "end"))
-    .toBeGreaterThan(sourceLoadsBeforeReturn)
+  await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThan(sourceLoadsBeforeReturn)
   await expect.poll(() => targetTallFrameCount(page, fixture.sourceID)).toBeGreaterThanOrEqual(180)
   const frames = await readTimelineSamples(page)
   const tall = frames.filter(
@@ -63,6 +98,7 @@ async function configureTabs(page: Page) {
   const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"}`
   await page.addInitScript(
     ({ directory, dirBase64, server, sessionIDs }) => {
+      localStorage.setItem("novaclaw.help.seen", "1")
       localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
       localStorage.setItem(
         "novaclaw.global.dat:server",
@@ -117,7 +153,12 @@ function nativePageMessages(sessionID: string, limit: number, before?: string) {
     sessionID === fixture.sourceID
       ? longMessages
       : [{ id: "msg_switch_source", type: "user", text: "Source chat", time: { created: 1_700_000_000_000 } }]
-  const end = before ? Math.max(0, messages.findIndex((message) => message.id === before)) : messages.length
+  const end = before
+    ? Math.max(
+        0,
+        messages.findIndex((message) => message.id === before),
+      )
+    : messages.length
   const start = Math.max(0, end - limit)
   return { items: messages.slice(start, end), cursor: start > 0 ? messages[start]!.id : undefined }
 }
@@ -143,6 +184,41 @@ function scrollTimelineToBottom(page: Page) {
   return page.locator('[data-component="native-timeline"]').evaluate((timeline) => {
     timeline.scrollTop = timeline.scrollHeight
   })
+}
+
+function scrollTimelineToMiddle(page: Page, ratio: number) {
+  return page.locator('[data-component="native-timeline"]').evaluate((timeline, ratio) => {
+    timeline.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -400 }))
+    timeline.scrollTop = Math.round((timeline.scrollHeight - timeline.clientHeight) * ratio)
+    const box = timeline.getBoundingClientRect()
+    const rows = [...timeline.querySelectorAll<HTMLElement>("[data-message-id]")]
+    const row = rows.findLast((item) => item.getBoundingClientRect().top <= box.top) ?? rows[0]
+    if (!row?.dataset.messageId) throw new Error("timeline has no message anchor")
+    return { messageID: row.dataset.messageId, offset: box.top - row.getBoundingClientRect().top }
+  }, ratio)
+}
+
+async function expectTimelinePosition(page: Page, expected: { messageID: string; offset: number }) {
+  await expect
+    .poll(() =>
+      page.locator('[data-component="native-timeline"]').evaluate((timeline) => {
+        const box = timeline.getBoundingClientRect()
+        const rows = [...timeline.querySelectorAll<HTMLElement>("[data-message-id]")]
+        return (rows.findLast((item) => item.getBoundingClientRect().top <= box.top) ?? rows[0])?.dataset.messageId
+      }),
+    )
+    .toBe(expected.messageID)
+  await expect
+    .poll(() =>
+      page.locator('[data-component="native-timeline"]').evaluate((timeline, expected) => {
+        const row = [...timeline.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+          (item) => item.dataset.messageId === expected.messageID,
+        )
+        if (!row) return Number.POSITIVE_INFINITY
+        return Math.abs(timeline.getBoundingClientRect().top - row.getBoundingClientRect().top - expected.offset)
+      }, expected),
+    )
+    .toBeLessThanOrEqual(2)
 }
 
 type TimelineSample = {
