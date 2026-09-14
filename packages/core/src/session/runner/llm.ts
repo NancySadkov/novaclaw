@@ -4022,7 +4022,14 @@ export const layer = Layer.effect(
             break
           }
           step = result.step + 1
-          promotion = "steer"
+          // A queued user message is work for the NEXT atomic boundary. `runTurn` does not return
+          // until reasoning has ended and every locally executed tool call has settled, so this is
+          // the first safe place to preempt an autonomous tool/continuation chain. Waiting for
+          // `needsContinuation` to become false strands the queue behind a goal-oriented officer
+          // that can keep producing tool turns indefinitely (measured live on ses_geryon).
+          const queuedAtBoundary = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+          promotion = queuedAtBoundary ? "queue" : "steer"
+          if (queuedAtBoundary) needsContinuation = true
           // The failed route's durable recovery row was written before `runTurn` returned. Resolve
           // the next turn immediately: while that route is inside its backoff window, model
           // resolution chooses a healthy substitute with matching declared capabilities.
@@ -4670,7 +4677,15 @@ export const layer = Layer.effect(
                     ),
                   )
             }
-            if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+            // Close the small race after `queuedAtBoundary`: post-turn harness work can take long
+            // enough for a user message to arrive. The same next-turn rule applies here too.
+            const queuedAfterChecks = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+            if (queuedAfterChecks) {
+              needsContinuation = true
+              promotion = "queue"
+            } else if (!needsContinuation) {
+              needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+            }
           }
         }
         // F2: the truncation halt ends the RUN, not just the inner step loop — otherwise the
@@ -4707,8 +4722,8 @@ export const layer = Layer.effect(
               }).pipe(Effect.as([])),
             ),
           )
-          const officerGoal =
-            latest?.agent === undefined ? undefined : (yield* agents.get(AgentV2.ID.make(latest.agent)))?.goal
+          const officer = latest?.agent === undefined ? undefined : yield* agents.get(AgentV2.ID.make(latest.agent))
+          const officerGoal = officer?.goal
           const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
             acceptedExit: acceptedGoalExit,
             goal:
@@ -4723,7 +4738,18 @@ export const layer = Layer.effect(
             }),
           })
           if (decision.kind === "sleep") {
-            const next = Date.now() + decision.milliseconds
+            const heartbeatMinutes = officer?.runtimeHeartbeatMinutes ?? OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES
+            const ownedRuntime = yield* OwnedRuntimeContext.observe({
+              db,
+              sessionID: input.sessionID,
+              heartbeatMinutes,
+            })
+            const sleepMilliseconds = OwnedRuntimeContext.sleepMilliseconds({
+              ordinaryMilliseconds: decision.milliseconds,
+              heartbeatMinutes,
+              observation: ownedRuntime,
+            })
+            const next = Date.now() + sleepMilliseconds
             yield* events
               .publish(SessionStatusEvent.Status, {
                 sessionID: input.sessionID,
@@ -4737,12 +4763,13 @@ export const layer = Layer.effect(
               .pipe(Effect.ignore)
             yield* Log.event("session.drive.sleep", {
               "session.id": input.sessionID,
-              milliseconds: decision.milliseconds,
+              milliseconds: sleepMilliseconds,
             })
             // No provider request or scheduler slot is held here. Stop interrupts this wait. A new
             // message wakes it early (the event is instant; the bounded queue probe closes the tiny
-            // check/subscribe race), while an external change with no event is retried at ten minutes.
-            let remaining = decision.milliseconds
+            // check/subscribe race). An external change with no event is retried at the ordinary
+            // ten-minute recheck, tightened to the configured live-work heartbeat while work exists.
+            let remaining = sleepMilliseconds
             let wokeForInput = false
             while (remaining > 0 && !wokeForInput) {
               const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
