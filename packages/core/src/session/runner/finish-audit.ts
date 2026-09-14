@@ -88,3 +88,13 @@ export const verdict = (reply: string): Verdict => {
   const parsed = Introspection.verdictOf(reply)
   return parsed === "yes" || parsed === "no" ? parsed : "unknown"
 }
+
+/**
+ * WHY a reply could not be read as a verdict: "empty" or "unparsed".
+ *
+ * Logged, never inferred. The audit's own log line records only `yes: false, no: false`, which cannot
+ * distinguish a blank reply from a considered one. On 2026-09-14 that ambiguity hid a live defect for
+ * an hour: four exit requests were left unjudged, nothing was published, and the officers were told
+ * nothing at all -- Geryon sat saying "I'm idle, waiting on the reviewer" for ten minutes.
+ */
+export const reason = (reply: string): string => Introspection.verdictOf(reply)

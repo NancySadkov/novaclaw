@@ -2139,6 +2139,7 @@ export const EVENTS = {
       "session.id": "correlate",
       "session.finish.audit.yes": "flag",
       "session.finish.audit.no": "flag",
+      "session.finish.audit.unknown": "flag",
     },
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
@@ -2148,6 +2149,13 @@ export const EVENTS = {
     message: "exit request completion audit failed",
     attributes: { "session.id": "correlate", "session.cause": "fault" },
     content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  "session.finish.audit.unusable": {
+    level: "warn",
+    message: "exit request completion audit could not read a verdict",
+    attributes: { "session.id": "correlate", "session.finish.audit.reason": "id" },
+    content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
   "session.finish.set.branch": {

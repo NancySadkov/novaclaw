@@ -781,18 +781,43 @@ export const layer = Layer.effect(
     ) {
       const evidence = FinishAudit.excerpt(context, request)
       if (evidence === undefined) return "unknown" as const
-      const reply = yield* ShortAnswer.generateOnSessionLane({
-        model,
-        guard,
-        llm,
-        system: FinishAudit.SYSTEM,
-        text: FinishAudit.prompt(evidence),
-        reasoningBudget: 128,
-        maxTokens: 512,
-        scheduler,
-        slot,
+      const judge = (reasoningBudget: number) =>
+        ShortAnswer.generateOnSessionLane({
+          model,
+          guard,
+          llm,
+          system: FinishAudit.SYSTEM,
+          text: FinishAudit.prompt(evidence),
+          reasoningBudget,
+          maxTokens: 512,
+          scheduler,
+          slot,
+        })
+      const reply = yield* judge(128)
+      const verdict = FinishAudit.verdict(reply)
+      if (verdict !== "unknown") return verdict
+      // An unusable reply is NOT a "no", and it must not be silent either. Measured 2026-09-14: four
+      // exit requests (three from Geryon, one from Nova) were logged with yes:false AND no:false, so
+      // no ExitAccepted was published, no steer was sent, and each officer was left waiting on a
+      // reviewer that never answered.
+      //
+      // The cause is a reply that is empty or unparsed: a thinking model can spend the whole 128-token
+      // budget inside its <think> block and then emit nothing in either channel, which short-answer.ts
+      // documents in its own comments. ONE retry with thinking structurally disabled is bounded, and it
+      // cannot race ReasoningBudget's recovery -- that recovery has already finished by this point,
+      // which is why this is a second phase rather than a second loop.
+      yield* Log.event("session.finish.audit.unusable", {
+        "session.id": sessionID,
+        "session.finish.audit.reason": FinishAudit.reason(reply),
       })
-      return FinishAudit.verdict(reply)
+      const retry = yield* judge(0)
+      const retried = FinishAudit.verdict(retry)
+      if (retried !== "unknown") return retried
+      yield* Log.event("session.finish.audit.unusable", {
+        "session.id": sessionID,
+        "session.finish.audit.reason": `retry:${FinishAudit.reason(retry)}`,
+      })
+      return "unknown" as const
     })
 
     const introspect = Effect.fn("SessionRunner.introspect")(function* (
@@ -4162,6 +4187,9 @@ export const layer = Layer.effect(
               "session.id": input.sessionID,
               "session.finish.audit.yes": audit === "yes",
               "session.finish.audit.no": audit === "no",
+              // Without this third flag an unusable verdict reads as BOTH false, which is how the
+              // defect above stayed invisible: "not yes and not no" looked like a state, not a failure.
+              "session.finish.audit.unknown": audit === "unknown",
             })
             if (audit === "yes") {
               yield* events.publish(SessionEvent.ExitAccepted, {
