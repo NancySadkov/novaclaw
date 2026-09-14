@@ -241,10 +241,10 @@ describe("SessionRunnerLLM — steering", () => {
     expect(userTexts(harness.requests[2]!)).toEqual(["Start working", "Queue first", "Queue second"])
   })
 
-  test("promotes steers before the next queued input", async () => {
-    // The priority rule, and it needs both deliveries live at once: with two items already queued, a
-    // steer arriving during the continuation must jump ahead of the remaining queued item. Steers are
-    // course corrections to what is happening now; queued items are work to do next.
+  test("coalesces steers at the next queued user boundary without delaying the user", async () => {
+    // Both deliveries are live at once: the remaining queued user message must enter the first safe
+    // turn after the current one, while steers accepted during that turn coalesce into the same next
+    // context. An autonomous steer must not buy another model turn ahead of the user.
     //
     // Two gates rather than one, swapped between turns, because the claim has to inject at TWO distinct
     // moments — during turn 1 and again during turn 2.
@@ -294,30 +294,25 @@ describe("SessionRunnerLLM — steering", () => {
         secondGate.open()
         yield* Fiber.join(first)
       }),
-      "claim — steers jump ahead of queued input",
+      "claim — steers coalesce without delaying queued user input",
     )
 
-    expect(harness.requests).toHaveLength(4)
+    expect(harness.requests).toHaveLength(3)
     expect(userTexts(harness.requests[0]!)).toEqual(["Start working"])
     expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "Queue first"])
-    // The steers land BEFORE "Queue second" — that is the claim.
+    // All newly admitted input lands at the next atomic boundary; Queue second stays FIFO-first.
     expect(userTexts(harness.requests[2]!)).toEqual([
       "Start working",
       "Queue first",
+      "Queue second",
       "Steer before next queued input",
       "Also steer before next queued input",
     ])
-    expect(userTexts(harness.requests[3]!)?.at(-1), "the queued item follows the steers").toBe("Queue second")
   })
 
-  test("promotes queued input after continuation ends", async () => {
-    // A queued item must wait for the WHOLE exchange, not just the current request. Turn 1 calls a
-    // tool, so turn 2 is its continuation — and the queued item must not cut in there. It gets turn 3.
-    //
-    // ⭐ That middle turn is why this claim exists and why its assertion looks redundant: requests 0
-    // and 1 carry the SAME user text. A runner that promoted on "the request finished" instead of "the
-    // exchange finished" would put the queued item into turn 2, and every other queue claim would still
-    // pass.
+  test("promotes queued input at the next settled reasoning or tool boundary", async () => {
+    // Turn 1 calls a tool. The queue cannot interrupt that real-world action halfway through, but as
+    // soon as it settles the user's message belongs in turn 2, ahead of autonomous continuation.
     const streamStarted = makeLatch()
     const streamGate = makeLatch()
     const harness = makeRunnerHarness({
@@ -328,8 +323,7 @@ describe("SessionRunnerLLM — steering", () => {
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],
-        replyTurn("t2", "Continued"),
-        replyTurn("t3", "Queued work"),
+        replyTurn("t2", "Queued work"),
       ],
     })
     harness.controls.streamStarted = streamStarted
@@ -349,21 +343,21 @@ describe("SessionRunnerLLM — steering", () => {
         yield* Effect.promise(() => streamStarted.promise)
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
-          prompt: Prompt.make({ text: "Wait until continuation ends" }),
+          prompt: Prompt.make({ text: "Review the workers before continuing" }),
           delivery: "queue",
         })
         streamGate.open()
         yield* Fiber.join(first)
       }),
-      "claim — queued input waits for the continuation",
+      "claim — queued user input preempts autonomous continuation at the safe boundary",
     )
 
-    expect(harness.requests).toHaveLength(3)
+    expect(harness.requests).toHaveLength(2)
     expect(userTexts(harness.requests[0]!)).toEqual(["Start working"])
-    expect(userTexts(harness.requests[1]!), "the continuation must NOT carry the queued item").toEqual([
+    expect(userTexts(harness.requests[1]!), "the first safe turn must carry the queued user message").toEqual([
       "Start working",
+      "Review the workers before continuing",
     ])
-    expect(userTexts(harness.requests[2]!)).toEqual(["Start working", "Wait until continuation ends"])
   })
 
   test("promotes the first queued input when woken while idle", async () => {

@@ -102,7 +102,7 @@ export const make = (value: Observation) =>
 
 const terminal = new Set(["settled", "failed", "interrupted"])
 
-export const load = Effect.fn("OwnedRuntimeContext.load")(function* (input: {
+export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input: {
   readonly db: Database.Interface["db"]
   readonly sessionID: SessionSchema.ID
   readonly heartbeatMinutes: number
@@ -165,11 +165,31 @@ export const load = Effect.fn("OwnedRuntimeContext.load")(function* (input: {
     .map((job): Shell => ({ ...job }))
     .sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
 
-  if (workers.length === 0 && shells.length === 0) return SystemContext.empty
-  return make({
+  return {
     observedAt: input.now ?? Date.now(),
     heartbeatMinutes: input.heartbeatMinutes,
     workers,
     shells,
-  })
+  } satisfies Observation
 })
+
+export const load = Effect.fn("OwnedRuntimeContext.load")(function* (input: {
+  readonly db: Database.Interface["db"]
+  readonly sessionID: SessionSchema.ID
+  readonly heartbeatMinutes: number
+  readonly now?: number
+}) {
+  const observation = yield* observe(input)
+  if (observation.workers.length === 0 && observation.shells.length === 0) return SystemContext.empty
+  return make(observation)
+})
+
+/** Live ownership may tighten a goal-oriented officer's ordinary recheck sleep, never lengthen it. */
+export const sleepMilliseconds = (input: {
+  readonly ordinaryMilliseconds: number
+  readonly heartbeatMinutes: number
+  readonly observation: Observation
+}) =>
+  input.observation.workers.length === 0 && input.observation.shells.length === 0
+    ? input.ordinaryMilliseconds
+    : Math.min(input.ordinaryMilliseconds, input.heartbeatMinutes * 60_000)

@@ -613,6 +613,14 @@ export const make = (dependencies: Dependencies) => {
           buf.push(action)
           if (buf.length > SessionStrict.MATERIALIZED_ACTION_CAP) buf.shift()
         })
+      // Strict owns its own multi-action loop, so the ordinary runner cannot see its action
+      // boundaries. A queued user message must stop that loop only AFTER the current command is
+      // complete, leaving the engine's checkpoint resumable and allowing the outer queue loop to
+      // promote the message immediately. This is the Strict sibling of llm.ts's turn boundary.
+      const yieldToQueuedUser = Effect.gen(function* () {
+        if (yield* SessionInput.hasPending(db, sessionID, "queue")) stopRequested = true
+      })
+      const actionBoundary = (action: Effect.Effect<void>) => action.pipe(Effect.andThen(yieldToQueuedUser))
       // Single-attempt runs publish actions live and used to DISCARD them, which is why the run
       // summary had no file list on the default path (see `SessionStrict.filesWritten`). Keeping the
       // names — not the actions — costs nothing and is what the summary needs.
@@ -656,7 +664,9 @@ export const make = (dependencies: Dependencies) => {
           ...(resumeState === undefined ? {} : { resume: resumeState }),
           onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
           aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
-          onAction: single ? publishAction : recordAction(i),
+          onAction: single
+            ? (action) => actionBoundary(publishAction(action))
+            : (action) => actionBoundary(recordAction(i)(action)),
           checkpoint: single
             ? (state) => {
                 const now = Date.now()

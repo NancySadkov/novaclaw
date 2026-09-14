@@ -63,12 +63,12 @@ const CLAIMS: readonly string[] = [
   "settles repeated provider-local tool call IDs against their owning assistant messages",
   "joins concurrent resume calls into one active provider run",
   "steers an active provider turn with newly recorded prompts",
-  "promotes queued input after continuation ends",
+  "promotes queued input at the next settled reasoning or tool boundary",
   "preserves durable queued input for a later wake after interruption",
   "preserves durable steering input for a later resume after interruption",
   "promotes queued inputs one at a time in FIFO order",
   "promotes queued input after steering continuation ends",
-  "promotes steers before the next queued input",
+  "coalesces steers at the next queued user boundary without delaying the user",
   "coalesces multiple active steering prompts into one continuation turn",
   "runs steering input accepted while the active provider turn fails",
   "durably fails local tools left running by a prior process before continuing",
@@ -228,11 +228,11 @@ const STATUS: Readonly<Record<string, { status: Exclude<ClaimStatus, "spec">; wh
     status: "ported",
     where: "session-runner-steering.test.ts",
   },
-  "promotes steers before the next queued input": {
+  "coalesces steers at the next queued user boundary without delaying the user": {
     status: "ported",
     where: "session-runner-steering.test.ts",
   },
-  "promotes queued input after continuation ends": {
+  "promotes queued input at the next settled reasoning or tool boundary": {
     status: "ported",
     where: "session-runner-steering.test.ts",
   },

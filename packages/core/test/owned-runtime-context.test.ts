@@ -89,4 +89,24 @@ describe("OwnedRuntimeContext", () => {
       expect(() => Schema.decodeUnknownSync(ConfigAgent.Info)({ runtimeHeartbeatMinutes: 0 })).toThrow()
     }),
   )
+
+  it.effect("lets live ownership tighten an officer sleep to the configured heartbeat", () =>
+    Effect.sync(() => {
+      const current = observation(65 * MINUTE)
+      expect(
+        OwnedRuntimeContext.sleepMilliseconds({
+          ordinaryMilliseconds: 10 * MINUTE,
+          heartbeatMinutes: 2,
+          observation: current,
+        }),
+      ).toBe(2 * MINUTE)
+      expect(
+        OwnedRuntimeContext.sleepMilliseconds({
+          ordinaryMilliseconds: 10 * MINUTE,
+          heartbeatMinutes: 2,
+          observation: { ...current, workers: [], shells: [] },
+        }),
+      ).toBe(10 * MINUTE)
+    }),
+  )
 })
