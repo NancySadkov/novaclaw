@@ -66,7 +66,12 @@ describe("SessionRunnerLLM — a session that moves", () => {
           .get()
 
         // The user prompts again — at the source, which no longer owns this session.
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Second" }),
+          delivery: "steer",
+          resume: false,
+        })
         const exit = yield* session.resume(HARNESS_SESSION).pipe(Effect.exit)
 
         return { epoch, exit, pending: yield* SessionInput.hasPending(db, HARNESS_SESSION, "steer") }

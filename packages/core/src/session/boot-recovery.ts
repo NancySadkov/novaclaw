@@ -8,7 +8,7 @@ import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "./config-resolv
 import type { SessionExecution } from "./execution"
 import type { SessionExecutionAttempt } from "./execution-attempt"
 import { SessionInput } from "./input"
-import type { SessionSchema } from "./schema"
+import { SessionSchema } from "./schema"
 import { SessionExecutionTable } from "./sql"
 import type { SessionStore } from "./store"
 
@@ -259,39 +259,16 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
   readonly db: Database.Interface["db"]
   readonly store: SessionStore.Interface
   readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
+  /** A boot-time snapshot. Omit only for an explicit, immediate recovery sweep. */
+  readonly sessionIDs?: readonly SessionSchema.ID[]
 }) {
-  const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
-  // A replacement drain used to read the provider-recovery latch only AFTER its first empty-queue
-  // return. It therefore settled successfully without consuming the latch. That state is durable and
-  // otherwise has no future wake source, so upgrades must adopt it just like an abandoned prompt.
-  const strandedRecovery = yield* input.db
-    .select({ sessionID: SessionExecutionTable.session_id })
-    .from(SessionExecutionTable)
-    .where(and(eq(SessionExecutionTable.state, "settled"), isNotNull(SessionExecutionTable.provider_recovery)))
-    .all()
-    .pipe(Effect.orDie)
-  // Builds before perpetual recovery classified process loss as `interrupted` and then abandoned
-  // the row. Adopt those durable turns too. `interrupt` is the authority-bearing state written by
-  // an explicit user/Nova stop, and must remain stopped. Include NULL for older rows.
-  const strandedInterrupted = yield* input.db
-    .select({ sessionID: SessionExecutionTable.session_id })
-    .from(SessionExecutionTable)
-    .where(
-      and(
-        inArray(SessionExecutionTable.state, ["paused", "failed", "interrupted", "recovering"]),
-        or(isNull(SessionExecutionTable.failure_class), ne(SessionExecutionTable.failure_class, "interrupt")),
-      ),
-    )
-    .all()
-    .pipe(Effect.orDie)
+  const candidates =
+    input.sessionIDs ??
+    (yield* abandonedSessionIDs({
+      db: input.db,
+    }))
   const sessions = yield* descendantsFirst({
-    sessionIDs: [
-      ...new Set([
-        ...pending,
-        ...strandedRecovery.map((row) => row.sessionID),
-        ...strandedInterrupted.map((row) => row.sessionID),
-      ]),
-    ],
+    sessionIDs: candidates,
     parentOf: (sessionID) =>
       input.store.get(sessionID).pipe(Effect.map((session) => session?.parentID as SessionSchema.ID | undefined)),
   })
@@ -325,6 +302,50 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
 })
 
 /**
+ * Snapshot the durable work a process restart could have abandoned.
+ *
+ * This read must finish before `start` forks its adoption fiber. If the query itself lived inside
+ * that detached fiber, a prompt admitted after service construction could enter the result and be
+ * misclassified as crash residue — violating `prompt({ resume: false })` and racing an explicit
+ * runner with a second drain.
+ */
+export const abandonedSessionIDs = Effect.fn("SessionBootRecovery.abandonedSessionIDs")(function* (input: {
+  readonly db: Database.Interface["db"]
+}) {
+  const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
+  // A replacement drain used to read the provider-recovery latch only AFTER its first empty-queue
+  // return. It therefore settled successfully without consuming the latch. That state is durable and
+  // otherwise has no future wake source, so upgrades must adopt it just like an abandoned prompt.
+  const strandedRecovery = yield* input.db
+    .select({ sessionID: SessionExecutionTable.session_id })
+    .from(SessionExecutionTable)
+    .where(and(eq(SessionExecutionTable.state, "settled"), isNotNull(SessionExecutionTable.provider_recovery)))
+    .all()
+    .pipe(Effect.orDie)
+  // Builds before perpetual recovery classified process loss as `interrupted` and then abandoned
+  // the row. Adopt those durable turns too. `interrupt` is the authority-bearing state written by
+  // an explicit user/Nova stop, and must remain stopped. Include NULL for older rows.
+  const strandedInterrupted = yield* input.db
+    .select({ sessionID: SessionExecutionTable.session_id })
+    .from(SessionExecutionTable)
+    .where(
+      and(
+        inArray(SessionExecutionTable.state, ["paused", "failed", "interrupted", "recovering"]),
+        or(isNull(SessionExecutionTable.failure_class), ne(SessionExecutionTable.failure_class, "interrupt")),
+      ),
+    )
+    .all()
+    .pipe(Effect.orDie)
+  return [
+    ...new Set([
+      ...pending,
+      ...strandedRecovery.map((row) => SessionSchema.ID.make(row.sessionID)),
+      ...strandedInterrupted.map((row) => SessionSchema.ID.make(row.sessionID)),
+    ]),
+  ]
+})
+
+/**
  * Start both sweeps in the caller's scope. Forked, and each arm is independently non-fatal: boot is
  * exactly where the self-healing law is void, so a recovery that cannot run must
  * degrade rather than take the instance down with it.
@@ -342,6 +363,13 @@ export const start = (input: {
     // ONE gate for both arms: whatever a sweep found, a session someone stopped stays stopped. See
     // `holdStopped` — the arms enumerate work, and work is not consent.
     const adopt = holdStopped({ db: input.db, adopt: input.execution.adopt })
+    // Snapshot before either detached arm can yield. A delayed query would see prompts admitted
+    // after boot and steal `resume: false` work as though the previous process had abandoned it.
+    const abandoned = yield* abandonedSessionIDs({ db: input.db }).pipe(
+      // Both recovery arms are independently non-fatal. Moving the read out of the fork must not
+      // turn an unavailable recovery table into an instance boot failure.
+      Effect.catchCause(() => Effect.succeed([] as readonly SessionSchema.ID[])),
+    )
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
         Effect.gen(function* () {
@@ -360,7 +388,7 @@ export const start = (input: {
     )
     yield* Effect.forkScoped(
       recoveryLane
-        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt }))
+        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt, sessionIDs: abandoned }))
         .pipe(Effect.ignore),
     )
   })

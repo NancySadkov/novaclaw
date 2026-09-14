@@ -244,6 +244,33 @@ describe("which sessions the sweep hands back", () => {
     return { woken, wake: (sessionID: SessionV2.ID) => Effect.sync(() => void woken.push(sessionID)) }
   }
 
+  it.live("a boot snapshot never steals a prompt admitted after boot", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const store = yield* SessionStoreService.Service
+
+      const created = yield* session.create({ location, agent: rootAgent })
+      const atBoot = yield* SessionBootRecovery.abandonedSessionIDs({ db })
+      yield* queue(created.id)
+
+      const snapshotted = record()
+      yield* SessionBootRecovery.wakeAbandonedInput({
+        db,
+        store,
+        adopt: snapshotted.wake,
+        sessionIDs: atBoot,
+      })
+      expect(snapshotted.woken).toEqual([])
+
+      // Positive control: an explicit sweep taken after admission still finds the durable row.
+      const immediate = record()
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, adopt: immediate.wake })
+      expect(immediate.woken).toEqual([created.id])
+    }),
+  )
+
   it.live("queued input wakes; a leftover steer does not", () =>
     Effect.gen(function* () {
       const location = yield* workspace
@@ -567,4 +594,3 @@ describe("a stop survives the restart", () => {
     }),
   )
 })
-

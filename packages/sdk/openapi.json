@@ -37596,6 +37596,12 @@
               "type": "string"
             }
           },
+          "officer_order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "default_agent": {
             "type": "string"
           },

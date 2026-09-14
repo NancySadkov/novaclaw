@@ -33,9 +33,10 @@ describe("test output parsing", () => {
     expect(readSkipCount("1 skip\n0 fail")).toBeUndefined()
   })
 
-  test("reads Bun's completed test total and rejects an incomplete summary", () => {
+  test("reads Bun's completed non-skipped total and rejects an incomplete summary", () => {
     const ansi = String.fromCharCode(27)
     expect(readTestCount(`${ansi}[2mRan 12 tests across 3 files.\x1b[0m`)).toBe(12)
+    expect(readTestCount(`10 pass\n 2 skip\n 0 fail\nRan 12 tests across 3 files.`)).toBe(10)
     expect(readTestCount("12 pass\n12 tests")).toBeUndefined()
   })
 })

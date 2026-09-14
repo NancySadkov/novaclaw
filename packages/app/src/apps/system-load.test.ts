@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { systemLoadStats, type SystemLoad } from "./system-load"
+import { systemLoadStats, threadActivity, type SystemLoad } from "./system-load"
 
 // The hero tile is the one surface that reports whether this machine is in trouble, and the state
 // that matters most — memory strained — is the one a test rig can reach and a person cannot stage on
@@ -13,6 +13,28 @@ const load = (over: Partial<SystemLoad> = {}): SystemLoad => ({ running: 0, tps:
 const byId = (input: SystemLoad, id: string) => systemLoadStats(input, t).find((stat) => stat.id === id)!
 
 describe("the hero readout", () => {
+  test("throughput equals every officer and worker rate, even across a status-event race", () => {
+    const ids = ["nova", "theron", "theron-worker", "aris", "aris-worker"]
+    const rates: Record<string, number> = {
+      nova: 2,
+      theron: 3,
+      "theron-worker": 5,
+      aris: 7,
+      "aris-worker": 11,
+    }
+    const working = new Set(["nova", "theron", "theron-worker", "aris"])
+
+    // The final worker has emitted a delta before its busy event reaches the client. Its 11 t/s is
+    // still real output and must not disappear from Home while the officer row already includes it.
+    expect(
+      threadActivity(
+        ids,
+        (id) => working.has(id),
+        (id) => rates[id],
+      ),
+    ).toEqual({ running: 4, tps: 28 })
+  })
+
   test("an idle instance still reports, dimmed rather than hidden", () => {
     const running = byId(load(), "running")
     expect(running.value).toBe("0")

@@ -84,9 +84,10 @@ describe("ConfigStoreWrite.apply", () => {
           quality: { enabled: false },
           snapshots: false,
           model_order: ["spark/m2", "spark/m1"],
+          officer_order: ["theron", "aris"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["model_order", "quality", "snapshots"])
+      expect([...consumed].sort()).toEqual(["model_order", "officer_order", "quality", "snapshots"])
 
       const all = yield* settings.all()
       // Deep merge: the patch flips `enabled`, the stored `checks` survives.
@@ -95,6 +96,7 @@ describe("ConfigStoreWrite.apply", () => {
       // `SettingsConfigStore` reads the runtime_setting SQLite table. This is the persistence gate:
       // ordering is instance data, not a browser-only preference that another client contradicts.
       expect(all.model_order).toEqual(["spark/m2", "spark/m1"])
+      expect(all.officer_order).toEqual(["theron", "aris"])
     }),
   )
 

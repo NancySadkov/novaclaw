@@ -36,6 +36,9 @@ export const SETTINGS_KEYS = [
   // Presentation order for the instance model catalog. A whole-value list: drag-reordering writes
   // one authoritative arrangement, while readers ignore vanished refs and append new models.
   "model_order",
+  // Presentation order for the officer roster. Nova is structurally pinned above this list; the
+  // stored value arranges every other visible colleague and is shared by every client.
+  "officer_order",
   "expertise",
   "virtualFs",
   "folder_bookmarks",

@@ -71,7 +71,10 @@ describe("hiring off a roster we could not read", () => {
 describe("clone is available on every Contacts entry", () => {
   test("both the visible and hidden rosters wire their rows to the shared clone action", () => {
     const source = read("contacts.tsx")
-    expect(source.match(/onClone=\{\(\) => void cloneColleague\(view\.id\)\}/g)).toHaveLength(2)
+    expect(source).toContain("onClone: () => void cloneColleague(view.id)")
+    expect(source).toContain("onClone={() => void cloneColleague(view.id)}")
+    expect(source).toContain("<ContactRow {...row} />")
+    expect(source).toContain("<SortableContactRow")
     expect(source).toContain('data-action="contacts-clone"')
     expect(source).toContain("cloneAgent({")
   })

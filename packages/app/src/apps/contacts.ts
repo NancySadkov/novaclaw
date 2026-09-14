@@ -198,15 +198,54 @@ const view = (agent: AgentLike): ContactView => {
   }
 }
 
-/** The roster, in the order it is shown: the CEO first, then colleagues by name. */
-export const roster = (agents: readonly AgentLike[]): readonly ContactView[] =>
-  agents
+/** Apply the instance-wide saved arrangement to an already filtered officer list.
+ *
+ * Nova is deliberately not represented by the setting: the governing agent is a structural root,
+ * not one more draggable peer. Unknown/duplicate ids are ignored and colleagues the arrangement has
+ * never seen append in their natural name order, so hiring and retirement never corrupt the list. */
+export const applyOfficerOrder = (
+  officers: readonly ContactView[],
+  saved: readonly string[],
+): readonly ContactView[] => {
+  const byID = new Map(officers.map((officer) => [officer.id, officer]))
+  const ordered: ContactView[] = []
+  for (const id of saved) {
+    const officer = byID.get(id)
+    if (!officer || officer.kind === "governing") continue
+    ordered.push(officer)
+    byID.delete(id)
+  }
+  for (const officer of officers) {
+    if (officer.kind === "governing" || !byID.has(officer.id)) continue
+    ordered.push(officer)
+  }
+  return ordered
+}
+
+/** Move one officer onto another and return the complete arrangement written to SQLite. */
+export const moveOfficerOrder = (officerIDs: readonly string[], fromID: string, toID: string): string[] | undefined => {
+  if (fromID === toID) return
+  const next = [...officerIDs]
+  const from = next.indexOf(fromID)
+  const to = next.indexOf(toID)
+  if (from < 0 || to < 0) return
+  next.splice(to, 0, ...next.splice(from, 1))
+  return next
+}
+
+/** The roster, in the order it is shown: the CEO first, then the saved officer arrangement. */
+export const roster = (agents: readonly AgentLike[], saved: readonly string[] = []): readonly ContactView[] => {
+  const natural = agents
     .filter(isColleague)
     .map(view)
     .sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === "governing" ? -1 : 1
       return left.name.localeCompare(right.name)
     })
+  const nova = natural.find((item) => item.kind === "governing")
+  const officers = applyOfficerOrder(natural, saved)
+  return nova ? [nova, ...officers] : officers
+}
 
 /**
  * The colleagues a user HID — the roster's second list, and the reason it exists.

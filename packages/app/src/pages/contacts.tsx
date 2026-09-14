@@ -1,6 +1,15 @@
 import { A, useNavigate } from "@solidjs/router"
 import { Dynamic } from "solid-js/web"
-import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import type { JSX } from "solid-js"
+import {
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  closestCenter,
+  createSortable,
+  type DragEvent,
+} from "@thisbeyond/solid-dnd"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useGlobal } from "@/context/global"
@@ -8,7 +17,7 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import { hiddenRoster, roster, searchRoster, type ContactView } from "@/apps/contacts"
+import { hiddenRoster, moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
@@ -109,6 +118,8 @@ export function ContactsPage() {
   const [hiring, setHiring] = createSignal(false)
   const [starting, setStarting] = createSignal<string | undefined>()
   const [cloning, setCloning] = createSignal<string | undefined>()
+  const [pendingOrder, setPendingOrder] = createSignal<readonly string[] | undefined>()
+  const [savingOrder, setSavingOrder] = createSignal(false)
   const navigate = useNavigate()
   const sync = useServerSync()
   useRateClock()
@@ -287,7 +298,8 @@ ${copy.detail}`
     return [...merged.values()]
   })
 
-  const views = createMemo(() => roster(agents() ?? []))
+  const savedOrder = createMemo<readonly string[]>(() => pendingOrder() ?? sync().data.config?.officer_order ?? [])
+  const views = createMemo(() => roster(agents() ?? [], savedOrder()))
   /** The colleagues the user hid — listed separately so their chats keep a door. */
   const hidden = createMemo(() => hiddenRoster(agents() ?? []))
   const shown = createMemo(() => searchRoster(views(), query()))
@@ -305,6 +317,48 @@ ${copy.detail}`
    */
   /** Configuration is an addressable app screen, so reload, browser Back and phone navigation work. */
   const openConfig = (agentID: string) => navigate(`/officers/${encodeURIComponent(agentID)}/settings`)
+
+  /** Persist one authoritative roster arrangement in the instance SQLite config store. */
+  const persistOrder = async (officerIDs: string[]) => {
+    if (savingOrder()) return
+    setPendingOrder(officerIDs)
+    setSavingOrder(true)
+    try {
+      await sync().updateConfig({ officer_order: officerIDs }, { refetch: false })
+      await sync().refetchConfig()
+      setPendingOrder(undefined)
+    } catch (error) {
+      setPendingOrder(undefined)
+      showToast({
+        variant: "error",
+        title: language.t("contacts.order.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  const officerIDs = () =>
+    views()
+      .filter((view) => view.kind === "officer")
+      .map((view) => view.id)
+  const moveByKeyboard = (id: string, direction: -1 | 1) => {
+    if (savingOrder()) return
+    const ids = officerIDs()
+    const at = ids.indexOf(id)
+    const target = at + direction
+    if (at < 0 || target < 0 || target >= ids.length) return
+    const next = moveOfficerOrder(ids, id, ids[target]!)
+    if (next) void persistOrder(next)
+  }
+  const onDragEnd = (event: DragEvent) => {
+    if (savingOrder()) return
+    const { draggable, droppable } = event
+    if (!draggable || !droppable) return
+    const next = moveOfficerOrder(officerIDs(), String(draggable.id), String(droppable.id))
+    if (next) void persistOrder(next)
+  }
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
@@ -376,23 +430,57 @@ ${copy.detail}`
               </p>
             }
           >
-            <For each={shown()}>
-              {(view) => (
-                <ContactRow
-                  view={view}
-                  sessions={liveSessions()}
-                  starting={starting() === view.id}
-                  cloning={cloning() === view.id}
-                  cloneDisabled={cloning() !== undefined}
-                  onStart={() => void startTheirChat(view.id, view.name)}
-                  onClone={() => void cloneColleague(view.id)}
-                  usage={usage()?.[view.id] ?? []}
-                  executions={executionBySession()}
-                  serverKey={serverKey()}
-                  onOpen={() => openConfig(view.id)}
-                />
-              )}
-            </For>
+            <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+              <DragDropSensors />
+              <SortableProvider
+                ids={shown()
+                  .filter((view) => view.kind === "officer")
+                  .map((view) => view.id)}
+              >
+                <For each={shown()}>
+                  {(view) => {
+                    const row = {
+                      get view() {
+                        return view
+                      },
+                      get sessions() {
+                        return liveSessions()
+                      },
+                      get starting() {
+                        return starting() === view.id
+                      },
+                      get cloning() {
+                        return cloning() === view.id
+                      },
+                      get cloneDisabled() {
+                        return cloning() !== undefined
+                      },
+                      onStart: () => void startTheirChat(view.id, view.name),
+                      onClone: () => void cloneColleague(view.id),
+                      get usage() {
+                        return usage()?.[view.id] ?? []
+                      },
+                      get executions() {
+                        return executionBySession()
+                      },
+                      get serverKey() {
+                        return serverKey()
+                      },
+                      onOpen: () => openConfig(view.id),
+                    } satisfies ContactRowProps
+                    return view.kind === "governing" ? (
+                      <ContactRow {...row} />
+                    ) : (
+                      <SortableContactRow
+                        {...row}
+                        saving={savingOrder()}
+                        onKeyboardMove={(direction) => moveByKeyboard(view.id, direction)}
+                      />
+                    )
+                  }}
+                </For>
+              </SortableProvider>
+            </DragDropProvider>
           </Show>
         </Show>
 
@@ -459,7 +547,7 @@ ${copy.detail}`
   )
 }
 
-function ContactRow(props: {
+type ContactRowProps = {
   view: ContactView
   /** The instance's sessions, unfiltered. ⚠️ The ROW derives its own live view from these.
    *  It used to take a ready-made `live={liveFor(...)}`, and solid compiles a call-expression prop
@@ -475,7 +563,71 @@ function ContactRow(props: {
   onClone: () => void
   serverKey: ServerConnection.Key | undefined
   onOpen: () => void
-}) {
+  dragHandle?: JSX.Element
+}
+
+function SortableContactRow(
+  props: ContactRowProps & {
+    saving: boolean
+    onKeyboardMove: (direction: -1 | 1) => void
+  },
+) {
+  // eslint-disable-next-line solid/reactivity -- an officer id is stable for this keyed row's lifetime
+  const sortable = createSortable(props.view.id)
+  const language = useLanguage()
+  let dragTarget: HTMLButtonElement | undefined
+
+  // Only the explicit handle activates sorting. The rest of the row remains an ordinary chat link
+  // with independent worker/clone/settings buttons, so reordering never steals those clicks.
+  createEffect(() => {
+    if (!dragTarget) return
+    const listeners = Object.entries(sortable.dragActivators).map(
+      ([name, listener]) => [name.startsWith("on") ? name.slice(2) : name, listener as EventListener] as const,
+    )
+    for (const [name, listener] of listeners) dragTarget.addEventListener(name, listener)
+    onCleanup(() => {
+      if (!dragTarget) return
+      for (const [name, listener] of listeners) dragTarget.removeEventListener(name, listener)
+    })
+  })
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
+    event.preventDefault()
+    props.onKeyboardMove(event.key === "ArrowUp" ? -1 : 1)
+  }
+
+  return (
+    <div
+      ref={sortable.ref}
+      data-component="contacts-officer-sortable"
+      data-officer-id={props.view.id}
+      data-dragging={sortable.isActiveDraggable ? "true" : undefined}
+      classList={{ "opacity-50": sortable.isActiveDraggable }}
+      style={{ transform: `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)` }}
+    >
+      <ContactRow
+        {...props}
+        dragHandle={
+          <button
+            ref={dragTarget}
+            type="button"
+            data-action="contacts-reorder"
+            class="shrink-0 touch-none cursor-grab rounded-md p-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
+            aria-label={language.t("contacts.order.drag", { name: props.view.name })}
+            title={language.t("contacts.order.hint")}
+            disabled={props.saving}
+            onKeyDown={onKeyDown}
+          >
+            <Icon name="outline-dots" class="size-4 rotate-90" />
+          </button>
+        }
+      />
+    </div>
+  )
+}
+
+function ContactRow(props: ContactRowProps) {
   const language = useLanguage()
   const dialog = useDialog()
   const rowSync = useServerSync()
@@ -578,7 +730,11 @@ function ContactRow(props: {
     return sessionID && props.serverKey ? sessionHref(props.serverKey, sessionID) : undefined
   })
   return (
-    <div class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 transition-colors hover:bg-v2-background-bg-layer-02">
+    <div
+      data-contact-id={props.view.id}
+      class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 transition-colors hover:bg-v2-background-bg-layer-02"
+    >
+      {props.dragHandle}
       <AgentPortrait
         id={props.view.id}
         name={props.view.name}

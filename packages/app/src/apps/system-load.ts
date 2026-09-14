@@ -24,20 +24,39 @@ export interface ThreadActivity {
   readonly tps: number
 }
 
+/**
+ * One instance-wide reading from the session ids the live store currently knows about.
+ *
+ * Running state and throughput deliberately have different predicates. A generated-token delta can
+ * arrive just before the matching busy status, and a worker can keep streaming while its officer is
+ * parked waiting for that worker. Requiring `working` before adding the rate made the Home total
+ * briefly smaller than the sum shown by the officer rows. A live rate is already cleared when that
+ * session settles, so its presence is the truthful inclusion rule for throughput.
+ */
+export function threadActivity(
+  ids: readonly string[],
+  working: (sessionID: string) => boolean,
+  rate: (sessionID: string) => number | undefined,
+): ThreadActivity {
+  let running = 0
+  let tps = 0
+  for (const id of ids) {
+    if (working(id)) running += 1
+    tps += rate(id) ?? 0
+  }
+  return { running, tps }
+}
+
 /** Reactive running-count + combined throughput for the active server. */
 export function useThreadActivity(): () => ThreadActivity {
   const serverSync = useServerSync()
   return createMemo(() => {
     const session = serverSync().session
-    const ids = Object.keys(session.data.info)
-    let running = 0
-    let tps = 0
-    for (const id of ids) {
-      if (!session.data.session_working(id)) continue
-      running += 1
-      tps += session.data.session_live(id)?.tps ?? 0
-    }
-    return { running, tps }
+    return threadActivity(
+      Object.keys(session.data.info),
+      (id) => session.data.session_working(id),
+      (id) => session.data.session_live(id)?.tps,
+    )
   })
 }
 

@@ -122,6 +122,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Presentation order only: existing provider/model refs, no endpoint, prompt, enablement or
   // selection semantics. A bad value can make a row inconvenient to find and nothing more.
   model_order: "operational",
+  // Presentation order only: existing agent ids. Nova is pinned first by the reader, so even a bad
+  // value cannot alter authority, identity, prompts, enablement or selection.
+  officer_order: "operational",
   // The session's own context-reclaim policy. `prune` MARKS rows already out of the model's context
   // (`session/compaction-prune.ts`); it destroys no stored message, so "a read never destroys" holds.
   compaction: "operational",

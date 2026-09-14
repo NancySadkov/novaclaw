@@ -114,7 +114,14 @@ describe("SessionRunnerLLM — step allowance", () => {
 
         const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         yield* Effect.promise(() => streamStarted.promise)
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Change direction" }) })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Change direction" }),
+          // Ordinary prompts now queue as new turns. This case exercises the harness/user
+          // interjection path specifically, so name the delivery instead of relying on the retired
+          // default that once made every follow-up a steer.
+          delivery: "steer",
+        })
         streamGate.open()
         yield* Fiber.join(run)
       }),

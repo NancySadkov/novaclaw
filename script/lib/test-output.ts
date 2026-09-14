@@ -16,12 +16,18 @@ export function readSkipCount(output: string): number | undefined {
 }
 
 /**
- * Read Bun's completed test total. A partial child may have printed a pass line before it was killed,
- * so the final `Ran ... across ...` line is the completion marker rather than the pass count.
+ * Read Bun's completed, non-skipped test total. A partial child may have printed a pass line before it
+ * was killed, so the final `Ran ... across ...` line remains the completion marker. Bun includes
+ * skipped definitions in that total when `--shard` is active; the skip ledger owns those separately,
+ * and the count ratchet has always described the tests that actually completed.
  */
 export function readTestCount(output: string): number | undefined {
-  const match = stripAnsi(output).match(/^Ran\s+(\d+)\s+tests?\s+across\s+\d+\s+files?\./m)
-  return match ? Number(match[1]) : undefined
+  const plain = stripAnsi(output)
+  const match = plain.match(/^Ran\s+(\d+)\s+tests?\s+across\s+\d+\s+files?\./m)
+  if (!match) return undefined
+  let skipped = 0
+  for (const skip of plain.matchAll(/^\s*(\d+)\s+skip\b/gm)) skipped += Number(skip[1])
+  return Number(match[1]) - skipped
 }
 
 /**

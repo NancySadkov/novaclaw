@@ -25,8 +25,18 @@ describe("SessionRunnerLLM — turn start", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "First" }),
+          delivery: "steer",
+          resume: false,
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Second" }),
+          delivery: "steer",
+          resume: false,
+        })
         yield* session.resume(HARNESS_SESSION)
         // Both prompts plus the one reply they drew. (Was 2 while an unscripted turn produced no
         // assistant message at all — see the empty-response claim in `session-runner-errors.test.ts`.)

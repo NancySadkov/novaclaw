@@ -48,6 +48,7 @@ import {
 } from "@/utils/session-execution-api"
 import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
+import { SessionContextUsage } from "@/components/session-context-usage"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
   createPromptInputController,
@@ -1030,6 +1031,7 @@ export default function Page() {
     return (
       <SessionComposerRegion
         controller={controller}
+        childContextUsage={<SessionContextUsage buttonAppearance="v2" placement="top" />}
         promptInput={
           <PromptInput
             controls={inputController()}

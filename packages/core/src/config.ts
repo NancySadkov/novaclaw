@@ -63,6 +63,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "User-arranged model catalog order as provider/model references. Unknown refs are ignored and newly discovered models append automatically.",
   }),
+  officer_order: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+    description:
+      "User-arranged officer roster order as agent IDs. Nova remains first; unknown IDs are ignored and newly hired officers append automatically.",
+  }),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description:
       "Default primary agent to use when no session agent is selected. ⚠️ Ruling 4: PRIVILEGED — " +

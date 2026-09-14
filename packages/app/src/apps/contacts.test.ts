@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import {
+  applyOfficerOrder,
   displayName,
   hiddenRoster,
   isColleague,
   memoryDisclosure,
+  moveOfficerOrder,
   roster,
   searchRoster,
   superiorCandidates,
@@ -41,6 +43,23 @@ describe("order and standing", () => {
   test("the CEO is first, then colleagues by name", () => {
     const views = roster([agent({ id: "zoe" }), agent({ id: "trader" }), agent({ id: "nova" }), agent({ id: "alice" })])
     expect(views.map((view) => view.id)).toEqual(["nova", "alice", "trader", "zoe"])
+  })
+
+  test("saved officer order wins while Nova stays first", () => {
+    const rows = [agent({ id: "zoe" }), agent({ id: "nova" }), agent({ id: "alice" }), agent({ id: "theron" })]
+    expect(roster(rows, ["theron", "nova", "missing", "zoe", "theron"]).map((row) => row.id)).toEqual([
+      "nova",
+      "theron",
+      "zoe",
+      "alice",
+    ])
+  })
+
+  test("new officers append naturally and a move returns the full persisted arrangement", () => {
+    const natural = roster([agent({ id: "nova" }), agent({ id: "aris" }), agent({ id: "theron" })])
+    expect(applyOfficerOrder(natural, ["theron"]).map((row) => row.id)).toEqual(["theron", "aris"])
+    expect(moveOfficerOrder(["aris", "theron", "zoe"], "zoe", "aris")).toEqual(["zoe", "aris", "theron"])
+    expect(moveOfficerOrder(["aris", "theron"], "nova", "aris")).toBeUndefined()
   })
 
   test("the governing agent is marked, and offers no Retire control", () => {

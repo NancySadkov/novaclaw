@@ -10,6 +10,9 @@ import type { SessionComposerRegionController } from "./session-composer-region-
 export function SessionComposerRegion(props: {
   controller: SessionComposerRegionController
   promptInput: JSX.Element
+  /** Workers cannot be prompted directly, but their context receipt is still their own observable
+   *  state. Keep the same clickable gauge the ordinary composer provides. */
+  childContextUsage: JSX.Element
 }) {
   const language = useLanguage()
   const controller = props.controller
@@ -32,7 +35,7 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
       >
-        <SessionResponderDock sessionID={controller.sessionID()} />
+        <Show when={controller.sessionID()}>{(id) => <SessionResponderDock sessionID={id()} />}</Show>
 
         <Show when={controller.dock()}>
           <div
@@ -122,18 +125,21 @@ export function SessionComposerRegion(props: {
             <Show when={controller.child()} fallback={props.promptInput}>
               <div
                 ref={controller.setPromptRef}
-                class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+                class="flex w-full items-center gap-3 rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
               >
-                <span>{language.t("session.child.promptDisabled")} </span>
-                <Show when={controller.parentID()}>
-                  <button
-                    type="button"
-                    class="text-text-base transition-colors hover:text-text-strong"
-                    onClick={controller.openParent}
-                  >
-                    {language.t("session.child.backToParent")}
-                  </button>
-                </Show>
+                <span class="min-w-0 flex-1">
+                  <span>{language.t("session.child.promptDisabled")} </span>
+                  <Show when={controller.parentID()}>
+                    <button
+                      type="button"
+                      class="text-text-base transition-colors hover:text-text-strong"
+                      onClick={controller.openParent}
+                    >
+                      {language.t("session.child.backToParent")}
+                    </button>
+                  </Show>
+                </span>
+                {props.childContextUsage}
               </div>
             </Show>
           </div>

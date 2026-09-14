@@ -73,7 +73,11 @@ describe("SessionRunnerLLM — steering", () => {
         const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         // The turn is in flight and has emitted nothing. Steer it now.
         yield* Effect.promise(() => streamStarted.promise)
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Change direction" }) })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Change direction" }),
+          delivery: "steer",
+        })
 
         // Opening the latch releases the in-flight turn AND every later one — a latch is one-shot, so
         // the steered continuation is not gated behind it. The whole exchange therefore completes
@@ -163,8 +167,16 @@ describe("SessionRunnerLLM — steering", () => {
 
         const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         yield* Effect.promise(() => streamStarted.promise)
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First steer" }) })
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second steer" }) })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "First steer" }),
+          delivery: "steer",
+        })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Second steer" }),
+          delivery: "steer",
+        })
 
         streamGate.open()
         yield* Fiber.join(first)
@@ -272,10 +284,12 @@ describe("SessionRunnerLLM — steering", () => {
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: "Steer before next queued input" }),
+          delivery: "steer",
         })
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: "Also steer before next queued input" }),
+          delivery: "steer",
         })
         secondGate.open()
         yield* Fiber.join(first)
@@ -413,7 +427,7 @@ describe("SessionRunnerLLM — steering", () => {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text }),
-            ...(delivery === "queue" ? { delivery: "queue" as const } : {}),
+            delivery,
           })
 
           // Interrupt with the input already accepted but the turn not yet settled — the window where
@@ -465,6 +479,7 @@ describe("SessionRunnerLLM — steering", () => {
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: "Start steering" }),
+          delivery: "steer",
           resume: false,
         })
         yield* session.prompt({
@@ -614,7 +629,11 @@ describe("SessionRunnerLLM — steering", () => {
 
         const first = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         yield* Effect.promise(() => streamStarted.promise)
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Recover with this" }) })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recover with this" }),
+          delivery: "steer",
+        })
 
         streamGate.open()
         expect(yield* Fiber.join(first).pipe(Effect.flip)).toBe(failure)

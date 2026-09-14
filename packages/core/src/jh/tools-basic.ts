@@ -117,7 +117,7 @@ function writeFile(input: {
     return badArgs("write_file", "{path: string, content: string}")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `write_file refused unsafe path "${p}" (absolute or contains "..")`)
-  if (fs.existsSync(target) && isBinaryFile(target)) return binaryHint("write_file", p)
+  if (isBinaryFile(target)) return binaryHint("write_file", p)
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.writeFileSync(target, content, "utf8")
@@ -147,7 +147,7 @@ function appendFile(input: {
   if (content === "") return obs(false, "append_file: content is empty — nothing to append")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `append_file refused unsafe path "${p}" (absolute or contains "..")`)
-  if (fs.existsSync(target) && isBinaryFile(target)) return binaryHint("append_file", p)
+  if (isBinaryFile(target)) return binaryHint("append_file", p)
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     let existing = ""
@@ -251,7 +251,7 @@ function editFile(input: {
     return badArgs("edit_file", "{path: string, old_string: string, new_string: string}")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `edit_file refused unsafe path "${p}" (absolute or contains "..")`)
-  if (fs.existsSync(target) && isBinaryFile(target)) return binaryHint("edit_file", p)
+  if (isBinaryFile(target)) return binaryHint("edit_file", p)
   let content: string
   try {
     content = fs.readFileSync(target, "utf8")
@@ -309,7 +309,7 @@ function replaceLines(input: {
     return obs(false, "replace_lines: first_line and last_line must be integers")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `replace_lines refused unsafe path "${p}" (absolute or contains "..")`)
-  if (fs.existsSync(target) && isBinaryFile(target)) return binaryHint("replace_lines", p)
+  if (isBinaryFile(target)) return binaryHint("replace_lines", p)
   let content: string
   try {
     content = fs.readFileSync(target, "utf8")
@@ -347,7 +347,7 @@ function readFile(input: {
   if (typeof p !== "string") return badArgs("read_file", "{path: string}")
   const target = safePath(input.cwd, p)
   if (!target) return obs(false, `read_file refused unsafe path "${p}"`)
-  if (fs.existsSync(target) && isBinaryFile(target)) return binaryHint("read_file", p)
+  if (isBinaryFile(target)) return binaryHint("read_file", p)
   try {
     let content = fs.readFileSync(target, "utf8")
     if (content.length > 65_536) content = content.slice(0, 65_536) + "…[truncated]"

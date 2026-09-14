@@ -179,6 +179,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "folder_bookmarks",
       "log",
       "model_order",
+      "officer_order",
       "provider_connection",
       // The measured per-request IMAGE CAP per model. Operational: a wrong value costs images in one
       // request and is undone by deleting the entry, where a wrong TOOL CHANNEL (consequential,
@@ -1172,7 +1173,9 @@ describe("formatWrite", () => {
     expect(message).toContain("$schema")
     // NEGATIVE CONTROL: with nothing discarded the line is absent, so its presence above is a
     // report of the router's answer rather than boilerplate printed either way.
-    expect(ConfigureTool.formatWrite({ requested: ["snapshots"], consumed: new Set(["snapshots"]) })).not.toContain("DISCARDED")
+    expect(ConfigureTool.formatWrite({ requested: ["snapshots"], consumed: new Set(["snapshots"]) })).not.toContain(
+      "DISCARDED",
+    )
     // And a write that stored nothing says so instead of claiming a save.
     expect(ConfigureTool.formatWrite({ requested: ["$schema"], consumed: new Set() })).toContain("Nothing was stored")
   })

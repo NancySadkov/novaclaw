@@ -319,7 +319,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // public event union; the remaining source/emitted pairs retain their prior names.
 // 2026-09-14: queued cancellation adds `SessionPendingCancelResponse` plus the durable cancellation
 // event's source, sync-envelope and public-event names. The rest of the mapping is unchanged.
-const SCHEMA_NAME_FINGERPRINT = "9084136764717b4c248c09b7ccc6678a9b621ecfbf5a8401160765b2720da708"
+// 2026-09-14: score-aware model routing adds exactly `ModelBenchmark` and `ModelPrefixCache`; both
+// map directly, with no collision suffix, and the prior mapping is otherwise byte-identical.
+const SCHEMA_NAME_FINGERPRINT = "185b8627570760284fac9fe9f1ec58ce7c446495f4df5ae2fe34dd29bcee12b7"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
