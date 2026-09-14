@@ -29,6 +29,7 @@ export type Event =
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
+  | EventSessionNextPromptCancelled
   | EventSessionNextContextUpdated
   | EventSessionNextSynthetic
   | EventSessionNextProviderAttemptStarted
@@ -516,6 +517,15 @@ export type GlobalEvent = {
           messageID: string
           prompt: Prompt
           delivery: "steer" | "queue"
+        }
+      }
+    | {
+        id: string
+        type: "session.next.prompt.cancelled"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
         }
       }
     | {
@@ -1298,6 +1308,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
+    | SyncEventSessionNextPromptCancelled
     | SyncEventSessionNextContextUpdated
     | SyncEventSessionNextSynthetic
     | SyncEventSessionNextProviderAttemptStarted
@@ -1732,7 +1743,8 @@ export type SessionPendingResponse = {
   data: Array<{
     id: string
     text: string
-    delivery: string
+    delivery: "steer" | "queue"
+    editable: boolean
     timeCreated: number
     origin?: PromptOrigin
   }>
@@ -1742,6 +1754,10 @@ export type UnknownError = {
   _tag: "UnknownError"
   message: string
   ref?: string
+}
+
+export type SessionPendingCancelResponse = {
+  data: boolean
 }
 
 export type ConflictError = {
@@ -1781,6 +1797,7 @@ export type SessionDurableEvent =
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextPromptCancelled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextProviderAttemptStarted
@@ -1949,6 +1966,7 @@ export type V2Event =
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextPromptCancelled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextProviderAttemptStarted
@@ -3078,6 +3096,22 @@ export type SyncEventSessionNextPromptAdmitted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+    }
+  }
+}
+
+export type SyncEventSessionNextPromptCancelled = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.prompt.cancelled.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
     }
   }
 }
@@ -5158,6 +5192,25 @@ export type SessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+  }
+}
+
+export type SessionNextPromptCancelled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.prompt.cancelled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
   }
 }
 
@@ -7456,6 +7509,16 @@ export type EventSessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+  }
+}
+
+export type EventSessionNextPromptCancelled = {
+  id: string
+  type: "session.next.prompt.cancelled"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
   }
 }
 
@@ -14087,6 +14150,46 @@ export type V2SessionPendingResponses = {
 }
 
 export type V2SessionPendingResponse = V2SessionPendingResponses[keyof V2SessionPendingResponses]
+
+export type V2SessionCancelPendingData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/pending/{messageID}"
+}
+
+export type V2SessionCancelPendingErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError
+}
+
+export type V2SessionCancelPendingError = V2SessionCancelPendingErrors[keyof V2SessionCancelPendingErrors]
+
+export type V2SessionCancelPendingResponses = {
+  /**
+   * SessionPendingCancelResponse
+   */
+  200: SessionPendingCancelResponse
+}
+
+export type V2SessionCancelPendingResponse = V2SessionCancelPendingResponses[keyof V2SessionCancelPendingResponses]
 
 export type V2SessionTodoData = {
   body?: never

@@ -14,7 +14,6 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { sessionAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
-import { StatusPopoverV2, useDirectoryStatusAttention } from "../status-popover"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
@@ -215,7 +214,6 @@ export function SessionHeader() {
     sessionAgentColor(params.id ? sync().session.get(params.id)?.agent : undefined, sync().data.agent),
   )
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
-    statusLabel: language.t("status.popover.trigger"),
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: reviewTooltipKeybind(command),
     reviewVisible: isDesktop(),
@@ -282,7 +280,6 @@ export function SessionHeader() {
 }
 
 type SessionHeaderV2ActionsState = {
-  statusLabel: string
   reviewLabel: string
   reviewKeybind: string[]
   reviewVisible: boolean
@@ -291,20 +288,8 @@ type SessionHeaderV2ActionsState = {
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
-  const language = useLanguage()
-  // Instance status is not daily-life information (owner, 2026-08-11): a green light that is green
-  // every day is furniture in the strip a person reads constantly. It appears when it has something
-  // to say — the server is unreachable, or an MCP server failed / needs auth — which is exactly when
-  // its popover carries the repair path. Healthy instances get the space back for tabs.
-  const attention = useDirectoryStatusAttention()
-
   return (
     <div class="flex items-center gap-2">
-      <Show when={attention()}>
-        <TooltipV2 placement="bottom" value={props.state.statusLabel}>
-          <StatusPopoverV2 />
-        </TooltipV2>
-      </Show>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
           placement="bottom"

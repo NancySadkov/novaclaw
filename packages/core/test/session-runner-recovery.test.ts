@@ -94,12 +94,6 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           prompt: Prompt.make({ text: "Finish the interrupted task" }),
           resume: false,
         })
-        yield* SessionInput.promoteSteers(
-          (yield* Database.Service).db,
-          events,
-          HARNESS_SESSION,
-          Number.MAX_SAFE_INTEGER,
-        )
         yield* SessionInput.promoteNextQueued((yield* Database.Service).db, events, HARNESS_SESSION)
         yield* events.publish(SessionEvent.ProviderAttempt.Started, {
           sessionID: HARNESS_SESSION,
@@ -141,12 +135,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           resume: false,
         })
         // Promote the prompt as the dead process would have, so the orphan sits after a real user turn.
-        yield* SessionInput.promoteSteers(
-          (yield* Database.Service).db,
-          events,
-          HARNESS_SESSION,
-          Number.MAX_SAFE_INTEGER,
-        )
+        yield* SessionInput.promoteNextQueued((yield* Database.Service).db, events, HARNESS_SESSION)
         yield* orphanToolCall({ callID: "call-interrupted", assistantMessageID, providerExecuted: false })
 
         harness.requests.length = 0
@@ -196,12 +185,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           prompt: Prompt.make({ text: "Recover interrupted hosted tool" }),
           resume: false,
         })
-        yield* SessionInput.promoteSteers(
-          (yield* Database.Service).db,
-          events,
-          HARNESS_SESSION,
-          Number.MAX_SAFE_INTEGER,
-        )
+        yield* SessionInput.promoteNextQueued((yield* Database.Service).db, events, HARNESS_SESSION)
         yield* orphanToolCall({
           callID: "call-hosted-interrupted",
           assistantMessageID,
@@ -248,12 +232,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           prompt: Prompt.make({ text: "Recover pending tool input" }),
           resume: false,
         })
-        yield* SessionInput.promoteSteers(
-          (yield* Database.Service).db,
-          events,
-          HARNESS_SESSION,
-          Number.MAX_SAFE_INTEGER,
-        )
+        yield* SessionInput.promoteNextQueued((yield* Database.Service).db, events, HARNESS_SESSION)
         yield* orphanToolCall({
           callID: "call-pending-interrupted",
           assistantMessageID,

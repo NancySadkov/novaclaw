@@ -151,6 +151,9 @@ export default function Page() {
   })
 
   const composer = createSessionComposerController()
+  const [queuedEdit, setQueuedEdit] = createSignal<
+    { id: string; prompt: [{ type: "text"; content: string; start: number; end: number }]; context: [] } | undefined
+  >()
   const [recoveryDismissed, setRecoveryDismissed] = createSignal<string>()
   const inputController = createPromptInputController({
     sessionID: () => params.id,
@@ -1006,6 +1009,8 @@ export default function Page() {
         promptInput={
           <PromptInput
             controls={inputController()}
+            edit={queuedEdit()}
+            onEditLoaded={() => setQueuedEdit(undefined)}
             ref={(el) => {
               inputRef = el
             }}
@@ -1184,6 +1189,13 @@ export default function Page() {
                             if (!conn) return
                             await stopSessionCommand(conn.http, _id, sdk().directory, callID, reason)
                           }}
+                          onEditQueued={(id, text) =>
+                            setQueuedEdit({
+                              id,
+                              prompt: [{ type: "text", content: text, start: 0, end: text.length }],
+                              context: [],
+                            })
+                          }
                           revertMessageID={revertMessageID()}
                         />
                       </ErrorBoundary>

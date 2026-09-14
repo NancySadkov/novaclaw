@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { NovaclawClient, SessionMessage, V2Event } from "@novaclaw/sdk/v2/client"
 import { createNativeMessageStore } from "./message-v2-store"
-import { isOptimistic } from "@novaclaw/session-ui/v2/message-fold"
+import { isOptimistic, OPTIMISTIC_METADATA_KEY } from "@novaclaw/session-ui/v2/message-fold"
 
 function ev(type: string, data: Record<string, unknown>): V2Event {
   return { id: `evt_${type}`, type, data } as unknown as V2Event
@@ -94,7 +94,13 @@ describe("createNativeMessageStore", () => {
 
 describe("optimistic user messages", () => {
   const optimisticUser = (id: string, text: string, created = Date.now()): SessionMessage =>
-    ({ id, type: "user", text, time: { created } }) as unknown as SessionMessage
+    ({
+      id,
+      type: "user",
+      text,
+      time: { created },
+      metadata: { [OPTIMISTIC_METADATA_KEY]: true },
+    }) as unknown as SessionMessage
 
   test("a sent prompt is on screen before the server has echoed anything", () => {
     // The defect this exists for: sendFollowupDraft awaits the worktree (five minutes, budgeted),
@@ -124,11 +130,25 @@ describe("optimistic user messages", () => {
     expect(store.messages("s")).toEqual([])
   })
 
+  test("a durable cancellation event takes back the optimistic row", () => {
+    const store = createNativeMessageStore(noClient)
+    store.optimistic("s", optimisticUser("msg_u", "deploy the thing"))
+    store.apply(ev("session.next.prompt.cancelled", { sessionID: "s", messageID: "msg_u", timestamp: 1 }))
+    expect(store.messages("s")).toEqual([])
+  })
+
   test("forgetting an id that is not there, or a session that is not there, is a no-op", () => {
     const store = createNativeMessageStore(noClient)
     store.forget("never-seen", "msg_u")
     store.optimistic("s", optimisticUser("msg_u", "one"))
     store.forget("s", "msg_other")
+    expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_u"])
+  })
+
+  test("forget never removes a canonical message when cancellation loses promotion", () => {
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("s", "msg_u", "the model has this"))
+    store.forget("s", "msg_u")
     expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_u"])
   })
 

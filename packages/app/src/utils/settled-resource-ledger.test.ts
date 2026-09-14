@@ -121,9 +121,7 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "context/notification.tsx": 1,
     "pages/contacts.tsx": 2,
     "pages/debug.tsx": 1,
-    "pages/session/timeline/native-timeline.tsx": 1,
     "utils/instance-fetch.ts": 1,
-    "utils/session-pending-api.ts": 1,
   },
 }
 

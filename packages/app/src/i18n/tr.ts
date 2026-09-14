@@ -366,11 +366,6 @@ export const dict = {
   "session.header.open.menu": "Açma seçenekleri",
   "session.header.open.copyPath": "Yolu kopyala",
 
-  "status.popover.trigger": "Durum",
-  "status.popover.ariaLabel": "Sunucu yapılandırmaları",
-  "status.popover.tab.servers": "Sunucular",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Sunucuları yönet",
 
   "session.share.popover.title": "Web'de yayınla",
   "session.share.popover.description.shared": "Bu oturum web'de herkese açıktır. Bağlantıya sahip herkes erişebilir.",

@@ -509,10 +509,35 @@ const SessionControlHandler = handlerLayer(
                 id: row.id,
                 // The transcript shows text; attachments are not worth surfacing on a queued bubble.
                 text: row.prompt.text,
-                delivery: String(row.delivery),
+                delivery: row.delivery,
+                // The composer edit loader only reconstructs text. Never offer an edit that would
+                // silently discard attachments; cancellation remains available for every row.
+                editable: !row.prompt.files?.length && !row.prompt.agents?.length,
                 timeCreated: row.timeCreated,
                 origin: row.prompt.origin,
               })),
+            }
+          }),
+        )
+        .handle(
+          "session.cancelPending",
+          Effect.fn(function* (ctx) {
+            return {
+              data: yield* session
+                .cancelPrompt({
+                  sessionID: ctx.params.sessionID,
+                  messageID: ctx.params.messageID,
+                })
+                .pipe(
+                  Effect.catchTag(
+                    "Session.NotFoundError",
+                    (error) =>
+                      new SessionNotFoundError({
+                        sessionID: error.sessionID,
+                        message: `Session not found: ${error.sessionID}`,
+                      }),
+                  ),
+                ),
             }
           }),
         )

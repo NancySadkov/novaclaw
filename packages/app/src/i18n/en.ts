@@ -1106,11 +1106,6 @@ export const dict = {
   "session.header.open.app.powershell": "PowerShell",
   "session.header.open.app.sublimeText": "Sublime Text",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Server configurations",
-  "status.popover.tab.servers": "Servers",
-  "status.popover.tab.mcp": "Connections",
-  "status.popover.action.manageServers": "Manage servers",
 
   "session.share.popover.title": "Publish on web",
   "session.share.popover.description.shared":

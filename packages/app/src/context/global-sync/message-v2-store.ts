@@ -51,13 +51,10 @@ export function createNativeMessageStore(client: NovaclawClient) {
       "messages",
       produce((bySession) => {
         const list = (bySession[sessionID] ??= [])
-        // ⚠️ The server's echo of a message we already showed OPTIMISTICALLY has to REPLACE it, not be
-        // ignored. `appendMessage` skips an id it already holds, which is what stops the echo
-        // duplicating the row — but it would also strip the echo of its power to *settle* it, leaving
-        // the row marked pending forever and the client's own text/timestamp standing in for the
-        // server's. Dropping ours first lets the normal fold append the canonical version, so "sending"
-        // becomes "sent" on the same event that proves it.
-        if (event.type === "session.next.prompted") {
+        // ⚠️ A server lifecycle event for a message we showed OPTIMISTICALLY has to settle it. On
+        // promotion, dropping ours first lets the fold append the canonical version; on cancellation,
+        // the row simply vanishes. Otherwise a missed poll leaves a permanent "sending" ghost.
+        if (event.type === "session.next.prompted" || event.type === "session.next.prompt.cancelled") {
           const echoed = (event.data as { messageID?: string } | undefined)?.messageID
           const index = echoed === undefined ? -1 : list.findIndex((message) => message.id === echoed)
           if (index >= 0 && isOptimistic(list[index])) list.splice(index, 1)
@@ -164,7 +161,10 @@ export function createNativeMessageStore(client: NovaclawClient) {
         const list = bySession[sessionID]
         if (!list) return
         const index = list.findIndex((message) => message.id === messageID)
-        if (index >= 0) list.splice(index, 1)
+        // This operation owns optimistic placeholders only. A cancellation can lose its race with
+        // promotion; deleting the canonical echo in that gap would make a message that DID enter
+        // context disappear until another fetch happened to restore it.
+        if (index >= 0 && isOptimistic(list[index])) list.splice(index, 1)
       }),
     )
 

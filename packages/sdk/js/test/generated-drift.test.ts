@@ -317,7 +317,9 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `SessionMessageAcceptedExit`, `SyncEventSessionNextExitAccepted`, and
 // `EventSessionNextExitAccepted`. These are the message projection plus the durable event in each
 // public event union; the remaining source/emitted pairs retain their prior names.
-const SCHEMA_NAME_FINGERPRINT = "a4a69322253802ec0ba2b8614c40f79dce824e0712f3898c06ab2cdd9f96b9ad"
+// 2026-09-14: queued cancellation adds `SessionPendingCancelResponse` plus the durable cancellation
+// event's source, sync-envelope and public-event names. The rest of the mapping is unchanged.
+const SCHEMA_NAME_FINGERPRINT = "9084136764717b4c248c09b7ccc6678a9b621ecfbf5a8401160765b2720da708"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

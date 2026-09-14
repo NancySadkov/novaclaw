@@ -373,11 +373,6 @@ export const dict = {
   "session.header.open.menu": "Варианты открытия",
   "session.header.open.copyPath": "Копировать путь",
 
-  "status.popover.trigger": "Статус",
-  "status.popover.ariaLabel": "Настройки серверов",
-  "status.popover.tab.servers": "Серверы",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Управлять серверами",
 
   "session.share.popover.title": "Опубликовать в интернете",
   "session.share.popover.description.shared":

@@ -115,11 +115,7 @@ export function ServerRow(props: ServerRowProps) {
 }
 
 export function ServerHealthIndicator(props: { health?: ServerHealth }) {
-  // ⚠️ The SECOND derivation of the titlebar dot's three states. It is correct today — exclusive and
-  // exhaustive over `boolean | undefined` — but it was correct in `status-popover.tsx` too until one
-  // edit folded two of the three comparisons together, and nothing noticed because a per-outcome
-  // boolean list fails silently in both directions. One shared total function, so there is one copy
-  // to drift rather than two.
-  const tone = () => statusDotTone({ serverHealth: props.health?.healthy, ready: true })
+  // Exhaustive over `boolean | undefined`; keep this row on the shared total function.
+  const tone = () => statusDotTone({ serverHealth: props.health?.healthy })
   return <div data-status={tone()} class={`size-1.5 rounded-full shrink-0 my-[3.5px] ${STATUS_DOT_CLASS[tone()]}`} />
 }

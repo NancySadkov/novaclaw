@@ -292,6 +292,21 @@ export const PromptAdmitted = Event.define({
 })
 export type PromptAdmitted = typeof PromptAdmitted.Type
 
+/**
+ * A queued input withdrawn before promotion. The message never entered model context and therefore
+ * never becomes a transcript row. Durable because admission is durable: replaying one without the
+ * other would resurrect a cancelled prompt after a projection rebuild.
+ */
+export const PromptCancelled = Event.define({
+  type: "session.next.prompt.cancelled",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+  },
+})
+export type PromptCancelled = typeof PromptCancelled.Type
+
 export const ContextUpdated = Event.define({
   type: "session.next.context.updated",
   ...options,
@@ -773,6 +788,7 @@ export const DurableDefinitions = Event.inventory(
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptCancelled,
   ContextUpdated,
   Synthetic,
   ProviderAttempt.Started,
@@ -824,6 +840,7 @@ export const Definitions = Event.inventory(
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptCancelled,
   ContextUpdated,
   Synthetic,
   ProviderAttempt.Started,

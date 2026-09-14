@@ -1,9 +1,4 @@
-/**
- * The titlebar health dot's whole decision, pure — so the interesting combinations are assertable
- * without a DOM. It lives beside `status-popover.tsx` rather than inside it because that file pulls
- * in Kobalte, which cannot be loaded outside a browser; a decision nobody can unit-test is a
- * decision that fails silently, and this one did.
- */
+/** The server-row health dot's whole decision, pure and unit-testable without a DOM. */
 
 /**
  * What the health dot is SAYING. Exactly one of these, always.
@@ -20,7 +15,7 @@
  * A total function returning ONE tone removes both by construction: there is no combination of
  * inputs that yields two answers, and none that yields no answer.
  */
-export type StatusDotTone = "healthy" | "warning" | "unreachable" | "unknown"
+export type StatusDotTone = "healthy" | "unreachable" | "unknown"
 
 /**
  * One tone, one class. The values are asserted distinct in the tests — two tones sharing a class
@@ -29,27 +24,17 @@ export type StatusDotTone = "healthy" | "warning" | "unreachable" | "unknown"
  */
 export const STATUS_DOT_CLASS: Record<StatusDotTone, string> = {
   healthy: "bg-icon-success-base",
-  warning: "bg-icon-warning-base",
   unreachable: "bg-icon-critical-base",
   unknown: "bg-border-weak-base",
 }
 
 /**
  * `serverHealth` is deliberately tri-state (`true` / `false` / not yet known) and each value means
- * something different to the person looking at the strip: it is up, it is down, or we have not
- * heard yet. `ready` is the second half of "we have not heard yet" — the MCP picture has not
- * loaded — and only ever softens the answer, never hardens it. A KNOWN-down server is reported as
- * down whatever else has or has not loaded.
+ * something different to the person looking at the server row: it is up, it is down, or we have
+ * not heard yet.
  */
-export function statusDotTone(input: {
-  readonly serverHealth: boolean | undefined
-  /** Enough is known to say something more specific than "unknown". */
-  readonly ready: boolean
-  readonly issue?: "critical" | "warning"
-}): StatusDotTone {
+export function statusDotTone(input: { readonly serverHealth: boolean | undefined }): StatusDotTone {
   if (input.serverHealth === false) return "unreachable"
-  if (input.serverHealth === undefined || !input.ready) return "unknown"
-  if (input.issue === "critical") return "unreachable"
-  if (input.issue === "warning") return "warning"
+  if (input.serverHealth === undefined) return "unknown"
   return "healthy"
 }

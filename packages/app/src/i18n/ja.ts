@@ -322,11 +322,6 @@ export const dict = {
   "session.header.open.ariaLabel": "{{app}}で開く",
   "session.header.open.menu": "開くオプション",
   "session.header.open.copyPath": "パスをコピー",
-  "status.popover.trigger": "ステータス",
-  "status.popover.ariaLabel": "サーバー設定",
-  "status.popover.tab.servers": "サーバー",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "サーバーを管理",
   "session.share.popover.title": "ウェブで公開",
   "session.share.popover.description.shared":
     "このセッションはウェブで公開されています。リンクを知っている人なら誰でもアクセスできます。",

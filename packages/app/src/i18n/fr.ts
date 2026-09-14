@@ -327,11 +327,6 @@ export const dict = {
   "session.header.open.ariaLabel": "Ouvrir dans {{app}}",
   "session.header.open.menu": "Options d'ouverture",
   "session.header.open.copyPath": "Copier le chemin",
-  "status.popover.trigger": "Statut",
-  "status.popover.ariaLabel": "Configurations des serveurs",
-  "status.popover.tab.servers": "Serveurs",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Gérer les serveurs",
   "session.share.popover.title": "Publier sur le web",
   "session.share.popover.description.shared":
     "Cette session est publique sur le web. Elle est accessible à toute personne disposant du lien.",

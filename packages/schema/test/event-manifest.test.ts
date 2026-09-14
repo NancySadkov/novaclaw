@@ -90,7 +90,9 @@ describe("public event manifest", () => {
       // the transcript projector needs the exact accepted boundary live and after reconnect; it adds
       // no reach beyond the authenticated session event stream. `Completed` remains the distinct
       // process-terminal event.
-    }).toEqual({ server: 95, all: 95, latest: 95, durable: 51 })
+      // 2026-09-14: +1 durable `session.next.prompt.cancelled`. A cancellation must survive replay
+      // so every projection removes the same not-yet-promoted input instead of resurrecting a ghost.
+    }).toEqual({ server: 96, all: 96, latest: 96, durable: 52 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

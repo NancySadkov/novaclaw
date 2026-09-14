@@ -410,11 +410,6 @@ export const dict = {
   "session.header.open.app.powershell": "PowerShell",
   "session.header.open.app.sublimeText": "Sublime Text",
 
-  "status.popover.trigger": "Статус",
-  "status.popover.ariaLabel": "Конфігурації серверів",
-  "status.popover.tab.servers": "Сервери",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Керувати серверами",
 
   "session.share.popover.title": "Опублікувати в інтернеті",
   "session.share.popover.description.shared":

@@ -359,11 +359,6 @@ export const dict = {
   "session.header.open.menu": "開啟選項",
   "session.header.open.copyPath": "複製路徑",
 
-  "status.popover.trigger": "狀態",
-  "status.popover.ariaLabel": "伺服器設定",
-  "status.popover.tab.servers": "伺服器",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "管理伺服器",
 
   "session.share.popover.title": "發佈到網頁",
   "session.share.popover.description.shared": "此工作階段已在網頁上公開。任何擁有連結的人都可以存取。",

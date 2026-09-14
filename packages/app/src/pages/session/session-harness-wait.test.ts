@@ -9,9 +9,9 @@ const attempt = (phase: "drain" | "provider" | "tool" | "maintenance", toolName?
 })
 
 describe("durable harness wait taxonomy", () => {
-  test("the generic line is reserved for genuinely unknown harness work", () => {
-    expect(harnessWaitLabel(undefined)).toBe("Waiting for the harness…")
-    expect(harnessWaitLabel(attempt("drain"))).toBe("Waiting for the harness…")
+  test("unknown harness work does not manufacture a chat message", () => {
+    expect(harnessWaitLabel(undefined)).toBeUndefined()
+    expect(harnessWaitLabel(attempt("drain"))).toBeUndefined()
   })
 
   test("names model, shell, file, thread, maintenance, and reconciliation waits", () => {

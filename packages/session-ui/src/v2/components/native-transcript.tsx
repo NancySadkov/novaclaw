@@ -173,6 +173,9 @@ export function NativeTranscript(props: {
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
   onStopCommand?: (callID: string, reason: string) => void | Promise<void>
+  /** A queued prompt is still outside model context, so it may be withdrawn or returned to the composer. */
+  onCancelQueued?: (messageID: string) => void | Promise<void>
+  onEditQueued?: (messageID: string, text: string) => void | Promise<void>
   status?: SessionStatus
   /** Durable execution says this turn still has an owner obligation, even while live status reconnects. */
   executionOpen?: boolean
@@ -193,6 +196,8 @@ export function NativeTranscript(props: {
   pending?: readonly {
     id: string
     text: string
+    editable: boolean
+    delivery?: string
     origin?: {
       via: string
       sessionID?: string
@@ -208,9 +213,12 @@ export function NativeTranscript(props: {
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
   // divider, which is the informative case.
-  const visible = createMemo(() => {
-    return selectTranscriptMessages(props.messages)
-  })
+  const queuedIDs = createMemo(() => new Set((props.pending ?? []).map((item) => item.id)))
+  const visible = createMemo(() =>
+    selectTranscriptMessages(props.messages).filter(
+      (message) => !(isOptimistic(message) && queuedIDs().has(message.id)),
+    ),
+  )
   const hasOpenAssistant = createMemo(() => visible().some(isInFlightAssistant))
   // A harness steer rides the `user` role, so the turn boundary is "a user message the USER wrote".
   //
@@ -340,7 +348,12 @@ export function NativeTranscript(props: {
                         turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
                       />
                     ) : (
-                      <QueuedMessage id={item.id} text={item.text} />
+                      <QueuedMessage
+                        id={item.id}
+                        text={item.text}
+                        onCancel={props.onCancelQueued}
+                        onEdit={item.editable ? props.onEditQueued : undefined}
+                      />
                     )
                   }
                 </For>
@@ -605,7 +618,12 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
  * rather than interrupting a running edit or command, and without saying so people assume it was swallowed.
  * It disappears on its own when the runner promotes the input into a real user message.
  */
-function QueuedMessage(props: { id: string; text: string }) {
+function QueuedMessage(props: {
+  id: string
+  text: string
+  onCancel?: (messageID: string) => void | Promise<void>
+  onEdit?: (messageID: string, text: string) => void | Promise<void>
+}) {
   const i18n = useI18n()
   return (
     <div data-slot="native-user" data-queued="true">
@@ -618,6 +636,24 @@ function QueuedMessage(props: { id: string; text: string }) {
           <span>{i18n.t("ui.transcript.queued")}</span>
         </div>
       </div>
+      <Show when={props.onCancel || props.onEdit}>
+        <div data-slot="native-msg-actions">
+          <Show when={props.onEdit}>
+            <button
+              type="button"
+              data-slot="native-queued-edit"
+              onClick={() => void props.onEdit?.(props.id, props.text)}
+            >
+              {i18n.t("ui.transcript.queued.edit")}
+            </button>
+          </Show>
+          <Show when={props.onCancel}>
+            <button type="button" data-slot="native-queued-cancel" onClick={() => void props.onCancel?.(props.id)}>
+              {i18n.t("ui.transcript.queued.cancel")}
+            </button>
+          </Show>
+        </div>
+      </Show>
     </div>
   )
 }
@@ -692,12 +728,18 @@ function UserMessage(props: { message: SessionMessageUser }) {
             <For each={props.message.agents ?? []}>{(agent) => <span data-slot="native-chip">@{agent.name}</span>}</For>
           </div>
         </Show>
+        <Show when={pending()}>
+          <div data-slot="native-user-queued" aria-live="polite">
+            <span data-slot="native-user-queued-dot" aria-hidden="true" />
+            <span>{i18n.t("ui.transcript.sending")}</span>
+          </div>
+        </Show>
       </div>
       {/* ⚠️ The row is no longer gated on `onRevert`. The timestamp belongs to EVERY message, and
           hanging it off a host-supplied callback would have made "when did I say this?" answerable
           only in a client that also happens to wire up Revert. */}
       <div data-slot="native-msg-actions">
-        <Show when={actions().onRevert}>
+        <Show when={actions().onRevert && !pending()}>
           <button
             type="button"
             data-slot="native-revert"

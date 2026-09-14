@@ -21,10 +21,9 @@ import { makeLocationNode } from "./effect/app-node"
  * **Answer: the user AND the model, through different channels, at different pressures.**
  *
  * 1. **The user was already told, and that half needed nothing.** A configured-but-broken MCP server
- *    surfaces on three PULL surfaces that exist today: the titlebar status dot
- *    (`app/src/components/status-popover.tsx` maps `failed` → critical), the per-server row in
- *    `dialog-select-mcp.tsx` — the one place that renders the fault's own `error` string — and
- *    `nova-cli mcp list`, which prints `✗ <name> failed` with the error beneath it. Pull is the right
+ *    surfaces on two PULL surfaces that exist today: the per-server row in `dialog-select-mcp.tsx` —
+ *    the one place that renders the fault's own `error` string — and `nova-cli mcp list`, which
+ *    prints `✗ <name> failed` with the error beneath it. Pull is the right
  *    shape and a push channel would be the wrong one: AGENTS.md's managed-by-default stance is that a
  *    common user is *helped, not handed a pager*, and a toast for a fault nobody can fix mid-turn is a
  *    pager. So nothing is owed to the user here.

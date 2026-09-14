@@ -361,11 +361,6 @@ export const dict = {
   "session.header.open.menu": "ตัวเลือกการเปิด",
   "session.header.open.copyPath": "คัดลอกเส้นทาง",
 
-  "status.popover.trigger": "สถานะ",
-  "status.popover.ariaLabel": "การกำหนดค่าเซิร์ฟเวอร์",
-  "status.popover.tab.servers": "เซิร์ฟเวอร์",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "จัดการเซิร์ฟเวอร์",
 
   "session.share.popover.title": "เผยแพร่บนเว็บ",
   "session.share.popover.description.shared": "เซสชันนี้เป็นสาธารณะบนเว็บ สามารถเข้าถึงได้โดยผู้ที่มีลิงก์",

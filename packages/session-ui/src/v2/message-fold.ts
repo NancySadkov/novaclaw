@@ -145,7 +145,7 @@ function mergeCheckpoint(current: string, offset: number, delta: string): string
 
 /**
  * Fold one `session.next.*` event into `messages` (the event's session array).
- * Non-transcript events (`prompt.admitted`, `moved`, `completed`,
+ * Non-transcript events (`prompt.admitted`, `prompt.cancelled`, `moved`, `completed`,
  * `responder/mode.switched`, `revert.*`) and non-`session.next`
  * events are no-ops here — they belong to the session-info / revert stores handled in later
  * F1e slices, exactly as the core updater routes them to the session row.
@@ -677,9 +677,14 @@ export function mergeNativeMessages(
  */
 export function unqueuedPending<P extends { readonly id: string }>(
   pending: readonly P[] | undefined,
-  messages: readonly { readonly id: string }[],
+  messages: readonly { readonly id: string; readonly metadata?: Record<string, unknown> }[],
 ): readonly P[] {
   if (!pending || pending.length === 0) return []
-  const shown = new Set(messages.map((message) => message.id))
+  // An optimistic row is only the pre-acknowledgement stand-in. Once the server reports the same
+  // id in its durable queue, the queued rendering wins because it carries the honest lifecycle and
+  // its Cancel/Edit controls. Only a canonical promoted row suppresses the queued stand-in.
+  const shown = new Set(
+    messages.filter((message) => message.metadata?.[OPTIMISTIC_METADATA_KEY] !== true).map((message) => message.id),
+  )
   return pending.filter((item) => !shown.has(item.id))
 }

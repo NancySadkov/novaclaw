@@ -151,7 +151,7 @@ describe("SessionV2.prompt", () => {
         id: message.id,
         sessionID,
         prompt: { text: "Fix the failing tests" },
-        delivery: "steer",
+        delivery: "queue",
       })
     }),
   )
@@ -188,7 +188,8 @@ describe("SessionV2.prompt", () => {
 
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), resume: false })
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
-      yield* SessionInput.promoteSteers(db, events, sessionID, Number.MAX_SAFE_INTEGER)
+      yield* SessionInput.promoteNextQueued(db, events, sessionID)
+      yield* SessionInput.promoteNextQueued(db, events, sessionID)
       const streamed = Array.from(yield* Fiber.join(fiber))
 
       expect(streamed.map((event) => [event.durable?.seq, event.type])).toEqual([
@@ -324,7 +325,7 @@ describe("SessionV2.prompt", () => {
           id: messageID,
           sessionID,
           prompt: Prompt.make({ text: "Fix the failing tests" }),
-          delivery: "queue",
+          delivery: "steer",
           resume: false,
         })
         .pipe(Effect.flip)
@@ -367,7 +368,67 @@ describe("SessionV2.prompt", () => {
 
       expect(yield* session.messages({ sessionID })).toEqual([])
       expect(yield* SessionInput.listPending(db, sessionID)).toMatchObject([
-        { id: messageID, prompt: { text: "Visible while paused" }, delivery: "steer" },
+        { id: messageID, prompt: { text: "Visible while paused" }, delivery: "queue" },
+      ])
+    }),
+  )
+
+  it.effect("cancels a queued prompt only before it enters model context", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Withdraw me" }),
+        resume: false,
+      })
+
+      expect(yield* session.cancelPrompt({ sessionID, messageID })).toBe(true)
+      expect(yield* session.cancelPrompt({ sessionID, messageID })).toBe(false)
+      expect(yield* admitted(messageID)).toBeUndefined()
+      expect(yield* session.messages({ sessionID })).toEqual([])
+      expect(yield* eventCount(EventV2.versionedType(SessionEvent.PromptCancelled.type, 1))).toBe(1)
+    }),
+  )
+
+  it.effect("records one cancellation under concurrent withdrawal attempts", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Withdraw once" }),
+        resume: false,
+      })
+
+      const results = yield* Effect.all(
+        [session.cancelPrompt({ sessionID, messageID }), session.cancelPrompt({ sessionID, messageID })],
+        { concurrency: "unbounded" },
+      )
+      expect(results.toSorted()).toEqual([false, true])
+      expect(yield* eventCount(EventV2.versionedType(SessionEvent.PromptCancelled.type, 1))).toBe(1)
+    }),
+  )
+
+  it.effect("refuses cancellation after promotion has entered the transcript", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Already entered" }),
+        resume: false,
+      })
+      yield* SessionInput.promoteNextQueued(db, events, sessionID)
+
+      expect(yield* session.cancelPrompt({ sessionID, messageID })).toBe(false)
+      expect(yield* session.messages({ sessionID })).toMatchObject([
+        { id: messageID, type: "user", text: "Already entered" },
       ])
     }),
   )
@@ -378,7 +439,13 @@ describe("SessionV2.prompt", () => {
       const { db } = yield* Database.Service
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
-      yield* session.prompt({ id: messageID, sessionID, prompt: Prompt.make({ text: "Promote once" }), resume: false })
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Promote once" }),
+        delivery: "steer",
+        resume: false,
+      })
 
       yield* Effect.all(
         [
@@ -402,9 +469,19 @@ describe("SessionV2.prompt", () => {
       const { db } = yield* Database.Service
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
-      const first = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Before cutoff" }), resume: false })
+      const first = yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Before cutoff" }),
+        delivery: "steer",
+        resume: false,
+      })
       const cutoff = first.admittedSeq
-      const second = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "After cutoff" }), resume: false })
+      const second = yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "After cutoff" }),
+        delivery: "steer",
+        resume: false,
+      })
 
       yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
 
@@ -456,6 +533,43 @@ describe("SessionV2.prompt", () => {
     }),
   )
 
+  it.effect("replay does not resurrect a cancelled queued prompt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* session.prompt({
+        id: messageID,
+        sessionID,
+        prompt: Prompt.make({ text: "Stay withdrawn" }),
+        resume: false,
+      })
+      expect(yield* session.cancelPrompt({ sessionID, messageID })).toBe(true)
+      const recorded = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+
+      yield* events.remove(sessionID)
+      yield* db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      yield* events.replayAll(
+        recorded.map((event) => ({
+          id: event.id,
+          aggregateID: event.aggregate_id,
+          seq: event.seq,
+          type: event.type,
+          data: event.data,
+        })),
+      )
+
+      expect(yield* admitted(messageID)).toBeUndefined()
+      expect(yield* session.messages({ sessionID })).toEqual([])
+    }),
+  )
+
   it.effect("returns an exact retry of a legacy projected prompt", () =>
     Effect.gen(function* () {
       yield* setup
@@ -470,7 +584,7 @@ describe("SessionV2.prompt", () => {
         delivery: "steer",
       })
 
-      const retried = yield* session.prompt({ id: messageID, sessionID, prompt, resume: false })
+      const retried = yield* session.prompt({ id: messageID, sessionID, prompt, delivery: "steer", resume: false })
 
       expect(retried).toMatchObject({ id: messageID, prompt: { text: "Historical prompt" } })
       expect(yield* admitted(messageID)).toHaveProperty("promotedSeq")

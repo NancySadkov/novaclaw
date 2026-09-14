@@ -12,7 +12,8 @@ import { instanceFetch } from "@/utils/instance-fetch"
 export interface PendingPrompt {
   id: string
   text: string
-  delivery: string
+  delivery: "steer" | "queue"
+  editable: boolean
   timeCreated: number
   origin?: {
     via: string
@@ -48,13 +49,8 @@ export const pendingPromptsKick = kicks
 export const kickPendingPrompts = () => setKicks((value) => value + 1)
 
 /**
- * ⚠️ **The one client on this seam that deliberately swallows its fault, and why it is not ruling 2's
- * "renders empty instead of naming itself".** This polls every 2 s while a turn is in flight, and its
- * sole caller (`pages/session/timeline/native-timeline.tsx`) already wraps it in `.catch(() => [])`.
- * Naming a transient 404/offline blip here would emit thirty console lines a minute into the Debug
- * app's error log while changing nothing a user sees. The surface it renders is additive — prompts
- * the user just typed and can still see in the composer — so "not shown yet" is not a false claim
- * about the world. If this ever becomes the ONLY view of a pending prompt, the swallow has to go.
+ * Failures propagate so the renderer can retain its last known queue. Folding an unreadable queue
+ * into `[]` would make every waiting prompt disappear during an outage — absence is not an empty result.
  */
 export async function fetchPendingPrompts(
   server: ServerConnection.HttpBase,
@@ -64,6 +60,21 @@ export async function fetchPendingPrompts(
     route: `api/session/${input.sessionID}/pending`,
     directory: input.directory,
     directoryVia: "header",
-  }).catch(() => ({}) as { data?: PendingPrompt[] })
-  return body.data ?? []
+  })
+  if (!body.data) throw new Error("Pending prompt response is missing data.")
+  return body.data
+}
+
+/** Withdraw a prompt only while it is still outside model context. */
+export async function cancelPendingPrompt(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; messageID: string },
+): Promise<boolean> {
+  const body = await instanceFetch<{ data: boolean }>(server, {
+    method: "DELETE",
+    route: `api/session/${encodeURIComponent(input.sessionID)}/pending/${encodeURIComponent(input.messageID)}`,
+    directory: input.directory,
+    directoryVia: "header",
+  })
+  return body.data
 }

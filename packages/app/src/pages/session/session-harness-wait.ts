@@ -33,14 +33,14 @@ const THREAD_TOOLS = new Set(["colleague", "session", "spawn", "spawn_agent", "w
 export const harnessWaitLabel = (
   attempt: HarnessWaitAttempt | undefined,
   options?: { readonly transcriptReconciliation?: boolean },
-): string => {
+): string | undefined => {
   if (options?.transcriptReconciliation) return "Syncing the transcript…"
-  if (!attempt) return "Waiting for the harness…"
+  if (!attempt) return undefined
   if (attempt.state === "recovering") return "Recovering the agent…"
   if (attempt.state === "paused") return "Waiting for recovery approval…"
   if (attempt.phase === "provider") return "Waiting for the model…"
   if (attempt.phase === "maintenance") return "Waiting for maintenance…"
-  if (attempt.phase !== "tool" || attempt.toolState === "settled") return "Waiting for the harness…"
+  if (attempt.phase !== "tool" || attempt.toolState === "settled") return undefined
 
   const name = attempt.toolName?.toLowerCase()
   if (!name) return "Waiting for a tool…"

@@ -194,6 +194,51 @@ export const projectPrompted = Effect.fn("SessionInput.projectPrompted")(functio
     .pipe(Effect.orDie)
 })
 
+export const projectCancelled = Effect.fn("SessionInput.projectCancelled")(function* (
+  db: DatabaseService,
+  input: { readonly id: SessionMessage.ID; readonly sessionID: SessionSchema.ID },
+) {
+  const deleted = yield* db
+    .delete(SessionInputTable)
+    .where(
+      and(
+        eq(SessionInputTable.id, input.id),
+        eq(SessionInputTable.session_id, input.sessionID),
+        isNull(SessionInputTable.promoted_seq),
+      ),
+    )
+    .returning({ id: SessionInputTable.id })
+    .get()
+    .pipe(Effect.orDie)
+  // Cancellation and promotion (or two cancellation requests) race under the aggregate's immediate
+  // transaction. Whichever event gets the sequence first wins; the loser rolls back instead of
+  // recording a second or false cancellation.
+  if (!deleted) return yield* Effect.die(new LifecycleConflict({ id: input.id }))
+})
+
+/** Withdraw an admitted input only while it is still outside model context. Idempotent for callers. */
+export const cancel = Effect.fn("SessionInput.cancel")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+  id: SessionMessage.ID,
+) {
+  const stored = yield* find(db, id)
+  if (stored === undefined || stored.sessionID !== sessionID || stored.promotedSeq !== undefined) return false
+  return yield* events
+    .publish(SessionEvent.PromptCancelled, {
+      sessionID,
+      messageID: id,
+      timestamp: yield* DateTime.now,
+    })
+    .pipe(
+      Effect.as(true),
+      Effect.catchDefect((defect) =>
+        defect instanceof LifecycleConflict ? Effect.succeed(false) : Effect.die(defect),
+      ),
+    )
+})
+
 export const hasPending = Effect.fn("SessionInput.hasPending")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,

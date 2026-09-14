@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage, V2Event } from "@novaclaw/sdk/v2"
 import {
+  OPTIMISTIC_METADATA_KEY,
   unqueuedPending,
   activeAssistant,
   appendMessage,
@@ -554,6 +555,11 @@ describe("applySessionNextEvent", () => {
         prompt: { text: "x" },
         delivery: "queue",
       }),
+      ev("session.next.prompt.cancelled", {
+        timestamp: 2,
+        sessionID: "s",
+        messageID: "msg_u",
+      }),
       ev("session.status", { sessionID: "s", status: { type: "idle" } }),
     )
     expect(messages).toHaveLength(0)
@@ -719,6 +725,12 @@ describe("unqueuedPending — the duplicate the owner saw on a packaged build", 
   test("keeps a queued row the transcript does not have yet", () => {
     const pending = [{ id: "msg_second", text: "and this" }]
     expect(unqueuedPending(pending, [{ id: "msg_hi" }])).toEqual(pending)
+  })
+
+  test("durable queue state replaces the optimistic sending placeholder", () => {
+    const pending = [{ id: "msg_second", text: "and this" }]
+    const optimistic = { id: "msg_second", metadata: { [OPTIMISTIC_METADATA_KEY]: true } }
+    expect(unqueuedPending(pending, [optimistic])).toEqual(pending)
   })
 
   test("filters per row, not all-or-nothing", () => {

@@ -5,10 +5,17 @@ import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
 import { selectVisibleMessages } from "@/pages/session/revert-view"
-import { fetchPendingPrompts, pendingPromptsKick, type PendingPrompt } from "@/utils/session-pending-api"
+import {
+  cancelPendingPrompt,
+  fetchPendingPrompts,
+  kickPendingPrompts,
+  pendingPromptsKick,
+  type PendingPrompt,
+} from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { createBottomPinController, navigationTargetIndex } from "./native-scroll"
-import { handoffPending, keepEqualRows, startPendingPoll } from "./pending-poll"
+import { keepEqualRows, startPendingPoll } from "./pending-poll"
+import { showToast } from "@/utils/toast"
 import { isInFlightAssistant } from "@novaclaw/session-ui/v2/message-fold"
 import { harnessWaitLabel, type HarnessWaitAttempt } from "../session-harness-wait"
 
@@ -45,6 +52,8 @@ export function NativeTimeline(props: {
   onChooseModel?: () => void
   onUnpinDevice?: (sessionID: string) => void | Promise<void>
   onStopCommand?: (callID: string, reason: string) => void | Promise<void>
+  /** Put a successfully cancelled queued prompt back in the composer. */
+  onEditQueued?: (messageID: string, text: string) => void
   /**
    * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
    * after it leave the transcript — a staged revert is a reversible HIDE, so the rows stay in the
@@ -93,13 +102,47 @@ export function NativeTimeline(props: {
   const [pending, setPending] = createSignal<readonly PendingPrompt[]>([])
   const updatePending = (rows: readonly PendingPrompt[]) =>
     setPending((current) => {
-      const handed = handoffPending(current, rows, stored())
       return keepEqualRows(
         current,
-        handed,
-        (a, b) => a.id === b.id && a.text === b.text && a.delivery === b.delivery && a.timeCreated === b.timeCreated,
+        rows.filter((row) => row.delivery === "queue"),
+        (a, b) =>
+          a.id === b.id &&
+          a.text === b.text &&
+          a.delivery === b.delivery &&
+          a.editable === b.editable &&
+          a.timeCreated === b.timeCreated,
       )
     })
+  const cancelQueued = async (messageID: string, edit = false) => {
+    const conn = server.current
+    const directory = sessionDirectory()
+    if (!conn || !directory) return
+    const row = pending().find((item) => item.id === messageID)
+    try {
+      const cancelled = await cancelPendingPrompt(conn.http, {
+        directory,
+        sessionID: props.sessionID,
+        messageID,
+      })
+      if (!cancelled) {
+        // Promotion may have won the race. Keep the waiting projection until the canonical read
+        // succeeds; dropping it first would recreate the very ownerless-frame ghost this path fixes.
+        await serverSync().nativeMessages.load(props.sessionID)
+        kickPendingPrompts()
+        return
+      }
+      // The durable cancellation committed, so both local projections can disappear immediately.
+      setPending((items) => items.filter((item) => item.id !== messageID))
+      serverSync().nativeMessages.forget(props.sessionID, messageID)
+      if (edit && row) props.onEditQueued?.(row.id, row.text)
+    } catch (error) {
+      showToast({
+        title: "Could not cancel this queued message",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      })
+    }
+  }
   /**
    * 🔴 `time?.completed`, not `time.completed` — this line put a shipped renderer on the floor.
    *
@@ -134,8 +177,18 @@ export function NativeTimeline(props: {
     onCleanup(
       startPendingPoll({
         repeat,
-        fetch: () =>
-          fetchPendingPrompts(conn.http, { directory, sessionID: props.sessionID }).catch(() => [] as PendingPrompt[]),
+        fetch: async () => {
+          const rows = await fetchPendingPrompts(conn.http, { directory, sessionID: props.sessionID }).catch(() =>
+            pending(),
+          )
+          const next = new Set(rows.map((row) => row.id))
+          const disappeared = pending().some((row) => !next.has(row.id))
+          // Promotion and cancellation both remove an input row. Reconcile the canonical transcript
+          // before handing either transition to the renderer, so there is never a frame in which a
+          // prompt is owned by neither projection. If the read fails, retain the last truthful list.
+          if (disappeared) await serverSync().nativeMessages.load(props.sessionID)
+          return rows
+        },
         // Preserve the signal identity when a one-shot idle read returns the same rows. Otherwise
         // an empty `[]` response would retrigger this effect forever and turn "read once" into a
         // tight request loop.
@@ -308,6 +361,8 @@ export function NativeTimeline(props: {
             onChooseModel={props.onChooseModel}
             onUnpinDevice={props.onUnpinDevice}
             onStopCommand={props.onStopCommand}
+            onCancelQueued={(messageID) => cancelQueued(messageID)}
+            onEditQueued={(messageID) => cancelQueued(messageID, true)}
             status={serverSync().session.data.session_status[props.sessionID]}
           />
         </div>

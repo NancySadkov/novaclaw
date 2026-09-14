@@ -93,9 +93,7 @@ describe("turn receipt", () => {
     expect(longStageNote("provider-prefill", 0)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS - 1)).toBeUndefined()
     expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBeTruthy()
-    expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBe(
-      "The request reached the model, but it has not produced its first token. It may still be loading context or model data.",
-    )
+    expect(longStageNote("provider-prefill", LONG_STAGE_MS)).toBe("Waiting for the model server...")
     expect(longStageNote("provider-prefill", LONG_STAGE_MS, { imageAttachments: 1 })).toBe(
       "The visual model is reading the attached image. Large images can take time.",
     )

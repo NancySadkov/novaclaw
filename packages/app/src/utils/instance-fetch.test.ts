@@ -17,7 +17,7 @@ import { discoverInstances } from "@/utils/instance-discovery"
 import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive, runRecipe } from "@/utils/recipe-api"
 import { registryRows } from "@/utils/registry-api"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
-import { fetchPendingPrompts } from "@/utils/session-pending-api"
+import { cancelPendingPrompt, fetchPendingPrompts } from "@/utils/session-pending-api"
 
 /**
  * Two things live here, and they are different in kind.
@@ -561,21 +561,32 @@ describe("every collapsed client still puts the same request on the wire", () =>
     expect(sent.method).toBe("GET")
   })
 
-  test("session-pending-api -> the header channel, and a fault still resolves to an empty list", async () => {
+  test("session-pending-api -> the header channel, and a fault remains a fault", async () => {
     const sent = await wire(() => fetchPendingPrompts(server, { directory: "/w", sessionID: "ses_1" }), {
       status: 200,
-      body: { data: [{ id: "p1", text: "hi", delivery: "ui", timeCreated: 1 }] },
+      body: { data: [{ id: "p1", text: "hi", delivery: "queue", editable: true, timeCreated: 1 }] },
     })
     expect(sent.url).toBe("http://instance.test:4096/api/session/ses_1/pending")
     expect(sent.headers["x-novaclaw-directory"]).toBe("%2Fw")
-    // The documented swallow: its caller polls every 2s and already catches.
     await wire(
-      async () => expect(await fetchPendingPrompts(server, { directory: "/w", sessionID: "ses_1" })).toEqual([]),
+      async () => {
+        await expect(fetchPendingPrompts(server, { directory: "/w", sessionID: "ses_1" })).rejects.toThrow("boom")
+      },
       {
         status: 500,
         body: { message: "boom" },
       },
     )
+  })
+
+  test("session-pending-api -> cancellation names the exact queued message", async () => {
+    const sent = await wire(
+      () => cancelPendingPrompt(server, { directory: "/w", sessionID: "ses 1", messageID: "msg/2" }),
+      { status: 200, body: { data: true } },
+    )
+    expect(sent.url).toBe("http://instance.test:4096/api/session/ses%201/pending/msg%2F2")
+    expect(sent.method).toBe("DELETE")
+    expect(sent.headers["x-novaclaw-directory"]).toBe("%2Fw")
   })
 
   test("instance-discovery -> GET /global/discovery, unwrapped, with the sibling headers", async () => {

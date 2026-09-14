@@ -13680,6 +13680,93 @@
         ]
       }
     },
+    "/api/session/{sessionID}/pending/{messageID}": {
+      "delete": {
+        "tags": ["session control"],
+        "operationId": "v2.session.cancelPending",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "SessionPendingCancelResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPendingCancelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Withdraw an admitted prompt only while it has not entered model context. Returns false when it was already promoted or absent.",
+        "summary": "Cancel a queued prompt",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.cancelPending({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/todo": {
       "get": {
         "tags": ["session control"],
@@ -23356,6 +23443,9 @@
             "$ref": "#/components/schemas/EventSessionNextPromptAdmitted"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextPromptCancelled"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextContextUpdated"
           },
           {
@@ -24995,6 +25085,39 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.prompt.cancelled"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID"],
                     "additionalProperties": false
                   }
                 },
@@ -27743,6 +27866,9 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextPromptAdmitted"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextPromptCancelled"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextContextUpdated"
               },
               {
@@ -29150,7 +29276,11 @@
                   "type": "string"
                 },
                 "delivery": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": ["steer", "queue"]
+                },
+                "editable": {
+                  "type": "boolean"
                 },
                 "timeCreated": {
                   "type": "number"
@@ -29159,7 +29289,7 @@
                   "$ref": "#/components/schemas/PromptOrigin"
                 }
               },
-              "required": ["id", "text", "delivery", "timeCreated"],
+              "required": ["id", "text", "delivery", "editable", "timeCreated"],
               "additionalProperties": false
             }
           }
@@ -29182,6 +29312,16 @@
           }
         },
         "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
+      "SessionPendingCancelResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "boolean"
+          }
+        },
+        "required": ["data"],
         "additionalProperties": false
       },
       "ConflictError": {
@@ -29295,6 +29435,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextPromptAdmitted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextPromptCancelled"
           },
           {
             "$ref": "#/components/schemas/SessionNextContextUpdated"
@@ -29782,6 +29925,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextPromptAdmitted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextPromptCancelled"
           },
           {
             "$ref": "#/components/schemas/SessionNextContextUpdated"
@@ -33318,6 +33464,60 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextPromptCancelled": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.prompt.cancelled.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID"],
                 "additionalProperties": false
               }
             },
@@ -39765,6 +39965,61 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextPromptCancelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.prompt.cancelled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID"],
             "additionalProperties": false
           }
         },
@@ -46722,6 +46977,39 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextPromptCancelled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.prompt.cancelled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID"],
             "additionalProperties": false
           }
         },

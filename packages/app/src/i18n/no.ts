@@ -363,11 +363,6 @@ export const dict = {
   "session.header.open.menu": "Åpne alternativer",
   "session.header.open.copyPath": "Kopier bane",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Serverkonfigurasjoner",
-  "status.popover.tab.servers": "Servere",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Administrer servere",
 
   "session.share.popover.title": "Publiser på nett",
   "session.share.popover.description.shared":

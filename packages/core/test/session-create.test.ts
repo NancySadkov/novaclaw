@@ -316,7 +316,7 @@ describe("SessionV2.create", () => {
       const { db } = yield* Database.Service
       const created = yield* session.create({ location, agent })
       yield* session.prompt({ sessionID: created.id, prompt: Prompt.make({ text: "Hello" }), resume: false })
-      yield* SessionInput.promoteSteers(db, events, created.id, Number.MAX_SAFE_INTEGER)
+      yield* SessionInput.promoteNextQueued(db, events, created.id)
 
       expect(
         Array.from(yield* session.events({ sessionID: created.id }).pipe(Stream.take(2), Stream.runCollect)),
@@ -338,7 +338,7 @@ describe("SessionV2.create", () => {
         prompt: Prompt.make({ text: "Replay lifecycle" }),
         resume: false,
       })
-      yield* SessionInput.promoteSteers(sourceDb, sourceEvents, created.id, Number.MAX_SAFE_INTEGER)
+      yield* SessionInput.promoteNextQueued(sourceDb, sourceEvents, created.id)
       const serialized = (yield* sourceDb
         .select()
         .from(EventTable)
@@ -374,7 +374,7 @@ describe("SessionV2.create", () => {
           id: admitted.id,
           sessionID: created.id,
           prompt: { text: "Replay lifecycle" },
-          delivery: "steer",
+          delivery: "queue",
           admittedSeq: 1,
         })
         expect(yield* store.context(created.id)).toEqual([])
@@ -384,7 +384,7 @@ describe("SessionV2.create", () => {
           id: admitted.id,
           sessionID: created.id,
           prompt: { text: "Replay lifecycle" },
-          delivery: "steer",
+          delivery: "queue",
           admittedSeq: 1,
           promotedSeq: 2,
         })
@@ -823,7 +823,7 @@ describe("SessionV2.fork", () => {
       const { db } = yield* Database.Service
       for (const text of texts) {
         yield* session.prompt({ sessionID, prompt: Prompt.make({ text }), resume: false })
-        yield* SessionInput.promoteSteers(db, events, sessionID, Number.MAX_SAFE_INTEGER)
+        yield* SessionInput.promoteNextQueued(db, events, sessionID)
       }
     })
 

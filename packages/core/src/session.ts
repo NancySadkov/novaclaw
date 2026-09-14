@@ -441,6 +441,11 @@ export interface Interface {
     delivery?: SessionInput.Delivery
     resume?: boolean
   }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionArchivedError>
+  /** Cancel a prompt only while it remains in the durable pre-context queue. */
+  readonly cancelPrompt: (input: {
+    sessionID: SessionSchema.ID
+    messageID: SessionMessage.ID
+  }) => Effect.Effect<boolean, NotFoundError>
   readonly shell: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
@@ -1047,7 +1052,10 @@ export const layer = Layer.effect(
             }
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
-            const delivery = input.delivery ?? "steer"
+            // A public prompt is a new user turn. Harness interjections use `SessionInput.steer`
+            // explicitly; defaulting this seam to steer let ordinary follow-ups interrupt and join
+            // the active work log, folding its prior work as though the user had ended it.
+            const delivery = input.delivery ?? "queue"
             const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
             const admitted = yield* SessionInput.admit(db, events, {
               id: messageID,
@@ -1068,6 +1076,10 @@ export const layer = Layer.effect(
           }),
         ),
       ),
+      cancelPrompt: Effect.fn("V2Session.cancelPrompt")(function* (input) {
+        yield* result.get(input.sessionID)
+        return yield* SessionInput.cancel(db, events, input.sessionID, input.messageID)
+      }),
       // The `!command` shell op: run one command to completion and record it as a
       // SessionMessage.Shell (Started opens the message, Ended fills its output — the
       // projector + message-updater build the rendered message from those two events).

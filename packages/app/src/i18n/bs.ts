@@ -365,11 +365,6 @@ export const dict = {
   "session.header.open.menu": "Opcije otvaranja",
   "session.header.open.copyPath": "Kopiraj putanju",
 
-  "status.popover.trigger": "Status",
-  "status.popover.ariaLabel": "Konfiguracije servera",
-  "status.popover.tab.servers": "Serveri",
-  "status.popover.tab.mcp": "MCP",
-  "status.popover.action.manageServers": "Upravljaj serverima",
 
   "session.share.popover.title": "Objavi na webu",
   "session.share.popover.description.shared": "Ova sesija je javna na webu. Dostupna je svima koji imaju link.",

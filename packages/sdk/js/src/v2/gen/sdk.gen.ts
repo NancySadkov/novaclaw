@@ -1723,6 +1723,30 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Cancel a queued prompt
+   *
+   * Withdraw an admitted prompt only while it has not entered model context. Returns false when it was already promoted or absent.
+   */
+  public cancelPending<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"], messageID: parameters?.["messageID"] }
+    return (options?.client ?? this.client).delete<
+      T.V2SessionCancelPendingResponses,
+      T.V2SessionCancelPendingErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/pending/{messageID}",
+      ...options,
+      path,
+    })
+  }
+
+  /**
    * Get session todos
    *
    * Retrieve the todo list the session's agent maintains.

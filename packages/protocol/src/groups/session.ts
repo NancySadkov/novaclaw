@@ -657,7 +657,8 @@ export const makeSessionGroups = <
               Schema.Struct({
                 id: SessionMessage.ID,
                 text: Schema.String,
-                delivery: Schema.String,
+                delivery: SessionInput.Delivery,
+                editable: Schema.Boolean,
                 timeCreated: Schema.Finite,
                 origin: Prompt.fields.origin,
               }),
@@ -672,6 +673,24 @@ export const makeSessionGroups = <
               summary: "Queued prompts not yet read by the agent",
               description:
                 "Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.",
+            }),
+          ),
+      )
+      .add(
+        HttpApiEndpoint.delete("session.cancelPending", "/api/session/:sessionID/pending/:messageID", {
+          params: { sessionID: Session.ID, messageID: SessionMessage.ID },
+          success: Schema.Struct({ data: Schema.Boolean }).annotate({
+            identifier: "SessionPendingCancelResponse",
+          }),
+          error: [SessionNotFoundError, UnknownError],
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.cancelPending",
+              summary: "Cancel a queued prompt",
+              description:
+                "Withdraw an admitted prompt only while it has not entered model context. Returns false when it was already promoted or absent.",
             }),
           ),
       )

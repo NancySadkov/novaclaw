@@ -216,18 +216,6 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   // have folded `session.next.prompted`, so an acknowledged prompt blinked out while the agent was
   // already processing it. One id across both projections makes duplication impossible and loss
   // visible until the canonical echo replaces our row.
-  // Guarded like the calls below, and for the same reason: this runs BEFORE the prompt POST, so an
-  // exception here would swallow the message. ⚠️ It fails toward SHOWING. If we cannot tell whether the
-  // session was busy, a duplicate bubble is visible, self-correcting (the queued one clears on
-  // promotion) and merely untidy — while a missing message is the defect being fixed. Pick the failure
-  // that a user can see over the one that looks like their words were thrown away.
-  const wasBusy = (() => {
-    try {
-      return input.sync.data.session_working(input.draft.sessionID) === true
-    } catch {
-      return false
-    }
-  })()
   const showOptimistic = () => {
     try {
       input.serverSync.nativeMessages?.optimistic(input.draft.sessionID, {
@@ -323,8 +311,9 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     // The server has it now. If this was a mid-turn prompt it is sitting in the durable input queue,
     // and the queued-bubble poll would not otherwise look for it until its next 2 s tick — so say so
     // rather than letting the user watch an empty transcript wonder whether Enter worked. Fired after
-    // the POST on purpose: before it there is nothing to fetch. Idle sessions already have their row.
-    if (wasBusy) kickPendingPrompts()
+    // the POST on purpose: before it there is nothing to fetch. Even an apparently idle session can
+    // still leave this row pending while its runner wakes, so every acknowledgement starts a read.
+    kickPendingPrompts()
     return true
   } catch (err) {
     setIdle()

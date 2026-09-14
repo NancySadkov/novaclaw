@@ -208,7 +208,7 @@ describe("SessionRunnerLLM — durable system context", () => {
   test("retries the first provider turn after system context becomes available", async () => {
     // If context cannot be built at all, the FIRST turn must not go out half-formed. The claim has four
     // parts and each is a separate way to get this wrong: the drain fails rather than proceeding, the
-    // provider is never called, the prompt is preserved as pending steer input, and no context epoch is
+    // provider is never called, the prompt is preserved as pending queued input, and no context epoch is
     // committed. Then, once context is available, the same prompt goes through as a single user turn —
     // not duplicated, which is what preserving the input naively would cause.
     const harness = makeRunnerHarness()
@@ -229,7 +229,7 @@ describe("SessionRunnerLLM — durable system context", () => {
         })
 
         const exit = yield* session.resume(HARNESS_SESSION).pipe(Effect.exit)
-        const pending = yield* SessionInput.hasPending(db, HARNESS_SESSION, "steer")
+        const pending = yield* SessionInput.hasPending(db, HARNESS_SESSION, "queue")
         const epoch = yield* db
           .select()
           .from(SessionContextEpochTable)
@@ -256,7 +256,7 @@ describe("SessionRunnerLLM — durable system context", () => {
       expect(Cause.squash(observed.exit.cause)).toBeInstanceOf(SystemContext.InitializationBlocked)
     }
     expect(observed.requestsWhileBlocked, "the provider must never be called without context").toBe(0)
-    expect(observed.pending, "the prompt must survive as pending steer input").toBe(true)
+    expect(observed.pending, "the prompt must survive as pending queued input").toBe(true)
     expect(observed.epoch, "no context epoch may be committed for a turn that never ran").toBeUndefined()
 
     expect(harness.requests, "the retry goes out exactly once").toHaveLength(1)

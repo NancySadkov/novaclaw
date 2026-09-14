@@ -124,7 +124,7 @@ export const longStageNote = (
         return "The visual model is reading the attached image. Large images can take time."
       if ((context?.imageAttachments ?? 0) > 1)
         return "The visual model is reading the attached images. Large images can take time."
-      return "The request reached the model, but it has not produced its first token. It may still be loading context or model data."
+      return "Waiting for the model server..."
     case "model-recovery":
       return "The selected model is unavailable. NovaClaw will retry it when its recovery delay ends, or use a compatible healthy model if one becomes available."
     case "capability-load":

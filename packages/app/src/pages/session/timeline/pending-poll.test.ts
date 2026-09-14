@@ -1,18 +1,5 @@
 import { expect, test } from "bun:test"
-import { handoffPending, keepEqualRows, startPendingPoll } from "./pending-poll"
-
-test("promotion cannot remove a pending row before the canonical transcript owns its id", () => {
-  const pending = [{ id: "msg_owner", text: "keep my words" }]
-  expect(handoffPending(pending, [], [])).toBeTruthy()
-  expect(handoffPending(pending, [], [])).toEqual(pending)
-  expect(handoffPending(pending, [], [{ id: "msg_owner" }])).toEqual([])
-})
-
-test("the same ownership hand-off retains a peer input", () => {
-  const pending = [{ id: "msg_peer", text: "Nova replied", origin: { via: "agent", relation: "peer" } }]
-  expect(handoffPending(pending, [], [])).toEqual(pending)
-  expect(handoffPending(pending, [], [{ id: "msg_peer" }])).toEqual([])
-})
+import { keepEqualRows, startPendingPoll } from "./pending-poll"
 
 test("an unchanged empty result preserves signal identity instead of rearming the effect", () => {
   const current: string[] = []
