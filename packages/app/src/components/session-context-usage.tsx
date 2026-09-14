@@ -14,6 +14,7 @@ import { useSDK } from "@/context/sdk"
 import { getSessionContext, getSessionTokenTotal } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
+import { sessionContextAction } from "@/components/session/session-context-toggle"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -77,7 +78,12 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const openContext = () => {
     if (!params.id) return
 
-    if (tabState.activeTab() === "context") {
+    if (
+      sessionContextAction({
+        panelOpened: view().reviewPanel.opened(),
+        activeTab: tabState.activeTab(),
+      }) === "close-tab"
+    ) {
       tabs().close("context")
       return
     }

@@ -189,7 +189,7 @@ describe("native transcript remount", () => {
     expect(stoppedFor).toBe("it has made no progress")
   })
 
-  test("keeps the run token counter moving through streamed tool arguments", () => {
+  test("keeps the run token counter moving inside the active command", async () => {
     const startedAt = Date.now() - 1_000
     const host = mount(undefined, {
       liveGeneratedTokens: 321,
@@ -198,7 +198,66 @@ describe("native transcript remount", () => {
         timing: { startedAt, phases: [], providerAttempts: [] },
       },
     })
-    expect(host.querySelector('[data-slot="native-turn-tokens"]')?.textContent).toBe("~321")
+    expect(host.querySelector('[data-slot="native-provider-status"]')).toBeNull()
+    expect(host.querySelector('[data-slot="native-turn-receipt"]')).toBeNull()
+    ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const prelude = host.querySelector('[data-slot="native-tool-prelude"]')
+    expect(prelude?.querySelector('[data-slot="native-turn-tokens"]')?.textContent).toBe("~321")
+  })
+
+  test("nests the reasoning and folded profiling receipt inside the command they produced", async () => {
+    const nested = [
+      { id: "msg_user_nested", type: "user", text: "Inspect it", time: { created: 1 } },
+      {
+        id: "msg_assistant_nested",
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created: 2, completed: 8 },
+        timing: {
+          startedAt: 2,
+          completedAt: 8,
+          phases: [{ phase: "generation", startedAt: 3, completedAt: 5 }],
+          providerAttempts: [],
+        },
+        tokens: { input: 10, output: 4, reasoning: 3, cache: { read: 0, write: 0 } },
+        content: [
+          {
+            id: "reasoning_nested",
+            type: "reasoning",
+            text: "I should inspect the file.",
+            time: { created: 3, completed: 4 },
+          },
+          {
+            id: "call_nested",
+            type: "tool",
+            name: "bash",
+            time: { created: 5, ran: 6, completed: 8 },
+            state: {
+              status: "completed",
+              input: { command: "file sample.bin" },
+              structured: {},
+              content: [],
+              outputPaths: [],
+              result: "data",
+            },
+          },
+        ],
+      },
+    ] as unknown as SessionMessage[]
+    const host = mount(undefined, { messages: nested, status: { type: "idle" } })
+
+    expect(host.querySelector('[data-slot="native-reasoning"]')).toBeNull()
+    expect(host.querySelector('[data-slot="native-turn-receipt"]')).toBeNull()
+    ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const prelude = host.querySelector('[data-slot="native-tool-prelude"]')
+    expect(prelude?.querySelector('[data-slot="native-reasoning"]')).not.toBeNull()
+    const profiling = prelude?.querySelector('[data-slot="native-turn-profiling"]')
+    expect(profiling?.hasAttribute("open")).toBe(false)
+    expect(profiling?.querySelector('[data-slot="native-turn-phase"]')?.textContent).toContain("Writing the answer")
   })
 
   test("shows elapsed and timeout for commands and worker waits", () => {

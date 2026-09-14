@@ -10,6 +10,7 @@ import {
   onCleanup,
   useContext,
   type Accessor,
+  type JSX,
 } from "solid-js"
 import type {
   LlmToolContent,
@@ -31,7 +32,7 @@ import { isSteerText, stripSteerProvenance, stripAutomatedEcho } from "@novaclaw
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
-import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
+import { answerStart, foldClosing, groupTurns, nestToolWork, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow, incomingColleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
@@ -138,7 +139,9 @@ type TranscriptActions = {
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
 const TranscriptDirectoryContext = createContext<Accessor<string | undefined>>(() => undefined)
-const ToolTimeoutContext = createContext<Accessor<number | undefined>>(() => undefined)
+type ActiveToolWork = { toolID: string; timing: TurnTiming; tokens?: string; runStartedAt?: number }
+type ToolContextValue = { maxTimeoutMs?: number; active?: ActiveToolWork }
+const ToolContext = createContext<Accessor<ToolContextValue>>(() => ({}))
 
 /** Images on the latest real prompt explain a long provider-prefill without blaming the endpoint. */
 function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): number {
@@ -237,6 +240,21 @@ export function NativeTranscript(props: {
   )
   const busy = createMemo(() => turnIsRunning(props.status?.type, props.executionOpen))
   const liveTiming = createMemo(() => (props.status?.type === "busy" ? props.status.timing : undefined))
+  const activeToolID = createMemo(() => {
+    const messages = visible()
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+      const message = messages[messageIndex]!
+      if (message.type !== "assistant") continue
+      for (let partIndex = message.content.length - 1; partIndex >= 0; partIndex--) {
+        const part = message.content[partIndex]!
+        if (part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")) return part.id
+      }
+      // A model cannot start a newer assistant step while an older step's tool is still active.
+      // Stop at the newest assistant so a stale running flag cannot steal the current live receipt.
+      return undefined
+    }
+    return undefined
+  })
   const liveMessageID = createMemo(() => {
     const open = visible().find((message) => message.type === "assistant" && !message.time.completed)
     return open?.type === "assistant" ? open.id : undefined
@@ -299,6 +317,12 @@ export function NativeTranscript(props: {
     runStart ??= props.status.timing?.startedAt ?? Date.now()
     return runStart
   })
+  const activeToolWork = createMemo<ActiveToolWork | undefined>(() => {
+    const toolID = activeToolID()
+    const timing = liveTiming()
+    if (!toolID || !timing) return undefined
+    return { toolID, timing, tokens: liveTokens(), runStartedAt: runStartedAt() }
+  })
   return (
     <ReasoningFoldContext.Provider
       value={() => ({
@@ -312,7 +336,7 @@ export function NativeTranscript(props: {
       })}
     >
       <TranscriptDirectoryContext.Provider value={() => props.directory}>
-        <ToolTimeoutContext.Provider value={() => props.maxToolTimeoutMs}>
+        <ToolContext.Provider value={() => ({ maxTimeoutMs: props.maxToolTimeoutMs, active: activeToolWork() })}>
           <TranscriptMessagesContext.Provider value={() => props.messages}>
             <TranscriptActionsContext.Provider
               value={() => ({
@@ -358,12 +382,13 @@ export function NativeTranscript(props: {
                   }
                 </For>
                 <Show
-                  when={liveTiming()}
+                  when={activeToolID() ? undefined : liveTiming()}
                   fallback={
                     <Show
                       when={
-                        (busy() && !hasOpenAssistant() && props.waitLabel) ||
-                        (props.status?.type === "busy" && !hasOpenAssistant())
+                        !activeToolID() &&
+                        ((busy() && !hasOpenAssistant() && props.waitLabel) ||
+                          (props.status?.type === "busy" && !hasOpenAssistant()))
                       }
                     >
                       <div data-slot="native-provider-status" role="status" aria-live="polite">
@@ -396,7 +421,7 @@ export function NativeTranscript(props: {
               </div>
             </TranscriptActionsContext.Provider>
           </TranscriptMessagesContext.Provider>
-        </ToolTimeoutContext.Provider>
+        </ToolContext.Provider>
       </TranscriptDirectoryContext.Provider>
     </ReasoningFoldContext.Provider>
   )
@@ -834,6 +859,7 @@ function AssistantMessage(props: {
     if (props.half === "answer") return props.message.content.slice(split())
     return props.message.content
   }
+  const toolWork = createMemo(() => nestToolWork(parts()))
   const showReceipt = () => props.half !== "answer"
   const showChrome = () => props.half !== "work"
   /**
@@ -844,13 +870,15 @@ function AssistantMessage(props: {
    * the transcript rather than move them. A part never disappears: when there is no fold to put it
    * in, it stays where it always was.
    */
+  const receiptTiming = () => (toolWork().profilingToolID ? undefined : props.message.timing)
   const receiptHoldsReasoning = () =>
-    reasoningGoesInReceipt({ half: props.half, hasTiming: props.message.timing !== undefined })
+    reasoningGoesInReceipt({ half: props.half, hasTiming: receiptTiming() !== undefined })
   /** This half's reasoning parts, for the fold — empty whenever they render inline instead. */
   const foldedReasoning = () =>
     receiptHoldsReasoning()
       ? parts().filter(
-          (part): part is SessionMessageAssistantReasoning => part.type === "reasoning" && part.text.trim().length > 0,
+          (part): part is SessionMessageAssistantReasoning =>
+            part.type === "reasoning" && part.text.trim().length > 0 && !toolWork().nestedReasoningIDs.has(part.id),
         )
       : []
   return (
@@ -882,21 +910,34 @@ function AssistantMessage(props: {
                 // disagree about which of them is showing.
                 <Show
                   when={
-                    p().text.trim() && !(props.liveTiming && !props.message.time.completed) && !receiptHoldsReasoning()
+                    p().text.trim() &&
+                    !(props.liveTiming && !props.message.time.completed) &&
+                    !toolWork().nestedReasoningIDs.has(p().id) &&
+                    !receiptHoldsReasoning()
                   }
                 >
                   <ReasoningPart part={p()} tokens={reasoningTokens()} cacheKey={`${props.message.id}:${p().id}`} />
                 </Show>
               )}
             </Match>
-            <Match when={part.type === "tool" && part}>{(p) => <ToolPart part={p()} />}</Match>
+            <Match when={part.type === "tool" && part}>
+              {(p) => (
+                <ToolPart
+                  part={p()}
+                  reasoningParts={toolWork().reasoningByTool.get(p().id)}
+                  reasoningTokens={reasoningTokens()}
+                  timing={toolWork().profilingToolID === p().id ? props.message.timing : undefined}
+                  developer={props.developer}
+                />
+              )}
+            </Match>
           </Switch>
         )}
       </For>
-      <Show when={showReceipt() && ((working() && !props.liveTiming) || props.message.timing)}>
+      <Show when={showReceipt() && ((working() && !props.liveTiming) || receiptTiming())}>
         <TurnReceipt
           messageID={props.message.id}
-          timing={props.message.timing}
+          timing={receiptTiming()}
           live={working() && !props.liveTiming}
           developer={props.developer}
           reasoningParts={foldedReasoning()}
@@ -971,6 +1012,74 @@ function ElapsedTime(props: { startedAt: number; completedAt?: number; live: boo
   )
 }
 
+/** Provider and harness timings are diagnostics, not transcript prose. Keep them one level below
+ * the reasoning they measure so opening a command never spills a phase-by-phase log by default. */
+function TurnProfiling(props: {
+  timing: TurnTiming
+  live: boolean
+  developer?: boolean
+  tokens?: string
+  runStartedAt?: number
+}) {
+  const i18n = useI18n()
+  const attempts = () =>
+    props.timing.providerAttempts.filter(
+      (attempt) => attempt.outcome !== "completed" || props.timing.providerAttempts.length > 1,
+    )
+  return (
+    <details data-slot="native-turn-profiling">
+      <summary>
+        <span data-slot="native-turn-summary">
+          <span>{i18n.t("ui.transcript.profiling")}</span>
+          <Show when={props.tokens}>{(count) => <span data-slot="native-turn-tokens">{count()}</span>}</Show>
+          <Show when={props.runStartedAt !== undefined}>
+            <ElapsedTime startedAt={props.runStartedAt!} live={props.live} />
+          </Show>
+        </span>
+      </summary>
+      <ol data-slot="native-turn-phases">
+        <For each={props.timing.phases}>
+          {(phase) => (
+            <li data-current={phase.completedAt === undefined ? "" : undefined}>
+              <div data-slot="native-turn-phase">
+                <span>{phaseLabel(phase.phase)}</span>
+                <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} live={props.live} />
+              </div>
+              <Show when={recallNote(phase.recall) !== undefined}>
+                <ul data-slot="native-turn-details">
+                  <li>{recallNote(phase.recall)}</li>
+                </ul>
+              </Show>
+              <Show when={props.developer && phase.details?.length}>
+                <ul data-slot="native-turn-details">
+                  <For each={phase.details}>
+                    {(detail) => (
+                      <li>
+                        <span>{detailLabel(detail.phase)}</span>
+                        <ElapsedTime startedAt={detail.startedAt} completedAt={detail.completedAt} live={props.live} />
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </li>
+          )}
+        </For>
+        <For each={attempts()}>
+          {(attempt) => (
+            <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
+              <div data-slot="native-turn-phase">
+                <span>{attemptLabel(attempt)}</span>
+                <ElapsedTime startedAt={attempt.dispatchedAt} completedAt={attempt.completedAt} live={props.live} />
+              </div>
+            </li>
+          )}
+        </For>
+      </ol>
+    </details>
+  )
+}
+
 /**
  * The receipt's summary is ONE label and ONE clock, and both are about the RUN.
  *
@@ -1040,8 +1149,6 @@ function TurnReceipt(props: {
   // reader looks for "which stage" — and it stops the fold renaming itself every few seconds while
   // the user is trying to read it.
   const liveLabel = () => working()
-  const attempts = (value: TurnTiming) =>
-    value.providerAttempts.filter((attempt) => attempt.outcome !== "completed" || value.providerAttempts.length > 1)
   // A stage that runs long gets a sentence saying WHY it might. Ticked once a second — the note
   // only changes at a 10 s threshold, so the 250 ms cadence the elapsed counters need would be
   // three quarters of a second of wasted work per counter.
@@ -1112,57 +1219,7 @@ function TurnReceipt(props: {
                 </For>
               </div>
             </Show>
-            <ol data-slot="native-turn-phases">
-              <For each={value().phases}>
-                {(phase) => (
-                  <li data-current={phase.completedAt === undefined ? "" : undefined}>
-                    <div data-slot="native-turn-phase">
-                      <span>{phaseLabel(phase.phase)}</span>
-                      <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} live={props.live} />
-                    </div>
-                    {/* What recall found, shown to everyone rather than behind the developer switch:
-                        this is the row that answers "did remembering something slow this turn down",
-                        and a person watching a stall should not have to know a setting exists to see it.
-                        Absent when the turn did not recall — no memory, no row. */}
-                    <Show when={recallNote(phase.recall) !== undefined}>
-                      <ul data-slot="native-turn-details">
-                        <li>{recallNote(phase.recall)}</li>
-                      </ul>
-                    </Show>
-                    <Show when={props.developer && phase.details?.length}>
-                      <ul data-slot="native-turn-details">
-                        <For each={phase.details}>
-                          {(detail) => (
-                            <li>
-                              <span>{detailLabel(detail.phase)}</span>
-                              <ElapsedTime
-                                startedAt={detail.startedAt}
-                                completedAt={detail.completedAt}
-                                live={props.live}
-                              />
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                  </li>
-                )}
-              </For>
-              <For each={attempts(value())}>
-                {(attempt) => (
-                  <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
-                    <div data-slot="native-turn-phase">
-                      <span>{attemptLabel(attempt)}</span>
-                      <ElapsedTime
-                        startedAt={attempt.dispatchedAt}
-                        completedAt={attempt.completedAt}
-                        live={props.live}
-                      />
-                    </div>
-                  </li>
-                )}
-              </For>
-            </ol>
+            <TurnProfiling timing={value()} live={props.live} developer={props.developer} />
           </details>
           {/* Outside the fold on purpose: the whole point is that it reaches someone who has NOT
             opened the receipt and is wondering whether the thing is stuck. */}
@@ -1280,10 +1337,59 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
   )
 }
 
-function ToolPart(props: { part: SessionMessageAssistantTool }) {
+function ToolPrelude(props: {
+  part: SessionMessageAssistantTool
+  reasoningParts?: readonly SessionMessageAssistantReasoning[]
+  reasoningTokens?: number
+  timing?: TurnTiming
+  developer?: boolean
+}) {
+  const toolContext = useContext(ToolContext)
+  const active = () => toolContext().active
+  const live = () => active()?.toolID === props.part.id
+  const timing = () => (live() ? active()?.timing : props.timing)
+  return (
+    <Show when={(props.reasoningParts?.length ?? 0) > 0 || timing() !== undefined}>
+      <div data-slot="native-tool-prelude">
+        <Show when={props.reasoningParts?.length}>
+          <div data-slot="native-turn-reasoning-parts">
+            <For each={props.reasoningParts}>
+              {(part) => (
+                <ReasoningPart
+                  part={part}
+                  tokens={props.reasoningTokens}
+                  cacheKey={`${props.part.id}:reasoning:${part.id}`}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={timing()}>
+          {(value) => (
+            <TurnProfiling
+              timing={value()}
+              live={live()}
+              developer={props.developer}
+              tokens={live() ? active()?.tokens : undefined}
+              runStartedAt={live() ? active()?.runStartedAt : undefined}
+            />
+          )}
+        </Show>
+      </div>
+    </Show>
+  )
+}
+
+function ToolPart(props: {
+  part: SessionMessageAssistantTool
+  reasoningParts?: readonly SessionMessageAssistantReasoning[]
+  reasoningTokens?: number
+  timing?: TurnTiming
+  developer?: boolean
+}) {
   const i18n = useI18n()
   const messages = useContext(TranscriptMessagesContext)
-  const maxToolTimeoutMs = useContext(ToolTimeoutContext)
+  const toolContext = useContext(ToolContext)
   const meta = () => toolMeta(props.part, i18n, messages())
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
@@ -1304,13 +1410,22 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           props.part.time.ran ?? props.part.time.created,
           props.part.time.completed,
           now(),
-          toolTimeoutMs(props.part.name, input(), maxToolTimeoutMs()),
+          toolTimeoutMs(props.part.name, input(), toolContext().maxTimeoutMs),
         )
       : undefined
+  const prelude = () => (
+    <ToolPrelude
+      part={props.part}
+      reasoningParts={props.reasoningParts}
+      reasoningTokens={props.reasoningTokens}
+      timing={props.timing}
+      developer={props.developer}
+    />
+  )
   return (
     <Switch>
       <Match when={props.part.name === "todowrite"}>
-        <TodoTool part={props.part} />
+        <TodoTool part={props.part} prelude={prelude()} active={toolContext().active?.toolID === props.part.id} />
       </Match>
 
       <Match when={props.part.name !== "bash" && props.part.state.status === "error" && props.part.state}>
@@ -1319,7 +1434,12 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
             data-slot="native-tool"
             title={meta().title}
             subtitle={faultText(sessionErrorDisplay(state().error))}
-            suffix={<ToolBody part={props.part} />}
+            suffix={
+              <>
+                {prelude()}
+                <ToolBody part={props.part} />
+              </>
+            }
           />
         )}
       </Match>
@@ -1328,7 +1448,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           data-slot="native-tool"
           status={props.part.state.status}
           defaultOpen={toolOpenDefault(foldMode().tool)}
-          expandWhilePending={props.part.name === "bash"}
+          expandWhilePending={props.part.name === "bash" || toolContext().active?.toolID === props.part.id}
           trigger={{
             icon: toolIcon(props.part.name),
             title:
@@ -1338,6 +1458,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
             args: meta().args,
           }}
         >
+          {prelude()}
           <ToolBody part={props.part} />
           <Show when={props.part.name === "bash" && props.part.state.status === "running" && actions().onStopCommand}>
             <CommandStop onStop={(reason) => actions().onStopCommand?.(props.part.id, reason)} />
@@ -1381,7 +1502,7 @@ function CommandStop(props: { onStop: (reason: string) => void | Promise<void> }
 }
 
 /** `todowrite` → an inline checklist (the one tool whose payload reads best expanded). */
-function TodoTool(props: { part: SessionMessageAssistantTool }) {
+function TodoTool(props: { part: SessionMessageAssistantTool; prelude?: JSX.Element; active?: boolean }) {
   const i18n = useI18n()
   const todos = () => {
     const raw = toolInput(props.part.state).todos ?? structuredTodos(props.part.state)
@@ -1393,12 +1514,14 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
       data-slot="native-tool"
       status={props.part.state.status}
       defaultOpen
+      expandWhilePending={props.active}
       trigger={{
         icon: toolIcon(props.part.name),
         title: i18n.t("ui.transcript.todos"),
         subtitle: todos().length ? `${done()}/${todos().length}` : undefined,
       }}
     >
+      {props.prelude}
       <ul data-slot="native-todos">
         <For each={todos()}>
           {(todo) => (

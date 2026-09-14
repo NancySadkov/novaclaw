@@ -202,6 +202,7 @@ export const dict = {
   "ui.transcript.doneIn": "Done in {{time}}",
   "ui.transcript.working": "Working…",
   "ui.transcript.details": "Details",
+  "ui.transcript.profiling": "Profiling",
   "ui.transcript.queued": "Queued — the agent will read this when it finishes what it's doing",
   "ui.transcript.sending": "Sending…",
   "ui.transcript.queued.edit": "Edit",

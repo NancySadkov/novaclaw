@@ -64,6 +64,52 @@ export interface AnswerPart {
   readonly text?: string
 }
 
+/** The minimum shape needed to place a reasoning trace with the tool call it produced. */
+export interface ToolWorkPart extends AnswerPart {
+  readonly id: string
+}
+
+export interface NestedToolWork<T extends ToolWorkPart> {
+  /** Reasoning since the preceding tool call, keyed by the tool it led to. */
+  readonly reasoningByTool: ReadonlyMap<string, readonly Extract<T, { readonly type: "reasoning" }>[]>
+  /** Parts moved under a tool card and therefore omitted from the message-level receipt. */
+  readonly nestedReasoningIDs: ReadonlySet<string>
+  /** One provider attempt profiles the whole tool-call batch, so it belongs to its first tool once. */
+  readonly profilingToolID: string | undefined
+}
+
+/**
+ * Associate model reasoning with the action it immediately led to.
+ *
+ * A model response may emit several parallel tool calls. The reasoning before that batch belongs to
+ * the first card, as does the response's single timing receipt; copying either into every card would
+ * fabricate several attempts from one. Reasoning after a tool starts a new batch and follows the next
+ * tool. Any trailing reasoning remains unclaimed so the ordinary message receipt can still show it.
+ */
+export function nestToolWork<T extends ToolWorkPart>(parts: readonly T[]): NestedToolWork<T> {
+  type Reasoning = Extract<T, { readonly type: "reasoning" }>
+  const reasoningByTool = new Map<string, readonly Reasoning[]>()
+  const nestedReasoningIDs = new Set<string>()
+  let pending: Reasoning[] = []
+  let profilingToolID: string | undefined
+
+  for (const part of parts) {
+    if (part.type === "reasoning") {
+      if ((part.text ?? "").trim()) pending.push(part as Reasoning)
+      continue
+    }
+    if (part.type !== "tool") continue
+
+    profilingToolID ??= part.id
+    if (pending.length === 0) continue
+    reasoningByTool.set(part.id, pending)
+    for (const reasoning of pending) nestedReasoningIDs.add(reasoning.id)
+    pending = []
+  }
+
+  return { reasoningByTool, nestedReasoningIDs, profilingToolID }
+}
+
 /**
  * Where the ANSWER starts inside an assistant message's content — the index of the first part of
  * the trailing run of prose.

@@ -239,6 +239,21 @@
   gap: 0.25rem;
   margin-top: 0.375rem;
 }
+[data-slot="native-tool-prelude"] {
+  display: grid;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+[data-slot="native-turn-profiling"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-turn-profiling"] > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  user-select: none;
+}
 [data-slot="native-turn-phases"] {
   display: grid;
   gap: 0.25rem;

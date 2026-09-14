@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { answerStart, groupTurns, stableGroups, type AnswerPart, foldClosing } from "./turn-group"
+import { answerStart, groupTurns, stableGroups, type AnswerPart, foldClosing, nestToolWork } from "./turn-group"
 
 interface Msg {
   readonly type: string
@@ -116,6 +116,38 @@ describe("answerStart", () => {
 
   test("empty content has no answer", () => {
     expect(answerStart([])).toBe(0)
+  })
+})
+
+describe("nestToolWork", () => {
+  const part = <T extends string>(id: string, type: T, text?: string) => ({ id, type, text })
+
+  test("moves reasoning under the tool it produced and assigns profiling once", () => {
+    const reasoning = part("r1", "reasoning", "inspect first")
+    const first = part("t1", "tool")
+    const second = part("t2", "tool")
+    const grouped = nestToolWork([reasoning, part("n1", "text", "running it"), first, second])
+
+    expect(grouped.reasoningByTool.get("t1")).toEqual([reasoning])
+    expect(grouped.reasoningByTool.has("t2")).toBe(false)
+    expect([...grouped.nestedReasoningIDs]).toEqual(["r1"])
+    expect(grouped.profilingToolID).toBe("t1")
+  })
+
+  test("starts a new reasoning batch after each tool", () => {
+    const firstReasoning = part("r1", "reasoning", "first")
+    const secondReasoning = part("r2", "reasoning", "second")
+    const grouped = nestToolWork([firstReasoning, part("t1", "tool"), secondReasoning, part("t2", "tool")])
+
+    expect(grouped.reasoningByTool.get("t1")).toEqual([firstReasoning])
+    expect(grouped.reasoningByTool.get("t2")).toEqual([secondReasoning])
+  })
+
+  test("leaves trailing reasoning for the message-level receipt", () => {
+    const trailing = part("r2", "reasoning", "still considering")
+    const grouped = nestToolWork([part("r1", "reasoning", "call it"), part("t1", "tool"), trailing])
+
+    expect(grouped.nestedReasoningIDs.has("r2")).toBe(false)
   })
 })
 
