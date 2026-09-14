@@ -3,7 +3,6 @@ import { createQuery } from "@tanstack/solid-query"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { workersOf } from "@/apps/roster-live"
 import { ShellListDialog } from "@/components/shell-list-dialog"
 import { WorkerListDialog } from "@/components/worker-list-dialog"
 import { useLanguage } from "@/context/language"
@@ -44,13 +43,17 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
   const dialog = useDialog()
   const language = useLanguage()
 
-  const workers = createMemo(() =>
-    workersOf(sync().data.session, props.sessionID, (sessionID) => ({
-      lifecycle:
-        sync().data.session_status[sessionID]?.type ??
-        (sync().session.get(sessionID)?.result === undefined ? undefined : "exited"),
-    })),
-  )
+  const workerQuery = createQuery(() => ({
+    queryKey: ["session-living-workers", server.key, sdk().directory, props.sessionID],
+    queryFn: async () => {
+      const response = await sdk().client.v2.session.worker.list({ sessionID: props.sessionID })
+      return response.data?.data ?? []
+    },
+    refetchInterval: 2_000,
+  }))
+  // The session cache is intentionally bounded and starts nearly empty after a restart. Worker
+  // ownership is durable instance state, so this shortcut reads the server projection directly.
+  const workers = createMemo(() => workerQuery.data ?? [])
 
   const shellQuery = createQuery(() => ({
     queryKey: ["session-running-shells", server.key, sdk().directory, props.sessionID],
