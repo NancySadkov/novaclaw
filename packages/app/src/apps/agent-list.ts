@@ -162,6 +162,9 @@ export const listSessions = async (sdk: {
             ? row["type"]
             : undefined,
         title: text("title"),
+        ...(typeof (row["location"] as { directory?: unknown } | undefined)?.directory === "string"
+          ? { location: { directory: (row["location"] as { directory: string }).directory } }
+          : {}),
         tokens: row["tokens"] as SessionLike["tokens"],
         time: {
           created,

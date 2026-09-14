@@ -22,6 +22,7 @@ import { SessionMessage } from "./message"
 import { FileAttachment, Prompt } from "./prompt"
 import { Log } from "@novaclaw/schema/log"
 import { WorkerProfile } from "./worker-profile"
+import { WorkerPurpose } from "./worker-purpose"
 
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
 // `fork` (architecture.md Phase 3 step 6). It deliberately depends ONLY on the cycle-free primitives
@@ -306,10 +307,14 @@ export const layer = Layer.effect(
                 priority: input.priority,
                 permissionMode: input.permissionMode,
                 title: input.title,
-                metadata:
-                  workerProfile === undefined
-                    ? input.metadata
-                    : { ...(input.metadata ?? {}), [WorkerProfile.KEY]: workerProfile },
+                // The delegated task is an ownership fact, not presentation. Persist it at creation
+                // so the parent can reconstruct its live fleet after compaction or a process restart,
+                // before the asynchronous title sampler has produced anything useful.
+                metadata: {
+                  ...(input.metadata ?? {}),
+                  [WorkerPurpose.KEY]: WorkerPurpose.fromPrompt(input.text),
+                  ...(workerProfile === undefined ? {} : { [WorkerProfile.KEY]: workerProfile }),
+                },
                 openingPrompt,
                 location, // the parent's location = this seam's location
               },

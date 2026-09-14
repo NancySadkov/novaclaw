@@ -32,6 +32,7 @@ import { ProviderV2 } from "../../provider"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
+import { OwnedRuntimeContext } from "../owned-runtime-context"
 import { ToolDiscovery } from "../../tool-discovery"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
@@ -1100,6 +1101,11 @@ export const layer = Layer.effect(
               referenceGuidance.load(),
               adhocGuidance.load(sessionID),
               toolCatalogueGuidance.load(),
+              OwnedRuntimeContext.load({
+                db,
+                sessionID,
+                heartbeatMinutes: agent.info?.runtimeHeartbeatMinutes ?? OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES,
+              }),
             ],
             { concurrency: "unbounded" },
           ).pipe(Effect.map(SystemContext.combine))

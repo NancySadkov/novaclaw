@@ -36166,6 +36166,10 @@
             "type": "integer",
             "minimum": 0
           },
+          "runtimeHeartbeatMinutes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
           "description": {
             "type": "string"
           },
@@ -38758,6 +38762,10 @@
           "spawnDepth": {
             "type": "integer",
             "minimum": 0
+          },
+          "runtimeHeartbeatMinutes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           },
           "mode": {
             "type": "string",

@@ -156,6 +156,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   maxWorkers: NonNegativeInt.pipe(Schema.optional),
   /** Worker generations permitted below this officer. 0 disables spawning; absent = 1. */
   spawnDepth: NonNegativeInt.pipe(Schema.optional),
+  /** Minutes between unchanged live-worker/shell reminders. Changes are always reported immediately. */
+  runtimeHeartbeatMinutes: PositiveInt.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

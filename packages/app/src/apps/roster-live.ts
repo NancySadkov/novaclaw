@@ -19,6 +19,7 @@ export interface SessionLike {
   readonly agent?: string | undefined
   readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | undefined
   readonly title?: string | undefined
+  readonly location?: { readonly directory: string } | undefined
   readonly tokens?:
     | { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     | undefined

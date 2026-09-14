@@ -126,6 +126,7 @@ export function AgentConfigScreen(props: {
   const [workerPrototype, setWorkerPrototype] = createSignal<string | undefined>()
   const [maxWorkers, setMaxWorkers] = createSignal<string | undefined>()
   const [spawnDepth, setSpawnDepth] = createSignal<string | undefined>()
+  const [runtimeHeartbeatMinutes, setRuntimeHeartbeatMinutes] = createSignal<string | undefined>()
   const [needsScore, setNeedsScore] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
@@ -360,6 +361,11 @@ export function AgentConfigScreen(props: {
   }
   const parsedMaxWorkers = () => parseNonNegative(maxWorkersValue())
   const parsedSpawnDepth = () => parseNonNegative(spawnDepthValue())
+  const runtimeHeartbeatMinutesValue = () => integerValue(runtimeHeartbeatMinutes(), "runtimeHeartbeatMinutes", 60)
+  const parsedRuntimeHeartbeatMinutes = () => {
+    const parsed = Number(runtimeHeartbeatMinutesValue())
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN
+  }
   const reasoningBudgetValue = () => {
     const chosen = reasoningBudget()
     if (chosen !== undefined) return chosen
@@ -453,6 +459,7 @@ export function AgentConfigScreen(props: {
     workerPrototype() !== undefined ||
     maxWorkers() !== undefined ||
     spawnDepth() !== undefined ||
+    runtimeHeartbeatMinutes() !== undefined ||
     superior() !== undefined ||
     avatarFile() !== undefined ||
     avatarRemoved()
@@ -799,6 +806,7 @@ export function AgentConfigScreen(props: {
         workerPrototype?: string
         maxWorkers?: number
         spawnDepth?: number
+        runtimeHeartbeatMinutes?: number
         contextBudget?: boolean
         surgicalEdits?: boolean
         introspection?: boolean
@@ -818,6 +826,9 @@ export function AgentConfigScreen(props: {
         ...(workerPrototypeValue() === "" ? {} : { workerPrototype: workerPrototypeValue() }),
         ...(maxWorkers() === undefined ? {} : { maxWorkers: parsedMaxWorkers() }),
         ...(spawnDepth() === undefined ? {} : { spawnDepth: parsedSpawnDepth() }),
+        ...(runtimeHeartbeatMinutes() === undefined
+          ? {}
+          : { runtimeHeartbeatMinutes: parsedRuntimeHeartbeatMinutes() }),
         ...(contextBudget() === undefined ? {} : { contextBudget: contextBudget()! }),
         ...(surgicalEdits() === undefined ? {} : { surgicalEdits: surgicalEdits()! }),
         ...(introspection() === undefined ? {} : { introspection: introspection()! }),
@@ -927,6 +938,7 @@ export function AgentConfigScreen(props: {
       setWorkerPrototype(undefined)
       setMaxWorkers(undefined)
       setSpawnDepth(undefined)
+      setRuntimeHeartbeatMinutes(undefined)
       setSuperior(undefined)
       setNeedsScore(undefined)
       props.onChanged?.()
@@ -1627,6 +1639,26 @@ export function AgentConfigScreen(props: {
                   <span>{language.t("agentConfig.strict")}</span>
                 </label>
 
+                <label class="block text-xs text-v2-text-text-muted">
+                  Live work heartbeat
+                  <span class="mt-1 flex items-center gap-2">
+                    <input
+                      aria-label="Live work heartbeat in minutes"
+                      class="w-24 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm text-v2-text-text-base"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={runtimeHeartbeatMinutesValue()}
+                      onInput={(event) => setRuntimeHeartbeatMinutes(event.currentTarget.value)}
+                    />
+                    <span>minutes</span>
+                  </span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    While this officer owns live workers or background shells, remind it what is still running. Changes
+                    are reported immediately. Default 60 minutes.
+                  </span>
+                </label>
+
                 <div class="my-2 border-t border-v2-border-border-muted" />
                 <label class="flex items-start gap-2 text-xs">
                   <input
@@ -1984,6 +2016,7 @@ export function AgentConfigScreen(props: {
               !needsScoreValid() ||
               Number.isNaN(parsedMaxWorkers()) ||
               Number.isNaN(parsedSpawnDepth()) ||
+              Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
               saving() ||
               props.agentID === undefined ||
               agent() === undefined
