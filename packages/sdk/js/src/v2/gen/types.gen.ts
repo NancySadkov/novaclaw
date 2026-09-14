@@ -3897,6 +3897,7 @@ export type ConfigV2Agent = {
   workerPrototype?: string
   maxWorkers?: number
   spawnDepth?: number
+  runtimeHeartbeatMinutes?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4786,6 +4787,7 @@ export type AgentV2Info = {
   workerPrototype?: string
   maxWorkers?: number
   spawnDepth?: number
+  runtimeHeartbeatMinutes?: number
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   paused?: boolean

@@ -113,6 +113,8 @@ export const Info = Schema.Struct({
   maxWorkers: NonNegativeInt.pipe(optional),
   /** Number of worker generations allowed below this officer. */
   spawnDepth: NonNegativeInt.pipe(optional),
+  /** Minutes between unchanged live-worker/shell reminders. */
+  runtimeHeartbeatMinutes: PositiveInt.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   /**

@@ -209,6 +209,8 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     }
     if (item.maxWorkers !== undefined) (agent as unknown as Record<string, unknown>)["maxWorkers"] = item.maxWorkers
     if (item.spawnDepth !== undefined) (agent as unknown as Record<string, unknown>)["spawnDepth"] = item.spawnDepth
+    if (item.runtimeHeartbeatMinutes !== undefined)
+      (agent as unknown as Record<string, unknown>)["runtimeHeartbeatMinutes"] = item.runtimeHeartbeatMinutes
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

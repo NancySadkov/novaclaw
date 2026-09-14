@@ -69,6 +69,7 @@ describe("every field the wire schema declares is accounted for", () => {
       workerPrototype: "researcher",
       maxWorkers: 100,
       spawnDepth: 1,
+      runtimeHeartbeatMinutes: 15,
       color: "amber",
       steps: 4,
       archiveChats: true,

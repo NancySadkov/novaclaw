@@ -43,7 +43,7 @@ import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { sessionExecutions, type SessionExecutionInfo } from "@/utils/session-execution-api"
+import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } from "@/utils/session-execution-api"
 import { formatTokensPerSecond } from "@/utils/token-rate"
 import { WorkerListDialog } from "@/components/worker-list-dialog"
 
@@ -466,6 +466,9 @@ ${copy.detail}`
                       get serverKey() {
                         return serverKey()
                       },
+                      get server() {
+                        return conn()?.http
+                      },
                       onOpen: () => openConfig(view.id),
                     } satisfies ContactRowProps
                     return view.kind === "governing" ? (
@@ -511,6 +514,7 @@ ${copy.detail}`
                   usage={usage()?.[view.id] ?? []}
                   executions={executionBySession()}
                   serverKey={serverKey()}
+                  server={conn()?.http}
                   onOpen={() => openConfig(view.id)}
                 />
               )}
@@ -562,6 +566,7 @@ type ContactRowProps = {
   onStart: () => void
   onClone: () => void
   serverKey: ServerConnection.Key | undefined
+  server: ServerConnection.HttpBase | undefined
   onOpen: () => void
   dragHandle?: JSX.Element
 }
@@ -693,12 +698,15 @@ function ContactRow(props: ContactRowProps) {
   })
   const openWorkers = () => {
     const rows = workers()
-    if (rows.length === 0 || props.serverKey === undefined) return
+    const root = props.sessions.find((session) => session.id === live().sessionID)
+    if (rows.length === 0 || props.serverKey === undefined || props.server === undefined || !root?.location?.directory)
+      return
     void dialog.showScoped(() => (
       <WorkerListDialog
         title={language.t("contacts.workers.title", { name: props.view.name })}
         workers={rows}
         href={(sessionID) => sessionHref(props.serverKey!, sessionID)}
+        onStop={(worker, reason) => stopSessionExecution(props.server!, worker.id, root.location!.directory, reason)}
       />
     ))
   }

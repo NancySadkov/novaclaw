@@ -11,6 +11,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { sessionHref } from "@/utils/session-route"
+import { stopSessionExecution } from "@/utils/session-execution-api"
 
 function ActivityButton(props: {
   action: string
@@ -70,6 +71,12 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
         title={language.t("session.activity.workers.title")}
         workers={rows}
         href={href}
+        onStop={(worker, reason) => {
+          const current = server.current
+          return current
+            ? stopSessionExecution(current.http, worker.id, sdk().directory, reason)
+            : Promise.reject(new Error("No instance is connected"))
+        }}
       />
     ))
   }
@@ -85,9 +92,7 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
         owner={(sessionID) =>
           sync().session.get(sessionID)?.title?.trim() ||
           language.t(
-            sessionID === props.sessionID
-              ? "session.activity.shells.thisChat"
-              : "session.activity.shells.workerChat",
+            sessionID === props.sessionID ? "session.activity.shells.thisChat" : "session.activity.shells.workerChat",
           )
         }
       />

@@ -1139,6 +1139,16 @@ const SessionObservationHandler = handlerLayer(
         .handle(
           "session.interrupt",
           Effect.fn(function* (ctx) {
+            const target = yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
             yield* session.interrupt(ctx.params.sessionID)
             const reason = ctx.payload.reason?.trim()
             if (reason) {
@@ -1147,8 +1157,20 @@ const SessionObservationHandler = handlerLayer(
                 sessionID: ctx.params.sessionID,
                 messageID: SessionMessage.ID.create(),
                 timestamp,
-                text: `You stopped the running command: ${reason}`,
+                text: target.parentID
+                  ? `The user stopped this worker. Reason: ${reason}`
+                  : `The user stopped this run. Reason: ${reason}`,
               })
+              // A worker's direct parent is its superior in the session tree. Put the user's reason
+              // in that durable transcript too, so the next turn sees it after compaction/restart
+              // instead of learning only that one child mysteriously disappeared.
+              if (target.parentID)
+                yield* events.publish(SessionEvent.Synthetic, {
+                  sessionID: target.parentID,
+                  messageID: SessionMessage.ID.create(),
+                  timestamp,
+                  text: `The user stopped your worker ${target.id}. Reason: ${reason}`,
+                })
             }
             return HttpApiSchema.NoContent.make()
           }),
