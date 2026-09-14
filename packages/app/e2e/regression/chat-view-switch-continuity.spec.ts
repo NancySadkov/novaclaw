@@ -41,6 +41,15 @@ test("chat and Home switches preserve a reader's place in a long transcript", as
   await expect(page).toHaveURL(/\/$/)
   await switchSession(page, fixture.sourceID)
   await expectTimelinePosition(page, homePosition)
+
+  // Reaching latest must replace the saved reading position with the bottom-pin state. This is a
+  // transition the fresh bottom-pin test below cannot cover because that chat never had a saved
+  // middle position to displace.
+  await page.getByRole("button", { name: "Scroll to latest" }).click()
+  await expectTimelineAtBottom(page)
+  await switchSession(page, fixture.targetID)
+  await switchSession(page, fixture.sourceID)
+  await expectTimelineAtBottom(page)
 })
 
 test("a session-tab switch preserves the bottom pin and prompt caret", async ({ page }) => {
@@ -217,6 +226,16 @@ async function expectTimelinePosition(page: Page, expected: { messageID: string;
         if (!row) return Number.POSITIVE_INFINITY
         return Math.abs(timeline.getBoundingClientRect().top - row.getBoundingClientRect().top - expected.offset)
       }, expected),
+    )
+    .toBeLessThanOrEqual(2)
+}
+
+async function expectTimelineAtBottom(page: Page) {
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-component="native-timeline"]')
+        .evaluate((timeline) => timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight),
     )
     .toBeLessThanOrEqual(2)
 }
