@@ -5,6 +5,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ColleagueBound } from "@novaclaw/core/session/colleague-bound"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
+import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
@@ -104,6 +105,17 @@ const promote = (db: Database.Interface["db"], session: SessionSchema.ID) =>
       .pipe(Effect.orDie)
   })
 
+/**
+ * The chat opener this graph supplies. `fromParts` REQUIRES one (see its `chat` docblock): a graph
+ * that omits it cannot tell "there is no such colleague" from "they exist and no row has been written
+ * yet", and would report the second as the first. Every colleague here is seeded by `openChat(...)`
+ * above, so the honest opener is the real lookup.
+ */
+const chatOpener = (db: Database.Interface["db"]) => (colleague: string) =>
+  RosterChat.chatFor(db, colleague).pipe(
+    Effect.map((row) => (row === undefined ? undefined : SessionSchema.ID.make(row.id))),
+  )
+
 const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents: Record<string, string>) =>
   ColleagueHandoff.fromParts({
     db,
@@ -111,6 +123,7 @@ const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents
     session: (id) => Effect.succeed({ agent: agents[String(id)] }),
     wake: () => Effect.succeed(true),
     store: {} as never,
+    chat: chatOpener(db),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,

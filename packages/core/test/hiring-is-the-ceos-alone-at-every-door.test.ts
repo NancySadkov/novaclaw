@@ -20,6 +20,14 @@ import { ConfigAgent } from "@novaclaw/core/config/agent"
  * name itself Nova.
  */
 
+/**
+ * This graph holds no services, so it cannot open a chat — and `fromParts` REQUIRES an opener rather
+ * than allowing the omission, because an omitted one cannot tell "there is no such colleague" from
+ * "they exist and no row has been written yet" and would report the second as the first. Nothing in
+ * this file delivers to a colleague, so reaching this is a defect and `die` says so.
+ */
+const noChatOpener = () => Effect.die("this graph cannot open a colleague chat")
+
 const parts = (sessions: Record<string, string | undefined>) =>
   ColleagueHandoff.fromParts({
     db: undefined as never,
@@ -27,6 +35,7 @@ const parts = (sessions: Record<string, string | undefined>) =>
     session: (id) => Effect.succeed({ agent: sessions[String(id)] }),
     wake: () => Effect.succeed(true),
     store: { setLayers: () => Effect.void } as never,
+    chat: noChatOpener,
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -108,6 +117,7 @@ describe("who may organize reporting lines", () => {
           }),
         setLayers: (_id: string, layers: ConfigAgent.Info[]) => Effect.sync(() => (written = layers)),
       } as never,
+      chat: noChatOpener,
       refresh: Effect.void,
       roster: Effect.succeed([record("nova"), record("iris"), record("theron")]),
       takenNames: Effect.succeed([]),
@@ -155,6 +165,7 @@ describe("who may organize reporting lines", () => {
             removed.push(id)
           }),
       } as never,
+      chat: noChatOpener,
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.sync(() => void order.push("workers")),
@@ -180,6 +191,7 @@ describe("who may organize reporting lines", () => {
         setLayers: () => Effect.void,
         removeAgent: (id: string) => Effect.sync(() => removed.push(id)),
       } as never,
+      chat: noChatOpener,
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.die("worker purge failed"),

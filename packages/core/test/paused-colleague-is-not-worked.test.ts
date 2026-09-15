@@ -38,6 +38,15 @@ describe("the model-facing roster", () => {
   })
 })
 
+/**
+ * This graph holds no services, so it cannot open a chat — and `fromParts` REQUIRES an opener rather
+ * than allowing the omission, because an omitted one cannot tell "there is no such colleague" from
+ * "they exist and no row has been written yet" and would report the second as the first. The test
+ * below reaches this ON PURPOSE: its claim is that the paused gate did not refuse, and the `die`
+ * downstream is how "it got past" is observed.
+ */
+const noChatOpener = () => Effect.die("this graph cannot open a colleague chat")
+
 describe("delivery", () => {
   const parts = (paused: boolean) =>
     ColleagueHandoff.fromParts({
@@ -46,6 +55,7 @@ describe("delivery", () => {
       session: () => Effect.succeed({ agent: "nova" }),
       wake: () => Effect.succeed(true),
       store: undefined as never,
+      chat: noChatOpener,
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.void,
@@ -72,11 +82,15 @@ describe("delivery", () => {
       session: () => Effect.succeed({ agent: "nova" }),
       wake: () => Effect.succeed(true),
       store: undefined as never,
+      chat: noChatOpener,
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.void,
     })
-    // It gets past the paused gate and fails later on the null db — reaching that point is the claim.
+    // It gets past the paused gate and fails DOWNSTREAM — reaching that point is the claim. The
+    // failure is the missing chat opener rather than the null db it used to be: this graph holds no
+    // services at all, so it cannot open a chat, and `fromParts` requires the opener rather than
+    // letting a graph omit it and answer "no such colleague" for a colleague that exists.
     const exit = await Effect.runPromise(
       Effect.exit(withoutPredicate.deliver({ from: "ses_nova" as never, colleague: "edda", message: "hi" })),
     )

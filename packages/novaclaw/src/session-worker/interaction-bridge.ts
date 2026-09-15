@@ -234,8 +234,6 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
           outcome: "refused" as const,
           reason: group.value.refused,
         }
-      if (group.value.delivered.length === 0)
-        return { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
       return {
         ...identity(input.message),
         type: "colleague-result" as const,
@@ -257,11 +255,15 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
         outcome: "delivered" as const,
         started: delivered.value.started,
       }
-    // 🔴 TWO reasons a hand-off did not land, and the bridge must not flatten them. `refused` is the
-    // loop bound (`session/colleague-bound.ts`) and carries the sentence the sender needs to read;
-    // `no-chat` is a colleague with nowhere to be written to. Collapsing both into "no open chat" —
-    // which this did — would have reported every bound as a missing chat, and the mechanism would
-    // have been invisible to the only reader that can act on it.
+    // 🔴 A hand-off that did not land carries the SENTENCE, and the bridge must not flatten it.
+    // `refused` is the loop bound (`session/colleague-bound.ts`), a paused colleague, or a name that
+    // is not on the roster — and the sender is the only reader that can act on it. Collapsing it into
+    // "no open chat" — which this did — would have reported every bound as a missing chat, and the
+    // mechanism would have been invisible to the only reader that can act on it.
+    //
+    // ⚠️ There is no third arm. `delivered: false` with no `refused` used to mean "they exist but have
+    // no chat"; since a colleague's chat is opened when it is reached, every remaining way to fail is
+    // a refusal. `reject()` is the honest answer if one ever appears — it is a defect, not a fact.
     if (delivered.value.refused !== undefined)
       return {
         ...identity(input.message),
@@ -269,9 +271,7 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
         outcome: "refused" as const,
         reason: delivered.value.refused,
       }
-    // Not a failure: that colleague simply has no open chat to leave this in, and the model must
-    // say so rather than retry something that cannot succeed.
-    return { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
+    return reject()
   }
 
   // Past the spawn branch, every remaining message carries its own `sessionID` and must match the

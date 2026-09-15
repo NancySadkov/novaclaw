@@ -133,16 +133,21 @@ export const AwaitChildResult = Schema.Struct({
  * The host's answer to a `colleague-ask`.
  *
  * The outcomes are different facts and are deliberately not flattened: `delivered` means it landed in
- * their chat, `no-chat` means that colleague has no open conversation to leave it in (the model must
- * say so rather than retry), `refused` means the loop bound stopped it, and `rejected` means the
- * request never got that far — a stale lease. Collapsing them would tell a model to retry a thing
- * that cannot succeed.
+ * their chat, `refused` means the request was understood and NOT carried out (the loop bound, a
+ * paused colleague, or a name that is not on the roster) and carries the sentence the sender reads,
+ * and `rejected` means the request never got that far — a stale lease.
+ *
+ * ⚠️ **`no-chat` used to be a third answer and is DELETED rather than left unproduced.** It meant "that
+ * colleague exists but has no conversation to leave this in", which stopped being a state on
+ * 2026-09-15: a colleague's chat is a component of the colleague and is opened when it is reached
+ * (`ColleagueHandoff` → `ensureLiveChat`). What is left of that case — a name that is not on the
+ * roster at all — is a refusal, because it is a call that did nothing and needs a change of course.
  *
  * ⚠️ **`refused` carries its `reason` ACROSS the worker boundary, and that is the point.** The tool
  * runs inside the worker and never sees the host's `Delivery` object — it sees this message. A bound
  * whose explanation stopped at the bridge would be a mechanism the model is never told about: it
- * would read "no open chat", go on trying to reach a colleague it was just stopped from reaching, and
- * the cap would look broken from every side that matters.
+ * would go on trying to reach a colleague it was just stopped from reaching, and the cap would look
+ * broken from every side that matters.
  */
 export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
@@ -151,7 +156,6 @@ export const ColleagueResultMessage = Schema.Struct({
   outcome: Schema.Literals([
     "delivered",
     "group-delivered",
-    "no-chat",
     "refused",
     "hired",
     "retired",

@@ -2,6 +2,8 @@ import { describe, expect } from "bun:test"
 import { DateTime, Effect, Schema } from "effect"
 import { eq } from "drizzle-orm"
 import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -26,7 +28,14 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, ProjectV2.node, SessionStore.node]),
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      SessionProjector.node,
+      ProjectV2.node,
+      SessionStore.node,
+      AgentConfigStore.node,
+    ]),
   ),
 )
 
@@ -85,6 +94,7 @@ describe("a moved colleague is told, in its own chat", () => {
       events: yield* EventV2.Service,
       projects: yield* ProjectV2.Service,
       store: yield* SessionStore.Service,
+      agentConfigs: yield* AgentConfigStore.Service,
     }
   })
 
@@ -175,12 +185,39 @@ describe("a moved colleague is told, in its own chat", () => {
     }),
   )
 
-  it.effect("a colleague with no chat is SKIPPED, not queued", () =>
+  it.effect("🔴 a colleague with no chat is OPENED, not skipped — the move still lands", () =>
     Effect.gen(function* () {
-      // Starting a conversation the user has never seen, in order to announce a settings change, is
-      // worse than silence — the next chat opens with the new folder in its prompt anyway.
+      // A colleague's chat is a component of the colleague, reached through it and materialised when
+      // it is reached — exactly as its memory cabinet (`agent:<id>`) and its folder
+      // (`Scratch.forAgent`) are. "No chat yet" was never a fact about the colleague; it was a row
+      // nobody had written. Skipping on it meant the explanation of the move had nowhere to live.
+      const d = yield* deps
+      yield* d.agentConfigs.setLayers("theron", [
+        Schema.decodeUnknownSync(ConfigAgent.Info)({ name: "Theron", title: "Bookkeeper", mode: "primary" }),
+      ])
+
+      expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(true)
+
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      const live = rows.filter((r) => r.agent === "theron" && r.time_archived === null)
+      // Exactly ONE live chat afterwards, rooted where the colleague now works — the chat was opened,
+      // archived, and replaced in the new folder, which is the same event a colleague that already
+      // had one goes through.
+      expect(live).toHaveLength(1)
+      expect(String(live[0]?.directory).replaceAll("\\", "/")).toBe(move.to)
+    }),
+  )
+
+  it.effect("a name that is NOT on the roster is not materialised", () =>
+    Effect.gen(function* () {
+      // The other half of the rule, and the expensive one to get wrong: a retired id must never be
+      // handed a live `ses_<name>`, because the pool can draw that name again and the next holder
+      // would open into the predecessor's transcript — the bleed `agent/retire.ts` archives chats to
+      // prevent. `undefined` here is "there is no such colleague", not "they have no chat".
       const d = yield* deps
       expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(false)
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      expect(rows).toHaveLength(0)
     }),
   )
 })

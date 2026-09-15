@@ -267,10 +267,14 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    * Handing work to a COLLEAGUE — the same class as `spawner` and `join` above: the delivery touches
    * a session that is NOT this worker's, so it happens host-side and the worker only asks.
    *
-   * ⚠️ A rejection DIES rather than returning a polite false. `no-chat` is a real answer the model
-   * acts on ("nobody has that conversation open"), while `rejected` means a stale lease — reporting
-   * that as "they have no chat" would send the model off to tell the user something untrue about a
-   * colleague that is perfectly fine.
+   * ⚠️ A rejection DIES rather than returning a polite false. A REFUSAL is a real answer the model
+   * acts on ("that colleague cannot be reached, and here is why"), while `rejected` means a stale
+   * lease — reporting that as a fact about a colleague would send the model off to tell the user
+   * something untrue about one that is perfectly fine.
+   *
+   * ⚠️ **There is no `no-chat` outcome any more.** It meant "that colleague exists but has no
+   * conversation to leave this in", which stopped being a state on 2026-09-15 — the host opens the
+   * chat when it is reached. A name that is not on the roster is a `refused` with its sentence.
    */
   const colleague: ColleagueHandoff.Interface = {
     // 🔴 STAFFING CROSSES TOO, and it must. The first build refused it here on the theory that only
@@ -310,10 +314,9 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ).pipe(
         Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.Delivery> => {
           if (reply.outcome === "delivered") return Effect.succeed({ delivered: true, started: reply.started ?? false })
-          if (reply.outcome === "no-chat") return Effect.succeed({ delivered: false, started: false })
-          // The loop bound's refusal, rebuilt on this side so the TOOL sees the same `Delivery` shape
-          // it would have seen host-side. Without this arm a bound would `die` here as an
-          // unavailability — the sender would lose its turn instead of being told to go to the user.
+          // The refusal, rebuilt on this side so the TOOL sees the same `Delivery` shape it would have
+          // seen host-side. Without this arm a refusal would `die` here as an unavailability — the
+          // sender would lose its turn instead of being told what happened.
           if (reply.outcome === "refused")
             return Effect.succeed({
               delivered: false,
@@ -335,10 +338,6 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
               started: reply.started ?? false,
               ...(reply.conversation === undefined ? {} : { conversation: reply.conversation }),
             })
-          if (reply.outcome === "no-chat") return Effect.succeed({ delivered: [], missing: [], started: false })
-          // Rebuilt on this side so the TOOL sees the same shape it would host-side — the same
-          // reason the 1:1 arm above does it. A bound that `die`d here would cost the sender its
-          // turn instead of telling it to go back to the user.
           if (reply.outcome === "refused")
             return Effect.succeed({
               delivered: [],

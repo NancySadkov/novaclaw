@@ -8,8 +8,8 @@ import { EventV2 } from "../event"
 import { AbsolutePath } from "../schema"
 import { AgentV2 } from "../agent"
 import { ProjectV2 } from "../project"
-import { createSessionRecord } from "../session"
-import { RosterChat } from "../session/roster-chat"
+import { createSessionRecord, ensureLiveChat } from "../session"
+import { AgentConfigStore } from "../agent-config-store"
 import { SessionPatch } from "../session/patch"
 import { SessionStore } from "../session/store"
 import { SessionEvent } from "../session/event"
@@ -106,25 +106,37 @@ export const notice = AgentWorkspace.reassignmentNotice
  * change — and the notice's own wording tells the colleague not to act on it. It needs to know when
  * it next thinks, not this second.
  *
- * ⚠️ A colleague with no open chat is skipped, not queued: there is nowhere to leave this, and
- * starting a conversation the user has never seen in order to announce a settings change is worse
- * than silence. Its next chat begins with the new folder in its prompt anyway.
+ * ⚠️ **The colleague's chat is OPENED if it has none** (`ensureLiveChat`), rather than the notice
+ * being skipped. This used to be a carve-out — *"a colleague with no open chat is skipped, not
+ * queued: starting a conversation the user has never seen in order to announce a settings change is
+ * worse than silence"* — and the reasoning was sound about SILENCE but wrong about the state. A
+ * colleague's chat is a component of the colleague (AGENTS.md, the ECS lens: *"a component does not
+ * get an identity of its own; it is reached through its entity"*), materialised when it is reached,
+ * exactly as its memory cabinet and its folder are. "No chat yet" was never a fact about the
+ * colleague; it was a row nobody had written. The rule that survives is the one below — do not leave
+ * the notice in a chat that has never produced anything — and it is about LITTER, not existence.
  */
 export const deliver = (input: {
   readonly db: Database.Interface["db"]
   readonly events: EventV2.Interface
   readonly projects: ProjectV2.Interface
   readonly store: SessionStore.Interface
+  readonly agentConfigs: AgentConfigStore.Interface
   readonly move: Move
 }): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    const chat = yield* RosterChat.chatFor(input.db, input.move.agentID)
-    if (chat === undefined) return false
+    const chatID = yield* ensureLiveChat(
+      { db: input.db, events: input.events, projects: input.projects, store: input.store, agentConfigs: input.agentConfigs },
+      AgentV2.ID.make(input.move.agentID),
+    )
+    // Only "there is no such colleague" reaches here — it was retired, or the id is a posture. There
+    // is nobody to tell, and `false` is the honest answer.
+    if (chatID === undefined) return false
 
     // The successor is an empty chat. Do not leave a world-change nudge in it when the old chat had
     // never received model output: on a cleared/new conversation this is just transcript litter and
     // the next real prompt already supplies the context that matters.
-    const previous = yield* input.store.context(SessionSchema.ID.make(chat.id)).pipe(
+    const previous = yield* input.store.context(chatID).pipe(
       Effect.catchTag("Session.MessageDecodeError", (error) =>
         Log.event("session.message.decode.failed", {
           "session.id": error.sessionID,
@@ -163,7 +175,7 @@ export const deliver = (input: {
     if (!Exit.isSuccess(resolved)) {
       yield* Log.event("agent.reassign.successor.failed", {
         "agent.id": input.move.agentID,
-        "session.id": chat.id,
+        "session.id": chatID,
         "agent.fault": Log.fault(resolved.cause),
       })
       // Nothing was archived, so the colleague keeps the chat it had. The folder change still
@@ -174,7 +186,7 @@ export const deliver = (input: {
     const at = DateTime.makeUnsafe(Date.now())
     yield* SessionPatch.patchSessionRecord(
       { db: input.db, events: input.events },
-      SessionSchema.ID.make(chat.id),
+      chatID,
       (info) => ({ ...info, time: { ...info.time, archived: at } }),
     )
 
@@ -206,7 +218,7 @@ export const deliver = (input: {
       // types here mints the successor that this insert did not — and lands in it.
       yield* Log.event("agent.reassign.successor.failed", {
         "agent.id": input.move.agentID,
-        "session.id": chat.id,
+        "session.id": chatID,
         "agent.fault": Log.fault(created.cause),
       })
       return false
@@ -260,8 +272,12 @@ export const node = makeGlobalNode({
       const events = yield* EventV2.Service
       const projects = yield* ProjectV2.Service
       const store = yield* SessionStore.Service
-      yield* register((move) => deliver({ db, events, projects, store, move }).pipe(Effect.asVoid))
+      // 🔴 `AgentConfigStore` is here because the chat is now OPENED rather than merely looked up:
+      // where the colleague works is read from its own config (`AgentWorkspace.folderFor`), and a
+      // successor opened in the old folder would put the notice back where the colleague no longer is.
+      const agentConfigs = yield* AgentConfigStore.Service
+      yield* register((move) => deliver({ db, events, projects, store, agentConfigs, move }).pipe(Effect.asVoid))
     }),
   ),
-  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, AgentConfigStore.node],
 })

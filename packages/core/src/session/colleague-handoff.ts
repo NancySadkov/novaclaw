@@ -13,7 +13,6 @@ import { EventV2 } from "../event"
 import { WorldMemory } from "../kb-graph/world-memory"
 import { makeLocationNode } from "../effect/app-node"
 import { ColleagueNote } from "./colleague-note"
-import { RosterChat } from "./roster-chat"
 import { SessionMessageTable } from "./sql"
 import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
@@ -23,6 +22,8 @@ import { AgentV2 } from "../agent"
 import { SessionStore } from "./store"
 import { ColleagueStall } from "./colleague-stall"
 import { isSteerText } from "./steer-provenance"
+import { ProjectV2 } from "../project"
+import { ensureLiveChat } from "../session"
 
 // Handing work from one colleague to another (AGENTS.md — the structural metaphor).
 //
@@ -410,12 +411,18 @@ const landColleagueMessage = (
  * (the sender was already refused — charging would bill them twice for one act), it does not wake
  * anybody (a loop detector that summons a third agent is an amplifier), and it deliberately skips
  * the cycle check it would otherwise trip, because the originator is by definition on the path.
+ *
+ * ⚠️ The originator's chat goes through the SAME `openChat` as a hand-off, rather than a bare lookup
+ * that returns on a miss. It is the last reader of "a colleague's chat" in this file, and a silent
+ * return here was the same defect the other two carried: a notice dropped because a row had not been
+ * written, with nothing anywhere saying so.
  */
 const notifyOriginator = (
   deps: {
     readonly db: Database.Interface["db"]
     readonly events: EventV2.Interface
     readonly wake: (id: SessionSchema.ID) => Effect.Effect<boolean>
+    readonly chat: (colleague: string) => Effect.Effect<SessionSchema.ID | undefined>
   },
   args: {
     readonly path: ReadonlyArray<string>
@@ -431,11 +438,12 @@ const notifyOriginator = (
     // it would silence exactly the case this exists for. That was the first cut of this guard, and
     // the test below is what caught it.
     if (originator === undefined || originator === args.refusedBy) return
-    const chat = yield* RosterChat.chatFor(deps.db, originator)
-    if (chat === undefined) return
+    const chatID = yield* openChat(deps, originator)
+    // Only "there is no such colleague" — the originator was retired mid-chain. Nobody to tell.
+    if (chatID === undefined) return
     yield* SessionInput.admit(deps.db, deps.events, {
       id: SessionMessage.ID.create(),
-      sessionID: chat.id as SessionSchema.ID,
+      sessionID: chatID,
       prompt: {
         text: ColleagueNote.cycleNotice({
           path: args.path,
@@ -454,6 +462,39 @@ const notifyOriginator = (
   })
 
 /**
+ * Which chat a colleague's message lands in — the ONE opener this file uses, so `deliver`,
+ * `deliverGroup` and `notifyOriginator` cannot drift apart on it.
+ *
+ * 🔴 **A colleague that exists ALWAYS answers here.** A colleague's chat is a component of the
+ * colleague (AGENTS.md, the ECS lens: *"a component does not get an identity of its own; it is
+ * reached through its entity"*), and a component is materialised when it is reached — the same shape
+ * its memory cabinet (`agent:<id>`, created on the first write) and its folder (`Scratch.forAgent`,
+ * created on the first tool call) already have. So this does not report "they have no chat"; it
+ * OPENS one, and `undefined` means only that there is no such colleague.
+ *
+ * ⚠️ **This replaces a carve-out, not a bug.** Both callers used to read a missing chat as a state
+ * they had to account for: `deliver` answered the model *"has no open chat yet, so there is nowhere
+ * to leave this"* and told it to go back to the user, and `deliverGroup` dropped the colleague into
+ * `missing`. The reasoning was that starting a conversation the user has never seen is worse than
+ * silence. That is the wrong trade for the ORGANIZATION this product is: the user is a shareholder,
+ * they do not staff the org, and handing a colleague's hand-off back to them because a row had not
+ * been written yet is the pager the structural metaphor exists to remove. Nothing is hidden either —
+ * the chat appears in the roster and the chat list, and every message in it carries the sender.
+ *
+ * 🔴 **`chat` is REQUIRED, and the first cut of this got it wrong.** It was optional, falling back to
+ * a bare `RosterChat.chatFor` lookup — and that fallback does not degrade, it LIES. `chatFor` cannot
+ * tell "there is no such colleague" from "they exist and no row has been written yet", so a graph
+ * that forgot to supply the opener would report the second as the first: the model is told a
+ * colleague it can see on the roster does not exist. A wrong answer about the world is not a smaller
+ * version of a right one, and the caller that omits the opener is exactly the caller least able to
+ * notice. Required, the omission is a type error; there is no rung above that.
+ */
+const openChat = (
+  input: { readonly chat: (colleague: string) => Effect.Effect<SessionSchema.ID | undefined> },
+  colleague: string,
+): Effect.Effect<SessionSchema.ID | undefined> => input.chat(colleague)
+
+/**
  * Build the delivery from parts the caller already holds.
  *
  * 🔴 **This exists because resolving a SERVICE inside a per-request host handler abandons the turn.**
@@ -469,6 +510,23 @@ export const fromParts = (input: {
   readonly session: (id: SessionSchema.ID) => Effect.Effect<{ readonly agent?: string | undefined } | undefined>
   readonly wake: (id: SessionSchema.ID) => Effect.Effect<boolean>
   readonly store: AgentConfigStore.Interface
+  /**
+   * Which chat is this colleague's — {@link SessionV2.ensureLiveChat}, and it OPENS one when the lazy
+   * window is open.
+   *
+   * 🔴 Passed in rather than reached for, for the reason this whole function exists: the per-request
+   * host handler cannot resolve `ProjectV2` or `SessionStore`, and the seam needs both. The host
+   * layers hold them already and hand the answer in.
+   *
+   * ⚠️ **REQUIRED, and the first cut made it optional with a lookup-only fallback — which was a bug,
+   * not a simplification.** `RosterChat.chatFor` cannot tell "there is no such colleague" from "they
+   * exist and no row has been written yet", so a graph that omitted the opener would report the
+   * second as the first: the model is told a colleague on its own roster does not exist. Both
+   * production graphs supply this (`layer` below and `session-worker/execution.ts`), and the
+   * worker-child's RPC proxy is unaffected because it builds the interface directly rather than
+   * through here. Required, forgetting it is a type error rather than a lie.
+   */
+  readonly chat: (colleague: string) => Effect.Effect<SessionSchema.ID | undefined>
   /** Re-materialise the LIVE roster after a staffing change. Without it a hire is durable and
    *  invisible — measured: `Procius` was in the store and absent from `GET /api/agent`. */
   readonly refresh: Effect.Effect<void>
@@ -590,8 +648,23 @@ export const fromParts = (input: {
           `help. Do NOT tell anyone it was delivered. Do the work yourself, hand it to a colleague who ` +
           `is active, or tell the user that ${request.colleague} is the one you need.`,
       }
-    const chat = yield* RosterChat.chatFor(input.db, request.colleague)
-    if (chat === undefined) return { delivered: false, started: false }
+    const chatID = yield* openChat(input, request.colleague)
+    // 🔴 `undefined` means ONE thing now: there is no such colleague. It used to also mean "they have
+    // no chat yet", which is a state this seam no longer produces for a colleague that exists.
+    //
+    // ⚠️ A REFUSAL, not a silent `false`. A hand-off to a name that is not on the roster is a call
+    // that did nothing and needs a change of course — the same shape `tool/colleague.ts` already uses
+    // for "no colleague called that", and the reason a bare `delivered: false` was wrong here: the
+    // model reads a structured `ok: false` beside prose as success, and would have told the user it
+    // handed the work over.
+    if (chatID === undefined)
+      return {
+        delivered: false,
+        started: false,
+        refused:
+          `NOT SENT. There is no colleague called "${request.colleague}" — call \`list\` to see who ` +
+          `works here. Do NOT tell anyone it was delivered.`,
+      }
     // The sender's own agent, read from ITS session row rather than trusted from the caller: the
     // label is what the receiver sees as "who is asking", and a hand-off that could name anyone
     // would make the attribution worthless.
@@ -668,7 +741,7 @@ export const fromParts = (input: {
     if (ColleagueBound.rateExceeded(String(request.from), now))
       return { delivered: false, started: false, refused: ColleagueBound.rateRefusal({ colleague: request.colleague }) }
     const started = yield* landColleagueMessage(input, {
-      chatID: chat.id as SessionSchema.ID,
+      chatID,
       from: request.from,
       message: request.message,
       label,
@@ -698,9 +771,11 @@ export const fromParts = (input: {
         refused: "Name at least one colleague other than yourself — call `list` to see who works here.",
       }
 
-    // Who can actually be reached. A colleague with no open chat is left OUT of the conference
-    // rather than blocking it, and reported: `participants` must name exactly who received this, or
-    // the recipients would answer someone who never heard the question and nobody could tell.
+    // Who can actually be reached. `missing` used to mean "a colleague with no open chat", and it
+    // now means exactly one thing: **no such colleague**. A colleague that exists always has a chat
+    // (`openChat`), so the conference can no longer lose a participant to a row that had not been
+    // written yet — which is the difference between a room that reports who it reached and a room
+    // that silently leaves somebody out.
     let reachable: string[] = []
     const missing: string[] = []
     // 🔴 RESOLVED ONCE, and the id is KEPT. The landing loop used to call `chatFor` a second time and
@@ -711,14 +786,25 @@ export const fromParts = (input: {
     // tell. One lookup means the two lists cannot disagree, by construction rather than by care.
     const chats = new Map<string, SessionSchema.ID>()
     for (const colleague of named) {
-      const chat = yield* RosterChat.chatFor(input.db, colleague)
-      if (chat === undefined) missing.push(colleague)
+      const chatID = yield* openChat(input, colleague)
+      if (chatID === undefined) missing.push(colleague)
       else {
         reachable.push(colleague)
-        chats.set(colleague, chat.id as SessionSchema.ID)
+        chats.set(colleague, chatID)
       }
     }
-    if (reachable.length === 0) return { delivered: [], missing, started: false }
+    if (reachable.length === 0)
+      return {
+        delivered: [],
+        missing,
+        started: false,
+        // 🔴 A REFUSAL, not an empty delivery. After `openChat`, the only way to reach nobody is to
+        // name nobody who exists — which is a call that did nothing and needs a change of course, and
+        // the model must be told rather than left to read an empty list as a room that heard it.
+        refused:
+          `NOT SENT. Nobody in that list works here (${missing.join(", ")}) — call \`list\` to see who ` +
+          `does. Do NOT tell anyone it was delivered.`,
+      }
 
     const context = yield* lastPeerContext(input.db, request.from)
     const hop = ColleagueBound.nextHop(context.hops)
@@ -834,6 +920,10 @@ export const layer = Layer.effect(
     const store = yield* AgentConfigStore.Service
     const agents = yield* AgentV2.Service
     const memory = WorldMemory.client(yield* WorldMemory.node.service)
+    // 🔴 Resolved at LAYER BUILD, like everything else here — the per-request handler trap this file
+    // documents is about resolving a service the location graph does not already hold, and
+    // `ProjectV2` is a global that the node below now names.
+    const projects = yield* ProjectV2.Service
     return Service.of(
       fromParts({
         db,
@@ -841,6 +931,9 @@ export const layer = Layer.effect(
         session: (id) => sessions.get(id),
         wake: (id) => wake.wake(id),
         store,
+        // The chat is OPENED if the colleague has none yet — see `openChat`. Built from what this
+        // layer already holds rather than re-resolved per delivery.
+        chat: (colleague) => ensureLiveChat({ db, events, projects, store: sessions, agentConfigs: store }, AgentV2.ID.make(colleague)),
         refresh: agents.reload(),
         roster: agents.all(),
         forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
@@ -860,6 +953,7 @@ export const node = makeLocationNode({
   deps: [
     Database.node,
     EventV2.node,
+    ProjectV2.node,
     SessionStore.node,
     SessionRunCoordinator.wakeNode,
     AgentConfigStore.node,

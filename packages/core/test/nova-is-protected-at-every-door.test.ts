@@ -16,6 +16,14 @@ import { AgentV2 } from "@novaclaw/core/agent"
  * host obeyed. A guard the guarded party applies to itself is not a guard.
  */
 
+/**
+ * This graph holds no services, so it cannot open a chat — and `fromParts` REQUIRES an opener rather
+ * than allowing the omission, because an omitted one cannot tell "there is no such colleague" from
+ * "they exist and no row has been written yet" and would report the second as the first. Nothing in
+ * this file delivers to a colleague, so reaching this is a defect and `die` says so.
+ */
+const noChatOpener = () => Effect.die("this graph cannot open a colleague chat")
+
 const removed: string[] = []
 const parts = () =>
   ColleagueHandoff.fromParts({
@@ -27,6 +35,7 @@ const parts = () =>
       agents: () => Effect.succeed({}),
       removeAgent: (name: string) => Effect.sync(() => void removed.push(name)),
     } as never,
+    chat: noChatOpener,
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: (name) => Effect.sync(() => void removed.push(`forgot:${name}`)),

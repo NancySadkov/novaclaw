@@ -507,26 +507,24 @@ export const layer = Layer.effectDiscard(
               //
               // A `ToolFailure` is a different rendering path: the model sees the call FAIL. It is
               // also the shape this very tool already uses for "no colleague called that" — a call
-              // that did nothing and needs a change of course, which is exactly this. The no-chat
-              // arm below stays `ok: false` because it is a fact about the world rather than a
-              // refusal: the colleague exists and simply has nowhere to be written to.
-              if (!outcome.delivered && outcome.refused !== undefined)
-                return yield* new ToolFailure({ message: outcome.refused })
+              // that did nothing and needs a change of course, which is exactly this.
+              //
+              // ⚠️ **There is no second arm any more, and its absence is the fix.** `delivered: false`
+              // with no reason used to mean "they exist but have no chat, so say so and let the turn
+              // continue". That stopped being a state on 2026-09-15: a colleague's chat is a component
+              // of the colleague, reached through it, and `ColleagueHandoff.deliver` opens it rather
+              // than reporting its absence. Handing that back to the user — *"tell the user what you
+              // wanted to hand over"* — made the person do the work an org exists to do for them.
+              //
+              // The fallback below is for the TYPE only: every way a hand-off fails now carries its
+              // sentence, so reaching it means a defect. A failure is the honest rendering of that,
+              // not a friendly sentence inventing a state that no longer exists.
               if (!outcome.delivered)
-                return {
-                  ok: false,
-                  // Two different facts hide behind "not delivered" — a colleague with no chat, and a
-                  // hand-off the loop bound refused — and they send a model to opposite next actions.
-                  // The refusal is a `ToolFailure` above; this arm is only ever reached when there is
-                  // no reason to give, so it no longer needs to choose between them.
-                  //
-                  // A colleague with no chat is not an error the model can fix by retrying, and
-                  // silently starting one on their behalf would put words in a conversation the user
-                  // has never seen. Say what is true and let the turn continue.
+                return yield* new ToolFailure({
                   message:
-                    `${target} has no open chat yet, so there is nowhere to leave this. Tell the user what you ` +
-                    `wanted to hand over and who you wanted to hand it to.`,
-                } satisfies Output
+                    outcome.refused ??
+                    `The hand-off to ${target} did not land, and the instance gave no reason. Do NOT tell anyone it was delivered.`,
+                })
 
               return {
                 ok: true,

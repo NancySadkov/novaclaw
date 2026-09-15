@@ -10,7 +10,11 @@ import { Log } from "@novaclaw/schema/log"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
-import { RosterChat } from "@novaclaw/core/session/roster-chat"
+import { ensureLiveChat } from "@novaclaw/core/session"
+import { EventV2 } from "@novaclaw/core/event"
+import { ProjectV2 } from "@novaclaw/core/project"
+import { SessionStore } from "@novaclaw/core/session/store"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { MemoryApi, handlerLayer } from "../handler-api"
 
 /** A store fault is a 400 with the store's own reason, never a 500 — the caller can act on it. */
@@ -87,6 +91,14 @@ export const MemoryHandler = handlerLayer(
        */
       const { db } = yield* Database.Service
       const atlasLabeller = yield* AgentStatusDerive.makeLabeller()
+      // 🔴 The officer's chat is OPENED when it has none (`ensureLiveChat`), so the atlas captions no
+      // longer disappear for a colleague the user has never opened. Resolved HERE, in the group's
+      // build, for the reason directly above: a service read inside the handler effects is the shape
+      // that made every `memory.*` event a silent no-op.
+      const events = yield* EventV2.Service
+      const projects = yield* ProjectV2.Service
+      const sessions = yield* SessionStore.Service
+      const agentConfigs = yield* AgentConfigStore.Service
 
       /**
        * Hydrate the memories behind a set of ledger rollups, keeping the verdict beside each row.
@@ -163,8 +175,10 @@ export const MemoryHandler = handlerLayer(
                   new InvalidRequestError({ message: "Atlas captions require one officer-owned cabinet" }),
                 )
 
-              const chat = yield* RosterChat.chatFor(db, agentID)
-              if (!chat) return { status: "unavailable" as const, clusters: [], memories: [] }
+              const chatID = yield* ensureLiveChat({ db, events, projects, store: sessions, agentConfigs }, AgentV2.ID.make(agentID))
+              // Only "there is no such colleague" — retired, or an id that is not an officer. The
+              // atlas has no model to label with, and says so rather than inventing captions.
+              if (chatID === undefined) return { status: "unavailable" as const, clusters: [], memories: [] }
 
               const clusterIDs = ctx.payload.clusters.flatMap((cluster) => cluster.ids)
               const requestedIDs = [...new Set([...clusterIDs, ...ctx.payload.memories])]
@@ -196,7 +210,7 @@ export const MemoryHandler = handlerLayer(
               const records = [...clusterRecords, ...memoryRecords]
               if (records.length === 0) return { status: "unavailable" as const, clusters: [], memories: [] }
 
-              const raw = yield* atlasLabeller.short(chat.id, {
+              const raw = yield* atlasLabeller.short(chatID, {
                 system: MemoryAtlasCaption.SYSTEM,
                 text: MemoryAtlasCaption.prompt(records),
                 task: "memory-atlas-captions",

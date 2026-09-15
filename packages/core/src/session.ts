@@ -820,16 +820,37 @@ export const createSessionRecord = (
 const RESTORED_CHAT_POSTURE = AgentV2.ID.make("build")
 
 /**
+ * The pieces every caller that needs a colleague's chat already has, named once so the seam below
+ * can be reached from `colleague-handoff.ts`, `agent/reassignment.ts` and the memory endpoint
+ * without each of them re-deriving a deps object.
+ */
+export interface LiveChatDeps {
+  readonly db: Database.Interface["db"]
+  readonly events: EventV2.Interface
+  readonly projects: ProjectV2.Interface
+  readonly store: SessionStore.Interface
+  readonly agentConfigs: AgentConfigStore.Interface
+}
+
+/**
  * **A COLLEAGUE ALWAYS HAS A CHAT.** The one function that answers "which chat is this colleague's",
- * and the only place a colleague's chat is created for a caller that did not ask for one.
+ * and the only place a colleague's chat is opened for a caller that did not ask for one.
  *
  * 🔴 The invariant it exists to make structural (owner, 2026-09-04: *"the colleague always has a
  * chat (by architecture)"*). It was NOT structural before: `createSessionRecord` mints a colleague's
  * chat lazily, on the first thing that asks for one, so every colleague had a window — after being
  * hired, after Clear chat deleted its transcript, and after `agent/reassignment.ts` archived the old
- * chat before its successor insert landed — in which `liveRootFor` answered `undefined`. A caller
- * that needed to *send* something there had nowhere to send it, and the only account the user got
- * was a refusal.
+ * chat before its successor insert landed — in which a plain lookup answered `undefined`. Every
+ * caller then invented its own account of that: a refusal to the user, a silent skip, an
+ * "unavailable". The state was real and the account was the wrong thing to build on it.
+ *
+ * ⚠️ **`undefined` means exactly one thing: there is no such colleague.** It is not "a colleague with
+ * no chat" — that state no longer exists, which is the whole point. A retired id and a posture are
+ * the two ways to get it: a retired id is deliberately NOT materialised (a live root under a retired
+ * id is a transcript the next holder of that name would open into, which is the bleed
+ * `agent/retire.ts` archives chats to prevent), and a posture is not a colleague at all — `build`
+ * and `plan` are how a chat runs, not whose it is, and they may hold many chats, so there is no
+ * single "the" chat to hand back.
  *
  * ⚠️ **The id is not minted here.** `createSessionRecord` already owns the canonical `ses_<agent>`
  * seat, the one-chat-per-colleague guard and the history re-key; a second creation path would be a
@@ -837,24 +858,31 @@ const RESTORED_CHAT_POSTURE = AgentV2.ID.make("build")
  * remove. This asks the existing rule, and only when it says there is nothing does it ask the
  * existing creator.
  *
- * ⚠️ **Only for a colleague that EXISTS.** A retired id is deliberately not materialised: a live root
- * under a retired id is a transcript the next holder of that name would open into, which is the
- * bleed `agent/retire.ts` archives chats to prevent. The caller checks; this does not guess.
+ * ⚠️ **A COMPONENT IS MATERIALISED WHEN IT IS REACHED, not when its entity is created.** That is the
+ * rule the sibling components already follow — a colleague's memory cabinet is the scope
+ * `agent:<id>`, materialised on the first write, and its folder is `Scratch.forAgent(id)`, created on
+ * the first tool call. Nothing pre-creates a row per colleague, and this is the same shape: the chat
+ * is reached through the entity, and the reach is what brings it into existence.
  */
-const ensureLiveChat = (
-  deps: {
-    readonly db: Database.Interface["db"]
-    readonly events: EventV2.Interface
-    readonly projects: ProjectV2.Interface
-    readonly store: SessionStore.Interface
-    readonly agentConfigs: AgentConfigStore.Interface
-  },
-  agent: AgentV2.ID,
-): Effect.Effect<SessionSchema.ID> =>
+export const ensureLiveChat = (deps: LiveChatDeps, agent: AgentV2.ID): Effect.Effect<SessionSchema.ID | undefined> =>
   Effect.gen(function* () {
+    // A POSTURE is not a colleague. `build` and `plan` are how a chat runs, not whose it is, and they
+    // may hold many chats — so there is no single "the" chat to hand back, and handing back whichever
+    // is newest would be the second answer to "which chat is this" that the canonical id exists to
+    // remove.
+    if (AgentV2.POSTURE_IDS.has(agent)) return undefined
+    // ⚠️ The live chat is looked up FIRST, before any existence test, and the order is load-bearing:
+    // a colleague that already has one is answered without consulting the roster at all. Gating the
+    // lookup on the config store would make a chat the user can see unreachable because a config row
+    // was missing, which is the same "the row is not the truth" mistake in the other direction.
     const live = yield* liveRootFor(deps.db, agent)
     if (live !== undefined) return SessionSchema.ID.make(live.id)
-    const configured = AgentConfigStore.fold((yield* deps.agentConfigs.agents())[agent] ?? [])
+    // From here the chat would have to be CREATED, and that is the half that needs the colleague to
+    // exist: a live root under a retired id is a transcript the next holder of that name would open
+    // into, which is the bleed `agent/retire.ts` archives chats to prevent.
+    const layers = (yield* deps.agentConfigs.agents())[agent]
+    if (layers === undefined && !AgentV2.isProtected(agent)) return undefined
+    const configured = AgentConfigStore.fold(layers ?? [])
     // Where the colleague works, read from its OWN config rather than from the chat that is being
     // replaced: the whole reason a successor is opened is that the folder moved, so inheriting the
     // old chat's directory would put the new conversation back in the folder the user just left.
@@ -868,8 +896,8 @@ const ensureLiveChat = (
       { agent, location: { directory: AbsolutePath.make(directory) } },
       // ⚠️ `OwnerRequiredError` is in `createSessionRecord`'s signature for the ROOT case that names
       // no agent (NC-SEC-020). This call always names one, so the branch cannot be taken and the
-      // error is discharged rather than threaded: a caller of `prompt` that could be handed it would
-      // have no wire shape for it, and the honest reading of "impossible" is a defect, not a 400.
+      // error is discharged rather than threaded: a caller that could be handed it would have no
+      // wire shape for it, and the honest reading of "impossible" is a defect, not a 400.
     ).pipe(Effect.orDie)
     return created.id
   })
@@ -904,38 +932,20 @@ const ensureLiveChat = (
  * still gets its words delivered, which is the property being bought here.
  */
 const resolveFiledChat = (
-  deps: {
-    readonly db: Database.Interface["db"]
-    readonly events: EventV2.Interface
-    readonly projects: ProjectV2.Interface
-    readonly store: SessionStore.Interface
-    readonly agentConfigs: AgentConfigStore.Interface
-  },
+  deps: LiveChatDeps,
   target: SessionSchema.Info,
   requestedID: SessionSchema.ID,
 ): Effect.Effect<SessionSchema.ID> =>
   Effect.gen(function* () {
     const owner = target.agent
-    // A POSTURE is not a colleague: `build` and `plan` are how a chat runs, not whose it is, and they
-    // may hold many chats — so there is no single "the" chat to resolve to. Only a named officer is
-    // reached through.
-    const named = owner !== undefined && !AgentV2.POSTURE_IDS.has(AgentV2.ID.make(owner)) ? owner : undefined
-    /**
-     * Does that officer still exist?
-     *
-     * The store is the answer for every colleague the user ever configured — `agent.remove` deletes
-     * the row, so absence is exactly "retired". Nova is the one colleague that is NOT in the store:
-     * the governing agent is defined in code and never seeded as a config row, so keying on the store
-     * alone would send Nova's filed chats down the restore path and leave its real chat unused.
-     *
-     * ⚠️ Getting this wrong in the other direction is the expensive one. Materialising a chat for a
-     * RETIRED id creates a live `ses_<name>` that the next colleague drawn from the pool would be
-     * handed as its own transcript — the bleed `agent/retire.ts` archives chats to prevent. So the
-     * test errs toward NOT materialising.
-     */
-    const exists =
-      named !== undefined && ((yield* deps.agentConfigs.agents())[named] !== undefined || AgentV2.isProtected(named))
-    if (named !== undefined && exists) return yield* ensureLiveChat(deps, AgentV2.ID.make(named))
+    // The ONE existence test on this path, and it is the same one every other caller uses.
+    // `ensureLiveChat` answers `undefined` for a posture, for an id nobody holds any more, and for
+    // nothing else — a second test here would be the second answer to "is this a colleague" that the
+    // seam exists to remove.
+    if (owner !== undefined) {
+      const live = yield* ensureLiveChat(deps, AgentV2.ID.make(owner))
+      if (live !== undefined) return live
+    }
 
     yield* SessionPatch.patchSessionRecord(
       { db: deps.db, events: deps.events },

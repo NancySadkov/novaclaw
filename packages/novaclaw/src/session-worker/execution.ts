@@ -45,6 +45,8 @@ import { LocalModelRuntime } from "@/local-model/runtime"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
+import { ensureLiveChat } from "@novaclaw/core/session"
+import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionWorkerLocation } from "./location"
@@ -165,6 +167,11 @@ export const layer = Layer.effect(
     // never inside the per-request handler, which is the trap `SessionJoin` warns about above.
     const agentConfig = yield* AgentConfigStore.Service
     const effectiveConfig = yield* SessionEffectiveConfig.Service
+    // 🔴 The chat a hand-off lands in is OPENED when the colleague has none (`ensureLiveChat`), which
+    // needs the project resolver as well as the store. Resolved HERE, at layer build, for the reason
+    // the hand-off's own comment gives: resolving a service the location graph does not already hold
+    // inside the per-request handler abandons every tool-call turn.
+    const projects = yield* ProjectV2.Service
     // Retiring a colleague clears its cabinet, so this seam needs a memory client too. Resolved at
     // layer build like everything else here — `WorldMemory.client` wraps a CAPABILITY that acquires per
     // call, so holding it costs nothing when memory is disabled and never blocks the handler.
@@ -381,6 +388,21 @@ export const layer = Layer.effect(
                           // the instance — measured 2026-08-21, `Procius` was in the store and absent
                           // from `GET /api/agent`.
                           store: agentConfig,
+                          // 🔴 The chat is OPENED when the colleague has none — a colleague's chat is a
+                          // component of the colleague, so "they have no chat yet" is not a state a
+                          // hand-off may act on. This is the host's own copy: the worker child's
+                          // `deliver` is an RPC, and the answer is built here.
+                          chat: (colleague) =>
+                            ensureLiveChat(
+                              {
+                                db: database.db,
+                                events,
+                                projects,
+                                store,
+                                agentConfigs: agentConfig,
+                              },
+                              AgentV2.ID.make(colleague),
+                            ),
                           refresh: roster.reload(),
                           roster: roster.all(),
                           takenNames: roster
@@ -667,6 +689,7 @@ export const node = makeGlobalNode({
     SessionPresence.node,
     Database.node,
     AgentConfigStore.node,
+    ProjectV2.node,
     SessionEffectiveConfig.node,
     WorldMemory.node,
     // The manager the server graph builds, named here so this layer resolves the runtime client and
