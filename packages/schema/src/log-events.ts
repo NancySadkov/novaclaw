@@ -1960,6 +1960,37 @@ export const EVENTS = {
     file: "packages/core/src/session/runner/llm.ts",
   },
   /**
+   * 🔴 The last-moment dispatch gate measured an over-window request. Measured 2026-09-14
+   * (`ses_daedalus`): the harness sent a request its own estimate put at 281,140 tokens against a
+   * 235,929 ceiling and read back HTTP 400. Nothing compared the two before this gate existed.
+   */
+  "session.context.ceiling.exceeded": {
+    level: "warn",
+    message: "the packed request is over the model's prompt ceiling; refusing to dispatch it as measured",
+    attributes: {
+      "session.id": "correlate",
+      "session.prompt.tokens": "count",
+      "session.prompt.ceiling": "count",
+      "session.prompt.overrun": "count",
+      "session.context.size": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /** The same gate, after its one deterministic hard re-pack brought the request under. */
+  "session.context.ceiling.shrunk": {
+    level: "warn",
+    message: "context ceiling exceeded: dropped older messages to fit and dispatched the smaller request",
+    attributes: {
+      "session.id": "correlate",
+      "session.prompt.tokens": "count",
+      "session.prompt.ceiling": "count",
+      "session.dropped": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
    * The endpoint told us its per-request image cap, and we learned it.
    *
    * 🔴 Measured 2026-08-19: untreated, an image cap DEAD-ENDS the session — every later turn

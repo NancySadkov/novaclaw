@@ -2584,6 +2584,13 @@ export type SessionMessageContext = {
         affectedMessages: number
         protected: boolean
       }
+    | {
+        kind: "budget-overrun"
+        limitTokens: number
+        afterTokens: number
+        keptMessages: number
+        droppedMessages: number
+      }
   >
   promptAnchor?: SessionMessagePromptAnchor
 }
@@ -4042,6 +4049,7 @@ export type ConfigV2Compaction = {
   auto?: boolean
   prune?: boolean
   summarize?: boolean
+  summarizeInput?: number
   keep?: ConfigV2CompactionKeep
   buffer?: number
 }

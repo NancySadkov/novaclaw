@@ -304,10 +304,16 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       "claim — a dense first call cannot trigger an unchanged overflow retry",
     )
 
-    expect(harness.requests, "no compactable head exists, so the same oversized call is never retried").toHaveLength(1)
+    expect(
+      harness.requests,
+      "no compactable head exists, so the same oversized call is never retried — and with the dispatch " +
+        "gate it is not attempted at all: a single message over the whole window cannot be made smaller " +
+        "by dropping anything, so the harness names the fault instead of buying the same refusal from " +
+        "the provider (or, on a server that reports no window, a silent front-truncation).",
+    ).toHaveLength(0)
     expect(context.slice(-2)).toMatchObject([
       { type: "user", text: dense },
-      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
+      { type: "assistant", finish: "error", error: { message: expect.stringContaining("too large to send") } },
     ])
   })
 

@@ -18,6 +18,10 @@ export const formatContextTokens = (tokens: number): string => {
 const targetLabel = (target: string | undefined): string => (target === undefined ? "" : ` for “${target}”`)
 
 export const formatContextFinding = (finding: SessionMessageContext["findings"][number]): string => {
+  if (finding.kind === "budget-overrun") {
+    const over = formatContextTokens(finding.afterTokens - finding.limitTokens)
+    return `The request is about ${over} tokens over this model's limit even after dropping ${finding.droppedMessages} older message(s): the newest message, the newest exchange and the original task are never dropped.`
+  }
   if (finding.kind === "duplicate-tool-output") {
     const subject = `${finding.tool} output${targetLabel(finding.target)}`
     const repeated = `about ${formatContextTokens(finding.repeatedTokens)} repeated tokens`

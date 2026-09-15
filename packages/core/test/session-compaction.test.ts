@@ -60,6 +60,43 @@ test("overflow recovery translates the fixed whole-request cut into a smaller re
     }),
   ).toBe(3_000)
 })
+
+/**
+ * 🔴 **THE SUMMARIZER'S CEILING IS NOT THE PROVIDER'S CEILING.**
+ *
+ * `context - summaryOutput` is the largest prompt the provider will ACCEPT. It is not the largest
+ * prompt we should SEND: with a 262,144-token window it is 258,048 tokens, which is a prefill no
+ * local endpoint survives inside the provider stall timeout. Measured 2026-09-14 (`ses_daedalus`):
+ * eight compaction attempts died as `summarizer-unavailable` with `generatedChars: 0` after 300 s /
+ * 308 s while the chat sat 20 % over its ceiling — compaction worked while the transcript was small
+ * and stopped working the moment it mattered.
+ */
+describe("the summarizer's own input budget", () => {
+  test("the smaller of the two ceilings wins, and the provider's is a hard contract", () => {
+    expect(SessionCompaction.summarizeInputCeiling(262_144, 4_096, 32_000)).toBe(32_000)
+    // A user who raises the setting above the provider's ceiling still gets the provider's: the
+    // setting can only ever make the request smaller, never illegal.
+    expect(SessionCompaction.summarizeInputCeiling(262_144, 4_096, 300_000)).toBe(258_048)
+    // A small window is still the provider's answer, not the setting's.
+    expect(SessionCompaction.summarizeInputCeiling(8_192, 4_096, 32_000)).toBe(4_096)
+  })
+
+  test("unset or unusable keeps the previous behaviour exactly", () => {
+    expect(SessionCompaction.summarizeInputCeiling(262_144, 4_096, undefined)).toBe(258_048)
+    expect(SessionCompaction.summarizeInputCeiling(262_144, 4_096, Number.NaN)).toBe(258_048)
+  })
+
+  test("a ceiling is never zero or negative, however degenerate the window", () => {
+    // `transcript-too-large` is the honest decline for an impossible window; a negative ceiling would
+    // instead make the halving loop below reason about a size that cannot exist.
+    expect(SessionCompaction.summarizeInputCeiling(4_096, 4_096, undefined)).toBe(0)
+    expect(SessionCompaction.summarizeInputCeiling(4_096, 4_096, 32_000)).toBe(1)
+  })
+
+  test("the default is a prefill budget, not a fraction of the window", () => {
+    expect(SessionCompaction.DEFAULT_SUMMARY_INPUT_TOKENS).toBe(32_000)
+  })
+})
 const steer = (text: string): SessionMessage.Message => user(applySteerProvenance(text))
 const assistant = (text: string): SessionMessage.Message =>
   ({ type: "assistant", content: [{ type: "text", text }] }) as unknown as SessionMessage.Message
@@ -330,16 +367,21 @@ test("overflow recovery measures the exact packed requests and resends at most o
   const runner = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
   const openingAt = runner.indexOf("const openingRequest = ProviderDispatch.openingRequest({")
   const estimateAt = runner.indexOf("const promptEstimate = PromptEstimate.resolve({", openingAt)
-  const prepareAt = runner.indexOf("ProviderDispatch.prepare({", estimateAt)
-  const compactionAt = runner.indexOf("compactIfNeeded({", prepareAt)
-  const packedAt = runner.indexOf("const request = preparedDispatch.request")
-  const measuredAt = runner.indexOf("const outboundPromptTokens = Math.ceil(", packedAt)
+  // ⚠️ The prepare argument list is built ONCE and used twice (the ordinary pack and the dispatch
+  // gate's hard re-pack), so the order to pin is: estimate → that one argument list → the prepare
+  // call → compaction → the measured request.
+  const prepareAt = runner.indexOf("const prepareInput = {", estimateAt)
+  const prepareCallAt = runner.indexOf("const preparedDispatch = ProviderDispatch.prepare(prepareInput)", prepareAt)
+  const compactionAt = runner.indexOf("compactIfNeeded({", prepareCallAt)
+  const packedAt = runner.indexOf("let request = preparedDispatch.request")
+  const measuredAt = runner.indexOf("let outboundPromptTokens = Math.ceil(", packedAt)
   const authorizeAt = runner.indexOf("OverflowRecoveryPolicy.authorizeRetry({", measuredAt)
   const providerAt = runner.indexOf("ProviderDispatch.stream({", authorizeAt)
   expect(openingAt).toBeGreaterThan(-1)
   expect(estimateAt).toBeGreaterThan(openingAt)
   expect(prepareAt).toBeGreaterThan(estimateAt)
-  expect(compactionAt).toBeGreaterThan(prepareAt)
+  expect(prepareCallAt).toBeGreaterThan(prepareAt)
+  expect(compactionAt).toBeGreaterThan(prepareCallAt)
   expect(packedAt).toBeGreaterThan(compactionAt)
   expect(measuredAt).toBeGreaterThan(packedAt)
   expect(authorizeAt).toBeGreaterThan(measuredAt)
@@ -361,7 +403,10 @@ test("overflow recovery measures the exact packed requests and resends at most o
   expect(compactAt).toBeGreaterThan(planAt)
   expect(transitionAt).toBeGreaterThan(compactAt)
   const recovery = runner.slice(planAt, transitionAt)
-  expect(recovery).toContain("originalPromptTokens: outboundPromptTokens")
+  // ⭐ The provider's OWN count outranks our estimate when it gave us one: it measured the exact
+  // request, we approximated it. Measured 2026-09-14, the harness said 281,140 for a request the
+  // provider counted at 245,761, which moved the 25 % cut target ~8,800 tokens the wrong way.
+  expect(recovery).toContain("originalPromptTokens: promptTokensFrom(recoveryFailure.message) ?? outboundPromptTokens")
   expect(recovery).toContain("overflowPromptTokens: recoveryPlan.originalPromptTokens")
   expect(recovery).toContain("overflowTargetTokens: recoveryPlan.targetPromptTokens")
   expect(runner).toContain("runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing)")
@@ -389,7 +434,9 @@ test("one resolved route profile reaches every compaction and packing consumer",
 
   expectProfileNear(runner, "const promptEstimate = PromptEstimate.resolve({", 500, false)
   expectProfileNear(runner, "harness.compaction.compactIfNeeded({", 500)
-  expectProfileNear(runner, "const preparedDispatch = ProviderDispatch.prepare({", 800)
+  // The prepare argument list is built once (`const prepareInput = {`) and handed to
+  // `ProviderDispatch.prepare`, so the resolved route facts are pinned at the LIST, not at a call.
+  expectProfileNear(runner, "const prepareInput = {", 1_200)
 
   // Strict mode builds two independently dispatched requests: each engine call, and the final
   // user-facing run summary. Both must use the same route fact resolved once above them.

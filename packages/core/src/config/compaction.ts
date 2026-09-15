@@ -1,7 +1,7 @@
 export * as ConfigCompaction from "./compaction"
 
 import { Schema } from "effect"
-import { NonNegativeInt } from "../schema"
+import { NonNegativeInt, PositiveInt } from "../schema"
 
 export class Keep extends Schema.Class<Keep>("ConfigV2.Compaction.Keep")({
   tokens: NonNegativeInt.pipe(Schema.optional),
@@ -23,6 +23,23 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
    * new failure mode.
    */
   summarize: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * How many tokens of transcript the SUMMARIZER may read in one pass.
+   *
+   * 🔴 **Without this, the summarizer's budget was the whole context window** —
+   * `promptCeiling = context - summaryOutput`, i.e. a ~258 k-token request against a 262,144-token
+   * window. Measured 2026-09-14 (`ses_daedalus`): eight consecutive compaction attempts died as
+   * `summarizer-unavailable` with `generatedChars: 0` and durations of 300 s / 308 s — the local
+   * endpoint's stall timeout — while the chat sat 20 % over its ceiling and could not compact at
+   * all. **The mechanism that exists to make the prompt smaller required sending the prompt**, so
+   * compaction worked while the transcript was small and stopped working exactly when it mattered.
+   *
+   * ⭐ This is a budget for a PREFILL, not a fraction of the window: it must be a prompt the
+   * slowest configured route can ingest inside the provider stall timeout. The default is
+   * `DEFAULT_SUMMARY_INPUT_TOKENS` in `session/compaction.ts`; the head is folded in passes that
+   * each stay under it.
+   */
+  summarizeInput: PositiveInt.pipe(Schema.optional),
   keep: Keep.pipe(Schema.optional),
   buffer: NonNegativeInt.pipe(Schema.optional),
 }) {}

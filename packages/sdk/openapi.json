@@ -31872,6 +31872,33 @@
                     "protected"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["budget-overrun"]
+                    },
+                    "limitTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "afterTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "keptMessages": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "droppedMessages": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["kind", "limitTokens", "afterTokens", "keptMessages", "droppedMessages"],
+                  "additionalProperties": false
                 }
               ]
             }
@@ -36722,6 +36749,10 @@
           },
           "summarize": {
             "type": "boolean"
+          },
+          "summarizeInput": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           },
           "keep": {
             "$ref": "#/components/schemas/ConfigV2CompactionKeep"

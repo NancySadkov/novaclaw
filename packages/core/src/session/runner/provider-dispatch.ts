@@ -75,6 +75,16 @@ export interface PrepareInput {
   readonly memoryRecall?: string
   readonly promptCorrectionTokens?: number
   readonly promptMarginTokens?: number
+  /**
+   * The compactor's response reserve, threaded so the packer and the compactor budget against ONE
+   * number rather than two that agree only at some window sizes. See `ContextPack.budget`.
+   */
+  readonly minimumResponseReserveTokens?: number
+  /**
+   * Last-moment hard mode: relax the packer's never-drop rules until the result fits, and report
+   * `fits`. Set only by the dispatch gate, immediately before the bytes would leave.
+   */
+  readonly hard?: boolean
 }
 
 /** Attach the stable cache identity and pack the exact request that will reach the provider. */
@@ -97,6 +107,9 @@ export const prepare = (input: PrepareInput) => {
     memoryRecall: input.memoryRecall,
     promptCorrectionTokens: input.promptCorrectionTokens,
     promptMarginTokens: input.promptMarginTokens,
+    ...(input.minimumResponseReserveTokens === undefined
+      ? {}
+      : { minimumResponseReserveTokens: input.minimumResponseReserveTokens }),
   })
   const request = packed.changed
     ? LLM.request({ ...LLM.requestInput(cacheable), system: packed.system, messages: packed.messages })

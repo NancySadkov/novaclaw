@@ -85,6 +85,19 @@ describe("Debug context findings", () => {
     ).toContain("kept on purpose")
   })
 
+  test("explains an over-budget request as the last-moment refusal it is", () => {
+    const text = formatContextFinding({
+      kind: "budget-overrun",
+      limitTokens: 235_929,
+      afterTokens: 281_140,
+      keptMessages: 1,
+      droppedMessages: 42,
+    })
+    expect(text).toContain("45k tokens over")
+    expect(text).toContain("dropping 42 older message(s)")
+    expect(text).toContain("never dropped")
+  })
+
   test("formats small and large token counts for scanning", () => {
     expect(formatContextTokens(942)).toBe("942")
     expect(formatContextTokens(1_240)).toBe("1.2k")

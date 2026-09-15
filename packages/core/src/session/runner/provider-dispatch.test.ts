@@ -116,8 +116,82 @@ describe("ProviderDispatch", () => {
     expect(prepared.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
-  test("does not mistake exact-route prefix retention for semantic capacity", () => {
+  /**
+   * 🔴 **A PACKED SET THAT IS OVER ITS OWN BUDGET MUST SAY SO.** Three rules are deliberately
+   * allowed to exceed `budgetTokens` — the newest message is always kept, the newest
+   * assistant+results group is recovered whole, and the original task is re-prepended — and until
+   * this finding existed nothing recorded the overrun. Measured 2026-09-14 (`ses_daedalus`): the
+   * harness dispatched a request its own estimate put at 281,140 tokens against a 235,929 ceiling
+   * and read back HTTP 400. A silent overrun is how a measured fault reaches a provider.
+   */
+  test("a kept set that could not be packed under budget reports the overrun", () => {
+    const newest = Message.user("x".repeat(40_000))
+    const packed = ContextPack.pack([Message.user("an older task"), newest], 1_000)
+    expect(packed.fits).toBe(false)
+    expect(packed.estimatedTokens).toBeGreaterThan(1_000)
+    expect(packed.findings.find((finding) => finding.kind === "budget-overrun")).toMatchObject({
+      kind: "budget-overrun",
+      limitTokens: 1_000,
+      keptMessages: 1,
+      droppedMessages: 1,
+    })
+  })
+
+  /**
+   * ⚠️ **`hard` is for the last moment before dispatch and nothing else.** The three never-drop rules
+   * are right for packing, but each can leave the request over the window by construction — and a
+   * request over the window is a guaranteed 400, not a preference to be weighed. Here the ANCHOR is
+   * what pushed the set over: with the rules relaxed, the same pack fits.
+   */
+  test("hard mode gives up the original-task anchor rather than dispatch an over-window request", () => {
+    // The anchor is the ONLY thing over: the newest message fits the budget on its own, and the sole
+    // real user message is four times the budget — so the choice is that anchor or a legal request.
+    const messages = [Message.user("T".repeat(8_000)), Message.assistant("a".repeat(2_000))]
+    const ordinary = ContextPack.pack(messages, 1_000)
+    expect(ordinary.fits).toBe(false)
+    expect(ordinary.messages.some((message) => message.role === "user")).toBe(true)
+
+    const hard = ContextPack.pack(messages, 1_000, { hard: true })
+    expect(hard.fits).toBe(true)
+    expect(hard.messages).toEqual([Message.assistant("a".repeat(2_000))])
+  })
+
+  /**
+   * The anchor is the NEWEST real user message, not the oldest. `find` returned the first one in
+   * history — on a long chat that is the opening request, furthest from the work in flight and the
+   * most expensive thing to re-prepend, and it displaced the task actually in force.
+   */
+  test("the re-prepended anchor is the newest task, not the opening one", () => {
+    const packed = ContextPack.pack(
+      [Message.user("O".repeat(8_000)), Message.user("N".repeat(8_000)), Message.assistant("a".repeat(2_000))],
+      1_000,
+    )
+    expect(packed.messages[0]).toEqual(Message.user("N".repeat(8_000)))
+    expect(packed.messages.filter((message) => message.role === "user")).toHaveLength(1)
+  })
+
+  /**
+   * P7 — the packer must reserve the SAME response budget the compactor does. At a 262,144 window
+   * both formulas give 26,215 and they agree by accident; at a smaller window the packer's own 10 %
+   * is smaller than the configured 20,000 buffer, so it would approve a request the compactor has
+   * already measured as over budget.
+   */
+  test("the packer reserves the compactor's response budget, not only its own 10%", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const request = LLM.request({ model, messages: [Message.user("old".repeat(20_000)), Message.user("new task")] })
+    const base = ProviderDispatch.prepare({ request, promptCacheKey: "s", contextSize: 32_000 })
+    const reserved = ProviderDispatch.prepare({
+      request,
+      promptCacheKey: "s",
+      contextSize: 32_000,
+      minimumResponseReserveTokens: 20_000,
+    })
+    expect(base.packed.dropped).toBe(0)
+    expect(reserved.packed.dropped).toBe(1)
+    expect(reserved.packed.messages.at(-1)).toEqual(Message.user("new task"))
+  })
+
+  test("does not mistake exact-route prefix retention for semantic capacity", () => {    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = LLM.request({
       model,
       messages: [Message.user("old".repeat(20_000)), Message.user("new task")],

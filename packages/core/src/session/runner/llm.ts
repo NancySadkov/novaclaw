@@ -7,8 +7,10 @@ import {
   LLMEvent,
   Message,
   SystemPart,
+  InvalidRequestReason,
   isContextOverflowFailure,
   mediaLimitFailure,
+  promptTokensFrom,
   type FinishReason,
   type ProviderErrorEvent,
   isModelMissing,
@@ -2329,7 +2331,10 @@ export const layer = Layer.effect(
       // here defeats cache reuse precisely on long chats, because its extra old messages diverge at
       // the history frontier the provider has cached.
       yield* timingStart("context-fit")
-      const preparedDispatch = ProviderDispatch.prepare({
+      // One argument list, used twice: the ordinary pack, and the HARD re-pack the last-moment gate
+      // below may ask for. A second copy would be the divergence that lets the gate measure against
+      // a different window than the packer packed to (ruling 6, in miniature).
+      const prepareInput = {
         request: openingRequest,
         promptCacheKey,
         contextSize: model.route.defaults.limits?.context,
@@ -2341,7 +2346,11 @@ export const layer = Layer.effect(
         promptCorrectionTokens: promptEstimate.correctionTokens,
         promptMarginTokens: promptEstimate.marginTokens,
         imagePatchPixels: routeProfile.imagePatchPixels,
-      })
+        // The compactor's own reserve, so the packer cannot approve a request the compactor has
+        // already measured as over budget. See `ContextPack.budget`.
+        minimumResponseReserveTokens: harness.compaction.settings.buffer,
+      } satisfies ProviderDispatch.PrepareInput
+      const preparedDispatch = ProviderDispatch.prepare(prepareInput)
       yield* timingEnd("context-fit")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
       // simply under its threshold. Timing it is right; RECORDING it as a phase is not, because the
@@ -2352,7 +2361,13 @@ export const layer = Layer.effect(
       const retryAt = compactionRetryAt.get(session.id) ?? 0
       const shouldAttemptCompaction = CompactionBackoff.due(retryAt, Date.now())
       let compacted = false
-      if (shouldAttemptCompaction) {
+      // 🔴 ALWAYS CALLED — the backoff gates the SPEND, not the check. It used to skip this call
+      // entirely for 30 minutes after a summarizer failure, which meant the threshold was not even
+      // measured or logged and the packed request went out unmeasured: `ses_daedalus` dispatched a
+      // request its own estimate put at 281,140 tokens against a 235,929 ceiling, 148 ms after
+      // compaction had given up. A failed summary is evidence about the summarizer; it is not
+      // evidence that the chat has room. See `SessionCompaction.Input.summaryAllowed`.
+      {
         let declined: SessionCompaction.DeclineReason | undefined
         yield* timingStart("compaction")
         compacted = yield* harness.compaction.compactIfNeeded({
@@ -2364,6 +2379,7 @@ export const layer = Layer.effect(
           promptEstimate,
           imagePatchPixels: routeProfile.imagePatchPixels,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
+          summaryAllowed: shouldAttemptCompaction,
           maintenance: {
             ownerID: session.id,
             task: "compaction",
@@ -2408,8 +2424,9 @@ export const layer = Layer.effect(
           )
       }
       if (compacted) yield* timingEnd("compaction")
-      else if (shouldAttemptCompaction)
-        yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
+      // The phase is started unconditionally now (see the call site), so it must be withdrawn
+      // unconditionally too — a started phase that never ends is a receipt that hangs.
+      else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an OpenAI-compatible server never silently front-truncates the
@@ -2424,10 +2441,108 @@ export const layer = Layer.effect(
           "session.kept.tokens": packed.estimatedTokens,
           "session.context.size": packed.contextSize,
         })
-      const request = preparedDispatch.request
-      const outboundPromptTokens = Math.ceil(
+      let request = preparedDispatch.request
+      let outboundPromptTokens = Math.ceil(
         PromptEstimate.whole(request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
       )
+      /**
+       * 🔴 **1M — THE LAST GATE, AND THE ONLY ONE THAT KNOWS BOTH THE CEILING AND THE BYTES.**
+       *
+       * Everything above this line is ADVICE: a heuristic estimate, a compaction that may have
+       * declined, a packer whose three never-drop rules can leave the request over budget by
+       * construction, and a failure backoff that used to switch the whole check off. Measured
+       * 2026-09-14 (`ses_daedalus`): the harness dispatched a request its own estimate put at
+       * 281,140 tokens against a 235,929 ceiling and read back HTTP 400 — it measured itself 19 %
+       * over and sent it anyway, because nothing compared the two.
+       *
+       * ⭐ **The window is `preparedDispatch.packed.contextSize`, NOT a re-resolution.** That is the
+       * number the packer actually packed to (including its `DEFAULT_CONTEXT_SIZE` fallback), and a
+       * second lookup here could disagree with it by construction — a gate measuring a different
+       * window than the packer used is worse than no gate.
+       *
+       * ⚠️ **Do not refuse on the first measurement.** The estimate is a heuristic that has been
+       * observed 14 % HIGH, so a request measured slightly over may well fit. One deterministic
+       * HARD re-pack — the same packer with its never-drop rules relaxed — either brings it under or
+       * proves that nothing can. Only the second measurement may end a turn.
+       */
+      /**
+       * 🔴 **THE PROVIDER'S CONTRACT — `context - output` — NOT OUR OWN RESERVE.**
+       *
+       * The first cut of this gate reused `PromptEstimate.capacity(...)` with the compaction buffer,
+       * which is the COMPACTOR's ceiling. That number is our own margin for estimation error and
+       * response headroom, and it is not a limit any provider enforces: with the default 20,000-token
+       * buffer and the 8,192-token floor under it, every route whose window is under ~22 k gets a
+       * ceiling of ZERO, and a gate that refuses on it refuses EVERY dispatch on those routes. The
+       * runner's own harness pins caught it — a 4,000-token test route went from "compacts and
+       * continues" to "refused to dispatch".
+       *
+       * ⭐ What the provider actually said, verbatim (`ses_daedalus`, 2026-09-14):
+       * *"you requested 16384 output tokens and your prompt contains at least 245761 input tokens,
+       * for a total of at least 262145"* — the contract is `input + output ≤ window`. That is the
+       * number this gate holds, and it is positive whenever the window can hold the requested output
+       * at all. A degenerate route (output ≥ window) is not evidence about anything, so the gate stays
+       * out of the way and the packer's own "a degenerate window still sends the newest message" rule
+       * governs, exactly as before.
+       *
+       * ⚠️ Deliberately NOT subtracting `promptEstimate.marginTokens`: that uncertainty term has a
+       * 1,000-token floor, which is a quarter of a small window, and a gate that refuses on it is the
+       * same defect with a smaller constant. Estimation error is the COMPACTOR's business — it fires
+       * earlier, at 90 % of the window — and this gate is the last resort behind it.
+       */
+      const requestedOutputTokens = request.generation?.maxTokens ?? model.route.defaults.limits?.output ?? 0
+      const dispatchCeiling = Math.max(0, preparedDispatch.packed.contextSize - Math.max(0, requestedOutputTokens))
+      let ceilingRefusal: LLMError | undefined
+      if (dispatchCeiling > 0 && outboundPromptTokens > dispatchCeiling) {
+        yield* Log.event("session.context.ceiling.exceeded", {
+          "session.id": session.id,
+          "session.prompt.tokens": outboundPromptTokens,
+          "session.prompt.ceiling": dispatchCeiling,
+          "session.prompt.overrun": outboundPromptTokens - dispatchCeiling,
+          "session.context.size": preparedDispatch.packed.contextSize,
+        })
+        const shrunk = ProviderDispatch.prepare({ ...prepareInput, hard: true })
+        const shrunkTokens = Math.ceil(
+          PromptEstimate.whole(shrunk.request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
+        )
+        if (shrunk.packed.fits && shrunkTokens <= dispatchCeiling) {
+          yield* Log.event("session.context.ceiling.shrunk", {
+            "session.id": session.id,
+            "session.prompt.tokens": shrunkTokens,
+            "session.prompt.ceiling": dispatchCeiling,
+            "session.dropped": shrunk.packed.dropped,
+          })
+          request = shrunk.request
+          outboundPromptTokens = shrunkTokens
+        } else {
+          /**
+           * ⚠️ **REFUSING IS THE LAST RESORT, AND IT IS REACHED ONLY WHEN NO DROP CAN HELP.** Hard
+           * mode leaves at least the newest message, so `fits: false` here means that ONE message is
+           * over the window on its own — there is no smaller request to send, and a provider that
+           * accepts it either refuses it (the 400 this gate exists to prevent) or, on a compatible
+           * server that reports no window, silently FRONT-TRUNCATES it (`context-pack.ts`'s header:
+           * the agent loses its system prompt and earlier tool results mid-task with no error).
+           *
+           * ⭐ The sentence distinguishes the two shapes, because the user's remedy differs: a paste
+           * that is too big for this model versus a chat that is too big. `keptMessages === 1` is what
+           * tells them apart — hard mode has already given up everything else.
+           */
+          const alone = shrunk.packed.messages.length <= 1
+          ceilingRefusal = new LLMError({
+            module: "SessionRunner",
+            method: "dispatch",
+            reason: new InvalidRequestReason({
+              message: alone
+                ? `This message is too large to send on its own: about ${outboundPromptTokens} tokens against ` +
+                  `this model's ${dispatchCeiling}-token prompt limit. Send a smaller part of it, or switch this ` +
+                  `chat to a model with a larger context window.`
+                : `This chat is too large to send: about ${outboundPromptTokens} tokens against this model's ` +
+                  `${dispatchCeiling}-token prompt limit, and dropping older messages could not get it under. ` +
+                  `NovaClaw is about to try folding the conversation instead.`,
+              classification: "context-overflow",
+            }),
+          })
+        }
+      }
       const prefixCacheObservation =
         prepared.ran?.prefixCache?.enabled === true
           ? yield* ModelPrefixCache.observe(db, {
@@ -2503,9 +2618,16 @@ export const layer = Layer.effect(
       // continues with a nudge (and a forced `</think>` close at the end). A model that answers on
       // its own streams through untouched. Skipped when thinking is explicitly disabled for the turn.
       const budgetedSource =
-        retryAuthorization?.action === "stop"
-          ? Stream.succeed(overflowRecovery!.failure)
-          : ProviderDispatch.stream({
+        ceilingRefusal !== undefined
+          ? // The gate refused: nothing goes on the wire. Failing the STREAM (rather than the effect)
+            // hands the refusal to the same machinery a real 400 reaches — publish, then the one
+            // bounded overflow recovery, which folds the conversation and retries this step. The
+            // classification is `context-overflow` because that is what this is: the provider never
+            // had to say it, we measured it.
+            Stream.fail(ceilingRefusal)
+          : retryAuthorization?.action === "stop"
+            ? Stream.succeed(overflowRecovery!.failure)
+            : ProviderDispatch.stream({
               llm,
               request,
               preparedOpening: request,
@@ -2528,6 +2650,7 @@ export const layer = Layer.effect(
                         promptCorrectionTokens: promptEstimate.correctionTokens,
                         promptMarginTokens: promptEstimate.marginTokens,
                         imagePatchPixels: routeProfile.imagePatchPixels,
+                        minimumResponseReserveTokens: harness.compaction.settings.buffer,
                       }).request,
                   }),
               ...(reasoningScheduledDevice === undefined || reasoningScheduledDevice.key === scheduledDevice.key
@@ -3030,7 +3153,12 @@ export const layer = Layer.effect(
               ? undefined
               : OverflowRecoveryPolicy.plan({
                   failure: recoveryFailure,
-                  originalPromptTokens: outboundPromptTokens,
+                  // ⭐ THE PROVIDER'S OWN COUNT BEATS OUR ESTIMATE when it gave us one. It measured the
+                  // exact request that failed; we approximated it. Measured 2026-09-14: the harness
+                  // said 281,140 for a request the provider counted at 245,761 — 14 % high, which
+                  // moved the 25 % cut target by ~8,800 tokens in the wrong direction and could make
+                  // `authorizeRetry` reject a retry that would in fact have fitted.
+                  originalPromptTokens: promptTokensFrom(recoveryFailure.message) ?? outboundPromptTokens,
                   recoveryAttempts: 0,
                 })
           if (
