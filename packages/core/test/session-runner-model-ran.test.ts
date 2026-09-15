@@ -349,6 +349,51 @@ describe("SessionRunnerModel — a Settings switch outranks a worker's stale cat
     ),
   )
 
+  // 🔴 THE QUESTION THIS RULE EXISTS TO ANSWER: *"as soon as the picked model gets turned on, does
+  // the agent switch back to it?"* — YES, on the very next resolution. The pin was never cleared (the
+  // picker deliberately keeps the officer's stored choice), the resolution re-reads the store every
+  // turn, and `select()` reconciles its worker-local catalog against the shared one, so a stale
+  // "disabled" snapshot cannot keep the substitute alive. Nothing writes a recovery row for a
+  // switched-off model either: turning it off is not a failure, so no backoff waits it out.
+  it.live("returns to the assigned model the moment the owner switches it back on", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const store = yield* CatalogStore.Service
+          // The officer's OWN model is switched off…
+          yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION), true)])
+          // …and one substitute exists, which is also the instance default.
+          yield* store.setLayers(SCRIBE, [configuredProvider("http://127.0.0.1:9102/v1", String(TEXT))])
+          yield* store.setDefault(`${SCRIBE}/${TEXT}`)
+
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const session = sessionOn(location)
+          yield* Effect.gen(function* () {
+            yield* Reference.Service
+            const models = yield* SessionRunnerModel.Service
+
+            // Switched off → the substitute, and the assignment is REPORTED as substituted.
+            const off = yield* models.resolveWithDevice(session)
+            expect(named(off.ran)).toBe("scribe/text")
+            expect(off.substituted?.reason).toBe("disabled")
+            expect(named(off.substituted?.requested)).toBe("seer/vision")
+
+            // The owner switches the assigned model back on.
+            yield* store.setLayers(SEER, [configuredProvider("http://127.0.0.1:9101/v1", String(VISION), false)])
+
+            // The very next resolution is the assigned model, with no substitution reported.
+            const back = yield* models.resolveWithDevice(session)
+            expect(named(back.ran)).toBe("seer/vision")
+            expect(back.substituted).toBeUndefined()
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
+        }),
+      ),
+    ),
+  )
+
   it.live("refuses dispatch when the switched-off model has no enabled substitute", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
