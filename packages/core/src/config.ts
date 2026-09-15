@@ -738,7 +738,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .pipe(Schema.optional)
     .annotate({
       description:
-        "Automatic model reconnect state keyed provider/model. Failures back off from two seconds to ten minutes; " +
+        "Automatic model reconnect state keyed provider/model. Failures back off from two seconds to thirty minutes; " +
         "a successful reconnect removes the row and resets the cadence.",
     }),
   devices: Schema.Record(Schema.String, ConfigDevice.Info)

@@ -2875,6 +2875,17 @@ export const dict = {
   "agentHelp.chat.body":
     "A colleague has exactly one conversation, so there is no list to lose things in. Clearing it puts the conversation away and starts fresh — the colleague, its brief and its memories all stay. When a chat gets long it is summarised to keep going, and by default the older part is kept in the colleague's memory so it can still look things up.",
   "agentConfig.modelInherit": "Default Model",
+  // The model picker must tell the truth about a model the kernel will not run. A switched-off model
+  // IS unavailable (owner: *"disabled model is unavailable - we do not re-enable it even if it is
+  // needed. Only the owner can re-enable the models"*), so it is not offered as a new pick — but the
+  // officer's OWN stored choice still renders, labelled, instead of the picker silently showing
+  // "Default Model" while the setting says otherwise.
+  "agentConfig.modelSwitchedOff": "{{model}} — switched off",
+  "agentConfig.modelUnavailable": "{{model}} — not available here",
+  "agentConfig.modelSwitchedOffHelp":
+    "This officer is set to {{model}}, which is switched off for this instance, so its turns run on another model. Re-enable it under Settings → Models to use it again; nothing else may.",
+  "agentConfig.modelUnavailableHelp":
+    "This officer is set to {{model}}, which this instance does not list right now, so its turns run on another model until it is back.",
   "agentConfig.reasoningBudget": "Reasoning budget",
   "agentConfig.reasoningBudgetModel": "Model default",
   "agentConfig.reasoningBudgetDefault": "Uses the selected model's reasoning budget.",

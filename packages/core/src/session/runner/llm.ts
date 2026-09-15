@@ -1371,6 +1371,9 @@ export const layer = Layer.effect(
         // resolution that applies neither fallback. `undefined` only behind a test/embedding seam,
         // which resolves a route with no catalog behind it at all.
         ran: resolvedModel.ran,
+        // WHY the turn left the assigned model, when it did. `undefined` on an ordinary turn, and
+        // `undefined` behind a seam. `runner/llm.ts` turns this into a visible notice.
+        substituted: resolvedModel.substituted,
         scheduledDevice: resolvedModel.device,
         entries,
         promoted,
@@ -1489,6 +1492,7 @@ export const layer = Layer.effect(
         modelSession,
         model,
         ran,
+        substituted,
         scheduledDevice,
         reasoningModel,
         reasoningRan,
@@ -1657,6 +1661,35 @@ export const layer = Layer.effect(
               }),
             })
             .pipe(Effect.ignore)
+      }
+      // 🔴 SUBSTITUTION IS SURFACED, NOT SILENT (owner, 2026-09-15). The officer's own model is part
+      // of its job description; when a turn runs on something else, both the officer and the person
+      // reading the chat must be able to see it and, for the switched-off case, act on it — that
+      // repair is the owner's alone (AGENTS.md: models are the operator's to enable, never Nova's).
+      //
+      // ⚠️ Once per context, like the role/model-fit notice above and for the same reason: the scan
+      // is over `entries`, so a compacted context re-tells. A durable "warned once" flag would leave
+      // a compacted officer confidently unaware of what it is running on.
+      //
+      // ⚠️ `config.model !== undefined` gates it: an inherited default that happens to be substituted
+      // is not an assignment anybody made, and a session with no assignment already says what it runs
+      // on through `self`. Best-effort — a notice must never cost the turn it describes.
+      if (substituted !== undefined && ran !== undefined && config.model !== undefined) {
+        const assigned = `${substituted.requested.providerID}/${substituted.requested.id}`
+        const ranName = `${ran.providerID}/${ran.id}`
+        if (assigned !== ranName) {
+          const marker = `Your assigned model \`${assigned}\``
+          const told = entries.some((entry) => SessionCompaction.serializeMessage(entry.message).includes(marker))
+          if (!told)
+            yield* events
+              .publish(SessionEvent.Synthetic, {
+                sessionID: session.id,
+                messageID: SessionMessage.ID.create(),
+                timestamp: yield* DateTime.now,
+                text: SessionRunnerModel.substitutionNotice({ assigned, ran: ranName, reason: substituted.reason }),
+              })
+              .pipe(Effect.ignore)
+        }
       }
       // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
       // behaviour correction, wrapped as a distinct labelled section. Read off the model that RAN

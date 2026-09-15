@@ -3,7 +3,18 @@ export * as ProviderRecovery from "./provider-recovery"
 import type { ModelV2 } from "../../model"
 
 export const BASE_DELAY_MS = 2_000
-export const MAX_DELAY_MS = 10 * 60_000
+/**
+ * The reconnect cadence ceiling — THIRTY minutes, per `invariants.md` (*Agent with unreachable model
+ * provider*: *"trying to reconnect to its assigned model with intervals doubled each failure, up to
+ * 30 minutes maximum interval"*).
+ *
+ * ⚠️ This read `10 * 60_000`, which was a divergence from the invariant rather than a preference:
+ * the doubling stopped at ten minutes, so an endpoint that came back between minute ten and minute
+ * thirty was never probed and the officer kept answering on its substitute long after its assigned
+ * model was healthy again. The invariant is the contract; the number lives here so a test can bind
+ * to it.
+ */
+export const MAX_DELAY_MS = 30 * 60_000
 
 export interface Entry {
   readonly failures: number
@@ -14,7 +25,7 @@ export type State = Readonly<Record<string, Entry>>
 
 export const key = (ref: { readonly providerID: string; readonly id: string }) => `${ref.providerID}/${ref.id}`
 
-/** Exponential reconnect cadence: 2 s, 4 s, 8 s … capped at one attempt per ten minutes. */
+/** Exponential reconnect cadence: 2 s, 4 s, 8 s … capped at one attempt per thirty minutes. */
 export const delayMs = (failures: number): number =>
   Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** Math.min(30, Math.max(0, Math.floor(failures) - 1)))
 
@@ -90,5 +101,38 @@ export const capabilitiesMatch = (
   return (
     required.input.every((kind) => candidate.input.includes(kind)) &&
     required.output.every((kind) => candidate.output.includes(kind))
+  )
+}
+
+/**
+ * HOW FAR a candidate's declared capabilities are from the unavailable model's — `invariants.md`:
+ * *"if several available pick the one with closest matching capability"*.
+ *
+ * 🔴 **A COUNT, not a boolean, because `capabilitiesMatch` above is the VETO and this is the RANK.**
+ * Once the veto has removed the candidates that cannot serve at all, every survivor may be a vast
+ * over-provider (a frontier multi-modal cloud model as the only alternative to a local text model),
+ * and choosing by catalog order or by the instance default is choosing by release calendar. The
+ * distance counts BOTH directions — modalities the candidate has that the requirement does not, and
+ * the reverse — so the substitution lands on the model that is closest to the one that was asked
+ * for, not on the biggest one that happens to be available.
+ *
+ * ⚠️ `undefined` on either side is NO EVIDENCE, never "no capabilities": a hand-added local endpoint
+ * usually declares nothing, and treating silence as an empty set would rank every such model as
+ * maximally distant. Both sides unknown is distance zero (nothing to compare), which keeps such a
+ * model eligible and lets the veto above be the only thing that refuses.
+ */
+export const capabilityDistance = (
+  required: ModelV2.Capabilities | undefined,
+  candidate: ModelV2.Capabilities | undefined,
+): number => {
+  if (required === undefined || candidate === undefined) return 0
+  const extra = (superset: readonly string[], subset: readonly string[]) =>
+    superset.filter((kind) => !subset.includes(kind)).length
+  return (
+    (candidate.tools && !required.tools ? 1 : 0) +
+    extra(candidate.input, required.input) +
+    extra(candidate.output, required.output) +
+    extra(required.input, candidate.input) +
+    extra(required.output, candidate.output)
   )
 }

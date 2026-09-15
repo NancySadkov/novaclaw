@@ -68,6 +68,8 @@ const SEER = ProviderV2.ID.make("seer")
 const VISION = ModelV2.ID.make("vision")
 const SCRIBE = ProviderV2.ID.make("scribe")
 const TEXT = ModelV2.ID.make("text")
+const ECHO = ProviderV2.ID.make("echo")
+const CLOSE = ModelV2.ID.make("close")
 
 /** The health tracker's key for the model this session is configured on. */
 const SICK = { providerID: String(SEER), id: String(VISION) }
@@ -103,14 +105,23 @@ const defaultSessionOn = (location: Location.Ref) => SessionV2.Info.make({ ...se
 
 const named = (model: ModelV2.Info | undefined) => (model === undefined ? undefined : `${model.providerID}/${model.id}`)
 
-const configuredProvider = (url: string, modelID: string, disabled = false) =>
+const configuredProvider = (
+  url: string,
+  modelID: string,
+  disabled = false,
+  capabilities: { tools: boolean; input: string[]; output: string[] } = {
+    tools: true,
+    input: ["text", "image"],
+    output: ["text"],
+  },
+) =>
   Schema.decodeUnknownSync(ConfigProvider.Info)({
     api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: {} },
     models: {
       [modelID]: {
         name: modelID,
         disabled,
-        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+        capabilities,
       },
     },
   })
@@ -276,6 +287,62 @@ describe("SessionRunnerModel — a Settings switch outranks a worker's stale cat
             expect(
               yield* models.guardDispatch({ providerID: SCRIBE, id: TEXT }, Effect.succeed("contacted substitute")),
             ).toBe("contacted substitute")
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
+        }),
+      ),
+    ),
+  )
+
+  it.live("substitutes with the capability-CLOSEST model, not the instance default", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const store = yield* CatalogStore.Service
+          // The assigned model asks for text only, and is switched off.
+          yield* store.setLayers(SEER, [
+            configuredProvider("http://127.0.0.1:9101/v1", String(VISION), true, {
+              tools: true,
+              input: ["text"],
+              output: ["text"],
+            }),
+          ])
+          // The instance default is CAPABLE but farther (it carries two extra modalities)…
+          yield* store.setLayers(SCRIBE, [
+            configuredProvider("http://127.0.0.1:9102/v1", String(TEXT), false, {
+              tools: true,
+              input: ["text", "image"],
+              output: ["text", "image"],
+            }),
+          ])
+          // …while this one matches the assigned model exactly.
+          yield* store.setLayers(ECHO, [
+            configuredProvider("http://127.0.0.1:9103/v1", String(CLOSE), false, {
+              tools: true,
+              input: ["text"],
+              output: ["text"],
+            }),
+          ])
+          yield* store.setDefault(`${SCRIBE}/${TEXT}`)
+
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const session = sessionOn(location)
+          yield* Effect.gen(function* () {
+            yield* Reference.Service
+            const catalog = yield* Catalog.Service
+            const models = yield* SessionRunnerModel.Service
+            // Both substitutes really are in this location's catalog, so "it landed on echo/close"
+            // cannot be an artefact of the default having vanished.
+            const available = (yield* catalog.model.available()).map(named)
+            expect(available).toContain("scribe/text")
+            expect(available).toContain("echo/close")
+
+            // 🔴 `invariants.md`: *"if several available pick the one with closest matching
+            // capability"*. The default is closer to nobody here — it is the far one.
+            const resolved = yield* models.resolveWithDevice(session)
+            expect(named(resolved.ran)).toBe("echo/close")
           }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),

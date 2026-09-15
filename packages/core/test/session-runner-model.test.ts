@@ -14,7 +14,12 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { DeviceRegistry } from "@novaclaw/core/session/device-registry"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
-import { healthyAlternative, usableFallback } from "@novaclaw/core/session/runner/model"
+import {
+  healthyAlternative,
+  rankByCapability,
+  substitutionNotice,
+  usableFallback,
+} from "@novaclaw/core/session/runner/model"
 import { SessionV2 } from "@novaclaw/core/session"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { it } from "./lib/effect"
@@ -455,6 +460,66 @@ describe("SessionRunnerModel", () => {
           same,
         }),
       ).toBeUndefined()
+    })
+  })
+
+  // 🔴 `invariants.md` — *"if several available pick the one with closest matching capability"*. The
+  // helpers above take their candidate list as given; THIS is the rule that decides that list.
+  describe("closest-capability substitute", () => {
+    const cap = (over: Partial<{ tools: boolean; input: string[]; output: string[] }>) => ({
+      tools: true,
+      input: ["text"],
+      output: ["text"],
+      ...over,
+    })
+    const info = (id: string, capabilities: ReturnType<typeof cap>) =>
+      ({ providerID: "p", id, capabilities }) as unknown as ModelV2.Info
+    const pref = (id: string) => ({ providerID: "p", id }) as unknown as ModelV2.Ref
+    const ids = (models: readonly ModelV2.Info[]) => models.map((model) => String(model.id))
+
+    test("ranks by capability distance, not by catalog order", () => {
+      const required = cap({ input: ["text", "image"] })
+      const far = info("far", cap({ input: ["text"], output: ["text", "image"] }))
+      const close = info("close", cap({ input: ["text", "image"] }))
+      expect(ids(rankByCapability(required, [far, close]))).toEqual(["close", "far"])
+    })
+
+    test("the instance default breaks a TIE only", () => {
+      const required = cap({})
+      const exact = info("exact", cap({}))
+      const other = info("other", cap({}))
+      // `other` is the default and EQUALLY close, so it wins the tie…
+      expect(ids(rankByCapability(required, [exact, other], pref("other")))).toEqual(["other", "exact"])
+      // …but a CLOSER candidate beats it outright — the change this rule exists for.
+      const nearer = info("nearer", cap({}))
+      const farther = info("farther", cap({ input: ["text", "image"] }))
+      expect(ids(rankByCapability(required, [farther, nearer], pref("farther")))).toEqual(["nearer", "farther"])
+    })
+
+    test("the order is TOTAL, so which snapshot arrived cannot decide", () => {
+      const required = cap({})
+      const a = info("a", cap({}))
+      const b = info("b", cap({}))
+      expect(ids(rankByCapability(required, [b, a]))).toEqual(["a", "b"])
+      expect(ids(rankByCapability(required, [a, b]))).toEqual(["a", "b"])
+    })
+  })
+
+  describe("the substitution notice", () => {
+    test("switched-off names the repair only the owner can make", () => {
+      const text = substitutionNotice({ assigned: "local/qwen", ran: "cloud/deepseek", reason: "disabled" })
+      expect(text).toContain("local/qwen")
+      expect(text).toContain("cloud/deepseek")
+      expect(text).toContain("switched off")
+      expect(text).toContain("Settings → Models")
+      expect(text).toContain("no one else may")
+    })
+
+    test("unreachable promises a retry rather than sending the user to a switch", () => {
+      const text = substitutionNotice({ assigned: "local/qwen", ran: "cloud/deepseek", reason: "unavailable" })
+      expect(text).toContain("could not be reached")
+      expect(text).toContain("retrying")
+      expect(text).not.toContain("Settings → Models")
     })
   })
 

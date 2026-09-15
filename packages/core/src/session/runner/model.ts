@@ -331,6 +331,23 @@ export interface Resolution {
   readonly model: Model
   readonly device: ScheduledDevice
   readonly ran: ModelV2.Info | undefined
+  /**
+   * Present exactly when the turn ran on a SUBSTITUTE for the model the session asked for.
+   *
+   * 🔴 Owner, 2026-09-15: *"we only use substitute model for the one in agent's settings if the
+   * picked model is unavailable (timeouts)"*. A substitution is a real fact about the turn — the
+   * officer's own model did not answer it — so it travels back with the resolution instead of living
+   * only in a `Log.event` line an operator may never read. `runner/llm.ts` turns it into a visible
+   * notice; `reason` is what lets that notice send the user to the right repair (a Settings switch
+   * versus a dead endpoint).
+   */
+  readonly substituted?: Substitution
+}
+
+/** Why a turn moved off its assigned model, and which model it was. */
+export interface Substitution {
+  readonly requested: ModelV2.Ref
+  readonly reason: "disabled" | "unavailable" | "unhealthy"
 }
 
 /**
@@ -434,6 +451,56 @@ export const healthyAlternative = <M>(input: {
       : input.available.find((entry) => input.supported(entry) && !input.sick(entry))
   return healthy !== undefined && !input.same(healthy, input.selected) ? healthy : undefined
 }
+
+/**
+ * Rank a candidate pool by how CLOSE its declared capabilities are to the model being replaced —
+ * `invariants.md`: *"if several available pick the one with closest matching capability"*.
+ *
+ * `preferred` (the instance default, when it is one of the candidates) breaks a TIE only. It cannot
+ * win a comparison it is not closest in, which is the whole change: the fallback used to be
+ * default-first, so an officer whose local model went down landed on whatever the release calendar
+ * made the default rather than on the model that could do the same job.
+ *
+ * ⚠️ The order is total (`ref` last), so the answer is stable across catalog orderings rather than
+ * depending on which `available()` snapshot happened to arrive.
+ */
+export const rankByCapability = (
+  required: ModelV2.Capabilities | undefined,
+  candidates: readonly ModelV2.Info[],
+  preferred?: ModelV2.Ref | undefined,
+): ModelV2.Info[] =>
+  candidates
+    .map((model) => ({
+      model,
+      distance: ProviderRecovery.capabilityDistance(required, model.capabilities),
+      preferred:
+        preferred !== undefined && model.providerID === preferred.providerID && model.id === preferred.id ? 1 : 0,
+    }))
+    .toSorted(
+      (left, right) =>
+        left.distance - right.distance ||
+        right.preferred - left.preferred ||
+        `${left.model.providerID}/${left.model.id}`.localeCompare(`${right.model.providerID}/${right.model.id}`),
+    )
+    .map((entry) => entry.model)
+
+/**
+ * The sentence a user and the officer read when a turn ran on a substitute.
+ *
+ * 🔴 Owner, 2026-09-15: the substitution must be SURFACED, not silently done. "Switched off" and
+ * "could not be reached" are different repairs — the first is a switch only the owner may flip
+ * (AGENTS.md: an instance's models are the operator's to enable), the second resolves itself on the
+ * reconnect cadence — so the wording never collapses them. Pure and exported so the wording is
+ * unit-testable without a runner.
+ */
+export const substitutionNotice = (input: {
+  readonly assigned: string
+  readonly ran: string
+  readonly reason: Substitution["reason"]
+}): string =>
+  input.reason === "disabled"
+    ? `This turn ran on \`${input.ran}\`. Your assigned model \`${input.assigned}\` is switched off under Settings → Models, so it cannot serve until you re-enable it there — no one else may.`
+    : `This turn ran on \`${input.ran}\`. Your assigned model \`${input.assigned}\` could not be reached, so the harness is retrying it in the background and will return to it when it answers.`
 
 export const layerWith = (
   resolve: Interface["resolve"],
@@ -1017,7 +1084,10 @@ export const locationLayer = Layer.effect(
       readonly resolve: (
         session: SessionSchema.Info,
         options?: { readonly requested?: boolean },
-      ) => Effect.Effect<{ readonly model: Model; readonly ran: ModelV2.Info }, Error>
+      ) => Effect.Effect<
+        { readonly model: Model; readonly ran: ModelV2.Info; readonly substituted?: Substitution },
+        Error
+      >
     } = {
       /**
        * A live turn reported WHICH process served it — discard a verdict measured on another.
@@ -1084,12 +1154,13 @@ export const locationLayer = Layer.effect(
         session: SessionSchema.Info,
         options?: ResolveOptions,
       ) {
-        const selected = yield* turnModel(session, {
+        const decision = yield* turnDecision(session, {
           requested: options?.requested,
           latch: true,
           report: true,
           recoveryWait: options?.recoveryWait,
         })
+        const selected = decision.selected
         yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
@@ -1101,7 +1172,11 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
           yield* measuredChannel(selected),
         )
-        return { model: routed, ran: selected }
+        return {
+          model: routed,
+          ran: selected,
+          ...(decision.substituted === undefined ? {} : { substituted: decision.substituted }),
+        }
       }),
       /**
        * The instance default, for work with no conversation behind it (document ingestion).
@@ -1243,11 +1318,13 @@ export const locationLayer = Layer.effect(
      * @param report emit the one `session.model.fallback` line. The turn's resolution owns it — a
      *   line per best-effort reader would report six fallbacks where one happened.
      */
-    const turnModel = Effect.fnUntraced(function* (
+    const turnDecision = Effect.fnUntraced(function* (
       session: SessionSchema.Info,
       options?: ResolveOptions & { readonly latch?: boolean; readonly report?: boolean },
     ) {
       const report = options?.report === true
+      /** Set the FIRST time this turn leaves the model the session asked for. See `Substitution`. */
+      let substituted: Substitution | undefined
       // Location plugins populate and filter the catalog asynchronously during layer startup
       // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an
       // EMPTY catalog and misreport a configured model as unavailable. Only when the first
@@ -1308,11 +1385,15 @@ export const locationLayer = Layer.effect(
         // define what the replacement must be able to do.
         const compatible = (entry: ModelV2.Info) =>
           supported(entry) && ProviderRecovery.capabilitiesMatch(pinned?.capabilities, entry.capabilities)
-        const usable = usableFallback({
-          fallback: yield* catalog.model.default(),
-          available: yield* catalog.model.available(),
-          supported: compatible,
-        })
+        // `invariants.md` — *"if several available pick the one with closest matching capability"*.
+        // Ranked, not default-first: the tie-break below still prefers the instance default when it
+        // is EQUALLY close, but a closer substitute wins outright.
+        const ranked = rankByCapability(
+          pinned?.capabilities,
+          (yield* catalog.model.available()).filter(compatible),
+          yield* catalog.model.default(),
+        )
+        const usable = usableFallback({ fallback: ranked[0], available: ranked, supported: compatible })
         if (usable) {
           if (report)
             yield* Log.event("session.model.fallback", {
@@ -1321,6 +1402,10 @@ export const locationLayer = Layer.effect(
               "model.used": `${usable.providerID}/${usable.id}`,
               "model.reason": switchedOff ? "disabled" : "unavailable",
             })
+          substituted ??= {
+            requested: { providerID: session.model.providerID, id: session.model.id },
+            reason: switchedOff ? "disabled" : "unavailable",
+          }
           selected = usable
         } else
           return yield* new ModelUnavailableError({
@@ -1367,10 +1452,17 @@ export const locationLayer = Layer.effect(
         if (routeSick(selected)) {
           const required = selected.capabilities
           const available = yield* catalog.model.available()
+          const healthyPool = rankByCapability(
+            required,
+            available.filter(
+              (entry) => supported(entry) && ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
+            ),
+            yield* catalog.model.default(),
+          )
           const healthy = healthyAlternative({
             selected,
-            fallback: yield* catalog.model.default(),
-            available,
+            fallback: healthyPool[0],
+            available: healthyPool,
             supported: (entry) => supported(entry) && ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
             sick: routeSick,
             same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
@@ -1383,11 +1475,15 @@ export const locationLayer = Layer.effect(
                 "model.used": `${healthy.providerID}/${healthy.id}`,
                 "model.reason": "unhealthy",
               })
+            substituted ??= {
+              requested: { providerID: selected.providerID, id: selected.id },
+              reason: "unhealthy",
+            }
             selected = healthy
           } else if (unavailable) {
             // No healthy substitute is not a terminal state. Wait without occupying a device slot,
             // then probe whichever compatible route becomes eligible first. Repeated failures move
-            // that route's durable deadline 2 s, 4 s, 8 s … up to ten minutes, forever.
+            // that route's durable deadline 2 s, 4 s, 8 s … up to thirty minutes, forever.
             const compatible = [selected, ...available].filter(
               (entry, index, all) =>
                 supported(entry) &&
@@ -1410,7 +1506,19 @@ export const locationLayer = Layer.effect(
         }
       }
       if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
-      return selected
+      return { selected, ...(substituted === undefined ? {} : { substituted }) }
+    })
+
+    /**
+     * The model alone, for the best-effort per-turn fact readers (`tier`, `prePrompt`, …). The turn's
+     * own resolution wants `turnDecision` — it also carries WHY a substitute was used, which the
+     * transcript notice needs and a decoration must never pay for.
+     */
+    const turnModel = Effect.fnUntraced(function* (
+      session: SessionSchema.Info,
+      options?: ResolveOptions & { readonly latch?: boolean; readonly report?: boolean },
+    ) {
+      return (yield* turnDecision(session, options)).selected
     })
 
     const resolveWithDevice: Interface["resolveWithDevice"] = Effect.fn("SessionRunnerModel.resolveWithDevice")(

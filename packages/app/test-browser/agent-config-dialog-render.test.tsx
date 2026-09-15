@@ -86,6 +86,8 @@ function mount(options: {
   agentID?: string
   agents?: unknown[]
   models?: () => unknown[]
+  /** Drives the kernel's enablement predicate; absent means every model is runnable. */
+  modelsEnabled?: (key: { providerID: string; modelID: string }) => boolean
   write?: (patch: unknown) => void
   remove?: (paths: string[][]) => void
 }) {
@@ -111,7 +113,13 @@ function mount(options: {
     updateConfig: async (patch: unknown) => options.write?.(patch),
     removeConfig: async (paths: string[][]) => options.remove?.(paths),
   })
-  const modelsStub = { list: () => options.models?.() ?? MODELS, connected: () => true }
+  const modelsStub = {
+    list: () => options.models?.() ?? MODELS,
+    connected: () => true,
+    // The kernel's own enablement predicate (Settings → Models). Default ON so every existing test
+    // keeps its runnable catalog; a test drives the switched-off path through `modelsEnabled`.
+    enabled: (key: { providerID: string; modelID: string }) => options.modelsEnabled?.(key) ?? true,
+  }
   // The translator returns the KEY, so an assertion names the key rather than English prose that a
   // copy edit would break.
   // Deliberately echoes the KEY rather than resolving copy — this file asserts which key a row
@@ -306,20 +314,22 @@ describe("AgentConfigDialog renders", () => {
     )
 
     const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
-    // 🔴 Re-pinned 2026-09-15: the Interactive/Unattended PAIR became ONE switch, so the two literal
-    // words are gone. The translator echoes keys, so what is asserted is that the Mind tab reaches for
-    // the switch and its state line — which is the claim this test is actually about, namely that the
-    // mode control lives HERE and not somewhere else.
-    expect(mind?.textContent).toContain("agentConfig.unattended")
-    expect(mind?.textContent).toContain("agentConfig.unattended.off")
-    // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
-    // element; see the note at `charterControls` above.
-    expect((mind?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
-    expect((mind?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
-    expect(mind?.textContent).toContain("Goal")
+    // 🔴 Re-pinned 2026-09-15 (twice): the Interactive/Unattended PAIR became ONE switch, and then
+    // that switch and the durable Goal moved to the WORK tab. The translator echoes keys, so Mind is
+    // asserted to hold what it still owns — how this officer THINKS.
     expect(mind?.textContent).toContain("Mood sampling")
+    expect(mind?.textContent).not.toContain("agentConfig.unattended")
+    expect(mind?.textContent).not.toContain("Goal")
 
     const work = document.querySelector('[data-section="work"][data-settings-tab="work"]')
+    // 🔴 The operating choices — posture, permissions, Strict, and now Unattended + Goal — live here.
+    expect(work?.textContent).toContain("agentConfig.unattended")
+    expect(work?.textContent).toContain("agentConfig.unattended.off")
+    // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
+    // element; see the note at `charterControls` above.
+    expect((work?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
+    expect((work?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
+    expect(work?.textContent).toContain("Goal")
     expect(work?.textContent).toContain("Context guard")
     expect(work?.textContent).toContain("Edits instead of overwriting")
     expect(work?.textContent).toContain("Stuck detector")
@@ -335,11 +345,12 @@ describe("AgentConfigDialog renders", () => {
     expect(profile?.textContent).toContain("Export personality")
     expect(profile?.querySelector('[data-action="agent-personality-import"]')?.classList.contains("w-full")).toBe(true)
 
-    // 🔴 The mode control is a SWITCH now (owner ruling 2026-09-15), so this drives it the way a
-    // person does: one click turns Unattended ON. It used to click the "interactive" radio, which was
-    // the old default's resting state — a control that is already off proves nothing about being
-    // wired, so the assertion below reads "unattended" rather than "interactive".
-    document.querySelector<HTMLInputElement>('[data-section="model"] [data-component="switch"] input')!.click()
+    // 🔴 The mode control is a SWITCH now (owner ruling 2026-09-15), and it lives in the WORK tab
+    // (owner, 2026-09-15), so this drives it the way a person does: one click turns Unattended ON.
+    // It used to click the "interactive" radio, which was the old default's resting state — a control
+    // that is already off proves nothing about being wired, so the assertion below reads "unattended"
+    // rather than "interactive".
+    document.querySelector<HTMLInputElement>('[data-section="work"] [data-component="switch"] input')!.click()
     const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
     goal.value = "Publish the reviewed manuscript."
     goal.dispatchEvent(new Event("input", { bubbles: true }))
@@ -358,7 +369,7 @@ describe("AgentConfigDialog renders", () => {
     expect(writes.at(-1)).toMatchObject({
       agents: {
         theron: {
-          // One click on the Mind tab's switch, and it reaches the save payload as the unattended
+          // One click on the Work tab's switch, and it reaches the save payload as the unattended
           // mode. This is the half that proves the control is WIRED rather than merely rendered.
           operationMode: "unattended",
           goal: "Publish the reviewed manuscript.",
@@ -430,6 +441,32 @@ describe("AgentConfigDialog renders", () => {
     setModels(MODELS)
     await settle()
     expect(selectText(model)).toBe("Qwen 3.8 27B")
+  })
+
+  test("🔴 a switched-off model is not offered, and the bound one is LABELLED rather than hidden", async () => {
+    // The colleague is bound to `spark/qwen3.8-27b`, which the instance switched off. The kernel
+    // substitutes for it (owner: a disabled model IS unavailable and only the owner may re-enable
+    // it), so offering it as a fresh pick would be a control that lies. What must NOT happen is the
+    // other lie: silently filtering it out of the option list, which makes the select display
+    // "Default Model" while the stored setting still says otherwise.
+    mount({
+      agents: [AGENT],
+      modelsEnabled: (key) => !(key.providerID === "spark" && key.modelID === "qwen3.8-27b"),
+    })
+    await settle()
+    const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
+    expect(selectText(model)).toBe("agentConfig.modelSwitchedOff")
+    expect(model.textContent).not.toContain("agentConfig.modelInherit")
+    // …and the row below names the one repair that exists.
+    expect(document.querySelector('[data-section="model"]')?.textContent).toContain("agentConfig.modelSwitchedOffHelp")
+
+    await openSelect(model)
+    const labels = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.textContent)
+    // The bound model is shown as its own labelled entry, not as a runnable choice…
+    expect(labels).toContain("agentConfig.modelSwitchedOff")
+    expect(labels).not.toContain("Qwen 3.8 27B")
+    // …and the runnable sibling it COULD be moved to is still offered.
+    expect(labels).toContain("Holo 3.1")
   })
 
   test("D3 · Save is disabled while the roster is still in flight", async () => {

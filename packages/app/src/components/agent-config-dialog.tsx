@@ -318,22 +318,96 @@ export function AgentConfigScreen(props: {
     const stored = agent()?.config?.["workerModel"]
     return typeof stored === "string" ? stored : ""
   }
-  const modelOptions = createMemo(() => [
-    { key: "inherit", value: "", label: language.t("agentConfig.modelInherit") },
-    ...models.list().map((item) => ({
-      key: modelRef({ providerID: item.provider.id, id: item.id }),
-      value: modelRef({ providerID: item.provider.id, id: item.id }),
-      label: item.name ?? item.id,
-    })),
-  ])
-  const reasoningModelOptions = createMemo(() => [
-    { key: "ordinary", value: "", label: "Use the ordinary model" },
-    ...modelOptions().slice(1),
-  ])
-  const workerModelOptions = createMemo(() => [
-    { key: "officer", value: "", label: "Use this officer’s model" },
-    ...modelOptions().slice(1),
-  ])
+  // 🔴 `enabled` is EXACTLY the predicate the kernel resolves a turn through: a switched-off model is
+  // not in `catalog.model.available()`, so a turn on it is substituted. Offering it as a new pick
+  // here is a control that lies — the user chooses it, the save succeeds, and the officer runs on
+  // something else. So the picker offers only RUNNABLE models (owner, 2026-09-15).
+  //
+  // ⚠️ The officer's OWN stored choice still renders even when it is not runnable — labelled, with
+  // the help line below the picker — because the alternative is the picker displaying "Default
+  // Model" while the stored setting says otherwise, which is the same lie from the other side.
+  // Nothing here RE-ENABLES a model: only the owner may, from Settings → Models.
+  const runnableModels = createMemo(() =>
+    models.list().filter((item) => models.enabled({ providerID: item.provider.id, modelID: item.id })),
+  )
+  const modelChoice = (item: {
+    readonly provider: { readonly id: string }
+    readonly id: string
+    readonly name?: string
+  }) => ({
+    key: modelRef({ providerID: item.provider.id, id: item.id }),
+    value: modelRef({ providerID: item.provider.id, id: item.id }),
+    label: item.name ?? item.id,
+  })
+  /**
+   * Why the model this officer is SET TO will not run here — or `undefined` when it will.
+   *
+   * `switched-off` and `unavailable` are kept apart because they are different repairs: the first is
+   * a switch only the owner may flip (Settings → Models), the second resolves itself when the
+   * provider returns.
+   */
+  const blockedKind = (value: string): "switched-off" | "unavailable" | undefined => {
+    if (value === "") return undefined
+    const ref = parseModelRef(value)
+    if (ref === undefined) return undefined
+    const listed = models.list().some((item) => item.provider.id === ref.providerID && item.id === ref.id)
+    if (!listed) return "unavailable"
+    if (!models.enabled({ providerID: ref.providerID, modelID: ref.id })) return "switched-off"
+    return undefined
+  }
+  const modelBlocked = createMemo<{ readonly value: string; readonly kind: "switched-off" | "unavailable" } | undefined>(
+    () => {
+      const value = modelValue()
+      const kind = blockedKind(value)
+      return kind === undefined ? undefined : { value, kind }
+    },
+  )
+  /** Append the current value when it is not among the runnable options, so the select can show it. */
+  const withBlockedCurrent = (options: { key: string; value: string; label: string }[], current: string) => {
+    // ⚠️ An EMPTY catalog is "not loaded yet", not "your model is gone". Appending a badged entry
+    // during the cold-start window would flash an unavailable label at every open — and the D2
+    // race test pins that the pre-catalog state reads as the inherit placeholder, then resolves.
+    if (models.list().length === 0) return options
+    if (current === "" || options.some((option) => option.value === current)) return options
+    return [
+      ...options,
+      {
+        key: current,
+        value: current,
+        label:
+          blockedKind(current) === "switched-off"
+            ? language.t("agentConfig.modelSwitchedOff", { model: current })
+            : language.t("agentConfig.modelUnavailable", { model: current }),
+      },
+    ]
+  }
+  const modelOptions = createMemo(() =>
+    withBlockedCurrent(
+      [
+        { key: "inherit", value: "", label: language.t("agentConfig.modelInherit") },
+        ...runnableModels().map(modelChoice),
+      ],
+      modelValue(),
+    ),
+  )
+  const reasoningModelOptions = createMemo(() =>
+    withBlockedCurrent(
+      [
+        { key: "ordinary", value: "", label: "Use the ordinary model" },
+        ...runnableModels().map(modelChoice),
+      ],
+      reasoningModelValue(),
+    ),
+  )
+  const workerModelOptions = createMemo(() =>
+    withBlockedCurrent(
+      [
+        { key: "officer", value: "", label: "Use this officer’s model" },
+        ...runnableModels().map(modelChoice),
+      ],
+      workerModelValue(),
+    ),
+  )
   const workerPrototypeValue = () => {
     const chosen = workerPrototype()
     if (chosen !== undefined) return chosen
@@ -1253,49 +1327,10 @@ export function AgentConfigScreen(props: {
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.mind")}
               </h3>
-              {/* 🔴 ONE SWITCH, NOT TWO CARDS (owner ruling 2026-09-15: *"switching from
-                  Interactive<->Unattended is a toggle switch (default Interactive), instead of being
-                  two buttons"*).
-
-                  The pair read as two features to shop for, when the two are one decision seen from
-                  two sides — the same defect the Memory section already fixed for
-                  persistent-vs-throwaway. So: the switch names the mode that is NOT the default, and
-                  the line beneath says WHICH ONE IS IN FORCE right now, in both positions, because a
-                  switch with one labelled end tells you nothing when it is off. */}
-              <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
-                <div class="flex items-start justify-between gap-3">
-                  <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
-                  <SwitchToggle
-                    aria-label={language.t("agentConfig.unattended")}
-                    checked={operationModeValue() === "unattended"}
-                    onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
-                  />
-                </div>
-                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                  {language.t(
-                    operationModeValue() === "unattended"
-                      ? "agentConfig.unattended.on"
-                      : "agentConfig.unattended.off",
-                  )}
-                </p>
-              </div>
-              <label class="mt-4 block text-xs text-v2-text-text-muted">
-                Goal
-                <textarea
-                  aria-label="Goal"
-                  class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
-                  value={goalValue()}
-                  onInput={(event) => setGoal(event.currentTarget.value)}
-                  placeholder="What should this officer keep working toward?"
-                />
-              </label>
-              {/* ⚠️ The paragraph that used to sit here repeated the Unattended sentence verbatim —
-                  "keeps prompting toward this durable goal… sleeps for 10 minutes" — one control above
-                  the switch that now says it. What is left is the part the switch cannot say: the goal
-                  is DURABLE, and it survives compaction, which is why it is worth typing. */}
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                The goal survives compaction, so this officer keeps it even after a long chat is trimmed.
-              </p>
+              {/* 🔴 The Interactive<->Unattended switch and the durable Goal now live in the WORK tab
+                  (owner, 2026-09-15). They are standing choices about how this officer OPERATES, the
+                  same family as posture, permission mode and Strict — and the Mind tab is about how it
+                  thinks (its model). Splitting one decision across two tabs is how a user loses it. */}
               <label class="mt-4 flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"
@@ -1323,6 +1358,18 @@ export function AgentConfigScreen(props: {
                 label={(option) => option.label}
                 onSelect={(option) => option && setModel(option.value)}
               />
+              <Show when={modelBlocked()}>
+                {(blocked) => (
+                  <p class="mt-1 text-[11px] leading-relaxed text-v2-state-fg-warning">
+                    {language.t(
+                      blocked().kind === "switched-off"
+                        ? "agentConfig.modelSwitchedOffHelp"
+                        : "agentConfig.modelUnavailableHelp",
+                      { model: blocked().value },
+                    )}
+                  </p>
+                )}
+              </Show>
               <label class="mt-4 block text-xs font-medium text-v2-text-text-muted">Reasoning model</label>
               <SelectV2
                 aria-label="Reasoning model"
@@ -1501,6 +1548,51 @@ export function AgentConfigScreen(props: {
                   />
                   <span>{language.t("agentConfig.strict")}</span>
                 </label>
+
+                {/* 🔴 ONE SWITCH, NOT TWO CARDS (owner ruling 2026-09-15: *"switching from
+                    Interactive<->Unattended is a toggle switch (default Interactive), instead of being
+                    two buttons"*), and it lives in the WORK tab (owner, 2026-09-15).
+
+                    It is a standing choice about how this officer OPERATES — the same family as
+                    posture, permission mode and Strict above — while Mind is about how it thinks. The
+                    pair read as two features to shop for when they are one decision seen from two
+                    sides, so the switch names the mode that is NOT the default and the line beneath
+                    says WHICH ONE IS IN FORCE right now, in both positions, because a switch with one
+                    labelled end tells you nothing when it is off. */}
+                <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
+                    <SwitchToggle
+                      aria-label={language.t("agentConfig.unattended")}
+                      checked={operationModeValue() === "unattended"}
+                      onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
+                    />
+                  </div>
+                  <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                    {language.t(
+                      operationModeValue() === "unattended"
+                        ? "agentConfig.unattended.on"
+                        : "agentConfig.unattended.off",
+                    )}
+                  </p>
+                </div>
+                <label class="mt-4 block text-xs text-v2-text-text-muted">
+                  Goal
+                  <textarea
+                    aria-label="Goal"
+                    class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                    value={goalValue()}
+                    onInput={(event) => setGoal(event.currentTarget.value)}
+                    placeholder="What should this officer keep working toward?"
+                  />
+                </label>
+                {/* ⚠️ The paragraph that used to sit in Mind repeated the Unattended sentence verbatim —
+                    "keeps prompting toward this durable goal… sleeps for 10 minutes" — one control above
+                    the switch that now says it. What is left is the part the switch cannot say: the goal
+                    is DURABLE, and it survives compaction, which is why it is worth typing. */}
+                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                  The goal survives compaction, so this officer keeps it even after a long chat is trimmed.
+                </p>
 
                 <label class="block text-xs text-v2-text-text-muted">
                   Live work heartbeat

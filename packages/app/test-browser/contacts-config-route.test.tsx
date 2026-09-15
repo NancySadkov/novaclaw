@@ -90,7 +90,7 @@ test("the addressable settings screen opens the selected colleague and returns t
     locale: () => "en",
     setLocale: () => {},
   }
-  const modelsStub = { list: () => [], connected: () => true }
+  const modelsStub = { list: () => [], connected: () => true, enabled: () => true }
   const tabsStub = { closeSessionTab: () => {}, store: [] as never[] }
 
   const originalFetch = globalThis.fetch
