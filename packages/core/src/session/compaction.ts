@@ -37,6 +37,28 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
  */
 const STEER_LABEL = "[Automated harness check — not the user]: "
 const SUMMARY_OUTPUT_TOKENS = 4_096
+/**
+ * Default budget for what the SUMMARIZER may read in one pass.
+ *
+ * 🔴 **Why this constant exists at all.** The summarizer's ceiling used to be the whole window
+ * (`context - summaryOutput`), so a 262,144-token model asked its summarizer to ingest ~258 k tokens
+ * in one request. Measured 2026-09-14 (`ses_daedalus`): eight consecutive attempts died as
+ * `summarizer-unavailable` with `generatedChars: 0` after 300 s / 308 s — the endpoint's stall
+ * timeout — while the chat sat 20 % over its ceiling and could not compact at all. **The mechanism
+ * that exists to make the prompt smaller required sending the prompt**, which is why compaction
+ * worked while the transcript was small and stopped working the moment it mattered.
+ *
+ * ⭐ The number is a PREFILL budget, not a fraction of anything: a prompt the slowest configured
+ * route can ingest inside `provider-stall-timeout`. At the measured ~1.1 k tok/s of the canonical
+ * local target, 32 k is about 30 s — an order of magnitude inside the 300 s liveness ceiling — while
+ * still being a transcript large enough to summarise a real working session in one pass.
+ *
+ * ⚠️ **32,000 is a FIRST value, not a measured optimum**, and it is a setting for exactly that
+ * reason (same treatment as `COMPACTION_REASONING_BUDGET` above). A head larger than this is folded
+ * from its newest end and the older span is marked (`HISTORY_HEAD_REMOVED`) and archived to this
+ * colleague's memory — see the trade recorded at `promptCeiling` below.
+ */
+export const DEFAULT_SUMMARY_INPUT_TOKENS = 32_000
 const SUMMARY_HEAD_REMOVED = "[Older summary content removed to fit the summary budget.]"
 /**
  * The INPUT counterpart of the constant above, and deliberately a SECOND string: one marks a summary
@@ -141,6 +163,11 @@ type Settings = {
    * always happened, so an absent value must keep doing it. Only an explicit `false` stops it.
    */
   readonly summarize: boolean
+  /**
+   * How much transcript the summarizer may read in one pass. See
+   * `DEFAULT_SUMMARY_INPUT_TOKENS` for why this is not the context window.
+   */
+  readonly summarizeInput: number
 }
 
 type Dependencies = {
@@ -179,6 +206,21 @@ type Input = {
    * actually fired rather than a guess — see `DeclineReason`.
    */
   readonly onDecline?: (reason: DeclineReason) => void
+  /**
+   * Whether a summary may be SPENT right now (the runner's failure backoff). Defaults to allowed.
+   *
+   * 🔴 **A backoff is a reason not to pay for a decode. It is not a reason to stop looking at the
+   * window.** Measured 2026-09-14: after `summarizer-unavailable` the runner skipped
+   * `compactIfNeeded` ENTIRELY for 30 minutes, so the threshold was not even measured or logged and
+   * the packed request was dispatched unmeasured — the failing turn went out at 281,140 estimated
+   * tokens against a 235,929 ceiling. During a backoff the chat is at its MOST dangerous, which is
+   * exactly when the guard was switched off.
+   *
+   * ⭐ So the measurement always runs and this gates only the spend: a `summarizer-backoff` decline
+   * still reports the numbers, still runs the cheap prune tier, and still feeds the caller's
+   * last-moment dispatch gate.
+   */
+  readonly summaryAllowed?: boolean
 }
 
 /**
@@ -216,6 +258,11 @@ export type DeclineReason =
   | "summarizer-unavailable"
   /** The summarizer answered, but out of budget in a shape no bounded retry can rescue. */
   | "summary-unusable"
+  /**
+   * The summarizer failed recently and the retry watermark has not elapsed. **Measured, not
+   * attempted** — see `Input.summaryAllowed`.
+   */
+  | "summarizer-backoff"
 
 /**
  * The ONE sentence a declined compaction may show a user, keyed by the branch that actually fired.
@@ -242,6 +289,10 @@ export const declineNotice = (reason: DeclineReason): string => {
       return "⚠️ Compaction didn't run — the summary model didn't answer. Check the model is reachable and try again."
     case "summary-unusable":
       return "⚠️ Compaction didn't run — the summary model answered, but not within the budget its summary has to fit. Try again, or switch this chat to a different model."
+    case "summarizer-backoff":
+      // Reachable only from the automatic path, which has nobody to tell; kept exhaustive on purpose
+      // so a future manual caller cannot inherit a silent `undefined`.
+      return "⚠️ Compaction didn't run — the last summary attempt failed, so NovaClaw is waiting before spending another one. Your conversation is untouched."
   }
 }
 
@@ -340,8 +391,18 @@ export const settings = (documents: readonly Config.Entry[]) => {
       // Default TRUE: prune-then-summarise is what has always shipped, so an absent setting must not
       // silently turn summarising off for every existing install.
       summarize: current.summarize ?? result.summarize,
+      // ⚠️ `??` and not a falsy test: the schema is `PositiveInt`, so a stored `0` is refused at
+      // decode rather than silently reinterpreted as "use the default".
+      summarizeInput: current.summarizeInput ?? result.summarizeInput,
     }),
-    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS, prune: false, summarize: true },
+    {
+      auto: true,
+      buffer: DEFAULT_BUFFER,
+      tokens: DEFAULT_KEEP_TOKENS,
+      prune: false,
+      summarize: true,
+      summarizeInput: DEFAULT_SUMMARY_INPUT_TOKENS,
+    },
   )
 }
 
@@ -381,6 +442,35 @@ export const selectContext = (
       .map((entry) => entry.text)
       .join("\n\n"),
   }
+}
+
+/**
+ * The largest prompt the SUMMARIZER may be asked to read, in tokens.
+ *
+ * 🔴 **`context - summaryOutput` is the largest prompt the PROVIDER will accept, which is a
+ * different question from the largest prompt we should SEND.** With a 262,144-token window that is
+ * 258,048 tokens — a prefill no local endpoint survives inside the provider stall timeout, which is
+ * why eight consecutive compaction attempts on `ses_daedalus` (2026-09-14) died as
+ * `summarizer-unavailable` with `generatedChars: 0` and the chat never compacted again.
+ *
+ * ⭐ **Two ceilings, and the smaller one wins.** The provider's is a hard contract (input + output
+ * must fit the window, or the request is a 400). The summarizer's is a survivability budget: what a
+ * prefill can actually ingest. A user who raises `summarizeInput` above the provider's ceiling still
+ * gets the provider's — the setting can only ever make the request smaller, never illegal.
+ *
+ * ⚠️ Exported as a SEAM, like `overflowRecentBudget` and `selectContext`: the whole point is one
+ * number, and asserting it through a full compaction cycle would need a model route, a request and a
+ * config to read one integer back out.
+ */
+export const summarizeInputCeiling = (
+  contextTokens: number,
+  summaryOutputTokens: number,
+  summarizeInputTokens: number | undefined,
+): number => {
+  const providerCeiling = Math.max(0, Math.floor(contextTokens - summaryOutputTokens))
+  if (summarizeInputTokens === undefined || !Number.isSafeInteger(summarizeInputTokens) || summarizeInputTokens <= 0)
+    return providerCeiling
+  return Math.max(1, Math.min(providerCeiling, summarizeInputTokens))
 }
 
 /**
@@ -708,7 +798,7 @@ export const make = (dependencies: Dependencies) => {
      * The loop is finite by construction (each pass halves, and zero terminates it), so this cannot
      * become an unbounded self-edit — the same property the summarize/trim chain below is built on.
      */
-    const promptCeiling = context - summaryOutput
+    const promptCeiling = summarizeInputCeiling(context, summaryOutput, config.summarizeInput)
     let keptHeadChars = selected.head.length
     let head = selected.head
     let summaryPrompt = promptFor(head)
@@ -770,9 +860,20 @@ export const make = (dependencies: Dependencies) => {
             disableTools: true,
           })
         : undefined
+    /**
+     * ⚠️ **Measure what goes on the WIRE, not `LLM.requestInput`.** The previous expression here was
+     * `Token.estimateStructured(LLM.requestInput(request))`, which serialises the whole request —
+     * including the model's route definition — and priced a request carrying three short messages and
+     * one tiny tool at 34,787 tokens. Nothing about the route is sent to the provider, and with the
+     * summarizer's ceiling now a real prefill budget (32 k) rather than the whole window (258 k), that
+     * artefact would have sent EVERY summary down the serialized-history fallback and thrown away the
+     * prefix-cache reuse this branch exists for. `PromptEstimate.whole` is the runner's own measure of
+     * an outgoing request: system + messages + tools, nothing else.
+     */
+    const prefixRequestTokens =
+      cachedPrefixRequest === undefined ? -1 : PromptEstimate.whole(cachedPrefixRequest, input.imagePatchPixels)
     const summaryRequest =
-      cachedPrefixRequest !== undefined &&
-      Token.estimateStructured(LLM.requestInput(cachedPrefixRequest)) <= promptCeiling
+      cachedPrefixRequest !== undefined && prefixRequestTokens <= promptCeiling
         ? cachedPrefixRequest
         : LLM.request({
             model: input.model,
@@ -828,6 +929,11 @@ export const make = (dependencies: Dependencies) => {
           ...decision,
           "compaction.after.tokens": Token.estimate(summary) + Token.estimate(selected.recent),
           "compaction.folded.chars": selected.head.length,
+          // The head is folded from its NEWEST end when it outgrows this budget; the oldest span is
+          // marked in the prompt (`HISTORY_HEAD_REMOVED`) and archived to memory. Without this
+          // number the next incident cannot tell "the summary was thin" from "the head was halved
+          // twice before the model ever saw it".
+          "compaction.summarize.input": promptCeiling,
           "compaction.summary.chars": summary.length,
           "compaction.recent.chars": selected.recent.length,
         },
@@ -892,6 +998,9 @@ export const make = (dependencies: Dependencies) => {
       "compaction.fires": estimatedWithMargin > threshold,
     })
     if (estimatedWithMargin <= threshold) return decline("under-threshold")
+    // ⚠️ AFTER the threshold test, never instead of it: a backoff silences the SPEND, and the
+    // measurement above has already happened and been logged either way. See `Input.summaryAllowed`.
+    if (input.summaryAllowed === false) return decline("summarizer-backoff")
     // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
     // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)
@@ -899,5 +1008,16 @@ export const make = (dependencies: Dependencies) => {
   return {
     compactIfNeeded,
     compactAfterOverflow,
+    /**
+     * The resolved compaction settings for this turn's config snapshot.
+     *
+     * ⭐ Exposed so the DETERMINISTIC packer reserves the same response budget the compactor does.
+     * `PromptEstimate.capacity` reserves `max(10% of window, 8,192, outputTokens, buffer)`, and the
+     * compactor passes `buffer` (20,000) while the packer passed nothing: at a 262,144 window both
+     * give 26,215 so they agree by accident, but at a 128,000 window the packer reserves 12,800 and
+     * the compactor 20,000 — the packer would be the looser of the two, and the request it approves
+     * is one the compactor has already decided is over budget.
+     */
+    settings: config,
   }
 }

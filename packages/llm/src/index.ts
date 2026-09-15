@@ -2,12 +2,14 @@ export { LLMClient } from "./route/client"
 export { Auth } from "./route/auth"
 export {
   classify,
+  contextLimitFrom,
   imageLimitFrom,
   isContextOverflow,
   isContextOverflowFailure,
   isMediaLimit,
   isModelMissing,
   mediaLimitFailure,
+  promptTokensFrom,
 } from "./provider-error"
 export type {
   RouteModelInput,

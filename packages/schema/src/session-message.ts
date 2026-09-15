@@ -324,6 +324,27 @@ export const ContextFinding = Schema.Union([
     affectedMessages: NonNegativeInt,
     protected: Schema.Boolean,
   }),
+  /**
+   * The packer could not get the kept set under its own budget.
+   *
+   * 🔴 Three rules are deliberately allowed to exceed `budgetTokens` — the newest message is always
+   * kept, the newest assistant+results group is recovered whole, and the sole real user message is
+   * re-prepended — and until this finding existed, nothing said so. Measured 2026-09-14
+   * (`ses_daedalus`): the harness dispatched a request its own estimate put at 281,140 tokens
+   * against a 235,929 ceiling and read back HTTP 400. A silent overrun is how a measured fault
+   * reaches a provider.
+   */
+  Schema.Struct({
+    kind: Schema.Literal("budget-overrun"),
+    /** The packing budget the kept set was measured against. */
+    limitTokens: NonNegativeInt,
+    /** What the kept set actually measured. */
+    afterTokens: NonNegativeInt,
+    /** How many messages the kept set still holds (the newest is never dropped). */
+    keptMessages: NonNegativeInt,
+    /** How many of the original messages the packer dropped trying to fit. */
+    droppedMessages: NonNegativeInt,
+  }),
 ]).pipe(Schema.toTaggedUnion("kind"))
 export type ContextFinding = typeof ContextFinding.Type
 

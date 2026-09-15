@@ -323,7 +323,14 @@ describe("the prune flag is honoured, and absent means inert", () => {
       document({ prune: true, buffer: 1_000, auto: false }),
       document({ prune: false }),
     ])
-    expect(folded).toEqual({ auto: false, buffer: 1_000, tokens: 8_000, prune: false, summarize: true })
+    expect(folded).toEqual({
+      auto: false,
+      buffer: 1_000,
+      tokens: 8_000,
+      prune: false,
+      summarize: true,
+      summarizeInput: 32_000,
+    })
   })
 
   // `prune only` — the tier ships, the summary does not. ⚠️ `summarize` defaults TRUE, the opposite
@@ -343,6 +350,7 @@ describe("the prune flag is honoured, and absent means inert", () => {
       tokens: 8_000,
       prune: false,
       summarize: true,
+      summarizeInput: 32_000,
     })
     expect(SessionCompaction.settings([document({ keep: { tokens: 2_000 } })]).tokens).toBe(2_000)
   })

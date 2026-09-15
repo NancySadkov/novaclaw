@@ -73,6 +73,80 @@ export const imageLimitFrom = (message: string): number | undefined => {
 export const isMediaLimit = (message: string) => imageLimitFrom(message) !== undefined
 
 /**
+ * The provider's OWN count of the prompt it refused — the third 4xx that is evidence about the
+ * request rather than a malformed body, and the same principle as `imageLimitFrom` above: the
+ * number is in the message, so it does not have to be guessed.
+ *
+ * 🔴 **Measured 2026-09-14 (`ses_daedalus`): this is the one place the true token count of an exact
+ * request is FREE, and it was thrown away.** The harness estimates every prompt it sends
+ * (`Token.estimate`, a heuristic) and only ever learns the truth from a usage report *after* a
+ * successful call. A context-overflow 400 is a measurement taken before the call that would have
+ * given us one:
+ *
+ * ```
+ * "This model's maximum context length is 262144 tokens. However, you requested 16384 output tokens
+ *  and your prompt contains at least 245761 input tokens ... (parameter=input_tokens, value=245761)"
+ * ```
+ *
+ * That session's own estimate for the same request was 281,140 — 14 % HIGH. Recovery then cut 25 %
+ * of a number already 14 % wrong, so the retry target was ~8,800 tokens away from what a correct
+ * reading would have asked for. **Recovering from an overflow by cutting a fraction of a number we
+ * already know is wrong is the defect this closes.**
+ *
+ * ⚠️ **Only ever call this on a message already classified `context-overflow`.** The last pattern is
+ * deliberately loose (a bare `N input tokens`), and a *healthy* message that happens to mention
+ * input tokens would match it. The classification is what makes the reading safe, and
+ * `provider-error.test.ts` pins both halves of that: the reading, and the fact that it is reached
+ * only through the classifier.
+ */
+const PROMPT_TOKENS_PATTERNS = [
+  // vLLM / OpenAI-compatible: `(parameter=input_tokens, value=245761)`.
+  /parameter=input_tokens,\s*value=(\d+)/i,
+  // OpenAI: "your prompt contains at least 245761 input tokens".
+  /contains at least (\d+) input tokens/i,
+  // Older/other wordings that name the prompt and then the count.
+  /prompt contains at least (\d+)/i,
+  // ⚠️ Requires the words "input tokens" together. A bare `(\d+) tokens` also matches
+  // "maximum prompt length is 4096 tokens" — a LIMIT, not a count — and reading a window as a
+  // prompt size is the one way this helper could make an overflow worse.
+  /(?:prompt|input)[^.\n]{0,40}?(\d+) input tokens/i,
+]
+export const promptTokensFrom = (message: string): number | undefined => {
+  for (const pattern of PROMPT_TOKENS_PATTERNS) {
+    const match = pattern.exec(message)
+    if (match === null) continue
+    const value = Number(match[1])
+    if (Number.isSafeInteger(value) && value > 0) return value
+  }
+  return undefined
+}
+
+/**
+ * The window the provider says it has, read from the same body.
+ *
+ * ⭐ Not a replacement for the configured route limit — the configured limit is what the packer and
+ * the compactor budget against, and it is what the server was *launched* to honour. This is the
+ * number the refusing process actually enforced, which is the useful one when the two disagree:
+ * a route that advertises 262,144 while serving 131,072 is exactly the case that produces a
+ * "boundary that is not enforced" 400, and the sentence naming it is the only place that is said.
+ */
+const CONTEXT_LIMIT_PATTERNS = [
+  /maximum context length is (\d+) tokens/i,
+  /context length is only (\d+) tokens/i,
+  /exceeds the limit of (\d+)/i,
+  /maximum prompt length is (\d+)/i,
+]
+export const contextLimitFrom = (message: string): number | undefined => {
+  for (const pattern of CONTEXT_LIMIT_PATTERNS) {
+    const match = pattern.exec(message)
+    if (match === null) continue
+    const value = Number(match[1])
+    if (Number.isSafeInteger(value) && value > 0) return value
+  }
+  return undefined
+}
+
+/**
  * The endpoint saying it does not serve this model at all.
  *
  * 🔴 A different KIND of evidence from every other fault here, and that is why it has its own

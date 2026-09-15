@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { classify, imageLimitFrom, isContextOverflow, isMediaLimit } from "./provider-error"
+import {
+  classify,
+  contextLimitFrom,
+  imageLimitFrom,
+  isContextOverflow,
+  isMediaLimit,
+  promptTokensFrom,
+} from "./provider-error"
 
 /**
  * **A 4xx body that names its own cause is evidence about the ENDPOINT** — the principle
@@ -63,5 +70,47 @@ describe("classify — one place, so three protocol sites cannot drift", () => {
    */
   test("a message that names BOTH is a media limit, because compaction cannot fix it", () => {
     expect(classify("At most 3 image(s) may be provided; prompt is too long")).toBe("media-limit")
+  })
+})
+
+/**
+ * **The refusing body is a MEASUREMENT of the exact request**, and it is the only free one in the
+ * system: every other prompt count arrives from a usage report after a call that succeeded.
+ */
+describe("the prompt count in a context-overflow body", () => {
+  /** The exact body from `ses_daedalus`, 2026-09-14 21:22 — kept verbatim. */
+  const MEASURED =
+    'Provider request failed with HTTP 400: {"error":{"message":"This model\'s maximum context length is 262144 tokens. However, you requested 16384 output tokens and your prompt contains at least 245761 input tokens, for a total of at least 262145 tokens. Please reduce the length of the input prompt or the number of requested output tokens. (parameter=input_tokens, value=245761)","type":"BadRequestError","param":"input_tokens","code":400}}'
+
+  test("reads both numbers out of the message we actually measured", () => {
+    expect(promptTokensFrom(MEASURED)).toBe(245_761)
+    expect(contextLimitFrom(MEASURED)).toBe(262_144)
+    expect(classify(MEASURED)).toBe("context-overflow")
+  })
+
+  test("reads the other phrasings, because the endpoint is not ours to standardise", () => {
+    expect(promptTokensFrom("This model's maximum prompt length is 4096 tokens")).toBeUndefined()
+    expect(promptTokensFrom("prompt contains at least 90000 input tokens")).toBe(90_000)
+    expect(promptTokensFrom("your input is too long: 123456 input tokens")).toBe(123_456)
+    expect(contextLimitFrom("context length is only 8192 tokens")).toBe(8_192)
+    expect(contextLimitFrom("input exceeds the limit of 131072")).toBe(131_072)
+  })
+
+  /**
+   * ⚠️ **The negative case is the load-bearing one**, exactly as it is for the image cap: the last
+   * pattern is loose by design, so an unreadable body must read as "no measurement" rather than as
+   * a number scraped out of prose. The classifier is what keeps the loose pattern safe — this test
+   * is the statement of that contract.
+   */
+  test("a body with no count reads as no measurement", () => {
+    expect(promptTokensFrom("prompt is too long")).toBeUndefined()
+    expect(promptTokensFrom("502 Bad Gateway")).toBeUndefined()
+    expect(contextLimitFrom("prompt is too long")).toBeUndefined()
+  })
+
+  test("a healthy reply that merely mentions input tokens is not a measurement", () => {
+    // Reading this as a prompt count would anchor the next turn's estimator to a number about
+    // nothing. It is only ever called behind `classify(...) === "context-overflow"`.
+    expect(classify("the response used 1200 input tokens")).toBeUndefined()
   })
 })

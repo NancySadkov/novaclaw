@@ -70,6 +70,15 @@ export const budget = (input: {
   readonly imagePatchPixels?: number
   readonly promptCorrectionTokens?: number
   readonly promptMarginTokens?: number
+  /**
+   * The same response reserve the COMPACTOR passes to `PromptEstimate.capacity`.
+   *
+   * ⚠️ Without it the packer reserves only the base 10 % / 8,192 and can approve a request the
+   * compactor has already measured as over budget. At a 262,144 window the two agree by accident
+   * (10 % = 26,215 > the 20,000 buffer); at 128,000 the packer would reserve 12,800 where the
+   * compactor reserves 20,000, and the packer would be the looser of the two.
+   */
+  readonly minimumResponseReserveTokens?: number
 }): number => {
   const systemTokens = input.system.reduce((total, part) => total + Token.estimate(part.text), 0)
   const toolTokens = estimateJson(input.tools, input.imagePatchPixels)
@@ -85,6 +94,9 @@ export const budget = (input: {
     PromptEstimate.capacity({
       contextTokens: input.contextSize,
       outputTokens: input.maxTokens,
+      ...(input.minimumResponseReserveTokens === undefined
+        ? {}
+        : { minimumResponseReserveTokens: input.minimumResponseReserveTokens }),
     }).promptCeilingTokens -
     systemTokens -
     toolTokens -
@@ -807,6 +819,14 @@ export interface PackResult {
   readonly changed: boolean
   readonly dropped: number
   readonly estimatedTokens: number
+  /**
+   * Whether the kept set is inside `budgetTokens` as MEASURED after packing.
+   *
+   * ⚠️ Not the same question as `estimatedTokens <= budgetTokens` computed by the caller: this is
+   * the packer's own answer about its own output, and it is the only place that knows which of the
+   * three never-drop rules fired. `false` means a request this size is over the window we packed to.
+   */
+  readonly fits: boolean
   /** How many duplicate tool results pass 1.5 collapsed (A2.1 ①). */
   readonly elided: number
   /** Plain structured findings for Developer diagnostics — never an opaque composite score. */
@@ -836,6 +856,11 @@ export const pack = (
   options: {
     readonly historyCaps?: Readonly<Record<HistoryCategory, number>>
     readonly imagePatchPixels?: number
+    /**
+     * Relax the three never-drop rules until the kept set fits the budget, oldest-first, never below
+     * one message. For the last-moment dispatch gate only — see the note in `pack`'s body.
+     */
+    readonly hard?: boolean
   } = {},
 ): PackResult => {
   const imagePatchPixels = options.imagePatchPixels
@@ -891,6 +916,12 @@ export const pack = (
       changed,
       dropped: messages.length - legal.length,
       estimatedTokens: total,
+      // ⚠️ MEASURED on the set actually returned, not inherited from `total` above: the test above
+      // is on `working`, and `demoteSystemMessages` rewrites system content, so the two can differ by
+      // the steer-provenance prefix. `estimatedTokens` deliberately stays `total` (prompt calibration
+      // reads it); `fits` is the claim about what is about to be sent, so it is the one that must be
+      // about `legal`.
+      fits: estimateMessages(legal, imagePatchPixels) <= budgetTokens,
       elided,
       findings: [
         ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elidedIndexes),
@@ -910,36 +941,78 @@ export const pack = (
   }
   let kept = dropOrphanTools(working.slice(start))
 
-  // Recover the newest assistant+results group whole (deliberately over budget) if the orphan
-  // pass emptied the window down to nothing usable.
-  if (kept.length === 0 || kept.every((message) => message.role === "tool")) {
-    let newestAssistant = -1
-    for (let i = working.length - 1; i >= 0; i--) {
-      if (working[i]!.role === "assistant") {
-        newestAssistant = i
-        break
+  /**
+   * ⚠️ **`hard` relaxes the three never-drop rules below, and only a last-moment dispatch gate
+   * should ask for it.** They are right for packing (a request with no newest message asks nothing,
+   * and the newest exchange is the work in flight), but each of them can leave the kept set over
+   * `budgetTokens` by construction, and a request over the window is a guaranteed 400 rather than a
+   * preference to be weighed.
+   */
+  if (options.hard !== true) {
+    // Recover the newest assistant+results group whole (deliberately over budget) if the orphan
+    // pass emptied the window down to nothing usable.
+    if (kept.length === 0 || kept.every((message) => message.role === "tool")) {
+      let newestAssistant = -1
+      for (let i = working.length - 1; i >= 0; i--) {
+        if (working[i]!.role === "assistant") {
+          newestAssistant = i
+          break
+        }
       }
+      if (newestAssistant >= 0) kept = dropOrphanTools(working.slice(newestAssistant))
     }
-    if (newestAssistant >= 0) kept = dropOrphanTools(working.slice(newestAssistant))
-  }
 
-  // Original-task anchoring (pass 4): never let packing evict the sole real user message.
-  // If no such message exists, leave that fact alone — never manufacture a replacement task.
-  if (!kept.some(isRealUserMessage)) {
-    const anchor = working.find(isRealUserMessage)
-    if (anchor !== undefined) kept = [anchor, ...kept]
+    // Original-task anchoring (pass 4): never let packing evict the sole real user message.
+    // If no such message exists, leave that fact alone — never manufacture a replacement task.
+    //
+    // ⚠️ NEWEST, not oldest. `find` returned the FIRST real user message in history — on a long chat
+    // that is the opening request, furthest from the work in flight and the most expensive thing to
+    // re-prepend. The task in force is the most recent one the user actually stated, and the newest
+    // anchor is also the one that can be dropped by a caller that needs the budget back.
+    if (!kept.some(isRealUserMessage)) {
+      const anchor = working.findLast(isRealUserMessage)
+      if (anchor !== undefined) kept = [anchor, ...kept]
+    }
   }
 
   kept = demoteSystemMessages(kept)
+  let keptTokens = estimateMessages(kept, imagePatchPixels)
+  if (options.hard === true) {
+    // Drop oldest-first until the MEASURED kept set fits, never below the newest message. Bounded by
+    // `kept.length` and finite: each iteration removes one message, so this cannot loop.
+    while (kept.length > 1 && keptTokens > budgetTokens) {
+      kept = demoteSystemMessages(dropOrphanTools(kept.slice(1)))
+      keptTokens = estimateMessages(kept, imagePatchPixels)
+    }
+  }
+  /**
+   * 🔴 **THE OVERRUN IS REPORTED, NOT SILENT.** The three rules above may leave the kept set over
+   * budget, and until this finding existed nothing recorded it — which is how a request the harness
+   * had itself measured at 281,140 tokens against a 235,929 ceiling reached a provider and came
+   * back as HTTP 400 (`ses_daedalus`, 2026-09-14 21:17).
+   */
+  const overrun = keptTokens - budgetTokens
   return {
     messages: kept,
     changed: true,
     dropped: messages.length - kept.length,
-    estimatedTokens: estimateMessages(kept, imagePatchPixels),
+    estimatedTokens: keptTokens,
+    fits: overrun <= 0,
     elided,
     findings: [
       ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elidedIndexes),
       ...budgetFindings,
+      ...(overrun > 0
+        ? [
+            {
+              kind: "budget-overrun" as const,
+              limitTokens: budgetTokens,
+              afterTokens: keptTokens,
+              keptMessages: kept.length,
+              droppedMessages: messages.length - kept.length,
+            },
+          ]
+        : []),
     ],
   }
 }
@@ -1045,6 +1118,13 @@ export const packRequest = (input: {
   readonly promptCorrectionTokens?: number
   /** Request-level uncertainty; response generation capacity is reserved independently. */
   readonly promptMarginTokens?: number
+  /** The compactor's response reserve, so packer and compactor budget against one number. */
+  readonly minimumResponseReserveTokens?: number
+  /**
+   * Last-moment hard mode: relax the never-drop rules until the packed set fits, and report `fits`.
+   * Only a caller that is about to put these bytes on the wire should set it.
+   */
+  readonly hard?: boolean
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
@@ -1079,12 +1159,16 @@ export const packRequest = (input: {
     imagePatchPixels: input.imagePatchPixels,
     promptCorrectionTokens: input.promptCorrectionTokens,
     promptMarginTokens,
+    ...(input.minimumResponseReserveTokens === undefined
+      ? {}
+      : { minimumResponseReserveTokens: input.minimumResponseReserveTokens }),
   })
   // Feedback and uncertainty apply ONCE at the whole-request capacity boundary. Item estimates and
   // category ranks stay ordinary heuristics; a positive correction leaves less room for history, a
   // negative one restores room the provider proved the heuristic was wasting.
   const result = pack(memoryBudget.messages, correctedBudget, {
     imagePatchPixels: input.imagePatchPixels,
+    ...(input.hard === true ? { hard: true } : {}),
     ...(input.profile === undefined
       ? {}
       : {

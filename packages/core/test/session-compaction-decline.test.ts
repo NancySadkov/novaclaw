@@ -57,6 +57,8 @@ const drive = (input: {
   readonly through?: "overflow" | "ifNeeded"
   readonly promptEstimate?: PromptEstimate.Result
   readonly prefixCacheRetentionTokens?: number
+  /** The runner's backoff decision: measurement always runs, only the SPEND is gated. */
+  readonly summaryAllowed?: boolean
 }) => {
   const requests: LLMRequest[] = []
   const published: string[] = []
@@ -102,6 +104,7 @@ const drive = (input: {
     request: LLM.request({ model: input.model, messages: [], tools: [] }),
     promptEstimate: input.promptEstimate,
     prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
+    ...(input.summaryAllowed === undefined ? {} : { summaryAllowed: input.summaryAllowed }),
     onDecline: (reason: SessionCompaction.DeclineReason) => {
       declines.push(reason)
     },
@@ -130,6 +133,7 @@ const EVERY_REASON = [
   "transcript-too-large",
   "summarizer-unavailable",
   "summary-unusable",
+  "summarizer-backoff",
 ] as const
 type Listed = (typeof EVERY_REASON)[number]
 const _everyReasonIsListed: [Exclude<SessionCompaction.DeclineReason, Listed>] extends [never]
@@ -207,6 +211,66 @@ describe("every decline names itself", () => {
     })
     expect(run.compacted).toBe(false)
     expect(run.declines).toEqual(["summarizer-unavailable"])
+  })
+
+  /**
+   * 🔴 **A BACKOFF IS A REASON NOT TO SPEND, NOT A REASON TO STOP LOOKING.**
+   *
+   * The runner used to skip `compactIfNeeded` ENTIRELY for 30 minutes after a summarizer failure, so
+   * the threshold was not measured, not logged, and the packed request was dispatched unmeasured.
+   * Measured 2026-09-14 (`ses_daedalus`): eight failed compactions, and the turn that produced the
+   * HTTP 400 went out at an estimated 281,140 tokens against a 235,929 ceiling 148 ms after
+   * compaction gave up. The chat is at its most dangerous DURING a backoff.
+   */
+  test("a summarizer backoff declines by name, and spends no provider call", () => {
+    const run = drive({
+      model: routed({ context: 200_000, output: 4_096 }),
+      entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
+      through: "ifNeeded",
+      summaryAllowed: false,
+      // Over the threshold, so the decline can only be the backoff: the measurement ran and the
+      // branch above it (`under-threshold`) did not fire.
+      promptEstimate: {
+        heuristicTokens: 300_000,
+        estimatedTokens: 300_000,
+        correctionTokens: 0,
+        marginTokens: 0,
+        deltaTokens: 0,
+        growth: 0,
+        confidence: "whole",
+        fallback: "none",
+        anchorReportedTokens: 0,
+        anchorHeuristicTokens: 0,
+      },
+    })
+    expect(run.compacted).toBe(false)
+    expect(run.declines).toEqual(["summarizer-backoff"])
+    expect(run.requests).toHaveLength(0)
+  })
+
+  /** The same call WITH the spend allowed reaches the summarizer — the gate is the only difference. */
+  test("the same over-threshold call compacts when the backoff has elapsed", () => {
+    const run = drive({
+      model: routed({ context: 200_000, output: 4_096 }),
+      entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
+      through: "ifNeeded",
+      summaryAllowed: true,
+      answers: [{ text: "## Goal\n- fold it", reason: "stop" }],
+      promptEstimate: {
+        heuristicTokens: 300_000,
+        estimatedTokens: 300_000,
+        correctionTokens: 0,
+        marginTokens: 0,
+        deltaTokens: 0,
+        growth: 0,
+        confidence: "whole",
+        fallback: "none",
+        anchorReportedTokens: 0,
+        anchorHeuristicTokens: 0,
+      },
+    })
+    expect(run.compacted).toBe(true)
+    expect(run.requests.length).toBeGreaterThan(0)
   })
 
   test("the summarizer answered in a shape no bounded retry can rescue", () => {
