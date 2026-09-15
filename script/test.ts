@@ -56,6 +56,7 @@ import { readFileSync } from "node:fs"
 import os from "node:os"
 import { join } from "node:path"
 
+import * as Arguments from "./lib/arguments"
 import { writeDiagnostic } from "./lib/diagnostic"
 import { check, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
 import { sweepStrayServers } from "./lib/stray-servers"
@@ -121,11 +122,30 @@ let stopSampler: () => void = () => {}
 // BEFORE the admission check below, so four idle `serve` backends make the gate proceed rather
 // than refuse; `stray-servers.test.ts` pins that no heavy-guard label is ever a sweep target, which
 // is what makes sweeping in front of a gate safe for a concurrent session's own run.
+/**
+ * 🔴 **AN UNRECOGNIZED ARGUMENT USED TO RUN THE WHOLE SUITE.** `--help` and `--list` were read by
+ * nothing, so both fell through to the fast tier and started a full 23-unit run — measured
+ * 2026-09-15, twice in one session, the second time leaving a stray `bun` that refused three
+ * unrelated units and blocked a `typecheck`. So anything unrecognized refuses HERE, before the
+ * stray sweep, before the memory gate, and before a single unit is admitted.
+ *
+ * The decision itself is `script/lib/arguments.ts` — a PURE module, because this file executes at
+ * import and therefore cannot be tested directly. See it for the full reasoning and for why
+ * `--force` is accepted and inert.
+ */
+const ARGUMENTS = process.argv.slice(2)
+if (Arguments.isHelp(ARGUMENTS)) {
+  console.log(Arguments.USAGE)
+  process.exit(0)
+}
+const unrecognizedArguments = Arguments.unrecognizedArguments(ARGUMENTS)
+if (unrecognizedArguments.length > 0) abort(2, Arguments.refusal(unrecognizedArguments))
+
 sweepStrayServers({ reason: "the test suite" })
 
 enforceTestMemory("the test suite")
 
-const FULL = process.argv.includes("--full")
+const FULL = Arguments.isFull(ARGUMENTS)
 // ⚠️ Owner directive 2026-09-02: `--full` is OFF the development loop — a release cut, or a failure
 // you cannot explain from the diff and cannot reproduce in its own unit. Nothing here refuses the
 // flag; the point is that the rule is visible where it is actually being spent, not only in a doc
@@ -137,7 +157,7 @@ if (FULL) {
   console.log("  Otherwise `--only=<unit>` plus `--only=typecheck` is what a commit or a push needs.")
   console.log("")
 }
-const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length)
+const ONLY = Arguments.only(ARGUMENTS)
 
 const PER_TEST_TIMEOUT_MS = 15_000
 const PACKAGE_WALLCLOCK_MS = 150_000 // a HANG backstop, not a normal budget
