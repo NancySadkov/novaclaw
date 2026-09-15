@@ -333,7 +333,7 @@ describe("the settled-resource ledger", () => {
     expect(Object.keys(found.folds).length).toBeGreaterThan(5)
     // The six viewers this ledger opened with are converted, and must stay converted.
     for (const converted of [
-      "pages/trash.tsx",
+      "components/settings-v2/trash.tsx",
       "pages/calendar.tsx",
       "pages/notes.tsx",
       // The largest single conversion in the tree — thirteen bare reads in one file, every one of

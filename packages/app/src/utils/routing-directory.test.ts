@@ -159,7 +159,7 @@ describe("nothing resolves the routing directory by hand any more", () => {
 
   test("the sweep sees a real tree", () => {
     expect(SOURCES.length).toBeGreaterThan(200)
-    expect(SOURCES.some((file) => file.name === "pages/trash.tsx")).toBe(true)
+    expect(SOURCES.some((file) => file.name === "components/settings-v2/trash.tsx")).toBe(true)
     // The detector must actually detect. If this stops matching, every assertion below is a
     // tautology.
     expect(BY_HAND.test("const d = p?.directory || p?.home || ''")).toBe(true)

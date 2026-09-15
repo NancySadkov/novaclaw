@@ -81,6 +81,11 @@ export interface AdmitInput {
   readonly priority?: number
   /** Device-declared concurrent generation cap; defaults to the conservative floor. */
   readonly concurrency?: number
+  /**
+   * Minimum ms the most-recently-dispatched session holds this device across its own turns.
+   * Absent means "this caller has no new policy" — it must never reset an operator-set window.
+   */
+  readonly minRunMs?: number
   /** Operator-declared placement fact, exposed in snapshots for routing and diagnosis. */
   readonly locality?: ConfigDevice.Locality
 }
@@ -105,6 +110,7 @@ export interface MaintenanceInput {
   readonly deviceKey: string
   /** Shares the device's generation ceiling with session turns. */
   readonly concurrency?: number
+  readonly minRunMs?: number
   readonly locality?: ConfigDevice.Locality
 }
 
@@ -121,6 +127,7 @@ export interface MaintenanceReleaseInput {
 export interface DeviceSnapshot {
   readonly deviceKey: string
   readonly concurrency: number
+  readonly minRunMs: number
   readonly locality?: ConfigDevice.Locality
   readonly inFlightInteractive: readonly string[]
   readonly inFlightBatch: readonly string[]
@@ -165,8 +172,17 @@ interface DeviceState {
   readonly maintenanceOwners: Map<string, string>
   readonly maintenancePreemptions: Map<string, Deferred.Deferred<void>>
   concurrency: number
+  /** Cache-affinity window in ms; see `ConfigDevice.Info.minRunMs`. 0 disables the warm cohort. */
+  minRunMs: number
   locality?: ConfigDevice.Locality
   lastDispatched?: string
+  /**
+   * sessionID → wall-clock ms of its most recent dispatch on this device. The WARM COHORT is the
+   * waiters whose last run is still inside `minRunMs`: they keep the device over a cold peer, so a
+   * memory-mapped context is not evicted the moment its owner's next turn queues. Bounded by the
+   * same lazy sweep as the ledger; an entry older than the window can no longer matter.
+   */
+  readonly recent: Map<string, number>
 }
 
 const disabled = () => {
@@ -201,6 +217,8 @@ export const make = (options?: Options): Interface => {
           maintenanceOwners: new Map(),
           maintenancePreemptions: new Map(),
           concurrency: MAX_BATCH,
+          minRunMs: 0,
+          recent: new Map(),
         }),
       )
     return device
@@ -213,7 +231,7 @@ export const make = (options?: Options): Interface => {
    * this gate still tracks is pinned, so a queued waiter can never lose the ledger entry
    * `drain` needs to pick it.
    */
-  const sweep = (device: DeviceState) =>
+  const sweep = (device: DeviceState) => {
     device.ledger.sweepForgiven(
       now(),
       (id) =>
@@ -222,6 +240,11 @@ export const make = (options?: Options): Interface => {
         device.inFlightMaintenance.has(id) ||
         device.waiters.has(id),
     )
+    if (device.minRunMs > 0) {
+      const cutoff = now() - device.minRunMs
+      for (const [id, at] of device.recent) if (at <= cutoff) device.recent.delete(id)
+    }
+  }
 
   const inFlight = (device: DeviceState) =>
     device.inFlightInteractive.size + device.inFlightBatch.size + device.inFlightMaintenance.size
@@ -238,7 +261,20 @@ export const make = (options?: Options): Interface => {
     while (inFlight(device) < device.concurrency && device.waiters.size > 0) {
       const foreground = interactiveWaiters(device)
       if (foreground.length === 0 && !batchCapacity(device)) return
-      const eligible = foreground.length > 0 ? foreground : [...device.waiters.keys()]
+      let eligible = foreground.length > 0 ? foreground : [...device.waiters.keys()]
+      // Cache-affinity window: among the batch waiters, prefer the WARM COHORT — sessions that ran
+      // within `minRunMs` — over a cold peer whose context would evict the resident pages. This is a
+      // preference among waiters, never a reservation: if nobody waiting ran recently, the device is
+      // handed on normally rather than left idle. A foreground waiter always outranks it (the owner's
+      // interactive turn is never delayed for affinity).
+      if (foreground.length === 0 && device.minRunMs > 0) {
+        const cutoff = now() - device.minRunMs
+        const warm = eligible.filter((id) => {
+          const at = device.recent.get(id)
+          return at !== undefined && at > cutoff
+        })
+        if (warm.length > 0) eligible = warm
+      }
       const candidates = eligible.map((id) => ({
         id,
         warmthTokens: id === device.lastDispatched ? RECENCY_WARMTH_TOKENS : 0,
@@ -251,6 +287,7 @@ export const make = (options?: Options): Interface => {
       else if (waiter.kind === "maintenance") device.inFlightMaintenance.add(pick)
       else device.inFlightBatch.add(pick)
       device.lastDispatched = pick
+      device.recent.set(pick, now())
       Deferred.doneUnsafe(waiter.deferred, Effect.void)
     }
   }
@@ -280,11 +317,20 @@ export const make = (options?: Options): Interface => {
       if (disabled()) return Effect.void
       const device = deviceFor(input.deviceKey)
       if (maintenanceOwner !== undefined) device.maintenanceOwners.set(input.sessionID, maintenanceOwner)
-      // Config is runtime-editable: the newest admission refreshes policy for the whole device.
-      // Lowering the cap never preempts an in-flight generation; it simply closes admission until
-      // the live count falls below the new ceiling.
-      device.concurrency = input.concurrency ?? MAX_BATCH
-      device.locality = input.locality
+      // Config is runtime-editable: an admission that CARRIES policy refreshes it for the whole
+      // device. Lowering the cap never preempts an in-flight generation; it simply closes admission
+      // until the live count falls below the new ceiling.
+      //
+      // 🔴 An admission that does NOT carry a concurrency must never WIDEN the cap. This was
+      // `device.concurrency = input.concurrency ?? MAX_BATCH`, so one request whose device profile
+      // had not resolved (a reasoning-phase lease, a maintenance pass, a model whose endpoint is not
+      // a registered Device) reset a device the operator had pinned to 1 straight back to 4 — the
+      // "Device concurrency is not fully respected, several agents reach the box at once" report.
+      // `undefined` means "this caller has no new policy", not "the policy is the fallback"; a fresh
+      // device still starts at MAX_BATCH in `deviceFor`.
+      if (input.concurrency !== undefined) device.concurrency = input.concurrency
+      if (input.minRunMs !== undefined) device.minRunMs = input.minRunMs
+      if (input.locality !== undefined) device.locality = input.locality
       sweep(device)
       // A raised cap belongs to the device, not to the newcomer that happened to carry it. Give
       // already-waiting sessions first claim through EEVDF before considering another background
@@ -319,6 +365,7 @@ export const make = (options?: Options): Interface => {
         if (inFlight(device) < device.concurrency) {
           device.inFlightInteractive.add(input.sessionID)
           device.lastDispatched = input.sessionID
+          device.recent.set(input.sessionID, now())
           for (const maintenanceID of preempt) {
             const preemption = device.maintenancePreemptions.get(maintenanceID)
             if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
@@ -339,6 +386,7 @@ export const make = (options?: Options): Interface => {
         if (kind === "maintenance") device.inFlightMaintenance.add(input.sessionID)
         else device.inFlightBatch.add(input.sessionID)
         device.lastDispatched = input.sessionID
+        device.recent.set(input.sessionID, now())
         return Effect.void
       }
       return queue(device, input, kind)
@@ -381,6 +429,7 @@ export const make = (options?: Options): Interface => {
         deviceKey: input.deviceKey,
         sessionClass: "cron",
         ...(input.concurrency === undefined ? {} : { concurrency: input.concurrency }),
+        ...(input.minRunMs === undefined ? {} : { minRunMs: input.minRunMs }),
         ...(input.locality === undefined ? {} : { locality: input.locality }),
       }
       const device = deviceFor(input.deviceKey)
@@ -417,6 +466,7 @@ export const make = (options?: Options): Interface => {
     Effect.sync(() => {
       for (const device of devices.values()) {
         device.ledger.remove(sessionID)
+        device.recent.delete(sessionID)
         device.inFlightInteractive.delete(sessionID)
         device.inFlightBatch.delete(sessionID)
         const waiter = device.waiters.get(sessionID)
@@ -454,6 +504,7 @@ export const make = (options?: Options): Interface => {
       [...devices.entries()].map(([deviceKey, device]) => ({
         deviceKey,
         concurrency: device.concurrency,
+        minRunMs: device.minRunMs,
         ...(device.locality === undefined ? {} : { locality: device.locality }),
         inFlightInteractive: [...device.inFlightInteractive],
         inFlightBatch: [...device.inFlightBatch],

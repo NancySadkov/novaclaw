@@ -82,12 +82,26 @@ describe("Model Configure — Provider", () => {
 
 describe("Model Configure — compact capability taxonomy", () => {
   test("puts modalities and limits in Capabilities and has no recovery or tool-channel section", () => {
-    expect(source).toContain('{section("capabilities")}')
+    // Configure is tabbed (owner, 2026-09-16 — it had become one long disorganized scroll). Each
+    // family is a `TabsV2`-free panel keyed on `tab()`, the same pattern as `AgentConfigScreen`.
+    expect(source).toContain('tab() === "identity"')
+    expect(source).toContain('tab() === "capabilities"')
+    expect(source).toContain('tab() === "scheduler"')
     expect(source).not.toContain('{section("limits")}')
     expect(source).not.toContain('{section("modalities")}')
     expect(source).not.toContain('{section("reliability")}')
     expect(source).not.toContain('data-action="tool-channel-test"')
     expect(source).not.toContain('paramRow("retryAttempts")')
+  })
+
+  test("🔴 the Scheduler tab exposes the device cap and the minimum run window", () => {
+    expect(source).toContain("value={form.deviceConcurrency}")
+    expect(source).toContain("value={form.minRunSeconds}")
+    expect(source).toContain("minRunMs")
+    // A device row must be minted for EITHER scheduling setting, not concurrency alone.
+    expect(source).toContain("concurrency === undefined && minRunMs === undefined")
+    expect(en["settings.models.config.minRun.name"]).toContain("seconds")
+    expect(en["settings.models.config.minRun.desc.more"]).toContain("prefills")
   })
 
   test("the ordinary model Test negotiates and reports tool use", () => {

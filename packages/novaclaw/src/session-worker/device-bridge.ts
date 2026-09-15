@@ -65,6 +65,7 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
             : SessionScheduler.focusClass(input.message.sessionClass, input.focused),
         ...(input.message.priority === undefined ? {} : { priority: input.message.priority }),
         ...(input.message.concurrency === undefined ? {} : { concurrency: input.message.concurrency }),
+        ...(input.message.minRunMs === undefined ? {} : { minRunMs: input.message.minRunMs }),
         ...(input.message.locality === undefined ? {} : { locality: input.message.locality }),
       })
       return { ...identity(input.message), type: "device-admitted" as const }
@@ -85,6 +86,7 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
         task: input.message.task,
         deviceKey: input.message.deviceKey,
         ...(input.message.concurrency === undefined ? {} : { concurrency: input.message.concurrency }),
+        ...(input.message.minRunMs === undefined ? {} : { minRunMs: input.message.minRunMs }),
         ...(input.message.locality === undefined ? {} : { locality: input.message.locality }),
       })
       return {

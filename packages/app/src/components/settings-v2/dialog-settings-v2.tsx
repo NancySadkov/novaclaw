@@ -16,6 +16,7 @@ import { SettingsUsageV2 } from "./usage"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsModelsV2 } from "./models"
+import { SettingsTrashV2 } from "./trash"
 import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
 import { SettingsSystemPromptV2 } from "./system-prompt"
@@ -96,13 +97,14 @@ export const DialogSettings: Component<{
         <ServerSDKProvider>
           <ServerSyncProvider>
             <TabsV2 orientation="vertical" variant="settings" value={tab()} onChange={setTab} class="settings-v2">
+              {/* ⚠️ FLAT, deliberately (owner, 2026-09-16). This list used to be four nested
+                  `flex-col` wrappers around two section groups. That renders identically on desktop,
+                  but it cannot become a horizontal strip on a phone without unwrapping every level —
+                  and the officer's settings screen, which this must match, is a flat rail. Sections
+                  are titles between triggers; on a phone the titles are hidden and the triggers
+                  scroll sideways. */}
               <TabsV2.List>
-                <div class="flex flex-col justify-between h-full w-full">
-                  <div class="flex flex-col gap-3 w-full">
-                    <div class="flex flex-col gap-3">
-                      <div class="flex flex-col gap-1.5">
-                        <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
-                        <div class="flex flex-col gap-1.5 w-full">
+                <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
                           <TabsV2.Trigger value="general">
                             <Icon name="sliders" size="large" />
                             {language.t("settings.tab.general")}
@@ -197,12 +199,7 @@ export const DialogSettings: Component<{
                               {language.t("settings.quality.title")}
                             </TabsV2.Trigger>
                           </Show>
-                        </div>
-                      </div>
-
-                      <div class="flex flex-col gap-1.5">
-                        <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
-                        <div class="flex flex-col gap-1.5 w-full">
+                <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
                           <TabsV2.Trigger value="usage">
                             <Icon name="bullet-list" size="large" />
                             {language.t("settings.usage.title")}
@@ -211,19 +208,20 @@ export const DialogSettings: Component<{
                             <Icon name="folder" size="large" />
                             {language.t("settings.tab.storage")}
                           </TabsV2.Trigger>
+                          {/* Trash was a home app; merging it here puts restore and retention on one
+                              screen instead of linking between two (owner, 2026-09-16). */}
+                          <TabsV2.Trigger value="trash">
+                            <Icon name="trash" size="large" />
+                            {language.t("trash.title")}
+                          </TabsV2.Trigger>
                           <TabsV2.Trigger value="recovery">
                             <Icon name="reset" size="large" />
                             {language.t("settings.tab.recovery")}
                           </TabsV2.Trigger>
-                          <TabsV2.Trigger value="about">
-                            <Icon name="info" size="large" />
-                            {language.t("settings.tab.about")}
-                          </TabsV2.Trigger>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <TabsV2.Trigger value="about">
+                  <Icon name="info" size="large" />
+                  {language.t("settings.tab.about")}
+                </TabsV2.Trigger>
               </TabsV2.List>
               <TabsV2.Content value="general" class="settings-v2-panel">
                 {/* `setTab` is handed down so General's health pointer can open the report. The
@@ -306,6 +304,9 @@ export const DialogSettings: Component<{
               </TabsV2.Content>
               <TabsV2.Content value="storage" class="settings-v2-panel">
                 <SettingsStorageV2 />
+              </TabsV2.Content>
+              <TabsV2.Content value="trash" class="settings-v2-panel">
+                <SettingsTrashV2 />
               </TabsV2.Content>
               <TabsV2.Content value="recovery" class="settings-v2-panel">
                 <SettingsRecoveryV2 />

@@ -121,8 +121,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       last: undefined,
     })
 
+    /**
+     * 🔴 A SWITCHED-OFF MODEL IS NOT A RESOLUTION (owner, 2026-09-16: *"disabling a model still
+     * doesn't shortcircuit all its uses"*).
+     *
+     * This checked only "listed + provider connected", so a model the installation had switched off
+     * stayed the composer's answer for the configured instance default, for recents, and for a pinned
+     * session row. The kernel would then substitute a different model on the next turn, which is how
+     * the UI came to name a model that was never going to answer. Enablement is
+     * `models.enabled` — the same predicate `catalog.model.available()` resolves through — so a
+     * disabled candidate falls through to the next link in the chain, exactly as the runner does.
+     */
     const validModel = (model: ModelKey) => {
-      return !!providers.model(model.providerID, model.modelID) && connected().has(model.providerID)
+      return (
+        !!providers.model(model.providerID, model.modelID) &&
+        connected().has(model.providerID) &&
+        models.enabled(model)
+      )
     }
 
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {

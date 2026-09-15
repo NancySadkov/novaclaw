@@ -132,6 +132,86 @@ describe("session scheduler admission gate", () => {
     expect(admitted).toBe(true)
   })
 
+  test("🔴 an admission with no concurrency never widens a pinned device", async () => {
+    // The regression: `device.concurrency = input.concurrency ?? MAX_BATCH` ran on EVERY admission,
+    // so one caller that could not resolve a profile (a reasoning lease, a maintenance pass, an
+    // endpoint that is not a registered Device) reset an operator's cap of 1 back to 4 and a second
+    // agent reached the box. `undefined` is "no new policy", not "the fallback".
+    const gate = make()
+    await run(gate.admit({ sessionID: "pinned", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    let admitted = false
+    const fiber = Effect.runFork(
+      gate
+        .admit({ sessionID: "carryless", deviceKey: "d", sessionClass: "auto-prompting" })
+        .pipe(Effect.map(() => (admitted = true))),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const [device] = await run(gate.snapshot())
+    expect(device!.concurrency).toBe(1)
+    expect(admitted).toBe(false)
+    expect(device!.inFlightBatch).toEqual(["pinned"])
+    expect(device!.waiting).toEqual(["carryless"])
+    await run(gate.release({ sessionID: "pinned", deviceKey: "d" }))
+    await run(Fiber.await(fiber))
+    expect(admitted).toBe(true)
+  })
+
+  test("🔴 the warm cohort keeps the device for a minimum run before handing it to a cold peer", async () => {
+    // Cache affinity, not fairness: a memory-mapped context (the Spark's Flash-Next PLE working set)
+    // re-faults every time the resident context changes, so ten agents alternating turns each pay a
+    // full re-prefill. A session that ran within `minRunMs` outranks a cold peer in the next pick.
+    let clock = 0
+    const gate = make({ now: () => clock })
+    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1, minRunMs: 30_000 }))
+    clock = 1_000
+    await run(gate.release({ sessionID: "warm", deviceKey: "d" }))
+    // A cold session with a huge EEVDF weight would win the next pick on its own.
+    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }))
+    // Both queue while `cold` holds the only slot.
+    const warmFiber = Effect.runFork(
+      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting" }),
+    )
+    const peerFiber = Effect.runFork(
+      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect([...(await run(gate.snapshot()))[0]!.waiting].sort()).toEqual(["peer", "warm"])
+
+    clock = 2_000
+    await run(gate.release({ sessionID: "cold", deviceKey: "d" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const [device] = await run(gate.snapshot())
+    // `warm` ran at t=0, inside the 30 s window; `peer` never ran. Warm wins.
+    expect(device!.inFlightBatch).toEqual(["warm"])
+    expect(device!.waiting).toEqual(["peer"])
+    await run(Fiber.interrupt(warmFiber))
+    await run(Fiber.interrupt(peerFiber))
+  })
+
+  test("without a window the cold, higher-weight peer wins the same race", async () => {
+    // The NEGATIVE CONTROL: the test above must be measuring the window, not an artefact of order.
+    let clock = 0
+    const gate = make({ now: () => clock })
+    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    clock = 1_000
+    await run(gate.release({ sessionID: "warm", deviceKey: "d" }))
+    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }))
+    const warmFiber = Effect.runFork(
+      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting" }),
+    )
+    const peerFiber = Effect.runFork(
+      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    clock = 2_000
+    await run(gate.release({ sessionID: "cold", deviceKey: "d" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // `peer`'s 1000 weight out-earns `warm`'s class weight, and with no window there is no cohort.
+    expect((await run(gate.snapshot()))[0]!.inFlightBatch).toEqual(["peer"])
+    await run(Fiber.interrupt(warmFiber))
+    await run(Fiber.interrupt(peerFiber))
+  })
+
   test("a live concurrency increase opens capacity on the next admission", async () => {
     const gate = make()
     await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))

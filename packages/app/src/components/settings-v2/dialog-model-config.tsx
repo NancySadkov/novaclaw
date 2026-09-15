@@ -3,7 +3,7 @@ import type {
   ConfigV2Provider as ProviderConfig,
   ProviderApi,
 } from "@novaclaw/sdk/v2/client"
-import { Component, For, type JSX, Show, createSignal } from "solid-js"
+import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -32,6 +32,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 type DeviceConfig = {
   readonly endpoints: readonly string[]
   readonly concurrency?: number
+  /** Cache-affinity window in ms; see ConfigDevice.Info.minRunMs. */
+  readonly minRunMs?: number
   readonly locality?: "local" | "lan" | "remote"
 }
 
@@ -177,6 +179,10 @@ export const DialogModelConfig: Component<{
       return typeof value === "string" && (THINKING_EFFORTS as readonly string[]).includes(value) ? value : ""
     })(),
     deviceConcurrency: nstr(initialDevice?.device.concurrency),
+    // Stored in ms (the scheduler's unit, like `maxToolTimeoutMs`); shown in SECONDS because that is
+    // the unit a person thinks in (principle 12c). Blank means "no stickiness", same as 0.
+    minRunSeconds:
+      initialDevice?.device.minRunMs === undefined ? "" : String(Math.round(initialDevice.device.minRunMs / 1000)),
     benchmarkScore: nstr(init.benchmark?.score),
     prefixCacheEnabled: init.prefixCache?.enabled ?? false,
     prefixCacheTtlMinutes: nstr(init.prefixCache?.ttlMinutes),
@@ -189,6 +195,24 @@ export const DialogModelConfig: Component<{
     outImage: outMod.includes("image"),
     outAudio: outMod.includes("audio"),
   })
+
+  /**
+   * The Configure dialog is TABBED, the same shape as the officer's settings screen (`AgentConfigScreen`):
+   * a horizontal, scrollable rail on phones and a vertical sidebar from `md` up. This dialog was one
+   * long scroll where identity, sampling, limits and capabilities ran together, which is what the
+   * owner called disorganized; the tabs give each family a home without hiding the whole surface in
+   * nested disclosures. `Scheduler` is new here — it exposes the DEVICE's scheduling policy, which is
+   * what the model runs on, not the model's own parameters.
+   */
+  type ConfigTab = "identity" | "sampling" | "capabilities" | "corrections" | "scheduler"
+  const [tab, setTab] = createSignal<ConfigTab>("identity")
+  const tabs = createMemo(() => [
+    { id: "identity" as const, label: language.t("settings.models.config.tab.identity"), icon: "user" as const },
+    { id: "sampling" as const, label: language.t("settings.models.config.tab.sampling"), icon: "sliders" as const },
+    { id: "capabilities" as const, label: language.t("settings.models.config.tab.capabilities"), icon: "cpu" as const },
+    { id: "corrections" as const, label: language.t("settings.models.config.tab.corrections"), icon: "prompt" as const },
+    { id: "scheduler" as const, label: language.t("settings.models.config.tab.scheduler"), icon: "share" as const },
+  ])
 
   // 🔴 Make THIS the model a fresh session resolves to when nothing else names one.
   //
@@ -313,7 +337,13 @@ export const DialogModelConfig: Component<{
     const devices = (serverSync().data.config as { devices?: Record<string, DeviceConfig> } | undefined)?.devices ?? {}
     const bound = deviceForEndpoint(devices, providerCfg().api?.url ?? props.providerApi.url ?? "")
     const concurrency = num(form.deviceConcurrency)
-    const deviceID = bound?.id ?? (concurrency === undefined ? undefined : availableDeviceID(props.providerID, devices))
+    const minRunSeconds = num(form.minRunSeconds)
+    const minRunMs = minRunSeconds === undefined ? undefined : Math.max(0, Math.round(minRunSeconds * 1000))
+    // A device row is created on the first scheduling setting, whichever it is. This used to key on
+    // `concurrency` alone, so a min-run window with no explicit concurrency was silently dropped.
+    const deviceID =
+      bound?.id ??
+      (concurrency === undefined && minRunMs === undefined ? undefined : availableDeviceID(props.providerID, devices))
     const endpoint = endpointOrigin(apiPath)
     const previousEndpoint = endpointOrigin(providerCfg().api?.url ?? props.providerApi.url ?? "")
     const devicePatch =
@@ -337,6 +367,7 @@ export const DialogModelConfig: Component<{
                         ),
                       ],
               ...(concurrency === undefined ? {} : { concurrency: Math.max(1, Math.floor(concurrency)) }),
+              ...(minRunMs === undefined ? {} : { minRunMs }),
             },
           }
     const patch = {
@@ -362,6 +393,7 @@ export const DialogModelConfig: Component<{
         ...(benchmarkScore === undefined ? [[...base, "benchmark"]] : []),
         ...(prefixCacheTtlMinutes === undefined ? [[...base, "prefixCache", "ttlMinutes"]] : []),
         ...(deviceID !== undefined && concurrency === undefined ? [["devices", deviceID, "concurrency"]] : []),
+        ...(deviceID !== undefined && minRunMs === undefined ? [["devices", deviceID, "minRunMs"]] : []),
         ...[...SAMPLING, "thinkingBudget", "reasoning_effort"]
           .filter((key) => body[key] === undefined)
           .map((key) => [...base, "request", "body", key]),
@@ -431,13 +463,9 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: "identity" | "corrections" | "sampling" | "capabilities") => (
-    <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
-  )
-
   return (
     <Dialog size="content">
-      <div class="model-config-dialog flex w-[min(34rem,calc(100vw-32px))] max-w-full flex-col gap-4 px-7 py-7">
+      <div class="model-config-dialog flex w-[min(52rem,calc(100vw-32px))] max-w-full flex-col gap-3 px-4 py-4 sm:px-7 sm:py-7">
         <div class="flex flex-col gap-1 text-center">
           <span class="text-[17px] font-semibold text-v2-text-text-base">
             {language.t("settings.models.config.title", { model: props.modelName })}
@@ -447,9 +475,37 @@ export const DialogModelConfig: Component<{
           </span>
         </div>
 
-        <div class="model-config-dialog-scroll -mx-1 flex max-h-[62vh] flex-col gap-4 overflow-y-auto overflow-x-hidden px-1">
-          {section("identity")}
-          <SettingsListV2>
+        <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
+          {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
+              scrollable strip on phones, a sidebar from `md` up. Configure used to be one long scroll
+              with identity, sampling, limits and capabilities interleaved, which is what the owner
+              called disorganized. */}
+          <nav
+            class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base pb-2 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:pb-0 md:pr-3"
+            aria-label={language.t("settings.models.config.title", { model: props.modelName })}
+          >
+            <For each={tabs()}>
+              {(item) => (
+                <button
+                  type="button"
+                  class={`flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-[13px] transition-colors ${
+                    tab() === item.id
+                      ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
+                      : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
+                  }`}
+                  aria-current={tab() === item.id ? "page" : undefined}
+                  onClick={() => setTab(item.id)}
+                >
+                  <Icon name={item.icon} class="hidden size-4 shrink-0 sm:block" />
+                  <span>{item.label}</span>
+                </button>
+              )}
+            </For>
+          </nav>
+          <div class="model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4">
+            <div class="flex flex-col gap-4">
+              <Show when={tab() === "identity"}>
+                <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.providerName.name")}
               description={
@@ -575,23 +631,11 @@ export const DialogModelConfig: Component<{
                 aria-label={language.t("settings.models.config.benchmark.name")}
               />
             </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.deviceConcurrency.name")}
-              description={language.t("settings.models.config.deviceConcurrency.desc")}
-            >
-              <TextInputV2
-                class="w-24 max-w-full"
-                value={form.deviceConcurrency}
-                onInput={(event) => setForm("deviceConcurrency", event.currentTarget.value)}
-                inputmode="numeric"
-                aria-label={language.t("settings.models.config.deviceConcurrency.name")}
-                placeholder={language.t("settings.models.config.defaultPlaceholder")}
-              />
-            </SettingsRowV2>
           </SettingsListV2>
+              </Show>
 
-          {section("corrections")}
-          <div class="flex flex-col gap-1.5">
+              <Show when={tab() === "corrections"}>
+                <div class="flex flex-col gap-1.5">
             <span class="text-[12px] text-v2-text-text-muted leading-snug">
               {language.t("settings.models.config.prePrompt.desc")}
               <SettingsExplainV2 label={language.t("settings.models.config.prePrompt.name")}>
@@ -605,15 +649,17 @@ export const DialogModelConfig: Component<{
               placeholder={language.t("settings.models.config.prePrompt.placeholder")}
               aria-label={language.t("settings.models.config.prePrompt.name")}
             />
-          </div>
+                </div>
+              </Show>
 
-          {section("sampling")}
-          <SettingsListV2>
-            <For each={SAMPLING}>{(k) => paramRow(k)}</For>
-          </SettingsListV2>
+              <Show when={tab() === "sampling"}>
+                <SettingsListV2>
+                  <For each={SAMPLING}>{(k) => paramRow(k)}</For>
+                </SettingsListV2>
+              </Show>
 
-          {section("capabilities")}
-          <SettingsListV2>
+              <Show when={tab() === "capabilities"}>
+                <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.tool_call.name")}
               description={language.t("settings.models.config.tool_call.desc")}
@@ -682,7 +728,51 @@ export const DialogModelConfig: Component<{
                 onSelect={(option) => setForm("thinkingEffort", option ?? "")}
               />
             </SettingsRowV2>
-          </SettingsListV2>
+                </SettingsListV2>
+              </Show>
+
+              <Show when={tab() === "scheduler"}>
+                <SettingsListV2>
+                  <SettingsRowV2
+                    title={language.t("settings.models.config.deviceConcurrency.name")}
+                    description={language.t("settings.models.config.deviceConcurrency.desc")}
+                  >
+                    <TextInputV2
+                      class="w-24 max-w-full"
+                      value={form.deviceConcurrency}
+                      onInput={(event) => setForm("deviceConcurrency", event.currentTarget.value)}
+                      inputmode="numeric"
+                      aria-label={language.t("settings.models.config.deviceConcurrency.name")}
+                      placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                    />
+                  </SettingsRowV2>
+                  <SettingsRowV2
+                    title={language.t("settings.models.config.minRun.name")}
+                    description={
+                      <>
+                        {language.t("settings.models.config.minRun.desc")}
+                        <SettingsExplainV2 label={language.t("settings.models.config.minRun.name")}>
+                          {language.t("settings.models.config.minRun.desc.more")}
+                        </SettingsExplainV2>
+                      </>
+                    }
+                  >
+                    <TextInputV2
+                      class="w-24 max-w-full"
+                      value={form.minRunSeconds}
+                      onInput={(event) => setForm("minRunSeconds", event.currentTarget.value)}
+                      inputmode="numeric"
+                      aria-label={language.t("settings.models.config.minRun.name")}
+                      placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                    />
+                  </SettingsRowV2>
+                </SettingsListV2>
+                <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
+                  {language.t("settings.models.config.scheduler.note")}
+                </p>
+              </Show>
+            </div>
+          </div>
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-1">

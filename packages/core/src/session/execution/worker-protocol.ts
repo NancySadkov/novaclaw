@@ -345,6 +345,8 @@ export const DeviceAdmit = Schema.Struct({
   ]),
   priority: Schema.Finite.pipe(Schema.optional),
   concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  /** Cache-affinity window in ms; see `ConfigDevice.Info.minRunMs`. */
+  minRunMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(Schema.optional),
   locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.DeviceAdmit" })
 export const DeviceRelease = Schema.Struct({
@@ -361,6 +363,7 @@ export const DeviceMaintenanceAdmit = Schema.Struct({
   type: Schema.Literal("device-maintenance-admit"),
   task: Schema.String,
   concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  minRunMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(Schema.optional),
   locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.DeviceMaintenanceAdmit" })
 export const DeviceMaintenanceRelease = Schema.Struct({

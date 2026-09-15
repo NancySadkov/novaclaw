@@ -122,7 +122,9 @@ export const BUILTIN_APP_LABELS = {
   // something that now belongs to a COLLEAGUE. What a colleague remembers is opened from that
   // colleague (`agent-config-dialog.tsx`), and the household's shared facts from the roster's own
   // "Shared with everyone" row. The page and the route stay; only the tile is gone.
-  trash: { name: "Trash", subtitle: "Restore safely deleted files before their retention period ends" },
+  // ⚠️ `trash` is NOT here any more — RETIRED as a tile 2026-09-16, id still reserved. The Trash
+  // surface moved into Settings → Safety, where restore and retention live together.
+  models: { name: "Models", subtitle: "Add, enable and tune the models this instance can run" },
   social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },
   help: { name: "Help", subtitle: "A short tour of what NovaClaw can do" },
   settings: { name: "Settings", subtitle: "Providers, models, servers, recovery" },

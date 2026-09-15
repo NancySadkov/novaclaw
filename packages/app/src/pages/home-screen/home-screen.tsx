@@ -229,18 +229,10 @@ export const HomeScreen: Component = () => {
   const onDragEnd = (event: DragEvent) => {
     const { draggable, droppable } = event
     if (!draggable || !droppable || draggable.id === droppable.id) return
-    // Dropped on Trash → delete, not reorder. The Trash tile is already a sortable droppable, so
-    // this needs no separate drop zone; the gesture people expect from a launcher just works.
-    if (droppable.id === "trash") {
-      const dragged = apps().find((app) => app.id === String(draggable.id))
-      if (dragged && isRemovable(dragged)) {
-        void deleteApp(dragged)
-        return
-      }
-      // A built-in dropped on Trash is a no-op rather than a reorder: it read as "delete this" and
-      // answering by moving it somewhere is the confusing outcome.
-      return
-    }
+    // ⚠️ The drag-onto-Trash delete gesture is GONE (Trash retired as a tile, 2026-09-16). Right-click
+    // on a removable tile is the one remaining vocabulary for deleting a contributed app. If a delete
+    // drop target returns, it belongs here — and it must not also be a sortable tile, or a drop reads
+    // as both "delete" and "reorder".
     const ids = apps().map((app) => app.id)
     const from = ids.indexOf(String(draggable.id))
     const to = ids.indexOf(String(droppable.id))

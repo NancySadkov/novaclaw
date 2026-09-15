@@ -20,6 +20,7 @@ import { useLanguage, type Translator } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
+import { formatTokensPerSecond } from "@/utils/token-rate"
 import { popularProviders } from "@/hooks/use-providers"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { reportedWrite } from "@/utils/config-write"
@@ -61,6 +62,8 @@ const SortableModelRow: Component<{
   dragHint: string
   defaultLabel: string
   onKeyboardMove: (direction: -1 | 1) => void
+  /** Live generation readout for this model (t/s + sessions on it). A thunk so it stays reactive. */
+  live?: () => JSX.Element
   children: JSX.Element
 }> = (props) => {
   // eslint-disable-next-line solid/reactivity -- a catalog key is stable for this keyed row's lifetime
@@ -117,6 +120,11 @@ const SortableModelRow: Component<{
                 </span>
               </Show>
             </button>
+            <Show when={props.live}>
+              <span class="settings-v2-models-live" data-slot="settings-v2-models-live">
+                {props.live?.()}
+              </span>
+            </Show>
           </div>
         }
         description={modelProviderLabel(props.item.provider.name)}
@@ -184,6 +192,56 @@ export const SettingsModelsV2: Component = () => {
       .catch(() => undefined)
     return scopedDirectory(got)
   })
+  /**
+   * Per-model live activity: tokens/s generated right now, and how many sessions are on that model.
+   *
+   * Both come from the already-synced session store — `session_live(id).tps` is the renderer's own
+   * delta accumulator, `session_working(id)` is the one busy predicate — so this adds a readout, not
+   * a poll. A session is attributed to the model it will RUN on: the session's own pin first, then
+   * its officer's configured model, then the instance default. That mirrors the client resolution
+   * chain, and a session with none of the three has nothing honest to attribute it to, so it is
+   * skipped rather than guessed.
+   */
+  const modelActivity = createMemo(() => {
+    const sessionStore = serverSync().session
+    const defaultRef = serverSync().data.config?.model
+    const roster = new Map((ctx()?.agents.list() ?? []).map((agent) => [agent.id, agent]))
+    const out = new Map<string, { tps: number; agents: number }>()
+    for (const id of Object.keys(sessionStore.data.info)) {
+      const info = sessionStore.data.info[id]
+      if (!info) continue
+      let providerID = info.model?.providerID
+      let modelID = info.model?.id
+      if ((!providerID || !modelID) && info.agent) {
+        const bound = roster.get(info.agent)?.model
+        if (bound) {
+          providerID = bound.providerID
+          modelID = bound.id
+        }
+      }
+      if ((!providerID || !modelID) && defaultRef) {
+        const [provider, model] = defaultRef.split("/")
+        providerID = provider
+        modelID = model
+      }
+      if (!providerID || !modelID) continue
+      const key = `${providerID}:${modelID}`
+      const entry = out.get(key) ?? { tps: 0, agents: 0 }
+      entry.tps += sessionStore.data.session_live(id)?.tps ?? 0
+      if (sessionStore.data.session_working(id)) entry.agents += 1
+      out.set(key, entry)
+    }
+    return out
+  })
+
+  /** "12 t/s · 2 using", or "idle" — read at render, so it tracks the live store. */
+  const liveLabel = (item: ModelItem): string => {
+    const activity = modelActivity().get(`${item.provider.id}:${item.id}`)
+    if (!activity || (activity.tps <= 0 && activity.agents === 0)) return language.t("settings.models.live.idle")
+    const rate = formatTokensPerSecond(activity.tps) ?? language.t("settings.models.live.idle")
+    return `${rate} t/s · ${language.t("settings.models.live.using", { count: activity.agents })}`
+  }
+
   const [probes, setProbes] = createSignal<Record<string, ProbeResult | "probing" | undefined>>({})
   const [pendingOrder, setPendingOrder] = createSignal<string[] | undefined>()
   const [savingOrder, setSavingOrder] = createSignal(false)
@@ -458,6 +516,7 @@ export const SettingsModelsV2: Component = () => {
                           dragHint={language.t("settings.models.order.hint")}
                           defaultLabel={language.t("settings.models.default.badge")}
                           onKeyboardMove={(direction) => moveByKeyboard(ref, direction)}
+                          live={() => liveLabel(item)}
                         >
                           <div class="settings-v2-models-row-actions">
                             <div class="settings-v2-models-row-controls">

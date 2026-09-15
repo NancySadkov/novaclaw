@@ -122,6 +122,7 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
           sessionClass: request.sessionClass,
           ...(request.priority === undefined ? {} : { priority: request.priority }),
           ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+          ...(request.minRunMs === undefined ? {} : { minRunMs: request.minRunMs }),
           ...(request.locality === undefined ? {} : { locality: request.locality }),
         }),
       )
@@ -159,6 +160,7 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
           deviceKey: request.deviceKey,
           task: request.task,
           ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+          ...(request.minRunMs === undefined ? {} : { minRunMs: request.minRunMs }),
           ...(request.locality === undefined ? {} : { locality: request.locality }),
         }),
       )

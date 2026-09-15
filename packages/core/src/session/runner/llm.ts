@@ -2816,6 +2816,9 @@ export const layer = Layer.effect(
                               ...(reasoningScheduledDevice.concurrency === undefined
                                 ? {}
                                 : { concurrency: reasoningScheduledDevice.concurrency }),
+                              ...(reasoningScheduledDevice.minRunMs === undefined
+                                ? {}
+                                : { minRunMs: reasoningScheduledDevice.minRunMs }),
                               ...(reasoningScheduledDevice.locality === undefined
                                 ? {}
                                 : { locality: reasoningScheduledDevice.locality }),
@@ -2846,6 +2849,9 @@ export const layer = Layer.effect(
                               ...(scheduledDevice.concurrency === undefined
                                 ? {}
                                 : { concurrency: scheduledDevice.concurrency }),
+                              ...(scheduledDevice.minRunMs === undefined
+                                ? {}
+                                : { minRunMs: scheduledDevice.minRunMs }),
                               ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
                             }),
                           ),
@@ -3206,6 +3212,7 @@ export const layer = Layer.effect(
         sessionClass: SessionScheduler.classForSessionType(config.type),
         ...(config.priority > 0 ? { priority: config.priority } : {}),
         ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+        ...(scheduledDevice.minRunMs === undefined ? {} : { minRunMs: scheduledDevice.minRunMs }),
         ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
       }
       const generation = (stream: Exit.Exit<void, LLMError>, restore: ProviderDispatch.Restore) =>
@@ -3742,6 +3749,9 @@ export const layer = Layer.effect(
                     ...(reasoningScheduledDevice.concurrency === undefined
                       ? {}
                       : { concurrency: reasoningScheduledDevice.concurrency }),
+                    ...(reasoningScheduledDevice.minRunMs === undefined
+                      ? {}
+                      : { minRunMs: reasoningScheduledDevice.minRunMs }),
                     ...(reasoningScheduledDevice.locality === undefined
                       ? {}
                       : { locality: reasoningScheduledDevice.locality }),

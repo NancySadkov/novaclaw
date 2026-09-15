@@ -8,13 +8,13 @@
 export const MANIFEST_ROUTE_TARGETS = {
   contacts: "/tasks",
   notes: "/notes",
+  models: "/models",
   files: "/files",
   calendar: "/calendar",
   recipes: "/recipes",
   skills: "/skills",
   registry: "/registry",
   debug: "/debug",
-  trash: "/trash",
   terminal: "/terminal",
 } as const satisfies Record<string, `/${string}`>
 

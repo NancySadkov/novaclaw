@@ -89,6 +89,7 @@ const RESERVED_IDS = new Set([
   "memory-graph",
   "search",
   "terminal",
+  // Retired as a tile 2026-09-16 (now a Settings → Safety tab), reserved like `processes`/`search`.
   "trash",
   "help",
   "social",
@@ -96,6 +97,8 @@ const RESERVED_IDS = new Set([
   "calendar",
   "recipes",
   "skills",
+  // Its own home app since 2026-09-16; reserved so no contributed app can impersonate the model list.
+  "models",
 ])
 
 /** Derive a valid id from a title ("Stock Prices" -> "stock-prices"). */

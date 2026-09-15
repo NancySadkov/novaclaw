@@ -82,7 +82,7 @@ const AgentSettingsPage = lazy(() =>
 const MemoryGraphPage = lazy(() =>
   import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
 )
-const TrashPage = lazy(() => import("@/pages/trash").then(({ TrashPage }) => ({ default: TrashPage })))
+const ModelsPage = lazy(() => import("@/pages/models").then(({ ModelsPage }) => ({ default: ModelsPage })))
 const TerminalPage = lazy(() => import("@/pages/terminal").then(({ TerminalPage }) => ({ default: TerminalPage })))
 
 const NewSession = lazy(() => import("@/pages/new-session"))
@@ -810,7 +810,8 @@ function Routes() {
       {/* The roster answers to both names while people learn the new one. */}
       <Route path="/contacts" component={ContactsPage} />
       <Route path="/memory-graph" component={MemoryGraphPage} />
-      <Route path="/trash" component={TrashPage} />
+      {/* Trash retired as a route 2026-09-16 — it is a Settings → Safety tab now. */}
+      <Route path="/models" component={ModelsPage} />
       <Route path="/terminal" component={TerminalPage} />
       <Route path="/new-session" component={DraftRoute} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />

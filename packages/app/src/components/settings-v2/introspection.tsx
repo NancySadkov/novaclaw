@@ -7,6 +7,7 @@ import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
+import { useModels } from "@/context/models"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsNumberFieldV2 } from "./parts/number-field"
@@ -40,6 +41,7 @@ const DEFAULT_INTERJECTION =
 export const SettingsIntrospectionV2: Component = () => {
   const language = useLanguage()
   const providers = useProviders()
+  const models = useModels()
   const [custom, setCustom] = createSignal(false)
   /** Sentinel for "let me type one". Every real option is a `provider/model` id and therefore
    *  contains a slash, so this slash-free literal cannot collide with one. */
@@ -49,8 +51,14 @@ export const SettingsIntrospectionV2: Component = () => {
   const INHERIT_MODEL = "inherit-active-model"
   const catalogModels = createMemo(() => {
     const ids: string[] = []
+    // A switched-off model is not a choice: the judge would resolve through `available()` and be
+    // substituted, so offering it here promises a model that cannot run (same rule as the officer
+    // picker, `agent-config-dialog.tsx`).
     for (const [providerID] of providers.all())
-      for (const model of providers.models(providerID)) ids.push(`${providerID}/${model.id}`)
+      for (const model of providers.models(providerID)) {
+        if (!models.enabled({ providerID, modelID: model.id })) continue
+        ids.push(`${providerID}/${model.id}`)
+      }
     return ids
   })
   const modelOptions = createMemo(() => {

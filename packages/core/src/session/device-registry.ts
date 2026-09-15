@@ -35,6 +35,8 @@ export const EMPTY_ENDPOINTS: EndpointMap = new Map()
 
 export interface SchedulingProfile {
   readonly concurrency?: number
+  /** Minimum ms a session keeps the device before another agent may take it (cache affinity). */
+  readonly minRunMs?: number
   readonly locality?: ConfigDevice.Locality
 }
 
@@ -130,7 +132,9 @@ export const layer = Layer.effect(
       profile: Effect.fn("DeviceRegistry.profile")(function* (deviceID) {
         yield* refresh()
         const entry = entries[deviceID]
-        return entry === undefined ? undefined : { concurrency: entry.concurrency, locality: entry.locality }
+        return entry === undefined
+          ? undefined
+          : { concurrency: entry.concurrency, minRunMs: entry.minRunMs, locality: entry.locality }
       }),
     })
   }),

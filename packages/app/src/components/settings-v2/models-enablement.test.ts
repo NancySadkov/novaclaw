@@ -92,6 +92,32 @@ describe("Model Configure — the default model finally has a writer", () => {
   })
 })
 
+/**
+ * The kernel half was fixed in `0ba4e8d52`/`6af2f1736` (a turn on a switched-off model is
+ * substituted). The CLIENT kept naming the dead model, which is what the owner saw: *"disabling a
+ * model still doesn't shortcircuit all its uses (e.g. clicking the context indicator ring still
+ * shows the old model, despite it being disabled)"*. These pin the class at three call sites so a
+ * lookup cannot drift back to ignoring enablement without a name.
+ */
+describe("A switched-off model is not a resolution anywhere", () => {
+  const local = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "local.tsx"), "utf8")
+  const ctxTab = fs.readFileSync(path.join(import.meta.dir, "..", "session", "session-context-tab.tsx"), "utf8")
+  const introspection = fs.readFileSync(path.join(import.meta.dir, "introspection.tsx"), "utf8")
+
+  test("the composer's resolution chain rejects a switched-off model", () => {
+    // `validModel` gates the session pin, the officer's model, the instance default and recents.
+    expect(local).toContain("models.enabled(model)")
+  })
+
+  test("the context indicator names the model that will run, not the switched-off one", () => {
+    expect(ctxTab).toContain("models.enabled({ providerID: historical.providerID, modelID: historical.id })")
+  })
+
+  test("the judge model picker does not offer a switched-off model", () => {
+    expect(introspection).toContain("models.enabled({ providerID, modelID: model.id })")
+  })
+})
+
 describe("Models tab — quiet overview, details on demand", () => {
   test("moves measured quality and prefix diagnostics into Configure and keeps endpoint URLs out of the list", () => {
     expect(tab).not.toContain("<DialogModelTier")

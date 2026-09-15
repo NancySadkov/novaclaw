@@ -105,18 +105,18 @@ describe("home tile labels", () => {
       const { t } = translator(merged({}))
       expect(appName(t, "contacts", BUILTIN_APP_LABELS.contacts.name)).toBe("Contacts")
       // `memory-graph` used to be the example here and was RETIRED as a tile 2026-08-21 (its id
-      // stays reserved). Any surviving tile makes the same point, and the point is the FALLBACK: a
-      // locale with no translation must render English rather than the key.
-      expect(appSubtitle(t, "trash", BUILTIN_APP_LABELS.trash.subtitle)).toBe(
-        "Restore safely deleted files before their retention period ends",
+      // stays reserved), then `trash` (2026-09-16). Any surviving tile makes the same point, and the
+      // point is the FALLBACK: a locale with no translation must render English rather than the key.
+      expect(appSubtitle(t, "models", BUILTIN_APP_LABELS.models.subtitle)).toBe(
+        "Add, enable and tune the models this instance can run",
       )
     })
 
     test("a blank translation does not blank the tile", () => {
-      const { t } = translator(merged({ "home.app.trash.name": "   ", "home.app.trash.subtitle": "" }))
-      expect(appName(t, "trash", "Trash")).toBe("Trash")
-      expect(appSubtitle(t, "trash", "Restore safely deleted files before their retention period ends")).toBe(
-        "Restore safely deleted files before their retention period ends",
+      const { t } = translator(merged({ "home.app.models.name": "   ", "home.app.models.subtitle": "" }))
+      expect(appName(t, "models", "Models")).toBe("Models")
+      expect(appSubtitle(t, "models", "Add, enable and tune the models this instance can run")).toBe(
+        "Add, enable and tune the models this instance can run",
       )
     })
   })

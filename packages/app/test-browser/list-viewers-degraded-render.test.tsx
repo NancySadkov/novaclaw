@@ -11,7 +11,7 @@ import { TabsContext } from "@/context/tabs"
 import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { SettingsProvider } from "@/context/settings"
-import { TrashPage } from "@/pages/trash"
+import { SettingsTrashV2 } from "@/components/settings-v2/trash"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
 import { CalendarPage } from "@/pages/calendar"
@@ -256,7 +256,9 @@ const openFilesTrash = () => {
 const VIEWERS: readonly Viewer[] = [
   {
     title: "Trash",
-    page: () => <TrashPage />,
+    // The Trash viewer is the Settings → Safety panel now (the standalone page was retired
+    // 2026-09-16); the three-outcome contract it was the poster child for is unchanged.
+    page: () => <SettingsTrashV2 />,
     target: "trash",
     failure: en["trash.loadFailed"],
     empty: en["trash.empty"],

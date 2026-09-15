@@ -20,6 +20,8 @@ export interface SchedulerLedgerEntry {
 
 export interface SchedulerDevice {
   readonly deviceKey: string
+  /** Cache-affinity window in ms; 0 means the EEVDF ledger decides alone. */
+  readonly minRunMs: number
   /** Sessions currently holding an interactive slot on this device. */
   readonly inFlightInteractive: readonly string[]
   /** Sessions currently holding a batch slot (sub-agent, auto-prompting, goal, cron classes). */

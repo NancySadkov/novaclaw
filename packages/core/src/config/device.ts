@@ -39,6 +39,23 @@ export class Info extends Schema.Class<Info>("ConfigV2.Device")({
   endpoints: Schema.Array(Schema.String),
   /** Maximum concurrent generations across foreground, background, and maintenance work. */
   concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  /**
+   * Minimum TIME (ms) a session keeps this device before another agent may take it.
+   *
+   * ⚠️ This is a cache-affinity control, not a fairness one, and the two are easy to confuse. The
+   * scheduler's hard cap protects the backend's MEMORY; this protects its PREFILL. A memory-mapped
+   * expert index (the Spark's 44 GiB Flash-Next PLE working set) re-faults from NVMe every time the
+   * resident context changes, so ten agents taking turns on one device each pay a full context
+   * re-prefill and aggregate throughput collapses to a few token/s even though only one generation
+   * is ever in flight. A window measured from each session's last dispatch forms a WARM COHORT: a
+   * queued session that ran within the window outranks a cold peer in the next pick, so a looping
+   * agent's own turns keep the warm pages instead of evicting them for a newcomer.
+   *
+   * A preference among waiters, never a reservation: if nobody waiting ran recently the device is
+   * handed on normally rather than left idle. 0 (or absent) disables the window entirely and the
+   * EEVDF ledger decides, exactly as before.
+   */
+  minRunMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(Schema.optional),
   /** Where this backend runs relative to the instance. Informational; never inferred from a URL. */
   locality: Locality.pipe(Schema.optional),
 }) {}

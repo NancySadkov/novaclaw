@@ -20,7 +20,6 @@ import { SettingsRowV2 } from "./parts/row"
 import { InstanceResources } from "./instance-resources"
 import { STORAGE_ENTRIES, type PathInfo } from "./storage-entries"
 import { SettingsExplainV2 } from "./explain"
-import { useSettingsConfigWrite } from "./parts/config-write"
 
 // The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //
@@ -43,22 +42,20 @@ interface LogConfig {
   subsystems?: Record<string, LogLevel | undefined>
 }
 
-interface TrashConfig {
-  retention_days?: number
-}
+// ⚠️ Trash retention moved OUT of this tab (owner, 2026-09-16): the Trash surface is its own
+// Settings → Safety tab now, next to Storage, and a setting must not have two writers on two screens.
+// The paths below are about where bytes live; what Trash keeps is Trash's business.
 
 export const SettingsStorageV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const sync = useServerSync()
   const expertise = useExpertise()
-  const writeConfig = useSettingsConfigWrite()
 
   // The SDK's generated PathInfo type lags the fields the server sends (same cast the new-agent bar
   // uses for scratchDir); regenerating the client for a read-only display is not worth the churn.
   const paths = (): PathInfo => (sync().data.path ?? {}) as PathInfo
   const logConfig = createMemo(() => ((sync().data.config as { log?: LogConfig } | undefined)?.log ?? {}) as LogConfig)
-  const trashConfig = createMemo(() => ((sync().data.config as { trash?: TrashConfig } | undefined)?.trash ?? {}) as TrashConfig)
   const levelOptions = createMemo(() =>
     (["debug", "info", "warn", "error"] as const).map((value) => ({
       id: value,
@@ -71,13 +68,6 @@ export const SettingsStorageV2: Component = () => {
       id: String(value),
       value,
       label: language.t("settings.storage.logs.retention.days", { days: value }),
-    })),
-  )
-  const trashRetentionOptions = createMemo(() =>
-    [7, 30, 90, 180, 365].map((value) => ({
-      id: String(value),
-      value,
-      label: language.t("settings.storage.trash.retention.days", { days: value }),
     })),
   )
   const saveLog = async (next: LogConfig) => {
@@ -115,36 +105,6 @@ export const SettingsStorageV2: Component = () => {
       </div>
 
       <InstanceResources />
-
-      <div>
-        <h3 class="settings-v2-section-title">{language.t("settings.storage.trash.title")}</h3>
-        <p class="settings-v2-tab-description">{language.t("settings.storage.trash.description")}</p>
-      </div>
-
-      <SettingsListV2>
-        <SettingsRowV2
-          title={language.t("settings.storage.trash.retention")}
-          description={language.t("settings.storage.trash.retention.description", {
-            days: trashConfig().retention_days ?? 30,
-          })}
-        >
-          <SelectV2
-            appearance="inline"
-            data-action="settings-trash-retention"
-            options={trashRetentionOptions()}
-            current={
-              trashRetentionOptions().find((option) => option.value === (trashConfig().retention_days ?? 30)) ??
-              trashRetentionOptions()[1]
-            }
-            value={(option) => option.id}
-            label={(option) => option.label}
-            onSelect={(option) => {
-              if (!option || option.value === (trashConfig().retention_days ?? 30)) return
-              void writeConfig({ trash: { ...trashConfig(), retention_days: option.value } })
-            }}
-          />
-        </SettingsRowV2>
-      </SettingsListV2>
 
       <div>
         <h3 class="settings-v2-section-title">{language.t("settings.storage.locations.title")}</h3>

@@ -87,6 +87,8 @@ const SchedulerLedgerEntry = Schema.Struct({
 const SchedulerDevice = Schema.Struct({
   deviceKey: Schema.String,
   concurrency: Schema.Int,
+  /** Cache-affinity window in ms; 0 means the EEVDF ledger decides alone. */
+  minRunMs: Schema.Int,
   locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
   inFlightInteractive: Schema.Array(Schema.String),
   inFlightBatch: Schema.Array(Schema.String),

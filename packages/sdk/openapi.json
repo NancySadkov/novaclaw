@@ -6693,6 +6693,9 @@
                       "concurrency": {
                         "type": "integer"
                       },
+                      "minRunMs": {
+                        "type": "integer"
+                      },
                       "locality": {
                         "type": "string",
                         "enum": ["local", "lan", "remote"]
@@ -6744,6 +6747,7 @@
                     "required": [
                       "deviceKey",
                       "concurrency",
+                      "minRunMs",
                       "inFlightInteractive",
                       "inFlightBatch",
                       "waiting",
@@ -37053,6 +37057,10 @@
           "concurrency": {
             "type": "integer",
             "minimum": 1
+          },
+          "minRunMs": {
+            "type": "integer",
+            "minimum": 0
           },
           "locality": {
             "type": "string",

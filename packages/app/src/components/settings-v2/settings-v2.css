@@ -192,11 +192,41 @@
 }
 
 @media (max-width: 639px) {
-  .settings-v2[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
-    [data-slot="tabs-v2-list"] {
-    width: 144px;
-    min-width: 144px;
-    padding-inline: 8px;
+  /* Phone: the settings rail becomes the same horizontal, scrollable strip the officer settings
+     screen (`AgentConfigScreen`) uses. The old 144px sidebar on a 360px screen left the panel a
+     sliver — this is the mainstream phone case, not an edge (owner, 2026-09-16). */
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] {
+    flex-direction: column;
+  }
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {
+    flex-direction: row;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    padding: 8px;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--v2-border-border-base);
+    scrollbar-width: none;
+  }
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
+    [data-slot="tabs-v2-list"]::-webkit-scrollbar {
+    display: none;
+  }
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-section-title"] {
+    display: none;
+  }
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
+    [data-slot="tabs-v2-trigger-wrapper"] {
+    width: auto;
+    height: 30px;
+    flex: 0 0 auto;
+  }
+  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-trigger"] {
+    width: auto;
+    padding: 0 8px;
   }
 }
 
@@ -487,6 +517,20 @@
   line-height: 1;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+/* Live per-model readout: generated tokens/s and how many sessions are on this model right now. */
+.settings-v2-models-live {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--v2-background-bg-layer-03);
+  color: var(--v2-text-text-muted);
+  font-size: 10px;
+  font-weight: 560;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .settings-v2-models [data-slot="settings-v2-row-control"] {

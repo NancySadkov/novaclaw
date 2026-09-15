@@ -10,6 +10,8 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import type { SessionMessage } from "@novaclaw/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
+import { useModels } from "@/context/models"
+import { useLocal } from "@/context/local"
 import { useSDK } from "@/context/sdk"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
@@ -56,6 +58,8 @@ export function SessionContextTab() {
   const global = useGlobal()
   const server = useServer()
   const providers = useProviders(() => sdk().directory)
+  const models = useModels()
+  const local = useLocal()
   const { params, view } = useSessionLayout()
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
@@ -130,6 +134,18 @@ export function SessionContextTab() {
   })
   const modelLabel = createMemo(() => {
     const current = ctx()
+    // 🔴 A SWITCHED-OFF MODEL MUST NOT BE NAMED (owner, 2026-09-16: *"clicking the context indicator
+    // ring still shows the old model, despite it being disabled"*). `ctx().modelLabel` is the model
+    // that produced the LAST reply, which is the right answer while that model is still runnable —
+    // but once it is switched off the runner substitutes another, so naming it describes a model that
+    // cannot answer. Prefer the model this session will actually run next (`local.model.current()`,
+    // which now resolves through `models.enabled`).
+    const historical = current?.message.model
+    const historicalEnabled =
+      historical === undefined || models.enabled({ providerID: historical.providerID, modelID: historical.id })
+    if (current && historicalEnabled) return current.modelLabel
+    const effective = local.model.current()
+    if (effective) return effective.name
     if (current) return current.modelLabel
     const assigned = info()?.model ?? officer()?.model
     if (!assigned) return "—"

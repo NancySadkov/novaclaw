@@ -15,8 +15,9 @@ import type { HomeApp } from "./registry"
 //
 // App-set decisions (2026-07-01, refined 2026-07-02): there is NO "New Chat" tile — new sessions live
 // inside the Chats app, which is the HERO tile (the one eye-anchor; everything else is done through
-// chat with an agent). Models + Devices are Settings tabs, not home apps. Notes / Files / Trash /
-// Processes route to real pages/dialogs. ⚠️ **Every tile here opens something real** — the last
+// chat with an agent). Models is its OWN home app (owner, 2026-09-16 — it outgrew a Settings tab), and
+// Devices remain Settings tabs. Notes / Files route to real pages/dialogs. Trash was a tile until
+// 2026-09-16, when it folded into Settings → Safety. ⚠️ **Every tile here opens something real** — the last
 // placeholder (Search) was retired 2026-08-11, and a tile whose `open()` apologises must not come
 // back: on a launcher, a tile IS a promise that the thing exists.
 //
@@ -102,6 +103,23 @@ export function useBuiltinApps(): () => HomeApp[] {
       },
       source: "builtin",
       open: () => navigate("/notes"),
+    },
+    {
+      id: "models",
+      get title() {
+        return name("models")
+      },
+      // No finished tile PNG yet: a gradient tile with the `cpu` glyph keeps the launcher honest
+      // rather than borrowing another app's artwork. The accent is the cool teal Trash freed.
+      icon: "cpu",
+      accent: "#14b8a6",
+      get subtitle() {
+        return sub("models")
+      },
+      source: "builtin",
+      // Its own screen, exactly like the roster: managing models is a place you go, not a dialog you
+      // dismiss into the settings you were already in.
+      open: () => navigate("/models"),
     },
     {
       id: "calendar",
@@ -231,21 +249,9 @@ export function useBuiltinApps(): () => HomeApp[] {
       minLevel: "developer",
       open: () => navigate("/debug"),
     },
-    {
-      id: "trash",
-      get title() {
-        return name("trash")
-      },
-      icon: "trash",
-      tile: "/assets/skin/tiles/trash.png",
-      // Cool teal, not the old saturated red — gold is the ONLY warm accent (the hero). uix.md §3/P3.
-      accent: "#14b8a6",
-      get subtitle() {
-        return sub("trash")
-      },
-      source: "builtin",
-      open: () => navigate("/trash"),
-    },
+    // Trash RETIRED as a tile (owner, 2026-09-16): it is a Settings tab under Safety now, where its
+    // restore list and its retention control share one screen. The id stays RESERVED so nothing can
+    // squat a name users still reach for, and the `/trash` route and page are gone with the tile.
     {
       id: "social",
       get title() {
