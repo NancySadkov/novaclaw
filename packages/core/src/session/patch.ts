@@ -24,6 +24,13 @@ import { fromRow } from "./info"
  *
  * Returns false when the session row is missing; `merge` returning undefined is a dedup
  * no-op (publishes nothing, returns true).
+ *
+ * ⚠️ **`clearArchived` exists because "un-file" is NOT expressible by writing the field.** The
+ * projector writes `time_archived: null` only when the event says so (`clearArchived`), because an
+ * absent `archived` on a full-info `Updated` must mean "unchanged" rather than "blank every column" —
+ * and drizzle omits `undefined` from a SET clause, so a merge returning `archived: undefined` is a
+ * silent no-op. `SessionV2.restore` published its own event to get around that; anything else that
+ * needs to bring a filed chat back asks for it here instead of re-deriving the publish.
  */
 export const patchSessionRecord = (
   deps: {
@@ -32,6 +39,7 @@ export const patchSessionRecord = (
   },
   sessionID: SessionSchema.ID,
   merge: (info: SessionSchema.Info) => SessionSchema.Info | undefined,
+  options?: { readonly clearArchived?: boolean },
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     const row = yield* deps.db
@@ -45,7 +53,11 @@ export const patchSessionRecord = (
     if (next) {
       yield* deps.events.publish(
         SessionRecordEvent.Updated,
-        { sessionID, info: next },
+        {
+          sessionID,
+          info: next,
+          ...(options?.clearArchived === true ? { clearArchived: true } : {}),
+        },
         {
           location: Location.Ref.make({
             directory: AbsolutePath.make(row.directory),

@@ -198,8 +198,12 @@ export const deliver = (input: {
     )
     if (!Exit.isSuccess(created)) {
       // The residual window: the project resolved and the insert still failed. It cannot be undone
-      // for the reason above, so it is REPORTED rather than papered over — a colleague with an
-      // archived chat and no successor is a state a person has to be told about.
+      // for the reason above, so it is REPORTED rather than papered over.
+      //
+      // ⚠️ **Since 2026-09-04 it is also SELF-HEALING**, which is why it is no longer a state the
+      // user meets. `V2Session.prompt` resolves a filed chat to its colleague's live chat and opens
+      // one when there is none (`resolveFiledChat` / `ensureLiveChat`), so the first thing the user
+      // types here mints the successor that this insert did not — and lands in it.
       yield* Log.event("agent.reassign.successor.failed", {
         "agent.id": input.move.agentID,
         "session.id": chat.id,

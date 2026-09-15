@@ -882,22 +882,13 @@ const SessionRuntimeHandler = handlerLayer(
                       }),
                     ),
                   ),
-                  // 🔴 A filed chat refuses work, and the refusal NAMES WHERE IT SHOULD HAVE GONE.
-                  // `ConflictError` is the honest wire shape: the resource is in a state that refuses
-                  // this operation, which is exactly true of a conversation that has been archived.
-                  // `resource` carries the successor so a caller can retry there without parsing prose
-                  // — and when the colleague has no live chat (a retirement), it carries the archived
-                  // id and the sentence says there is nowhere to go, rather than inventing one.
-                  Effect.catchTag("Session.ArchivedError", (error) =>
-                    Effect.fail(
-                      new ConflictError({
-                        message: error.successorID
-                          ? `This conversation has been filed and does not take new messages. Its colleague's current chat is ${error.successorID}.`
-                          : `This conversation has been filed and does not take new messages, and its colleague has no current chat.`,
-                        resource: error.successorID ?? error.sessionID,
-                      }),
-                    ),
-                  ),
+                  // ⚠️ There is no archived branch here any more, and its absence IS the fix. A prompt
+                  // aimed at a filed chat is resolved by the kernel to the colleague's current chat
+                  // (`resolveFiledChat`) and answered with the session that took it, so there is no
+                  // refusal left for this handler to format. The user-facing sentence it used to build
+                  // — *"This conversation has been filed and does not take new messages, and its
+                  // colleague has no current chat."* — is unreachable by construction now: nothing
+                  // produces the error it was built from.
                 ),
             }
           }),

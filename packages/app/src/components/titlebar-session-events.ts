@@ -35,8 +35,12 @@ export type SessionAgentChatsDetail = {
  * caller of `followAgentChats` was the colleague dialog's post-save fetch: a one-shot that races the
  * archive it is trying to observe, and that never fires at all when the reassignment comes from
  * anywhere else. Reported from a live build: change a colleague's folder, send a message, and the
- * prompt is refused with *"This conversation has been filed and does not take new messages"* —
- * the server naming a successor the client was still not pointing at.
+ * prompt was refused — the server naming a successor the client was still not pointing at.
+ *
+ * ⚠️ **This is no longer what makes the prompt work, and it must not be read as such.** Since
+ * 2026-09-04 the kernel resolves a filed chat to the colleague's current chat itself, so a stale tab
+ * costs the user a jump, never a refusal. This remains the thing that makes the jump EARLY — the tab
+ * re-points as soon as the record events arrive rather than when the user next types.
  */
 export function notifySessionAgentChats(input: SessionAgentChatsDetail) {
   if (input.rows.length === 0) return

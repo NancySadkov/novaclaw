@@ -25,6 +25,10 @@ const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
 const promptedVariants: Array<string | undefined> = []
 const toasts: Array<{ title?: string; description?: string }> = []
+/** Every route the prompt path navigated to — see the redirect test. */
+const navigated: string[] = []
+/** What the prompt POST answers with. `undefined` = the ordinary "it landed where you sent it". */
+let promptLanded: string | undefined
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -67,7 +71,9 @@ const clientFor = (directory: string) => {
             },
           }
         },
-        prompt: async () => ({ data: undefined }),
+        prompt: async () => ({
+          data: promptLanded === undefined ? undefined : { data: { sessionID: promptLanded } },
+        }),
         command: async () => ({ data: undefined }),
         interrupt: async () => {
           if (interruptError) throw interruptError
@@ -94,7 +100,9 @@ beforeAll(async () => {
   const rootClient = clientFor("/repo/main")
 
   mock.module("@solidjs/router", () => ({
-    useNavigate: () => () => undefined,
+    useNavigate: () => (to: string) => {
+      navigated.push(to)
+    },
     useParams: () => params,
     useLocation: () => ({}),
     useSearchParams: () => [search, () => undefined],
@@ -494,5 +502,70 @@ describe("prompt submit worktree selection", () => {
     // submit.ts seeds the new session into the selected worktree's store before sending; the
     // optimistic-prompt add and its seed-first ordering now live in session.tsx.
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
+  })
+
+  test("🔴 a prompt the kernel resolved elsewhere takes the view with it", async () => {
+    // The kernel resolves a filed chat to the colleague's CURRENT chat and answers with the session
+    // that took the prompt. Without this the user's words would be delivered into a chat they are not
+    // looking at, and their screen would sit on the superseded conversation.
+    params = { id: "session-1" }
+    promptLanded = "ses_landed"
+
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(navigated.some((to) => to.endsWith("/session/ses_landed"))).toBe(true)
+    // And the echo keyed on the ADDRESS is dropped, or the user sees their own message sitting in a
+    // conversation that never received it — the "lying row" the optimistic echo's teardown prevents.
+    expect(forgottenEchoes.some((call) => call[0] === "session-1")).toBe(true)
+  })
+
+  test("CONTROL — a prompt that landed where it was sent navigates nowhere", async () => {
+    params = { id: "session-1" }
+    promptLanded = "session-1"
+    navigated.length = 0
+
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(navigated).toEqual([])
   })
 })

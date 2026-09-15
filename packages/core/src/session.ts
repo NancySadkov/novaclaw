@@ -70,6 +70,7 @@ import { Shell } from "./shell"
 import { ChildProcess } from "effect/unstable/process"
 import { Identifier } from "./id/id"
 import { AgentConfigStore } from "./agent-config-store"
+import { AgentWorkspace } from "./agent/workspace"
 
 // The V2 `shell` op caps captured output at the same 1 MB in-memory limit the bash tool uses.
 const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
@@ -274,35 +275,26 @@ export class PromptConflictError extends Schema.TaggedErrorClass<PromptConflictE
   sessionID: SessionSchema.ID,
   messageID: SessionMessage.ID,
 }) {}
-/**
- * 🔴 A FILED CHAT IS NOT A PLACE WORK HAPPENS.
+
+/*
+ * A filed chat is no longer an error, and the error that said so is DELETED rather than kept unused.
  *
- * Archiving is deliberate and it means the conversation is history — the ECS lens says so outright:
- * *"an archived chat is history, not a component."* A component is where work is addressed; history
- * is not. So a prompt aimed at one is refused HERE, at the single seam every prompt passes through,
- * rather than in whichever client happened to remember.
+ * `SessionArchivedError` was introduced on 2026-09-03 to refuse a prompt aimed at an archived chat
+ * and name its successor. It closed a real hole — the CLI, the HTTP API, a colleague's `ask` and
+ * every integration reached that seam and none of them knew the chat had been replaced — but it
+ * closed it in the middle rung of AGENTS.md's *impossible > caught > named*: the refusal still reached
+ * a person, as *"This conversation has been filed and does not take new messages, and its colleague
+ * has no current chat."*
  *
- * Measured on the owner's instance 2026-09-03: reassignment archived a colleague's chat and opened a
- * successor, correctly. The client stayed pinned to the predecessor, which then accepted **296 more
- * events over three minutes** — a file written and compiled into the colleague's scratch, and a write
- * to the real project refused, because that session's root really was scratch. Every layer behaved as
- * written and the user got work in the wrong place with no way to see why.
+ * Measured on the owner's instance 2026-09-04, on a chat whose colleague was perfectly healthy: the
+ * colleague's chat is created lazily, so between Clear chat, a reassignment, or a fresh hire there is
+ * a window in which it does not exist yet — and the refusal's own sentence is what the user got.
  *
- * ⚠️ The client fix that shipped first (the tab follows the colleague) closed ONE door. The CLI, the
- * HTTP API, a colleague's `ask`, a scheduled task and any integration reach this same seam, and none
- * of them knew either. AGENTS.md: *impossible > caught > named* — a guard in one caller is the middle
- * rung wearing the top one's clothes.
- *
- * ⚠️ It carries the SUCCESSOR, so the refusal states the remedy instead of only the problem. The
- * colleague's live chat is the answer to "then where should this have gone", and every caller that
- * can retry can retry there.
+ * The resolution now happens at the seam (`resolveFiledChat`), so there is no state left for this
+ * error to describe. Deleting it rather than leaving it unthrown is the point: a wire shape nothing
+ * produces is a door a future caller reopens, and the handler branch that formatted its message has
+ * gone with it.
  */
-export class SessionArchivedError extends Schema.TaggedErrorClass<SessionArchivedError>()("Session.ArchivedError", {
-  sessionID: SessionSchema.ID,
-  /** The colleague's live chat, when it has one. Absent for a retired colleague — then there is
-   *  genuinely nowhere for this to go, and saying so is the honest answer. */
-  successorID: Schema.optional(SessionSchema.ID),
-}) {}
 
 export const MessageNotFoundError = SessionRevert.MessageNotFoundError
 export type MessageNotFoundError = SessionRevert.MessageNotFoundError
@@ -434,13 +426,20 @@ export interface Interface {
     messageID?: SessionMessage.ID
   }) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | MessageDecodeError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
+  /**
+   * ⚠️ **The error channel is `NotFoundError | PromptConflictError`, and it is deliberately narrow.**
+   * A chat that has been FILED is not a failure: the prompt is resolved to the colleague's current
+   * chat (`resolveFiledChat`) and the returned `Admitted` names the session that took it. A caller
+   * that needs to know where its words landed reads `admitted.sessionID`; a caller that does not
+   * still gets them delivered. `Session.ArchivedError` used to live here and no longer exists.
+   */
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
     prompt: PromptInput.Prompt
     delivery?: SessionInput.Delivery
     resume?: boolean
-  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionArchivedError>
+  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
   /** Cancel a prompt only while it remains in the durable pre-context queue. */
   readonly cancelPrompt: (input: {
     sessionID: SessionSchema.ID
@@ -810,6 +809,156 @@ export const createSessionRecord = (
   })
 
 /**
+ * THE POSTURE A CHAT RUNS AS WHEN ITS COLLEAGUE IS GONE.
+ *
+ * A restored chat must run as SOMETHING. `undefined` is the one value that cannot be used: it is
+ * exactly the ghost NC-SEC-020 abolished, where every turn re-derives an owner from whatever the
+ * current default officer happens to be, so the chat's identity — and its private memory cabinet —
+ * changes under it between turns. `build` is the posture most chats already run as and the one the
+ * composer falls back to, so it is the honest default here rather than a new concept.
+ */
+const RESTORED_CHAT_POSTURE = AgentV2.ID.make("build")
+
+/**
+ * **A COLLEAGUE ALWAYS HAS A CHAT.** The one function that answers "which chat is this colleague's",
+ * and the only place a colleague's chat is created for a caller that did not ask for one.
+ *
+ * 🔴 The invariant it exists to make structural (owner, 2026-09-04: *"the colleague always has a
+ * chat (by architecture)"*). It was NOT structural before: `createSessionRecord` mints a colleague's
+ * chat lazily, on the first thing that asks for one, so every colleague had a window — after being
+ * hired, after Clear chat deleted its transcript, and after `agent/reassignment.ts` archived the old
+ * chat before its successor insert landed — in which `liveRootFor` answered `undefined`. A caller
+ * that needed to *send* something there had nowhere to send it, and the only account the user got
+ * was a refusal.
+ *
+ * ⚠️ **The id is not minted here.** `createSessionRecord` already owns the canonical `ses_<agent>`
+ * seat, the one-chat-per-colleague guard and the history re-key; a second creation path would be a
+ * second answer to "which chat is this colleague's", which is the defect the canonical id exists to
+ * remove. This asks the existing rule, and only when it says there is nothing does it ask the
+ * existing creator.
+ *
+ * ⚠️ **Only for a colleague that EXISTS.** A retired id is deliberately not materialised: a live root
+ * under a retired id is a transcript the next holder of that name would open into, which is the
+ * bleed `agent/retire.ts` archives chats to prevent. The caller checks; this does not guess.
+ */
+const ensureLiveChat = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly projects: ProjectV2.Interface
+    readonly store: SessionStore.Interface
+    readonly agentConfigs: AgentConfigStore.Interface
+  },
+  agent: AgentV2.ID,
+): Effect.Effect<SessionSchema.ID> =>
+  Effect.gen(function* () {
+    const live = yield* liveRootFor(deps.db, agent)
+    if (live !== undefined) return SessionSchema.ID.make(live.id)
+    const configured = AgentConfigStore.fold((yield* deps.agentConfigs.agents())[agent] ?? [])
+    // Where the colleague works, read from its OWN config rather than from the chat that is being
+    // replaced: the whole reason a successor is opened is that the folder moved, so inheriting the
+    // old chat's directory would put the new conversation back in the folder the user just left.
+    const directory = AgentWorkspace.folderFor({
+      agentID: agent,
+      directory: configured?.directory,
+      shortChat: configured?.shortChat,
+    })
+    const created = yield* createSessionRecord(
+      { db: deps.db, events: deps.events, projects: deps.projects, store: deps.store },
+      { agent, location: { directory: AbsolutePath.make(directory) } },
+      // ⚠️ `OwnerRequiredError` is in `createSessionRecord`'s signature for the ROOT case that names
+      // no agent (NC-SEC-020). This call always names one, so the branch cannot be taken and the
+      // error is discharged rather than threaded: a caller of `prompt` that could be handed it would
+      // have no wire shape for it, and the honest reading of "impossible" is a defect, not a 400.
+    ).pipe(Effect.orDie)
+    return created.id
+  })
+
+/**
+ * WHERE A PROMPT AIMED AT A FILED CHAT ACTUALLY GOES.
+ *
+ * The ECS lens, at the one seam every prompt reaches. A chat is a component of a colleague; a filed
+ * chat is history, and history is not a place work happens. So the address is resolved through the
+ * entity that owns it rather than refused back to a caller who cannot act on the refusal.
+ *
+ * Two outcomes, and there is no third:
+ *
+ *   · **A live colleague owns it** — the prompt goes to that colleague's chat, which
+ *     {@link ensureLiveChat} guarantees exists. This is the ordinary case, and the one the owner hit:
+ *     reassignment or Clear chat replaced the chat under a tab that had not caught up, and the user's
+ *     words were refused by a chat that was merely superseded.
+ *
+ *   · **Nobody live owns it** — a retired colleague's transcript, an archived posture chat, or a
+ *     legacy root with no owner at all. There is no entity to resolve through, so the chat the caller
+ *     NAMED is the address, and it is brought back: filed is a state the user put it in, and typing
+ *     into it is the user asking for it not to be. The owner is re-stamped to a POSTURE, never left
+ *     as a retired colleague's id — a live root under a retired id is a transcript the next holder of
+ *     that name would open into, which is exactly the bleed `agent/retire.ts` archives chats to stop.
+ *
+ * ⚠️ **Retired ids are never materialised**, only reused chats are. `ensureLiveChat` on a retired id
+ * would create a fresh live chat under a name the pool can hand out again, which is the same bleed
+ * from the other side.
+ *
+ * ⚠️ The resolution is invisible to the caller except in the answer: the returned `Admitted` carries
+ * the session that took the prompt, so a client that wants to follow can — and a client that does not
+ * still gets its words delivered, which is the property being bought here.
+ */
+const resolveFiledChat = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly projects: ProjectV2.Interface
+    readonly store: SessionStore.Interface
+    readonly agentConfigs: AgentConfigStore.Interface
+  },
+  target: SessionSchema.Info,
+  requestedID: SessionSchema.ID,
+): Effect.Effect<SessionSchema.ID> =>
+  Effect.gen(function* () {
+    const owner = target.agent
+    // A POSTURE is not a colleague: `build` and `plan` are how a chat runs, not whose it is, and they
+    // may hold many chats — so there is no single "the" chat to resolve to. Only a named officer is
+    // reached through.
+    const named = owner !== undefined && !AgentV2.POSTURE_IDS.has(AgentV2.ID.make(owner)) ? owner : undefined
+    /**
+     * Does that officer still exist?
+     *
+     * The store is the answer for every colleague the user ever configured — `agent.remove` deletes
+     * the row, so absence is exactly "retired". Nova is the one colleague that is NOT in the store:
+     * the governing agent is defined in code and never seeded as a config row, so keying on the store
+     * alone would send Nova's filed chats down the restore path and leave its real chat unused.
+     *
+     * ⚠️ Getting this wrong in the other direction is the expensive one. Materialising a chat for a
+     * RETIRED id creates a live `ses_<name>` that the next colleague drawn from the pool would be
+     * handed as its own transcript — the bleed `agent/retire.ts` archives chats to prevent. So the
+     * test errs toward NOT materialising.
+     */
+    const exists =
+      named !== undefined && ((yield* deps.agentConfigs.agents())[named] !== undefined || AgentV2.isProtected(named))
+    if (named !== undefined && exists) return yield* ensureLiveChat(deps, AgentV2.ID.make(named))
+
+    yield* SessionPatch.patchSessionRecord(
+      { db: deps.db, events: deps.events },
+      requestedID,
+      (info) =>
+        SessionSchema.Info.make({
+          ...info,
+          /**
+           * ⚠️ A ROOT gets the posture; a CHILD is left as it is. `agent` on a root is who owns it,
+           * so a retired id there is the bleed; on a child it is an override the chain walk would
+           * otherwise fill, and stamping a posture onto a worker would change how the thread runs
+           * rather than who owns it. Children are not reached by `chatFor` (it requires a null
+           * parent), so leaving one alone cannot open a returning name into anything.
+           */
+          ...(info.parentID === undefined ? { agent: RESTORED_CHAT_POSTURE } : {}),
+          time: { ...info.time, archived: undefined },
+        }),
+      { clearArchived: true },
+    )
+    return requestedID
+  })
+
+/**
  * Remove a session RECORD tree from CYCLE-FREE primitives (the `createSessionRecord` seam
  * pattern): run the injected `interrupt` first (the SessionV2 layer passes the execution
  * coordinator, as does workspace removal), then the injected `evict`, depth-first over children,
@@ -1057,35 +1206,57 @@ export const layer = Layer.effect(
         Effect.uninterruptible(
           Effect.gen(function* () {
             const target = yield* result.get(input.sessionID)
-            // The invariant, at the one seam every prompt reaches. See `SessionArchivedError`.
-            if (target.time.archived !== undefined) {
-              const successor = target.agent === undefined ? undefined : yield* liveRootFor(db, target.agent)
-              return yield* new SessionArchivedError({
-                sessionID: input.sessionID,
-                ...(successor?.id === undefined ? {} : { successorID: SessionSchema.ID.make(successor.id) }),
-              })
-            }
+            /**
+             * 🔴 **A FILED CHAT IS ADDRESSED THROUGH ITS COLLEAGUE, NEVER REFUSED.**
+             *
+             * This branch used to fail with `Session.ArchivedError`, which reached a person as
+             * *"This conversation has been filed and does not take new messages, and its colleague has
+             * no current chat."* — measured on the owner's instance, hit by simply typing into a
+             * colleague's chat after a config change. Every layer was behaving as written and the
+             * user's words went nowhere.
+             *
+             * AGENTS.md settles it in two sentences. *"A component does not get an identity of its
+             * own; it is reached through its entity."* The chat is a component of the colleague, so a
+             * prompt aimed at a chat that has been filed is still addressed to the COLLEAGUE, and the
+             * colleague's chat is where it goes. And *"impossible > caught > named"*: a guard that
+             * tells the caller to retry somewhere else is the middle rung, and the caller — a tab, the
+             * CLI, a colleague's `ask`, an integration — has no business knowing that a chat was
+             * replaced under it.
+             *
+             * ⚠️ The alternative that was tried first was the refusal naming the successor, and the
+             * reason it is not enough is measurable: it moved the work into the *caller's* hands, and
+             * every caller that did not implement the retry kept the bug. There is exactly one seam
+             * every prompt reaches; the resolution belongs here, once.
+             */
+            const at =
+              target.time.archived === undefined
+                ? input.sessionID
+                : yield* resolveFiledChat(
+                    { db, events, projects, store, agentConfigs },
+                    target,
+                    input.sessionID,
+                  )
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
             // A public prompt is a new user turn. Harness interjections use `SessionInput.steer`
             // explicitly; defaulting this seam to steer let ordinary follow-ups interrupt and join
             // the active work log, folding its prior work as though the user had ended it.
             const delivery = input.delivery ?? "queue"
-            const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
+            const expected = { sessionID: at, messageID, prompt, delivery }
             const admitted = yield* SessionInput.admit(db, events, {
               id: messageID,
-              sessionID: input.sessionID,
+              sessionID: at,
               prompt,
               delivery,
             }).pipe(
               Effect.catchDefect((defect) =>
                 defect instanceof SessionInput.LifecycleConflict
-                  ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+                  ? new PromptConflictError({ sessionID: at, messageID })
                   : Effect.die(defect),
               ),
             )
             if (!SessionInput.equivalent(admitted, expected))
-              return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
+              return yield* new PromptConflictError({ sessionID: at, messageID })
             if (input.resume !== false) yield* execution.wake(admitted.sessionID)
             return admitted
           }),

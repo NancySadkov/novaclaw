@@ -160,7 +160,7 @@ const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? 
 
 const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
 
-export async function sendFollowupDraft(input: FollowupSendInput) {
+export async function sendFollowupDraft(input: FollowupSendInput): Promise<string | undefined> {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
   const setBusy = () => {
@@ -244,7 +244,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     if (!(await wait())) {
       setIdle()
       forgetOptimistic()
-      return false
+      return undefined
     }
 
     // 🔴 The session row carries an OVERRIDE, and an override is a choice. `resolveSessionConfig` —
@@ -303,7 +303,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
      */
     if (record?.agent === undefined && input.draft.agent !== undefined)
       await input.client.v2.session.switchAgent({ sessionID: input.draft.sessionID, agent: input.draft.agent })
-    await input.client.v2.session.prompt({
+    const admitted = await input.client.v2.session.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
       prompt,
@@ -314,7 +314,21 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     // the POST on purpose: before it there is nothing to fetch. Even an apparently idle session can
     // still leave this row pending while its runner wakes, so every acknowledgement starts a read.
     kickPendingPrompts()
-    return true
+    /**
+     * 🔴 **Where it LANDED, which is not always where it was addressed.**
+     *
+     * The kernel resolves a filed chat to the colleague's current chat, and the answer names the
+     * session that actually took the prompt. Returning it is what lets the caller take the view with
+     * it — see the `.then` in `handleSubmit`.
+     *
+     * ⚠️ The optimistic echo was keyed on the ADDRESSED session, so it is dropped here when the two
+     * differ. Leaving it would show the user their own message sitting in a conversation that never
+     * received it, which is the "lying row" `forgetOptimistic` exists to prevent — and the canonical
+     * echo appears in the chat we are navigating to.
+     */
+    const landed = admitted.data?.data?.sessionID
+    if (landed !== undefined && landed !== input.draft.sessionID) forgetOptimistic()
+    return landed ?? input.draft.sessionID
   } catch (err) {
     setIdle()
     // The send failed, so the row has to go. Leaving it would trade a missing message for a LYING one
@@ -746,17 +760,38 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
-    }).catch((err) => {
-      pending.delete(pendingKey(session.id))
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
     })
+      /**
+       * 🔴 **A PROMPT THAT LANDED SOMEWHERE ELSE TAKES THE VIEW WITH IT.**
+       *
+       * The kernel resolves a filed chat to the colleague's CURRENT chat and says which session took
+       * the prompt (`Admitted.sessionID`). That answer exists so this can happen: without it the user's
+       * message would be delivered into a chat they are not looking at, and their screen would sit on
+       * the superseded conversation showing an optimistic echo that never arrives.
+       *
+       * ⚠️ This is the COURTESY, not the correctness. The kernel resolves the address whether or not
+       * any client listens, which is the point of doing it there — the CLI, a colleague's `ask` and
+       * every integration get the same delivery without implementing anything.
+       *
+       * Navigating is enough to move the tab: the route effect in `app.tsx` calls `addSessionTab`,
+       * which re-points the colleague's standing tab at the id it is given rather than opening a
+       * second one.
+       */
+      .then((landed) => {
+        if (landed === undefined || landed === draft.sessionID) return
+        navigate(`/${base64Encode(sessionDirectory)}/session/${landed}`)
+      })
+      .catch((err) => {
+        pending.delete(pendingKey(session.id))
+        if (sessionDirectory === projectDirectory) {
+          sync().set("session_status", session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      })
   }
 
   return {
