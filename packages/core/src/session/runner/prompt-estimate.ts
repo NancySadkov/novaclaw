@@ -1,7 +1,8 @@
 export * as PromptEstimate from "./prompt-estimate"
 
-import { mergeHttpOptions, type LLMRequest, type Usage } from "@novaclaw/llm"
+import { mergeHttpOptions, SystemPart, type LLMRequest, type Usage } from "@novaclaw/llm"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
+import { OldContext } from "../old-context"
 import { Hash } from "../../util/hash"
 import { Token } from "../../util/token"
 import { PromptCalibration } from "./prompt-calibration"
@@ -204,7 +205,18 @@ const templateOptions = (
   }
 }
 
-/** Stable identity for the governing prompt, tool catalogue, template options, and image grid. */
+/**
+ * Stable identity for the governing prompt, tool catalogue, template options, and image grid.
+ *
+ * ⚠️ **The tombstone is excluded, and that exclusion is load-bearing.** The system prompt is stable
+ * across a session's turns on purpose (that is the prefix-cache premise, and why auto-recall was moved
+ * out of it). The tombstone is the one exception: it appears only on a turn that dropped messages, and
+ * it disappears on the next one. Hashing it into the shape key rejected the durable provider anchor as
+ * `shape-changed` on the very turn the tombstone appeared — measured 2026-09-15, a chat the provider
+ * had counted at 8,000 against a 20,000 ceiling was refused on a 21,277-token heuristic and folded.
+ * The anchor's `reportedTokens` describes the prompt WITHOUT the line, and `resolve`'s signed delta
+ * absorbs the difference, so ignoring the line keeps the estimate correct in both directions.
+ */
 export const shapeKey = (
   request: Pick<RequestShape, "model" | "system" | "tools" | "toolChannel" | "http">,
   imagePatchPixels?: number,
@@ -213,9 +225,12 @@ export const shapeKey = (
     imagePatchPixels !== undefined && Number.isSafeInteger(imagePatchPixels) && imagePatchPixels > 0
       ? imagePatchPixels
       : Token.DEFAULT_IMAGE_PATCH_PIXELS
+  // Only normalized when a tombstone is actually present, so a request without one serializes exactly
+  // as it always did and every anchor recorded before this change still matches.
+  const system = SystemPart.content(request.system)
   return Hash.sha256(
     JSON.stringify({
-      system: request.system,
+      system: system.some(OldContext.isTombstone) ? system.filter((part) => !OldContext.isTombstone(part)) : request.system,
       tools: request.tools,
       templateOptions: templateOptions(request),
       imagePatchPixels: resolvedImagePatchPixels,

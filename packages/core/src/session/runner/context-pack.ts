@@ -21,10 +21,12 @@
 // turns early.
 
 import { Message } from "@novaclaw/llm"
-import type { LLMRequest, SystemPart, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
+import { SystemPart } from "@novaclaw/llm"
+import type { LLMRequest, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
 import { applySteerProvenance, isSteerText } from "../steer-provenance"
+import { OldContext } from "../old-context"
 import { ContextRedundancy } from "./context-redundancy"
 import { ContextBudget } from "./context-budget"
 import { PromptEstimate } from "./prompt-estimate"
@@ -896,6 +898,17 @@ export interface PackResult {
   /** true when anything was evicted or repaired — the runner rebuilds the request only then. */
   readonly changed: boolean
   readonly dropped: number
+  /**
+   * ⭐ **THE MESSAGES THAT LEFT, not just how many.** `invariants.md` (Context Management 2) requires
+   * deterministic compaction to "store the cut text in the agent's scratch folder" — and a count is
+   * not text. `dropped` says a window was lost; this says WHAT was in it, so the caller can write it
+   * where the agent can still reach it and name that file in the request.
+   *
+   * ⚠️ Matched by `id`, never by object identity: `demoteSystemMessages` returns NEW objects for the
+   * messages it rewrites, so an identity difference would report every demoted system message as
+   * dropped — a lie in the direction that matters, since those messages are still in the window.
+   */
+  readonly droppedMessages: ReadonlyArray<Message>
   readonly estimatedTokens: number
   /**
    * Whether the kept set is inside `budgetTokens` as MEASURED after packing.
@@ -909,6 +922,39 @@ export interface PackResult {
   readonly elided: number
   /** Plain structured findings for Developer diagnostics — never an opaque composite score. */
   readonly findings: ReadonlyArray<SessionMessage.ContextFinding>
+}
+
+/**
+ * The messages that left a packed set.
+ *
+ * ⚠️ **Two ways to match, and both are needed.** `Message.id` is OPTIONAL (`llm/src/schema/
+ * messages.ts`), and a message built without one — `Message.user("hello")`, which is how every test
+ * fixture and several harness paths construct messages — has `id: undefined` for every instance. An
+ * id-only difference therefore collapses to `new Set([undefined])`, matches everything, and reports
+ * that NOTHING was dropped while `dropped` says two were: the caller then writes no file and the
+ * count in the log has no text behind it. Measured, in this file's own test.
+ *
+ * So: match by `id` when the message has one, by object identity when it does not.
+ *
+ * ⚠️ **Identity alone is not enough either.** `demoteSystemMessages` returns NEW objects for the
+ * system messages it rewrites, and those messages are still IN the window — an identity-only
+ * difference reports every one of them as dropped, and the caller writes a file naming text the model
+ * can still read. The lie runs in the direction that matters. Ids survive those rewrites (they are
+ * built by spreading the original), which is exactly why the id leg carries the real traffic: every
+ * message the runner builds from a session entry has one (`to-llm-message.ts`).
+ *
+ * The residual is stated rather than hidden: an id-less message rewritten IN PLACE (pass 1.5's
+ * elision, the oversized-result marker) is reported as dropped although its elided form is still in
+ * the window. That errs toward the agent being handed a file it did not strictly need — the harmless
+ * direction — and the fix for it is to give those messages ids, not to weaken this comparison.
+ */
+const droppedFrom = (messages: ReadonlyArray<Message>, kept: ReadonlyArray<Message>): ReadonlyArray<Message> => {
+  const keptObjects = new Set<Message>(kept)
+  const keptIDs = new Set(kept.flatMap((message) => (message.id === undefined ? [] : [message.id])))
+  return messages.filter(
+    (message) =>
+      !keptObjects.has(message) && !(message.id !== undefined && keptIDs.has(message.id)),
+  )
 }
 
 /**
@@ -987,12 +1033,19 @@ export const pack = (
   }
 
   if (total <= budgetTokens) {
-    const legal = demoteSystemMessages(dropOrphanTools(working))
+    // ⚠️ `survivors` is the SAME set as `legal`, captured before wire-legality demotion — and that is
+    // what the drop comparison must see. `demoteSystemMessages` is a `map`: it preserves count and
+    // order, and it replaces every `system` message with a NEW object that is still in the window.
+    // Comparing against the demoted set would report each of those as dropped, and the caller would
+    // write a file naming text the model can still read.
+    const survivors = dropOrphanTools(working)
+    const legal = demoteSystemMessages(survivors)
     const changed = legal.length !== messages.length || legal.some((message, i) => message !== messages[i])
     return {
       messages: legal,
       changed,
       dropped: messages.length - legal.length,
+      droppedMessages: droppedFrom(messages, survivors),
       estimatedTokens: total,
       // ⚠️ MEASURED on the set actually returned, not inherited from `total` above: the test above
       // is on `working`, and `demoteSystemMessages` rewrites system content, so the two can differ by
@@ -1053,13 +1106,20 @@ export const pack = (
     }
   }
 
-  kept = demoteSystemMessages(kept)
+  // ⚠️ `survivors` is the SAME set as `kept` before wire-legality demotion, tracked in parallel for
+  // the drop comparison — see the early-return path above for why the demoted set is the wrong thing
+  // to compare against. Tracking is safe because `demoteSystemMessages` is a `map` (count and order
+  // preserved) and `dropOrphanTools` filters on `role === "tool"`, which demotion never produces: the
+  // two slices stay index-aligned, so the survivors named here are the survivors that were sent.
+  let survivors = kept
+  kept = demoteSystemMessages(survivors)
   let keptTokens = estimateMessages(kept, imagePatchPixels)
   if (options.hard === true) {
     // Drop oldest-first until the MEASURED kept set fits, never below the newest message. Bounded by
     // `kept.length` and finite: each iteration removes one message, so this cannot loop.
     while (kept.length > 1 && keptTokens > budgetTokens) {
       kept = demoteSystemMessages(dropOrphanTools(kept.slice(1)))
+      survivors = dropOrphanTools(survivors.slice(1))
       keptTokens = estimateMessages(kept, imagePatchPixels)
     }
   }
@@ -1074,6 +1134,7 @@ export const pack = (
     messages: kept,
     changed: true,
     dropped: messages.length - kept.length,
+    droppedMessages: droppedFrom(messages, survivors),
     estimatedTokens: keptTokens,
     fits: overrun <= 0,
     elided,
@@ -1203,6 +1264,23 @@ export const packRequest = (input: {
    * Only a caller that is about to put these bytes on the wire should set it.
    */
   readonly hard?: boolean
+  /**
+   * The file the caller WILL write the dropped messages to — `invariants.md` (Context Management 2):
+   * "Prefix the result with the system prompt and a tombstone saying that the original context was
+   * saved to the file."
+   *
+   * ⭐ Reserved BEFORE the measurement, emitted only when `dropped > 0`. The order is the whole point
+   * and it is the same defect this file already paid for once (`OVERSIZED_MARKER_TOKENS`, declared and
+   * referenced nowhere, measured 20,093 against 20,000): a line appended after `budget()` was computed
+   * is an unmeasured line, and the request that promised to fit is the one that overruns. Passing the
+   * file here means the packer reserves its room whether or not it ends up needed — and a caller that
+   * passes nothing gets byte-identical packing to before.
+   *
+   * ⚠️ **The caller passes the FILE, not the line.** `OldContext` owns the wording and the marker that
+   * keeps the tombstone out of the prompt's shape key; a caller that spelled the line itself could
+   * produce one without the marker, and that silently costs the provider anchor (measured 2026-09-15).
+   */
+  readonly droppedContextFile?: string
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
@@ -1228,9 +1306,16 @@ export const packRequest = (input: {
     input.promptMarginTokens !== undefined && Number.isFinite(input.promptMarginTokens)
       ? Math.max(0, Math.trunc(input.promptMarginTokens))
       : PromptEstimate.unsupported(input.request, input.imagePatchPixels).marginTokens
+  // Reserve the tombstone's room before measuring, emit it only if something actually left. `budget`
+  // sees the part; the returned `system` carries it only when `dropped > 0`, because a line naming a
+  // file that was never written is worse than no line at all.
+  const droppedContextPart =
+    input.droppedContextFile === undefined ? undefined : OldContext.part(input.droppedContextFile)
+  const measuredSystem =
+    droppedContextPart === undefined ? input.request.system : [...input.request.system, droppedContextPart]
   const correctedBudget = budget({
     contextSize,
-    system: input.request.system,
+    system: measuredSystem,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
     prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
@@ -1262,6 +1347,8 @@ export const packRequest = (input: {
     changed: result.changed || memoryBudget.changed,
     findings: [...systemFindings, ...memoryBudget.findings, ...result.findings],
     contextSize,
-    system: input.request.system,
+    // The tombstone only rides the request when it is TRUE of this request. `dropped > 0` is the same
+    // fact `droppedMessages` carries; if nothing left, the caller must not be told to go read a file.
+    system: droppedContextPart !== undefined && result.dropped > 0 ? measuredSystem : input.request.system,
   }
 }

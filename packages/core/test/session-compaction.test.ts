@@ -371,7 +371,7 @@ test("overflow recovery measures the exact packed requests and resends at most o
   // gate's hard re-pack), so the order to pin is: estimate → that one argument list → the prepare
   // call → compaction → the measured request.
   const prepareAt = runner.indexOf("const prepareInput = {", estimateAt)
-  const prepareCallAt = runner.indexOf("const preparedDispatch = ProviderDispatch.prepare(prepareInput)", prepareAt)
+  const prepareCallAt = runner.indexOf("const preparedDispatch = yield* prepareDispatch({", prepareAt)
   const compactionAt = runner.indexOf("compactIfNeeded({", prepareCallAt)
   const packedAt = runner.indexOf("let request = preparedDispatch.request")
   const measuredAt = runner.indexOf("const resolveOutbound = (candidate:", packedAt)

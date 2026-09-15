@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { DIR, file, name, save, tombstone } from "../src/session/old-context"
+import { DIR, file, name, render, save, tombstone } from "../src/session/old-context"
+import { Message } from "@novaclaw/llm"
 
 /**
  * `invariants.md` (Context Management 1 and 2) names a file the code never wrote: compaction is
@@ -127,5 +128,68 @@ describe("the harness can always write it, whatever is already on disk", () => {
     expect(path.basename(written)).toBe("oldctx-20260915T174500123Z.txt")
     expect(path.basename(path.dirname(written))).toBe("tmp")
     await expect(fs.stat(written)).resolves.toBeDefined()
+  })
+})
+
+/**
+ * `invariants.md` (Context Management 2) ends its sentence with the reason the file exists at all:
+ * *"we store the cut text in the agent's scratch, so that agent can still grep it."* That is an
+ * acceptance test, not a flourish — a file whose content is a JSON blob of wire frames, or a summary
+ * of the messages, or their ids, satisfies "we saved something" and fails "grep it". So the body is
+ * pinned the way the name is: verbatim text, one message per block, and the tool ids kept, because a
+ * tool result without its call is an answer to nothing.
+ */
+describe("the cut text is written as text an agent can grep", () => {
+  test("a message body survives verbatim", () => {
+    const needle = "the deploy failed because the migration never ran"
+    const rendered = render([Message.user(needle), Message.assistant("understood")])
+
+    expect(rendered).toContain(needle)
+    // Its own line, not folded into a structure the agent would have to parse back out.
+    expect(rendered.split("\n")).toContain(needle)
+  })
+
+  test("roles and order are preserved, in the vocabulary compaction already uses", () => {
+    const rendered = render([Message.user("first"), Message.assistant("second"), Message.user("third")])
+    const labels = rendered.match(/^\[[a-z]+\]:$/gm)
+
+    expect(labels).toEqual(["[user]:", "[assistant]:", "[user]:"])
+    expect(rendered.indexOf("first")).toBeLessThan(rendered.indexOf("second"))
+    expect(rendered.indexOf("second")).toBeLessThan(rendered.indexOf("third"))
+  })
+
+  test("a tool call and its result keep the id that joins them", () => {
+    const call = Message.make({
+      id: "msg_call",
+      role: "assistant",
+      content: [{ type: "tool-call", id: "call_7", name: "read", input: { filePath: "src/a.ts" } }],
+    })
+    const result = Message.make({
+      id: "msg_result",
+      role: "tool",
+      content: [{ type: "tool-result", id: "call_7", name: "read", result: { type: "text", value: "file body" } }],
+    })
+    const rendered = render([call, result])
+
+    // The id is the join: an agent reconstructing which of its own actions produced this output needs
+    // both halves to name the same call, and the tool's own input is what tells it what was asked.
+    expect(rendered.match(/call_7/g)?.length).toBe(2)
+    expect(rendered).toContain("src/a.ts")
+    expect(rendered).toContain("file body")
+  })
+
+  test("an image is a placeholder, not its bytes", () => {
+    const rendered = render([
+      Message.make({
+        id: "msg_media",
+        role: "user",
+        content: [{ type: "media", mediaType: "image/png", data: "aGVsbG8=", filename: "shot.png" }],
+      }),
+    ])
+
+    expect(rendered).toContain("image/png")
+    expect(rendered).toContain("shot.png")
+    // Base64 in a text file an agent greps is noise that hides the text it was looking for.
+    expect(rendered).not.toContain("aGVsbG8=")
   })
 })

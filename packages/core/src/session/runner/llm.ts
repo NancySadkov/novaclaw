@@ -50,6 +50,7 @@ import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
+import { OldContext } from "../old-context"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
 import { SessionComponentRegistry } from "../component-registry"
@@ -330,6 +331,77 @@ const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(fun
     "agent.id": agentID,
     "archive.passages": passages.length,
   })
+})
+
+/**
+ * ⭐ **THE HEAD THE PACKER CUT LANDS SOMEWHERE THE AGENT CAN STILL REACH — or we do not claim it did.**
+ *
+ * `invariants.md` (Context Management 2) is one sentence with two halves: deterministic compaction
+ * "stores the cut text in the agent's scratch, so that agent can still grep it", and prefixes the
+ * result with a tombstone naming that file. A count of dropped messages satisfies neither, and the
+ * packer used to return only a count.
+ *
+ * ⚠️ **This is a function because the two halves must not be able to disagree.** Ordering them wrongly
+ * produces a request that promises a file which was never written — the same class of defect as a
+ * message asserting a cause the code never established (ruling 2), and the one clause 1's save path was
+ * built to avoid. So the sequence is fixed here, once, for every dispatch site that can drop:
+ *
+ *   1. reserve a name for the file BEFORE packing (the packer must measure the tombstone it may
+ *      emit — a line added after the measurement is an unmeasured line, see
+ *      `packRequest.droppedContextFile`);
+ *   2. pack;
+ *   3. if nothing left, the reserved tombstone was never emitted and there is nothing to write;
+ *   4. if something left, write it, then dispatch the request that already names the file;
+ *   5. if the write FAILED, re-prepare WITHOUT the file. A tombstone over a missing file is a lie the
+ *      agent can act on — it greps a path and finds nothing — so the request that goes out names no
+ *      file at all. Re-packing is safe in exactly one direction and that is the direction that matters:
+ *      the tombstone was reserved, so removing it only frees room and the second pack still fits.
+ *
+ * ⚠️ A failed write never fails the turn. The dropped text is a second copy of bytes we still hold, and
+ * dying here would trade a working session for a missing convenience file. It is logged, loudly.
+ */
+const prepareDispatch = Effect.fnUntraced(function* (input: {
+  readonly prepare: ProviderDispatch.PrepareInput
+  readonly scratchFolder: string | undefined
+  readonly sessionID: SessionSchema.ID
+  readonly hard?: boolean
+}) {
+  // One argument list, so the ordinary pack and the HARD re-pack cannot measure against different
+  // windows (ruling 6, in miniature). `droppedContextFile` is deliberately NOT taken from the caller:
+  // the file must be the one this function writes, and only this function knows it.
+  const base = input.hard === true ? { ...input.prepare, hard: true } : input.prepare
+  if (input.scratchFolder === undefined) return ProviderDispatch.prepare(base)
+  const scratchFolder = input.scratchFolder
+  const at = DateTime.toDate(yield* DateTime.now)
+  const file = OldContext.file({ scratchFolder, at })
+  const dispatch = ProviderDispatch.prepare({ ...base, droppedContextFile: file })
+  if (dispatch.packed.droppedMessages.length === 0) return dispatch
+  const text = OldContext.render(dispatch.packed.droppedMessages)
+  const saved = yield* Effect.tryPromise({
+    // `save` recomputes the path from the SAME `at` the request was packed against, so the file
+    // written is the file named by construction rather than by two call sites agreeing.
+    try: () => OldContext.save({ scratchFolder, at, text }),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.tap((file) =>
+      Log.event("session.context.dropped.saved", {
+        "session.id": String(input.sessionID),
+        "context.dropped.file": file,
+        "context.dropped.messages": dispatch.packed.droppedMessages.length,
+        "context.dropped.chars": text.length,
+      }),
+    ),
+    Effect.catch((cause) =>
+      Log.event("session.context.dropped.unsaved", {
+        "session.id": String(input.sessionID),
+        "context.dropped.messages": dispatch.packed.droppedMessages.length,
+        "context.dropped.chars": text.length,
+        "context.dropped.error": Log.fault(cause),
+      }).pipe(Effect.as(undefined)),
+    ),
+  )
+  if (saved !== undefined) return dispatch
+  return ProviderDispatch.prepare(base)
 })
 
 /**
@@ -2350,7 +2422,11 @@ export const layer = Layer.effect(
         // already measured as over budget. See `ContextPack.budget`.
         minimumResponseReserveTokens: harness.compaction.settings.buffer,
       } satisfies ProviderDispatch.PrepareInput
-      const preparedDispatch = ProviderDispatch.prepare(prepareInput)
+      // The agent's scratch folder, resolved ONCE: the tombstone the packer may emit names a file in
+      // it, the compaction below writes its folded chat into it, and two separate `Scratch.forAgent`
+      // calls would be two chances for the two to name different folders.
+      const scratchFolder = prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined
+      const preparedDispatch = yield* prepareDispatch({ prepare: prepareInput, scratchFolder, sessionID: session.id })
       yield* timingEnd("context-fit")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
       // simply under its threshold. Timing it is right; RECORDING it as a phase is not, because the
@@ -2372,7 +2448,7 @@ export const layer = Layer.effect(
         yield* timingStart("compaction")
         compacted = yield* harness.compaction.compactIfNeeded({
           sessionID: session.id,
-          scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
+          scratchFolder,
           entries,
           model,
           guard: modelGuard,
@@ -2533,7 +2609,12 @@ export const layer = Layer.effect(
           "session.prompt.overrun": outboundPromptTokens - dispatchCeiling,
           "session.context.size": preparedDispatch.packed.contextSize,
         })
-        const shrunk = ProviderDispatch.prepare({ ...prepareInput, hard: true })
+        const shrunk = yield* prepareDispatch({
+          prepare: prepareInput,
+          scratchFolder,
+          sessionID: session.id,
+          hard: true,
+        })
         const shrunkTokens = resolveOutbound(shrunk.request).estimatedTokens
         if (shrunk.packed.fits && shrunkTokens <= dispatchCeiling) {
           yield* Log.event("session.context.ceiling.shrunk", {

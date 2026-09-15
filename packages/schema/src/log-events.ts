@@ -1054,6 +1054,45 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/compaction.ts",
   },
+  /**
+   * The head the PACKER cut — not the summarizer's fold — was written to the agent's scratch folder,
+   * and the tombstone in the request that leaves names THAT file (`invariants.md`, Context
+   * Management 2: *"we store the cut text in the agent's scratch, so that agent can still grep it"*).
+   *
+   * ⚠️ A separate name from `session.compaction.folded.saved` because the two cuts are different
+   * artifacts of the same turn: that one is the transcript the summarizer read, this one is the
+   * messages the deterministic pack dropped from the wire. One request can produce both.
+   */
+  "session.context.dropped.saved": {
+    level: "info",
+    message: "dropped context saved to the agent's scratch folder",
+    attributes: {
+      "session.id": "correlate",
+      "context.dropped.file": "path",
+      "context.dropped.messages": "count",
+      "context.dropped.chars": "count",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
+   * ⚠️ The dropped text could NOT be written, so the request was rebuilt WITHOUT the tombstone. A line
+   * naming a file that is not there is a lie the agent can act on — it greps a path and finds nothing —
+   * so the honest request names no file at all. Best-effort on purpose, and loud on purpose: the turn
+   * survives, but "it failed" must not be indistinguishable from "nothing was dropped".
+   */
+  "session.context.dropped.unsaved": {
+    level: "warn",
+    message: "could not save the dropped context, so the request carries no tombstone",
+    attributes: {
+      "session.id": "correlate",
+      "context.dropped.messages": "count",
+      "context.dropped.chars": "count",
+      "context.dropped.error": "fault",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** One subsystem's cleanup for a retired agent failed; the rest of the retirement still ran. */
   "agent.retire.cleaner.failed": {
     level: "warn",

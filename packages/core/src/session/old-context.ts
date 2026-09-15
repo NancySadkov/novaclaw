@@ -2,6 +2,7 @@ export * as OldContext from "./old-context"
 
 import fs from "node:fs/promises"
 import path from "node:path"
+import type { Message, SystemPart } from "@novaclaw/llm"
 import { stampOf } from "../observability/log-file"
 
 /**
@@ -46,6 +47,96 @@ export const file = (input: { readonly scratchFolder: string; readonly at: Date 
  * agent's working directory is not necessarily its scratch folder.
  */
 export const tombstone = (file: string): string => `${file} holds earlier chat`
+
+/**
+ * The marker that says "this system part is the tombstone, not part of the prompt's shape".
+ *
+ * 🔴 **Measured 2026-09-15, and it is the whole reason this exists.** `PromptEstimate.resolve` matches
+ * its durable provider anchor by `shapeKey(request)`, and that key hashes `{system, tools, ...}` — so a
+ * tombstone appended to the system prompt changed the key, the anchor was rejected as `shape-changed`,
+ * the estimate fell back to the raw heuristic, and the dispatch gate refused a chat the provider had
+ * already counted at 8,000 against a 20,000 ceiling. The turn then folded a conversation that did not
+ * need folding. A one-line tombstone poisoning the anchor on the very turn it appears — and on the next
+ * one, because the anchor is recorded from the request that was sent — is a regression of exactly the
+ * failure (`ses_geryon`, 229,614 against 229,376) this clause was written to fix.
+ *
+ * The marker rides `metadata`, which the wire never reads: every protocol lowers system parts through
+ * `joinText`, which reads `part.text` only.
+ */
+export const MARKER = "novaclaw.oldContext"
+
+/** The system part for the tombstone: the line, marked so the shape key can ignore it. */
+export const part = (file: string): SystemPart => ({
+  type: "text",
+  text: tombstone(file),
+  metadata: { [MARKER]: true },
+})
+
+/** Is this system part the tombstone? True only for parts built by `part`. */
+export const isTombstone = (part: SystemPart): boolean => part.metadata?.[MARKER] === true
+
+/**
+ * The cut text, as text — because the tombstone's promise is that the agent can *grep* it.
+ *
+ * `invariants.md` (Context Management 2): *"we store the cut text in the agent's scratch, so that
+ * agent can still grep it."* That is the acceptance test for this function, and it is stricter than
+ * "the file has content": a message body has to survive verbatim and on its own line, or the grep
+ * finds nothing and the promise was decoration.
+ *
+ * ⚠️ **It renders the LLM messages that actually left, not the session entries they came from.**
+ * Those are two different texts — the wire form has already been demoted, elided, trimmed and
+ * tool-repaired by the packer's own passes — and a file claiming to hold "the context that was cut"
+ * must hold the bytes that were cut, not a reconstruction that is close. Joining back to entries is
+ * also a second lookup that can disagree with the drop set; this cannot, because it is handed the drop
+ * set.
+ *
+ * The labels are the same `[role]:` shape the summarizer's transcript uses, so an agent reading this
+ * file reads the vocabulary it already knows from compaction. Tool calls and results keep their ids:
+ * a tool result without its call is an answer to nothing, and the id is the join the agent needs to
+ * reconstruct which of its own actions produced it.
+ */
+export const render = (messages: ReadonlyArray<Message>): string => messages.map(renderMessage).join("\n\n")
+
+const renderPart = (part: Message["content"][number]): string => {
+  switch (part.type) {
+    case "text":
+      return part.text
+    case "reasoning":
+      return `[reasoning]\n${part.text}`
+    case "media":
+      return `[image ${part.mediaType}${part.filename === undefined ? "" : ` ${part.filename}`}]`
+    case "tool-call":
+      return `[tool call ${part.name} id=${part.id}]\n${stringify(part.input)}`
+    case "tool-result":
+      return `[tool result ${part.name} id=${part.id}]\n${renderResultValue(part.result)}`
+    default:
+      return `[${(part as { readonly type: string }).type}]`
+  }
+}
+
+const renderResultValue = (result: { readonly type: string; readonly value: unknown }): string => {
+  // `content` is the only structured arm (text/file blocks); every other arm already carries the
+  // value the tool returned, and `stringify` renders it without inventing a shape.
+  if (result.type !== "content" || !Array.isArray(result.value)) return stringify(result.value)
+  return result.value
+    .map((block: unknown) => {
+      const record = block as { readonly type?: string; readonly text?: string; readonly mime?: string }
+      if (record?.type === "text" && typeof record.text === "string") return record.text
+      return `[${record?.type ?? "block"}${record?.mime === undefined ? "" : ` ${record.mime}`}]`
+    })
+    .join("\n")
+}
+
+const renderMessage = (message: Message): string => `[${message.role}]:\n${message.content.map(renderPart).join("\n")}`
+
+const stringify = (value: unknown): string => {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value, undefined, 2) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
 
 /**
  * Write the folded chat to its own name, creating the folder on the way if it is not there.

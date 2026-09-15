@@ -85,6 +85,15 @@ export interface PrepareInput {
    * `fits`. Set only by the dispatch gate, immediately before the bytes would leave.
    */
   readonly hard?: boolean
+  /**
+   * The file the caller WILL write the dropped messages to, so the packer can reserve room for the
+   * tombstone that names it and emit that tombstone exactly when something is dropped
+   * (`invariants.md`, Context Management 2). The caller passes the FILE, never a pre-built line:
+   * `OldContext` owns both the wording and the marker that keeps the tombstone out of the prompt's
+   * shape key, and `prepare` stays pure — it is told the path, never asked to produce one. Omitted:
+   * packing is byte-identical to before.
+   */
+  readonly droppedContextFile?: string
 }
 
 /** Attach the stable cache identity and pack the exact request that will reach the provider. */
@@ -107,6 +116,7 @@ export const prepare = (input: PrepareInput) => {
     memoryRecall: input.memoryRecall,
     promptCorrectionTokens: input.promptCorrectionTokens,
     promptMarginTokens: input.promptMarginTokens,
+    ...(input.droppedContextFile === undefined ? {} : { droppedContextFile: input.droppedContextFile }),
     ...(input.minimumResponseReserveTokens === undefined
       ? {}
       : { minimumResponseReserveTokens: input.minimumResponseReserveTokens }),
