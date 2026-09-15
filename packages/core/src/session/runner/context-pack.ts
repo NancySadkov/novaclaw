@@ -49,6 +49,84 @@ export const estimateMessage = (message: Message, imagePatchPixels?: number): nu
 export const estimateMessages = (messages: ReadonlyArray<Message>, imagePatchPixels?: number): number =>
   messages.reduce((total, message) => total + estimateMessage(message, imagePatchPixels), 0)
 
+/** Tokens reserved for the marker below, so the bound cannot be exceeded by its own explanation. */
+export const OVERSIZED_MARKER_TOKENS = 512
+
+/** The sentence that replaces what was withheld. Loud, exact, and never silent. */
+export const oversizedMarker = (omittedChars: number, totalChars: number): string =>
+  `[… ${omittedChars.toLocaleString("en-US")} of ${totalChars.toLocaleString("en-US")} characters of this ` +
+  `message were NOT sent: it is larger than this model's entire context window, so no packing can fit it. ` +
+  `The complete text is unchanged in the transcript. Ask for it in smaller parts, or switch this chat to a ` +
+  `model with a larger window. …]`
+
+/**
+ * The text of a message, or `undefined` when it carries a part that must not be rewritten.
+ *
+ * ⚠️ Deliberately all-or-nothing: a message holding an image or a tool result is left alone. Those
+ * are bounded by their own passes (`budgetImages`, redundancy eviction), and rewriting around them
+ * here would drop media the user can see.
+ */
+const rewriteableText = (message: Message): string | undefined => {
+  const parts = message.content
+  if (parts.length === 0) return undefined
+  if (!parts.every((part) => "text" in part && typeof part.text === "string")) return undefined
+  return parts.map((part) => (part as { readonly text: string }).text).join("")
+}
+
+/** Never cut a surrogate pair in half — a lone half renders as a replacement glyph. */
+const safeBoundary = (text: string, index: number): number => {
+  if (index <= 0 || index >= text.length) return index
+  const code = text.charCodeAt(index - 1)
+  return code >= 0xd800 && code <= 0xdbff ? index + 1 : index
+}
+
+/**
+ * 🔴 **BOUND ONE MESSAGE THAT CANNOT FIT ON ITS OWN — because dropping cannot fix it.**
+ *
+ * Every other pass in this file makes room by removing messages. That is useless when a SINGLE
+ * message is larger than the whole budget: it is the newest, so it is never dropped, and there is
+ * nothing left to drop behind it. Measured 2026-09-14 (`ses_daedalus`) the session then had no move
+ * at all and the turn ended — which is what the dispatch gate's refusal names, and what this makes
+ * unnecessary.
+ *
+ * ⭐ **Head AND tail, never just a head.** The instruction that makes a pasted document useful is as
+ * often at the end ("…now rewrite section 3") as at the start, and a head-only bound silently
+ * deletes the actual question.
+ *
+ * ⚠️ The marker states the EXACT size withheld. A truncation a reader cannot see is a lie about what
+ * the model was told; this one is unmissable in the transcript and in the provider payload.
+ *
+ * Returns `undefined` when the message cannot be rewritten (media, tool parts) or already fits.
+ */
+export const boundOversizedMessage = (
+  message: Message,
+  allowanceTokens: number,
+  imagePatchPixels?: number,
+): Message | undefined => {
+  if (estimateMessage(message, imagePatchPixels) <= allowanceTokens) return undefined
+  const text = rewriteableText(message)
+  if (text === undefined) return undefined
+  // 🔴 **The marker's reservation is spent HERE, and it was not.** `OVERSIZED_MARKER_TOKENS` was
+  // declared one screen up and referenced nowhere: the budget came from the WHOLE allowance and the
+  // marker was appended on top of it, so the message this returned could exceed the allowance it was
+  // given by the marker's own cost — measured 2026-09-15 at 20,093 tokens against a 20,000-token
+  // allowance, which is precisely the failure the constant's sentence says it prevents. A reservation
+  // nobody subtracts is a comment, not a bound.
+  const contentAllowance = Math.max(1, allowanceTokens - OVERSIZED_MARKER_TOKENS)
+  const budgetChars = Token.charsFromTokens(contentAllowance)
+  if (text.length <= budgetChars) return undefined
+  const headChars = safeBoundary(text, Math.floor(budgetChars / 2))
+  const tailChars = safeBoundary(text, text.length - (budgetChars - Math.floor(budgetChars / 2)))
+  const head = text.slice(0, headChars)
+  const tail = text.slice(tailChars)
+  const omitted = text.length - head.length - tail.length
+  if (omitted <= 0) return undefined
+  return Message.make({
+    ...message,
+    content: [Message.text(`${head}\n\n${oversizedMarker(omitted, text.length)}\n\n${tail}`)],
+  })
+}
+
 /**
  * 🔴 Media-aware. This was `Token.estimate(JSON.stringify(value))`, which prices one base64 image at
  * ~11,772 tokens against a provider's measured 66 — so the packer dropped history it had room for.
