@@ -219,10 +219,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Виконується після створення нової робочої області (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "напр. bun install",
 
-  "dialog.releaseNotes.action.getStarted": "Розпочати",
-  "dialog.releaseNotes.action.next": "Далі",
-  "dialog.releaseNotes.action.hideFuture": "Не показувати це в майбутньому",
-  "dialog.releaseNotes.media.alt": "Попередній перегляд релізу",
 
   "context.breakdown.title": "Розподіл контексту",
   "context.breakdown.note":
@@ -497,7 +493,6 @@ export const dict = {
   "settings.tab.shortcuts": "Скорочення",
 
   "settings.general.section.notifications": "Системні сповіщення",
-  "settings.general.section.updates": "Оновлення",
   "settings.general.section.sounds": "Звукові ефекти",
 
   "settings.general.row.language.title": "Мова",
@@ -512,8 +507,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "Шрифт інтерфейсу",
   "settings.general.row.uiFont.description": "Налаштуйте шрифт, який використовується в інтерфейсі",
 
-  "settings.general.row.releaseNotes.title": "Нотатки до релізу",
-  "settings.general.row.releaseNotes.description": 'Показувати спливаючі вікна "Що нового" після оновлень',
 
   "sound.option.none": "Немає",
   "sound.option.alert01": "Alert 01",

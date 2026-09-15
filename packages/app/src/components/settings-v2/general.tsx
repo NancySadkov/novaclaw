@@ -6,7 +6,6 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
-import { ReleaseNotesStatusLine } from "@/context/highlights"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
@@ -190,13 +189,6 @@ export const SettingsGeneralV2: Component<{
       label: language.label(locale),
     })),
   )
-
-  // Feed expansion prefs (reasoning folds / tool cards): "auto" = the expertise-level default.
-  const feedDisplayOptions = createMemo(() => [
-    { value: "auto" as const, label: language.t("settings.general.feedDisplay.auto") },
-    { value: "expanded" as const, label: language.t("settings.general.feedDisplay.expanded") },
-    { value: "collapsed" as const, label: language.t("settings.general.feedDisplay.collapsed") },
-  ])
 
   // push (not show) so it STACKS over Settings instead of disposing it — see ui/context/dialog.tsx.
   const openExpertise = () => dialog.push(() => <DialogExpertise />)
@@ -391,49 +383,6 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
-        <SettingsRowV2
-          title={language.t("settings.general.row.feedReasoning.title")}
-          description={language.t("settings.general.row.feedReasoning.description")}
-        >
-          <div data-action="settings-feed-reasoning-display">
-            <SelectV2
-              appearance="inline"
-              options={feedDisplayOptions()}
-              placement="bottom-end"
-              gutter={6}
-              current={feedDisplayOptions().find((o) => o.value === settings.general.feedReasoningDisplay())}
-              value={(o) => o.value}
-              label={(o) => o.label}
-              onSelect={(option) => {
-                // Kobalte re-emits unchanged values when options recreate — diff before writing.
-                if (option && option.value !== settings.general.feedReasoningDisplay())
-                  settings.general.setFeedReasoningDisplay(option.value)
-              }}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.feedTool.title")}
-          description={language.t("settings.general.row.feedTool.description")}
-        >
-          <div data-action="settings-feed-tool-display">
-            <SelectV2
-              appearance="inline"
-              options={feedDisplayOptions()}
-              placement="bottom-end"
-              gutter={6}
-              current={feedDisplayOptions().find((o) => o.value === settings.general.feedToolDisplay())}
-              value={(o) => o.value}
-              label={(o) => o.label}
-              onSelect={(option) => {
-                if (option && option.value !== settings.general.feedToolDisplay())
-                  settings.general.setFeedToolDisplay(option.value)
-              }}
-            />
-          </div>
-        </SettingsRowV2>
-
         <Show when={mobile() && import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
           <SettingsRowV2
             title={language.t("settings.general.row.mobileTitlebarBottom.title")}
@@ -512,34 +461,6 @@ export const SettingsGeneralV2: Component<{
             <Switch
               checked={settings.notifications.errors()}
               onChange={(checked) => settings.notifications.setErrors(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-      </SettingsListV2>
-    </div>
-  )
-
-  const UpdatesSection = () => (
-    <div class="settings-v2-section">
-      <h3 class="settings-v2-section-title">{language.t("settings.general.section.updates")}</h3>
-
-      <SettingsListV2>
-        <SettingsRowV2
-          title={language.t("settings.general.row.releaseNotes.title")}
-          description={
-            // ⚠️ The status sentence is NOT written here. Both Settings panels render the same
-            // `ReleaseNotesStatusLine`, so the v1 and v2 rows cannot come to say different things
-            // about one subsystem — pinned by components/settings-release-notes-row.test.ts.
-            <>
-              {language.t("settings.general.row.releaseNotes.description")}
-              <ReleaseNotesStatusLine />
-            </>
-          }
-        >
-          <div data-action="settings-release-notes">
-            <Switch
-              checked={settings.general.releaseNotes()}
-              onChange={(checked) => settings.general.setReleaseNotes(checked)}
             />
           </div>
         </SettingsRowV2>
@@ -656,20 +577,6 @@ export const SettingsGeneralV2: Component<{
             </SettingsListV2>
           </div>
         </Show>
-
-        {/* Updates is NOT desktop-gated as a whole (2026-07-28). It was until today, and that hid the
-            release-notes toggle and its status row on web in THIS panel while the v1 panel showed them
-            — the exact drift the shared status component was supposed to make impossible, and it did
-            not, because a shared component stops two panels SAYING different things and does nothing
-            to stop one of them from not saying it at all.
-            Release notes are not an update mechanism; they are the product telling you what changed,
-            and the subsystem behind that toggle runs on web — HighlightsProvider is mounted for every
-            entry point and fetches novaclaw.app/changelog.json on a version change, on by default. So
-            gating the section left a web user with a live outbound request they could not switch off
-            and no answer to "did the release notes work?". Only the update-CHECK row inside is
-            desktop-only. Both panels must agree on this: components/settings-release-notes-row.test.ts
-            resolves the gate path through the section component and fails if they diverge. */}
-        <UpdatesSection />
       </div>
     </>
   )

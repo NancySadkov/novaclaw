@@ -712,11 +712,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Runs each time you create a new workspace.",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",
 
-  "dialog.releaseNotes.action.getStarted": "Get started",
-  "dialog.releaseNotes.action.next": "Next",
-  "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
-  "dialog.releaseNotes.media.alt": "Release preview",
-
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note":
     "Rough split of what's taking up the model's context. \"Other\" covers tool definitions and system overhead.",
@@ -1441,8 +1436,22 @@ export const dict = {
   "settings.appearance.theme.nova": "Nova",
   "settings.appearance.theme.summer": "Summer",
   "settings.appearance.theme.autumn": "Autumn",
+  // The Appearance tab's chat section — how the conversation itself is drawn (feed folds, the
+  // command timer). Per-device presentation, which is why it lives here and not in General.
+  "settings.appearance.section.chat": "Chat",
+  "settings.appearance.row.feedReasoning.title": "Reasoning sections",
+  "settings.appearance.row.feedReasoning.description":
+    "How the model's reasoning shows in chat. Auto follows your expertise level.",
+  "settings.appearance.row.feedTool.title": "Tool and shell cards",
+  "settings.appearance.row.feedTool.description":
+    "How tool calls (shell commands, edits, …) show in chat. Auto follows your expertise level.",
+  "settings.appearance.feedDisplay.auto": "Auto",
+  "settings.appearance.feedDisplay.expanded": "Expanded",
+  "settings.appearance.feedDisplay.collapsed": "Collapsed",
+  "settings.appearance.row.commandTiming.title": "Command timer",
+  "settings.appearance.row.commandTiming.description":
+    "Show elapsed and timeout seconds while a command runs.",
   "settings.general.section.notifications": "System notifications",
-  "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",
 
   "settings.general.row.instance.title": "Connected instance",
@@ -1964,33 +1973,8 @@ export const dict = {
   "settings.general.row.virtualFs.title": "Virtual workspace",
   "settings.general.row.virtualFs.description":
     "Keep this instance's projects, notes, and files in an app-private folder — for hosts without a browsable filesystem.",
-  "settings.general.row.feedReasoning.title": "Reasoning sections",
-  "settings.general.row.feedReasoning.description":
-    "How the model's reasoning shows in chat. Auto follows your expertise level.",
-  "settings.general.row.feedTool.title": "Tool and shell cards",
-  "settings.general.row.feedTool.description":
-    "How tool calls (shell commands, edits, …) show in chat. Auto follows your expertise level.",
-  "settings.general.feedDisplay.auto": "Auto",
-  "settings.general.feedDisplay.expanded": "Expanded",
-  "settings.general.feedDisplay.collapsed": "Collapsed",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
-
-  "settings.general.row.releaseNotes.title": "Release notes",
-  "settings.general.row.releaseNotes.description": 'Show a "What\'s New" summary after NovaClaw updates.',
-
-  // The status line under the toggle, one per state of context/highlights.tsx. Plain English on
-  // purpose: the Debug app's error log carries the URL and the status code, this says what happened.
-  // Never leave one of these blank — an unavailable subsystem has to name itself (todo.md ruling 2).
-  "settings.general.row.releaseNotes.status.idle":
-    "NovaClaw looks for release notes the first time it starts a new version.",
-  "settings.general.row.releaseNotes.status.checking": "Checking for release notes…",
-  "settings.general.row.releaseNotes.status.new": "Release notes for this version are ready — {{count}} to show.",
-  "settings.general.row.releaseNotes.status.none": "Up to date — this version had no release notes to show.",
-  "settings.general.row.releaseNotes.status.unavailableRetry":
-    "Couldn't reach the release-notes list. NovaClaw will try again the next time it starts.",
-  "settings.general.row.releaseNotes.status.unavailableFinal":
-    "No release notes are published for this version, so NovaClaw has stopped checking.",
 
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",

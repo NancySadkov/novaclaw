@@ -1030,8 +1030,8 @@ async function run() {
     check(false, "memory-enabled", `POST /api/world-memory/list failed: ${String(error)}`)
   }
 
-  // A healthy sidecar does not imply a usable app. This caught a real packaged build where
-  // HighlightsProvider initialized outside ServerSDKProvider: every HTTP assertion above passed,
+  // A healthy sidecar does not imply a usable app. This caught a real packaged build where a
+  // provider initialized outside ServerSDKProvider: every HTTP assertion above passed,
   // while the only thing the user could see was the root error page.
   try {
     const errorPage = await readRendererErrorPage(renderer.wsUrl)

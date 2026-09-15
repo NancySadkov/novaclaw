@@ -59,12 +59,6 @@ const LEDGER: Entry[] = [
     note: "Settings v2 → Appearance 'Learn more'. Same 404 as /docs.",
   },
   {
-    file: "context/highlights.tsx",
-    url: "https://novaclaw.app/changelog.json",
-    status: "dead",
-    note: "Fetched to build the What's-new highlights. Still 404, so the dialog is unreachable — but the fetch no longer fails silently (U5, 2026-07-28): the 404 is classified apart from a network failure and from a genuinely empty changelog, named in the Debug app's error log, and the version is marked seen so it stops re-fetching every launch. Not repointable — Discord is not a changelog; fixing it means publishing the file. See context/highlights.test.ts.",
-  },
-  {
     file: "pages/layout/helpers.ts",
     url: "https://novaclaw.app/favicon.svg",
     status: "unverified",

@@ -523,42 +523,24 @@ function isTrustedRendererUrl(value?: string) {
 }
 
 /**
- * Hosts whose responses need an ACAO injected because they do not send one, and that the renderer
- * legitimately reads cross-origin.
+ * 🔴 The desktop must not hand out a blanket `Access-Control-Allow-Origin`.
  *
- * ⚠️ This used to be a blanket `*` on EVERY response the renderer session received, and that
- * nullified the instance server's own CORS policy inside the desktop app. The server deliberately
- * allowlists `nc://renderer` and refuses everything else (`packages/server/src/cors.ts`, pinned by
- * `httpapi-cors.test.ts` asserting `https://evil.example` is refused) — and there is a whole
- * `corsVaryFix` middleware keeping `Vary: Origin` honest for that per-origin echo. Overwriting the
- * echo with `*` threw all of that away, including for the `Origin: null` requests an `allow-scripts`
- * sandboxed agent canvas sends.
+ * This used to be a blanket `*` on EVERY response the renderer session received, and that nullified
+ * the instance server's own CORS policy inside the desktop app. The server deliberately allowlists
+ * `nc://renderer` and refuses everything else (`packages/server/src/cors.ts`, pinned by
+ * `httpapi-cors.test.ts` asserting `https://evil.example` is refused) — and a `corsVaryFix`
+ * middleware keeps `Vary: Origin` honest for that per-origin echo. Overwriting the echo with `*`
+ * threw all of that away, including for the `Origin: null` requests an `allow-scripts` sandboxed
+ * agent canvas sends.
  *
- * It is narrowed rather than deleted because ONE fetch genuinely depends on it, measured rather than
- * assumed: `https://novaclaw.app/changelog.json` (the What's-new feed, `app/src/context/highlights.tsx`)
- * is served by a third-party static host that sends **no** `Access-Control-Allow-Origin` at all —
- * confirmed by `curl -D -`, whose 404 carries only `Content-Type`. Measured in the running dev app
- * over CDP: with the override the renderer reads it (`status 404, type "cors"`); with the override
- * disabled the same fetch fails `TypeError: Failed to fetch`. So deleting it outright would break
- * What's-new the day that file starts existing.
- *
- * The real fix is upstream — novaclaw.app should send its own ACAO — at which point this list, and
- * this whole function's CORS half, can go.
+ * It was then narrowed to one host that genuinely needed it, measured rather than assumed:
+ * `novaclaw.app/changelog.json`, the What's-new feed, sends **no** ACAO of its own. That feed and
+ * its broker are gone (owner, 2026-09-15 — the settings section that carried the toggle was
+ * scrapped, and no release notes are published), so the exception went with them. The header is now
+ * written NOWHERE, which is strictly stronger than the narrowed form and is what
+ * `cors-scope.test.ts` ratchets.
  */
-const ACAO_INJECT_ORIGINS = new Set(["https://novaclaw.app"])
-
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  // Only for the hosts that need it. Every other response — above all the instance server's — keeps
-  // whatever ACAO its own policy chose.
-  let origin: string | undefined
-  try {
-    origin = new URL(value).origin
-  } catch {
-    /* not an absolute URL; no injection */
-  }
-  if (origin !== undefined && ACAO_INJECT_ORIGINS.has(origin)) {
-    upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
-  }
   // Same gate the Document-Policy header already uses, and it is the right one: it is true for
   // `nc://renderer/*.html` (packaged) and for `*.html` on the dev-server origin (dev), i.e. for
   // exactly the documents this policy is written for — and never for a remote instance's HTML.

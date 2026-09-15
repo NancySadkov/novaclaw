@@ -410,7 +410,6 @@ export const dict = {
   "settings.tab.shortcuts": "Prečice",
 
   "settings.general.section.notifications": "Sistemske obavijesti",
-  "settings.general.section.updates": "Ažuriranja",
   "settings.general.section.sounds": "Zvučni efekti",
 
   "settings.general.row.language.title": "Jezik",
@@ -425,8 +424,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "UI font",
   "settings.general.row.uiFont.description": "Prilagodi font koji se koristi u cijelom interfejsu",
 
-  "settings.general.row.releaseNotes.title": "Bilješke o izdanju",
-  "settings.general.row.releaseNotes.description": 'Prikaži iskačuće prozore "Šta je novo" nakon ažuriranja',
 
   "sound.option.none": "Nijedan",
   "sound.option.alert01": "Upozorenje 01",
@@ -537,10 +534,6 @@ export const dict = {
   "workspace.type.local": "lokalno",
   "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Radni prostor se još priprema",
-  "dialog.releaseNotes.action.getStarted": "Započni",
-  "dialog.releaseNotes.action.next": "Sljedeće",
-  "dialog.releaseNotes.action.hideFuture": "Ne prikazuj ovo u budućnosti",
-  "dialog.releaseNotes.media.alt": "Pregled izdanja",
   "toast.project.reloadFailed.title": "Nije uspjelo ponovno učitavanje {{project}}",
   "common.moreCountSuffix": " (+{{count}} više)",
   "common.time.justNow": "Upravo sada",

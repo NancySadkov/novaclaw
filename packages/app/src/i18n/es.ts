@@ -408,7 +408,6 @@ export const dict = {
   "settings.tab.shortcuts": "Atajos",
 
   "settings.general.section.notifications": "Notificaciones del sistema",
-  "settings.general.section.updates": "Actualizaciones",
   "settings.general.section.sounds": "Efectos de sonido",
 
   "settings.general.row.language.title": "Idioma",
@@ -423,9 +422,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "Fuente de la interfaz",
   "settings.general.row.uiFont.description": "Personaliza la fuente usada en toda la interfaz",
 
-  "settings.general.row.releaseNotes.title": "Notas de la versión",
-  "settings.general.row.releaseNotes.description":
-    'Mostrar ventanas emergentes de "Novedades" después de las actualizaciones',
 
   "sound.option.none": "Ninguno",
   "sound.option.alert01": "Alerta 01",
@@ -538,10 +534,6 @@ export const dict = {
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "El espacio de trabajo aún se está preparando",
-  "dialog.releaseNotes.action.getStarted": "Comenzar",
-  "dialog.releaseNotes.action.next": "Siguiente",
-  "dialog.releaseNotes.action.hideFuture": "No mostrar esto en el futuro",
-  "dialog.releaseNotes.media.alt": "Vista previa de la versión",
   "toast.project.reloadFailed.title": "Error al recargar {{project}}",
   "common.moreCountSuffix": " (+{{count}} más)",
   "common.time.justNow": "Justo ahora",

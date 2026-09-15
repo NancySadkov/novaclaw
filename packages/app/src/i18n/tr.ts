@@ -406,7 +406,6 @@ export const dict = {
   "settings.tab.shortcuts": "Kısayollar",
 
   "settings.general.section.notifications": "Sistem bildirimleri",
-  "settings.general.section.updates": "Güncellemeler",
   "settings.general.section.sounds": "Ses efektleri",
 
   "settings.general.row.language.title": "Dil",
@@ -421,8 +420,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "Arayüz Yazı Tipi",
   "settings.general.row.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
 
-  "settings.general.row.releaseNotes.title": "Sürüm notları",
-  "settings.general.row.releaseNotes.description": "Güncellemelerden sonra Yenilikler bildirimlerini göster",
 
   "sound.option.none": "Yok",
   "sound.option.alert01": "Uyarı 01",
@@ -532,10 +529,6 @@ export const dict = {
   "workspace.type.local": "yerel",
   "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Çalışma alanı hâlâ hazırlanıyor",
-  "dialog.releaseNotes.action.getStarted": "Başla",
-  "dialog.releaseNotes.action.next": "İleri",
-  "dialog.releaseNotes.action.hideFuture": "Bunu gelecekte bir daha gösterme",
-  "dialog.releaseNotes.media.alt": "Sürüm önizlemesi",
   "toast.project.reloadFailed.title": "{{project}} yeniden yüklenemedi",
   "common.moreCountSuffix": " (+{{count}} daha)",
   "common.time.justNow": "Şimdi",

@@ -402,7 +402,6 @@ export const dict = {
   "settings.tab.shortcuts": "快捷键",
 
   "settings.general.section.notifications": "系统通知",
-  "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 NovaClaw 的显示语言",
@@ -415,8 +414,6 @@ export const dict = {
   "settings.general.row.terminalFont.description": "自定义终端使用的字体",
   "settings.general.row.uiFont.title": "界面字体",
   "settings.general.row.uiFont.description": "自定义整个界面使用的字体",
-  "settings.general.row.releaseNotes.title": "发行说明",
-  "settings.general.row.releaseNotes.description": "更新后显示“新功能”弹窗",
 
   "sound.option.none": "无",
   "sound.option.alert01": "警报 01",
@@ -523,10 +520,6 @@ export const dict = {
   "workspace.type.local": "本地",
   "workspace.type.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作区仍在准备中",
-  "dialog.releaseNotes.action.getStarted": "开始",
-  "dialog.releaseNotes.action.next": "下一步",
-  "dialog.releaseNotes.action.hideFuture": "不再显示",
-  "dialog.releaseNotes.media.alt": "发布预览",
   "toast.project.reloadFailed.title": "无法重新加载 {{project}}",
   "common.moreCountSuffix": " (还有 {{count}} 个)",
   "common.time.justNow": "刚刚",

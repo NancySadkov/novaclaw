@@ -399,7 +399,6 @@ export const dict = {
   "settings.tab.shortcuts": "ทางลัด",
 
   "settings.general.section.notifications": "การแจ้งเตือนระบบ",
-  "settings.general.section.updates": "การอัปเดต",
   "settings.general.section.sounds": "เสียงเอฟเฟกต์",
 
   "settings.general.row.language.title": "ภาษา",
@@ -414,8 +413,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "ฟอนต์ UI",
   "settings.general.row.uiFont.description": "ปรับแต่งฟอนต์ที่ใช้ทั่วทั้งอินเทอร์เฟซ",
 
-  "settings.general.row.releaseNotes.title": "บันทึกการอัปเดต",
-  "settings.general.row.releaseNotes.description": "แสดงป๊อปอัพ What's New หลังจากอัปเดต",
 
   "sound.option.none": "ไม่มี",
   "sound.option.alert01": "เสียงเตือน 01",
@@ -524,10 +521,6 @@ export const dict = {
   "workspace.type.local": "ในเครื่อง",
   "workspace.type.sandbox": "แซนด์บ็อกซ์",
   "workspace.error.stillPreparing": "พื้นที่ทำงานกำลังเตรียมอยู่",
-  "dialog.releaseNotes.action.getStarted": "เริ่มต้น",
-  "dialog.releaseNotes.action.next": "ถัดไป",
-  "dialog.releaseNotes.action.hideFuture": "ไม่ต้องแสดงสิ่งนี้อีกในอนาคต",
-  "dialog.releaseNotes.media.alt": "ตัวอย่างรุ่น",
   "toast.project.reloadFailed.title": "ไม่สามารถโหลด {{project}} ใหม่ได้",
   "common.moreCountSuffix": " (เพิ่มอีก {{count}})",
   "common.time.justNow": "เมื่อสักครู่นี้",

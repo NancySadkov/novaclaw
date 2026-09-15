@@ -636,10 +636,10 @@ const QUALIFIED_FETCH = /\b(?:globalThis|window|self)\.fetch\s*\(/
 
 /**
  * ⚠️ **Comments are prose, and a ledger that fires on prose gets deleted rather than obeyed.**
- * Caught on the first run of this file: `utils/error-log.ts` was reported as an offender because a
- * comment there says *"release-notes fetch (context/highlights.tsx)"* — a space before the paren,
- * which the `\s*` above happily matched. Stripping comments first is the fix, and the guard is
- * strictly better for it: `\s*` stays, so an actual `fetch (url)` is still caught.
+ * Caught on the first run of this file: a source comment was reported as an offender because it
+ * said *"release-notes fetch (url)"* — a space before the paren, which the `\s*` above happily
+ * matched. Stripping comments first is the fix, and the guard is strictly better for it: `\s*`
+ * stays, so an actual `fetch (url)` is still caught.
  *
  * The line-comment pattern uses the negative lookbehind AGENTS.md pitfall #6 exists for — a bare
  * `//` also matches the `//` in `http://`, which would eat the rest of any line containing a URL.
@@ -782,8 +782,8 @@ describe("the sweep can actually see the tree", () => {
     expect(callsFetch("void resource.refetch()")).toBe(false)
     expect(callsFetch("router.prefetch(href)")).toBe(false)
     expect(callsFetch("const f: typeof fetch = platform.fetch ?? globalThis.fetch")).toBe(false)
-    // Prose is not code. This exact string is in `utils/error-log.ts` and it failed the first run.
-    expect(callsFetch("// release-notes fetch (context/highlights.tsx) hands its line here")).toBe(false)
+    // Prose is not code, even when it contains a paren-spaced `fetch (`.
+    expect(callsFetch("// a notice about a fetch (url) in prose")).toBe(false)
     expect(callsFetch("/* a block comment mentioning fetch(url) */")).toBe(false)
     // …but a comment must not be able to HIDE a real call on the same file.
     expect(callsFetch("// mentions fetch(\nconst res = await fetch(url)")).toBe(true)

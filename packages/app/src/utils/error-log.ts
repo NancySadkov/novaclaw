@@ -7,11 +7,12 @@ import * as Timestamp from "@novaclaw/schema/time"
 // retain huge objects; the console taps guard re-entrancy so a tap that itself throws or logs
 // cannot recurse.
 
-// ⚠️ `notice` was added 2026-07-28 for a fault that is NOT a fault in the user's install. The
-// release-notes fetch (context/highlights.tsx) hands its unavailable-line here, and OUR changelog file
-// 404s — so every launch wrote a `warn` accusing the user's machine of something our CDN was doing.
-// A warning the user can neither cause nor fix trains them to ignore warnings, which is how the one
-// that matters gets missed. `notice` is the honest level: recorded, named, not alarming.
+// ⚠️ `notice` was added 2026-07-28 for a fault that is NOT a fault in the user's install: a
+// first-party fetch whose upstream file simply was not published wrote a `warn` accusing the user's
+// machine of something our own host was doing. (The release-notes changelog was that caller; it was
+// removed on 2026-09-15, and the level is kept as the vocabulary for the next such fault.) A warning
+// the user can neither cause nor fix trains them to ignore warnings, which is how the one that
+// matters gets missed. `notice` is the honest level: recorded, named, not alarming.
 // ⚠️ A new level MUST also be given a colour in the Debug app's Error-log panel (pages/debug.tsx) —
 // its `classList` matches levels by name, so an undeclared level renders in the inherited colour and
 // reads as a rendering bug rather than a level.

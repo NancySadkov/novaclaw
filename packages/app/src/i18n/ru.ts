@@ -414,7 +414,6 @@ export const dict = {
   "settings.tab.shortcuts": "Горячие клавиши",
 
   "settings.general.section.notifications": "Системные уведомления",
-  "settings.general.section.updates": "Обновления",
   "settings.general.section.sounds": "Звуковые эффекты",
 
   "settings.general.row.language.title": "Язык",
@@ -429,8 +428,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "Шрифт интерфейса",
   "settings.general.row.uiFont.description": "Настройте шрифт, используемый во всем интерфейсе",
 
-  "settings.general.row.releaseNotes.title": "Примечания к выпуску",
-  "settings.general.row.releaseNotes.description": 'Показывать всплывающие окна "Что нового" после обновлений',
 
   "sound.option.none": "Нет",
   "sound.option.alert01": "Alert 01",
@@ -542,10 +539,6 @@ export const dict = {
   "workspace.type.local": "локальное",
   "workspace.type.sandbox": "песочница",
   "workspace.error.stillPreparing": "Рабочее пространство всё ещё подготавливается",
-  "dialog.releaseNotes.action.getStarted": "Начать",
-  "dialog.releaseNotes.action.next": "Далее",
-  "dialog.releaseNotes.action.hideFuture": "Больше не показывать",
-  "dialog.releaseNotes.media.alt": "Превью релиза",
   "toast.project.reloadFailed.title": "Не удалось перезагрузить {{project}}",
   "common.moreCountSuffix": " (ещё {{count}})",
   "common.time.justNow": "Только что",

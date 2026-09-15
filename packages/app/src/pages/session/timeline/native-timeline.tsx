@@ -88,14 +88,14 @@ export function NativeTimeline(props: {
   const expertise = useExpertise()
   const settings = useSettings()
   // The user's explicit Settings pref wins over the expertise-level default ("auto") — the
-  // feed-display selects in Settings → General (owner 2026-07-22: the level default alone left
+  // feed-display selects in Settings → Appearance (owner 2026-07-22: the level default alone left
   // no way to keep reasoning/tool cards collapsed as a Developer, and the old shell/edit
   // switches were dead V1-path settings).
   const levelFold = () => REASONING_FOLD[expertise.level()] ?? "collapsed"
   const applyPref = (pref: "auto" | "expanded" | "collapsed"): ReasoningFoldMode =>
     pref === "expanded" ? "open" : pref === "collapsed" ? "collapsed" : levelFold()
-  const reasoningFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedReasoningDisplay()))
-  const toolFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedToolDisplay()))
+  const reasoningFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.appearance.feedReasoningDisplay()))
+  const toolFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.appearance.feedToolDisplay()))
   // `stored` is everything the native store holds; `messages` is what a staged revert leaves on
   // screen. Liveness reads `stored` (the server is still running that turn whether or not a revert
   // hides it); rendering and auto-scroll read `messages`.
@@ -441,6 +441,7 @@ export function NativeTimeline(props: {
             waitLabel={waitLabel()}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}
+            showCommandTiming={settings.appearance.commandTiming()}
             developer={expertise.level() === "developer"}
             pending={pending()}
             onRevert={props.onRevert}

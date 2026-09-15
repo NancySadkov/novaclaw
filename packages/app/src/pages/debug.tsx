@@ -896,9 +896,10 @@ function DebugAppPage() {
                         "text-v2-state-fg-warning": entry.level === "warn",
                         "text-v2-text-text-muted": entry.level === "rejection",
                         // A notice is NOT a fault in the user's install — it is one of our own
-                        // subsystems reporting something worth recording (a missing changelog file
-                        // on our CDN, say). Without an entry here it renders in the inherited body
-                        // colour, which reads as a styling bug rather than as the quietest level.
+                        // subsystems reporting something worth recording (a first-party file that
+                        // was simply not published, say). Without an entry here it renders in the
+                        // inherited body colour, which reads as a styling bug rather than as the
+                        // quietest level.
                         "text-v2-text-text-faint": entry.level === "notice",
                       }}
                     >

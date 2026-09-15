@@ -203,6 +203,15 @@ export const SettingsAppearanceV2: Component = () => {
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
 
+  // Feed expansion prefs (reasoning folds / tool cards): "auto" = the expertise-level default.
+  // Moved here from General with the rows themselves (owner, 2026-09-15) — they are per-device
+  // presentation, the same class as the theme and fonts above.
+  const feedDisplayOptions = createMemo(() => [
+    { value: "auto" as const, label: language.t("settings.appearance.feedDisplay.auto") },
+    { value: "expanded" as const, label: language.t("settings.appearance.feedDisplay.expanded") },
+    { value: "collapsed" as const, label: language.t("settings.appearance.feedDisplay.collapsed") },
+  ])
+
   const noneSound = { id: "none", label: "sound.option.none" } as const
   const soundOptions = [noneSound, ...SOUND_OPTIONS]
   const demoSound = createDemoSound()
@@ -391,8 +400,70 @@ export const SettingsAppearanceV2: Component = () => {
     </div>
   )
 
-  const SoundsSection = () => (
+  const ChatSection = () => (
     <div class="settings-v2-section">
+      <h3 class="settings-v2-section-title">{language.t("settings.appearance.section.chat")}</h3>
+
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.appearance.row.feedReasoning.title")}
+          description={language.t("settings.appearance.row.feedReasoning.description")}
+        >
+          <div data-action="settings-feed-reasoning-display">
+            <SelectV2
+              appearance="inline"
+              options={feedDisplayOptions()}
+              placement="bottom-end"
+              gutter={6}
+              current={feedDisplayOptions().find((o) => o.value === settings.appearance.feedReasoningDisplay())}
+              value={(o) => o.value}
+              label={(o) => o.label}
+              onSelect={(option) => {
+                // Kobalte re-emits unchanged values when options recreate — diff before writing.
+                if (option && option.value !== settings.appearance.feedReasoningDisplay())
+                  settings.appearance.setFeedReasoningDisplay(option.value)
+              }}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.appearance.row.feedTool.title")}
+          description={language.t("settings.appearance.row.feedTool.description")}
+        >
+          <div data-action="settings-feed-tool-display">
+            <SelectV2
+              appearance="inline"
+              options={feedDisplayOptions()}
+              placement="bottom-end"
+              gutter={6}
+              current={feedDisplayOptions().find((o) => o.value === settings.appearance.feedToolDisplay())}
+              value={(o) => o.value}
+              label={(o) => o.label}
+              onSelect={(option) => {
+                if (option && option.value !== settings.appearance.feedToolDisplay())
+                  settings.appearance.setFeedToolDisplay(option.value)
+              }}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.appearance.row.commandTiming.title")}
+          description={language.t("settings.appearance.row.commandTiming.description")}
+        >
+          <div data-action="settings-command-timing">
+            <Switch
+              checked={settings.appearance.commandTiming()}
+              onChange={(checked) => settings.appearance.setCommandTiming(checked)}
+            />
+          </div>
+        </SettingsRowV2>
+      </SettingsListV2>
+    </div>
+  )
+
+  const SoundsSection = () => (    <div class="settings-v2-section">
       <h3 class="settings-v2-section-title">{language.t("settings.general.section.sounds")}</h3>
 
       <SettingsListV2>
@@ -461,6 +532,7 @@ export const SettingsAppearanceV2: Component = () => {
 
       <div class="settings-v2-tab-body">
         <AppearanceSection />
+        <ChatSection />
         <SoundsSection />
       </div>
     </>

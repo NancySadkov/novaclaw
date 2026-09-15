@@ -27,7 +27,6 @@ export interface SoundSettings {
 export interface Settings {
   general: {
     autoSave: boolean
-    releaseNotes: boolean
     // ⚠️ Six `show*` chrome toggles used to sit here — `showFileTree`, `showNavigation`,
     // `showSearch`, `showStatus`, `showTerminal`, `showCustomAgents` — and every one of them was
     // INERT (deleted 2026-08-07). The B2 UIX pass (b524c4ff3, uix.md §7 "Pruned 2026-07-02")
@@ -40,12 +39,6 @@ export interface Settings {
     // panel should be hideable, give it an affordance, not a settings key.
     showReasoningSummaries: boolean
     defaultPermissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-    // Feed expansion prefs for the NATIVE transcript: "auto" = the expertise-level default
-    // (C4 — Normal collapsed, Advanced live, Developer open); explicit values always win.
-    // Replaced the dead V1-path shellToolPartsExpanded/editToolPartsExpanded switches, which
-    // the native transcript never read (owner-hit 2026-07-22).
-    feedReasoningDisplay: "auto" | "expanded" | "collapsed"
-    feedToolDisplay: "auto" | "expanded" | "collapsed"
     mobileTitlebarPosition: "top" | "bottom"
     expertiseLevel: ExpertiseLevel
   }
@@ -56,6 +49,14 @@ export interface Settings {
     terminal: string
     // Color-scheme preset id (uix.md §7): "nova" (default gold/purple) | "summer" | "autumn".
     appTheme: string
+    // Feed expansion prefs for the NATIVE transcript: "auto" = the expertise-level default
+    // (C4 — Normal collapsed, Advanced live, Developer open); explicit values always win.
+    // They live in Appearance, next to the other per-device presentation prefs, not in General.
+    feedReasoningDisplay: "auto" | "expanded" | "collapsed"
+    feedToolDisplay: "auto" | "expanded" | "collapsed"
+    // Show the `<elapsed>s / <timeout>s` pair on running bash/wait cards. On by default; a user who
+    // finds the second number noise turns it off here rather than losing the whole card.
+    commandTiming: boolean
   }
   keybinds: Record<string, string>
   permissions: {
@@ -121,13 +122,10 @@ export function terminalFontFamily(font: string | undefined) {
 const defaultSettings: Settings = {
   general: {
     autoSave: true,
-    releaseNotes: true,
     showReasoningSummaries: true,
     // Write access to the PROJECT FOLDER by default (owner 2026-07-25). Outside the folder is still
     // guarded regardless of mode, so this is "trusted here", not "trusted everywhere".
     defaultPermissionMode: "bypass",
-    feedReasoningDisplay: "auto",
-    feedToolDisplay: "auto",
     mobileTitlebarPosition: "top",
     expertiseLevel: "normal",
   },
@@ -137,6 +135,9 @@ const defaultSettings: Settings = {
     sans: "",
     terminal: "",
     appTheme: "nova",
+    feedReasoningDisplay: "auto",
+    feedToolDisplay: "auto",
+    commandTiming: true,
   },
   keybinds: {},
   permissions: {
@@ -190,10 +191,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setAutoSave(value: boolean) {
           setStore("general", "autoSave", value)
         },
-        releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
-        setReleaseNotes(value: boolean) {
-          setStore("general", "releaseNotes", value)
-        },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,
           defaultSettings.general.showReasoningSummaries,
@@ -209,17 +206,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setDefaultPermissionMode(value: Settings["general"]["defaultPermissionMode"]) {
           setStore("general", "defaultPermissionMode", value)
-        },
-        feedReasoningDisplay: withFallback(
-          () => store.general?.feedReasoningDisplay,
-          defaultSettings.general.feedReasoningDisplay,
-        ),
-        setFeedReasoningDisplay(value: Settings["general"]["feedReasoningDisplay"]) {
-          setStore("general", "feedReasoningDisplay", value)
-        },
-        feedToolDisplay: withFallback(() => store.general?.feedToolDisplay, defaultSettings.general.feedToolDisplay),
-        setFeedToolDisplay(value: Settings["general"]["feedToolDisplay"]) {
-          setStore("general", "feedToolDisplay", value)
         },
         mobileTitlebarPosition: withFallback(
           () => store.general?.mobileTitlebarPosition,
@@ -256,6 +242,24 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         appTheme: withFallback(() => store.appearance?.appTheme, defaultSettings.appearance.appTheme),
         setAppTheme(value: string) {
           setStore("appearance", "appTheme", value)
+        },
+        feedReasoningDisplay: withFallback(
+          () => store.appearance?.feedReasoningDisplay,
+          defaultSettings.appearance.feedReasoningDisplay,
+        ),
+        setFeedReasoningDisplay(value: Settings["appearance"]["feedReasoningDisplay"]) {
+          setStore("appearance", "feedReasoningDisplay", value)
+        },
+        feedToolDisplay: withFallback(
+          () => store.appearance?.feedToolDisplay,
+          defaultSettings.appearance.feedToolDisplay,
+        ),
+        setFeedToolDisplay(value: Settings["appearance"]["feedToolDisplay"]) {
+          setStore("appearance", "feedToolDisplay", value)
+        },
+        commandTiming: withFallback(() => store.appearance?.commandTiming, defaultSettings.appearance.commandTiming),
+        setCommandTiming(value: boolean) {
+          setStore("appearance", "commandTiming", value)
         },
       },
       keybinds: {

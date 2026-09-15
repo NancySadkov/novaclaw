@@ -140,8 +140,8 @@ const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() =
 const TranscriptMessagesContext = createContext<Accessor<readonly SessionMessage[]>>(() => [])
 const TranscriptDirectoryContext = createContext<Accessor<string | undefined>>(() => undefined)
 type ActiveToolWork = { toolID: string; timing: TurnTiming; tokens?: string; runStartedAt?: number }
-type ToolContextValue = { maxTimeoutMs?: number; active?: ActiveToolWork }
-const ToolContext = createContext<Accessor<ToolContextValue>>(() => ({}))
+type ToolContextValue = { maxTimeoutMs?: number; active?: ActiveToolWork; commandTiming: boolean }
+const ToolContext = createContext<Accessor<ToolContextValue>>(() => ({ commandTiming: true }))
 
 /** Images on the latest real prompt explain a long provider-prefill without blaming the endpoint. */
 function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): number {
@@ -190,6 +190,11 @@ export function NativeTranscript(props: {
   liveGeneratedTokens?: number
   /** Effective officer ceiling for the command/wait elapsed display. */
   maxToolTimeoutMs?: number
+  /**
+   * Show the `<elapsed>s / <timeout>s` pair on running bash/wait cards. On by default; the Appearance
+   * tab's command-timer toggle is the one writer. A caller that omits it keeps the shipped default.
+   */
+  showCommandTiming?: boolean
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -336,7 +341,7 @@ export function NativeTranscript(props: {
       })}
     >
       <TranscriptDirectoryContext.Provider value={() => props.directory}>
-        <ToolContext.Provider value={() => ({ maxTimeoutMs: props.maxToolTimeoutMs, active: activeToolWork() })}>
+        <ToolContext.Provider value={() => ({ maxTimeoutMs: props.maxToolTimeoutMs, active: activeToolWork(), commandTiming: props.showCommandTiming ?? true })}>
           <TranscriptMessagesContext.Provider value={() => props.messages}>
             <TranscriptActionsContext.Provider
               value={() => ({
@@ -1399,13 +1404,13 @@ function ToolPart(props: {
   const input = () => toolInput(props.part.state)
   const timed = () => props.part.name === "bash" || props.part.name === "wait"
   createEffect(() => {
-    if (!timed() || props.part.state.status !== "running") return
+    if (!toolContext().commandTiming || !timed() || props.part.state.status !== "running") return
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     onCleanup(() => clearInterval(timer))
   })
   const shellCommand = () => (props.part.name === "bash" ? str(input().command) : undefined)
   const elapsed = () =>
-    timed() && props.part.state.status !== "pending"
+    toolContext().commandTiming && timed() && props.part.state.status !== "pending"
       ? commandElapsed(
           props.part.time.ran ?? props.part.time.created,
           props.part.time.completed,

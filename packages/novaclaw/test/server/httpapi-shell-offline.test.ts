@@ -109,13 +109,6 @@ describe("shell/offline HttpApi", () => {
       expect(hotBody.active).toBe(7)
       expect(hotBody.layers.slice(0, 7).every((layer) => layer.active)).toBe(true)
       expect(hotBody.layers[7]!.active).toBe(false)
-
-      // The changelog broker is a plain router layer rather than a typed HttpApi handler. Its
-      // Offline requirement must still reach the per-request context: this returned 500
-      // "Service not found: @novaclaw/Offline" in the packaged app while /shell/offline worked.
-      const changelog = yield* requestInDirectory("/api/maintenance/changelog", tmp.directory)
-      expect(changelog.status).toBe(403)
-      expect(yield* changelog.json).toMatchObject({ error: "airgapped" })
     }).pipe(Effect.ensuring(Effect.sync(() => Offline.resetPolicy()))),
   )
 })

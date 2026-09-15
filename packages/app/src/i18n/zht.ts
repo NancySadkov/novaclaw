@@ -398,7 +398,6 @@ export const dict = {
   "settings.tab.shortcuts": "快速鍵",
 
   "settings.general.section.notifications": "系統通知",
-  "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",
 
   "settings.general.row.language.title": "語言",
@@ -413,8 +412,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "介面字型",
   "settings.general.row.uiFont.description": "自訂整個介面使用的字型",
 
-  "settings.general.row.releaseNotes.title": "發行說明",
-  "settings.general.row.releaseNotes.description": "更新後顯示「新功能」彈出視窗",
 
   "sound.option.none": "無",
   "sound.option.alert01": "警報 01",
@@ -522,10 +519,6 @@ export const dict = {
   "workspace.type.local": "本地",
   "workspace.type.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作區仍在準備中",
-  "dialog.releaseNotes.action.getStarted": "開始",
-  "dialog.releaseNotes.action.next": "下一步",
-  "dialog.releaseNotes.action.hideFuture": "不再顯示",
-  "dialog.releaseNotes.media.alt": "發佈預覽",
   "toast.project.reloadFailed.title": "無法重新載入 {{project}}",
   "common.moreCountSuffix": " (還有 {{count}} 個)",
   "common.time.justNow": "剛剛",

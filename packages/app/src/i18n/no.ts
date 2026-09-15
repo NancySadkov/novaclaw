@@ -404,7 +404,6 @@ export const dict = {
   "settings.tab.shortcuts": "Snarveier",
 
   "settings.general.section.notifications": "Systemvarsler",
-  "settings.general.section.updates": "Oppdateringer",
   "settings.general.section.sounds": "Lydeffekter",
 
   "settings.general.row.language.title": "Språk",
@@ -419,8 +418,6 @@ export const dict = {
   "settings.general.row.uiFont.title": "UI-skrift",
   "settings.general.row.uiFont.description": "Tilpass skrifttypen som brukes i hele grensesnittet",
 
-  "settings.general.row.releaseNotes.title": "Utgivelsesnotater",
-  "settings.general.row.releaseNotes.description": 'Vis "Hva er nytt"-vinduer etter oppdateringer',
 
   "sound.option.none": "Ingen",
   "sound.option.alert01": "Varsel 01",
@@ -531,10 +528,6 @@ export const dict = {
   "workspace.type.local": "lokal",
   "workspace.type.sandbox": "sandkasse",
   "workspace.error.stillPreparing": "Arbeidsområdet klargjøres fortsatt",
-  "dialog.releaseNotes.action.getStarted": "Kom i gang",
-  "dialog.releaseNotes.action.next": "Neste",
-  "dialog.releaseNotes.action.hideFuture": "Ikke vis disse igjen",
-  "dialog.releaseNotes.media.alt": "Forhåndsvisning av utgivelse",
   "toast.project.reloadFailed.title": "Kunne ikke laste inn {{project}} på nytt",
   "common.moreCountSuffix": " (+{{count}} mer)",
   "common.time.justNow": "Akkurat nå",
