@@ -11,7 +11,8 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
+import { Token } from "../src/util/token"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
 import { fragmentFixture } from "./fixture/fragments"
 
 /**
@@ -676,5 +677,122 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       (context as Array<{ type: string }>).some((message) => message.type === "compaction"),
       "an interrupted summary must not leave a compaction behind",
     ).toBe(false)
+  })
+})
+
+/**
+ * ⭐ **THE DISPATCH GATE MUST MEASURE WITH THE PROVIDER'S OWN COUNT.**
+ *
+ * An anchor's only source is a real usage report, so turn one here is `completeTurn` with the
+ * provider's own number on its step-finish and nothing else changed. The two cases below are the same
+ * fixture at the same sizes; the single variable is whether the provider reported a count — which is
+ * exactly what the gate was ignoring when it killed a live session on 2026-09-15.
+ *
+ * Sizes are derived from the estimator the harness itself uses rather than hard-coded, so the case
+ * cannot quietly drift into proving nothing: 14,000 tokens of transcript on turn one, a 6,500-token
+ * prompt on turn two, against a 20,000-token ceiling (context 40,000, output 20,000 — the packer's
+ * `promptCeiling` is the same number, so the gate is the only thing that can refuse). The provider
+ * reports 8,000 for turn one: the same direction and a comparable size of over-estimate the live
+ * route showed (1.41x on `ses_geryon`).
+ */
+const gateModel = { context: 40_000, output: 20_000 } as const
+
+const countedTurn = (id: string, text: string, inputTokens: number): LLMEvent[] => [
+  LLMEvent.stepStart({ index: 0 }),
+  LLMEvent.textStart({ id }),
+  LLMEvent.textDelta({ id, text }),
+  LLMEvent.textEnd({ id }),
+  LLMEvent.stepFinish({
+    index: 0,
+    reason: "stop",
+    usage: {
+      inputTokens,
+      nonCachedInputTokens: inputTokens,
+      cacheReadInputTokens: 0,
+      cacheWriteInputTokens: 0,
+      outputTokens: 12,
+    },
+  }),
+  LLMEvent.finish({ reason: "stop" }),
+]
+
+const gateProse = "the runner measures the outbound request before it dispatches it. "
+const sized = (tokens: number) => gateProse.repeat(Math.ceil(tokens / Token.estimate(gateProse)))
+const GATE_TURN_ONE_TOKENS = 14_000
+const GATE_TURN_TWO_TOKENS = 6_500
+const GATE_PROVIDER_REPORTED = 8_000
+
+const driveGate = (
+  harness: ReturnType<typeof makeRunnerHarness>,
+  label: string,
+): Promise<Array<{ type: string }>> =>
+  drive(
+    harness,
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      for (const tokens of [GATE_TURN_ONE_TOKENS, GATE_TURN_TWO_TOKENS]) {
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: sized(tokens) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+      }
+      return yield* session.context(HARNESS_SESSION)
+    }),
+    label,
+  )
+
+describe("SessionRunnerLLM — the dispatch gate measures with the provider's own count", () => {
+  test("🔴 a chat the provider has already counted under the ceiling is dispatched, not refused", async () => {
+    const harness = makeRunnerHarness({
+      turns: [countedTurn("counted", "First answer", GATE_PROVIDER_REPORTED), completeTurn("answered", "Second answer")],
+    })
+    harness.controls.currentModel = harness.makeModel("counted-route", gateModel)
+
+    const context = await driveGate(harness, "claim — the gate reads the anchor the packer already reads")
+
+    expect(
+      harness.requests,
+      "the provider had already counted this chat under the ceiling and the packer had packed to that " +
+        "same anchor (droppedMessages: 0), so the second request must go out rather than being refused " +
+        "on the raw heuristic.",
+    ).toHaveLength(2)
+    expect(context.slice(-2), "and the turn settles on the provider's answer, not on an error").toMatchObject([
+      { type: "user" },
+      { type: "assistant", finish: "stop" },
+    ])
+  })
+
+  test("with no reported count the same chat is refused, and the harness has to fold it", async () => {
+    // The control: identical fixture, identical sizes, and the only difference is that turn one's
+    // response carries no usage — so no anchor exists and the raw heuristic is all the gate has. That
+    // number is genuinely over the ceiling here, so refusing is right; it is the anchored case above
+    // that was wrong.
+    //
+    // ⚠️ A refusal is not the end of the turn: it is classified `context-overflow`, so the runner
+    // folds the transcript and retries once. That is why this case spends THREE requests where the
+    // anchored case spends two, and why the transcript gains a compaction. The extra requests are the
+    // cost of not knowing the provider's count, and they are the point of the comparison.
+    const harness = makeRunnerHarness({
+      turns: [
+        completeTurn("uncounted", "First answer"),
+        fragmentFixture("text", "text-summary", ["## Goal\n- Fold to fit"]).completeEvents,
+        completeTurn("answered", "Second answer"),
+      ],
+    })
+    harness.controls.currentModel = harness.makeModel("uncounted-route", gateModel)
+
+    const context = await driveGate(harness, "claim — with no anchor the gate refuses what the heuristic says cannot fit")
+
+    expect(
+      harness.requests,
+      "the refused attempt never reaches the provider; the summary and the retry do",
+    ).toHaveLength(3)
+    expect(userTexts(harness.requests[1]!).at(-1), "the middle request is the summarizer's").toContain("## Goal")
+    expect(context.slice(-2), "the chat had to be folded to fit").toMatchObject([
+      { type: "compaction", summary: "## Goal\n- Fold to fit" },
+      { type: "assistant", finish: "stop" },
+    ])
   })
 })

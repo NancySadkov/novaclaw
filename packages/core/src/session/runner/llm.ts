@@ -2442,9 +2442,41 @@ export const layer = Layer.effect(
           "session.context.size": packed.contextSize,
         })
       let request = preparedDispatch.request
-      let outboundPromptTokens = Math.ceil(
-        PromptEstimate.whole(request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
-      )
+      /**
+       * 🔴 **THE GATE MUST MEASURE WITH THE PROVIDER'S OWN COUNT, OR IT REFUSES A CHAT THAT FITS.**
+       *
+       * This was `PromptEstimate.whole(request) * promptFactor` — the raw heuristic, with no anchor.
+       * Measured 2026-09-15 (`ses_geryon`, the session that landed this gate): the heuristic priced
+       * the outbound request at **229,614** against a **229,376** ceiling, and the gate refused. The
+       * same request carried a durable anchor recording what the provider had actually counted for
+       * it one step earlier — **162,572** input tokens, 67 k UNDER the ceiling — and the packer had
+       * already used that anchor: `promptCorrectionTokens` is threaded into its budget, so it
+       * dropped nothing and reported `droppedMessages: 0`. So the harness refused a request its own
+       * packer had approved and its own provider had measured, and the turn died on it. A refusal
+       * built on the most pessimistic number in the building is the same defect as dispatching on
+       * the most optimistic one, facing the other way.
+       *
+       * ⚠️ **`promptFactor` cannot fix this.** `calibrationFactor` is clamped to `[1, 1.25]` — it may
+       * only inflate — while this route's error is an OVER-estimate (heuristic ÷ reported = 1.41 on
+       * the same transcript). Only the anchor corrects a high heuristic, and the anchor is exactly
+       * what the gate was not reading.
+       *
+       * ⭐ **Resolve again on the PACKED request, not on the opening one.** `resolve` prices one
+       * request; the packer then rewrites it (eviction, elision, a hard re-pack) before anything
+       * leaves, and the correction it establishes is a property of the route and the settled prefix
+       * rather than of the request shape — so it transfers, but only onto the request that is
+       * actually sent. Reading `openingRequest` here would report a request that was never sent.
+       */
+      const resolveOutbound = (candidate: ProviderDispatch.PrepareInput["request"]) =>
+        PromptEstimate.resolve({
+          request: candidate,
+          messages: entries.map((entry) => entry.message),
+          scope: promptScope,
+          calibrationFactor: routeProfile.promptFactor,
+          anchoredResidualRatios: routeProfile.promptResidualRatios,
+          imagePatchPixels: routeProfile.imagePatchPixels,
+        })
+      let outboundPromptTokens = resolveOutbound(request).estimatedTokens
       /**
        * 🔴 **1M — THE LAST GATE, AND THE ONLY ONE THAT KNOWS BOTH THE CEILING AND THE BYTES.**
        *
@@ -2501,9 +2533,7 @@ export const layer = Layer.effect(
           "session.context.size": preparedDispatch.packed.contextSize,
         })
         const shrunk = ProviderDispatch.prepare({ ...prepareInput, hard: true })
-        const shrunkTokens = Math.ceil(
-          PromptEstimate.whole(shrunk.request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
-        )
+        const shrunkTokens = resolveOutbound(shrunk.request).estimatedTokens
         if (shrunk.packed.fits && shrunkTokens <= dispatchCeiling) {
           yield* Log.event("session.context.ceiling.shrunk", {
             "session.id": session.id,
@@ -3174,6 +3204,19 @@ export const layer = Layer.effect(
                 guard: modelGuard,
                 request,
                 imagePatchPixels: routeProfile.imagePatchPixels,
+                /**
+                 * ⚠️ **THE RECORD MUST NAME THE NUMBER THAT WAS ACTUALLY AVAILABLE.** This call site
+                 * used to pass nothing, so the compactor fell back to `PromptEstimate.unsupported`
+                 * — the raw heuristic with no anchor — and the durable row it wrote said
+                 * `estimate.mode: "full"`, `anchor.fallback: "unsupported"`. Measured 2026-09-15
+                 * (`ses_geryon`): a compatible anchor existed on the session, and the request it
+                 * describes was recorded as 229,614 when the provider had counted it at 162,572.
+                 * The same defect as the dispatch gate above, one layer down: a site that holds the
+                 * anchored estimate and measures without it. No behaviour changes here — this input
+                 * reaches the decision metadata only — but the row a person reads to answer "which
+                 * number did it compare" must not report a fallback that never happened.
+                 */
+                promptEstimate: resolveOutbound(request),
                 overflowPromptTokens: recoveryPlan.originalPromptTokens,
                 overflowTargetTokens: recoveryPlan.targetPromptTokens,
               }),

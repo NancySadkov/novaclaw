@@ -374,7 +374,7 @@ test("overflow recovery measures the exact packed requests and resends at most o
   const prepareCallAt = runner.indexOf("const preparedDispatch = ProviderDispatch.prepare(prepareInput)", prepareAt)
   const compactionAt = runner.indexOf("compactIfNeeded({", prepareCallAt)
   const packedAt = runner.indexOf("let request = preparedDispatch.request")
-  const measuredAt = runner.indexOf("let outboundPromptTokens = Math.ceil(", packedAt)
+  const measuredAt = runner.indexOf("const resolveOutbound = (candidate:", packedAt)
   const authorizeAt = runner.indexOf("OverflowRecoveryPolicy.authorizeRetry({", measuredAt)
   const providerAt = runner.indexOf("ProviderDispatch.stream({", authorizeAt)
   expect(openingAt).toBeGreaterThan(-1)
@@ -391,7 +391,19 @@ test("overflow recovery measures the exact packed requests and resends at most o
   expect(runner.slice(estimateAt, prepareAt)).toContain("request: openingRequest")
   expect(runner.slice(prepareAt, packedAt)).toContain("request: openingRequest")
   expect(runner.slice(compactionAt, packedAt)).toContain("request: preparedDispatch.request")
-  expect(runner.slice(measuredAt, authorizeAt)).toContain("PromptEstimate.whole(request")
+  /**
+   * 🔴 **THE GATE MEASURES THE PACKED REQUEST WITH THE ANCHOR, NOT WITH THE RAW HEURISTIC.**
+   *
+   * This assertion used to pin `PromptEstimate.whole(request) * promptFactor` — and that expression
+   * killed a live session: on 2026-09-15 the harness priced the outbound request at 229,614 against a
+   * 229,376 ceiling and refused it, while the same request carried an anchor recording the provider's
+   * own count of 162,572 and the packer had already packed to that anchor (`droppedMessages: 0`). The
+   * gate must read the number the packer, the compactor and the provider all use.
+   */
+  expect(runner.slice(measuredAt, authorizeAt)).toContain("PromptEstimate.resolve({")
+  expect(runner.slice(measuredAt, authorizeAt)).toContain(
+    "let outboundPromptTokens = resolveOutbound(request).estimatedTokens",
+  )
   expect(runner.slice(providerAt)).toContain("preparedOpening: request")
   expect(runner.slice(authorizeAt, providerAt)).toContain("compressedPromptTokens: outboundPromptTokens")
   expect(runner.slice(authorizeAt, providerAt)).toContain("Stream.succeed(overflowRecovery!.failure)")
