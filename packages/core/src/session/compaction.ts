@@ -1,8 +1,6 @@
 export * as SessionCompaction from "./compaction"
 
 import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, type Model } from "@novaclaw/llm"
-import fs from "node:fs/promises"
-import path from "node:path"
 import { DateTime, Effect, Stream } from "effect"
 import { OldContext } from "./old-context"
 import type { Config } from "../config"
@@ -767,13 +765,8 @@ export const make = (dependencies: Dependencies) => {
     readonly sessionID: SessionSchema.ID
   }) {
     const at = DateTime.toDate(yield* DateTime.now)
-    const target = OldContext.file({ scratchFolder: input.scratchFolder, at })
     return yield* Effect.tryPromise({
-      try: async () => {
-        await fs.mkdir(path.dirname(target), { recursive: true })
-        await fs.writeFile(target, input.text, "utf8")
-        return target
-      },
+      try: () => OldContext.save({ scratchFolder: input.scratchFolder, at, text: input.text }),
       catch: (cause) => cause,
     }).pipe(
       Effect.tap((file) =>
