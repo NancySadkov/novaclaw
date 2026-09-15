@@ -249,17 +249,16 @@ export async function sendFollowupDraft(input: FollowupSendInput): Promise<strin
 
     // 🔴 The session row carries an OVERRIDE, and an override is a choice. `resolveSessionConfig` —
     // the keystone — reads an absent `model` column as INHERIT, so whatever is written here outranks
-    // the officer permanently. This block used to write `draft.model`, which is the composer's
-    // RESOLVED model (this chat's pick → the officer's model → recents → the default): on the common
-    // path it persisted an answer nobody had given, and from that turn on the chat no longer had an
-    // officer to follow. Both of the owner's complaints are that line: switching the officer's model
-    // did nothing, and switching a model off did nothing, because the row kept saying what the picker
-    // had happened to resolve on the day the chat started.
+    // the officer. The composer no longer keeps its own durable pick: `override()` IS the kernel row
+    // (or a pre-session draft), so for an existing chat this block is a no-op and the picker has
+    // already done the write. It survives for the one path that still needs it — a chat CREATED in
+    // this submit, whose draft pick has not reached the new row yet — and as the idempotent clear
+    // (`null`) for a pick the user removed in the same tick. Re-sending costs nothing server-side.
     //
-    // So: write only a pick this chat actually made; and if it made none, take the pin OFF, which is
-    // what `null` means on this wire (the kernel event has been nullable since 2026-08-14). Clearing
-    // is idempotent server-side, so re-sending it every prompt costs nothing and heals the rows this
-    // bug already wrote — including the officer chats in front of me, which are all pinned today.
+    // This used to write `draft.model`, the composer's RESOLVED model: on the common path it
+    // persisted an answer nobody had given, and from that turn on the chat no longer had an officer
+    // to follow. Both of the owner's first complaints (switching the officer's model did nothing,
+    // switching a model off did nothing) were that line.
     const record = input.serverSync.session.get(input.draft.sessionID)
     const picked = input.draft.override
     if (picked) {

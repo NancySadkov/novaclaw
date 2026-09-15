@@ -95,7 +95,37 @@ const ModelList: Component<{
     }
   })
 
+  /**
+   * The fact the user could not see, said in one line (AGENTS.md principle 12): this chat carries a
+   * model override that outranks its officer, and here is the one click back. Without it, re-pointing
+   * an officer looked like it did nothing while the chat silently kept the older model (owner,
+   * 2026-09-16).
+   */
+  const officerName = () =>
+    local.agent.current()?.name?.trim() || language.t("dialog.model.override.officer")
+  const followOfficer = () => {
+    model.set(undefined)
+    props.onSelect()
+  }
+
   return (
+    <>
+      <Show when={model.overridden?.()}>
+        <div class="px-3 pt-2">
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="w-full justify-start text-left"
+            data-slot="model-override-follow"
+            onClick={followOfficer}
+          >
+            {language.t("dialog.model.override.follow", {
+              officer: officerName(),
+              model: model.officer?.()?.name ?? model.override()?.modelID ?? "",
+            })}
+          </ButtonV2>
+        </div>
+      </Show>
     <List
       class={`flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0 ${props.class ?? ""}`}
       search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true, action: props.action }}
@@ -195,6 +225,7 @@ const ModelList: Component<{
         )
       }}
     </List>
+    </>
   )
 }
 

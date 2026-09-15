@@ -3,82 +3,62 @@ import fs from "fs"
 import path from "path"
 
 /**
- * 🔴 The composer sends what THIS CHAT PICKED, never what it resolved to.
+ * 🔴 **The chat's model override belongs to the SESSION, and the session owns it alone.**
  *
- * The bug this pins is invisible at runtime and expensive to find afterwards, which is why it is a
- * source scan rather than a behavioural test. `local.model.current()` is the model a chat will RUN on
- * — `firstModel(scope()?.model, agent.current()?.model, fallback)` (`context/local.tsx:241`). Shipping
- * THAT value through `switchModel` wrote the resolved answer into `session.model`, and a written row
- * outranks the officer forever (`runner/model.ts` `select()` prefers the row). The result, visible in
- * the live database: nearly every `session` row pinned to one model with `session.agent` NULL — every
- * chat permanently deaf to its officer's re-pointing, and no way back.
+ * The bug this pins (owner, 2026-09-16): *"I switched its model from default to qwen3.8-flash, but it
+ * kept using deepseek-flash."* Measured in the live store, `agent_config.daedalus.model` was the
+ * qwen3.8 ref while `session.ses_daedalus.model` still held deepseek. The session column outranks the
+ * officer by design, so that alone explains it — but the reason nobody could SEE it was a second
+ * answer: the composer kept a durable per-session pick in this client, and that shadow outranked
+ * everything while being invisible to the kernel and to every other client.
  *
- * A behavioural test cannot catch the regression, because a chat whose pick and resolution happen to
- * agree passes either way. The distinction lives in which EXPRESSION the call site reads, so the
+ * So the rule is one source of truth. The kernel component (`session.switchModel`,
+ * `session.next.model.switched`) is the chat's override; the composer READS it and WRITES it, and a
+ * pre-session draft stages a pick in memory until `create`. `overridden()` makes the override
+ * legible and offers the way back, because the keystone (`undefined = inherit`) means a deliberate
+ * chat choice must survive an officer re-point rather than being cleared behind the user's back.
+ *
+ * A behavioural test cannot catch the old regression — a chat whose pick and resolution happen to
+ * agree passes either way — so the distinction lives in which SOURCE the call site reads, and the
  * guard reads the call site.
  */
 const submit = fs.readFileSync(path.join(import.meta.dir, "submit.ts"), "utf8")
 const local = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "local.tsx"), "utf8")
+const picker = fs.readFileSync(path.join(import.meta.dir, "..", "dialog-select-model.tsx"), "utf8")
 const officerDialog = fs.readFileSync(path.join(import.meta.dir, "..", "agent-config-dialog.tsx"), "utf8")
 
-describe("a chat's model is an override, not a snapshot", () => {
-  test("🔴 the per-turn switch reads the draft's own pick", () => {
+describe("a chat's model is an override the session owns", () => {
+  test("🔴 the composer sends what THIS CHAT picked, never what it resolved to", () => {
     expect(submit).toContain("const picked = input.draft.override")
+    expect(submit).toContain("const currentOverride = local.model.override()")
   })
 
-  test("🔴 and a chat that never picked actively CLEARS its row", () => {
-    // Without this the pre-Fix-D rows never heal: clearing is what makes existing pinned sessions
-    // follow their officer again on the next prompt, instead of needing a data migration.
-    expect(submit).toMatch(/switchModel\(\{\s*sessionID:[^}]*model:\s*null\s*\}\)/)
+  test("🔴 the kernel session row is the ONE source of truth for the override", () => {
+    // The composer reads the session component for an existing chat...
+    expect(local).toContain("sync().session.get(session)?.model")
+    // ...and keeps no durable client copy — a second copy is what made the question answerable two
+    // ways. `modelFor` was the stopgap that scoped a shadow; the migration deletes the shadow.
+    expect(local).not.toContain("modelFor")
   })
 
-  test("🔴 no resolved value is read inline inside a switch call", () => {
-    // `current()` is right for DISPLAY and wrong for PERSISTENCE. Scope note, learned by mutating this
-    // file: this scan sees only what a call reads INLINE. The regression in its most likely form —
-    // the assignment site quietly switching `draft.override` → `draft.model` — is caught by the first
-    // test, not this one. Keep both; neither alone covers the door.
-    const switchCalls = submit.split("switchModel(").slice(1)
-    expect(switchCalls.length).toBeGreaterThan(0)
-    for (const call of switchCalls) {
-      const body = call.slice(0, call.indexOf("})") + 2)
-      expect(body).not.toMatch(/model\.current\(\)/)
-      expect(body).not.toMatch(/draft\.model\b/)
-    }
+  test("🔴 picking a model for an existing session writes the KERNEL, not a local copy", () => {
+    expect(local).toMatch(/\.switchModel\(\{\s*sessionID: session,\s*model: \{/)
+    // Returning to the officer's model is the same kernel write with `null`.
+    expect(local).toContain(".switchModel({ sessionID: session, model: null })")
   })
 
-  test("the slash-command path sends a model only when there is a pick", () => {
-    // An unconditional `model:` here would re-introduce the pin through a side door, because the
-    // command payload is built from a resolved string.
-    expect(submit).toMatch(/currentOverride\s*\?\s*\{\s*model:/)
+  test("🔴 the model control says when a chat overrides its officer, and offers the way back", () => {
+    // Principle 12: say what is in force, and make the one-click repair reachable. This is what the
+    // owner's report was actually missing — the override was real but silent.
+    expect(local).toContain("const overridden = ()")
+    expect(picker).toContain("model.overridden?.()")
+    expect(picker).toContain("dialog.model.override.follow")
   })
 
-  test("the app exposes the pick separately from the resolution", () => {
-    // `override()` is the whole point of the Fix D surface: two questions, two answers. Pin the
-    // DEFINITION, not just the name — it must read the FIRST LINK of the chain and nothing else.
-    // If someone widens it to `current()`'s walk, the scan above has nothing left to distinguish.
-    expect(local).toMatch(/const override = \(\) => pickedModel\(\)/)
-    // ...and that it is actually handed out on the `model` object, not left dead in the file.
-    expect(local).toMatch(/\bmodel = \{[\s\S]{0,400}?\n\s*override,\n/)
-  })
-
-  test("🔴 a chat pick is scoped to the officer assignment it was made under", () => {
-    // Owner, 2026-09-16: *"I switched its model from default to qwen3.8-flash, but it kept using
-    // deepseek-flash."* Measured in the live store: daedalus's officer model was qwen3.8 while the
-    // session row still pinned deepseek, and the composer read the chat pick first. A pick that
-    // predates the current officer assignment must not outrank it.
-    expect(local).toContain("state.modelFor !== officerModelRef()")
-    expect(local).toContain("modelFor: officerModelRef()")
-    // The DISPLAY chain reads the scoped pick too, or the composer would show a model the row will
-    // not honor.
-    expect(local).toMatch(/const current = \(\) => \{\s*const item = firstModel\(\s*\(\) => pickedModel\(\),/)
-  })
-
-  test("🔴 re-pointing an officer clears its chat's server-side override", () => {
-    // The composer reconciles on submit, but the provider-recovery dock's Resume and a headless turn
-    // do not — so the officer's own settings surface must heal the row when the model CHANGES.
-    expect(officerDialog).toContain("switchModel({ sessionID: chat.id, model: null })")
-    expect(officerDialog).toContain("model() !== modelBefore")
-    // A personality edit must never repoint a chat: the clear is gated on a changed model.
-    expect(officerDialog).toMatch(/if \(model\(\) !== undefined && model\(\) !== modelBefore\)/)
+  test("re-pointing an officer does NOT silently clear a chat's explicit override", () => {
+    // The keystone is `undefined = inherit`: an override is a deliberate sparse choice and survives.
+    // Legibility above is how the user changes their mind — not a hidden cascade from an edit to a
+    // different field on the officer.
+    expect(officerDialog).not.toContain("switchModel({ sessionID: chat.id, model: null })")
   })
 })

@@ -1,7 +1,7 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, startTransition } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, startTransition } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
@@ -11,7 +11,9 @@ import { useSDK } from "./sdk"
 import { useSettings } from "./settings"
 import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
+import { useLanguage } from "./language"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
+import { showToast } from "@/utils/toast"
 
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
 
@@ -40,22 +42,18 @@ export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriente
 
 type State = {
   agent?: string
-  model?: ModelKey
   /**
-   * The OFFICER model this chat's `model` pick was made under, as `providerID/id` (or `""` when the
-   * officer had none and the pick rode the instance default).
+   * A model pick for a session that does not exist YET — the in-memory draft state that becomes the
+   * new session's override at create. For an EXISTING session this is deliberately unused: the
+   * kernel row is the one source of truth (see `kernelModel`/`pickedModel`).
    *
-   * 🔴 **A chat pick belongs to the officer assignment it was made under.** The pick outranks the
-   * officer (`resolveSessionConfig` reads the row as an override), so without this a pick made while
-   * an officer ran model A silently defeated every later re-point of that officer to model B — the
-   * owner's report: *"I switched its model from default to qwen3.8-flash, but it kept using
-   * deepseek-flash."* Measured in the live store: `agent_config.daedalus.model =
-   * 192-168-178-40-8010-v1/qwen3.8-flash-next` while `session.ses_daedalus.model` still held
-   * `deepseek-flash`, and the composer's first link was the chat pick. `undefined` (every pick
-   * written before this field existed) is treated as stale, which is how existing pinned chats heal
-   * with no migration.
+   * ⚠️ It used to be persisted per session alongside the kernel row, which made the same question —
+   * "what model does this chat run?" — have two answers. The client copy was invisible to the kernel
+   * and to other clients, and because a session row is an override it silently won, so re-pointing
+   * an officer changed nothing the user could see (owner, 2026-09-16). One answer, owned by the
+   * entity: the session.
    */
-  modelFor?: string
+  model?: ModelKey
   variant?: string | null
   permissionMode?: PermissionMode
   strict?: StrictChoice
@@ -100,6 +98,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const params = useParams()
+    const language = useLanguage()
     const sdk = useSDK()
     const sync = useSync()
     const serverSDK = useServerSDK()
@@ -268,23 +267,60 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
-    /** The officer's own model as `providerID/id`, or `""` when it inherits the instance default. */
-    const officerModelRef = () => {
-      const bound = agent.current()?.model
-      return bound ? `${bound.providerID}/${bound.modelID}` : ""
+    /**
+     * An in-flight model switch, per session, so the composer reflects the pick immediately and a
+     * prompt sent in the same tick carries it. NOT persisted: it is staging for a kernel write, not a
+     * second copy of the truth. `null` means "clearing back to the officer".
+     */
+    const [pendingModel, setPendingModel] = createSignal<Record<string, ModelKey | null | undefined>>({})
+    const clearPending = (session: string) =>
+      setPendingModel((current) => {
+        if (!(session in current)) return current
+        const next = { ...current }
+        delete next[session]
+        return next
+      })
+    createEffect(() => {
+      const session = id()
+      if (!session) return
+      const pending = pendingModel()[session]
+      if (!(session in pendingModel())) return
+      const kernel = kernelModel()
+      const settled =
+        (pending ?? undefined)?.providerID === kernel?.providerID &&
+        (pending ?? undefined)?.modelID === kernel?.modelID &&
+        (pending ?? undefined)?.variant === kernel?.variant
+      if (settled) clearPending(session)
+    })
+
+    /**
+     * The kernel's model override for this session, as a `ModelKey`, or `undefined` when the chat
+     * inherits its officer. **The session row is the ONE source of truth** — the kernel owns the
+     * component (`session.switchModel`, `session.next.model.switched`), so a second client store would
+     * give the same question two answers, and the invisible one silently outranks the officer.
+     */
+    const kernelModel = (): ModelKey | undefined => {
+      const session = id()
+      if (!session) return undefined
+      const bound = sync().session.get(session)?.model
+      if (!bound) return undefined
+      return {
+        providerID: bound.providerID,
+        modelID: bound.id,
+        ...(bound.variant ? { variant: bound.variant } : {}),
+      }
     }
 
     /**
-     * This chat's pick, but ONLY while it was made under the officer assignment still in force.
-     * A pick recorded before `modelFor` existed (or under a different officer model) is STALE and
-     * yields `undefined`, so the chain falls through to the officer and the row can be cleared.
-     * See `State.modelFor`.
+     * This chat's model override: an in-flight pick first, then the kernel row. For a session that
+     * does not exist yet, the in-memory draft pick (it is promoted to the kernel at create).
      */
-    const pickedModel = () => {
-      const state = scope()
-      if (!state?.model) return undefined
-      if (state.modelFor !== officerModelRef()) return undefined
-      return state.model
+    const pickedModel = (): ModelKey | undefined => {
+      const session = id()
+      if (!session) return scope()?.model
+      const map = pendingModel()
+      if (session in map) return map[session] ?? undefined
+      return kernelModel()
     }
 
     const current = () => {
@@ -297,20 +333,28 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return models.find(item)
     }
 
-    /**
-     * 🔴 The model THIS CHOSE, or nothing. `current()` above is what the chat will RUN on and walks
-     * `this chat's pick → the officer's model → recents → the default`, so most of the time it is a
-     * value nobody picked. Only the first link may be written to the session row: the keystone is
-     * `resolveSessionConfig`, where an absent column means inherit, so persisting a resolved value
-     * turns a live dependency into a frozen copy. That is exactly why an officer's model change, and
-     * why switching a model off, never reached a working chat — the composer had stamped the answer
-     * of the day onto the row, and the row outranks the officer forever after.
-     *
-     * ⚠️ It reads `pickedModel()`, not `scope()?.model`: a pick that predates (or outlives) the
-     * officer assignment it was made under is not a choice for THIS officer, so it does not travel to
-     * the row as one. See `State.modelFor`.
-     */
     const override = () => pickedModel()
+
+    /** The officer's own model, resolved, for the "this chat overrides it" affordance. */
+    const officerModel = () => {
+      const bound = agent.current()?.model
+      if (!bound) return undefined
+      return models.find({ providerID: bound.providerID, modelID: bound.modelID })
+    }
+    /**
+     * True when this chat carries an override that differs from what its officer would run — the
+     * fact the user could not see. `resolveSessionConfig` will run the override, so the UI must SAY
+     * so and offer the one-click way back (principle 12: say what is in force).
+     */
+    const overridden = () => {
+      const pick = override()
+      if (!pick) return false
+      const officer = officerModel()
+      if (!officer) return true
+      return pick.providerID !== officer.provider.id || pick.modelID !== officer.id
+    }
+    /** Return the chat to its officer's model (clears the session override). */
+    const followOfficer = () => model.set(undefined)
 
     const configured = () => {
       const item = agent.current()
@@ -322,7 +366,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
     }
 
-    const selected = () => scope()?.variant
+    /**
+     * The explicit variant for THIS chat. For an existing session it is the kernel override's variant
+     * (the model component carries it — `Model.Ref { providerID, id, variant }`); the stale persisted
+     * shadow is deliberately ignored. A pre-session draft keeps its variant in the draft state.
+     */
+    const selected = () => {
+      if (!id()) return scope()?.variant
+      return pickedModel()?.variant
+    }
 
     const snapshot = () => {
       const model = current()
@@ -357,6 +409,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       ready: models.ready,
       current,
       override,
+      /** The officer's own model, for the override affordance. */
+      officer: officerModel,
+      /** True when this chat overrides what its officer would run. */
+      overridden,
       recent,
       list: models.list,
       cycle(direction: 1 | -1) {
@@ -376,6 +432,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
+        const session = id()
         startTransition(() =>
           batch(() => {
             setStore("last", {
@@ -384,13 +441,49 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               model: item ?? null,
               variant: selected(),
             })
-            // A pick is stamped with the officer model in force at the moment it is made, so a later
-            // re-point of that officer voids it. Clearing drops the stamp with the pick.
-            write(item ? { model: item, modelFor: officerModelRef() } : { model: undefined, modelFor: undefined })
-            if (!item) return
+            const fail = (error: unknown) =>
+              showToast({
+                variant: "error",
+                title: language.t("dialog.model.switchFailed"),
+                description: error instanceof Error ? error.message : String(error),
+              })
+            if (!item) {
+              // Clearing the override. A session is a KERNEL write; a pre-session draft is just state.
+              if (session === undefined) {
+                write({ model: undefined, variant: undefined })
+                return
+              }
+              setPendingModel((m) => ({ ...m, [session]: null }))
+              void sdk().client.v2.session
+                .switchModel({ sessionID: session, model: null })
+                .catch((error: unknown) => {
+                  clearPending(session)
+                  fail(error)
+                })
+              return
+            }
             models.setVisibility(item, true)
-            if (!options?.recent) return
-            models.recent.push(item)
+            if (options?.recent) models.recent.push(item)
+            if (session === undefined) {
+              // No session yet: the pick is promoted from this draft after `create`.
+              write({ model: item, variant: item.variant })
+              return
+            }
+            // The session OWNS the override: stage it for the immediate UI, then write the kernel.
+            setPendingModel((m) => ({ ...m, [session]: item }))
+            void sdk().client.v2.session
+              .switchModel({
+                sessionID: session,
+                model: {
+                  providerID: item.providerID,
+                  id: item.modelID,
+                  ...(item.variant ? { variant: item.variant } : {}),
+                },
+              })
+              .catch((error: unknown) => {
+                clearPending(session)
+                fail(error)
+              })
           }),
         )
       },
@@ -421,19 +514,44 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return item.variants.map((v) => v.id)
         },
         set(value: string | undefined) {
+          const session = id()
           startTransition(() =>
             batch(() => {
-              const model = current()
+              const item = current()
               setStore("last", {
                 type: "variant",
                 agent: agent.current()?.name,
-                model: model ? { providerID: model.provider.id, modelID: model.id } : null,
+                model: item ? { providerID: item.provider.id, modelID: item.id } : null,
                 variant: value ?? null,
               })
-              write({ variant: value ?? null })
-              if (model) {
-                models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
+              if (item) {
+                models.variant.set({ providerID: item.provider.id, modelID: item.id }, value ?? undefined)
               }
+              if (session === undefined) {
+                write({ variant: value ?? null })
+                return
+              }
+              if (!item) return
+              // An explicit variant is part of the model override, so it rides the SAME kernel write.
+              const next: ModelKey = {
+                providerID: item.provider.id,
+                modelID: item.id,
+                ...(value ? { variant: value } : {}),
+              }
+              setPendingModel((m) => ({ ...m, [session]: next }))
+              void sdk().client.v2.session
+                .switchModel({
+                  sessionID: session,
+                  model: { providerID: item.provider.id, id: item.id, ...(value ? { variant: value } : {}) },
+                })
+                .catch((error: unknown) => {
+                  clearPending(session)
+                  showToast({
+                    variant: "error",
+                    title: language.t("dialog.model.switchFailed"),
+                    description: error instanceof Error ? error.message : String(error),
+                  })
+                })
             }),
           )
         },

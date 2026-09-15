@@ -263,6 +263,9 @@ export const dict = {
   "dialog.model.search.placeholder": "Search models",
   "dialog.model.empty": "No model results",
   "dialog.model.manage": "Manage models",
+  "dialog.model.switchFailed": "Could not switch this chat's model",
+  "dialog.model.override.follow": "Follow {{officer}} — use {{model}}",
+  "dialog.model.override.officer": "the officer",
 
   "model.tag.free": "Free",
   "model.tag.latest": "Latest",
