@@ -103,7 +103,8 @@ const sessionOn = (location: Location.Ref) =>
 
 const defaultSessionOn = (location: Location.Ref) => SessionV2.Info.make({ ...sessionOn(location), model: undefined })
 
-const named = (model: ModelV2.Info | undefined) => (model === undefined ? undefined : `${model.providerID}/${model.id}`)
+const named = (model: ModelV2.Info | ModelV2.Ref | undefined) =>
+  model === undefined ? undefined : `${model.providerID}/${model.id}`
 
 const configuredProvider = (
   url: string,

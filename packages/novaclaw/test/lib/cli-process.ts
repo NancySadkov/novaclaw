@@ -263,7 +263,17 @@ export function withCliFixture<A, E>(
 
     const spawn = Effect.fn("novaclaw.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
-      const timeoutMs = opts?.timeoutMs ?? 30_000
+      // 🔴 45s, not 30s, and the difference is a RELEASE GATE going red on a loaded box.
+      //
+      // The callers declare their own budget (`cliIt.concurrent(..., 60_000)`), and the child was
+      // being killed at a hidden 30s default — so the declared 60s was unreachable and a CLI boot
+      // that took ~30.3s under `--full`'s concurrency (host commit peaked 80%) failed two
+      // prompt-quoting tests that pass in 15-16s when the box is quiet (measured 2026-09-15:
+      // isolated 15.8s/15.9s, in-gate timeout at 30.3s). 45s keeps the child's synthesized
+      // "Timed out" result inside the caller's 60s so a REAL hang still fails legibly, while
+      // leaving 1.5x headroom for the same boot under load. Callers that need a tighter bound
+      // pass `timeoutMs` explicitly (`refuse-instead-of-blocking`, `run-model`, `run-process`).
+      const timeoutMs = opts?.timeoutMs ?? 45_000
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to

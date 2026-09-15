@@ -2,10 +2,10 @@
  * `boundOversizedMessage` — the bound for ONE message larger than the whole window.
  *
  * ⚠️ **NOT WIRED YET.** Nothing in `context-pack.ts` calls this helper; it is the first cut at the
- * open item "a single inserted item larger than the whole window is NAMED, not PREVENTED"
- * (`todo/context-manager.md`, Part 5 open items). These pins exist because the helper is committed:
- * a committed export whose contract is asserted nowhere is a claim nobody can check, and the
- * contract here is the one the whole helper exists for — that what it returns FITS.
+ * open item "a single inserted item larger than the whole window is NAMED, not PREVENTED". These
+ * pins exist because the helper is committed: a committed export whose contract is asserted nowhere
+ * is a claim nobody can check, and the contract here is the one the whole helper exists for — that
+ * what it returns FITS.
  */
 import { describe, expect, test } from "bun:test"
 import { Message } from "@novaclaw/llm"
