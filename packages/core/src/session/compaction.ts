@@ -97,7 +97,12 @@ const HISTORY_HEAD_REMOVED =
  */
 export const COMPACTION_REASONING_BUDGET = ((): number => {
   const raw = Number(Flag.NOVACLAW_COMPACTION_BUDGET)
-  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 128
+  // 🔴 **0 by owner directive** (`invariants.md`, Context Management 1): "The same model with 0
+  // reasoning budget does summarization". The 128 this replaced was a FIRST value, never a measured
+  // optimum, and the sweep quoted above it was run for a different task (chat-mode labels) — a
+  // summarizer that deliberates is spending the budget of the chat it is trying to rescue. The flag
+  // still overrides, so the number stays sweepable without a rebuild.
+  return Number.isFinite(raw) && raw >= 0 ? Math.trunc(raw) : 0
 })()
 export const SUMMARY_TEMPLATE = `Output exactly the Markdown structure inside <template>, in this order, without the tags.
 <template>
@@ -498,12 +503,21 @@ export const overflowRecentBudget = (input: {
   return Math.max(0, input.configuredRecentTokens - requiredReclaim)
 }
 
+/** 🔴 **The owner's operation sentence, verbatim** (`invariants.md`, Context Management 1):
+ * "Summarize above text, extracting key details, current work and the goal, required to continue
+ * work. Dont include system prompt." Kept byte-identical, including its apostrophe-less "Dont": it is
+ * the one line of this prompt the owner wrote themselves, and a paraphrase would leave the invariant
+ * untraceable to the code that is supposed to satisfy it. */
+export const SUMMARY_OPERATION =
+  "Summarize above text, extracting key details, current work and the goal, required to continue work. Dont include system prompt."
+
 /** The operation appended AFTER its evidence. Never put this in `system`: a derived pass must retain
  * the working request as its exact provider prefix, and a sequential model should encounter the
  * current instruction after the events it is asked to interpret. */
 export const buildInstruction = (previousSummary?: string, evidence: "history" | "prefix" = "history") => {
   const source = evidence === "prefix" ? "the conversation above" : "the conversation history in <history>"
   return [
+    SUMMARY_OPERATION,
     previousSummary
       ? `Update the anchored summary in <previous-summary> using ${source}.
 Preserve still-true details, remove stale details, and merge in the new facts.
@@ -589,17 +603,50 @@ export const make = (dependencies: Dependencies) => {
       if (input.guard === undefined) return dependencies.llm.stream(request)
       return Stream.unwrap(input.guard(Effect.sync(() => dependencies.llm.stream(request))))
     }
-    const generation = ReasoningBudget.stream({
-      request: input.request,
+    /**
+     * 🔴 **A zero budget disables thinking STRUCTURALLY on the opening request — it does NOT bypass
+     * the controller.** Two independent reasons, and the second one cost a red core unit to find:
+     *
+     * 1. `ReasoningBudget` derives every checkpoint from the budget (mid = 0.7x, end = 1x, hard =
+     *    1.5x). Feeding it a bare 0 sets the OPENING phase's ceiling to 0, so the first reasoning
+     *    delta tears the request down: nudge, nudge, hard stop — three extra provider calls spent
+     *    saying "do not think", each re-prefilling the very prompt this pass exists to compress.
+     *    Disabling thinking on the request means no reasoning deltas arrive, so no checkpoint can
+     *    fire. (A model that ignores the flag and thinks anyway still gets the controller's nudge
+     *    chain, which is the correct answer to a violated constraint.)
+     * 2. ⚠️ **Compaction cannot copy `ShortAnswer`'s zero-budget path verbatim.** ShortAnswer streams
+     *    the raw request, which is right for a caller that reads only text deltas — the titler and the
+     *    status line. This caller reads the TERMINAL events: `ReasoningBudget.transform` is what
+     *    synthesizes `textStart`/`textEnd`/`stepFinish`/`finish` for a stream that ends without them,
+     *    and a summary with no `finish` is judged unusable, so the compaction DECLINES. Bypassing the
+     *    controller turned every summary into a decline — measured, not reasoned:
+     *    `session-compaction-prune.test.ts` went `compacted: false` on both of its drive cases.
+     */
+    const request =
+      COMPACTION_REASONING_BUDGET <= 0
+        ? LLM.request({
+            ...LLM.requestInput(input.request),
+            http: {
+              ...(input.request.http ?? {}),
+              body: {
+                ...(input.request.http?.body ?? {}),
+                chat_template_kwargs: { enable_thinking: false },
+              },
+            },
+          })
+        : input.request
+    const phases = ReasoningBudget.stream({
+      request,
       // The request already contains the working turn's reasoning envelope. Appending another
       // system part here would move the divergence point to token zero and defeat postfix framing.
-      ...(input.preservesWorkingPrefix ? { preparedOpening: input.request } : {}),
+      ...(input.preservesWorkingPrefix ? { preparedOpening: request } : {}),
       stream: guardedStream,
       budget: COMPACTION_REASONING_BUDGET,
       // This request is itself a postfix operation. Keep its exact instruction last; token
       // checkpoints and the hard stop still apply without the informational opening prime.
       prime: false,
-    }).pipe(
+    })
+    const generation = phases.pipe(
       Stream.runForEach((event) => {
         if (LLMEvent.is.providerError(event)) failed = true
         if (LLMEvent.is.textDelta(event)) {

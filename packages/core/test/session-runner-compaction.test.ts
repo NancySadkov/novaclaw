@@ -428,16 +428,23 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     expect(harness.requests).toHaveLength(4)
   })
 
-  test("discards partial summary text when a reasoning continuation fails", async () => {
-    const continuationFailure = Stream.concat(
+  test("discards partial summary text when the summary pass fails", async () => {
+    // 🔴 **This used to script a FAILED REASONING CONTINUATION** — 7,000 reasoning deltas, then a
+    // continuation that emits a partial summary and dies. A zero reasoning budget removes that shape
+    // outright: `invariants.md` (Context Management 1) requires the summarizer to run with no
+    // deliberation, and a 0-budget pass takes ShortAnswer's stricter path — thinking is disabled
+    // structurally on the OPENING request and there is exactly one request, never a continuation to
+    // fail. The property this test exists for is unchanged, and is re-pinned on the pass that now
+    // exists: a summary that dies mid-stream must not persist what it already managed to emit.
+    const partialThenFailure = Stream.concat(
       Stream.fromIterable<LLMEvent>([
-        LLMEvent.textDelta({ id: "text-partial-summary", text: "## Goal\n- Partial and unsafe" }),
+        ...fragmentFixture("text", "text-partial-summary", ["## Goal\n- Partial and unsafe"]).partialEvents,
       ]),
       Stream.fail(
         new LLMError({
           module: "test",
           method: "stream",
-          reason: new TransportReason({ message: "summary continuation failed" }),
+          reason: new TransportReason({ message: "summary pass failed" }),
         }),
       ),
     )
@@ -445,8 +452,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       turns: [
         fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
-        [LLMEvent.reasoningDelta({ id: "reasoning-summary", text: "r".repeat(7_000) })],
-        continuationFailure,
+        partialThenFailure,
         fragmentFixture("text", "text-c", ["Continued without compaction"]).completeEvents,
       ],
     })
