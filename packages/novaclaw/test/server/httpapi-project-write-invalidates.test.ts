@@ -134,7 +134,14 @@ type Attempt = { readonly kind: "conclusive" } | { readonly kind: "inconclusive"
 const conclusive: Attempt = { kind: "conclusive" }
 const inconclusive = (why: string): Attempt => ({ kind: "inconclusive", why })
 
-const ATTEMPTS = 5
+/**
+ * ⚠️ 15, raised from 5 on 2026-09-15 after the full `--full` gate (4 run units in flight) closed the
+ * window on all five attempts in one run while the previous full run observed it inside 5. Each
+ * attempt is a fresh directory and its own location boot, so the only thing more attempts buy is
+ * more chances to catch a sub-second lull — the property assertion still fails on attempt 1. The
+ * 60s test budget bounds it: the failing 5-attempt run took 12.7s, so 15 stays well inside.
+ */
+const ATTEMPTS = 15
 
 /** Retry `attempt` until one run observes the property inside the TTL, or fail naming every miss. */
 const untilConclusive = <E, R>(attempt: (run: number) => Effect.Effect<Attempt, E, R>) =>
