@@ -19,6 +19,7 @@ import path from "path"
  */
 const submit = fs.readFileSync(path.join(import.meta.dir, "submit.ts"), "utf8")
 const local = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "local.tsx"), "utf8")
+const officerDialog = fs.readFileSync(path.join(import.meta.dir, "..", "agent-config-dialog.tsx"), "utf8")
 
 describe("a chat's model is an override, not a snapshot", () => {
   test("🔴 the per-turn switch reads the draft's own pick", () => {
@@ -55,8 +56,29 @@ describe("a chat's model is an override, not a snapshot", () => {
     // `override()` is the whole point of the Fix D surface: two questions, two answers. Pin the
     // DEFINITION, not just the name — it must read the FIRST LINK of the chain and nothing else.
     // If someone widens it to `current()`'s walk, the scan above has nothing left to distinguish.
-    expect(local).toMatch(/const override = \(\) => scope\(\)\?\.model/)
+    expect(local).toMatch(/const override = \(\) => pickedModel\(\)/)
     // ...and that it is actually handed out on the `model` object, not left dead in the file.
     expect(local).toMatch(/\bmodel = \{[\s\S]{0,400}?\n\s*override,\n/)
+  })
+
+  test("🔴 a chat pick is scoped to the officer assignment it was made under", () => {
+    // Owner, 2026-09-16: *"I switched its model from default to qwen3.8-flash, but it kept using
+    // deepseek-flash."* Measured in the live store: daedalus's officer model was qwen3.8 while the
+    // session row still pinned deepseek, and the composer read the chat pick first. A pick that
+    // predates the current officer assignment must not outrank it.
+    expect(local).toContain("state.modelFor !== officerModelRef()")
+    expect(local).toContain("modelFor: officerModelRef()")
+    // The DISPLAY chain reads the scoped pick too, or the composer would show a model the row will
+    // not honor.
+    expect(local).toMatch(/const current = \(\) => \{\s*const item = firstModel\(\s*\(\) => pickedModel\(\),/)
+  })
+
+  test("🔴 re-pointing an officer clears its chat's server-side override", () => {
+    // The composer reconciles on submit, but the provider-recovery dock's Resume and a headless turn
+    // do not — so the officer's own settings surface must heal the row when the model CHANGES.
+    expect(officerDialog).toContain("switchModel({ sessionID: chat.id, model: null })")
+    expect(officerDialog).toContain("model() !== modelBefore")
+    // A personality edit must never repoint a chat: the clear is gated on a changed model.
+    expect(officerDialog).toMatch(/if \(model\(\) !== undefined && model\(\) !== modelBefore\)/)
   })
 })

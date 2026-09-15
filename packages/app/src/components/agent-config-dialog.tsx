@@ -1020,6 +1020,30 @@ export function AgentConfigScreen(props: {
         // officer inherits the floor's grant the same as a colleague that was never configured.
         ...(computerUse() !== undefined && computerRuleset().length === 0 ? [["agents", id, "permissions"]] : []),
       ])
+      /**
+       * 🔴 **Re-pointing an officer VOIDS its chats' model overrides** (owner, 2026-09-16).
+       *
+       * A session's model column is an override that outranks the officer (`resolveSessionConfig`),
+       * and `agent-config-dialog` is where the officer is re-pointed. Without this, changing an
+       * officer from model A to model B left every chat that had ever picked a model still answering
+       * on A — the owner's report: *"I switched its model from default to qwen3.8-flash, but it kept
+       * using deepseek-flash"* on `ses_daedalus`, whose row still held deepseek while its officer had
+       * moved to qwen3.8. The pin is invisible, so the change looked like it did nothing.
+       *
+       * The clear is deliberately scoped to a CHANGED model (a personality edit must never repoint a
+       * chat), it is best-effort, and it heals every dispatch path — the composer already reconciles
+       * on submit, but the provider-recovery dock's Resume and any headless turn do not go through
+       * the composer. `local.tsx` scopes the CLIENT pick the same way (`State.modelFor`).
+       */
+      const modelBefore = agent()?.model ? modelRef(agent()!.model!) : ""
+      if (model() !== undefined && model() !== modelBefore) {
+        const client = sdk()
+        const chat = chatToClear(sessionRows() ?? [], id, location.pathname)
+        if (client && chat)
+          await client.session
+            .switchModel({ sessionID: chat.id, model: null })
+            .catch(() => undefined)
+      }
       const current = conn()
       if (current === undefined) throw new Error("No instance is connected")
       if (avatarFile() !== undefined) await uploadAgentAvatar(current.http, id, avatarFile()!)

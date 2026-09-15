@@ -41,6 +41,21 @@ export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriente
 type State = {
   agent?: string
   model?: ModelKey
+  /**
+   * The OFFICER model this chat's `model` pick was made under, as `providerID/id` (or `""` when the
+   * officer had none and the pick rode the instance default).
+   *
+   * 🔴 **A chat pick belongs to the officer assignment it was made under.** The pick outranks the
+   * officer (`resolveSessionConfig` reads the row as an override), so without this a pick made while
+   * an officer ran model A silently defeated every later re-point of that officer to model B — the
+   * owner's report: *"I switched its model from default to qwen3.8-flash, but it kept using
+   * deepseek-flash."* Measured in the live store: `agent_config.daedalus.model =
+   * 192-168-178-40-8010-v1/qwen3.8-flash-next` while `session.ses_daedalus.model` still held
+   * `deepseek-flash`, and the composer's first link was the chat pick. `undefined` (every pick
+   * written before this field existed) is treated as stale, which is how existing pinned chats heal
+   * with no migration.
+   */
+  modelFor?: string
   variant?: string | null
   permissionMode?: PermissionMode
   strict?: StrictChoice
@@ -253,9 +268,28 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    /** The officer's own model as `providerID/id`, or `""` when it inherits the instance default. */
+    const officerModelRef = () => {
+      const bound = agent.current()?.model
+      return bound ? `${bound.providerID}/${bound.modelID}` : ""
+    }
+
+    /**
+     * This chat's pick, but ONLY while it was made under the officer assignment still in force.
+     * A pick recorded before `modelFor` existed (or under a different officer model) is STALE and
+     * yields `undefined`, so the chain falls through to the officer and the row can be cleared.
+     * See `State.modelFor`.
+     */
+    const pickedModel = () => {
+      const state = scope()
+      if (!state?.model) return undefined
+      if (state.modelFor !== officerModelRef()) return undefined
+      return state.model
+    }
+
     const current = () => {
       const item = firstModel(
-        () => scope()?.model,
+        () => pickedModel(),
         () => agent.current()?.model,
         fallback,
       )
@@ -271,8 +305,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
      * turns a live dependency into a frozen copy. That is exactly why an officer's model change, and
      * why switching a model off, never reached a working chat — the composer had stamped the answer
      * of the day onto the row, and the row outranks the officer forever after.
+     *
+     * ⚠️ It reads `pickedModel()`, not `scope()?.model`: a pick that predates (or outlives) the
+     * officer assignment it was made under is not a choice for THIS officer, so it does not travel to
+     * the row as one. See `State.modelFor`.
      */
-    const override = () => scope()?.model
+    const override = () => pickedModel()
 
     const configured = () => {
       const item = agent.current()
@@ -346,7 +384,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               model: item ?? null,
               variant: selected(),
             })
-            write({ model: item })
+            // A pick is stamped with the officer model in force at the moment it is made, so a later
+            // re-point of that officer voids it. Clearing drops the stamp with the pick.
+            write(item ? { model: item, modelFor: officerModelRef() } : { model: undefined, modelFor: undefined })
             if (!item) return
             models.setVisibility(item, true)
             if (!options?.recent) return
