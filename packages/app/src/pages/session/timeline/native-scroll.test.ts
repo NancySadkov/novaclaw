@@ -51,6 +51,20 @@ const nextFrames = async (count: number) => {
   for (let index = 0; index < count; index++) await new Promise((resolve) => requestAnimationFrame(resolve))
 }
 
+/**
+ * Drain frames until `condition` holds, with a bound.
+ *
+ * ⚠️ A FIXED frame count is the flake this replaces. The MutationObserver callback is a microtask that
+ * then schedules the rAF `stick()`, so under a loaded event loop (a whole `app:unit` run, 237 files)
+ * two frames can pass before the observer even runs and the restore lands on the third — green alone,
+ * red in the suite (measured 2026-09-16, twice). Waiting on the CONDITION keeps the guard honest: if
+ * the observer or its rAF is removed the frame budget runs out and the assertion still fails.
+ */
+const until = async (condition: () => boolean, frames = 30) => {
+  for (let index = 0; index < frames && !condition(); index++)
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+}
+
 test("a DOM-owned move that leaves the view off the bottom cannot revoke the pin", async () => {
   const { element: scroller, geometry } = fakeScroller({ scrollHeight: 6628, clientHeight: 500, scrollTop: 6128 })
   const content = document.createElement("div")
@@ -161,7 +175,7 @@ test("the view is back at the bottom once the rows return", async () => {
   // `stick()`. Asserting both sides is what makes this fail if that rAF (or the observer feeding it)
   // is removed: the controller would leave the reader at the top of the chat.
   expect(scroller.scrollTop).toBe(0)
-  await nextFrames(2)
+  await until(() => scroller.scrollTop === 6128)
   expect(scroller.scrollTop).toBe(6128)
   controller.dispose()
 })
