@@ -1,3 +1,5 @@
+export * as OldContext from "./old-context"
+
 import path from "node:path"
 import { stampOf } from "../observability/log-file"
 

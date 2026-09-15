@@ -2372,6 +2372,7 @@ export const layer = Layer.effect(
         yield* timingStart("compaction")
         compacted = yield* harness.compaction.compactIfNeeded({
           sessionID: session.id,
+          scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
           entries,
           model,
           guard: modelGuard,
@@ -3199,6 +3200,7 @@ export const layer = Layer.effect(
             (yield* restore(
               recoverOverflow({
                 sessionID: session.id,
+                scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
                 entries,
                 model,
                 guard: modelGuard,
@@ -3889,6 +3891,7 @@ export const layer = Layer.effect(
       const compacted = yield* compaction.compactAfterOverflow(
         {
           sessionID: session.id,
+          scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
           entries,
           model,
           guard: SessionRunnerModel.dispatchGuard(models, prepared.ran),

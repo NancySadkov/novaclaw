@@ -1025,6 +1025,35 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * The folded-away chat was written to the agent's own scratch folder, and the tombstone in the new
+   * context names THAT file (`invariants.md`, Context Management 1: *"while the old is saved at that
+   * folder"*). Informational, and the counterpart of `session.compaction.archived`: that one says
+   * the older half is still reachable BY MEANING, this one says it is reachable by PATH.
+   */
+  "session.compaction.folded.saved": {
+    level: "info",
+    message: "folded conversation saved to the agent's scratch folder",
+    attributes: { "session.id": "correlate", "compaction.folded.file": "path", "compaction.folded.chars": "count" },
+    content: "user",
+    file: "packages/core/src/session/compaction.ts",
+  },
+  /**
+   * ⚠️ The folded-away chat could NOT be written, so no tombstone was emitted either — the context
+   * tells the agent nothing rather than naming a file that is not there.
+   *
+   * Best-effort on purpose: a missing convenience file must never fail a compaction, because the
+   * summary is the rescue and the file is a second copy of text we still hold. Best-effort means the
+   * TURN survives, not that nobody is told — the same sentence the archive failure above was written
+   * for, after `Effect.ignore` made "it failed" indistinguishable from "it never ran".
+   */
+  "session.compaction.folded.unsaved": {
+    level: "warn",
+    message: "could not save the folded conversation, so no tombstone was written",
+    attributes: { "session.id": "correlate", "compaction.folded.chars": "count", "compaction.folded.error": "fault" },
+    content: "user",
+    file: "packages/core/src/session/compaction.ts",
+  },
   /** One subsystem's cleanup for a retired agent failed; the rest of the retirement still ran. */
   "agent.retire.cleaner.failed": {
     level: "warn",

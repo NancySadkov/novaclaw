@@ -1,7 +1,10 @@
 export * as SessionCompaction from "./compaction"
 
 import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, type Model } from "@novaclaw/llm"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { DateTime, Effect, Stream } from "effect"
+import { OldContext } from "./old-context"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
 import { CompactionPrune } from "./compaction-prune"
@@ -226,6 +229,17 @@ type Input = {
    * last-moment dispatch gate.
    */
   readonly summaryAllowed?: boolean
+  /**
+   * The agent's own scratch folder, when the caller knows it. Absent = the folded chat is not saved,
+   * which is what every isolated compactor seam wants: a test that compacts should not write files.
+   *
+   * ⭐ **This is the whole of clause 1's second half.** `invariants.md` (Context Management) promises
+   * the old context is *"saved at that folder"* and that the new one is prepended with a
+   * `%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat` tombstone. Nothing wrote
+   * it — measured 2026-09-15, the string `oldctx` existed nowhere in `packages/` — so a compacted
+   * agent could neither see nor reach the chat that had just been taken from it.
+   */
+  readonly scratchFolder?: string
 }
 
 /**
@@ -727,6 +741,57 @@ export const make = (dependencies: Dependencies) => {
     )
     return entries.map((entry, index) => ({ ...entry, message: erased[index]! }))
   })
+  /**
+   * 🔴 **THE FOLDED CHAT LANDS SOMEWHERE THE AGENT CAN STILL REACH — or we do not claim it did.**
+   *
+   * `invariants.md` (Context Management 1) is explicit about both halves: compaction's result is
+   * prepended with a `<%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat>`
+   * tombstone, *"while the old is saved at that folder"*. Measured 2026-09-15: `oldctx` existed
+   * nowhere in `packages/`, and the folded text went to the KB as searchable passages instead. Those
+   * are different questions — the KB answers by MEANING and only if the agent thinks to ask, this
+   * answers by PATH, and an agent holding a path can grep it, quote it and diff it.
+   *
+   * ⚠️ **The two halves are ONE decision, which is why they are one function.** A tombstone is a
+   * promise that a file is there; emitting it from a code path that has not yet written the file is
+   * the same class of defect as a message asserting a cause the code never established (ruling 2).
+   * So the line is built from the path this function RETURNED, and a failed write returns `undefined`
+   * and produces no line at all.
+   *
+   * ⚠️ **A failed write never fails the compaction.** The summary is the rescue and it is already in
+   * hand; the file is a second copy of text we still hold. Dying here would trade a rescued session
+   * for a missing convenience file, so the failure is logged and swallowed.
+   */
+  const saveFoldedChat = Effect.fnUntraced(function* (input: {
+    readonly scratchFolder: string
+    readonly text: string
+    readonly sessionID: SessionSchema.ID
+  }) {
+    const at = DateTime.toDate(yield* DateTime.now)
+    const target = OldContext.file({ scratchFolder: input.scratchFolder, at })
+    return yield* Effect.tryPromise({
+      try: async () => {
+        await fs.mkdir(path.dirname(target), { recursive: true })
+        await fs.writeFile(target, input.text, "utf8")
+        return target
+      },
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.tap((file) =>
+        Log.event("session.compaction.folded.saved", {
+          "session.id": String(input.sessionID),
+          "compaction.folded.file": file,
+          "compaction.folded.chars": input.text.length,
+        }),
+      ),
+      Effect.catch((cause) =>
+        Log.event("session.compaction.folded.unsaved", {
+          "session.id": String(input.sessionID),
+          "compaction.folded.chars": input.text.length,
+          "compaction.folded.error": Log.fault(cause),
+        }).pipe(Effect.as(undefined)),
+      ),
+    )
+  })
   // `reason` threads into the Compaction.Started/Ended events: "auto" for the runner's overflow /
   // threshold paths (the default keeps every existing caller unchanged), "manual" for the
   // user-requested compact cycle (SessionV2.compact → the runner's SessionCompactionRequest marker).
@@ -957,6 +1022,36 @@ export const make = (dependencies: Dependencies) => {
       summary = trimSummaryHead(first.text, summaryOutput, true)
     }
     if (!summary.trim()) return yield* fail("summarizer-unavailable", first.generatedChars)
+    /**
+     * ⭐ **CLAUSE 1'S SECOND HALF: WRITE THE FOLDED CHAT, THEN REPORT WHERE IT WENT.**
+     *
+     * `invariants.md` (Context Management 1) names both halves: compaction's result is prepended with
+     * a `<%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat>` tombstone, *"while the
+     * old is saved at that folder"*. Measured 2026-09-15: `oldctx` existed nowhere in `packages/`, so
+     * the folded chat was gone from the context and nowhere on disk — and a compaction an agent cannot
+     * interrogate is one it has to take on faith.
+     *
+     * ⚠️ **The LINE is not built here, and that is deliberate.** `summary` is the MODEL's summary: it
+     * renders inside `<summary>`, it is re-fed as `<previous-summary>` on the next cycle, it is
+     * archived to memory and it is shown to the user. A harness path prepended into it would be words
+     * in the model's mouth in all four places, and it would accumulate one stale line per cycle. So
+     * this records the PATH — durably, through the event metadata the projector already writes
+     * verbatim — and `to-llm-message.ts` composes the line into the checkpoint it builds. That is the
+     * same split as the rest of that file, where the renderer owns the wording.
+     *
+     * ⚠️ **The two halves stay ONE decision**, which is why the path is what `saveFoldedChat`
+     * RETURNED rather than a second guess at the filename: a tombstone is a promise that a file is
+     * there, and emitting one from a path that was never written is the same class of defect as a
+     * message asserting a cause the code never established (ruling 2).
+     */
+    const saved =
+      input.scratchFolder === undefined || selected.head.length === 0
+        ? undefined
+        : yield* saveFoldedChat({
+            scratchFolder: input.scratchFolder,
+            text: selected.head,
+            sessionID: input.sessionID,
+          })
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(
       SessionEvent.Compaction.Ended,
@@ -976,6 +1071,10 @@ export const make = (dependencies: Dependencies) => {
           ...decision,
           "compaction.after.tokens": Token.estimate(summary) + Token.estimate(selected.recent),
           "compaction.folded.chars": selected.head.length,
+          // ⭐ Where the folded chat was written, for the RENDERER to name — see `saveFoldedChat`.
+          // `null` (no scratch folder, or a write that failed) means the new context carries no
+          // tombstone, which is the honest answer and never a promise to grep a file that is not there.
+          "compaction.folded.file": saved ?? null,
           // The head is folded from its NEWEST end when it outgrows this budget; the oldest span is
           // marked in the prompt (`HISTORY_HEAD_REMOVED`) and archived to memory. Without this
           // number the next incident cannot tell "the summary was thin" from "the head was halved
