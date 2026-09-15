@@ -428,7 +428,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     expect(harness.requests).toHaveLength(4)
   })
 
-  test("discards partial summary text when the summary pass fails", async () => {
+  test("a failed summary pass never persists its partial text, and folds deterministically", async () => {
     // 🔴 **This used to script a FAILED REASONING CONTINUATION** — 7,000 reasoning deltas, then a
     // continuation that emits a partial summary and dies. A zero reasoning budget removes that shape
     // outright: `invariants.md` (Context Management 1) requires the summarizer to run with no
@@ -482,7 +482,13 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       "claim — a failed continuation cannot persist a partial summary",
     )
 
-    expect(context.map((message) => message.type)).not.toContain("compaction")
+    // ⭐ The failed pass is no longer a dead end: the deterministic fold commits a checkpoint whose
+    // summary is EMPTY, so nothing the dying stream emitted survives — and the chat still shrinks.
+    const compacted = context.find((message) => message.type === "compaction") as
+      | { readonly type: "compaction"; readonly summary: string }
+      | undefined
+    expect(compacted).toBeDefined()
+    expect(compacted?.summary).toBe("")
     expect(JSON.stringify(context)).not.toContain("Partial and unsafe")
   })
 
@@ -600,18 +606,17 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     ])
   })
 
-  test("publishes the original overflow when recovery summarization fails", async () => {
-    // Recovery itself fails. The user must be told about the OVERFLOW — the thing that actually blocked
-    // their turn — not about the summariser, which is an implementation detail of the attempted fix.
-    //
-    // ⭐ And no semantic compaction may be recorded: the failed operational audit row remains visible,
-    // but it cannot replace history without the summary that justified shrinking it.
+  test("a failed recovery summary folds deterministically and the retry is answered", async () => {
+    // The owner's rule: no possibility of failure. A recovery whose summary model dies now folds
+    // deterministically, so the user's turn is retried instead of met with the raw overflow. The
+    // summary is an OPTIMISATION; the fold no longer depends on a model answering.
     const harness = makeRunnerHarness({
       turns: [
         fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
         [LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" })],
         [LLMEvent.providerError({ message: "summary unavailable" })],
+        fragmentFixture("text", "text-recovered", ["Recovered after the deterministic fold"]).completeEvents,
       ],
     })
 
@@ -623,19 +628,22 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         yield* session.resume(HARNESS_SESSION)
         return yield* session.context(HARNESS_SESSION)
       }),
-      "claim — a failed recovery reports the overflow, not the summariser",
+      "claim — a failed recovery summary still folds and retries",
     )
 
-    expect(harness.requests).toHaveLength(2)
+    // The overflow, the failed summary attempt, and the retry the deterministic fold made possible.
+    expect(harness.requests).toHaveLength(3)
+    const compacted = context.find((message) => message.type === "compaction") as
+      | { readonly type: "compaction"; readonly summary: string }
+      | undefined
+    expect(compacted).toBeDefined()
+    expect(compacted?.summary).toBe("")
+    // The turn is answered, not failed: the fold removed the need for a summary.
     expect(
-      (context as Array<{ type: string }>).some((message) => message.type === "compaction"),
-      "a failed recovery must not leave a compaction behind",
+      context.some(
+        (message) => message.type === "assistant" && (message as { readonly finish?: string }).finish === "error",
+      ),
     ).toBe(false)
-    expect(context.slice(-3)).toMatchObject([
-      { type: "user", text: "Continue" },
-      { type: "compaction-status", status: "failed", failure: "summarizer-unavailable" },
-      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
-    ])
   })
 
   test("interrupts overflow recovery while the summary provider is running", async () => {

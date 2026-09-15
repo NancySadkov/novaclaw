@@ -62,13 +62,16 @@ const drive = (input: {
 }) => {
   const requests: LLMRequest[] = []
   const published: string[] = []
+  const ended: { readonly data: unknown; readonly metadata: unknown }[] = []
   const declines: SessionCompaction.DeclineReason[] = []
   let index = 0
   const compactor = SessionCompaction.make({
     events: {
-      publish: (definition: { type: string }) =>
+      publish: (definition: { type: string }, data: unknown, options?: { metadata?: unknown }) =>
         Effect.sync(() => {
           published.push(definition.type)
+          if (definition.type === "session.next.compaction.ended")
+            ended.push({ data, metadata: options?.metadata })
         }),
     } as unknown as EventV2.Interface,
     llm: {
@@ -115,7 +118,7 @@ const drive = (input: {
   const prompt = (requests[0]?.messages ?? [])
     .flatMap((message) => message.content.map((part) => ("text" in part ? part.text : "")))
     .join("\n")
-  return { compacted, declines, published, prompt, requests }
+  return { compacted, declines, published, ended, prompt, requests }
 }
 
 /**
@@ -194,42 +197,88 @@ describe("every decline names itself", () => {
     expect(run.declines).toEqual(["nothing-to-fold"])
   })
 
-  test("a window too small to hold any summary at all", () => {
+  test("an empty head with no model declines BEFORE starting a compaction audit row", () => {
+    // 🔴 The anti-loop guard. Head empty means the whole conversation already fits the verbatim tail;
+    // with no model to merge the carried summary, NO path can reduce the context. Starting the audit
+    // row anyway would settle as a failed `compaction-status` on every turn — the loop a user sees as
+    // "stuck compacting". So it declines before `Compaction.Started` is ever published.
+    const run = drive({
+      model: routed({ context: 4_000, output: 4_096 }),
+      entries: entries(compactionMessage("previous summary", "previous tail"), user("hi"), assistant("ok")),
+      through: "ifNeeded",
+      summaryAllowed: false,
+      promptEstimate: {
+        heuristicTokens: 5_000,
+        estimatedTokens: 5_000,
+        correctionTokens: 0,
+        marginTokens: 0,
+        deltaTokens: 0,
+        growth: 0,
+        confidence: "whole",
+        fallback: "none",
+        anchorReportedTokens: 0,
+        anchorHeuristicTokens: 0,
+      },
+    })
+    expect(run.compacted).toBe(false)
+    expect(run.declines).toEqual(["nothing-to-fold"])
+    expect(run.published).toEqual([])
+    expect(run.ended).toEqual([])
+  })
+
+  test("a window too small to hold any summary still folds deterministically", () => {
+    // 🔴 The old contract declined here, and that was the clause-4 hole: a 4K route could never
+    // compact, so the trigger fired every turn and `context-too-small` was the whole conversation.
+    // The deterministic fold needs no model and no output budget, so the chat now shrinks instead.
     const run = drive({
       model: routed({ context: 4, output: 4_096 }),
       entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["context-too-small"])
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
+    expect(run.requests).toHaveLength(0)
+    expect(run.ended[0]?.metadata).toMatchObject({
+      "compaction.mode": "deterministic",
+      "compaction.deterministic.reason": "context-too-small",
+    })
   })
 
-  test("the summarizer never answered", () => {
+  test("the summarizer never answered, so the fold is deterministic instead of a decline", () => {
+    // ⭐ The owner's rule: *"there should never be even a possibility of failure."* A model that never
+    // answers is a reason to stop spending decode, not a reason to leave the chat over its ceiling.
     const run = drive({
       model: routed({ context: 200_000, output: 4_096 }),
       entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
       answers: [{ text: "", reason: "error", fail: true }],
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["summarizer-unavailable"])
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
+    expect(run.requests.length).toBeGreaterThan(0)
+    expect(run.ended[0]?.metadata).toMatchObject({
+      "compaction.mode": "deterministic",
+      "compaction.deterministic.reason": "summarizer-unavailable",
+    })
   })
 
   /**
-   * 🔴 **A BACKOFF IS A REASON NOT TO SPEND, NOT A REASON TO STOP LOOKING.**
+   * 🔴 **A BACKOFF IS A REASON NOT TO SPEND, NOT A REASON TO STOP LOOKING OR TO STOP FOLDING.**
    *
    * The runner used to skip `compactIfNeeded` ENTIRELY for 30 minutes after a summarizer failure, so
    * the threshold was not measured, not logged, and the packed request was dispatched unmeasured.
    * Measured 2026-09-14 (`ses_daedalus`): eight failed compactions, and the turn that produced the
    * HTTP 400 went out at an estimated 281,140 tokens against a 235,929 ceiling 148 ms after
    * compaction gave up. The chat is at its most dangerous DURING a backoff.
+   *
+   * ⭐ Under the owner's never-fail rule the backoff now skips only the SPEND: the cycle measures,
+   * folds deterministically, and spends no provider call. An over-threshold chat never just sits there.
    */
-  test("a summarizer backoff declines by name, and spends no provider call", () => {
+  test("a summarizer backoff spends no provider call and folds deterministically", () => {
     const run = drive({
       model: routed({ context: 200_000, output: 4_096 }),
       entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
       through: "ifNeeded",
       summaryAllowed: false,
-      // Over the threshold, so the decline can only be the backoff: the measurement ran and the
-      // branch above it (`under-threshold`) did not fire.
+      // Over the threshold, so the threshold branch above it (`under-threshold`) did not fire.
       promptEstimate: {
         heuristicTokens: 300_000,
         estimatedTokens: 300_000,
@@ -243,9 +292,13 @@ describe("every decline names itself", () => {
         anchorHeuristicTokens: 0,
       },
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["summarizer-backoff"])
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
     expect(run.requests).toHaveLength(0)
+    expect(run.ended[0]?.metadata).toMatchObject({
+      "compaction.mode": "deterministic",
+      "compaction.deterministic.reason": "summarizer-backoff",
+    })
   })
 
   /** The same call WITH the spend allowed reaches the summarizer — the gate is the only difference. */
@@ -273,14 +326,18 @@ describe("every decline names itself", () => {
     expect(run.requests.length).toBeGreaterThan(0)
   })
 
-  test("the summarizer answered in a shape no bounded retry can rescue", () => {
+  test("an answer no bounded retry can rescue folds deterministically", () => {
     const run = drive({
       model: routed({ context: 200_000, output: 4_096 }),
       entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
       answers: [{ text: "## Goal\n- keep going", reason: "content-filter" }],
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["summary-unusable"])
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
+    expect(run.ended[0]?.metadata).toMatchObject({
+      "compaction.mode": "deterministic",
+      "compaction.deterministic.reason": "summary-unusable",
+    })
   })
 
   test("the automatic trigger's own exits report through the same channel", () => {
@@ -377,28 +434,34 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
   })
 
   /**
-   * The other side: when even an empty head does not fit — a carried summary alone overruns the
-   * window — there is nothing left to trim and the user must be told THAT, not that the chat is
-   * small.
+   * The other side: a carried summary alone overruns the window, so no semantic pass can fit — and
+   * the deterministic fold carries the previous summary verbatim instead. The decline that used to
+   * live here is exactly the "possibility of failure" the owner ruled out.
    */
-  test("when no amount of trimming can fit, it declines with the honest reason", () => {
+  test("even a carried summary too large to trim folds deterministically", () => {
+    const carried = `carried ${"gamma ".repeat(20_000)}`
     const run = drive({
       model: routed({ context: 8_000, output: 4_096 }),
       entries: entries(
-        compactionMessage(`carried ${"gamma ".repeat(20_000)}`, "carried tail"),
+        compactionMessage(carried, "carried tail"),
         user("a new question"),
         assistant("a new answer"),
       ),
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["transcript-too-large"])
-    expect(run.requests.length).toBe(0)
-    expect(SessionCompaction.declineNotice(run.declines[0]!)).toContain("too large")
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
+    expect(run.requests).toHaveLength(0)
+    expect(run.ended[0]?.metadata).toMatchObject({
+      "compaction.mode": "deterministic",
+      "compaction.deterministic.reason": "transcript-too-large",
+    })
+    // The previous summary is CARRIED, not thrown away: the fold is deterministic, not amnesiac.
+    expect((run.ended[0]?.data as { readonly text?: string } | undefined)?.text).toBe(carried)
   })
 })
 
 describe("the Geryon sleep-recovery regression", () => {
-  test("a hung compactor yields to a new chat, falls back deterministically, and stays backed off next turn", async () => {
+  test("a hung compactor yields to a new chat and folds deterministically instead of failing", async () => {
     const scheduler = SessionScheduler.make()
     const model = routed({ context: 12_000, output: 4_096 })
     const declines: SessionCompaction.DeclineReason[] = []
@@ -453,25 +516,26 @@ describe("the Geryon sleep-recovery regression", () => {
         throw new Error("foreground admission did not preempt the hung compactor")
       }),
     ])
-    expect(compacted).toBe(false)
+    expect(compacted).toBe(true)
     expect(Date.now() - admittedAt).toBeLessThan(1_000)
-    expect(declines).toEqual(["summarizer-unavailable"])
+    // ⭐ The preempted summary is no longer a failed compaction: the deterministic fold runs on the
+    // same turn, so Geryon's chat shrinks even though its summarizer never answered. The old contract
+    // declined here and left the chat over its ceiling for the next turn to trip over.
+    expect(declines).toEqual([])
     expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({
       inFlightInteractive: ["daedalus"],
       inFlightMaintenance: [],
     })
 
-    // Persist the same named outcome the runner receives. The following tool turn must not launch
-    // another summary decode, but it must still fit the outgoing request deterministically.
-    const failedAt = 10_000
+    // A successful fold CLEARS the retry watermark (it did not fail), so the following turn launches
+    // no further summary decode — and the deterministic packer still fits the outgoing request.
     const retryAt = CompactionBackoff.afterAttempt({
-      now: failedAt,
+      now: 10_000,
       compacted,
       decline: declines[0],
     })
-    expect(CompactionBackoff.due(retryAt, failedAt + 1)).toBe(false)
-    if (CompactionBackoff.due(retryAt, failedAt + 1))
-      await Effect.runPromise(compactor.compactAfterOverflow(compactionInput))
+    expect(retryAt).toBeUndefined()
+    expect(CompactionBackoff.due(retryAt, 10_001)).toBe(true)
     expect(summaryCalls).toBe(1)
 
     const packed = packRequest({
@@ -491,4 +555,78 @@ describe("the Geryon sleep-recovery regression", () => {
 
     await Effect.runPromise(scheduler.release({ sessionID: "daedalus", deviceKey: "spark" }))
   }, 3_000)
+})
+
+/**
+ * ⭐ **CLAUSE 4: THE WINDOW TABLE, AND THE NEVER-FAIL PROPERTY IT PINS.**
+ *
+ * `invariants.md` (Context Management 4): *"We support context sizes from 4K and up, so our unit and
+ * smoke tests should cover range from 4K to 256K (inclusive) in power of two intervals."* The small
+ * end is where the harness actually broke: `promptCeilingTokens` is `window − reserve`, and the
+ * reserve's floors (8,192 and the 20,000 buffer) swallow a 4K window whole, so the ceiling was ZERO
+ * and `estimate > 0` fired the trigger on every turn — a compaction loop that folded nothing.
+ *
+ * Two properties per window, both at the floor:
+ *   1. the trigger's ceiling is POSITIVE (a zero ceiling is the loop);
+ *   2. whether or not the summarizer answers, the cycle COMMITS a fold — semantic when a model can
+ *      answer, deterministic when it cannot. There is no third outcome.
+ */
+describe("the 4K..256K window table", () => {
+  const WINDOWS = [4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144] as const
+  const overThreshold = (window: number): PromptEstimate.Result => ({
+    heuristicTokens: window,
+    estimatedTokens: window,
+    correctionTokens: 0,
+    marginTokens: 0,
+    deltaTokens: 0,
+    growth: 0,
+    confidence: "whole",
+    fallback: "none",
+    anchorReportedTokens: 0,
+    anchorHeuristicTokens: 0,
+  })
+  const conversation = () =>
+    entries(
+      user(`old ${"detail ".repeat(400)}`),
+      assistant(`done ${"more ".repeat(200)}`),
+      user("the current question"),
+      assistant("the current answer"),
+    )
+
+  for (const window of WINDOWS) {
+    test(`a ${window}-token window compacts with a model`, () => {
+      const run = drive({
+        model: routed({ context: window, output: 4_096 }),
+        entries: conversation(),
+        through: "ifNeeded",
+        summaryAllowed: true,
+        answers: [{ text: "## Goal\n- keep going", reason: "stop" }],
+        promptEstimate: overThreshold(window),
+      })
+      expect(run.compacted).toBe(true)
+      expect(run.declines).toEqual([])
+      // A 4K window cannot hold a 4,096-token summary, so it folds deterministically; every larger
+      // window summarises. Either way the cycle commits a fold.
+      expect(run.ended.at(-1)?.metadata).toMatchObject({
+        "compaction.mode": expect.stringMatching(/^(semantic|deterministic)$/),
+      })
+      expect((run.ended.at(-1)?.metadata as { readonly "compaction.threshold"?: number })["compaction.threshold"]).toBeGreaterThan(0)
+    })
+
+    test(`a ${window}-token window still folds when no model can answer`, () => {
+      const run = drive({
+        model: routed({ context: window, output: 4_096 }),
+        entries: conversation(),
+        through: "ifNeeded",
+        summaryAllowed: false,
+        promptEstimate: overThreshold(window),
+      })
+      // The summarizer is not merely unavailable — it is not consulted (`summaryAllowed: false`), and
+      // no request is spent. The deterministic fold is what keeps the chat from staying over ceiling.
+      expect(run.compacted).toBe(true)
+      expect(run.declines).toEqual([])
+      expect(run.requests).toHaveLength(0)
+      expect(run.ended.at(-1)?.metadata).toMatchObject({ "compaction.mode": "deterministic" })
+    })
+  }
 })

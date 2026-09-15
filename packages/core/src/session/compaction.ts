@@ -824,6 +824,24 @@ export const make = (dependencies: Dependencies) => {
       outputTokens: output,
       minimumResponseReserveTokens: config.buffer,
     })
+    /**
+     * 🔴 **THE TRIGGER CEILING IS NEVER ZERO ON A WORKING WINDOW.**
+     *
+     * `promptCeilingTokens` is `window - reserve`, and the reserve has FLOORS (8,192 and the 20,000
+     * buffer) that swallow a small window whole: at a 4,096-token route the ceiling lands at 0, and
+     * `estimatedWithMargin > 0` is then true on EVERY turn — a compactor that fires forever, folds
+     * nothing it can explain, and looks to the user exactly like a chat stuck in a compaction loop.
+     * Clause 4 of the invariant promises 4K and up, so the small end is the one that has to work.
+     *
+     * ⭐ The fallback is the same 90 % boundary the reserve is derived from, without the floors: a
+     * prompt over 90 % of the window is worth folding, and below it there is room. It is a FLOOR, not
+     * a replacement — a ceiling that is already positive is untouched, so every existing route keeps
+     * the exact number it had.
+     */
+    const triggerThreshold =
+      triggerCapacity.promptCeilingTokens > 0
+        ? triggerCapacity.promptCeilingTokens
+        : Math.max(1, Math.floor((context * PromptEstimate.AUTO_COMPACT_PERCENT) / 100))
     // Which of the three doors reached this cycle. `reason` alone cannot say: it is "auto" for BOTH
     // the threshold trigger and overflow recovery, and the owner's report — a compaction that fires
     // again a few tool calls later — is exactly the case where telling them apart is the whole
@@ -833,7 +851,7 @@ export const make = (dependencies: Dependencies) => {
     const decision = {
       "compaction.cause": cause,
       "compaction.window": context,
-      "compaction.threshold": triggerCapacity.promptCeilingTokens,
+      "compaction.threshold": triggerThreshold,
       "compaction.response.reserve": triggerCapacity.responseReserveTokens,
       "compaction.buffer": config.buffer,
       "compaction.keep.tokens": config.tokens,
@@ -862,10 +880,16 @@ export const make = (dependencies: Dependencies) => {
       yield* Log.event("session.compaction.prune.only", { "session.id": input.sessionID })
       return decline("prune-only")
     }
+    // ⚠️ The verbatim tail is bounded by the TRIGGER's own ceiling, not only by `compaction.keep`.
+    // `keep` defaults to 8,000 tokens, which is larger than a small route's whole window: at a 4,096-
+    // token window `selectContext` would then keep the ENTIRE conversation as `recent`, leave `head`
+    // empty, and the compactor would have nothing to fold while the trigger kept firing — a
+    // compaction loop at exactly the scale clause 4 promises to support. Clamping the tail under the
+    // ceiling guarantees a foldable head whenever the trigger can fire at all.
     const selected = selectContext(
       entries,
       overflowRecentBudget({
-        configuredRecentTokens: config.tokens,
+        configuredRecentTokens: Math.min(config.tokens, triggerThreshold),
         originalPromptTokens: input.overflowPromptTokens,
         targetPromptTokens: input.overflowTargetTokens,
       }),
@@ -877,49 +901,13 @@ export const make = (dependencies: Dependencies) => {
     const carriedRecent = previousSummary?.type === "compaction" ? previousSummary.recent : ""
     const promptFor = (head: string) =>
       buildPrompt({ previousSummary: carriedSummary, context: [carriedRecent, head].filter(Boolean) })
+    // ⚠️ Nothing to cut and no model to merge the carried summary: only then can neither the
+    // deterministic fold nor a semantic pass reduce the context. A Started row here would settle as a
+    // failed status on EVERY turn — the compaction loop in its visible form — so decline before it.
     const requestedSummaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    // One semantic pass gets the declared output budget. If a server ignores that budget, recovery
-    // is deterministic: trim the oldest generated summary text. A second model pass used to double
-    // the decode work and could itself inflate the context it was meant to rescue.
-    if (requestedSummaryOutput >= context) return decline("context-too-small")
     const summaryOutput = requestedSummaryOutput
-    if (summaryOutput <= 0) return decline("context-too-small")
-    /**
-     * 🔴 **A TRANSCRIPT TOO LARGE TO SUMMARIZE USED TO BE A DEAD END.**
-     *
-     * This guard was `if (estimate(prompt) > context - summaryOutput) return false`, and it fires
-     * exactly when the head is bigger than one summarization pass — which is reachable on the
-     * overflow-recovery path, where `overflowRecentBudget` shrinks the verbatim TAIL while the head
-     * is whatever is left. The session is then over its ceiling with compaction refusing to run, so
-     * every subsequent turn overflows: the one state a compactor exists to prevent, entered by the
-     * compactor declining.
-     *
-     * ⭐ **Dropping the OLDEST head is the same trade the rest of this file already makes** —
-     * `trimSummaryHead` cuts an oversized summary from the front under `SUMMARY_HEAD_REMOVED`, and
-     * `overflowRecentBudget` cuts the tail. Oldest-first, halving, bounded, and the dropped span is
-     * not lost: `archiveCompactedChat` writes the compacted entries into this colleague's memory as
-     * passages before the overlay commits, so `kb search` still reaches them.
-     *
-     * The loop is finite by construction (each pass halves, and zero terminates it), so this cannot
-     * become an unbounded self-edit — the same property the summarize/trim chain below is built on.
-     */
-    const promptCeiling = summarizeInputCeiling(context, summaryOutput, config.summarizeInput)
-    let keptHeadChars = selected.head.length
-    let head = selected.head
-    let summaryPrompt = promptFor(head)
-    while (keptHeadChars > 0 && Token.estimate(summaryPrompt) > promptCeiling) {
-      keptHeadChars = Math.floor(keptHeadChars / 2)
-      head = keptHeadChars === 0 ? "" : `${HISTORY_HEAD_REMOVED}\n\n${selected.head.slice(-keptHeadChars)}`
-      summaryPrompt = promptFor(head)
-    }
-    // Still over with nothing left to give: the window cannot hold the template plus the carried
-    // summary, so no amount of trimming this chat helps and the user must be told THAT.
-    if (Token.estimate(summaryPrompt) > promptCeiling) return decline("transcript-too-large")
-    if (head.length === 0 && carriedSummary === undefined) return decline("transcript-too-large")
-    // ⚠️ NOT logged through `session.compaction.summary.truncated` — that key names the SUMMARY
-    // overrunning its output budget, and borrowing it for a trimmed INPUT would make the one number
-    // it reports mean two things. The trim announces itself where it matters instead: the marker
-    // rides the prompt the model is sent, so it is visible in the request the tests pin.
+    const canSummarize = summaryOutput > 0 && summaryOutput < context && input.summaryAllowed !== false
+    if (selected.head.length === 0 && !canSummarize) return decline("nothing-to-fold")
     const messageID = SessionMessage.ID.create()
     const startedAt = yield* DateTime.now
     yield* dependencies.events.publish(
@@ -935,7 +923,61 @@ export const make = (dependencies: Dependencies) => {
       // ended publish adds what only it can know (the size after).
       { metadata: decision },
     )
-
+    const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
+    const prefixHash = yield* dependencies.prefixHash(input.sessionID, prefixSeq)
+    /**
+     * ⭐ **THE DETERMINISTIC FOLD — THE FLOOR COMPACTION CANNOT FALL THROUGH.**
+     *
+     * `invariants.md` (Context Management 2) defines it without a model: take the context, cut its
+     * head, save the cut text to the agent's scratch, and carry on with the tail and a tombstone. The
+     * owner's rule is blunt: *"there should never be even a possibility of failure"*. So every way the
+     * semantic pass can fail — no substitute model, a route that errors, an empty answer, an output
+     * budget too small to be a summary, a transcript too large for one pass — lands HERE instead of
+     * declining and leaving the chat over its ceiling for the next turn to trip over again.
+     *
+     * ⚠️ It still carries the previous summary, and it still writes the cut head to a real file named
+     * by a real tombstone: the fold is deterministic, not amnesiac. What it cannot do is invent a
+     * semantic digest, so the difference between the two modes rides `compaction.mode` on the durable
+     * row a person reads.
+     *
+     * ⚠️ Valid only when there IS a head to cut. An empty head means the whole conversation already
+     * fits the verbatim tail; a "fold" that removes nothing would shrink nothing and loop instead.
+     */
+    const deterministic = Effect.fnUntraced(function* (why: DeclineReason) {
+      const saved =
+        input.scratchFolder === undefined || selected.head.length === 0
+          ? undefined
+          : yield* saveFoldedChat({
+              scratchFolder: input.scratchFolder,
+              text: selected.head,
+              sessionID: input.sessionID,
+            })
+      yield* dependencies.events.publish(
+        SessionEvent.Compaction.Ended,
+        {
+          sessionID: input.sessionID,
+          messageID,
+          timestamp: yield* DateTime.now,
+          reason,
+          text: carriedSummary ?? "",
+          recent: selected.recent,
+          prefixSeq,
+          prefixHash,
+          generatedChars: 0,
+        },
+        {
+          metadata: {
+            ...decision,
+            "compaction.mode": "deterministic",
+            "compaction.deterministic.reason": why,
+            "compaction.after.tokens": Token.estimate(carriedSummary ?? "") + Token.estimate(selected.recent),
+            "compaction.folded.chars": selected.head.length,
+            "compaction.folded.file": saved ?? null,
+          },
+        },
+      )
+      return true
+    })
     const fail = Effect.fnUntraced(function* (why: DeclineReason, generatedChars: number) {
       yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
         sessionID: input.sessionID,
@@ -944,141 +986,210 @@ export const make = (dependencies: Dependencies) => {
         reason,
         text: "",
         recent: "",
-        prefixSeq: 0,
-        prefixHash: "",
+        prefixSeq,
+        prefixHash,
         failure: why,
         generatedChars,
       })
       return decline(why)
     })
-
-    // The chain is deliberately finite: one semantic summary followed, only if its token budget is
-    // violated, by a deterministic oldest-first cut. There is no wall-clock deadline: observable
-    // token progress is useful work, and interrupting it merely discards that work.
-    // When the runner supplied its assembled request, preserve that exact request at the front and
-    // append only the summarization operation. Direct compactor callers without provider history use
-    // the serialized history as their evidence prefix; the instruction is still last.
-    const cachedPrefixRequest =
-      input.request.messages.length > 0
-        ? PostfixPrompt.append(input.request, buildInstruction(carriedSummary, "prefix"), {
-            maxTokens: summaryOutput,
-            disableTools: true,
-          })
-        : undefined
     /**
-     * ⚠️ **Measure what goes on the WIRE, not `LLM.requestInput`.** The previous expression here was
-     * `Token.estimateStructured(LLM.requestInput(request))`, which serialises the whole request —
-     * including the model's route definition — and priced a request carrying three short messages and
-     * one tiny tool at 34,787 tokens. Nothing about the route is sent to the provider, and with the
-     * summarizer's ceiling now a real prefill budget (32 k) rather than the whole window (258 k), that
-     * artefact would have sent EVERY summary down the serialized-history fallback and thrown away the
-     * prefix-cache reuse this branch exists for. `PromptEstimate.whole` is the runner's own measure of
-     * an outgoing request: system + messages + tools, nothing else.
+     * 🔴 **EVERY ROAD OUT OF THE SEMANTIC PASS NOW LEADS TO THE DETERMINISTIC FOLD.**
+     *
+     * The owner's rule is blunt: *"there should never be even a possibility of failure."* A summary is
+     * an OPTIMISATION — a semantic digest of the head — and this codebase has paid for treating it as
+     * the only way to fold: `summarizer-unavailable` left the chat over its ceiling, the next turn
+     * overflowed, and the compactor declined again. So a route that cannot produce a summary (no
+     * substitute model, an endpoint that errors or goes silent, an empty or unusable answer, an output
+     * budget too small to be a summary, a transcript too large for one pass) does not decline and does
+     * not fail. It falls through to `deterministic`, which needs no model at all.
+     *
+     * `why` is the honest name of the door that was reached, recorded on the durable row so a person
+     * can tell "the model was down" from "the window is tiny" without a post-mortem.
      */
-    const prefixRequestTokens =
-      cachedPrefixRequest === undefined ? -1 : PromptEstimate.whole(cachedPrefixRequest, input.imagePatchPixels)
-    const summaryRequest =
-      cachedPrefixRequest !== undefined && prefixRequestTokens <= promptCeiling
-        ? cachedPrefixRequest
-        : LLM.request({
-            model: input.model,
-            messages: [Message.user(summaryPrompt)],
-            tools: [],
-            generation: { maxTokens: summaryOutput },
-          })
-    const first = yield* summarize({
-      request: summaryRequest,
-      preservesWorkingPrefix: summaryRequest === cachedPrefixRequest,
-      model: input.model,
-      outputTokens: summaryOutput,
-      sessionID: input.sessionID,
-      messageID,
-      maintenance: input.maintenance,
-      guard: input.guard,
-    })
-    if (!first.completed || first.failed || !first.text.trim())
-      return yield* fail("summarizer-unavailable", first.generatedChars)
-    const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
-    const firstClean = first.finish === "stop" && firstFits
-    let summary = first.text
-    if (!firstClean) {
-      const budgetCut = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
-      if (!budgetCut) return yield* fail("summary-unusable", first.generatedChars)
-      yield* Log.event("session.compaction.summary.truncated", {
-        "session.id": String(input.sessionID),
-        "compaction.output.cap": summaryOutput,
-        "compaction.summary.chars": first.text.length,
-      })
-      // A provider-reported length cut can fit the estimate while still ending mid-summary. Mark
-      // that loss inside the summary itself, then keep as much of the newest generated tail as the
-      // declared budget allows. An over-budget stop follows the same deterministic path.
-      summary = trimSummaryHead(first.text, summaryOutput, true)
+    let why: DeclineReason = "summarizer-unavailable"
+    // One semantic pass gets the declared output budget. If a server ignores that budget, recovery is
+    // deterministic: trim the oldest generated summary text. A second model pass used to double the
+    // decode work and could itself inflate the context it was meant to rescue.
+    if (input.summaryAllowed === false) why = "summarizer-backoff"
+    else if (summaryOutput <= 0 || summaryOutput >= context) why = "context-too-small"
+    if (canSummarize) {
+      /**
+       * 🔴 **A TRANSCRIPT TOO LARGE TO SUMMARIZE USED TO BE A DEAD END.**
+       *
+       * This guard was `if (estimate(prompt) > context - summaryOutput) return false`, and it fires
+       * exactly when the head is bigger than one summarization pass — which is reachable on the
+       * overflow-recovery path, where `overflowRecentBudget` shrinks the verbatim TAIL while the head
+       * is whatever is left. The session is then over its ceiling with compaction refusing to run, so
+       * every subsequent turn overflows: the one state a compactor exists to prevent, entered by the
+       * compactor declining.
+       *
+       * ⭐ **Dropping the OLDEST head is the same trade the rest of this file already makes** —
+       * `trimSummaryHead` cuts an oversized summary from the front under `SUMMARY_HEAD_REMOVED`, and
+       * `overflowRecentBudget` cuts the tail. Oldest-first, halving, bounded, and the dropped span is
+       * not lost: `archiveCompactedChat` writes the compacted entries into this colleague's memory as
+       * passages before the overlay commits, so `kb search` still reaches them.
+       *
+       * The loop is finite by construction (each pass halves, and zero terminates it), so this cannot
+       * become an unbounded self-edit — the same property the summarize/trim chain below is built on.
+       */
+      const promptCeiling = summarizeInputCeiling(context, summaryOutput, config.summarizeInput)
+      let keptHeadChars = selected.head.length
+      let head = selected.head
+      let summaryPrompt = promptFor(head)
+      while (keptHeadChars > 0 && Token.estimate(summaryPrompt) > promptCeiling) {
+        keptHeadChars = Math.floor(keptHeadChars / 2)
+        head = keptHeadChars === 0 ? "" : `${HISTORY_HEAD_REMOVED}\n\n${selected.head.slice(-keptHeadChars)}`
+        summaryPrompt = promptFor(head)
+      }
+      // Still over with nothing left to give: the window cannot hold the template plus the carried
+      // summary, so no amount of trimming this INPUT helps — but the deterministic fold still can,
+      // because it needs no template and no model.
+      if (Token.estimate(summaryPrompt) > promptCeiling || (head.length === 0 && carriedSummary === undefined)) {
+        why = "transcript-too-large"
+      } else {
+        // The chain is deliberately finite: one semantic summary, then — if the summary is empty,
+        // unusable, or the model never answers — the deterministic cut. There is no wall-clock
+        // deadline: observable token progress is useful work, and interrupting it merely discards it.
+        // When the runner supplied its assembled request, preserve that exact request at the front and
+        // append only the summarization operation. Direct compactor callers without provider history use
+        // the serialized history as their evidence prefix; the instruction is still last.
+        const cachedPrefixRequest =
+          input.request.messages.length > 0
+            ? PostfixPrompt.append(input.request, buildInstruction(carriedSummary, "prefix"), {
+                maxTokens: summaryOutput,
+                disableTools: true,
+              })
+            : undefined
+        /**
+         * ⚠️ **Measure what goes on the WIRE, not `LLM.requestInput`.** The previous expression here was
+         * `Token.estimateStructured(LLM.requestInput(request))`, which serialises the whole request —
+         * including the model's route definition — and priced a request carrying three short messages and
+         * one tiny tool at 34,787 tokens. Nothing about the route is sent to the provider, and with the
+         * summarizer's ceiling now a real prefill budget (32 k) rather than the whole window (258 k), that
+         * artefact would have sent EVERY summary down the serialized-history fallback and thrown away the
+         * prefix-cache reuse this branch exists for. `PromptEstimate.whole` is the runner's own measure of
+         * an outgoing request: system + messages + tools, nothing else.
+         */
+        const prefixRequestTokens =
+          cachedPrefixRequest === undefined ? -1 : PromptEstimate.whole(cachedPrefixRequest, input.imagePatchPixels)
+        const summaryRequest =
+          cachedPrefixRequest !== undefined && prefixRequestTokens <= promptCeiling
+            ? cachedPrefixRequest
+            : LLM.request({
+                model: input.model,
+                messages: [Message.user(summaryPrompt)],
+                tools: [],
+                generation: { maxTokens: summaryOutput },
+              })
+        const first = yield* summarize({
+          request: summaryRequest,
+          preservesWorkingPrefix: summaryRequest === cachedPrefixRequest,
+          model: input.model,
+          outputTokens: summaryOutput,
+          sessionID: input.sessionID,
+          messageID,
+          maintenance: input.maintenance,
+          guard: input.guard,
+        })
+        if (!first.completed || first.failed || !first.text.trim()) {
+          why = "summarizer-unavailable"
+        } else {
+          const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
+          const firstClean = first.finish === "stop" && firstFits
+          let summary = first.text
+          if (!firstClean) {
+            const budgetCut = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
+            if (!budgetCut) {
+              why = "summary-unusable"
+              summary = ""
+            } else {
+              yield* Log.event("session.compaction.summary.truncated", {
+                "session.id": String(input.sessionID),
+                "compaction.output.cap": summaryOutput,
+                "compaction.summary.chars": first.text.length,
+              })
+              // A provider-reported length cut can fit the estimate while still ending mid-summary. Mark
+              // that loss inside the summary itself, then keep as much of the newest generated tail as the
+              // declared budget allows. An over-budget stop follows the same deterministic path.
+              summary = trimSummaryHead(first.text, summaryOutput, true)
+            }
+          }
+          if (summary.trim()) {
+            /**
+             * ⭐ **CLAUSE 1'S SECOND HALF: WRITE THE FOLDED CHAT, THEN REPORT WHERE IT WENT.**
+             *
+             * `invariants.md` (Context Management 1) names both halves: compaction's result is prepended
+             * with a `<%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat>` tombstone,
+             * *"while the old is saved at that folder"*. Measured 2026-09-15: `oldctx` existed nowhere in
+             * `packages/`, so the folded chat was gone from the context and nowhere on disk — and a
+             * compaction an agent cannot interrogate is one it has to take on faith.
+             *
+             * ⚠️ **The LINE is not built here, and that is deliberate.** `summary` is the MODEL's summary:
+             * it renders inside `<summary>`, it is re-fed as `<previous-summary>` on the next cycle, it is
+             * archived to memory and it is shown to the user. A harness path prepended into it would be
+             * words in the model's mouth in all four places, and it would accumulate one stale line per
+             * cycle. So this records the PATH — durably, through the event metadata the projector already
+             * writes verbatim — and `to-llm-message.ts` composes the line into the checkpoint it builds.
+             * That is the same split as the rest of that file, where the renderer owns the wording.
+             *
+             * ⚠️ **The two halves stay ONE decision**, which is why the path is what `saveFoldedChat`
+             * RETURNED rather than a second guess at the filename: a tombstone is a promise that a file is
+             * there, and emitting one from a path that was never written is the same class of defect as a
+             * message asserting a cause the code never established (ruling 2).
+             */
+            const saved =
+              input.scratchFolder === undefined || selected.head.length === 0
+                ? undefined
+                : yield* saveFoldedChat({
+                    scratchFolder: input.scratchFolder,
+                    text: selected.head,
+                    sessionID: input.sessionID,
+                  })
+            yield* dependencies.events.publish(
+              SessionEvent.Compaction.Ended,
+              {
+                sessionID: input.sessionID,
+                messageID,
+                timestamp: yield* DateTime.now,
+                reason,
+                text: summary,
+                recent: selected.recent,
+                prefixSeq,
+                prefixHash,
+                generatedChars: first.generatedChars,
+              },
+              {
+                metadata: {
+                  ...decision,
+                  "compaction.mode": "semantic",
+                  "compaction.after.tokens": Token.estimate(summary) + Token.estimate(selected.recent),
+                  "compaction.folded.chars": selected.head.length,
+                  // ⭐ Where the folded chat was written, for the RENDERER to name — see `saveFoldedChat`.
+                  // `null` (no scratch folder, or a write that failed) means the new context carries no
+                  // tombstone, which is the honest answer and never a promise to grep a file that is not
+                  // there.
+                  "compaction.folded.file": saved ?? null,
+                  // The head is folded from its NEWEST end when it outgrows this budget; the oldest span
+                  // is marked in the prompt (`HISTORY_HEAD_REMOVED`) and archived to memory. Without this
+                  // number the next incident cannot tell "the summary was thin" from "the head was halved
+                  // twice before the model ever saw it".
+                  "compaction.summarize.input": promptCeiling,
+                  "compaction.summary.chars": summary.length,
+                  "compaction.recent.chars": selected.recent.length,
+                },
+              },
+            )
+            return true
+          }
+        }
+      }
     }
-    if (!summary.trim()) return yield* fail("summarizer-unavailable", first.generatedChars)
-    /**
-     * ⭐ **CLAUSE 1'S SECOND HALF: WRITE THE FOLDED CHAT, THEN REPORT WHERE IT WENT.**
-     *
-     * `invariants.md` (Context Management 1) names both halves: compaction's result is prepended with
-     * a `<%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat>` tombstone, *"while the
-     * old is saved at that folder"*. Measured 2026-09-15: `oldctx` existed nowhere in `packages/`, so
-     * the folded chat was gone from the context and nowhere on disk — and a compaction an agent cannot
-     * interrogate is one it has to take on faith.
-     *
-     * ⚠️ **The LINE is not built here, and that is deliberate.** `summary` is the MODEL's summary: it
-     * renders inside `<summary>`, it is re-fed as `<previous-summary>` on the next cycle, it is
-     * archived to memory and it is shown to the user. A harness path prepended into it would be words
-     * in the model's mouth in all four places, and it would accumulate one stale line per cycle. So
-     * this records the PATH — durably, through the event metadata the projector already writes
-     * verbatim — and `to-llm-message.ts` composes the line into the checkpoint it builds. That is the
-     * same split as the rest of that file, where the renderer owns the wording.
-     *
-     * ⚠️ **The two halves stay ONE decision**, which is why the path is what `saveFoldedChat`
-     * RETURNED rather than a second guess at the filename: a tombstone is a promise that a file is
-     * there, and emitting one from a path that was never written is the same class of defect as a
-     * message asserting a cause the code never established (ruling 2).
-     */
-    const saved =
-      input.scratchFolder === undefined || selected.head.length === 0
-        ? undefined
-        : yield* saveFoldedChat({
-            scratchFolder: input.scratchFolder,
-            text: selected.head,
-            sessionID: input.sessionID,
-          })
-    const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
-    yield* dependencies.events.publish(
-      SessionEvent.Compaction.Ended,
-      {
-        sessionID: input.sessionID,
-        messageID,
-        timestamp: yield* DateTime.now,
-        reason,
-        text: summary,
-        recent: selected.recent,
-        prefixSeq,
-        prefixHash: yield* dependencies.prefixHash(input.sessionID, prefixSeq),
-        generatedChars: first.generatedChars,
-      },
-      {
-        metadata: {
-          ...decision,
-          "compaction.after.tokens": Token.estimate(summary) + Token.estimate(selected.recent),
-          "compaction.folded.chars": selected.head.length,
-          // ⭐ Where the folded chat was written, for the RENDERER to name — see `saveFoldedChat`.
-          // `null` (no scratch folder, or a write that failed) means the new context carries no
-          // tombstone, which is the honest answer and never a promise to grep a file that is not there.
-          "compaction.folded.file": saved ?? null,
-          // The head is folded from its NEWEST end when it outgrows this budget; the oldest span is
-          // marked in the prompt (`HISTORY_HEAD_REMOVED`) and archived to memory. Without this
-          // number the next incident cannot tell "the summary was thin" from "the head was halved
-          // twice before the model ever saw it".
-          "compaction.summarize.input": promptCeiling,
-          "compaction.summary.chars": summary.length,
-          "compaction.recent.chars": selected.recent.length,
-        },
-      },
-    )
-    return true
+    // ⭐ THE FLOOR. Nothing above produced a semantic summary; fold deterministically. An empty head
+    // means there is genuinely nothing to cut (the whole conversation already fits the verbatim tail),
+    // so only then is a decline the truthful answer.
+    if (selected.head.length === 0) return yield* fail(why, 0)
+    return yield* deterministic(why)
   })
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
     // The trigger's own three exits report through the same channel as the nine below it, so a
@@ -1115,7 +1226,13 @@ export const make = (dependencies: Dependencies) => {
       outputTokens: output,
       minimumResponseReserveTokens: config.buffer,
     })
-    const threshold = promptCapacity.promptCeilingTokens
+    // Never zero on a working window — see `triggerThreshold` in `compactAfterOverflow`. A ceiling of
+    // zero would make `estimatedWithMargin > 0` true on every turn: a trigger that fires forever and
+    // folds nothing, which is what a compaction loop looks like from the inside.
+    const threshold =
+      promptCapacity.promptCeilingTokens > 0
+        ? promptCapacity.promptCeilingTokens
+        : Math.max(1, Math.floor((context * PromptEstimate.AUTO_COMPACT_PERCENT) / 100))
     yield* Log.event("session.compaction.threshold", {
       "session.id": String(input.sessionID),
       "compaction.estimated": estimated,
@@ -1137,9 +1254,10 @@ export const make = (dependencies: Dependencies) => {
       "compaction.fires": estimatedWithMargin > threshold,
     })
     if (estimatedWithMargin <= threshold) return decline("under-threshold")
-    // ⚠️ AFTER the threshold test, never instead of it: a backoff silences the SPEND, and the
-    // measurement above has already happened and been logged either way. See `Input.summaryAllowed`.
-    if (input.summaryAllowed === false) return decline("summarizer-backoff")
+    // ⚠️ A backoff silences the SPEND, not the FOLD. It used to decline here entirely, which left an
+    // over-threshold chat exactly as it was — the state the owner's never-fail rule forbids. The backoff
+    // now rides through to `compactAfterOverflow`, which skips the summary and takes the deterministic
+    // path: the chat shrinks, and no provider call is spent. See `Input.summaryAllowed`.
     // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
     // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)
