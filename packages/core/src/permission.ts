@@ -409,8 +409,8 @@ export function protectedAttachment(
 // THE PLUGIN DOOR (v0.2.0) — an agent may never write where in-process code is loaded from.
 //
 // 🔴 AGENTS.md principle 13's last clause: *"In-process third-party code enters through exactly one
-// door — the instance config dir's plugin glob — and it must never widen to a project directory. The
-// plugin contract is NOT a gate: `import()` runs module scope before anything is validated."*
+// door, the instance config dir's plugin glob, and nothing a user merely cloned may widen it. The
+// plugin contract is not a gate: `import()` runs module scope before anything is validated."*
 // Ruling 5 (`notes/reports/decisions-v0.2.0.md` §5) kept that door open on exactly one condition,
 // stated in the ruling itself: the local `{plugin,plugins}/*.ts` glob survives as *"user code at user
 // privilege, unreachable by an agent, a registry or a peer."* Nothing enforced the middle clause.
@@ -705,9 +705,13 @@ export function matchRule(action: string, resource: string, ruleset: Permission.
  * 🔴 WHY THIS EXISTS RATHER THAN ANOTHER `merge`. `evaluate` takes the LAST matching rule across the
  * concatenation, so appending a ruleset is how you OVERRIDE — including with `allow`. That is correct
  * for user config, agent config and saved answers, which are the operator speaking. It is exactly
- * wrong for a `novaclaw.json` sitting inside a folder the user may have cloned five minutes ago:
- * AGENTS.md design principle 13 requires that a Project or session may never widen the operator's safety floor,
- * and appending would hand a repository author a `{"*": "*": "allow"}` past every deny in the install.
+ * wrong for a layer beneath the operator: appending would hand such a layer a `{"*": "*":
+ * "allow"}` past every deny in the install.
+ *
+ * 🗑️ It was written for the session folder's `novaclaw.json`, the one layer that could only ever
+ * narrow, so its rules had to be a CONSTRAINT rather than an append (AGENTS.md principle 13, retired
+ * 2026-09-17 with the mechanism). The seam is kept and called with `[]`: the direction is a property
+ * of the evaluator, not of that file, so a future narrowing source needs the door, not a rewrite.
  *
  * So a constraint can only move the verdict UP the restrictiveness order, and a constraint with no
  * matching rule leaves it untouched.

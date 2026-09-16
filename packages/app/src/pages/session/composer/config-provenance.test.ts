@@ -10,11 +10,12 @@ import { featureOrigins, switchStance, type ResolvedConfigLike } from "./config-
 describe("where a switch's value came from", () => {
   test("🔴 a chain layer OUTRANKS the default source — `origin` is checked first", () => {
     // The wire's contract: `origin` names the chain layer that supplied the value, and `source`
-    // answers only when no layer moved it. Reading `source` first would tell a user their PROJECT
+    // answers only when no layer moved it. Reading `source` first would tell a user another layer
     // set something a parent chat chose. A response carrying both is malformed, and this pins which
-    // one wins if one ever does.
+    // one wins if one ever does. (The fixture sent `kind: "project"` until 2026-09-17; that source
+    // cannot appear on the wire any more, and the property is about the shape, not the sender.)
     const resolved: ResolvedConfigLike = {
-      fields: { safeMode: { origin: "ses_parent", source: { kind: "project", file: "C:/w/novaclaw.json" } } },
+      fields: { safeMode: { origin: "ses_parent", source: { kind: "agent" } } },
     }
     expect(featureOrigins(resolved).safeMode).toEqual({ kind: "session" })
   })

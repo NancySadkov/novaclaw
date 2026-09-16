@@ -167,8 +167,8 @@ describe("Settings → System prompt — the layout table on screen", () => {
   })
 
   test("the three slots a plausible edit mislabels carry the right provenance on screen", async () => {
-    // `base` feels like "the kernel" but is files on disk; `projectScope` travels in the folder's own
-    // `novaclaw.json` and may only ever narrow (principle 13); `goal` is set by the user or a superior.
+    // `base` feels like "the kernel" but is files on disk; `projectScope` is the kernel's own rule for
+    // the working folder, from the permission mode; `goal` is set by the user or a superior.
     mount()
     await settle()
     expect(rowFor("base").origin).toBe("files")

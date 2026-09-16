@@ -2122,7 +2122,7 @@ export const dict = {
   "settings.contextLayout.origin.agent": "the colleague's or chat's settings",
   "settings.contextLayout.origin.model": "Settings → Models → Configure",
   "settings.contextLayout.origin.files": "AGENTS.md and skills",
-  "settings.contextLayout.origin.project": "the folder's rules (novaclaw.json)",
+  "settings.contextLayout.origin.project": "the rule for this folder, by permission mode",
   "settings.contextLayout.origin.session": "this chat, through its own tools",
   "settings.contextLayout.origin.auto": "supplied automatically",
   "settings.contextLayout.channel.system": "in the system prompt",

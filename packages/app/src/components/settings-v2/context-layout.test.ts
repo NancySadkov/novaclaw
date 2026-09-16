@@ -64,9 +64,10 @@ describe("Settings → System prompt — the layout screen covers the kernel's t
 
   test("the slots the page must NOT mislabel: base is files, projectScope is the folder, goal is the pair", () => {
     // Pinned by name because these three are the ones a plausible edit gets wrong (all three feel like
-    // "the kernel"): `base` is the epoch-frozen baseline from AGENTS.md and skills, `projectScope`
-    // travels in the folder's own `novaclaw.json` (untrusted, may only narrow — principle 13), and
-    // `goal` is set by the user or a superior, never by the agent.
+    // "the kernel"): `base` is the epoch-frozen baseline from AGENTS.md and skills, `projectScope` is
+    // the kernel's own rule for the working folder, generated from the permission mode
+    // (`SystemCompose.projectScopeSection`) — NOT from a file, which is what this comment said until
+    // 2026-09-17, and not from an agent — and `goal` is set by the user or a superior.
     expect(SLOT_ORIGIN.base).toBe("files")
     expect(SLOT_ORIGIN.projectScope).toBe("project")
     expect(SLOT_ORIGIN.goal).toBe("agent")

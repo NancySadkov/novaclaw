@@ -14,18 +14,17 @@ import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolv
  *
  * The resulting precedence, lowest first:
  *
- *     EFFECTIVE_CONFIG_DEFAULTS  <  the colleague's config  <  the folder's tune  <  chain  <  row
+ *     EFFECTIVE_CONFIG_DEFAULTS  <  the colleague's config  <  chain  <  row
  *
- * ⚠️ **The colleague sits UNDER the folder, and that ordering is a security decision.** A folder's
- * `novaclaw.json` may RAISE a supervision rail and never lower one (principle 13); if a colleague's
- * config were folded on top, a cloned repository's rail could be widened again by whichever colleague
- * you happened to open it with. The user's standing choice for a role outranks the shipped defaults
- * and loses to a project asking for more supervision — which is the direction that cannot hurt.
+ * ⚠️ **Folds into `defaults`, NOT onto the front of the chain**: `resolveConfig` gives chain index 0
+ * special authority, so a root session may set a `merge: "narrow"` field freely. Prepending a layer
+ * would shift the root to index 1 and silently clamp a root session's own permission mode.
  *
- * ⚠️ **Folds into `defaults`, NOT onto the front of the chain**, for the reason `project-defaults.ts`
- * records: `resolveConfig` gives chain index 0 special authority, so a root session may set a
- * `merge: "narrow"` field freely. Prepending a layer would shift the root to index 1 and silently
- * clamp a root session's own permission mode.
+ * 🗑️ A layer for the session folder's `novaclaw.json` sat between the colleague and the chain, ABOVE
+ * the colleague, because a folder's tune could only ever RAISE a supervision rail: folded on top, a
+ * cloned repository's rail could be widened back by whichever colleague you opened it with. The
+ * mechanism is retired (owner, 2026-09-16) and the folder layer went with it, so the ordering
+ * question has no subject. Record: `notes/reports/retire-project-file-2026-09-16.md`.
  */
 
 /** The fields a colleague may declare. Deliberately small: these are standing WORK choices, not the

@@ -43,10 +43,12 @@ export interface Check {
 /**
  * One tool call a pre-action policy INTERVENED on. Never one per tool call.
  *
- * Typed pre-action policies (AGENTS.md design principle 13): *"bind every intervention to a receipt."* This is
- * that binding, surfaced through the receipt that already exists rather than through a second
- * document — the question *"what did Nova actually do, and what stopped it"* has one answer here or
- * it has two answers that can disagree.
+ * Typed pre-action policies write here when they intervene. ⚠️ Removed 2026-09-17: a quotation this
+ * paragraph carried, attributed to AGENTS.md design principle 13 — *"bind every intervention to a
+ * receipt"* — is in no principle, note or doc in the plan repo, so the attribution was false. What
+ * the binding buys is unchanged and is why the row exists: it rides the receipt that already exists
+ * rather than a second document, so the question *"what did Nova actually do, and what stopped it"*
+ * has one answer here rather than two that can disagree.
  *
  * ⚠️ Rows exist only where something happened (`tool-policy.sql.ts` carries why), so an empty list
  * is a positive statement: every installed policy allowed every call in this attempt, in time.
