@@ -1,6 +1,7 @@
 export * as SystemCompose from "./system-compose"
 
 import type { PermissionMode } from "../config-resolve"
+import { ContextTemplate } from "../context-template"
 import { XmlText } from "../../util/xml-text"
 // Type-only, so this file stays pure: `InputCapabilities` is the structural shape `attachmentSupport`
 // reads, and sharing it is what keeps the perception SECTION and the media GATE deciding from one
@@ -532,54 +533,19 @@ export const organizationSection = (input: {
   ].join("\n")
 }
 
-export interface SystemPromptParts {
-  /** The role-neutral harness baseline — composed FIRST (persona.ts). */
-  readonly persona?: string
-  /** The optional per-model pre-prompt SECTION (already wrapped via `modelPrePromptSection`). */
-  readonly modelPrePrompt?: string
-  /** T9 plain-language stance line for a Normal-level user. */
-  readonly expertiseHint?: string
-  /** Class scaffold for a `fast` model (taxonomy-scaffold.ts). */
-  readonly taxonomyHint?: string
-  /** Per-session system-prompt override (the config-inheritance walk). */
-  readonly systemPromptOverride?: string
-  /** The selected officer's resolved name/title/personality — immediately before its job brief. */
-  readonly agentIdentity?: string
-  /** The selected agent's own system prompt. */
-  readonly agentSystem?: string
-  /** Immutable officer hierarchy and conflict escalation. */
-  readonly organization?: string
-  /** That the tool list is partial (via `toolDiscoverySection`); absent when nothing is deferred. */
-  readonly toolDiscovery?: string
-  /** That the model can SEE (via `perceptionSection`); absent unless an `image` modality is declared. */
-  readonly perception?: string
-  /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
-  readonly projectScope?: string
-  /** That this colleague keeps nothing between chats. Absent unless `memory: "none"`. */
-  readonly memoryStance?: string
-  /** Who else can do work — `spawn` for more hands, `colleague` for somebody else's job. */
-  readonly delegation?: string
-  /** The colleague's own scratch workspace, when it also has a project folder. */
-  readonly workspace?: string
-  /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
-  readonly base?: string
-  /**
-   * The officer's durable objective, for an unattended / goal-oriented session.
-   *
-   * 🔴 Owner, 2026-09-16: *"Goal prompt is appended to system prompt, right after the tool
-   * specification and before the user prompt."* In this codebase the tool SPECIFICATION is the
-   * request's `tools` field, not a system block — the only tool-ish block is `toolDiscovery` — so
-   * "right after the tool specification, before the user prompt" means LAST in this array: the last
-   * thing the system prefix says before the message history begins.
-   *
-   * ⚠️ That placement is also the tie-break the owner's own instruction implies. `system-compose.ts`
-   * forbids per-turn-volatile material here because a changed prefix throws away the server's prefix
-   * cache for everything after it; a block at the END invalidates the fewest messages, and the owner
-   * accepted the cost explicitly (*"even if that will lead to prompt prefix cache misses"*) because a
-   * switch that does not take effect is worse than a cache miss.
-   */
-  readonly goal?: string
-}
+/**
+ * The system prompt's parts, keyed by slot name.
+ *
+ * 🔴 The type is DERIVED from `ContextTemplate.SLOTS` (owner, 2026-09-16), which is what makes the
+ * table the single source: a slot cannot exist without a key here, and a key cannot exist without a
+ * slot. The per-field descriptions that used to live in this interface are the `purpose` and
+ * `placement` columns of that table now — one home, where the ORDER and the VOLATILITY sit beside them.
+ *
+ * ⚠️ Optional on purpose: a slot with nothing to say composes nothing. `ContextTemplate.composedBlocks`
+ * states the non-empty predicate once, and `test/session-system-compose.test.ts`'s
+ * `Required<Omit<…>>` ledger is what forces a decision when a slot is added.
+ */
+export type SystemPromptParts = ContextTemplate.SystemPromptParts
 
 /**
  * The ORDERED, non-empty system-prompt parts. The per-model pre-prompt sits immediately after the
@@ -599,52 +565,22 @@ export interface SystemPromptParts {
 /**
  * THE ORDER, and the ONE list that decides it.
  *
- * 🔴 `system-accounting.ts` used to keep a second, hand-written list of the same names so it could
- * count each block — and it was already stale: `delegation` and `workspace` are composed here and
- * were missing there, so the instrument UNDERCOUNTED every colleague turn, which is exactly the turn
- * whose prompt anyone would want measured. Two lists of one thing is how the measurement and the
- * thing measured drift apart, and the drift is invisible because both sides look right on their own.
+ * 🔴 The list MOVED (owner, 2026-09-16): it is now `ContextTemplate.SLOTS`
+ * (`session/context-template.ts`), which declares every place in the request — the system blocks, the
+ * tail, the tool schemas and the transcript — together with each one's VOLATILITY (how long its value
+ * survives, i.e. whether changing it costs the server's prefix cache) and a one-line purpose.
  *
- * So the order lives here once. `composeSystemParts` joins it; `SystemAccounting.of` counts it.
+ * ⚠️ It was split across five places before that, and the split was not merely untidy: `volatility`
+ * decides whether a request keeps its prefix cache, and getting it wrong is what turns a small edit
+ * into gigabytes of re-prefill. That knowledge was a prose warning here, an implicit consequence of
+ * where a value was read in `llm.ts`, and a conditional in `context-epoch.ts`.
+ *
+ * What stays here is the shaping — `composeSystemParts` joins what the table orders, and
+ * `SystemAccounting.of` counts it (BLOCKS derives from this function, so the instrument and the thing
+ * measured still cannot drift).
  */
-export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ block: string; text?: string }> => [
-  { block: "persona", text: parts.persona },
-  { block: "modelPrePrompt", text: parts.modelPrePrompt },
-  { block: "expertiseHint", text: parts.expertiseHint },
-  { block: "taxonomyHint", text: parts.taxonomyHint },
-  { block: "systemPromptOverride", text: parts.systemPromptOverride },
-  { block: "agentIdentity", text: parts.agentIdentity },
-  { block: "agentSystem", text: parts.agentSystem },
-  // The org chart is a kernel constraint. It lands after editable identity/job text so neither a
-  // personality nor a cloned brief can promote an officer into a second CEO.
-  { block: "organization", text: parts.organization },
-  { block: "toolDiscovery", text: parts.toolDiscovery },
-  // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can
-  // REACH — one about tools, one about perception — and both are kernel material a persona or an
-  // agent prompt must not be able to bury. Absent when the model declares no image modality, so a
-  // text-only model's prompt is byte-identical to the pre-feature one.
-  { block: "perception", text: parts.perception },
-  // Beside those two for the third time and the same reason: a fact about what this runtime keeps.
-  // A persona that says "I'll remember that for you" must not be able to sit on top of it.
-  { block: "delegation", text: parts.delegation },
-  { block: "memoryStance", text: parts.memoryStance },
-  { block: "projectScope", text: parts.projectScope },
-  // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the
-  // working folder, which is right until the colleague has a workspace of its own. The specific
-  // instruction has to land last or a model is left reconciling two rules.
-  { block: "workspace", text: parts.workspace },
-  // LAST: the durable context the session carries. It is the largest block on most turns and the one
-  // a reader scrolls to, so everything that frames how to behave comes before what to work on.
-  { block: "base", text: parts.base },
-  // 🔴 END OF THE PROMPT, and deliberately after `base` (owner, 2026-09-16). The goal is what this
-  // turn is FOR, and the owner's own sketch puts it last: goal, then the DURABLE area, then the first
-  // user prompt. It is the only block that may change WITHOUT a compaction (when the mode switches) —
-  // the durable area, which will sit immediately after it, changes only WITH one — so keeping it at the
-  // very end bounds what a change invalidates to the message history, the cost the owner accepted
-  // (*"even if that will lead to prompt prefix cache misses"*), and leaves every framing block's cache
-  // intact.
-  { block: "goal", text: parts.goal },
-]
+export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ block: string; text?: string }> =>
+  ContextTemplate.systemBlocks(parts)
 
 /** The system prompt's parts, in order, with the absent ones dropped. */
 export const composeSystemParts = (parts: SystemPromptParts): string[] =>

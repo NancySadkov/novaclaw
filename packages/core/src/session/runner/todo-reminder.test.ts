@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Token } from "../../util/token"
 import { STEER_PROVENANCE_PREFIX } from "../steer-provenance"
+import { ContextTemplate } from "../context-template"
 import { TodoReminder } from "./todo-reminder"
 
 const todo = (content: string, status = "pending", priority = "medium") => ({ content, status, priority })
@@ -82,7 +83,16 @@ describe("runner composition", () => {
   })
 
   test("projects the reminder into the provider request without writing a transcript message", () => {
-    expect(source).toContain("[Message.user(todoReminder)]")
+    // 🔴 Re-pinned 2026-09-16. The claim is unchanged — the reminder is a REQUEST message and never a
+    // transcript row — but the positive half used to pin a literal that no longer exists:
+    // `[Message.user(todoReminder)]`, a spread in a hand-written array. That array is now the template's
+    // (`ContextTemplate.tailMessages`), so pinning the old literal would have pinned the SHAPE OF THE
+    // CODE rather than the property the test is named for — and the property is stronger asserted in two
+    // places than one: the slot must be DECLARED by the table, and the runner must PROJECT it.
+    expect(ContextTemplate.tailSlotNames()).toContain("todoReminder")
+    expect(source).toContain("Message.user(todoReminder)")
+    expect(source).toContain("ContextTemplate.tailMessages(")
+    // The negative half is the half that matters, and it is unchanged: no steer, no durable write.
     expect(source).not.toContain("SessionInput.steer(db, events, session.id, todoReminder)")
   })
 })

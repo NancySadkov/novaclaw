@@ -42,6 +42,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { ContextTemplate } from "../context-template"
 import { SessionCompactionArchive } from "../compaction-archive"
 import { SessionCompactionRequest } from "../compaction-request"
 import { SessionEvent } from "../event"
@@ -2366,7 +2367,6 @@ export const layer = Layer.effect(
         system: systemParts,
         messages: [
           ...providerMessages,
-          ...(projectGrounding === undefined ? [] : [Message.user(projectGrounding)]),
           // Derived provider context only — never a transcript row. The provenance prefix makes
           // every downstream real-user detector treat it as harness guidance rather than speech.
           //
@@ -2374,10 +2374,16 @@ export const layer = Layer.effect(
           // it is recomputed and re-ranked every turn, so in the system array it invalidated the
           // server-side prefix cache for the entire request — measured 0.3s -> 12.9s to first token
           // on a 13.5K-token agent turn. Here, a change costs only the tokens after it.
-          ...(recallMessage === undefined ? [] : [Message.user(recallMessage)]),
-          ...(todoReminder === undefined ? [] : [Message.user(todoReminder)]),
-          ...(toolCatalogueUpdate === undefined ? [] : [Message.user(toolCatalogueUpdate)]),
-          ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+          // 🔴 The TAIL, in the order `ContextTemplate.SLOTS` declares (owner, 2026-09-16). It used to be
+          // a hand-written spread list right here, which is how "what comes after the transcript" became
+          // a second place to keep in step with the first.
+          ...ContextTemplate.tailMessages({
+            projectGrounding: projectGrounding === undefined ? undefined : Message.user(projectGrounding),
+            memoryRecall: recallMessage === undefined ? undefined : Message.user(recallMessage),
+            todoReminder: todoReminder === undefined ? undefined : Message.user(todoReminder),
+            toolCatalogueUpdate: toolCatalogueUpdate === undefined ? undefined : Message.user(toolCatalogueUpdate),
+            maxSteps: isLastStep ? Message.assistant(MAX_STEPS_PROMPT) : undefined,
+          }),
         ],
         // A text-only model is not told a picture "arrives as a picture you can see" (owner,
         // 2026-08-20). Applied HERE rather than in the registry because this is the first point
