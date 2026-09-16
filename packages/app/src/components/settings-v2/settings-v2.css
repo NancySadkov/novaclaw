@@ -1181,3 +1181,17 @@
 .settings-v2-about-note--muted {
   color: var(--v2-text-text-muted);
 }
+
+/* Full-screen model configure: every panel stays mounted so a control is reachable regardless of the
+   open tab (and a render harness can drive it), and CSS shows only the active family — the same
+   contract as `.agent-settings-panels` on the officer settings screen. */
+.model-settings-panels [data-settings-tab] {
+  display: none;
+}
+.model-settings-panels[data-active-tab="identity"] [data-settings-tab="identity"],
+.model-settings-panels[data-active-tab="sampling"] [data-settings-tab="sampling"],
+.model-settings-panels[data-active-tab="capabilities"] [data-settings-tab="capabilities"],
+.model-settings-panels[data-active-tab="corrections"] [data-settings-tab="corrections"],
+.model-settings-panels[data-active-tab="scheduler"] [data-settings-tab="scheduler"] {
+  display: block;
+}

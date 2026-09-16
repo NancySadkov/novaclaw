@@ -5,7 +5,6 @@ import type {
 } from "@novaclaw/sdk/v2/client"
 import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -14,10 +13,8 @@ import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
-import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
-import type { ServerConnection } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { PresetFieldV2 } from "./parts/preset-field"
@@ -99,25 +96,27 @@ const bodyEffort = (m: unknown): unknown => (m as WithRequestBody | undefined)?.
  */
 const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
 
-export const DialogModelConfig: Component<{
+/**
+ * ONE model's configuration, as a full-screen surface — the same shape as the officer's
+ * `AgentConfigScreen` (and the file name is the same historical `…-dialog` as that one: it was a
+ * pushed dialog until 2026-09-16).
+ *
+ * ⚠️ It takes the resolved facts as PROPS rather than reaching for `useSDK()`/`useProviders()`: a
+ * route page resolves them, and a render harness can supply them directly. That is also why the
+ * screen stays mountable outside the SDK/router context.
+ */
+export const ModelConfigScreen: Component<{
   providerID: string
   modelID: string
   modelName: string
   apiModelID: string
-  providerApi: ProviderApi
+  /** The provider's API channel, when the catalog has one. A missing one is inert: `apiPath` seeds
+   *  empty and nothing is written on save. */
+  providerApi?: ProviderApi
   defaults?: Pick<ModelConfig, "capabilities">
-  /**
-   * The connection to probe through, passed in like `DialogNewModel`'s.
-   *
-   * ⚠️ NOT `useSDK()`/`useServer()`. A settings dialog is pushed OUTSIDE the SDK context provider, so
-   * reaching for the context throws "SDK context must be used within a context provider" and the app
-   * error boundary swallows the whole dialog. Measured 2026-08-13 by opening it; the typecheck and
-   * 1,009 unit tests were green through it.
-   */
-  http: ServerConnection.HttpBase
-  directory: string
+  /** Leave the screen: back, Cancel, and a successful Save all land here. */
+  onDismiss: () => void
 }> = (props) => {
-  const dialog = useDialog()
   const language = useLanguage()
   const serverSync = useServerSync()
 
@@ -128,7 +127,7 @@ export const DialogModelConfig: Component<{
 
   const initialDevices =
     (serverSync().data.config as { devices?: Record<string, DeviceConfig> } | undefined)?.devices ?? {}
-  const initialDevice = deviceForEndpoint(initialDevices, providerCfg().api?.url ?? props.providerApi.url ?? "")
+  const initialDevice = deviceForEndpoint(initialDevices, providerCfg().api?.url ?? props.providerApi?.url ?? "")
 
   const d = props.defaults ?? {}
   const nstr = (v: unknown) => (typeof v === "number" ? String(v) : "")
@@ -136,7 +135,7 @@ export const DialogModelConfig: Component<{
   const inMod = init.capabilities?.input ?? d.capabilities?.input ?? ["text"]
   const outMod = init.capabilities?.output ?? d.capabilities?.output ?? ["text"]
   const defaultProviderName = () =>
-    providerCfg().name === "local" ? "local" : (providerCfg().api?.url ?? props.providerApi.url ?? props.providerID)
+    providerCfg().name === "local" ? "local" : (providerCfg().api?.url ?? props.providerApi?.url ?? props.providerID)
   const customProviderName = () => {
     const name = providerCfg().name?.trim()
     return name && name !== defaultProviderName() ? name : ""
@@ -155,7 +154,7 @@ export const DialogModelConfig: Component<{
   // Editable numbers are stored overrides. Seeding from resolved catalog defaults would pin
   // inheritance on the next unrelated Save; blank stays the default until explicitly overridden.
   const [form, setForm] = createStore({
-    apiPath: providerCfg().api?.url ?? props.providerApi.url ?? "",
+    apiPath: providerCfg().api?.url ?? props.providerApi?.url ?? "",
     // Seeded from what is STORED, because the owner's ask was to see it as well as change it. A
     // write-only field cannot answer "which key is this provider using?", which is the question
     // somebody opening this dialog actually has.
@@ -335,7 +334,7 @@ export const DialogModelConfig: Component<{
       next: form.apiKey.trim(),
     })
     const devices = (serverSync().data.config as { devices?: Record<string, DeviceConfig> } | undefined)?.devices ?? {}
-    const bound = deviceForEndpoint(devices, providerCfg().api?.url ?? props.providerApi.url ?? "")
+    const bound = deviceForEndpoint(devices, providerCfg().api?.url ?? props.providerApi?.url ?? "")
     const concurrency = num(form.deviceConcurrency)
     const minRunSeconds = num(form.minRunSeconds)
     const minRunMs = minRunSeconds === undefined ? undefined : Math.max(0, Math.round(minRunSeconds * 1000))
@@ -345,7 +344,7 @@ export const DialogModelConfig: Component<{
       bound?.id ??
       (concurrency === undefined && minRunMs === undefined ? undefined : availableDeviceID(props.providerID, devices))
     const endpoint = endpointOrigin(apiPath)
-    const previousEndpoint = endpointOrigin(providerCfg().api?.url ?? props.providerApi.url ?? "")
+    const previousEndpoint = endpointOrigin(providerCfg().api?.url ?? props.providerApi?.url ?? "")
     const devicePatch =
       deviceID === undefined
         ? undefined
@@ -402,7 +401,7 @@ export const DialogModelConfig: Component<{
           .map((key) => [...base, "limit", key]),
       ])
       showToast({ variant: "success", icon: "circle-check", title: language.t("settings.models.config.toast.saved") })
-      dialog.close()
+      props.onDismiss()
     } catch (error) {
       showToast({
         title: language.t("settings.models.config.toast.failed"),
@@ -464,18 +463,37 @@ export const DialogModelConfig: Component<{
   )
 
   return (
-    <Dialog size="content">
-      <div class="model-config-dialog flex w-[min(52rem,calc(100vw-32px))] max-w-full flex-col gap-3 px-4 py-4 sm:px-7 sm:py-7">
-        <div class="flex flex-col gap-1 text-center">
-          <span class="text-[17px] font-semibold text-v2-text-text-base">
-            {language.t("settings.models.config.title", { model: props.modelName })}
+    <div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
+      {/* The officer-settings header shape: BACK (this is a place you came from the list), the model's
+          identity, then Close. */}
+      <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
+        <button
+          type="button"
+          data-action="model-config-back"
+          class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+          aria-label={language.t("agentConfig.back")}
+          title={language.t("agentConfig.back")}
+          onClick={() => props.onDismiss()}
+        >
+          <Icon name="chevron-left" size="normal" />
+        </button>
+        <Icon name="cpu" size="large" class="shrink-0 text-v2-text-text-muted" />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold">{props.modelName}</span>
+          <span class="block truncate text-xs text-v2-text-text-muted">
+            {providerCfg().name ?? props.providerApi?.url ?? props.providerID}
           </span>
-          <span class="text-[13px] font-medium text-v2-text-text-muted">
-            {language.t("settings.models.config.description")}
-          </span>
-        </div>
+        </span>
+        <button
+          type="button"
+          class="shrink-0 text-xs text-v2-text-text-muted hover:underline"
+          onClick={() => props.onDismiss()}
+        >
+          {language.t("common.close")}
+        </button>
+      </div>
 
-        <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
+      <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
           {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
               scrollable strip on phones, a sidebar from `md` up. Configure used to be one long scroll
               with identity, sampling, limits and capabilities interleaved, which is what the owner
@@ -502,9 +520,15 @@ export const DialogModelConfig: Component<{
               )}
             </For>
           </nav>
-          <div class="model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4">
+          {/* Every panel stays MOUNTED and inactive ones are hidden by CSS — the same
+              `data-active-tab`/`data-settings-tab` contract the officer settings screen uses, so a
+              control is in the DOM (and a render harness can reach it) regardless of the open tab. */}
+          <div
+            class="model-settings-panels model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4"
+            data-active-tab={tab()}
+          >
             <div class="flex flex-col gap-4">
-              <Show when={tab() === "identity"}>
+              <div data-settings-tab="identity">
                 <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.providerName.name")}
@@ -632,9 +656,9 @@ export const DialogModelConfig: Component<{
               />
             </SettingsRowV2>
           </SettingsListV2>
-              </Show>
+              </div>
 
-              <Show when={tab() === "corrections"}>
+              <div data-settings-tab="corrections">
                 <div class="flex flex-col gap-1.5">
             <span class="text-[12px] text-v2-text-text-muted leading-snug">
               {language.t("settings.models.config.prePrompt.desc")}
@@ -650,15 +674,15 @@ export const DialogModelConfig: Component<{
               aria-label={language.t("settings.models.config.prePrompt.name")}
             />
                 </div>
-              </Show>
+              </div>
 
-              <Show when={tab() === "sampling"}>
+              <div data-settings-tab="sampling">
                 <SettingsListV2>
                   <For each={SAMPLING}>{(k) => paramRow(k)}</For>
                 </SettingsListV2>
-              </Show>
+              </div>
 
-              <Show when={tab() === "capabilities"}>
+              <div data-settings-tab="capabilities">
                 <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.tool_call.name")}
@@ -729,9 +753,9 @@ export const DialogModelConfig: Component<{
               />
             </SettingsRowV2>
                 </SettingsListV2>
-              </Show>
+              </div>
 
-              <Show when={tab() === "scheduler"}>
+              <div data-settings-tab="scheduler">
                 <SettingsListV2>
                   <SettingsRowV2
                     title={language.t("settings.models.config.deviceConcurrency.name")}
@@ -770,18 +794,18 @@ export const DialogModelConfig: Component<{
                 <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
                   {language.t("settings.models.config.scheduler.note")}
                 </p>
-              </Show>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-1">
+        <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
           <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>
             {isDefault()
               ? language.t("settings.models.config.default.isDefault")
               : language.t("settings.models.config.default.make")}
           </ButtonV2>
-          <ButtonV2 size="normal" variant="ghost-muted" onClick={() => dialog.close()}>
+          <ButtonV2 size="normal" variant="ghost-muted" onClick={() => props.onDismiss()}>
             {language.t("common.cancel")}
           </ButtonV2>
           <ButtonV2
@@ -793,7 +817,6 @@ export const DialogModelConfig: Component<{
             {language.t("common.save")}
           </ButtonV2>
         </div>
-      </div>
-    </Dialog>
+    </div>
   )
 }

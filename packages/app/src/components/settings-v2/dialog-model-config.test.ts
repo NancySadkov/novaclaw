@@ -7,12 +7,14 @@ import { dict as en } from "@/i18n/en"
 
 const source = fs.readFileSync(path.join(import.meta.dir, "dialog-model-config.tsx"), "utf8")
 const caller = fs.readFileSync(path.join(import.meta.dir, "models.tsx"), "utf8")
+const page = fs.readFileSync(path.join(import.meta.dir, "..", "..", "pages", "model-settings.tsx"), "utf8")
+const host = fs.readFileSync(path.join(import.meta.dir, "..", "..", "pages", "models.tsx"), "utf8")
 /** ⚠️ The preset TABLE now lives here, not in the dialog: it was lifted into a shared module so the
  *  Affective settings tab could sell temperature the same way. The recovery test below scans this
  *  file, because scanning the dialog would silently pass on a file that no longer holds the table. */
 describe("Model Configure — Provider", () => {
   test("shows the connection name, resolved API path, wire model ID, and friendly name", () => {
-    expect(source).toContain('apiPath: providerCfg().api?.url ?? props.providerApi.url ?? ""')
+    expect(source).toContain('apiPath: providerCfg().api?.url ?? props.providerApi?.url ?? ""')
     expect(source).toContain("providerName: customProviderName()")
     expect(source).toContain("modelID: init.api?.id ?? props.apiModelID")
     expect(source).toContain("modelName: init.name ?? props.modelName")
@@ -20,8 +22,13 @@ describe("Model Configure — Provider", () => {
     expect(source).toContain("value={form.providerName}")
     expect(source).toContain("value={form.modelID}")
     expect(source).toContain("value={form.modelName}")
-    expect(caller).toContain("apiModelID={item.api.id}")
-    expect(caller).toContain("providerApi={item.provider.api}")
+    // The route page resolves the identity from the catalog and hands it to the screen; the LIST
+    // hands Configure to its HOST page, which navigates rather than opening a dialog (owner,
+    // 2026-09-16).
+    expect(page).toContain("apiModelID={")
+    expect(page).toContain("providerApi={")
+    expect(caller).toContain("props.onConfigure?.(key)")
+    expect(host).toContain("navigate(`/models/configure?")
   })
 
   test("saves the wire ID and name without renaming the stable catalog key", () => {
@@ -83,10 +90,13 @@ describe("Model Configure — Provider", () => {
 describe("Model Configure — compact capability taxonomy", () => {
   test("puts modalities and limits in Capabilities and has no recovery or tool-channel section", () => {
     // Configure is tabbed (owner, 2026-09-16 — it had become one long disorganized scroll). Each
-    // family is a `TabsV2`-free panel keyed on `tab()`, the same pattern as `AgentConfigScreen`.
-    expect(source).toContain('tab() === "identity"')
-    expect(source).toContain('tab() === "capabilities"')
-    expect(source).toContain('tab() === "scheduler"')
+    // family is a `TabsV2`-free panel, and ALL of them stay mounted with CSS hiding the inactive
+    // ones — the same `data-active-tab`/`data-settings-tab` contract as `AgentConfigScreen`, which is
+    // what keeps a control reachable regardless of the open tab.
+    expect(source).toContain('data-settings-tab="identity"')
+    expect(source).toContain('data-settings-tab="capabilities"')
+    expect(source).toContain('data-settings-tab="scheduler"')
+    expect(source).toContain("data-active-tab={tab()}")
     expect(source).not.toContain('{section("limits")}')
     expect(source).not.toContain('{section("modalities")}')
     expect(source).not.toContain('{section("reliability")}')

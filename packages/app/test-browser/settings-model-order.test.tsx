@@ -92,10 +92,10 @@ test("marks the effective default and saves keyboard reordering through instance
   await settle()
 
   const rows = () => [...document.querySelectorAll<HTMLElement>('[data-component="settings-v2-model-sortable"]')]
-  expect(rows().map((row) => row.querySelector('[data-slot="settings-v2-row-title"]')?.textContent)).toEqual([
-    "AlphaDefault",
-    "Beta",
-  ])
+  // The reorder control's own text: the row title ALSO carries the live t/s readout, which is not
+  // part of the model's name (added 2026-09-16).
+  const rowLabel = (row: HTMLElement) => row.querySelector(".settings-v2-models-drag-target")?.textContent
+  expect(rows().map(rowLabel)).toEqual(["AlphaDefault", "Beta"])
   expect(document.querySelector('[data-default="true"]')?.textContent).toContain("Alpha")
 
   const handle = document.querySelector<HTMLButtonElement>('button[aria-label="Reorder Alpha"]')!
@@ -104,10 +104,7 @@ test("marks the effective default and saves keyboard reordering through instance
 
   expect(writes).toEqual([{ model_order: ["local/beta", "local/alpha"] }])
   expect(config.model_order).toEqual(["local/beta", "local/alpha"])
-  expect(rows().map((row) => row.querySelector('[data-slot="settings-v2-row-title"]')?.textContent)).toEqual([
-    "Beta",
-    "AlphaDefault",
-  ])
+  expect(rows().map(rowLabel)).toEqual(["Beta", "AlphaDefault"])
   // Reordering changes presentation only; the default remains Alpha and moves with its row.
   expect(document.querySelector('[data-default="true"]')?.textContent).toContain("Alpha")
 })

@@ -27,7 +27,6 @@ import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { DialogModelConfig } from "./dialog-model-config"
 import { DialogModelStats } from "./dialog-model-stats"
 import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
@@ -166,7 +165,15 @@ export function probeLabel(result: ProbeResult, t: Translator): string {
   }
 }
 
-export const SettingsModelsV2: Component = () => {
+/**
+ * The model manager. Routing is the HOST page's job (`pages/models.tsx` owns `/models` and its
+ * configure route), so the Configure action arrives as a callback rather than a `useNavigate()` here:
+ * that keeps the component mountable in a render harness with no Router, which is how its browser
+ * tests drive it.
+ */
+export const SettingsModelsV2: Component<{
+  onConfigure?: (key: { readonly providerID: string; readonly modelID: string }) => void
+}> = (props) => {
   const language = useLanguage()
   const models = useModels()
   const global = useGlobal()
@@ -203,12 +210,16 @@ export const SettingsModelsV2: Component = () => {
    * skipped rather than guessed.
    */
   const modelActivity = createMemo(() => {
-    const sessionStore = serverSync().session
-    const defaultRef = serverSync().data.config?.model
-    const roster = new Map((ctx()?.agents.list() ?? []).map((agent) => [agent.id, agent]))
     const out = new Map<string, { tps: number; agents: number }>()
-    for (const id of Object.keys(sessionStore.data.info)) {
-      const info = sessionStore.data.info[id]
+    // ⚠️ EVERY read is guarded. A render harness builds a lightweight server context (no `session`,
+    // no roster), and the readout is presentation only — it degrades to "nothing running" rather
+    // than taking the surface down with it.
+    const sessions = serverSync().session?.data
+    if (!sessions) return out
+    const defaultRef = serverSync().data?.config?.model
+    const roster = new Map((ctx()?.agents?.list() ?? []).map((agent) => [agent.id, agent]))
+    for (const id of Object.keys(sessions.info ?? {})) {
+      const info = sessions.info[id]
       if (!info) continue
       let providerID = info.model?.providerID
       let modelID = info.model?.id
@@ -227,8 +238,8 @@ export const SettingsModelsV2: Component = () => {
       if (!providerID || !modelID) continue
       const key = `${providerID}:${modelID}`
       const entry = out.get(key) ?? { tps: 0, agents: 0 }
-      entry.tps += sessionStore.data.session_live(id)?.tps ?? 0
-      if (sessionStore.data.session_working(id)) entry.agents += 1
+      entry.tps += sessions.session_live?.(id)?.tps ?? 0
+      if (sessions.session_working?.(id)) entry.agents += 1
       out.set(key, entry)
     }
     return out
@@ -544,32 +555,7 @@ export const SettingsModelsV2: Component = () => {
                                 size="small"
                                 variant="ghost-muted"
                                 aria-label={language.t("settings.models.config.open")}
-                                onClick={() => {
-                                  const cn = conn()
-                                  const dir = routeDir()
-                                  // The same guard the sibling openers use: without a connection and a
-                                  // directory the dialog cannot probe, and pushing it anyway would offer a
-                                  // Test button that fails for a reason the user cannot see.
-                                  if (!cn || !dir) return
-                                  dialog.push(() => (
-                                    <DialogModelConfig
-                                      http={cn.http}
-                                      directory={dir}
-                                      providerID={key.providerID}
-                                      modelID={key.modelID}
-                                      modelName={item.name}
-                                      apiModelID={item.api.id}
-                                      providerApi={item.provider.api}
-                                      defaults={{
-                                        capabilities: {
-                                          tools: item.capabilities.tools,
-                                          input: [...item.capabilities.input],
-                                          output: [...item.capabilities.output],
-                                        },
-                                      }}
-                                    />
-                                  ))
-                                }}
+                                onClick={() => props.onConfigure?.(key)}
                               >
                                 {language.t("settings.models.config.open")}
                               </ButtonV2>

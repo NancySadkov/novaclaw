@@ -2112,6 +2112,7 @@ export const dict = {
   "settings.models.config.title": "Configure {{model}}",
   "settings.models.config.description":
     "Set how this model runs. Leave a field blank to use the model's or provider's own default.",
+  "settings.models.config.missing": "No model to configure.",
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.identity": "Provider",
   "settings.models.config.providerName.name": "Connection name (optional)",

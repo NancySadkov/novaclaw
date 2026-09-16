@@ -1,13 +1,14 @@
 import { afterEach, expect, test } from "bun:test"
+import { Show, createSignal } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { render } from "solid-js/web"
-import { DialogProvider, useDialog } from "@novaclaw/ui/context/dialog"
+import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { toasterV2 } from "@novaclaw/ui/v2/toast-v2"
 import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
-import { DialogModelConfig } from "@/components/settings-v2/dialog-model-config"
+import { ModelConfigScreen } from "@/components/settings-v2/dialog-model-config"
 import { ToastRegion } from "@/utils/toast"
 import { languageStub } from "./language-stub"
 import { Schema } from "effect"
@@ -84,31 +85,25 @@ function mount(failRemoval = false, inheritedLimits = false) {
       setStore("config", reconcile(structuredClone(config)))
     },
   })
-  const Open = () => {
-    const dialog = useDialog()
-    return (
-      <button
-        onClick={() =>
-          dialog.show(() => (
-            <DialogModelConfig
-              defaults={inheritedLimits ? catalogDefaults : undefined}
-              providerID="local"
-              modelID="test"
-              modelName="Test"
-              apiModelID="test"
-              providerApi={config.providers.local.api}
-              tier="guess"
-              onTierSelect={() => {}}
-              http={{ url: "http://localhost:8000" } as never}
-              directory="/tmp/test"
-            />
-          ))
-        }
-      >
-        Configure test
-      </button>
-    )
-  }
+  // The configure surface is a full-screen route now; the harness mounts it directly and a real
+  // "Configure test" button toggles it, preserving the open → save → reopen flow the tests assert.
+  const [configured, setConfigured] = createSignal(false)
+  const Open = () => (
+    <>
+      <button onClick={() => setConfigured(true)}>Configure test</button>
+      <Show when={configured()}>
+        <ModelConfigScreen
+          defaults={inheritedLimits ? catalogDefaults : undefined}
+          providerID="local"
+          modelID="test"
+          modelName="Test"
+          apiModelID="test"
+          providerApi={config.providers.local.api}
+          onDismiss={() => setConfigured(false)}
+        />
+      </Show>
+    </>
+  )
   const host = document.createElement("div")
   document.body.append(host)
   dispose = render(

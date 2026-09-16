@@ -83,6 +83,9 @@ const MemoryGraphPage = lazy(() =>
   import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
 )
 const ModelsPage = lazy(() => import("@/pages/models").then(({ ModelsPage }) => ({ default: ModelsPage })))
+const ModelSettingsPage = lazy(() =>
+  import("@/pages/model-settings").then(({ ModelSettingsPage }) => ({ default: ModelSettingsPage })),
+)
 const TerminalPage = lazy(() => import("@/pages/terminal").then(({ TerminalPage }) => ({ default: TerminalPage })))
 
 const NewSession = lazy(() => import("@/pages/new-session"))
@@ -812,6 +815,9 @@ function Routes() {
       <Route path="/memory-graph" component={MemoryGraphPage} />
       {/* Trash retired as a route 2026-09-16 — it is a Settings → Safety tab now. */}
       <Route path="/models" component={ModelsPage} />
+      {/* One model's configure surface, full screen like the officer's settings page. Ids ride search
+          params because a catalog model id can contain a slash. */}
+      <Route path="/models/configure" component={ModelSettingsPage} />
       <Route path="/terminal" component={TerminalPage} />
       <Route path="/new-session" component={DraftRoute} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
