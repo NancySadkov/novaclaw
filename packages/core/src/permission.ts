@@ -9,8 +9,6 @@ import { Location } from "./location"
 import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
-import { ProjectExclusion } from "./project-exclusion"
-import { ProjectFileCache } from "./project-file-cache"
 import { SessionEffectiveConfig } from "./session/effective-config"
 import { Wildcard } from "./util/wildcard"
 import {
@@ -214,30 +212,8 @@ export const DenialReason = Schema.Literals([
    * send it to negotiate for something no permission rule can give.
    */
   "plugin-door",
-  /**
-   * This folder's `novaclaw.json` refused it, and nothing else would have.
-   *
-   * ⚠️ Its own literal because the ADVICE differs from every other reason here: the others describe
-   * the instance's own posture, which the person running NovaClaw chose. This one points at a FILE
-   * IN THE FOLDER — possibly written by whoever the user cloned it from — and the action it
-   * prescribes is "open Settings → Project and read `novaclaw.json`", not "change your settings".
-   * A reader told only *denied* would go looking in the wrong place.
-   */
-  "project-denied",
-  /** The nearest project file is present but cannot be enforced. These stay distinct because the
-   * action is respectively fix, upgrade, or unlock; one generic denial would send two thirds of
-   * users to the wrong remedy. */
-  "project-file-invalid",
-  "project-file-future-version",
-  "project-file-unreadable",
 ])
 export type DenialReason = typeof DenialReason.Type
-
-const PROJECT_FILE_DENIAL_REASON: Record<ProjectFileCache.FaultKind, DenialReason> = {
-  invalid: "project-file-invalid",
-  "future-version": "project-file-future-version",
-  unreadable: "project-file-unreadable",
-}
 
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
   rules: Permission.Ruleset,
@@ -291,15 +267,6 @@ export const GRANT_IN_ADVANCE = {
  * including the user's optional reject feedback — instead of collapsing into "Unable to <x>".
  */
 export function denialMessage(error: unknown): string | undefined {
-  if (error instanceof ProjectFileCache.FaultError) return error.message
-  // A `novaclaw.json` exclusion is a refusal of the same KIND — the user said no — and it arrives
-  // through the same `mapError` absorbers, so it is lowered here rather than by a line added to
-  // every tool. That is what makes the refusal legible in tools nobody edited: without it, `read`'s
-  // absorber would collapse it to "Unable to read <path>", which is a lie about a deliberate
-  // privacy choice and exactly the dead-end AGENTS.md forbids. Enforcement lives in
-  // `project-exclusion.ts`; this is only its voice.
-  const excluded = ProjectExclusion.refusalMessage(error)
-  if (excluded) return excluded
   if (error instanceof DeniedError) {
     const denied = error.rules.filter((rule) => rule.effect === "deny")
     const rules = denied.length ? denied : error.rules
@@ -340,21 +307,6 @@ export function denialMessage(error: unknown): string | undefined {
         `present to approve modifying it and waiting or retrying will change nothing. Write your output to a ` +
         `NEW file instead and name the attached file in your result if it genuinely needs to change.`
       )
-    // The FOLDER refused it, not the instance. Every other reason here describes a posture the
-    // person running NovaClaw chose; this one is a file that may have arrived with a clone. So the
-    // advice has to point somewhere else entirely — at `novaclaw.json`, not at the settings — and it
-    // has to say that a project can only NARROW, because a model told merely "denied" will otherwise
-    // spend turns trying to get the permission widened somewhere that cannot widen it.
-    if (error.reason === "project-denied")
-      return (
-        `Permission denied: this folder's own \`novaclaw.json\` refuses action '${actions}' on ` +
-        `'${resources}'. That is a PROJECT rule declared in the working folder, not a setting of this ` +
-        `NovaClaw — the instance would have allowed it. A project may only ever NARROW what is permitted, ` +
-        `so no change to the instance's permission settings, and no consent prompt, can widen it; only ` +
-        `editing that file can, and it belongs to whoever set the folder up. Continue with what you ARE ` +
-        `allowed to do, and if the task genuinely cannot finish without '${actions}', name it in your result ` +
-        `together with the project file so the user can decide.`
-      )
     // The one refusal on this list that no setting can lift, so the advice cannot end in "get it
     // widened". A file placed there is EXECUTED at the next boot, in this process, before any
     // NovaClaw API is consulted — so the question is not whether the agent may write a file, it is
@@ -371,11 +323,10 @@ export function denialMessage(error: unknown): string | undefined {
         `the task needs, write the file somewhere you ARE allowed to — your own project folder — and say ` +
         `in your reply where it is and what it does, so the user can install it themselves.`
       )
-    if (error.reason === "project-file-invalid") return ProjectFileCache.refusal({ kind: "invalid", file: resources })
-    if (error.reason === "project-file-future-version")
-      return ProjectFileCache.refusal({ kind: "future-version", file: resources })
-    if (error.reason === "project-file-unreadable")
-      return ProjectFileCache.refusal({ kind: "unreadable", file: resources })
+    // 🗑️ Three arms stood here for a `novaclaw.json` that was present but unusable (invalid, written by
+    // a newer NovaClaw, unreadable), each delegating its wording to `ProjectFileCache.refusal` so the
+    // remedy could not drift from the fault. The file, the faults and their denial reasons all went
+    // together (owner, 2026-09-16).
     // The B4c follow-up. Nobody RULED on this action, so the evaluator's honest verdict is `ask` —
     // and in an unattended chain an ask has no answerer, which makes it a hang rather than a gate.
     // The refusal has to be ACTIONABLE, not merely legible: name the action, say the waiting is
@@ -800,40 +751,19 @@ export const layer = Layer.effect(
     const pluginDoorDirs = pluginDoors((yield* Global.Service).config)
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
-    const projects = yield* ProjectFileCache.Service
     const effective = yield* SessionEffectiveConfig.Service
     /**
-     * A session's Project permissions.
+     * 🗑️ A session's PROJECT permissions used to be read here — a NARROWING constraint (never part of
+     * the appended chain, so that a `novaclaw.json` inside a folder the user may have cloned minutes
+     * ago could not override an operator deny with `allow`), resolved from the SESSION's working
+     * folder rather than this location's directory, and read through `ProjectFileCache` so the rules
+     * and the tune came from ONE read of one file.
      *
-     * 🔴 They are a NARROWING constraint, never part of the appended chain. `evaluate` takes the last
-     * match, so appending would let a `novaclaw.json` — a file inside a folder the user may have
-     * cloned minutes ago — override an operator deny with `allow`. See `evaluateNarrowed`.
-     *
-     * ⚠️ Resolved from the SESSION's working folder, not this location's directory. The two differ
-     * whenever a session was opened somewhere else, and the folder the agent is actually working in
-     * is the one whose project governs it (*"the nearest valid `novaclaw.json`
-     * at or above the session folder"*). Reading the location's directory answered for the instance
-     * no matter whose folder was asked about — correct only while every session sits in the
-     * instance's own folder, which is not a property the kernel has. The direction of the change is
-     * worth naming: a session working outside a project now carries no project constraint, where it
-     * used to inherit the instance folder's. That is the honest reading of a narrowing rule set —
-     * it belongs to a folder, and a session that left the folder left its rules.
-     *
-     * ⚠️ The read itself lives in `ProjectFileCache` so the rules and the tune come from ONE read of
-     * one file. Two caches over one file can disagree across a mid-window edit and apply a folder's
-     * rules without its stance.
+     * It went with the mechanism itself (owner, 2026-09-16). `evaluateNarrowed` and the constraint
+     * parameter it takes stay: the narrowing RULE is general and correct, and what changed is only
+     * that no source supplies constraints any more. That is why the call sites below pass `[]` rather
+     * than this being a rewrite of the evaluator.
      */
-    const sessionDirectory = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      const session = yield* sessions.get(sessionID)
-      // A session that vanished mid-evaluation gets the location's own folder rather than none: the
-      // fallback direction for a narrowing constraint must be the stricter one.
-      return session?.location.directory ?? location.directory
-    })
-    const projectEntry = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      // The session's own folder is both the question and the trust root here.
-      const directory = yield* sessionDirectory(sessionID)
-      return yield* projects.read(directory, directory)
-    })
 
     const autoGrants = yield* SessionAutoGrant.Service
     const saved = yield* PermissionSaved.Service
@@ -1011,18 +941,10 @@ export const layer = Layer.effect(
       // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
       const stance = unattendedStanceRules(rootType, mode)
       const configuredRules = yield* configured(input.sessionID, input.agent)
-      // A present-but-unusable project file is a constraint we cannot read, never an empty one.
-      // Refuse before any model-authored action and name the exact remedy. The synthetic rule's
-      // resource is the FILE (not the requested target) so the shared denial voice can identify
-      // what the user must fix, upgrade for, or unlock.
-      const project = yield* projectEntry(input.sessionID)
-      const projectFault = ProjectFileCache.fault(project)
-      if (projectFault !== undefined)
-        return {
-          effect: "deny" as const,
-          rules: [{ action: input.action, resource: projectFault.file, effect: "deny" as const }],
-          reason: PROJECT_FILE_DENIAL_REASON[projectFault.kind],
-        }
+      // 🗑️ A present-but-unusable project file used to be refused HERE, before any model-authored
+      // action, with a synthetic rule naming the FILE so the shared denial voice could identify what
+      // the user had to fix, upgrade for, or unlock. There is no file to be unusable (owner,
+      // 2026-09-16), so the refusal and its three denial reasons went with it.
       // The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
       // may still write its findings somewhere — a review that cannot save its own report is not much use.
       // The allows land AFTER the mode denies (findLast) so they apply to the temp dir and nowhere else, and
@@ -1090,27 +1012,21 @@ export const layer = Layer.effect(
         ? [{ action: input.action, resource: attachment.resource, effect: "ask" }]
         : []
       const all = [...rules, ...saved, ...attachmentRules]
-      // ⚠️ `evaluateNarrowed`, not `evaluate`. Every early return above is a DENY, which a project
-      // cannot narrow further, so this is the one place a Project's rules can change an answer — and
-      // they can only make it stricter.
-      // Resolved ONCE per evaluation, not per resource: a multi-resource assert must be judged
-      // against ONE view of the file, or two resources in the same call could be answered from
-      // either side of an edit.
-      const projectRules = project.rules
+      // ⚠️ `evaluateNarrowed`, not `evaluate`, and the constraint list is now always EMPTY: it is the
+      // seam a folder's `novaclaw.json` used to constrain (owner, 2026-09-16). Keeping the call rather
+      // than reverting to `evaluate` is deliberate — the narrowing RULE is general and correct, and a
+      // future constraint source should not have to re-derive which of the two functions is right.
+      const projectRules: readonly Permission.Rule[] = []
       const effects = input.resources.map(
         (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect,
       )
       const aliasDenied = (input.denyAliases ?? []).some(
         (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect === "deny",
       )
-      // Did the PROJECT do this, or would it have been refused anyway? Compared against the same
-      // resources WITHOUT the constraint, because "the project denied it" is only true when nothing
-      // else would have — telling a user to go read a file that changed nothing is worse than
-      // saying nothing, and it is the kind of wrong pointer that costs an afternoon.
-      const projectDenied =
-        projectRules.length > 0 &&
-        effects.includes("deny") &&
-        !input.resources.some((resource) => evaluate(input.action, resource, all).effect === "deny")
+      // 🗑️ A `projectDenied` flag used to sit here, comparing the constrained verdict against the
+      // unconstrained one so that "the project denied it" was reported only when nothing else would
+      // have — telling a user to go read a file that changed nothing being worse than saying nothing.
+      // There is no project layer to compare against (owner, 2026-09-16).
       const evaluated: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       const effect: Permission.Effect =
         aliasDenied || evaluated === "deny" || input.minimumEffect === "deny"
@@ -1194,7 +1110,7 @@ export const layer = Layer.effect(
       return {
         effect,
         rules: all,
-        reason: (effect === "deny" && projectDenied ? "project-denied" : undefined) as DenialReason | undefined,
+        reason: undefined as DenialReason | undefined,
         attachment: protecting ? attachment : undefined,
       }
     })
@@ -1235,10 +1151,6 @@ export const node = makeLocationNode({
     SessionStore.node,
     PermissionSaved.node,
     SessionAutoGrant.node,
-    // The session's `novaclaw.json`: its rules here, its tune through the effective-config entry
-    // point. Both are GLOBAL nodes already built in every instance, so this adds references rather
-    // than new subsystems to the boot order.
-    ProjectFileCache.node,
     SessionEffectiveConfig.node,
   ],
 })

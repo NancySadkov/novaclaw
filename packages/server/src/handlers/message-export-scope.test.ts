@@ -35,7 +35,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -75,7 +74,6 @@ const kernel = AppNodeBuilder.build(
     SessionStore.node,
     ...SESSION_HANDLER_NODES,
     FSUtil.node,
-    ProjectFileCache.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],

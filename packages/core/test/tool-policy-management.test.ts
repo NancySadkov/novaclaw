@@ -10,7 +10,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -66,7 +65,6 @@ const graph = (directory: string) =>
       Database.node,
       EventV2.node,
       SessionStore.node,
-      ProjectFileCache.node,
       Config.node,
       SettingsConfigStore.node,
       ToolPolicyGate.node,

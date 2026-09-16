@@ -1,10 +1,8 @@
 export * as SessionEffectiveConfig from "./effective-config"
 
 import { Context, Effect, Layer } from "effect"
-import { ProjectFile } from "@novaclaw/schema/project-file"
 import { makeGlobalNode } from "../effect/app-node"
 import { MemorySetting } from "../kb-graph/memory-setting"
-import { ProjectFileCache } from "../project-file-cache"
 import {
   EFFECTIVE_CONFIG_DEFAULTS,
   agentOf,
@@ -16,7 +14,6 @@ import {
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentDefaults } from "./agent-defaults"
 import type { ConfigAgent } from "../config/agent"
-import { ProjectDefaults } from "./project-defaults"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
 import { WorkerProfile } from "./worker-profile"
@@ -58,13 +55,22 @@ export interface Resolution {
    * defaults instead, it would report a folder-supplied value as coming from the instance.
    */
   readonly defaults: EffectiveConfig
-  /** The tune components the folder actually contributed. */
-  readonly applied: readonly ProjectFile.TuneFeature[]
-  /** Declared and refused, because the folder may not loosen what a lower layer already set. */
-  readonly refused: readonly ProjectFile.TuneFeature[]
-  /** Declared, allowed, and not applied because a reader of it does not fold yet (`WIRED`). */
-  readonly deferred: readonly ProjectFile.TuneFeature[]
-  /** The project file that supplied the tune, when one governs the session's folder. */
+  /**
+   * 🗑️ A FOLDER could contribute tune components through its `novaclaw.json`, and these three fields
+   * were that report: what it contributed, what it was refused, and what no reader folded yet. The file
+   * is retired (owner, 2026-09-16), so all three are structurally empty and typed as plain names rather
+   * than as a tune vocabulary that no longer exists. They stay in the shape because the provenance
+   * surface reads them and "the folder contributed nothing" is the truthful answer — collapsing the
+   * type as well is part of the app-side pass, not this one.
+   */
+  readonly applied: readonly string[]
+  readonly refused: readonly string[]
+  readonly deferred: readonly string[]
+  /**
+   * 🗑️ The project file that governed the session's folder — never set any more, for the reason above.
+   * Kept in the type so the consumers that read it (the composer's provenance line, the session-config
+   * handler) keep compiling through the removal; they report "no folder layer", which is now always true.
+   */
   readonly project?: { readonly root: string; readonly file: string }
   /**
    * The COLLEAGUE whose chat this is, and which defaults it supplied.
@@ -115,55 +121,22 @@ export const clampToCeilings = (config: EffectiveConfig, ceilings: Ceilings): Ef
 
 const currentCeilings = (): Ceilings => ({ memory: MemorySetting.memoryEnabled() })
 
-/** The instance's live ceilings, for a caller outside this service (`GET /api/project`). */
+/** The instance's live ceilings, for a caller outside this service. */
 export const ceilings = currentCeilings
 
-/** What a folder alone decides, before any chat exists to declare anything. */
-export interface FolderStance {
-  /** The stance a chat created here would START with — the folded defaults, ceilings applied. */
-  readonly config: EffectiveConfig
-  /** The tune components the folder actually contributes to it. */
-  readonly applied: readonly ProjectFile.TuneFeature[]
-  /** Declared and refused: a folder may raise a supervision rail and may never lower one. */
-  readonly refused: readonly ProjectFile.TuneFeature[]
-  /** Declared, allowed, and not applied because no reader folds it yet (`ProjectDefaults.WIRED`). */
-  readonly deferred: readonly ProjectFile.TuneFeature[]
-}
-
 /**
- * 🔴 **The same fold, for a chat that does not exist yet — and it lives HERE for the reason the rest
- * of this file exists.**
+ * 🗑️ A `folderStance` fold used to sit here: the same fold as `resolution`, for a chat that does not
+ * exist yet, because a DRAFT has no session id and the composer's Tuning panel therefore showed every
+ * switch at the INSTANCE stance while the chat the same click would create resolved them from the
+ * folder's `novaclaw.json`. It existed so the kernel folded once and the client rendered what it was
+ * told — a browser-side re-derivation once produced toggles that were the exact INVERSE of what the
+ * runner resolved, because `narrowTune` is a security rule (a folder may raise a supervision switch
+ * and never lower one).
  *
- * A DRAFT has no session id, so `resolution` cannot answer for it, and the composer's Tuning panel
- * therefore showed every switch at the INSTANCE stance: a draft in a folder declaring
- * `quality: true` rendered *"Using Settings default: Off"* while the chat that same click would
- * create resolves `quality: true` from the folder. Measured 2026-08-19. The sentence above the
- * switches had already been fixed to name the folder's file, so the two halves of one panel
- * contradicted each other — worse than either alone.
- *
- * The obvious repair is to let the browser fold the folder's declared tune over its own baseline.
- * That is the mistake `config-provenance.ts` records: a browser-side re-derivation once produced
- * toggles that were the exact INVERSE of what the runner resolved. `narrowTune` is a security rule —
- * a folder may raise a supervision switch and never lower one — and a second implementation of it in
- * a renderer is a second chance to get a security rule wrong. So the kernel folds, and the client
- * renders what it is told.
- *
- * ⚠️ There is no chain step because there is no chain: `resolveConfig(base, [])` is `{...base}`, so
- * running the walk over an empty chain would be a longer spelling of `folded.defaults`. The
- * CEILINGS still apply, because they clamp the resolution rather than the defaults — a folder that
- * asks for `memory: true` while the user's privacy switch is off must not be reported as supplying
- * it, since the chat this creates will not have it.
+ * With the file retired (owner, 2026-09-16) there is no folder layer left to report: a draft resolves
+ * from the shipped defaults plus its officer, which is exactly what `resolution` answers for a session
+ * with no row. The app-side pass that removes the caller goes with the rest of the UI.
  */
-export const folderStance = (tune: ProjectFile.Tune | undefined, limits: Ceilings): FolderStance => {
-  const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune)
-  const config = clampToCeilings(folded.defaults, limits)
-  return {
-    config,
-    applied: folded.applied.filter((feature) => config[feature] === folded.defaults[feature]),
-    refused: folded.refused,
-    deferred: folded.deferred,
-  }
-}
 
 export interface Interface {
   /** The full resolution, including where the folder layer came from and what it could not do. */
@@ -178,7 +151,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const sessions = yield* SessionStore.Service
-    const projects = yield* ProjectFileCache.Service
     const agents = yield* AgentConfigStore.Service
 
     /**
@@ -192,15 +164,9 @@ export const layer = Layer.effect(
 
     const resolution = Effect.fn("SessionEffectiveConfig.resolution")(function* (sessionID: SessionSchema.ID) {
       const session = yield* sessions.get(sessionID)
-      // No session means no folder, and the chain walk below returns an empty chain — so the answer
-      // is the shipped defaults. Resolving anyway (rather than short-circuiting) keeps this method's
-      // result identical to what the readers computed before, for a session that vanished mid-turn.
-      const found = session
-        ? yield* projects.read(session.location.directory, session.location.directory)
-        : ProjectFileCache.EMPTY
-      // 🔴 The COLLEAGUE's standing choices, folded UNDER the folder (see `agent-defaults.ts` for why
-      // that order is a security decision, not a preference). Read from the store rather than from
-      // the live roster so this resolves the same way on a headless turn as in the app.
+      // 🔴 The COLLEAGUE's standing choices (see `agent-defaults.ts` for why the fold order is a
+      // security decision, not a preference). Read from the store rather than from the live roster so
+      // this resolves the same way on a headless turn as in the app.
       // 🔴 **WHOSE config to fold — the CHAIN's agent, not this row's.** A spawned sub-agent stores
       // `agent: null` and inherits its officer through the parent-chain walk (`agent` is a chain field
       // with `merge: "override"`, which is the "undefined = inherit" stance). Reading the ROW here gave
@@ -231,38 +197,31 @@ export const layer = Layer.effect(
         workerProfile === undefined
           ? ownerColleague
           : { ...(ownerColleague ?? {}), ...WorkerProfile.config(workerProfile) }
-      const projectFault = ProjectFileCache.fault(found)
-      const folded = ProjectDefaults.fold(
-        AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague as ConfigAgent.Info | undefined),
-        projectFault === undefined ? found.tune : undefined,
-      )
-      const guardedDefaults =
-        projectFault === undefined ? folded.defaults : { ...folded.defaults, safeMode: true, askBeforeChanges: true }
-      const resolved = clampToCeilings(resolveConfig(guardedDefaults, chain), currentCeilings())
-      // A tune we cannot read is not permission to keep a looser stance. These are the two
-      // supervision rails a project may raise but never lower, applied AFTER the session chain so a
-      // per-chat override cannot turn a project-file fault back into capability. Permission and
-      // policy consumers provide the actionable refusal; keeping config resolution successful is
-      // what lets the chat itself remain usable.
-      const config = projectFault === undefined ? resolved : { ...resolved, safeMode: true, askBeforeChanges: true }
+      const defaults = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague as ConfigAgent.Info | undefined)
+      // 🗑️ A folder layer used to sit between the colleague's choices and the session chain: the
+      // `novaclaw.json` tune, folded under the chain, with a FAULT (a file we could not read) forcing
+      // `safeMode` + `askBeforeChanges` afterwards so an unreadable file could never be permission to
+      // keep a looser stance. The file is retired (owner, 2026-09-16), so there is no tune and no
+      // fault: what remains is the colleague's fold under the chain, which is what the shipped
+      // defaults plus one officer always were.
+      const resolved = clampToCeilings(resolveConfig(defaults, chain), currentCeilings())
       return {
-        config,
-        defaults: guardedDefaults,
-        applied: folded.applied,
-        refused: folded.refused,
-        deferred: folded.deferred,
-        ...(found.root !== undefined && found.file !== undefined
-          ? { project: { root: found.root, file: found.file } }
-          : {}),
+        config: resolved,
+        defaults,
+        // Structurally empty: the folder contributed nothing, because there is no folder layer. See
+        // the `Resolution` fields' own note for why the names survive this pass.
+        applied: [],
+        refused: [],
+        deferred: [],
         // 🔴 WHO supplied a default, so the config surface can say "Veritas chose this" instead of
         // blaming the instance. Measured 2026-08-22: every field a colleague declares — its model,
         // its posture, Strict, its permission mode — reported `source: {kind: "instance"}`, because
         // the fold writes into `defaults` and defaults were attributed to the instance by
         // elimination. A surface built to explain configuration was naming the wrong author.
-        // ⚠️ The CHAIN's agent here too, not the row's. This is what the Tune dialog and the folder
-        // report read to say "these settings came from Theron" — and for a sub-agent the row is null,
-        // so reporting from it said no colleague was involved while the colleague's own model, floor
-        // and posture were in force.
+        // ⚠️ The CHAIN's agent here too, not the row's. This is what the Tune dialog reads to say
+        // "these settings came from Theron" — and for a sub-agent the row is null, so reporting from
+        // it said no colleague was involved while the colleague's own model, floor and posture were
+        // in force.
         ...(agentID === undefined
           ? {}
           : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague as ConfigAgent.Info | undefined) } }),
@@ -283,5 +242,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [SessionStore.node, ProjectFileCache.node, AgentConfigStore.node],
+  deps: [SessionStore.node, AgentConfigStore.node],
 })

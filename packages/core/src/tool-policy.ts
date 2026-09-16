@@ -1,8 +1,20 @@
 export * as ToolPolicy from "./tool-policy"
 
 import { createHash } from "node:crypto"
-import { ProjectFile } from "@novaclaw/schema/project-file"
 import { Duration, Effect, Schema } from "effect"
+
+/**
+ * The grammar a pre-action policy id must match: 1-64 characters of lowercase letters, digits, `-` and
+ * `.`, with no leading or trailing separator.
+ *
+ * 🔴 **MOVED here (2026-09-16) rather than deleted.** It used to live in
+ * `@novaclaw/schema/project-file`, because a `novaclaw.json` was one of the two things that spelled
+ * policy ids; that mechanism is retired (owner: *"Please ensure it is gone for good."*), but
+ * `config.tool_policy` still keys its switches by this grammar, so the constant had to move rather than
+ * vanish with the file that used to own it. The PROPERTY it protected is unchanged: a provider and a
+ * switch that could drift apart would make "not installed" fire for a reason nobody could see.
+ */
+export const POLICY_ID_PATTERN = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/
 
 /**
  * ─── TYPED PRE-ACTION POLICIES: the vocabulary and the composition ─────────────────────────────
@@ -156,7 +168,7 @@ export interface Request {
  * a capability at call time, so the cost of consulting it is bounded by what it closed over.
  */
 export interface Provider {
-  /** Matches {@link ProjectFile.POLICY_ID_PATTERN}; a registration with any other shape is refused. */
+  /** Matches {@link POLICY_ID_PATTERN}; a registration with any other shape is refused. */
   readonly id: string
   /** One line, for the receipt and for any surface listing what is installed. */
   readonly describe: string
@@ -447,20 +459,20 @@ export class RegistrationError extends Schema.TaggedErrorClass<RegistrationError
 /**
  * The check every registration runs: a legal id, and no second policy under that id.
  *
- * The grammar is `@novaclaw/schema/project-file`'s `PolicyID` — the SAME one a `novaclaw.json` is
- * decoded against — rather than a second copy here. If the two could drift, a project could name an
- * id no provider is able to register under, or a provider could register under an id no project can
- * spell, and either way the "not installed" refusal below would fire for a reason nobody could see.
+ * The grammar is {@link POLICY_ID_PATTERN} — one definition, not a second copy here. If the two could
+ * drift, a switch could name an id no provider is able to register under, or a provider could register
+ * under an id no switch can spell, and either way the "not installed" refusal below would fire for a
+ * reason nobody could see.
  */
 export const validateRegistration = (id: string, installed: ReadonlySet<string>): Effect.Effect<void, RegistrationError> => {
-  if (!ProjectFile.POLICY_ID_PATTERN.test(id))
+  if (!POLICY_ID_PATTERN.test(id))
     return Effect.fail(
       new RegistrationError({
         id,
         message:
           `"${id}" is not a legal policy id. An id is 1-64 characters of lowercase letters, digits, ` +
-          `'-' and '.', with no leading or trailing separator — the same grammar a novaclaw.json is ` +
-          `decoded against, so that a project can always spell the policies that are installed.`,
+          `'-' and '.', with no leading or trailing separator — the grammar a stored policy switch is ` +
+          `keyed by, so that every installed policy can always be named.`,
       }),
     )
   if (installed.has(id))
@@ -468,7 +480,7 @@ export const validateRegistration = (id: string, installed: ReadonlySet<string>)
       new RegistrationError({
         id,
         message:
-          `A policy is already installed under the id "${id}". Ids are how a novaclaw.json names a ` +
+          `A policy is already installed under the id "${id}". Ids are how a policy switch names a ` +
           `policy and how a receipt attributes an intervention; two providers sharing one would make ` +
           `both unattributable.`,
       }),
@@ -492,7 +504,7 @@ export type SwitchDeclaration = Readonly<Record<string, { readonly enabled?: boo
  * direction is a one-way door: the later document could turn a guard off and never back on, which is
  * the opposite of how every other sparse settings map in this repo resolves.
  *
- * ⚠️ Ids are taken verbatim and are NOT validated against {@link ProjectFile.POLICY_ID_PATTERN}. A
+ * ⚠️ Ids are taken verbatim and are NOT validated against {@link POLICY_ID_PATTERN}. A
  * stored switch for an id no provider registered is inert by construction (nothing looks it up), and
  * refusing to decode the whole section because of one stale row would let a removed plugin brick the
  * switch for every policy beside it.

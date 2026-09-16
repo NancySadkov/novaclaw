@@ -164,23 +164,12 @@ describe("denialMessage — the attached-source refusal names the file and the w
   })
 })
 
-describe("denialMessage — a PROJECT refusal points at the folder, not the settings", () => {
-  test("names the file's authority and says the instance would have allowed it", () => {
-    // Every other reason describes a posture the operator chose. This one is a file that may have
-    // arrived with a clone, so the advice has to point somewhere else entirely.
-    const message = PermissionV2.denialMessage(
-      new PermissionV2.DeniedError({
-        rules: [{ action: "bash", resource: "rm*", effect: "deny" }],
-        reason: "project-denied",
-      }),
-    )
-    expect(message).toContain("novaclaw.json")
-    expect(message).toContain("bash")
-    // 🔴 The load-bearing sentence: a model told merely "denied" spends turns trying to get the
-    // permission widened somewhere that cannot widen it.
-    expect(message).toContain("NARROW")
-  })
-
+describe("denialMessage — a denial with no reason", () => {
+  // 🗑️ A case for a PROJECT refusal stood here — the one that named `novaclaw.json`, said the instance
+  // would have allowed it, and closed with "NARROW" so a model would not spend turns trying to widen a
+  // permission somewhere that cannot widen it. It went with the mechanism and its `project-denied`
+  // reason (owner, 2026-09-16). The case below is the CONTROL that outlives it: a denial with no reason
+  // must not be dressed in a folder's vocabulary, whatever that vocabulary used to be.
   test("a denial with no reason still gets the plain message, not the project one", () => {
     const message = PermissionV2.denialMessage(
       new PermissionV2.DeniedError({ rules: [{ action: "bash", resource: "*", effect: "deny" }] }),

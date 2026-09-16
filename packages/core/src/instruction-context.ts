@@ -97,7 +97,7 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "instruction-context",
   layer,
-  deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node, ProjectFileCache.node],
+  deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node],
 })
 
 /**

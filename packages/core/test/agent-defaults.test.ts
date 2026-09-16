@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AgentDefaults } from "@novaclaw/core/session/agent-defaults"
 import { EFFECTIVE_CONFIG_DEFAULTS } from "@novaclaw/core/session/config-resolve"
-import { ProjectDefaults } from "@novaclaw/core/session/project-defaults"
 import type { ConfigAgent } from "@novaclaw/core/config/agent"
 
 // A COLLEAGUE's standing work choices (owner, 2026-08-21: the Chat/Agent posture, Strict and the
@@ -149,38 +148,12 @@ describe("a colleague's standing choices", () => {
 })
 
 describe("the colleague sits UNDER the folder", () => {
-  test("shared harness fields are explicit, so project narrowing stays visible", () => {
-    // 🔴 The ordering was chosen as a security decision (principle 13: a folder may raise a
-    // supervision rail and never lower one, so the colleague must not be able to widen it again).
-    // Measured while writing this: they cannot contend at all today, because a folder may only
-    // influence the WIRED features and a colleague declares three that are not among them.
-    //
-    // ⚠️ Kept as a test rather than a comment so the day the sets OVERLAP, somebody has to look at
-    // this ordering deliberately instead of discovering it as a widened rail.
-    const overlap = AgentDefaults.DECLARABLE.filter((field) =>
-      (ProjectDefaults.WIRED as readonly string[]).includes(field),
-    )
-    expect(overlap.sort()).toEqual(["affective", "contextBudget", "introspection", "quality", "surgicalEdits"])
-  })
-
-  test("the colleague outranks the shipped baseline for what it does declare", () => {
-    const base = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ shortChat: true, permissionMode: "plan" }))
-    expect(ProjectDefaults.fold(base, undefined).defaults).toMatchObject({
-      shortChat: true,
-      permissionMode: "plan",
-    })
-  })
-
-  test("a folder still lands its own features over the colleague's baseline", () => {
-    // The layers coexist: the colleague sets how it works, the folder still tunes what it is allowed
-    // to do in that project.
-    const base = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ strict: { enabled: true } }))
-    // ⚠️ The tune's shape is `{ features: {...} }`, not a bare map — a fixture that guesses the shape
-    // tests the fixture. This one was wrong on the first attempt and the test said so.
-    const withFolder = ProjectDefaults.fold(base, { features: { safeMode: true } } as never)
-    expect(withFolder.defaults.safeMode).toBe(true)
-    expect(withFolder.defaults.strict).toEqual({ enabled: true })
-  })
+  // 🗑️ Three cases stood here about the FOLDER layer: that a colleague declares features the folder may
+  // not influence (`ProjectDefaults.WIRED`, whose overlap the test pinned so a widened supervision rail
+  // would be a deliberate act), that the colleague outranks the shipped baseline, and that a folder
+  // lands its own features over the colleague's. All three were about the `novaclaw.json` tune, which is
+  // retired (owner, 2026-09-16): with no folder layer the ORDER they guarded does not exist, and the
+  // colleague-under-the-chain property they shared is covered by the cases below.
 
   test("the five restored officer toggles are real session defaults", () => {
     const folded = AgentDefaults.fold(

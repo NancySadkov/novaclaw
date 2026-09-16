@@ -6,7 +6,6 @@ import { Database } from "./database/database"
 import { makeLocationNode } from "./effect/app-node"
 import { Location } from "./location"
 import { PermissionV2 } from "./permission"
-import { ProjectFileCache } from "./project-file-cache"
 import type { AgentV2 } from "./agent"
 import type { SessionSchema } from "./session/schema"
 import { SessionStore } from "./session/store"
@@ -126,7 +125,6 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
-    const projects = yield* ProjectFileCache.Service
     const sessions = yield* SessionStore.Service
     const effective = yield* SessionEffectiveConfig.Service
 
@@ -200,13 +198,16 @@ export const layer = Layer.effect(
       })
 
     /**
-     * The session's working folder.
+     * The session's working folder, for the provider contract (`Request.directory`).
      *
-     * ⚠️ The SESSION's folder, not this location's directory, for `permission.ts`'s reason: the two
-     * differ whenever a session was opened somewhere else, and the folder the agent is working in is
-     * the one whose `novaclaw.json` selects its policies. A session that vanished mid-call falls back
-     * to the location's own folder — for a gate, the fallback direction has to be the one that still
-     * consults something.
+     * ⚠️ The SESSION's folder, not this location's directory: the two differ whenever a session was
+     * opened somewhere else, and a policy provider that rules on the folder must be told the one the
+     * agent is actually working in. A session that vanished mid-call falls back to the location's own
+     * folder — for a gate, the fallback direction has to be the one that still consults something.
+     *
+     * 🗑️ Until 2026-09-16 this value ALSO selected the session's `novaclaw.json`, which is how a folder
+     * requested policies; the file and its request path are retired, and what remains is the provider
+     * contract, which still wants the directory.
      */
     const directoryOf = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
       const session = yield* sessions.get(sessionID)
@@ -291,57 +292,29 @@ export const layer = Layer.effect(
     const screen: Interface["screen"] = Effect.fn("ToolPolicyGate.screen")(function* (input) {
       const maxToolTimeoutMs = (yield* effective.resolve(input.sessionID)).maxToolTimeoutMs
       const directory = yield* directoryOf(input.sessionID)
-      const project = yield* projects.read(directory, directory)
-      const projectFault = ProjectFileCache.fault(project)
-      if (projectFault !== undefined)
-        return {
-          kind: "refuse",
-          halt: false,
-          message: ProjectFileCache.refusal(projectFault),
-        } satisfies Screened
-      const requested = project.policies
+      // 🗑️ A folder used to be able to REQUEST policies through its `novaclaw.json` (`requested`), and
+      // that request drove three things below: a refusal for a requested-but-not-installed policy, a
+      // refusal for a requested-but-switched-off one, and the candidate set. The file is retired
+      // (owner, 2026-09-16), so nothing can request a policy any more and those two refusals are
+      // unreachable rather than removed in spirit: an always-on provider is the whole population.
+      const requested: readonly string[] = []
 
-      // A folder that asked for a guard which is not installed gets a refusal, never silence.
-      if (requested.length > 0) {
-        const missing = requested.filter((id) => !providers.has(id)).toSorted()
-        if (missing.length > 0)
-          return {
-            kind: "refuse",
-            halt: false,
-            message: ToolPolicy.missingPolicyRefusal(
-              missing,
-              project.file ?? `${directory}/novaclaw.json`,
-              [...providers.keys()].toSorted(),
-            ),
-          } satisfies Screened
-      }
-
-      const wanted = new Set(requested)
       // ⚠️ Deliberately NOT sorted here. `compose` sorts, and a second sort on this side would make
       // the first one untestable: the seam's determinism test would keep passing with `compose`'s
       // sort deleted, which is the shape of a guard that is green because something else is doing
       // its job. One decision, one place (ruling 6) — the order belongs to the composer's contract.
-      const candidates = [...providers.values()].filter(
-        (provider) => ToolPolicy.alwaysOn(provider) || wanted.has(provider.id),
-      )
-      // The fast path, and it is the normal one: nothing installed applies, so no policy is
-      // consulted, nothing is composed, and no receipt row is written. Effective config is still
-      // resolved above because the tool-deadline ceiling applies independently of policy presence.
-      if (candidates.length === 0 && requested.length === 0)
-        return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
+      const candidates = [...providers.values()].filter((provider) => ToolPolicy.alwaysOn(provider))
+      // The fast path, and it is now the normal one in every direction: nothing installed applies, so
+      // no policy is consulted, nothing is composed, and no receipt row is written. Effective config is
+      // still resolved above because the tool-deadline ceiling applies independently of policy presence.
+      if (candidates.length === 0) return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
 
-      // 🔴 What the user switched off in Settings. The direction below is the same fail-closed one
-      // the missing case uses: a folder that DECLARED a policy which is now off is refused, because
-      // "the guard you asked for is not running" must never be spelled the same way as "you asked
-      // for nothing". A policy nobody's folder declared simply stops being consulted.
+      // 🔴 What the user switched off in Settings. The direction is the fail-closed one: a policy the
+      // user switched off does not run, and because nothing can REQUEST a policy any more the
+      // "you asked for a guard that is not running" refusal below has no way to fire — an off switch
+      // can now only silence, never refuse. That is a real loss of a warning, recorded rather than
+      // left for a reader to infer from an absent branch.
       const off = yield* disabledIDs()
-      const disabledRequested = requested.filter((id) => providers.has(id) && off.has(id)).toSorted()
-      if (disabledRequested.length > 0)
-        return {
-          kind: "refuse",
-          halt: false,
-          message: ToolPolicy.disabledPolicyRefusal(disabledRequested, project.file ?? `${directory}/novaclaw.json`),
-        } satisfies Screened
 
       const applicable = candidates.filter((provider) => !off.has(provider.id))
       if (applicable.length === 0) return { kind: "run", input: input.input, maxToolTimeoutMs } satisfies Screened
@@ -503,7 +476,6 @@ export const node = makeLocationNode({
     Database.node,
     Location.node,
     PermissionV2.node,
-    ProjectFileCache.node,
     SessionStore.node,
     SessionEffectiveConfig.node,
   ],

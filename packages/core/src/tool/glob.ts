@@ -10,7 +10,6 @@ import { LocationMutation } from "../location-mutation"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { PermissionV2 } from "../permission"
-import { ProjectExclusion } from "../project-exclusion"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -73,8 +72,11 @@ type ModelOutput = typeof Output.Encoded
 /** Format raw search results into the concise line-oriented output models expect. */
 export const toModelOutput = (output: ModelOutput) => {
   const lines = output.entries.length === 0 ? ["No files found"] : output.entries.map((item) => item.path)
-  const notice = ProjectExclusion.withheldNotice(output.withheld ?? 0, output.excludedBy)
-  return (notice ? [...lines, "", notice] : lines).join("\n")
+  // 🗑️ A `withheld` notice used to be appended here — the sentence that told the model its result was
+  // PARTIAL because the folder's `exclude` list removed rows. There is no list any more (owner,
+  // 2026-09-16), so there is nothing to be partial about and no sentence to write. A bare `withheld: 0`
+  // cannot produce one, which is why this is a deletion rather than a branch on zero.
+  return lines.join("\n")
 }
 
 /** Glob leaf that defaults its filesystem root to the active Location. */
@@ -159,12 +161,13 @@ export const layer = Layer.effectDiscard(
                   source,
                 })
                 const cwd = target.canonical
-                // The SECOND exclusion seam, and the only one besides `LocationMutation.resolve`.
-                // `resolve` above spoke for the search ROOT; it cannot speak for rows this tool
-                // never named. Without this, `exclude: ["secrets"]` would still list every path
-                // under `secrets/` — a directory listing IS a read of what the folder contains, and
-                // it is the cheapest way to learn what a user was trying to hide.
-                const exclusions = yield* mutation.exclusionsFor(cwd)
+                // 🗑️ The SECOND exclusion seam used to be here — `mutation.exclusionsFor(cwd)` plus
+                // `ProjectExclusion.screenAll` over the rows, because `resolve` speaks for the search
+                // ROOT and cannot speak for rows the tool never names. It went with the `novaclaw.json`
+                // mechanism (owner, 2026-09-16), so `withheld` below is now structurally ZERO and the
+                // notice that consumed it can never fire. The output keeps the field rather than
+                // collapsing back to a bare array in this commit: that shape change has its own tests
+                // and its own argument, and doing both at once is how a removal turns into a rewrite.
                 return yield* ripgrep
                   .glob({
                     cwd,
@@ -172,24 +175,15 @@ export const layer = Layer.effectDiscard(
                     limit: input.limit ?? Number.MAX_SAFE_INTEGER,
                   })
                   .pipe(
-                    Effect.map((result) => {
-                      const screened = ProjectExclusion.screenAll(exclusions, result, (entry) =>
-                        path.resolve(cwd, entry.path),
-                      )
-                      return {
-                        entries: screened.kept.map((entry) =>
-                          FileSystem.Entry.make({
-                            ...entry,
-                            path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
-                          }),
-                        ),
-                        // `withheld` is 0 when no exclusion governs the root, and `screenAll` returns
-                        // the rows untouched in that case — so the notice never fires on a project
-                        // that excludes nothing.
-                        withheld: screened.withheld,
-                        excludedBy: exclusions?.file,
-                      }
-                    }),
+                    Effect.map((result) => ({
+                      entries: result.map((entry) =>
+                        FileSystem.Entry.make({
+                          ...entry,
+                          path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
+                        }),
+                      ),
+                      withheld: 0,
+                    })),
                   )
               }).pipe(
                 Effect.mapError((error) => {

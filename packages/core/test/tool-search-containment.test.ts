@@ -90,9 +90,6 @@ const mutation = Layer.succeed(
           : undefined,
       })
     },
-    // No project file in play in this suite — the real exclusion seam is exercised by
-    // `test/project-exclusion.test.ts` against the real layer.
-    exclusionsFor: () => Effect.succeed(undefined),
   }),
 )
 

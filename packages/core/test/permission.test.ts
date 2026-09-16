@@ -18,7 +18,6 @@ import { SessionAutoGrant } from "@novaclaw/core/session/auto-grant"
 import { ASK_BEFORE_CHANGES_RULES, MODE_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { Global } from "@novaclaw/core/global"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
@@ -36,10 +35,9 @@ const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
       Database.node,
-      // PermissionV2 reads the SESSION's `novaclaw.json` through the shared cache, and its config
-      // through the one effective-config entry point; FSUtil is how the cache reaches the disk.
+      // PermissionV2 reads its config through the one effective-config entry point; FSUtil is how it
+      // reaches the disk.
       FSUtil.node,
-      ProjectFileCache.node,
       SessionStore.node,
       SessionEffectiveConfig.node,
       PermissionSaved.node,

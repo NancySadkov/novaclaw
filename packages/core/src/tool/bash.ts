@@ -19,7 +19,6 @@ import { AppProcess } from "../process"
 import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
-import { ProjectExclusion } from "../project-exclusion"
 import { PositiveInt } from "../schema"
 import { attendedRoot, rootSessionType, stanceOf } from "../session/config-resolve"
 import type { SessionV2 } from "../session"
@@ -362,20 +361,13 @@ export const layer = Layer.effectDiscard(
                   agent: context.agent,
                   source,
                 })
-              // The exclusion screen for the one tool that does not name its target. See
-              // `commandPathTokens` for what this buys and what it cannot. Run BEFORE the command
-              // approval so an excluded path is refused with its reason rather than asked about.
-              for (const [canonical, written] of commandPathTokens(commandText, target.canonical, shell)) {
-                const declaration = yield* mutation.exclusionsFor(path.dirname(canonical))
-                if (!declaration) continue
-                const verdict = ProjectExclusion.screen(declaration, canonical, false)
-                if (verdict.excluded && verdict.pattern !== undefined)
-                  return yield* new ProjectExclusion.ExcludedError({
-                    resource: written,
-                    pattern: verdict.pattern,
-                    file: declaration.file,
-                  })
-              }
+              // 🗑️ An exclusion screen used to run HERE, before the command approval: bash is the one
+              // tool that does not name its target, so it scanned the command text's path tokens
+              // (`commandPathTokens`) and refused an excluded one with its reason rather than asking
+              // about it. It went with the `novaclaw.json` mechanism (owner, 2026-09-16). What that
+              // costs is stated in `bash.ts`'s own warning below rather than implied: bash runs with
+              // host-user authority, and the scan there was advisory only — the exclusion was the one
+              // ENFORCED promise on a path this tool never named, and it is now gone with the list.
 
               const warnings = externalCommandDirectories(commandText, target.canonical, shell).map(
                 (directory) =>

@@ -10,7 +10,6 @@ import {
 } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
@@ -280,11 +279,6 @@ const app = LayerNode.group([
   LocationServiceMap.node,
   // ...and the client it asks for a line. Third and last of the sampler's additions.
   llmClient,
-  // The folder's `novaclaw.json`, cached. Listed HERE so `POST /api/project` can invalidate the very
-  // entry the kernel reads after it rewrites the file — exactly the hazard the comment below names:
-  // without it the handler compiled green under `tsgo -b` and every write answered 500 with
-  // "Service not found: @novaclaw/v2/ProjectFileCache" (measured, 7 route tests).
-  ProjectFileCache.node,
   // Community P3/P4: contacts and channels are INSTANCE state, like the identity beside them. A
   // group whose services are missing here compiles green and answers 500 on every call.
   CommunityContacts.node,

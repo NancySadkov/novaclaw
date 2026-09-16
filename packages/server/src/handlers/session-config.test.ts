@@ -33,7 +33,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
@@ -239,10 +238,9 @@ const kernel = AppNodeBuilder.build(
     // anything about config resolution. Shared with the other test kernel and production
     // `routes.ts` — see `session-nodes.ts` for the three times a hand-kept copy went stale.
     ...SESSION_HANDLER_NODES,
-    // The handler resolves the layer the TURN uses through this service — the folder's tune folded
-    // in — so the view cannot disagree with the runner. `FSUtil` is how the cache reaches the disk.
+    // The handler resolves the layer the TURN uses through this service, so the view cannot disagree
+    // with the runner. `FSUtil` is how it reaches the disk.
     FSUtil.node,
-    ProjectFileCache.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],

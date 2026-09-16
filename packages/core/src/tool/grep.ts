@@ -9,7 +9,6 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
-import { ProjectExclusion } from "../project-exclusion"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { ToolRegistry } from "./registry"
@@ -64,8 +63,10 @@ export const toModelOutput = (output: ModelOutput) => {
     }
     lines.push(`  Line ${match.line}: ${match.text}`)
   }
-  const notice = ProjectExclusion.withheldNotice(output.withheld ?? 0, output.excludedBy)
-  if (notice) lines.push("", notice)
+  // 🗑️ A `withheld` notice used to be appended here: grep returns matching LINES, so the sentence that
+  // told the model its result was PARTIAL was doing real work — an unfiltered row IS the excluded
+  // file's content. There is no list to be partial about any more (owner, 2026-09-16), so the branch
+  // and the field's only consumer both go; `withheld: 0` is structurally incapable of producing one.
   return lines.join("\n")
 }
 
@@ -146,10 +147,12 @@ export const layer = Layer.effectDiscard(
                 const target = resolved.canonical
                 const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
                 const searchRoot = info?.type === "Directory" ? target : path.dirname(target)
-                // The SECOND exclusion seam — see the same block in `glob.ts`. It matters MORE
-                // here: grep returns matching LINES, so an unfiltered row is the excluded file's
-                // actual content arriving in the model's context.
-                const exclusions = yield* mutation.exclusionsFor(searchRoot)
+                // 🗑️ The SECOND exclusion seam used to be here, and it mattered MORE than glob's:
+                // grep returns matching LINES, so an unfiltered row is the excluded file's actual
+                // content arriving in the model's context. It went with the `novaclaw.json` mechanism
+                // (owner, 2026-09-16), so `withheld` below is now structurally zero. The output keeps
+                // the field rather than collapsing back to a bare array in this commit — see `glob.ts`
+                // for why that shape change is its own slice.
                 return yield* ripgrep
                   .grep({
                     cwd: info?.type === "Directory" ? target : path.dirname(target),
@@ -159,26 +162,20 @@ export const layer = Layer.effectDiscard(
                     limit: input.limit ?? Number.MAX_SAFE_INTEGER,
                   })
                   .pipe(
-                    Effect.map((result) => {
-                      const screened = ProjectExclusion.screenAll(exclusions, result, (match) =>
-                        path.resolve(searchRoot, match.entry.path),
-                      )
-                      return {
-                        matches: screened.kept.map((match) =>
-                          FileSystem.Match.make({
-                            ...match,
-                            entry: FileSystem.Entry.make({
-                              ...match.entry,
-                              path: RelativePath.make(
-                                path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
-                              ),
-                            }),
+                    Effect.map((result) => ({
+                      matches: result.map((match) =>
+                        FileSystem.Match.make({
+                          ...match,
+                          entry: FileSystem.Entry.make({
+                            ...match.entry,
+                            path: RelativePath.make(
+                              path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
+                            ),
                           }),
-                        ),
-                        withheld: screened.withheld,
-                        excludedBy: exclusions?.file,
-                      }
-                    }),
+                        }),
+                      ),
+                      withheld: 0,
+                    })),
                   )
               }).pipe(
                 Effect.mapError((error) => {

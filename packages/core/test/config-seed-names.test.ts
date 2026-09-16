@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import { FILENAME } from "@novaclaw/core/project-file"
+/**
+ * 🗑️ Imported from `@novaclaw/core/project-file` until 2026-09-16, when that module was retired with the
+ * `novaclaw.json` mechanism. The name is spelled out here now: this ratchet is about a NAME a first-boot
+ * seed must never read, and the collision it guards (that filename meaning "untrusted, narrow-only" in
+ * one directory and "defines the instance" in another) does not need the mechanism to exist to be worth
+ * preventing.
+ */
+const FILENAME = "novaclaw.json"
 import { stripComments } from "./lib/source-scan"
 
 /**

@@ -4,9 +4,8 @@ import { Effect } from "effect"
 import { Command } from "@novaclaw/schema/command"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
-import { ProjectFileCache } from "../project-file-cache"
-import { SkillV2 } from "../skill"
 import { SkillInvocation } from "../skill/invocation"
+import { SkillV2 } from "../skill"
 import { ExternalCommandSource } from "./external-command-source"
 import { SkillCommand } from "./skill-command"
 
@@ -53,35 +52,20 @@ const savedInvocation = Effect.fn("CommandList.savedInvocation")(function* () {
 })
 
 /**
- * The skill ids the folder's own `novaclaw.json` hides — the PROJECT half of "Show it for me to run".
+ * 🗑️ A `projectVisibility` reader used to sit here: the PROJECT half of "Show it for me to run", read
+ * through `ProjectFileCache` so the folder's menu and its permissions came from one read of one file.
  *
- * ⚠️ Resolved from the LOCATION's directory (`ProjectFileCache.LocalService`) because that is the
- * only folder this list has. The
- * permission evaluator uses the SESSION's working folder instead, and it can — an assert carries a
- * session id. This list does not — the composer fetches it per location, before any session exists
- * — and a location's directory is the folder the user opened. The two answers differ only for a
- * session moved elsewhere after it was created, which is the same folder every other per-location
- * surface in this list already answers for.
- *
- * ⚠️ Read through `ProjectFileCache` rather than resolving the file here, so this is the FIFTH
- * consumer of ONE read of one `novaclaw.json` and not a fifth cache over it. Two caches over one
- * file disagree across a mid-window edit, and a folder whose menu comes from the file it used to be
- * while its permissions come from the file it now is, is the worst of both.
- *
- * 🔴 Already narrowed: `ProjectFileCache` stores `ProjectFile.narrowSkills(...).hidden`, so a folder
- * asking to SHOW a skill the user hid never reaches this function at all. A project may hide, never
- * un-hide.
+ * It went with the `novaclaw.json` mechanism (owner, 2026-09-16: *"Please ensure it is gone for good."*).
+ * What remains is the INSTANCE half — the user's own `skill_invocation` store, folded `savedInvocation`
+ * above — which is the switch that was always the user's; a folder can no longer hide a skill, and the
+ * `faulted` suppression it carried (a file we could not read suppressing project-visible skills until
+ * it was repaired) left with the file it was about.
  */
-const projectVisibility = Effect.fn("CommandList.projectVisibility")(function* () {
-  const project = yield* ProjectFileCache.LocalService
-  const entry = yield* project.entry
-  return { hidden: entry.skills, faulted: ProjectFileCache.fault(entry) !== undefined }
-})
 
 export const list: Effect.Effect<
   Command.Info[],
   never,
-  CommandV2.Service | SkillV2.Service | ExternalCommandSource.Service | Config.Service | ProjectFileCache.LocalService
+  CommandV2.Service | SkillV2.Service | ExternalCommandSource.Service | Config.Service
 > = Effect.gen(function* () {
   const commands = yield* CommandV2.Service
   const skills = yield* SkillV2.Service
@@ -91,9 +75,6 @@ export const list: Effect.Effect<
   // skill here removes it from the user's own menu and changes nothing about what an agent may do.
   // The agent half is the `skill` permission action — see `core/src/skill/invocation.ts`.
   const invocation = yield* savedInvocation()
-  // ⚠️ Resolved ONCE per list rather than per skill: a mid-list TTL expiry would otherwise let two
-  // skills in one popover be judged against two different readings of one file.
-  const visibility = yield* projectVisibility()
 
   const result: Command.Info[] = []
   const seen = new Set<string>()
@@ -102,16 +83,12 @@ export const list: Effect.Effect<
     result.push({ ...cmd, source: "command", hints: hints(cmd.template) })
   }
   for (const skill of yield* skills.list()) {
-    // The file may contain a hide declaration we cannot currently read. Suppress project-visible
-    // skills until it is fixed/unlocked/upgraded instead of treating the empty presentation
-    // fallback as "hide nothing". Built-in commands remain available, including repair paths.
-    if (visibility.faulted) continue
     if (seen.has(skill.name)) continue
     // ⚠️ NOT added to `seen` when hidden. `seen` is the collision ledger — it exists so a CommandV2
     // command outranks a same-named skill which outranks a same-named MCP prompt. Marking a hidden
     // skill as seen would let it suppress the MCP prompt behind it, so hiding one entry would
     // silently delete a different one.
-    if (!SkillInvocation.showsToUser(invocation, visibility.hidden, skill.name)) continue
+    if (!SkillInvocation.showsToUser(invocation, [], skill.name)) continue
     seen.add(skill.name)
     result.push({
       name: skill.name,

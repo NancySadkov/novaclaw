@@ -55,7 +55,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -100,10 +99,8 @@ const kernel = AppNodeBuilder.build(
     // test kernel and with production `routes.ts`, so adding a `yield*` to a handler group is a
     // single line in `session-nodes.ts` rather than three that must be kept in agreement.
     ...SESSION_HANDLER_NODES,
-    // The config view resolves the layer the TURN uses — the session folder's tune folded in — so
-    // its project-file cache (and the filesystem behind it) come with it.
+    // The config view resolves the layer the TURN uses, so it needs the filesystem behind it.
     FSUtil.node,
-    ProjectFileCache.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],
