@@ -212,13 +212,24 @@ test("model class and prefix-cache lifetime survive save and reopening", async (
   expect(field("Prefix lifetime (minutes)").value).toBe("7")
 })
 
-test("the class picker starts on Usual when the model has never been rated", async () => {
+test("the class picker starts on Usual and offers exactly the four classes", async () => {
   // `Usual` IS the documented default for an unrated model, so the control states what is in force
   // rather than showing an empty picker (AGENTS.md 12d).
   mount()
   click(button("Configure test"))
   await settle()
-  expect(selectText(document.querySelector<HTMLElement>('[data-action="settings-model-taxonomy"]')!)).toBe("Usual")
+  const select = document.querySelector<HTMLElement>('[data-action="settings-model-taxonomy"]')!
+  expect(selectText(select)).toBe("Usual")
+  // And the LIST is pinned here because it is hand-copied: a rating the app can offer but the
+  // instance's closed vocabulary rejects would save nothing and say it saved. `special` is the one
+  // that must be here — it is the class the harness refuses to route to on its own.
+  select.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse" }))
+  await Promise.resolve()
+  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse" }))
+  await settle()
+  expect(
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((item) => item.textContent?.trim()),
+  ).toEqual(["Smart", "Usual", "Fast", "Special"])
 })
 
 test("every field's explanation is behind a `?` beside its NAME, not a paragraph under it", async () => {

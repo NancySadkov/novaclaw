@@ -1,6 +1,6 @@
 export * as AgentModelFit from "./model-fit"
 
-import { ModelTaxonomy, type Taxonomy } from "../model-taxonomy"
+import { ModelTaxonomy, type Requirement, type Taxonomy } from "../model-taxonomy"
 
 // WHETHER THE MODEL BEHIND A COLLEAGUE IS UP TO ITS JOB (`notes/named-agents.md` — "role/model fit
 // warning"; the owner's rule is *"it warns; it never refuses"*).
@@ -22,9 +22,10 @@ import { ModelTaxonomy, type Taxonomy } from "../model-taxonomy"
  *
  * ⚠️ Both sides are already materialised (`ModelTaxonomy.of`), so there is no "unknown" case to
  * special-case here: an unrated model reads as `usual` wherever it is compared, which is exactly
- * what makes `usual` the default rather than a missing value.
+ * what makes `usual` the default rather than a missing value. A model rated `special` IS beneath
+ * every requirement — that is what the rating means.
  */
-export const below = (input: { readonly needs: Taxonomy; readonly bound: Taxonomy }): boolean =>
+export const below = (input: { readonly needs: Requirement; readonly bound: Taxonomy }): boolean =>
   !ModelTaxonomy.satisfies(input.bound, input.needs)
 
 /**
@@ -39,7 +40,7 @@ export const below = (input: { readonly needs: Taxonomy; readonly bound: Taxonom
  * bravado; what a model can act on is: tell the person, work smaller, do not silently attempt the
  * big thing.
  */
-export const notice = (input: { needs: Taxonomy; bound: Taxonomy; model: string }): string =>
+export const notice = (input: { needs: Requirement; bound: Taxonomy; model: string }): string =>
   `${opening(input.model)}, which is rated ${ModelTaxonomy.label(input.bound)} — your role is set up expecting a ` +
   `${ModelTaxonomy.label(input.needs)} model. Nothing is blocked and you should carry on. But say so plainly to the ` +
   `user the first time it matters, work in smaller and more carefully checked steps than you ` +

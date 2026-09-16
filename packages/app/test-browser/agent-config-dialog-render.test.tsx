@@ -561,6 +561,19 @@ describe("AgentConfigDialog renders", () => {
   })
 })
 
+test("the class a colleague may REQUIRE never offers Special", async () => {
+  // 🔴 The two vocabularies are deliberately different lengths. `special` marks a model the harness
+  // must not route to by itself, so "this role requires a Special model" is a contradiction the server
+  // refuses at the SCHEMA — and the picker must not offer a choice the write would reject.
+  mount({ agents: [{ ...AGENT, config: {} }], write: () => {}, remove: () => {} })
+  await settle()
+  const select = document.querySelector<HTMLElement>("#agent-needs-taxonomy")!
+  await openSelect(select)
+  expect(
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((item) => item.textContent?.trim()),
+  ).toEqual(["agentConfig.needsTaxonomyNone", "taxonomy.smart", "taxonomy.usual", "taxonomy.fast"])
+})
+
 test("returning a colleague to default model and no requirement deletes both overrides", async () => {
   const writes: unknown[] = []
   const removals: string[][][] = []

@@ -1,7 +1,7 @@
 export * as WorkerProfile from "./worker-profile"
 
 import type { AgentV2 } from "../agent"
-import type { Taxonomy } from "../model-taxonomy"
+import type { Requirement } from "../model-taxonomy"
 
 /**
  * The immutable, session-owned part of a prototype worker.
@@ -26,7 +26,7 @@ export interface Snapshot {
   readonly shortChat?: boolean
   readonly reasoningBudget?: number
   readonly maxToolTimeoutMs?: number
-  readonly needsTaxonomy?: Taxonomy
+  readonly needsTaxonomy?: Requirement
 }
 
 const modelString = (model: AgentV2.Info["model"]): string | undefined =>
@@ -53,8 +53,8 @@ const optionalString = (value: unknown): string | undefined =>
 const optionalNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
 /** Read a class back through the closed vocabulary so a hand-edited metadata blob cannot smuggle a
- *  fourth word into the selection path. */
-const optionalTaxonomy = (value: unknown): Taxonomy | undefined =>
+ *  fourth word into the selection path. `special` is excluded: a colleague may not REQUIRE it. */
+const optionalTaxonomy = (value: unknown): Requirement | undefined =>
   value === "smart" || value === "usual" || value === "fast" ? value : undefined
 
 /** Read only a spawner-authored, versioned profile from a child session. */

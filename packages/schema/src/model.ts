@@ -65,17 +65,32 @@ export const DEFAULT_IMAGE_LIMIT = 1
  * 🔴 Owner ruling, 2026-09-16: this REPLACES the raw Terminal-Bench 4.0 percentage. A benchmark
  * number is a value no normal user has a way to know (AGENTS.md principle 12), and it had leaked into
  * three independent ladders — selection, role-fit warnings and harness scaffold intensity — each of
- * which could pick a different answer. One three-word rating is the whole vocabulary now:
+ * which could pick a different answer. One rating is the whole vocabulary now:
  *
- *  - `smart` — knowledge-heavy work: writing, design, analysis.
- *  - `usual` — coding, running your OS and sites. THE DEFAULT: an unrated model is this.
- *  - `fast`  — labeling and searching; the cheapest model that can do the job.
+ *  - `smart`   — knowledge-heavy work: writing, design, analysis.
+ *  - `usual`   — coding, running your OS and sites. THE DEFAULT: an unrated model is this.
+ *  - `fast`    — labeling and searching; the cheapest model that can do the job.
+ *  - `special` — NOT general-purpose: a test model, an embedding-shaped endpoint, something kept for
+ *                one job. The harness never routes a turn to it by itself (see
+ *                `core/src/model-taxonomy.ts`); it powers a colleague only when that colleague's
+ *                settings name THIS model explicitly.
  *
- * Capability is a floor (fast < usual < smart), and the single conversion lives in
+ * Capability is a floor among the first three (fast < usual < smart), and `special` sits below all of
+ * them because it is not a capability rank at all. The single conversion lives in
  * `core/src/model-taxonomy.ts` so selection, fit warnings and scaffold cannot invent different ranks.
  */
-export const Taxonomy = Schema.Literals(["smart", "usual", "fast"])
+export const Taxonomy = Schema.Literals(["smart", "usual", "fast", "special"])
 export type Taxonomy = typeof Taxonomy.Type
+
+/**
+ * The classes a COLLEAGUE may require (`Agent.needsTaxonomy`).
+ *
+ * ⚠️ The closed set is the enforcement, not a validation step: `special` is excluded because asking a
+ * role to require a model the harness must not route to is a contradiction, and a type that cannot
+ * express it means no reader has to check for it. The client's picker offers exactly this list.
+ */
+export const Requirement = Schema.Literals(["smart", "usual", "fast"])
+export type Requirement = typeof Requirement.Type
 
 /** What an unrated model reads as. `usual` is the mainstream job, not the weakest one. */
 export const DEFAULT_TAXONOMY: Taxonomy = "usual"

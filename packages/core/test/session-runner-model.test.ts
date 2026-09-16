@@ -108,6 +108,28 @@ describe("SessionRunnerModel", () => {
     )
   })
 
+  test("a SPECIAL model is never chosen, not even as the last-resort fallback", () => {
+    // 🔴 Owner ruling, 2026-09-16: *"Special (wont be used to power agents, unless agent settings
+    // explicitly pick it)."* The fallback below exists so an undersized officer still runs, and it is
+    // exactly where a `special` model would leak in — an install whose only model is one the user
+    // rated "not for agents" must say so, not quietly run on it. `undefined` is that answer.
+    const special = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://test-model.test/v1" }),
+      taxonomy: "special",
+    })
+    expect(SessionRunnerModel.leastLoaded({ available: [special], tools: true, devices: [] })).toBeUndefined()
+    expect(
+      SessionRunnerModel.leastLoaded({ available: [special], taxonomy: "usual", tools: true, devices: [] }),
+    ).toBeUndefined()
+    // A CONTROL: the same call with the rating flipped picks it, so the claim is about the class and
+    // not about something else in the fixture being unroutable.
+    const usable = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://test-model.test/v1" }),
+      taxonomy: "usual",
+    })
+    expect(SessionRunnerModel.leastLoaded({ available: [usable], tools: true, devices: [] })).toBe(usable)
+  })
+
   it.effect("asks the managed runtime to prepare the selected model before the provider request", () =>
     Effect.gen(function* () {
       const calls: LocalModelManager.ModelRequest[] = []

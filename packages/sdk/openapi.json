@@ -37497,7 +37497,7 @@
           },
           "taxonomy": {
             "type": "string",
-            "enum": ["smart", "usual", "fast"]
+            "enum": ["smart", "usual", "fast", "special"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
@@ -37671,7 +37671,7 @@
           },
           "taxonomy": {
             "type": "string",
-            "enum": ["smart", "usual", "fast"]
+            "enum": ["smart", "usual", "fast", "special"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
@@ -38568,7 +38568,7 @@
           },
           "taxonomy": {
             "type": "string",
-            "enum": ["smart", "usual", "fast"]
+            "enum": ["smart", "usual", "fast", "special"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"

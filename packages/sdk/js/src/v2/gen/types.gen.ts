@@ -4303,7 +4303,7 @@ export type ConfigV2Model = {
     }
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
-  taxonomy?: "smart" | "usual" | "fast"
+  taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
@@ -4366,7 +4366,7 @@ export type ConfigV2ModelEntry = {
     }
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
-  taxonomy?: "smart" | "usual" | "fast"
+  taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
@@ -4692,7 +4692,7 @@ export type ModelV2Info = {
   id: string
   providerID: string
   family?: string
-  taxonomy?: "smart" | "usual" | "fast"
+  taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: {

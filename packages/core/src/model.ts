@@ -16,6 +16,8 @@ export const DEFAULT_IMAGE_LIMIT = Model.DEFAULT_IMAGE_LIMIT
 
 export const Taxonomy = Model.Taxonomy
 export type Taxonomy = Model.Taxonomy
+export const Requirement = Model.Requirement
+export type Requirement = Model.Requirement
 export const DEFAULT_TAXONOMY = Model.DEFAULT_TAXONOMY
 export const PrefixCache = Model.PrefixCache
 export type PrefixCache = Model.PrefixCache

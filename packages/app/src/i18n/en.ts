@@ -2091,7 +2091,7 @@ export const dict = {
   "settings.models.stats.prefixBytes.desc":
     "Exact common bytes across measured outgoing prompts, with their share of all prompt bytes.",
   "settings.models.stats.taxonomy": "Model class",
-  "settings.models.stats.taxonomy.desc": "What this model is rated for — Smart, Usual or Fast.",
+  "settings.models.stats.taxonomy.desc": "What this model is rated for — Smart, Usual, Fast or Special.",
   "settings.models.stats.taxonomy.unrated": "default",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "Endpoint and generation are healthy",
@@ -2134,12 +2134,13 @@ export const dict = {
   "settings.models.config.taxonomy.name": "Model class",
   "settings.models.config.taxonomy.desc": "What this model is for.",
   "settings.models.config.taxonomy.desc.more":
-    "Smart — knowledge-heavy work like writing and design. Usual — coding and running your OS and sites. Fast — labeling and searching. Unset means Usual.",
+    "Smart — knowledge-heavy work like writing and design. Usual — coding and running your OS and sites. Fast — labeling and searching. Special — not for agents at all: a test model, or one kept for a single job; Nova never picks it on its own, only a colleague you point at it by name. Unset means Usual.",
   // The one vocabulary a person is asked to learn. Shared by the model picker and the colleague's
-  // requirement so the two can never drift into different words for the same three things.
+  // requirement so the two can never drift into different words for the same things.
   "taxonomy.smart": "Smart",
   "taxonomy.usual": "Usual",
   "taxonomy.fast": "Fast",
+  "taxonomy.special": "Special",
   "settings.models.config.prefixCache.name": "Measure prompt prefixes",
   "settings.models.config.prefixCache.desc": "Keep a short local diagnostic cache of exact outgoing prompt bytes.",
   "settings.models.config.prefixCache.ttl.name": "Prefix lifetime (minutes)",

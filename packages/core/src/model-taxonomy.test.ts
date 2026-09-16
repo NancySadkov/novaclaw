@@ -77,14 +77,21 @@ describe("fit — exact first, then above, then the shortfall", () => {
 })
 
 describe("requestModel — the general 'give me a model for this job'", () => {
-  const pool = [model("s", "smart"), model("u", "usual"), model("f", "fast"), model("none")]
+  const pool = [model("s", "smart"), model("u", "usual"), model("f", "fast"), model("x", "special"), model("none")]
 
-  test("an undefined request asks nothing, so every candidate is adequate", () => {
-    expect(ModelTaxonomy.requestModel({ taxonomy: undefined, available: pool })).toEqual(pool)
+  test("an undefined request asks nothing, so every AUTO-SELECTABLE candidate is adequate", () => {
+    // The pool is the whole catalog for the purposes of this claim; `x` is the one the harness may not
+    // pick by itself, so it is absent even here.
+    expect(ModelTaxonomy.requestModel({ taxonomy: undefined, available: pool }).map((m) => String(m.id))).toEqual([
+      "s",
+      "u",
+      "f",
+      "none",
+    ])
   })
 
   test("a class request returns only what can serve it, unrated models included as Usual", () => {
-    const ids = (taxonomy: ModelV2.Taxonomy | undefined) =>
+    const ids = (taxonomy: ModelV2.Requirement | undefined) =>
       ModelTaxonomy.requestModel({ taxonomy, available: pool }).map((m) => String(m.id))
     expect(ids("smart")).toEqual(["s"])
     expect(ids("usual")).toEqual(["s", "u", "none"])
@@ -95,5 +102,44 @@ describe("requestModel — the general 'give me a model for this job'", () => {
     // `leastLoaded` is where this matters: an install with one undersized model must still answer, so
     // it keeps the officer working and lets `AgentModelFit` explain the shortfall.
     expect(ModelTaxonomy.requestModel({ taxonomy: "smart", available: [model("f", "fast")] })).toEqual([])
+  })
+})
+
+describe("special — a scope marker, not a capability rank", () => {
+  test("it satisfies NOTHING, at every rung", () => {
+    // Owner ruling: *"Special (wont be used to power agents, unless agent settings explicitly pick
+    // it)."* A floor comparison is the first place that has to be false, or `requestModel` and the
+    // officer's fit warning would both let it through.
+    expect(ModelTaxonomy.satisfies("special", "fast")).toBe(false)
+    expect(ModelTaxonomy.satisfies("special", "usual")).toBe(false)
+    expect(ModelTaxonomy.satisfies("special", "smart")).toBe(false)
+  })
+
+  test("it has the lowest fit for EVERY request, so it can never win a sort tie-break", () => {
+    // ⚠️ The claim is per-REQUEST, not across requests. `fit` measures DISTANCE from the wanted class,
+    // so `special` versus a `fast` request ties with `fast` versus a `usual` request — both are one
+    // step below. What is true, and what a sort needs, is that for a FIXED request nothing scores
+    // lower than `special`: `rank(-1)` puts it one step under `fast`, and the shortfall penalty
+    // applies on top.
+    for (const want of ["smart", "usual", "fast"] as const) {
+      const special = ModelTaxonomy.fit("special", want)
+      for (const have of ["smart", "usual", "fast"] as const)
+        expect(special, `special vs ${have} for a ${want} request`).toBeLessThan(ModelTaxonomy.fit(have, want))
+    }
+    expect(ModelTaxonomy.rank("special")).toBeLessThan(ModelTaxonomy.rank("fast"))
+  })
+
+  test("autoSelectable is false for special alone, and it is what every pool asks", () => {
+    expect(ModelTaxonomy.autoSelectable({ taxonomy: "special" })).toBe(false)
+    for (const taxonomy of ["smart", "usual", "fast"] as const)
+      expect(ModelTaxonomy.autoSelectable({ taxonomy })).toBe(true)
+    // ⚠️ An unrated model is Usual, so it IS auto-selectable — absence must never read as `special`,
+    // or every hand-added endpoint would silently become unroutable.
+    expect(ModelTaxonomy.autoSelectable({ taxonomy: undefined })).toBe(true)
+  })
+
+  test("`of` never materialises special from an absent rating", () => {
+    expect(ModelTaxonomy.of({ taxonomy: undefined })).toBe("usual")
+    expect(ModelTaxonomy.of({ taxonomy: "special" })).toBe("special")
   })
 })

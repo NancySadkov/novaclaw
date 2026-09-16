@@ -41,7 +41,14 @@ import { AgentRemoteChat } from "@/components/agent-remote-chat"
 import { PERSONALITY_FORMAT, downloadOfficerPersonality, parseOfficerPersonality } from "@/apps/agent-personality"
 import { switchType } from "@/utils/fs-api"
 import { createSettledResource } from "@/utils/settled-resource"
-import { classify, isBelow, TAXONOMIES, taxonomyLabel } from "@/components/model-taxonomy"
+import {
+  classify,
+  classifyRequirement,
+  isBelow,
+  REQUIREMENTS,
+  taxonomyLabel,
+  type Requirement,
+} from "@/components/model-taxonomy"
 
 const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
@@ -486,12 +493,13 @@ export function AgentConfigScreen(props: {
    * control had no way back to "No requirement". A named sentinel is also what the user reads.
    */
   const NO_REQUIREMENT = "none"
+  const requirementOptions: readonly (Requirement | typeof NO_REQUIREMENT)[] = [NO_REQUIREMENT, ...REQUIREMENTS]
   /** `NO_REQUIREMENT` when nothing is declared; `undefined` means the user has not touched it. */
-  const needsTaxonomyValue = () => {
+  const needsTaxonomyValue = (): Requirement | typeof NO_REQUIREMENT => {
     const chosen = needsTaxonomy()
-    if (chosen !== undefined) return chosen
+    if (chosen !== undefined) return classifyRequirement(chosen) ?? NO_REQUIREMENT
     const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsTaxonomy"]
-    return typeof declared === "string" ? declared : NO_REQUIREMENT
+    return typeof declared === "string" ? (classifyRequirement(declared) ?? NO_REQUIREMENT) : NO_REQUIREMENT
   }
   const superiorOptions = createMemo(() => [
     { key: "nova", value: "", label: language.t("agentConfig.superiorNova") },
@@ -505,10 +513,9 @@ export function AgentConfigScreen(props: {
    *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
    *  for the model but the wrong place for the person setting this up. */
   const belowFloor = createMemo(() => {
-    const needs = needsTaxonomyValue()
-    if (needs === NO_REQUIREMENT) return false
+    const needs = classifyRequirement(needsTaxonomyValue())
     const bound = boundTaxonomy()
-    return bound !== undefined && isBelow(bound, classify(needs))
+    return needs !== undefined && bound !== undefined && isBelow(bound, needs)
   })
   const dirty = () =>
     renamed() !== undefined ||
@@ -881,7 +888,7 @@ export function AgentConfigScreen(props: {
       // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
-      const taxonomy = needsTaxonomyValue()
+      const requirement = classifyRequirement(needsTaxonomyValue())
       const binding: Pick<ConfigV2Agent, "model" | "needsTaxonomy"> & {
         reasoningModel?: string
         workerModel?: string
@@ -900,7 +907,7 @@ export function AgentConfigScreen(props: {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
         ...(workerModelValue() === "" ? {} : { workerModel: workerModelValue() }),
-        ...(needsTaxonomy() === undefined || taxonomy === NO_REQUIREMENT ? {} : { needsTaxonomy: classify(taxonomy) }),
+        ...(needsTaxonomy() === undefined || requirement === undefined ? {} : { needsTaxonomy: requirement }),
         ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
           ? {}
           : { reasoningBudget: parsedReasoningBudget() }),
@@ -1451,13 +1458,13 @@ export function AgentConfigScreen(props: {
                 id="agent-needs-taxonomy"
                 aria-label={language.t("agentConfig.needsTaxonomy")}
                 class="mt-1 w-full"
-                options={[NO_REQUIREMENT, ...TAXONOMIES]}
+                options={requirementOptions}
                 current={needsTaxonomyValue()}
                 value={(option) => option}
                 label={(option) =>
                   option === NO_REQUIREMENT
                     ? language.t("agentConfig.needsTaxonomyNone")
-                    : taxonomyLabel(language.t, classify(option))
+                    : taxonomyLabel(language.t, option)
                 }
                 onSelect={(option) => setNeedsTaxonomy(option ?? NO_REQUIREMENT)}
               />

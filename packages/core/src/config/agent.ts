@@ -80,10 +80,13 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * same role runs fine on a smaller model for an easy request, and the user may have exactly one
    * model on the machine — refusing would turn a guess into a veto over somebody's hardware.
    *
+   * ⚠️ `special` is NOT expressible here (`ModelV2.Requirement`): a model rated "not for agents" is
+   * never routed to automatically, so requiring one would be a contradiction the schema refuses.
+   *
    * Absent = no floor declared. `usual` is the default a person sees in the picker, so declaring it
    * is a real answer and not the same as silence.
    */
-  needsTaxonomy: ModelV2.Taxonomy.pipe(Schema.optional),
+  needsTaxonomy: ModelV2.Requirement.pipe(Schema.optional),
   /**
    * The FOLDER this colleague works on — its project (owner, 2026-08-21).
    *

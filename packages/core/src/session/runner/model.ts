@@ -36,10 +36,19 @@ export class ModelNotSelectedError extends Schema.TaggedErrorClass<ModelNotSelec
   "SessionRunnerModel.ModelNotSelectedError",
   {
     sessionID: SessionSchema.ID,
+    /**
+     * Why the catalog offered nothing, when the catalog was not empty.
+     *
+     * Optional so the ordinary "there is no model at all" case is unchanged; present when automatic
+     * selection was refused by the rating itself (every runnable model rated `Special`). See
+     * `noRoutableModelReason`.
+     */
+    reason: Schema.String.pipe(Schema.optional),
   },
 ) {
   override get message() {
-    return `No model is available for session ${this.sessionID}`
+    const cause = this.reason === undefined ? "" : `: ${this.reason}`
+    return `No model is available for session ${this.sessionID}${cause}`
   }
 }
 
@@ -172,9 +181,10 @@ export interface ResolveOptions {
    *
    * Absent = no declaration, then `leastLoaded` keeps its ordinary default-first behaviour. When set
    * it is a FLOOR, never a veto (`ModelTaxonomy.requestModel`): if nothing clears it the officer
-   * still runs, and `AgentModelFit` explains the shortfall in the chat.
+   * still runs, and `AgentModelFit` explains the shortfall in the chat. `special` is not expressible
+   * here by construction — see `ModelV2.Requirement`.
    */
-  readonly taxonomy?: ModelV2.Taxonomy
+  readonly taxonomy?: ModelV2.Requirement
   /** Hard protocol needs for this turn. Unknown is never invented: catalog capabilities are exact. */
   readonly requiredCapabilities?: { readonly tools?: boolean }
   /** Exact visibility around the durable provider-backoff sleep; absent callers keep it silent. */
@@ -918,13 +928,20 @@ export const leastLoaded = (input: {
   readonly available: readonly ModelV2.Info[]
   readonly preferred?: ModelV2.Info
   /** The class the caller asked for (`ResolveOptions.taxonomy`); absent asks nothing. */
-  readonly taxonomy?: ModelV2.Taxonomy
+  readonly taxonomy?: ModelV2.Requirement
   readonly tools?: boolean
   readonly endpoints?: DeviceRegistry.EndpointMap
   readonly devices: readonly SessionScheduler.DeviceSnapshot[]
 }): ModelV2.Info | undefined => {
+  // 🔴 `special` is filtered out FIRST, and the position is the point: it must not be reachable even
+  // through the `adequate.length > 0 ? adequate : capable` fallback below, which exists so an
+  // undersized officer still runs. A model the user rated "not for agents" is not an undersized
+  // general-purpose model; routing to it is the one thing the rating forbids.
   const capable = input.available.filter(
-    (model) => supported(model) && (input.tools === undefined || model.capabilities.tools === input.tools),
+    (model) =>
+      ModelTaxonomy.autoSelectable(model) &&
+      supported(model) &&
+      (input.tools === undefined || model.capabilities.tools === input.tools),
   )
   // 🔴 The ONE place a class becomes a candidate pool (`ModelTaxonomy.requestModel`). Adequate models
   // win when they exist; otherwise the officer keeps working on everything capable and the in-chat fit
@@ -999,6 +1016,11 @@ export const locationLayer = Layer.effect(
     const selectSnapshot = Effect.fnUntraced(function* (session: SessionSchema.Info, options?: ResolveOptions) {
       const defaultModel = session.model ? undefined : yield* catalog.model.default()
       const available = yield* catalog.model.available()
+      // ⚠️ Three arms, and `special` is excluded from two of them. An EXPLICIT choice counts: the
+      // session's own model, or the instance default the user set with "Make default". The
+      // last-resort arm picks for the user, so it may not land on a model rated "not for agents"
+      // (`ModelTaxonomy.autoSelectable`) — see `noRoutableModelReason` for what happens when that
+      // leaves nothing.
       return session.model
         ? available.find((model) => model.providerID === session.model?.providerID && model.id === session.model.id)
         : options?.taxonomy !== undefined || options?.requiredCapabilities !== undefined
@@ -1012,7 +1034,28 @@ export const locationLayer = Layer.effect(
             })
           : defaultModel && supported(defaultModel)
             ? defaultModel
-            : available.find(supported)
+            : available.filter(ModelTaxonomy.autoSelectable).find(supported)
+    })
+
+    /**
+     * Why the catalog offered nothing to run on, when it did offer models.
+     *
+     * 🔴 The case the `special` class CREATES: the catalog is not empty, yet automatic selection
+     * cannot use any of it. `"No model is available"` over a Models screen full of models is a fault
+     * described falsely (ruling 2) — and the repair is one pick in the very screen the sentence
+     * names, so the sentence may as well name it. `undefined` when the reason is something else
+     * (an empty catalog, or nothing supported at all), which leaves the original message intact.
+     */
+    const noRoutableModelReason = Effect.fnUntraced(function* () {
+      const entries = yield* catalog.model.available()
+      if (entries.some((model) => supported(model) && ModelTaxonomy.autoSelectable(model))) return undefined
+      const blocked = entries.filter((model) => supported(model) && !ModelTaxonomy.autoSelectable(model))
+      if (blocked.length === 0) return undefined
+      return (
+        `every runnable model is rated Special (${blocked.map((model) => `${model.providerID}/${model.id}`).join(", ")}). ` +
+        `Special models are reserved for a colleague that names one explicitly, so nothing is chosen automatically — ` +
+        `re-rate one as Usual in Settings → Models`
+      )
     })
 
     /**
@@ -1206,7 +1249,13 @@ export const locationLayer = Layer.effect(
         }
         // No `session.id` to name, and none invented: the caller had no session, so the error says
         // the instance has no usable default rather than blaming a session that never existed.
-        if (!selected) return yield* new NoDefaultModelError({ reason: "the catalog offers no supported model" })
+        //
+        // ⚠️ `noRoutableModelReason()` first, so the rating case is named rather than folded into
+        // "no supported model" — the same false description the session path refuses to give.
+        if (!selected)
+          return yield* new NoDefaultModelError({
+            reason: (yield* noRoutableModelReason()) ?? "the catalog offers no supported model",
+          })
         yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
@@ -1388,8 +1437,14 @@ export const locationLayer = Layer.effect(
           })
         // The unavailable catalog entry may not be routable, but its declared capabilities still
         // define what the replacement must be able to do.
+        //
+        // ⚠️ `autoSelectable` excludes `special` from the pool. A substitute is chosen FOR the user,
+        // and a model rated "not for agents" may only serve when its own settings name it — being the
+        // stand-in for something else is exactly the silent promotion the rating forbids.
         const compatible = (entry: ModelV2.Info) =>
-          supported(entry) && ProviderRecovery.capabilitiesMatch(pinned?.capabilities, entry.capabilities)
+          ModelTaxonomy.autoSelectable(entry) &&
+          supported(entry) &&
+          ProviderRecovery.capabilitiesMatch(pinned?.capabilities, entry.capabilities)
         // `invariants.md` — *"if several available pick the one with closest matching capability"*.
         // Ranked, not default-first: the tie-break below still prefers the instance default when it
         // is EQUALLY close, but a closer substitute wins outright.
@@ -1460,7 +1515,10 @@ export const locationLayer = Layer.effect(
           const healthyPool = rankByCapability(
             required,
             available.filter(
-              (entry) => supported(entry) && ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
+              (entry) =>
+                ModelTaxonomy.autoSelectable(entry) &&
+                supported(entry) &&
+                ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
             ),
             yield* catalog.model.default(),
           )
@@ -1468,7 +1526,10 @@ export const locationLayer = Layer.effect(
             selected,
             fallback: healthyPool[0],
             available: healthyPool,
-            supported: (entry) => supported(entry) && ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
+            supported: (entry) =>
+              ModelTaxonomy.autoSelectable(entry) &&
+              supported(entry) &&
+              ProviderRecovery.capabilitiesMatch(required, entry.capabilities),
             sick: routeSick,
             same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
           })
@@ -1489,7 +1550,10 @@ export const locationLayer = Layer.effect(
             // No healthy substitute is not a terminal state. Wait without occupying a device slot,
             // then probe whichever compatible route becomes eligible first. Repeated failures move
             // that route's durable deadline 2 s, 4 s, 8 s … up to thirty minutes, forever.
-            const compatible = [selected, ...available].filter(
+            //
+            // ⚠️ `selected` is kept whatever its class — an explicitly named model IS the route being
+            // recovered, so it must be probeable — while the rest of the pool excludes `special`.
+            const compatible = [selected, ...available.filter(ModelTaxonomy.autoSelectable)].filter(
               (entry, index, all) =>
                 supported(entry) &&
                 ProviderRecovery.capabilitiesMatch(required, entry.capabilities) &&
@@ -1510,7 +1574,8 @@ export const locationLayer = Layer.effect(
           }
         }
       }
-      if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
+      if (!selected)
+        return yield* new ModelNotSelectedError({ sessionID: session.id, reason: yield* noRoutableModelReason() })
       return { selected, ...(substituted === undefined ? {} : { substituted }) }
     })
 
@@ -1551,7 +1616,8 @@ export const locationLayer = Layer.effect(
               modelID: session.model.id,
               reason: declaredProfile === undefined ? "unknown" : "incompatible",
             })
-          if (selected === undefined) return yield* new ModelNotSelectedError({ sessionID: session.id })
+          if (selected === undefined)
+            return yield* new ModelNotSelectedError({ sessionID: session.id, reason: yield* noRoutableModelReason() })
 
           const placement = resolveDevicePlacement({
             selected,
