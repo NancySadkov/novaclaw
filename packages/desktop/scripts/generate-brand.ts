@@ -30,7 +30,15 @@ const imagesDir = path.resolve(repo, "packages/ui/src/assets/images")
 const INK = "#1a1135" // brand ink — favicon background so the light-on-transparent mark stays legible
 const BANNER_BG = "#0b0b12" // social-share banner background
 const GLYPH_CROP = 0.795 // --crop default: keep this top fraction of the lockup (drops a wordmark band)
-const GLYPH_FILL = 928 // glyph fits within this box inside the 1024 icon canvas (leaves a small margin)
+// The glyph is trimmed to its content bounding box and scaled until its LONGER side reaches the
+// canvas, so it FILLS the canvas instead of sitting in a padded box. The canvas is 1024 (the PNG
+// master / Linux icon), so this equals that size by construction.
+//
+// ⚠️ It was 928, which left a 48px transparent ring around every app icon — the mark rendered
+// ~91% of the box and looked smaller than every neighbouring app in the taskbar. Do not reintroduce
+// a fixed inset: a glyph that is not square letterboxes on its SHORT axis, which is correct, and the
+// assertion after the write below fails the run if padding ever comes back.
+const GLYPH_FILL = 1024
 const channels = ["dev", "prod", "beta"]
 
 const argv = process.argv.slice(2)
@@ -66,17 +74,32 @@ await $`cp ${master} ${appPublic}/logo.png`
 const lockup = `${appPublic}/logo.png`
 await resizePng(lockup, 186, `${appPublic}/novaclaw-logo.png`)
 
-// 2) The icon/favicon source: the dedicated glyph export when present (trimmed + squared), else
-//    crop the glyph out of the TOP of the lockup. Either way it ends centred in a square canvas
-//    with a little breathing room.
+// 2) The icon/favicon source: the dedicated glyph export when present, else crop the glyph out of
+//    the TOP of the lockup. Either way it is trimmed to its content and scaled to FILL a square
+//    canvas — no fixed inset. A non-square glyph letterboxes on its short axis (centred), which is
+//    the only margin that survives.
 const glyph = `${iconsDir}/logo-source-1024.png`
 if (glyphMaster) {
-  await $`magick ${glyphMaster} -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
+  await $`magick ${glyphMaster} -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent ${GLYPH_FILL}x${GLYPH_FILL} -strip PNG32:${glyph}`
 } else {
   const [masterW, masterH] = (await $`magick identify -format "%w %h" ${master}`.text()).trim().split(" ").map(Number)
   const cropH = Math.round(masterH * cropFraction)
-  await $`magick ${lockup} -crop ${masterW}x${cropH}+0+0 +repage -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
+  await $`magick ${lockup} -crop ${masterW}x${cropH}+0+0 +repage -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent ${GLYPH_FILL}x${GLYPH_FILL} -strip PNG32:${glyph}`
 }
+
+// Ratchet: the glyph must reach the canvas edge on its long axis. A reintroduced inset (the old
+// 928-in-1024) silently shrinks every icon, so fail the run loudly instead of shipping a smaller
+// mark. `%@` is the trim bounding box, e.g. `1024x1024+0+0`.
+const glyphBox = (await $`magick ${glyph} -format "%@" info:`.text()).trim()
+const [glyphW, glyphH] = glyphBox
+  .split("+")[0]
+  .split("x")
+  .map(Number)
+if (Math.max(glyphW, glyphH) !== GLYPH_FILL)
+  throw new Error(
+    `glyph does not fill its ${GLYPH_FILL}px canvas: content is ${glyphBox}. Padding crept back in — ` +
+      `the glyph is trimmed and scaled to the canvas on purpose (see GLYPH_FILL).`,
+  )
 
 // 3) Desktop app icons (all channels, identical today) from the glyph.
 const pngSizes: Record<string, number> = {

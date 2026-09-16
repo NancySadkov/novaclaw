@@ -25,6 +25,12 @@ it from the master lockup on every run, and everything in the channel folders is
 change the icon, edit the master logo and re-run the script — replacing `logo-source-1024.png` by
 hand is overwritten the next time anyone regenerates.
 
+⚠️ **The glyph fills its canvas — no transparent inset.** The run trims the glyph to its content and
+scales it until that content reaches the 1024px canvas edge (a non-square glyph letterboxes on its
+short axis only). It used to sit inside a fixed 928px box, a 48px ring that made every icon ~9%
+smaller than its neighbours; the script now throws if padding reappears. Rebuild the release to see
+the change in a shipped `.exe`.
+
 ⚠️ **These folders are not the only thing the run rewrites.** The same pass regenerates
 `packages/app/public` (in-app logo), `packages/ui/src/assets/favicon` (browser/PWA icons) and
 `packages/ui/src/assets/images` (social banners) from the same master. A partial regeneration that
