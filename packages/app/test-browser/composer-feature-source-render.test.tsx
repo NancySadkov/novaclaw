@@ -37,8 +37,6 @@ const state = (over: Partial<ComposerFeaturesControlState> = {}): ComposerFeatur
   current,
   override: {},
   origin: {},
-  project: undefined,
-  makeDefault: undefined,
   mode: "interactive",
   agent: undefined,
   remote: {

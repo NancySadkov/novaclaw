@@ -72,7 +72,9 @@ function mount(options: { removeFails: boolean }) {
     // does not make the Models row simpler — it makes the row throw.
     enabled: (key: { providerID: string; modelID: string }) =>
       (
-        sync().data.config?.providers as Record<string, { models?: Record<string, { disabled?: boolean }> }> | undefined
+        (sync().data.config as
+          | { providers?: Record<string, { models?: Record<string, { disabled?: boolean }> }> }
+          | undefined)?.providers
       )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
   }
 

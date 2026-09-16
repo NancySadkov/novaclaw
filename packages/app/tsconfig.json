@@ -21,6 +21,13 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "package.json"],
+  // 🔴 `test-browser` is INCLUDED, and that is a correctness fix rather than tidiness (owner,
+  // 2026-09-16: *"so we can move to production testing"*). It used to be `["src", "package.json"]`, so
+  // the browser tier's ~47 files were never typechecked: a stale import there could not fail
+  // `typecheck:app`, and bun simply dropped the FILE — `app:browser` reported **259 pass / 0 fail** while
+  // three live cases had silently vanished (measured while retiring the `novaclaw.json` mechanism). The
+  // arithmetic is what caught it: no browser test file had been deleted, so a count that moved had no
+  // explanation. A tier that can lose a whole file and still say green is not one to take to production.
+  "include": ["src", "test-browser", "package.json"],
   "exclude": ["dist", "ts-dist"]
 }

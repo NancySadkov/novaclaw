@@ -36,10 +36,10 @@ describe("what a bare createResource actually does when its fetcher rejects", ()
     // whenever `resolved` is set. So the spelling that READS as the safe one is not one, and a
     // viewer reaching for `.latest` to avoid a flash of undefined inherits the crash unchanged.
     await createRoot(async (dispose) => {
-      const [resource] = createResource(
+      const [resource] = createResource<string[], number>(
         () => 1,
         () => Promise.reject(new Error("still throws")),
-        { initialValue: [] as string[] },
+        { initialValue: [] },
       )
       await settle()
       expect(() => resource.latest).toThrow("still throws")

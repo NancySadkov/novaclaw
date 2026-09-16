@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { render } from "solid-js/web"
+import type { JSX } from "solid-js"
 import { AppPageHeader } from "@/components/app-page"
 
 /**
@@ -27,8 +28,7 @@ afterEach(() => {
   document.body.innerHTML = ""
 })
 
-function mount(node: () => Element) {
-  const host = document.createElement("div")
+function mount(node: () => JSX.Element) {  const host = document.createElement("div")
   document.body.appendChild(host)
   dispose = render(node as never, host)
   return host.querySelector("[data-component='app-page-header']") as HTMLElement

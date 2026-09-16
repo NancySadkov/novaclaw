@@ -98,7 +98,7 @@ test("the addressable settings screen opens the selected colleague and returns t
     new Response(JSON.stringify({ data: [] }), {
       status: 200,
       headers: { "content-type": "application/json" },
-    })) as typeof fetch
+    })) as unknown as typeof fetch
   restoreFetch = () => {
     ;(globalThis as { fetch: typeof fetch }).fetch = originalFetch
   }
@@ -211,7 +211,7 @@ test("officer order starts in stored config, saves from the keyboard drag handle
     new Response(JSON.stringify({ data: [] }), {
       status: 200,
       headers: { "content-type": "application/json" },
-    })) as typeof fetch
+    })) as unknown as typeof fetch
   restoreFetch = () => {
     ;(globalThis as { fetch: typeof fetch }).fetch = originalFetch
   }

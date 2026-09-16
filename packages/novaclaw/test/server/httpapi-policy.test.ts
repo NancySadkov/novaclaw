@@ -122,26 +122,9 @@ describe("the toggle, through the route Settings actually calls", () => {
     { git: true, config: { formatter: false } },
   )
 
-  it.instance(
   // 🗑️ A case stood here: a folder that DECLARED a policy the user then switched off was reported
   // apart from a policy that was never installed, because the two ask for opposite fixes — install it,
   // or switch it back on — and both refuse every tool call in that folder. A folder can no longer
   // declare a policy at all (owner, 2026-09-16), so the route reports the INSTALLED list and nothing
   // else: `requested`, `missing` and `disabledButRequested` are structurally empty.
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        fs.writeFileSync(
-          path.join(test.directory, "novaclaw.json"),
-          JSON.stringify({ version: 1, policies: ["git-no-pager"] }),
-        )
-        yield* patchConfig(test.directory, { tool_policy: { "git-no-pager": { enabled: false } } })
-
-        const state = yield* read(test.directory)
-        // ⚠️ Reported apart from `missing`, because the fix is the opposite one: switch it back on
-        // rather than go and install something. Both states refuse every tool call in the folder.
-        expect(state.missing).toEqual([])
-        expect(state.disabledButRequested).toEqual(["git-no-pager"])
-      }),
-    { git: true, config: { formatter: false } },
-  )
 })
