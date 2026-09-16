@@ -67,7 +67,7 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // could not fire. `doom_loop` is not a permission at all — the mechanism it named is
 // `session/runner/doom-loop.ts`, an always-on harness floor that injects a redirect, and a switch
 // offering to turn a loop-breaker off is the opposite of "it never breaks in your hands".
-// `question` is principle 14: the chat IS the channel, there is no question tool, and its runtime
+// `question` is principle 13: the chat IS the channel, there is no question tool, and its runtime
 // rules had already gone on 2026-09-01 (`plugin/agent.ts` states the reason) leaving this key as
 // the last residue.
 // ⚠️ The door they came through is now shut from the config side too:

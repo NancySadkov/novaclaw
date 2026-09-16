@@ -6,7 +6,7 @@ export * as ColleagueNote from "./colleague-note"
 //
 // 🔴 **The note is the whole reply channel.** There is no callback, no blocking wait and no second
 // mechanism: the answer travels back the way the question came, as another peer message. That is
-// principle 14 read structurally — *answer immediately, or do not ask* forbids a session that waits
+// principle 13 read structurally — *answer immediately, or do not ask* forbids a session that waits
 // on another party, and two officers waiting on each other is the same defect twice. A message
 // carrying its own return address costs one sentence and cannot strand anybody.
 //
@@ -73,7 +73,7 @@ export const replyNote = (input: {
  * 🔴 **The part no surveyed framework does.** Everyone else refuses the hop and tells the sender; the
  * one participant who can actually dissolve the loop is the agent holding the question it is
  * circling, and nobody informs it. Its chat is a door we already have, so this costs no new
- * mechanism — principle 14 satisfied rather than bent.
+ * mechanism — principle 13 satisfied rather than bent.
  *
  * ⚠️ Deliberately NOT a hand-off. It asks for nothing, so it invites no reply and starts no chain: an
  * amplifier attached to a loop detector would be a poor joke.

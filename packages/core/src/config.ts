@@ -569,15 +569,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
    * this key is how the person at the computer switches one OFF, and it is an override rather than
    * a doorway (principle 12a). Writing `enabled: true` is therefore the same as writing nothing.
    *
-   * ⚠️ **It may never carry anything but a switch, and that is a type-level property.** A policy is
-   * chosen by ID and its behaviour lives in code that was installed; if this struct could carry a
-   * command, a pattern or a script, a config write would become a way to author a new pre-action
-   * guard — which is precisely what `novaclaw.json`'s `policies` section is forbidden from doing
-   * ("IDs of installed policies only — never a command"). The two surfaces name policies; neither
-   * defines one.
-   *
-   * Keyed by `ProjectFile.POLICY_ID_PATTERN`'s grammar — the same ids a `novaclaw.json` may spell
-   * and the same ids a provider may register under, so the three can always name each other.
+    * ⚠️ **It may never carry anything but a switch, and that is a type-level property.** A policy is
+    * chosen by ID and its behaviour lives in code that was installed; if this struct could carry a
+    * command, a pattern or a script, a config write would become a way to author a new pre-action
+    * guard. A config surface may NAME a policy and may never define one.
+    *
+    * Keyed by the same id grammar a provider registers under, so the two can always name each other.
    */
   tool_policy: Schema.Record(
     Schema.String,
@@ -590,7 +587,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .pipe(Schema.optional)
     .annotate({
       description:
-        "Per-policy on/off choices for the installed pre-action policies, keyed by policy id. Absent = the policy runs. A folder's novaclaw.json may opt IN to an installed policy; only this key can switch one off.",
+        "Per-policy on/off choices for the installed pre-action policies, keyed by policy id. Absent = the policy runs. Only this key switches one off; nothing else can opt one in.",
     }),
   commands: Schema.Record(Schema.String, ConfigCommand.Info).pipe(Schema.optional).annotate({
     description: "Named slash command definitions",

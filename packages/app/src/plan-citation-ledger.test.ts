@@ -45,7 +45,7 @@ import { join, relative, resolve } from "node:path"
  * nothing once the file was gone, so deleting the path alone left an orphan mid-sentence. Where the
  * cited passage was a fact's only home the fact was kept and the pointer dropped; where a durable
  * successor existed the citation moved to it (`todo/projects.md` closed into AGENTS.md design
- * principle 13 plus `notes/reports/projects-program-2026-08-18.md`, and several sites now say so).
+ * the durable record `notes/reports/projects-program-2026-08-18.md`, and several sites now say so).
  *
  * ⚠️ **`notes/` and `doc/` are deliberately NOT counted here.** They are the *sanctioned* targets, so
  * counting them would penalise the correct move. They rot too (84 dead against 90 live at the same

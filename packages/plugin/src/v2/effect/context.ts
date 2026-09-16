@@ -30,7 +30,7 @@ import type { AppHooks } from "./app.js"
  * not a declaration, so these three stay in-process capabilities and nothing pretends otherwise.
  *
  * ⚠️ **A contract, not a gate.** `import()` runs a module's scope before anything here is
- * consulted, so nothing in this type constrains hostile code in-process (principle 13). What it buys
+ * consulted, so nothing in this type constrains hostile code in-process (principle 11). What it buys
  * is that a plugin WRITTEN against it keeps working when the host moves out of process, and that the
  * door hands out no callback API for a third party to depend on meanwhile.
  *

@@ -21,7 +21,7 @@ import { makeLocationNode } from "./effect/app-node"
  * ⚠️ **This is prompt-reduction and blast-radius reduction, NOT containment**, and the distinction is
  * the one `permission.ts` draws above `evaluate`: matching a command STRING is best-effort by
  * construction — a variable, a subshell, a here-doc or a `find -exec` is invisible to it, exactly as
- * AGENTS.md design principle 13 records for a path-matching screen. Hard confinement is the
+ * AGENTS.md design principle 11 records for a path-matching screen. Hard confinement is the
  * operator's boundary (Agent Jail). What this buys is that the three or four commands that
  * cannot be undone stop being one hallucinated token away, which is worth having even though a
  * determined injection walks around it.

@@ -11,7 +11,7 @@ import type { Registration } from "./registration.js"
  * exactly one such callback. A declaration is data, so the same contribution can arrive over a
  * transport from a confined process without the plugin being written differently.
  *
- * ⚠️ **A CLOSED op vocabulary, deliberately, and the reason is principle 13's** — *"it may name a
+ * ⚠️ **A CLOSED op vocabulary, deliberately, and the reason is principle 11's** — *"it may name a
  * policy ID and may never carry a command… the closed vocabulary is the security property: an open
  * one is `permissionMode` in a config file with extra steps."* Three ops cover every use in the
  * tree, and a fourth is a decision somebody makes on purpose rather than a callback smuggling

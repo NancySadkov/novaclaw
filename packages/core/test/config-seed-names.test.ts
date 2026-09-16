@@ -12,16 +12,13 @@ const FILENAME = "novaclaw.json"
 import { stripComments } from "./lib/source-scan"
 
 /**
- * 🔴 **No first-boot seed may read a file named `novaclaw.json` — that name belongs to the PROJECT
- * file, and the two carry opposite trust.**
- *
- * `ProjectFile.FILENAME` is `novaclaw.json`: a file that travels inside a repository somebody cloned,
- * which AGENTS.md principle 13 treats as untrusted input that may only NARROW — hide a skill, never
- * un-hide one; raise a rail, never lower it. The first-boot seeds read the instance config dir and
- * treat what they find as the operator's own full configuration: providers, agents, commands,
- * references, skills, settings. Until 2026-09-04 every one of them listed `novaclaw.json` among the
- * names it would read, so ONE filename meant "untrusted, narrow-only" in one directory and
- * "trusted, defines the instance" in another, told apart by nothing but which directory it sat in.
+ * ⚠️ **No first-boot seed reads a file named `novaclaw.json` from the launch directory, and the name
+ * is why.** It was the name a folder’s own declarations travelled under: untrusted input that could
+ * only ever narrow. The seeds read the instance config dir instead and treat what they find there as
+ * the operator’s own full configuration: providers, agents, commands, references, skills, settings.
+ * Until 2026-09-04 every one of them listed `novaclaw.json` among the names it would read, so ONE
+ * filename meant “untrusted, narrow-only” in one directory and “defines the instance” in another,
+ * told apart by nothing but which directory it sat in.
  *
  * ⚠️ **The config dir's ROOT is not behind the pre-emptive plugin-door refusal.** That guard is
  * `pluginDoors(configDir)`, derived from `ConfigPluginGlob.PATTERN`, so it covers

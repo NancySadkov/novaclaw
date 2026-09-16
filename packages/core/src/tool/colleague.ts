@@ -32,7 +32,7 @@ import { Tools } from "./tools"
 // returns. There is deliberately no `wait`: a peer is not a subroutine, and blocking one officer on
 // another's reply is how two colleagues deadlock over a question either could have answered. If the
 // sender needs the answer to continue, it says so in the message and ends its turn — the same rule
-// as principle 14, one level up.
+// as principle 13, one level up.
 
 export const name = "colleague"
 

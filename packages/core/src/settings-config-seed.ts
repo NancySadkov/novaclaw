@@ -103,7 +103,7 @@ export const SETTINGS_KEYS = [
   // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
   // then bricks the next boot when the synthetic document fails to decode.
   "skill_invocation",
-  // Which installed pre-action policies run (AGENTS.md design principle 13). A
+  // Which installed pre-action policies run (AGENTS.md design principle 11). A
   // settings key for `skill_invocation`'s reason: a sparse map of user DECISIONS, not a resource
   // any subsystem materialises, and `tool-policy-gate.ts` reads it through `config.entries()` on
   // every screened call — so there is nothing to invalidate and no reload trigger to register.

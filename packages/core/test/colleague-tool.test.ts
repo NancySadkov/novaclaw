@@ -159,7 +159,7 @@ describe("what the receiver is told about who is asking", () => {
 //
 // The route back exists now — the delivered message carries a return address
 // (`session/colleague-note.ts`) — so the sentence has to do two jobs at once: promise the answer
-// WILL come here, and forbid waiting for it. A turn that stalls on a peer is the defect principle 14
+// WILL come here, and forbid waiting for it. A turn that stalls on a peer is the defect principle 13
 // forbids, and two officers stalling on each other is that defect twice.
 //
 // ⚠️ A source ledger, and it has to be: the behaviour it guards is a model's inference, which no
@@ -195,7 +195,7 @@ describe("a delivered peer message says how to answer it", () => {
     expect(note).toContain("`colleague`")
     expect(note).toContain('op "ask"')
     expect(note).toContain('colleague "doriel"')
-    // …and that nobody is blocked on it: principle 14 is structural, so the note must not read as a
+    // …and that nobody is blocked on it: principle 13 is structural, so the note must not read as a
     // summons the receiver has to drop everything for.
     expect(note).toContain("not waiting")
   })

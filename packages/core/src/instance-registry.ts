@@ -23,8 +23,8 @@ export * as InstanceRegistry from "./instance-registry"
  *
  * ⚠️ **Unknown fields are PRESERVED on rewrite.** A newer NovaClaw may pin things this build has no
  * word for, and a registry that silently dropped them would make "open it in the old build once"
- * destructive. Same rule `project-file.ts` states for `novaclaw.json`, arrived at here first because
- * this file is written by two builds far more often.
+ * destructive. This file is written by two builds far more often than any other, so the rule is
+ * load-bearing here first.
  */
 
 import fs from "node:fs"

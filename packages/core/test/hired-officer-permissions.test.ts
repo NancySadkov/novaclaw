@@ -84,7 +84,7 @@ describe("a colleague the user hired", () => {
       // Three deliberate differences are excluded: `colleague` (an officer may address peers, `build`
       // may not — its own test below), `plan_enter` (a colleague that switched the user's mode under
       // them would be a surprise; the person has a mode picker, and `build` is the agent that picker
-      // drives), and `question` — denied for officers under principle 14, *the chat IS the channel*,
+      // drives), and `question` — denied for officers under principle 13, *the chat IS the channel*,
       // while `build` keeps a grant for an action whose tool no longer exists.
       for (const action of [
         "read",

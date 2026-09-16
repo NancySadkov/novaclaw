@@ -35,7 +35,7 @@ export const Event = Plugin.Event
 /**
  * What a loaded plugin says about itself, for the disclosure surface.
  *
- * `capabilities` is a CLAIM and never a grant — principle 13 is explicit that the plugin contract is
+ * `capabilities` is a CLAIM and never a grant — principle 11 is explicit that the plugin contract is
  * not a gate, because `import()` runs module scope before anything is validated. Its worth is 12(d):
  * a person can be shown what the code in their instance says it needs. `undefined` means the plugin
  * declared nothing, which is a different statement from declaring an empty set and is kept distinct

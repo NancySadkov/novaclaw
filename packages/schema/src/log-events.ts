@@ -1740,7 +1740,7 @@ export const EVENTS = {
    * An external plugin was loaded, and what it DECLARED it needs.
    *
    * ⚠️ The declaration is a claim, never a gate — `import()` has already run the plugin's module
-   * scope by the time it is read (principle 13). This record exists so "what did this third-party
+   * scope by the time it is read (principle 11). This record exists so "what did this third-party
    * code say it wanted" has an answer that is not "read its source".
    *
    * `plugin.capabilities` reports `<undeclared>` and `<none>` as DIFFERENT things: the first is a

@@ -113,7 +113,7 @@ export type ConfigWriter = "operator" | "instance"
  * agent redefinition — neither grants a capability, alters a prompt, nor touches who exists.
  *
  * So the rule is: an in-instance fragment naming Nova may carry these keys and nothing else. Closed
- * rather than "everything except the dangerous ones", for the reason principle 13 gives — an open
+ * rather than "everything except the dangerous ones", for the reason principle 11 gives — an open
  * vocabulary is the charter with extra steps, and an exclusion list is only as good as whoever last
  * imagined the threat. Adding a key here is a security decision, not a convenience: it must not be
  * able to widen what Nova can do or rewrite what Nova is told.

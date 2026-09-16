@@ -18,7 +18,7 @@ import { CommandSpec } from "../command-spec"
  *
  * Distinct from 1 ("the work was attempted and failed") so a provisioning script can tell "you
  * called me wrong" from "authentication was refused" without parsing prose. These leaves used to
- * open a blocking prompt instead, which principle 14 forbids structurally: a headless CLI has
+ * open a blocking prompt instead, which principle 13 forbids structurally: a headless CLI has
  * nobody to answer it, and a killed process's output is discarded, so the operator saw nothing at
  * all. Answer immediately, or do not ask — so we refuse and name what is needed.
  */

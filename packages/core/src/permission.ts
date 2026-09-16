@@ -234,7 +234,7 @@ export type Error = DeniedError
  * So the copy prescribed a remedy the code had removed, and a model that followed it would spend its
  * result telling the user to answer a prompt they will never see.
  *
- * 🔴 **Why the fix is the COPY and not a restored ask.** AGENTS.md principle 14 is structural: *the
+ * 🔴 **Why the fix is the COPY and not a restored ask.** AGENTS.md principle 13 is structural: *the
  * chat IS the channel*, a model that needs a decision ends its turn and says so, and *"do not add a
  * mode that decides whether to block; do not add a timeout and call it safe."* Attendance cannot be
  * inferred either — *"'interactive' describes how a session was CREATED, never whether anyone is
@@ -408,7 +408,7 @@ export function protectedAttachment(
 // ─────────────────────────────────────────────────────────────────────────────
 // THE PLUGIN DOOR (v0.2.0) — an agent may never write where in-process code is loaded from.
 //
-// 🔴 AGENTS.md principle 13's last clause: *"In-process third-party code enters through exactly one
+// 🔴 AGENTS.md principle 11's last clause: *"In-process third-party code enters through exactly one
 // door, the instance config dir's plugin glob, and nothing a user merely cloned may widen it. The
 // plugin contract is not a gate: `import()` runs module scope before anything is validated."*
 // Ruling 5 (`notes/reports/decisions-v0.2.0.md` §5) kept that door open on exactly one condition,
@@ -435,7 +435,7 @@ export function protectedAttachment(
 // false`) and ARE screened here, so `> ~/.config/novaclaw/plugin/x.ts` is refused — but `cp`, a
 // heredoc inside `sh -c`, `python -c`, or `find -exec` are not, and no token scan will make them so.
 // Hard confinement is the operator's boundary (Agent Jail, v0.3.0). This closes the resolved-path
-// seam, which is the seam that exists; claiming more would be the false promise principle 13 names.
+// seam, which is the seam that exists; claiming more would be the false promise principle 11 names.
 //
 // ⚠️ NOR is it a rule about the config directory. NovaClaw's OWN writes there — settings, catalog,
 // the database — are principle 11 location (a) and are the product working; they do not pass through
@@ -708,10 +708,10 @@ export function matchRule(action: string, resource: string, ruleset: Permission.
  * wrong for a layer beneath the operator: appending would hand such a layer a `{"*": "*":
  * "allow"}` past every deny in the install.
  *
- * 🗑️ It was written for the session folder's `novaclaw.json`, the one layer that could only ever
- * narrow, so its rules had to be a CONSTRAINT rather than an append (AGENTS.md principle 13, retired
- * 2026-09-17 with the mechanism). The seam is kept and called with `[]`: the direction is a property
- * of the evaluator, not of that file, so a future narrowing source needs the door, not a rewrite.
+ * 🗑️ It was written for a layer that could only ever NARROW, so its rules had to be a CONSTRAINT
+ * rather than an append; that layer is gone (owner, 2026-09-16). The seam is kept and called with `[]`:
+ * the direction is a property of the evaluator, not of any one caller, so a future narrowing source
+ * needs the door rather than a rewrite.
  *
  * So a constraint can only move the verdict UP the restrictiveness order, and a constraint with no
  * matching rule leaves it untouched.

@@ -8,7 +8,7 @@ export interface Plugin<R = Scope.Scope> {
    * it when the plugin loads, so a person can see what a plugin asked for before trusting it.
    *
    * ⚠️ **A CLAIM, not a gate, and the distinction is the contract.** `import()` runs a plugin's
-   * module scope before anything here is read (AGENTS.md principle 13), so this cannot restrain a
+   * module scope before anything here is read (AGENTS.md principle 11), so this cannot restrain a
    * plugin and must never be described as if it could. It exists so the answer to *what does this
    * thing want* has a source other than reading the code. Omitting it is legitimate and means
    * exactly "declared nothing", which the host reports as such rather than as "needs nothing".

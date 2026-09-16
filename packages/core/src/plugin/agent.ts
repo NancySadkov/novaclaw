@@ -170,7 +170,7 @@ export const floor = (input: {
   // (): six rules over a vocabulary nothing asserts, with this comment reading as a standing
   // prohibition while the file below reversed it four times. Inert either way — no tool means no
   // `evaluate("question", …)` ever happens — so they were removed rather than reconciled. **If a
-  // question tool is ever proposed, principle 14 is the answer, and it is a structural rule, not a
+  // question tool is ever proposed, principle 13 is the answer, and it is a structural rule, not a
   // permission default:** do not add a rule here and consider it handled.
   // DENIED unless this is an officer, which is what keeps the hand-off tool OFF the horizon for
   // agents that may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather

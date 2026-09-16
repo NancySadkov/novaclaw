@@ -87,7 +87,7 @@ describe("instance HttpApi", () => {
    * it needs (12(d)). Until this route existed the declaration reached exactly one place — a log
    * line — and a declaration nobody can read is worth what an undeclared one is.
    *
-   * ⚠️ It is DISCLOSURE, never enforcement: principle 13 is explicit that the plugin contract is not
+   * ⚠️ It is DISCLOSURE, never enforcement: principle 11 is explicit that the plugin contract is not
    * a gate, since `import()` runs module scope before anything is validated. What this asserts is
    * that the claim survives the trip, not that anything is constrained by it.
    */

@@ -124,7 +124,7 @@ export const Plugin = define({
           /**
            * 🔴 **Disclosure, not enforcement, and the log says which.** A third-party plugin's
            * `capabilities` is a CLAIM: `import()` above already ran its module scope, so nothing
-           * here restrains it (principle 13). What this buys is an answer to *what did this thing
+           * here restrains it (principle 11). What this buys is an answer to *what did this thing
            * say it wanted* that does not require reading the plugin's source — recorded at the one
            * point third-party code enters the process.
            *

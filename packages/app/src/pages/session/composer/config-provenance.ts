@@ -2,8 +2,8 @@ import type { ComposerFeatureOrigin } from "@/components/composer"
 import type { SessionFeatureName } from "@/utils/fs-api"
 
 /**
- * Turn `GET /api/session/:id/config` into the two things the Tuning panel needs: per switch, WHERE
- * its value came from, and what this folder's project file contributed.
+ * Turn `GET /api/session/:id/config` into what the Tuning panel needs: per switch, WHERE its value
+ * came from.
  *
  * ⚠️ Extracted from the controller rather than left inline, because it is the only part of this
  * feature that can be got wrong quietly. The panel renders whatever it is handed; a mapping that
@@ -36,7 +36,7 @@ export const FEATURE_NAMES: readonly SessionFeatureName[] = [
 export interface ResolvedConfigLike {
   readonly fields?: Record<
     string,
-    { readonly value?: unknown; readonly origin?: string; readonly source?: { kind: string; file?: string } }
+    { readonly value?: unknown; readonly origin?: string; readonly source?: { kind: string } }
   >
 }
 
@@ -66,19 +66,13 @@ export const featureOrigins = (
   return out
 }
 
-// 🗑️ `projectLayer` stood here: the folder's own `novaclaw.json`, for the panel to name as the layer
-// beneath the chat. It went with the mechanism (owner, 2026-09-16), and with it the whole DRAFT
-// half of this module that followed — `DiscoveredProjectLike`, `governing`, `draftStances`,
-// `draftOrigins` and `draftProjectLayer`, which read `GET /api/project` to fill the Tuning panel for
-// a chat that does not exist yet. A draft has nothing beneath it now, so the panel's provenance is
-// the instance's.
 /**
  * The kernel's own RESOLVED value for each switch.
  *
- * 🔴 **The panel was showing a different answer from the one the turn runs with, and the folder
- * layer is why.** The browser re-derives a baseline per switch from the instance config
- * (`featureState`), which is a second copy of a rule the kernel owns — and it cannot see a folder's
- * `novaclaw.json` at all. Measured live 2026-08-13 against a session in a folder setting
+ * ⚠️ **The panel used to show a different answer from the one the turn runs with.** The browser
+ * re-derives a baseline per switch from the instance config (`featureState`), which is a second copy
+ * of a rule the kernel owns, and the two disagreed as soon as a layer the browser could not see moved
+ * a value. Measured live 2026-08-13 against a session in a folder setting
  * `safeMode: true, memory: false`: the toggles read Off and On, the exact inverse of what the runner
  * resolved, with the provenance line underneath naming the very file that had set them. A control
  * that contradicts the sentence beneath it is worse than one that says nothing.
@@ -119,37 +113,3 @@ export const switchStance = (input: {
 }): boolean => input.own ?? input.kernel ?? input.instance
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// THE DRAFT HALF — the same three answers, for a chat that has no id yet
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * 🔴 **A draft's switches showed the INSTANCE stance for a folder that had already decided.**
- * Measured 2026-08-19 in dev Electron: a draft in a folder whose `novaclaw.json` declares
- * `quality: true` rendered *"Quality gates … Using Settings default: Off"*, while a real session in
- * that same folder resolves `quality: {value: true, source: {kind:"project"}}`. The sentence above
- * the switches had already been fixed to name the folder's file, so one panel made two
- * contradictory statements about one folder — which is worse than the original silence.
- *
- * `GET /api/project` now carries the kernel's own fold for the folder (`tune`), so the draft path
- * below is the same shape as the session path above: read what the server resolved, and render it.
- *
- * ⚠️ **Nothing here folds anything.** The temptation is to take the file's declared tune and apply
- * it over the browser's baseline. That is the mistake this module's header exists to prevent, and
- * `narrowTune` makes it a security rule rather than a display rule: a folder may raise a
- * supervision switch and may never lower one. The client's job is to render the kernel's answer.
- *
- * ⚠️ `tune` is OPTIONAL. An instance older than that field answers without it, and the honest
- * degrade is to claim nothing — the panel falls back to its instance wording, which is where this
- * started, rather than to a confident "off".
- */
-export interface DiscoveredProjectLike {
-  readonly kind: string
-  readonly root?: string
-  readonly file?: string
-  readonly tune?: {
-    readonly features?: Readonly<Record<string, boolean>>
-    readonly applied?: readonly string[]
-    readonly refused?: readonly string[]
-    readonly deferred?: readonly string[]
-  }
-}

@@ -35,7 +35,7 @@ export const dict = {
   "files.restoreFailed": "Couldn’t restore",
 
   // ─────────────────────────────────────────────────────────────────────────────────────────────
-  // The Project a folder's `novaclaw.json` declares, said in Chats and in Files.
+  // The Project a folder is — its location identity — said in Chats and in Files.
   //
   // The rule: *"never make a person infer project state from a hidden dotfile."* Settings
   // → General and the composer's Tune panel already say it; these two blocks are the same facts
@@ -374,7 +374,7 @@ export const dict = {
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
   "prompt.features.source.inherit": "Using Settings default: {{state}}",
   "prompt.features.source.parent": "Inherited from the chat that started this one: {{state}}",
-  "prompt.project.title": "This folder's project file",
+  "prompt.project.title": "This folder's project",
   "prompt.project.applied": "It sets: {{list}}",
   "prompt.project.refused":
     "It asked for, and did not get: {{list}}. A project file can turn a safety control on, never off.",
@@ -1575,7 +1575,7 @@ export const dict = {
   "policies.hint":
     "These are installed with NovaClaw, not written here — a folder can ask for one by name below, and no file can ever add a command of its own.",
   "policies.row.describes": "It says: “{{describe}}”",
-  "policies.row.optIn": "Only runs in folders whose novaclaw.json asks for it by name.",
+  "policies.row.optIn": "Only runs where something opts in by name; nothing can any more, so it stays off.",
   "policies.row.advisory": "Advisory: if it stops answering, your tool call still runs.",
   "policies.row.safetyCritical": "If it stops answering, tool calls are refused until it does — on purpose.",
   "policies.row.off": "Switched off — it is not consulted at all.",

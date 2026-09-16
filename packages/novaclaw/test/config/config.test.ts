@@ -141,12 +141,9 @@ const writeManagedSettingsEffect = (settings: object, filename?: string) =>
 
 /**
  * ⚠️ `name` is REQUIRED, and the missing default is the point. It used to default to
- * `novaclaw.json` while this helper served both the GLOBAL config dir and a PROJECT directory — two
- * places where that filename means opposite things. When the first-boot seeds stopped reading
- * `novaclaw.json` on 2026-09-04 (it is `ProjectFile.FILENAME`, untrusted narrow-only input under
- * principle 13), the global-dir tests silently stopped writing a file the reader would look at, and
- * one of them failed for a reason that had nothing to do with what it asserts. Making the caller
- * name the file means the next author picks a side rather than inheriting one.
+ * `novaclaw.json` while this helper served both the GLOBAL config dir and a launch directory - two
+ * places where that filename meant opposite things. Making the caller name the file means the next
+ * author picks a side rather than inheriting one.
  */
 const writeConfigEffect = (dir: string, config: object, name: string) =>
   FSUtil.use.writeWithDirs(path.join(dir, name), JSON.stringify(config))

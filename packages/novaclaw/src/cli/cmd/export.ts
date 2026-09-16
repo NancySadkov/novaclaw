@@ -218,7 +218,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
   // 🔴 REQUIRED, not prompted. Without an id this used to open an autocomplete over the instance's
   // sessions and wait — on a surface that runs in CI, in a scheduled agent and inside a `Bash` tool
   // call, where nobody is watching and a killed process's output is discarded. Principle 7 makes the
-  // CLI headless; principle 14 says the chat is the channel, not a terminal prompt. So it refuses
+  // CLI headless; principle 13 says the chat is the channel, not a terminal prompt. So it refuses
   // and says what to pass, which is the pattern `run.ts` already uses for its permission flag.
   if (!sessionID) return yield* fail("Pass a session id: nova-cli export <sessionID>", 2)
 
