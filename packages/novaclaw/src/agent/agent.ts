@@ -25,6 +25,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { AbsolutePath, type DeepMutable } from "@novaclaw/core/schema"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
+import { ModelTaxonomy } from "@novaclaw/core/model-taxonomy"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
@@ -462,9 +463,16 @@ export const layer = Layer.effect(
                 (m) => m.providerID === input.model!.providerID && m.id === input.model!.modelID,
               )
             : yield* Effect.gen(function* () {
+                // ⚠️ `default()`'s own fabricated fallback already skips `special`, so a `preferred`
+                // that IS special can only be one the user STORED — an explicit choice. The last
+                // resort below chooses FOR them, so it asks `ModelTaxonomy.autoSelectable` too; this
+                // is the second door onto automatic selection and it had the same defect as
+                // `selectSnapshot`'s (`session/runner/model.ts`).
                 const preferred = yield* catalog.model.default()
                 if (preferred && SessionRunnerModel.supported(preferred)) return preferred
-                return (yield* catalog.model.available()).find(SessionRunnerModel.supported)
+                return (yield* catalog.model.available()).find(
+                  (model) => ModelTaxonomy.autoSelectable(model) && SessionRunnerModel.supported(model),
+                )
               })
           if (!selected)
             return yield* new ModelUnconfiguredError({

@@ -4,6 +4,7 @@ import { makeLocationNode } from "./effect/app-node"
 import { Array, Context, Effect, Layer, Option, Order, pipe, Schema } from "effect"
 import { Catalog } from "@novaclaw/schema/catalog"
 import { ModelV2 } from "./model"
+import { ModelTaxonomy } from "./model-taxonomy"
 import { ProviderV2 } from "./provider"
 import { EventV2 } from "./event"
 import { Policy } from "./policy"
@@ -222,9 +223,17 @@ export const layer = Layer.effect(
             }
           }
 
+          // 🔴 The FABRICATED arm, and it is an AUTOMATIC pick — so it may not land on a model the
+          // user rated `special` (`ModelTaxonomy.autoSelectable`). The arm above is different: a
+          // STORED default is the user's own choice, so it is returned whatever its class, which is
+          // exactly the "unless agent settings explicitly pick it" exception.
+          //
+          // ⚠️ Without this the whole `special` guarantee leaks through the most ordinary door in the
+          // product: on a fresh install nothing sets the default, so this fallback runs on every first
+          // turn, and "the newest released model" is as likely to be a test model as any other.
           return Option.getOrUndefined(
             pipe(
-              yield* result.model.available(),
+              (yield* result.model.available()).filter(ModelTaxonomy.autoSelectable),
               Array.sortWith((item) => item.time.released, Order.flip(Order.Number)),
               Array.head,
             ),

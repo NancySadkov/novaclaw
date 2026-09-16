@@ -257,6 +257,37 @@ describe("CatalogV2", () => {
     }),
   )
 
+  it.effect("never FABRICATES a special model as the default, but honours a STORED one", () =>
+    Effect.gen(function* () {
+      // 🔴 The most ordinary door in the product, and the one a `special` guarantee is most likely to
+      // leak through: on a fresh install nothing sets the default, so this fallback runs on the first
+      // turn of every instance. "The newest released model" is as likely to be a test model as any
+      // other, and a Special model is one the user has said the harness must not pick by itself.
+      const catalog = yield* Catalog.Service
+      const providerID = ProviderV2.ID.make("test")
+      const special = ModelV2.ID.make("test-model")
+      yield* catalog.transform((catalog) => {
+        catalog.provider.update(providerID, () => {})
+        catalog.model.update(providerID, ModelV2.ID.make("usable"), (model) => {
+          model.time.released = 1000
+        })
+        catalog.model.update(providerID, special, (model) => {
+          model.taxonomy = "special"
+          // NEWER than the usable one, so only the class can keep it out.
+          model.time.released = 2000
+        })
+      })
+
+      expect((yield* catalog.model.default())?.id).toMatch(/^usable$/)
+
+      // ⚠️ The other arm is deliberately unchanged: a default the USER stored is an explicit choice,
+      // which is exactly the "unless agent settings explicitly pick it" exception. Returning the
+      // usable model here would let the class silently override the user's own pick.
+      yield* catalog.transform((catalog) => catalog.model.default.set(providerID, special))
+      expect((yield* catalog.model.default())?.id).toMatch(/^test-model$/)
+    }),
+  )
+
   it.effect("uses a transform-provided default model until that transform is replaced", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
