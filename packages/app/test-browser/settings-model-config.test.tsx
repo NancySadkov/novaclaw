@@ -232,6 +232,16 @@ test("every field's explanation is behind a `?` beside its NAME, not a paragraph
   for (const title of rows) expect(title.querySelector('[data-slot="settings-explain"]')).not.toBeNull()
   // And the inline paragraph is gone from every row of this screen.
   expect(document.querySelectorAll('[data-slot="settings-v2-row-description"]')).toHaveLength(0)
+
+  // 🔴 And the `?` actually CARRIES the text, on the real screen rather than in the primitive's own
+  // test: the row's short `desc` and its `desc.more` both had to arrive at the same popover.
+  const first = document.querySelector<HTMLElement>('[data-slot="settings-explain"]')!
+  expect(first.getAttribute("aria-label")).toBe("Connection name (optional)")
+  first.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true, pointerId: 1, pointerType: "mouse" }))
+  await settle()
+  const panel = document.querySelector<HTMLElement>('[data-component="info-popover-v2"]')
+  expect(panel?.textContent).toContain("A concise name shown in Nova.")
+  expect(panel?.textContent).toContain("Leave it blank to identify this connection by its serving URL.")
 })
 
 test("device concurrency round-trips through the endpoint's Device entry", async () => {
