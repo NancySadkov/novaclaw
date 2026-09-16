@@ -1,22 +1,25 @@
 import { Persona } from "@novaclaw/core/persona"
+import { ContextTemplate } from "@novaclaw/core/session/context-template"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
-import { type Component } from "solid-js"
+import { For, Show, type Component } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
+import { SLOT_ORIGIN } from "./context-layout"
 
-// B4 — the System Prompt settings tab. Exposes the composed prompt's EDITABLE
-// layers: (1) the role-neutral B3 approach baseline; (2) project instructions —
-// the `instructions[]` paths/URLs
-// already honored by the runtime, surfaced here. (The user profile lives in its
-// own Profile tab now — it's delivered on demand via the `profile` tool, not
-// injected here.) The shipped base stays immutable: editing here writes CONFIG
-// overrides (persona.prompt replaces at compose time; clearing the field
-// restores the canonical default). Persisting MUST go through updateConfig.
+// B4 — the System Prompt settings tab, and (owner, 2026-09-16) the ONE place the prompt LAYOUT is
+// legible. It exposes the composed prompt's editable layers — the role-neutral persona baseline — and
+// renders `ContextTemplate.SLOTS` in order, so "where does everything go" is answered by the screen
+// instead of by reading five files.
+//
+// ⚠️ The layout table is IMPORTED from the kernel, never transcribed. A hand-written copy of the block
+// list in the client is the defect this page exists to end (`SystemAccounting.BLOCKS` was one, and it
+// had already gone stale), and `context-template.ts` is a pure table with no imports, so rendering it
+// here costs the client nothing and cannot drift.
 
 interface PersonaConfig {
   enabled?: boolean
@@ -36,6 +39,15 @@ interface PersonaConfig {
  */
 const defaultPersonaPrompt = Persona.defaultPrompt
 
+/**
+ * `placement` is optional PER SLOT, so the kernel's array is a tuple in which the member without it
+ * has no such property — reading `slot.placement` on the union is a type error, and `as` at the call
+ * site would hide a genuine rename. This one accessor is the whole cost of keeping the field optional
+ * where it belongs.
+ */
+const placementOf = (slot: (typeof ContextTemplate.SLOTS)[number]): string | undefined =>
+  "placement" in slot ? (slot.placement as string | undefined) : undefined
+
 export const SettingsSystemPromptV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
@@ -43,10 +55,8 @@ export const SettingsSystemPromptV2: Component = () => {
   const config = () =>
     serverSync().data.config as {
       persona?: PersonaConfig
-      instructions?: string[]
     }
   const persona = (): PersonaConfig => config().persona ?? {}
-  const instructions = (): string[] => config().instructions ?? []
 
   const failed = (error: unknown) =>
     showToast({
@@ -55,9 +65,8 @@ export const SettingsSystemPromptV2: Component = () => {
       description: error instanceof Error ? error.message : String(error),
     })
 
-  // updateGlobal patch-MERGES records (cleared string fields persist as "" — the
-  // resolvers treat empty as use-the-default), while ARRAYS replace wholesale
-  // (patchJsonc), which is exactly what the instructions editor needs.
+  // updateGlobal patch-MERGES records (cleared string fields persist as "" — the resolvers treat empty
+  // as use-the-default).
   async function persistPersona(patch: Partial<PersonaConfig>) {
     const next = { ...persona(), ...patch }
     await serverSync()
@@ -65,11 +74,7 @@ export const SettingsSystemPromptV2: Component = () => {
       .catch(failed)
   }
 
-  async function persistInstructions(lines: string[]) {
-    await serverSync()
-      .updateConfig({ instructions: lines } as never)
-      .catch(failed)
-  }
+  const slotLabel = (name: string) => language.t(`settings.contextLayout.slot.${name}` as never) || name
 
   return (
     <>
@@ -84,14 +89,7 @@ export const SettingsSystemPromptV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.systemPrompt.persona.enabled.title")}
-              description={
-                <>
-                  {language.t("settings.systemPrompt.persona.enabled.description")}
-                  <SettingsExplainV2 label={language.t("settings.systemPrompt.persona.enabled.title")}>
-                    {language.t("settings.systemPrompt.persona.enabled.description.more")}
-                  </SettingsExplainV2>
-                </>
-              }
+              info={language.t("settings.systemPrompt.persona.enabled.description.more")}
             >
               <Switch
                 checked={persona().enabled !== false}
@@ -115,25 +113,46 @@ export const SettingsSystemPromptV2: Component = () => {
           />
         </div>
 
-        <div class="settings-v2-section">
-          <h3 class="settings-v2-section-title">{language.t("settings.systemPrompt.instructions.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.systemPrompt.instructions.description")}</p>
-          <TextareaV2
-            class="settings-v2-textarea"
-            rows={3}
-            value={instructions().join("\n")}
-            placeholder={language.t("settings.systemPrompt.instructions.placeholder")}
-            spellcheck={false}
-            onChange={(event) =>
-              void persistInstructions(
-                event.currentTarget.value
-                  .split("\n")
-                  .map((line) => line.trim())
-                  .filter((line) => line.length > 0),
-              )
-            }
-            aria-label={language.t("settings.systemPrompt.instructions.title")}
-          />
+        {/*
+          🔴 THE LAYOUT (owner, 2026-09-16: *"clearly exposing the layout in UI, while allowing user to
+          both view and edit it"*). It is the kernel's own table, in order, with the two facts a reader
+          cannot get from anywhere else today: WHERE each part comes from, and HOW LONG it survives.
+        */}
+        <div class="settings-v2-section" data-component="settings-context-layout">
+          <h3 class="settings-v2-section-title">{language.t("settings.contextLayout.title")}</h3>
+          <p class="settings-v2-field-description">
+            {language.t("settings.contextLayout.description", { count: String(ContextTemplate.SLOTS.length) })}
+            <SettingsExplainV2 label={language.t("settings.contextLayout.title")}>
+              {language.t("settings.contextLayout.description.more")}
+            </SettingsExplainV2>
+          </p>
+
+          <SettingsListV2>
+            <For each={ContextTemplate.SLOTS}>
+              {(slot) => (
+                <SettingsRowV2
+                  title={slotLabel(slot.name)}
+                  info={
+                    <>
+                      {slot.purpose}
+                      <Show when={placementOf(slot)}>{(placement) => <> {placement()}</>}</Show>
+                      <span class="block mt-1 text-[11px] text-v2-text-text-faint">
+                        {language.t(`settings.contextLayout.channel.${slot.channel}` as never)} ·{" "}
+                        {language.t(`settings.contextLayout.volatility.${slot.volatility}` as never)}
+                      </span>
+                    </>
+                  }
+                >
+                  <span
+                    class="text-[11px] text-v2-text-text-muted"
+                    data-slot-origin={SLOT_ORIGIN[slot.name] ?? "auto"}
+                  >
+                    {language.t(`settings.contextLayout.origin.${SLOT_ORIGIN[slot.name] ?? "auto"}` as never)}
+                  </span>
+                </SettingsRowV2>
+              )}
+            </For>
+          </SettingsListV2>
         </div>
       </div>
     </>

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { ContextTemplate } from "./context-template"
 import { SystemAccounting } from "./runner/system-accounting"
 
@@ -130,6 +131,72 @@ describe("ContextTemplate — the tail builder", () => {
     // "absent" the builder knows, so a caller that must not send an empty message says so by passing
     // `undefined` — one rule per layer, both stated.
     expect(ContextTemplate.tailMessages({ todoReminder: "" })).toEqual([""])
+  })
+})
+
+describe("ContextTemplate — DETERMINISM: static arguments, static results", () => {
+  /**
+   * 🔴 Owner, 2026-09-16: *"please ensure that the template given static arguments, gives static
+   * results - i.e. it is deterministic and respects the prefix cache."*
+   *
+   * This is not a nicety about tidy code. The prefix cache is decided by BYTES: a directive that
+   * composes in a different order, or reads a clock, or picks up an environment variable, silently
+   * changes the request's prefix and pays a full re-prefill of the history behind it — measured once at
+   * 0.3s → 12.9s to first token. Nothing about that failure is visible in a passing test that only
+   * checks content, so the determinism is asserted directly.
+   */
+
+  test("the same arguments produce byte-identical output, every time", () => {
+    const parts = { persona: "P", agentSystem: "J", base: "B", goal: "G" }
+    const once = JSON.stringify(ContextTemplate.systemBlocks(parts))
+    const twice = JSON.stringify(ContextTemplate.systemBlocks(parts))
+    expect(once).toBe(twice)
+    expect(ContextTemplate.composedBlocks(parts)).toEqual(ContextTemplate.composedBlocks(parts))
+    expect(ContextTemplate.describe()).toBe(ContextTemplate.describe())
+  })
+
+  test("🔴 the ORDER comes from the table, never from the argument object's key order", () => {
+    // The failure this prevents: composing from `Object.entries(parts)` would make the prompt's order
+    // depend on the order keys were SET, which differs between a test, a config walk and a reload — so
+    // the same logical prompt would be a different prefix in different processes. The table decides, so
+    // two objects with the same content and different insertion orders must be byte-identical.
+    const a = ContextTemplate.composedBlocks({ persona: "P", base: "B", goal: "G" })
+    const b = ContextTemplate.composedBlocks({ goal: "G", base: "B", persona: "P" })
+    expect(a).toEqual(b)
+    expect(JSON.stringify(ContextTemplate.systemBlocks({ persona: "P", base: "B" }))).toBe(
+      JSON.stringify(ContextTemplate.systemBlocks({ base: "B", persona: "P" })),
+    )
+  })
+
+  test("the tail is assembled from the table too, so its order cannot depend on insertion order", () => {
+    const a = ContextTemplate.tailMessages({ maxSteps: 5, memoryRecall: 2, todoReminder: 3 })
+    const b = ContextTemplate.tailMessages({ todoReminder: 3, memoryRecall: 2, maxSteps: 5 })
+    expect(a).toEqual(b)
+    expect(a).toEqual([2, 3, 5])
+  })
+
+  test("🔴 PURITY, as a source ratchet: the module reads nothing but its argument", () => {
+    // A pass-through design boundary, not a style rule: any of these would make a "static argument"
+    // produce a different request on the next call, and the diff would be invisible in a content
+    // assertion. The check is on the SOURCE because the failure is one import away, in a file whose
+    // tests would still pass.
+    const source = readFileSync(new URL("./context-template.ts", import.meta.url), "utf8")
+    for (const impure of [
+      "Date.now",
+      "new Date",
+      "Math.random",
+      "performance.now",
+      "process.env",
+      "crypto.randomUUID",
+      "randomUUID",
+      "setTimeout",
+      "await ",
+      "fetch(",
+      "readFileSync",
+    ])
+      expect(source.includes(impure), `context-template.ts must not use ${impure}`).toBe(false)
+    // And it imports NOTHING at all: no service, no clock, no filesystem. A pure table + pure helpers.
+    expect(source).not.toMatch(/^import /m)
   })
 })
 
