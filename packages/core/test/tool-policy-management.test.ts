@@ -253,56 +253,13 @@ describe("the switch, driven through a real tool call", () => {
   })
 })
 
-describe("a folder that declared a policy the user then switched off", () => {
-  test("🔴 is REFUSED, and the refusal names the switch rather than telling the model to install something", async () => {
-    const message = await withHarness(
-      ({ registry, gate, settings }) =>
-        Effect.gen(function* () {
-          yield* gate.install([provider("opt-in-guard", { type: "allow" }, { alwaysOn: false })]).pipe(Effect.orDie)
-          yield* settings.set("tool_policy", { "opt-in-guard": { enabled: false } })
-          const settlement = yield* call(registry, "hello")
-          return resultText(settlement.result)
-        }).pipe(Effect.scoped),
-      { project: { version: 1, policies: ["opt-in-guard"] } },
-    )
-    // The direction is fail-closed, exactly as for a policy that was never installed: a folder that
-    // asked for a guard and did not get one is refused rather than run unpoliced.
-    expect(message).toContain("Refused before running")
-    expect(message).toContain("opt-in-guard")
-    // 🔴 The two reasons get DIFFERENT sentences. "Install it" and "switch it back on" are opposite
-    // actions, and a model told the wrong one spends the rest of the turn on it.
-    expect(message).toContain("switched OFF in Settings")
-    expect(message).not.toContain("not installed in this NovaClaw")
-    // And it says who can fix it, because the session provably cannot.
-    expect(message).toContain("Only the person at this computer")
-  })
+// 🗑️ `describe("a folder that declared a policy the user then switched off")` stood here. Its subject was the folder's `novaclaw.json`, retired
+// 2026-09-16 (owner: *"Please ensure it is gone for good."*). The cases are deleted rather than
+// re-pinned because every one of them asserts a behaviour that no longer exists: the mechanism they
+// measured was removed, not changed. The programme and the cost are in `todo/retire-project-file.md`
+// (plan repo); the surviving halves — the instance `skill_invocation` store, the always-on policy
+// providers, the plain `AGENTS.md` walk — are covered by the other suites in this file.
 
-  test("a policy nobody's folder declared simply stops being consulted — no refusal", async () => {
-    const text = await withHarness(({ registry, gate, settings }) =>
-      Effect.gen(function* () {
-        yield* gate.install([provider("blocker", { type: "deny", reason: "no" })]).pipe(Effect.orDie)
-        yield* settings.set("tool_policy", { blocker: { enabled: false } })
-        const settlement = yield* call(registry, "hello")
-        return resultText(settlement.result)
-      }).pipe(Effect.scoped),
-    )
-    expect(text).toBe("ran: hello")
-  })
-
-  test("a folder naming a policy that was never installed still gets the OTHER refusal", async () => {
-    const message = await withHarness(
-      ({ registry, gate }) =>
-        Effect.gen(function* () {
-          yield* gate.install([provider("present", { type: "allow" })]).pipe(Effect.orDie)
-          const settlement = yield* call(registry, "hello")
-          return resultText(settlement.result)
-        }).pipe(Effect.scoped),
-      { project: { version: 1, policies: ["absent"] } },
-    )
-    expect(message).toContain("not installed in this NovaClaw")
-    expect(message).not.toContain("switched OFF in Settings")
-  })
-})
 
 /**
  * ``: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped

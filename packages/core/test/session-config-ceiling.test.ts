@@ -66,12 +66,13 @@ describe("the memory ceiling", () => {
     // still correct. What this test is about is that the clamp WRAPS the resolve, so that is what it
     // reads.
     const source = fs.readFileSync(path.join(SRC, "session", "effective-config.ts"), "utf8")
-    expect(source).toMatch(/ProjectDefaults\.fold\(/)
-    // A project-file fault may strengthen the folded defaults before the chain walk, so pin the
-    // intermediate layer's provenance as well as the nesting: clamp(resolve(guardedDefaults, …)).
-    // The resolve is still the clamp ARGUMENT, so an explicit `true` cannot climb over the ceiling.
-    expect(source).toMatch(/guardedDefaults\s*=\s*[^;]*folded\.defaults/)
-    expect(source).toMatch(/clampToCeilings\(\s*resolve(SessionConfig|Config)\(\s*guardedDefaults/)
+    // 🗑️ RE-PINNED 2026-09-16. The claim is unchanged — the clamp WRAPS the resolve, so an explicit
+    // `true` cannot climb over the ceiling — but the fold it used to name (`ProjectDefaults.fold`, the
+    // folder's tune, preceded by a fault that strengthened the defaults) is gone with the
+    // `novaclaw.json` mechanism. What survives is the colleague's fold under the same name, and the
+    // nesting is still the property being asserted: `clampToCeilings(resolveConfig(defaults, chain))`.
+    expect(source).toMatch(/const defaults = AgentDefaults\.fold\(/)
+    expect(source).toMatch(/clampToCeilings\(\s*resolveConfig\(\s*defaults/)
   })
 
   test("no reader re-applies the ceiling by hand", () => {

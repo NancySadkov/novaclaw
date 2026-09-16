@@ -39,7 +39,12 @@ import { ColleagueTool } from "./colleague"
 import { SpawnTool } from "./spawn"
 import * as CommunityTool from "./deferred/community.gen"
 import { ExitTool } from "./exit"
-import { DurableTool } from "./durable"
+// ⚠️ The GENERATED schema-only modules, never `./durable-set` / `./durable-clear` themselves: the whole
+// point of a deferred registration is that the worker graph never imports the implementation. Importing
+// the tool file here made `tool-deferred-manifest.test.ts`'s "a fresh worker graph evaluates no deferred
+// implementation" red, which is exactly what that test is for.
+import * as DurableClearTool from "./deferred/durable-clear.gen"
+import * as DurableSetTool from "./deferred/durable-set.gen"
 import { WaitTool } from "./wait"
 import { KillTool } from "./kill"
 import { WriteTool } from "./write"
@@ -60,7 +65,8 @@ export const node = makeLocationNode({
     JsTool.node,
     LogTool.node,
     DbRegistryTool.node,
-    DurableTool.node,
+    DurableClearTool.node,
+    DurableSetTool.node,
     MessengerTool.node,
     NudgeTool.node,
     PermissionTool.node,

@@ -42,9 +42,7 @@ import { Tools } from "./tools"
  * invariant — see `component-registry.ts`'s `DurablePrompt` — not an implementation detail.
  */
 
-export const name = "durable_set"
-
-const SetInput = Schema.Struct({
+export const SetInput = Schema.Struct({
   name: Schema.String.annotate({
     description: `The item's short name — at most ${Durable.DURABLE_NAME_MAX} characters, one line. Reusing a name replaces that item.`,
   }),
@@ -54,12 +52,12 @@ const SetInput = Schema.Struct({
 })
 export type SetInput = typeof SetInput.Type
 
-const ClearInput = Schema.Struct({
+export const ClearInput = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the item to clear." }),
 })
 export type ClearInput = typeof ClearInput.Type
 
-const Output = Schema.Struct({ message: Schema.String })
+export const Output = Schema.Struct({ message: Schema.String })
 export type Output = typeof Output.Type
 
 /** Yieldable, exactly as `tool/session.ts` does it: an Effect generator can `yield*` this error. */
@@ -88,7 +86,7 @@ const describeArea = (items: readonly Durable.Item[]): string =>
  * (`tool/kill.ts` holds `ColleagueHandoff.Service` this way), and it also makes the captured instance
  * the one the location graph actually provided.
  */
-interface Deps {
+export interface Deps {
   readonly components: SessionComponentRegistry.Interface
   readonly permission: PermissionV2.Interface
 }
@@ -123,7 +121,7 @@ const charge = (deps: Deps, context: Tool.Context, operation: string) =>
     })
   })
 
-const set = (deps: Deps, input: SetInput, context: Tool.Context) =>
+export const setDurable = (deps: Deps, input: SetInput, context: Tool.Context) =>
   Effect.gen(function* () {
     const components = deps.components
     const ctx = context
@@ -167,7 +165,7 @@ const set = (deps: Deps, input: SetInput, context: Tool.Context) =>
     }
   })
 
-const clear = (deps: Deps, input: ClearInput, context: Tool.Context) =>
+export const clearDurable = (deps: Deps, input: ClearInput, context: Tool.Context) =>
   Effect.gen(function* () {
     const components = deps.components
     const ctx = context
@@ -205,7 +203,7 @@ const clear = (deps: Deps, input: ClearInput, context: Tool.Context) =>
  * place a denial becomes a sentence, so this delegates rather than re-wording it — and says WHAT is
  * unchanged, because "denied" alone leaves the colleague unsure whether its note was half-written.
  */
-const toFailure = (error: unknown): ToolFailure => {
+export const toFailure = (error: unknown): ToolFailure => {
   if (error instanceof ToolFailure) return error
   const denial = PermissionV2.denialMessage(error)
   if (denial) return failure(`Durable area unchanged. ${denial}`)
@@ -214,61 +212,10 @@ const toFailure = (error: unknown): ToolFailure => {
   return failure(error instanceof Error ? error.message : String(error))
 }
 
-export const layer = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const tools = yield* Tools.Service
-    const components = yield* SessionComponentRegistry.Service
-    const permission = yield* PermissionV2.Service
-    const deps: Deps = { components, permission }
-
-    const setTool = Tool.make({
-      description:
-        "Keep a short named item in this session's durable area: a place for the handful of facts that must " +
-        "survive a context rewrite (a path that matters, a decision already made, what the user is waiting " +
-        `for). The area holds at most ${Durable.DURABLE_ITEMS_MAX} items and is rebuilt into your system ` +
-        "prompt after each compaction, so a write here reaches the prompt from the next rewrite onwards — read " +
-        "it back sooner with the `session` tool (`kind: \"durable\"`). Reusing a name replaces that item. " +
-        "Nothing is evicted for you: clear what you no longer need with `durable_clear`.",
-      input: SetInput,
-      output: Output,
-      toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-      execute: (input, context) => set(deps, input, context).pipe(Effect.mapError(toFailure)),
-    })
-
-    const clearTool = Tool.make({
-      description:
-        "Remove one item from this session's durable area by name. Nothing is evicted automatically, so this is " +
-        "how room is made once the area is full. The item leaves the shadow immediately; the block in your " +
-        "system prompt drops it at the next compaction.",
-      input: ClearInput,
-      output: Output,
-      toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-      execute: (input, context) => clear(deps, input, context).pipe(Effect.mapError(toFailure)),
-    })
-
-    /**
-     * 🔴 DEFERRED, and the byte ratchet in `test/location-layer.test.ts` is why the question got asked
-     * rather than assumed. A resident schema is paid on every turn of every session forever; deferred
-     * costs one `tool_search` round-trip in the sessions that need it.
-     *
-     * *Which is this?* Occasional, like `log` and `community`: a colleague keeps a durable item when
-     * something happens worth keeping — a decision made, a path it must not lose — not every turn. That
-     * is the criterion the ratchet's own list states, and their only sibling (`session`, the generic
-     * component tool) is deferred for the same reason. What replaces residency is the hint: the
-     * `#DURABLE` block itself names both tools, so a session that has an area has already been told how
-     * to maintain it.
-     */
-    yield* tools
-      .register({ [name]: Tool.withDeferred(setTool), durable_clear: Tool.withDeferred(clearTool) })
-      .pipe(Effect.orDie)
-  }),
-)
-
-export const node = makeLocationNode({
-  name: "tool/durable",
-  layer,
-  // `PermissionV2.node` is here because {@link charge} is what makes the kind's tier real — see the
-  // header. Omitting it is the failure this file was written twice to avoid.
-  deps: [ToolRegistry.node, PermissionV2.node, SessionComponentRegistry.node],
-})
-
+// 🗑️ The registration used to live here. It moved to `durable-set.ts` and `durable-clear.ts`
+// because the deferred-manifest generator (`script/deferred-builtins.ts`) is ONE TOOL PER FILE: it
+// reads a single `name` and a single `metadata` out of the module it scans, so a file registering
+// two tools cannot be represented — and the first attempt at this change was caught by exactly that
+// generator refusing to run (`Extract schema metadata first: durable.ts`). What stays here is the
+// half both tools share: the two schemas, the item/deps plumbing, the charge, and the refusal
+// mapping. Nothing in this file registers a tool, so the generator skips it.

@@ -385,9 +385,10 @@ const REPAIRED: ReadonlyArray<readonly [string, string]> = [
   // does not. This is the other direction of the ratchet.
   ["packages/llm/src/protocols/utils/tool-recovery.ts", "\\x00"],
   ["packages/app/src/constants/links.test.ts", "\\x00"],
-  // The exclusion matcher cache keys on its patterns joined by NUL. Same separator, same reason:
-  // without it `["a","bc"]` and `["ab","c"]` collide and a folder gets another folder's rules.
-  ["packages/core/src/project-exclusion.ts", "\\x00"],
+  // 🗑️ An entry stood here for `packages/core/src/project-exclusion.ts`, whose matcher cache keyed on its
+  // patterns joined by NUL (without it `["a","bc"]` and `["ab","c"]` collided and a folder got another
+  // folder's rules). The file was retired with the `novaclaw.json` mechanism on 2026-09-16, so the entry
+  // is dropped rather than re-pointed: there is no exclusion matcher left to key anything.
   // The homoglyph carrier: the docstring must name the parameter the signature actually declares.
   ["packages/core/src/messenger/pace.ts", "perCall"],
 ]

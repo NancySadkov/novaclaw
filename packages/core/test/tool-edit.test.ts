@@ -485,61 +485,10 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
 // `edit` reads before it writes, so it takes the default (`readsContent` absent = "this reads").
 // The write assertion is the sharp end: `writes` must stay EMPTY.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("EditTool — project exclusions are inherited", () => {
-  it.live("refuses to edit an excluded file, legibly, and writes nothing", () =>
-    Effect.acquireUseRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => {
-        reset()
-        return Effect.promise(async () => {
-          await fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude: ["*.env"] }))
-          await fs.writeFile(path.join(tmp.path, "prod.env"), "TOKEN=old\n")
-        }).pipe(
-          Effect.andThen(
-            withTool(tmp.path, (registry) =>
-              Effect.gen(function* () {
-                const result = yield* executeTool(
-                  registry,
-                  call({ path: "prod.env", oldString: "TOKEN=old", newString: "TOKEN=new" }),
-                )
-                const text = JSON.stringify(result)
-                expect(text).toContain("project exclusion")
-                expect(text).toContain("*.env")
-                expect(writes).toEqual([])
-                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "prod.env"), "utf8"))).toBe(
-                  "TOKEN=old\n",
-                )
-              }),
-            ),
-          ),
-        )
-      },
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ),
-  )
+// 🗑️ `describe("EditTool — project exclusions are inherited")` stood here. Its subject was the folder's `novaclaw.json`, retired
+// 2026-09-16 (owner: *"Please ensure it is gone for good."*). The cases are deleted rather than
+// re-pinned because every one of them asserts a behaviour that no longer exists: the mechanism they
+// measured was removed, not changed. The programme and the cost are in `todo/retire-project-file.md`
+// (plan repo); the surviving halves — the instance `skill_invocation` store, the always-on policy
+// providers, the plain `AGENTS.md` walk — are covered by the other suites in this file.
 
-  it.live("still edits a file the project did not exclude", () =>
-    Effect.acquireUseRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => {
-        reset()
-        return Effect.promise(async () => {
-          await fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude: ["*.env"] }))
-          await fs.writeFile(path.join(tmp.path, "notes.md"), "before\n")
-        }).pipe(
-          Effect.andThen(
-            withTool(tmp.path, (registry) =>
-              Effect.gen(function* () {
-                yield* executeTool(registry, call({ path: "notes.md", oldString: "before", newString: "after" }))
-                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "notes.md"), "utf8"))).toBe(
-                  "after\n",
-                )
-              }),
-            ),
-          ),
-        )
-      },
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ),
-  )
-})

@@ -925,66 +925,10 @@ test("keeps locked deferred parity TODOs visible", async () => {
 // the command reads correct in a log and leaks anyway. (Same reasoning as the DENIED case in
 // `tool-search-containment.test.ts`.)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("BashTool — project exclusions", () => {
-  const withProject = (exclude: readonly string[], command: string) =>
-    Effect.acquireUseRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => {
-        reset()
-        return Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude })),
-          )
-          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "prod.env"), "TOKEN=1"))
-          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "README.md"), "hi"))
-          return yield* withTool(tmp.path, (registry) => executeTool(registry, call({ command })))
-        })
-      },
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    )
+// 🗑️ `describe("BashTool — project exclusions")` stood here. Its subject was the folder's `novaclaw.json`, retired
+// 2026-09-16 (owner: *"Please ensure it is gone for good."*). The cases are deleted rather than
+// re-pinned because every one of them asserts a behaviour that no longer exists: the mechanism they
+// measured was removed, not changed. The programme and the cost are in `todo/retire-project-file.md`
+// (plan repo); the surviving halves — the instance `skill_invocation` store, the always-on policy
+// providers, the plain `AGENTS.md` walk — are covered by the other suites in this file.
 
-  it.live("refuses a command that names an excluded file, and never runs it", () =>
-    Effect.gen(function* () {
-      const result = yield* withProject(["*.env"], "cat prod.env")
-      expect(JSON.stringify(result)).toContain("project exclusion")
-      expect(runs).toEqual([])
-    }),
-  )
-
-  it.live("documents the expansion forms the token screen cannot resolve before the shell runs", () =>
-    Effect.gen(function* () {
-      const expansions = [
-        ["variable", 'p=prod.env; cat "$p"'],
-        ["glob", "cat *.env"],
-        ["subshell", 'cat "$(printf prod.env)"'],
-        ["find -exec", "find . -type f -exec cat {} \\;"],
-      ] as const
-
-      for (const [kind, command] of expansions) {
-        const result = yield* withProject(["prod.env"], command)
-        expect(JSON.stringify(result), `${kind} was unexpectedly represented as a resolved path`).not.toContain(
-          "project exclusion",
-        )
-        expect(runs, `${kind} did not reach the shell`).toHaveLength(1)
-      }
-    }),
-  )
-
-  it.live("refuses it by ABSOLUTE path too", () =>
-    Effect.gen(function* () {
-      const result = yield* withProject(["*.env"], `cat "${path.join(process.cwd(), "nope")}"`)
-      // A path outside any project is untouched — this case only proves the screen does not fire
-      // indiscriminately; the absolute-in-project case is covered by `project-exclusion.test.ts`.
-      expect(JSON.stringify(result)).not.toContain("project exclusion")
-      expect(runs).toHaveLength(1)
-    }),
-  )
-
-  it.live("still runs a command that names only permitted files", () =>
-    Effect.gen(function* () {
-      const result = yield* withProject(["*.env"], "cat README.md")
-      expect(JSON.stringify(result)).not.toContain("project exclusion")
-      expect(runs).toHaveLength(1)
-    }),
-  )
-})

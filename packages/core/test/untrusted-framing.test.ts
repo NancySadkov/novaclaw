@@ -704,6 +704,10 @@ const NO_EXTERNAL = [
   "deferred/computer.gen.ts",
   "deferred/configure.gen.ts",
   "deferred/db-registry.gen.ts",
+  // The durable area's two generated registrations. They carry ONLY the schema (`metadata`), no
+  // execute body and no fetching — see the `durable*.ts` entries below for what the implementations do.
+  "deferred/durable-clear.gen.ts",
+  "deferred/durable-set.gen.ts",
   "deferred/log.gen.ts",
   "deferred/messenger.gen.ts",
   "deferred/nudge.gen.ts",
@@ -753,14 +757,20 @@ const NO_EXTERNAL = [
   // and the entry moves to FRAMED with them rather than being argued down.
   "docs-index.ts",
   "docs.ts",
-  // Writes and clears the calling agent's OWN durable-area items. It fetches nothing, and the value it
-  // stores was authored by the very agent that calls it — so the model already knows what is in it, and
-  // there is no third party on the path.
+  // The durable area's tools fetch nothing: they write and clear NAMED ITEMS in the calling agent's own
+  // session, and the value stored was authored by the very agent that called the tool — so the model
+  // already knows what is in it, and there is no third party on the path.
   //
-  // ⚠️ The CROSS-SESSION read is the one that carries somebody else's words, and it does not run
-  // through this file: `session list` / `session read` frames a foreign component value with
-  // `SessionOrigin.externalContentFrame` and takes the privileged tier for it. This file never reads
-  // another session, which is why it belongs here rather than in FRAMED.
+  // ⚠️ The CROSS-SESSION read is the one that carries somebody else's words, and it does not run through
+  // these files: `session list` / `session read` frames a foreign component value with
+  // `SessionOrigin.externalContentFrame` and takes the privileged tier for it. These files never read
+  // another session, which is why they belong here rather than in FRAMED.
+  //
+  // ⚠️ THREE entries for one feature, because the sweep counts FILES: `durable-set.ts` and
+  // `durable-clear.ts` each register one tool (the deferred-manifest generator is one-tool-per-file),
+  // and `durable.ts` holds the half they share.
+  "durable-clear.ts",
+  "durable-set.ts",
   "durable.ts",
   "edit-match.ts",
   "edit.ts",
