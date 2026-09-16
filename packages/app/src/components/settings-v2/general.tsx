@@ -15,7 +15,6 @@ import { useServerSDK } from "@/context/server-sdk"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
-import { SettingsProjectSection } from "./project"
 import { SettingsPoliciesSection } from "./policies"
 // Confinement is no longer rendered here — it is part of the health report now. `ShellStatus` below
 // still types the shell-BUNDLE row's own fetch, which stays in this tab because it has a control.
@@ -542,14 +541,11 @@ export const SettingsGeneralV2: Component<{
             fetched for the shell-BUNDLE row inside GeneralSection; the report makes its own
             `shell/status` call, which is named as a cost in `nova-health.tsx` rather than hidden. */}
 
-        {/* Directly after the settings above, because it answers the same question from the other side: not
-            "what boxes the agent in", but "what ELSE is deciding what it may do here". A folder's
-            `novaclaw.json` can narrow this session's permissions, and until this section existed the
-            only way to discover that was to be refused and go looking for the file. */}
-        <SettingsProjectSection
-          shellStatus={bundle.latest}
-          onOpenConfinement={props.onOpenTab ? () => props.onOpenTab?.("recovery") : undefined}
-        />
+        {/* 🗑️ `SettingsProjectSection` stood here: the folder's own `novaclaw.json` — which file governs
+            it, which rules it adds, which paths it forbids, and the `.gitignore` import. It went with the
+            mechanism on 2026-09-16 (owner: *"Please ensure it is gone for good."*). The reason it lived
+            in General rather than in a status board was that it carried CONTROLS; there are none left to
+            carry, and nothing else answers "what else is deciding what it may do here". */}
 
         {/* And directly after Project, because it is the THIRD answer to the same question those two
             raise — not "what boxes the agent in" or "what does this folder narrow", but "what looks

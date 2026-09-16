@@ -16,7 +16,6 @@ import { createListState } from "@/utils/list-state"
 import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
 import { AppPage, AppPageHeader } from "@/components/app-page"
-import { ProjectChip, ProjectDetail, useProjectSummary } from "@/components/project-indicator"
 import * as Timestamp from "@novaclaw/schema/time"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
@@ -167,22 +166,11 @@ export function FilesPage() {
 
   // Whether the folder on screen is a Project. Files browses folders, so this is
   // the one surface where a person can SEE which of their folders carry a `novaclaw.json` without
-  // turning on hidden files and reading it — and, when one is broken, that it is being ignored.
-  const projectSource = createMemo(() => {
-    const http = conn()?.http
-    const directory = dir()
-    return http && directory ? { http, directory } : undefined
-  })
-  const project = useProjectSummary(projectSource, "files")
-  // `undefined` = the user has not decided, so the state decides. An unusable file opens itself:
-  // it is the only state that needs acting on, and putting the remedy behind a click would make it
-  // something to discover rather than something to fix. A click still closes it.
-  const [projectOpen, setProjectOpen] = createSignal<boolean | undefined>(undefined)
-  const projectExpanded = createMemo(() => projectOpen() ?? project()?.kind === "invalid")
-  createEffect(() => {
-    dir()
-    setProjectOpen(undefined)
-  })
+  // 🗑️ A project chip and detail panel used to hang off this page: the Files app showed which
+  // `novaclaw.json` governs the folder being browsed, its rules, and whether it was unusable — because a
+  // listing is exactly where a user notices a file the model was told not to read. All of it went with
+  // the mechanism on 2026-09-16. What remains is what the page needs on its own: the directory, its pin,
+  // and the trash/hidden toggles.
 
   const operations = useFilesystemOperations({
     server: () => conn()?.http,
@@ -410,21 +398,6 @@ export function FilesPage() {
           {language.t(isPinned(dir()) ? "dialog.directory.pinnedShort" : "dialog.directory.pinShort")}
         </button>
         <span class="min-w-0 flex-1 truncate font-mono text-xs text-v2-text-text-faint">{dir() || "…"}</span>
-        <Show when={project()}>
-          {(summary) => (
-            <button
-              type="button"
-              data-action="files-project"
-              class="flex shrink-0 items-center rounded-md transition-opacity hover:opacity-80"
-              aria-expanded={projectExpanded()}
-              aria-label={language.t("files.project.details")}
-              title={language.t("files.project.details")}
-              onClick={() => setProjectOpen(!projectExpanded())}
-            >
-              <ProjectChip summary={summary()} />
-            </button>
-          )}
-        </Show>
         <button
           type="button"
           class={btn}
@@ -448,18 +421,6 @@ export function FilesPage() {
           {language.t("files.askAiFolder")}
         </button>
       </AppPageHeader>
-
-      <Show when={projectExpanded() && project()}>
-        {(summary) => (
-          <div
-            data-component="files-project-detail"
-            class="border-b border-v2-border-border-base px-4 py-2.5"
-            classList={{ "bg-v2-state-bg-warning/10": summary().kind === "invalid" }}
-          >
-            <ProjectDetail summary={summary()} showChip={false} />
-          </div>
-        )}
-      </Show>
 
       <div class="flex min-h-0 flex-1">
         <div class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-v2-border-border-base p-2">

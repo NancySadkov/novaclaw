@@ -1,4 +1,4 @@
-import type { ComposerFeatureOrigin, ComposerProjectLayer } from "@/components/composer"
+import type { ComposerFeatureOrigin } from "@/components/composer"
 import type { SessionFeatureName } from "@/utils/fs-api"
 
 /**
@@ -38,12 +38,6 @@ export interface ResolvedConfigLike {
     string,
     { readonly value?: unknown; readonly origin?: string; readonly source?: { kind: string; file?: string } }
   >
-  readonly project?: {
-    readonly root: string
-    readonly file: string
-    readonly applied: readonly string[]
-    readonly refused: readonly string[]
-  }
 }
 
 /**
@@ -67,21 +61,17 @@ export const featureOrigins = (
       out[name] = { kind: "session" }
       continue
     }
-    if (field.source?.kind === "project" && field.source.file !== undefined)
-      out[name] = { kind: "project", file: field.source.file }
     else if (field.source?.kind === "instance") out[name] = { kind: "instance" }
   }
   return out
 }
 
-/** The folder's project file, when one governs this chat. */
-export const projectLayer = (resolved: ResolvedConfigLike | undefined): ComposerProjectLayer | undefined => {
-  const project = resolved?.project
-  return project
-    ? { root: project.root, file: project.file, applied: project.applied, refused: project.refused }
-    : undefined
-}
-
+// 🗑️ `projectLayer` stood here: the folder's own `novaclaw.json`, for the panel to name as the layer
+// beneath the chat. It went with the mechanism (owner, 2026-09-16), and with it the whole DRAFT
+// half of this module that followed — `DiscoveredProjectLike`, `governing`, `draftStances`,
+// `draftOrigins` and `draftProjectLayer`, which read `GET /api/project` to fill the Tuning panel for
+// a chat that does not exist yet. A draft has nothing beneath it now, so the panel's provenance is
+// the instance's.
 /**
  * The kernel's own RESOLVED value for each switch.
  *
@@ -161,76 +151,5 @@ export interface DiscoveredProjectLike {
     readonly applied?: readonly string[]
     readonly refused?: readonly string[]
     readonly deferred?: readonly string[]
-  }
-}
-
-/**
- * Is this the answer of a folder a project file actually governs?
- *
- * Returns the narrowed shape rather than a boolean, so the three readers below cannot reach for
- * `root`/`file` on an `invalid` or `none` answer — the arms where they do not exist.
- */
-const governing = (
-  found: DiscoveredProjectLike | undefined,
-): (DiscoveredProjectLike & { root: string; file: string }) | undefined =>
-  found?.kind === "project" && found.root !== undefined && found.file !== undefined
-    ? (found as DiscoveredProjectLike & { root: string; file: string })
-    : undefined
-
-/** The values a fresh chat in this folder starts with, for the switches this panel shows. */
-export const draftStances = (
-  found: DiscoveredProjectLike | undefined,
-): Partial<Record<SessionFeatureName, boolean>> => {
-  const project = governing(found)
-  const features = project?.tune?.features
-  if (!features) return {}
-  const out: Partial<Record<SessionFeatureName, boolean>> = {}
-  for (const name of FEATURE_NAMES) {
-    const value = features[name]
-    if (typeof value === "boolean") out[name] = value
-  }
-  return out
-}
-
-/**
- * Per switch, the origin line beneath it.
- *
- * ⚠️ Only `project` is ever produced. A draft has no chain, so there is no `session` origin to
- * report; and `instance` is deliberately NOT filled in for the rest, because the panel already
- * treats an absent origin as the instance and claiming it here would be a second place the same
- * default is spelled out.
- */
-export const draftOrigins = (
-  found: DiscoveredProjectLike | undefined,
-): Partial<Record<SessionFeatureName, ComposerFeatureOrigin>> => {
-  const project = governing(found)
-  const file = project?.file
-  const applied = project?.tune?.applied
-  if (!file || !applied) return {}
-  const out: Partial<Record<SessionFeatureName, ComposerFeatureOrigin>> = {}
-  for (const name of FEATURE_NAMES) if (applied.includes(name)) out[name] = { kind: "project", file }
-  return out
-}
-
-/**
- * The folder's own section of the panel, for a draft.
- *
- * ⚠️ `undefined` unless the server told us what the file SETS. Rendering the block with an empty
- * `applied` prints "it sets nothing", which is the false-statement failure mode in a different
- * costume — the same reason `inForceState` keeps a `here-unknown` case.
- *
- * ⚠️ `deferred` is not folded into `refused`. They are different sentences — *"your file may not
- * ask for this"* and *"this build does not fold it yet"* — and the session path carries only
- * `refused`, so inventing a wider meaning here would make the two halves disagree.
- */
-export const draftProjectLayer = (found: DiscoveredProjectLike | undefined): ComposerProjectLayer | undefined => {
-  const project = governing(found)
-  const tune = project?.tune
-  if (!project || !tune?.applied) return undefined
-  return {
-    root: project.root,
-    file: project.file,
-    applied: tune.applied.filter((name) => (FEATURE_NAMES as readonly string[]).includes(name)),
-    refused: tune.refused ?? [],
   }
 }

@@ -9,7 +9,6 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { SettingsProvider } from "@/context/settings"
 import { NovaHealthBoard } from "@/components/settings-v2/nova-health"
-import { SettingsProjectSection } from "@/components/settings-v2/project"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
 import { NotificationContext } from "@/context/notification"
@@ -226,49 +225,10 @@ describe("the health board survives the instance it is diagnosing", () => {
   })
 })
 
-describe("Settings → General survives a project route that will not answer", () => {
-  test("a failed project read is NAMED, and the surrounding app is still mounted", async () => {
-    stubFetch("api/project", "reject")
-    mount(() => <SettingsProjectSection />)
-    await settle()
+// 🗑️ `describe("Settings → General survives a project route that will not answer")` stood here, with its
+// cases: a failed `GET /api/project` is NAMED rather than crashing the General tab, a 500 is the same
+// finding, a folder that IS a project renders its rows, and a folder with none is the ordinary empty
+// state. Every one of them mounted `SettingsProjectSection`, which is retired with the `novaclaw.json`
+// mechanism (owner, 2026-09-16), so they are deleted rather than re-pinned: there is no project section
+// left to survive a route that no longer exists.
 
-    expect(document.querySelector('[data-slot="project-unavailable"]')?.textContent).toContain(UNREACHABLE)
-    // The section still says which section it is, rather than vanishing without a word.
-    expect(bodyText()).toContain(en["settings.project.section"])
-    expect(boundaryFired()).toBe(false)
-    expect(appAlive()).toBe(true)
-  })
-
-  test("a 500 from the project route is the same finding, not a crash", async () => {
-    stubFetch("api/project", "http500")
-    mount(() => <SettingsProjectSection />)
-    await settle()
-
-    expect(bodyText()).toContain(UNREACHABLE)
-    expect(boundaryFired()).toBe(false)
-  })
-
-  test("a folder that IS a project renders its rows, unchanged", async () => {
-    stubFetch("api/project", "ok")
-    mount(() => <SettingsProjectSection />)
-    await settle()
-
-    expect(bodyText()).toContain("Workshop")
-    expect(bodyText()).toContain(en["settings.project.fileLabel"])
-    expect(bodyText()).not.toContain(UNREACHABLE)
-    expect(document.querySelector('[data-slot="project-unavailable"]')).toBeNull()
-    expect(boundaryFired()).toBe(false)
-  })
-
-  test("a folder with NO project file is the ordinary empty state, never the failure copy", async () => {
-    stubFetch("api/project", "empty")
-    mount(() => <SettingsProjectSection />)
-    await settle()
-
-    // `settings.project.none` — the invitation, which is not an error and must not read as one.
-    expect(bodyText()).toContain(interpolate(en["settings.project.none"], { directory: DIRECTORY }))
-    expect(bodyText()).not.toContain(UNREACHABLE)
-    expect(document.querySelector('[data-slot="project-unavailable"]')).toBeNull()
-    expect(boundaryFired()).toBe(false)
-  })
-})

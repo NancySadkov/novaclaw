@@ -43,7 +43,7 @@ export const SessionListQuery = Schema.Struct({
 // 🗑️ The `/api/project` schema — `ProjectState`, `ProjectWriteInput`, `ProjectWriteResult` and the
 // `ProjectFile`-typed fields they carried — stood here until 2026-09-16, when the `novaclaw.json`
 // mechanism was retired (owner: *"Please ensure it is gone for good."*). The route is gone with it;
-// see `todo/retire-project-file.md` in the plan repo for the programme and for what the deletion
+// see `notes/reports/retire-project-file-2026-09-16.md` in the plan repo for the programme and for what the deletion
 // cost (the `exclude` list had no other source).
 export const ExperimentalPaths = {
   worktree: "/experimental/worktree",

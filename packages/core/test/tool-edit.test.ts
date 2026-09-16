@@ -488,7 +488,7 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
 // 🗑️ `describe("EditTool — project exclusions are inherited")` stood here. Its subject was the folder's `novaclaw.json`, retired
 // 2026-09-16 (owner: *"Please ensure it is gone for good."*). The cases are deleted rather than
 // re-pinned because every one of them asserts a behaviour that no longer exists: the mechanism they
-// measured was removed, not changed. The programme and the cost are in `todo/retire-project-file.md`
+// measured was removed, not changed. The programme and the cost are in `notes/reports/retire-project-file-2026-09-16.md`
 // (plan repo); the surviving halves — the instance `skill_invocation` store, the always-on policy
 // providers, the plain `AGENTS.md` walk — are covered by the other suites in this file.
 

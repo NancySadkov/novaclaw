@@ -10,20 +10,9 @@ import { useServerSync } from "@/context/server-sync"
 import { policyState, type InstalledPolicy } from "@/utils/policy-api"
 import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
-import { projectState, projectWrite, type ProjectState, type ProjectWriteResult } from "@/utils/project-api"
 import type { ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { governedHere } from "./project-permissions"
-import { WriteReceipt } from "./project-permissions-section"
-import {
-  folderPolicyStatus,
-  type FolderPolicyStatus,
-  planProjectPolicies,
-  policyAddOptions,
-  policyIDIsAddable,
-  projectPoliciesPayload,
-} from "./project-policies"
 import { SettingsExplainV2 } from "./explain"
 import { scopedDirectory } from "@/utils/routing-directory"
 
@@ -108,14 +97,6 @@ export const SettingsPoliciesSection: Component = () => {
    * putting `root` on the policy route — would be a second answer to a question `GET /api/project`
    * already answers.
    */
-  const [project, { refetch: refetchProject }] = createResource(source, async (value) => {
-    try {
-      return await projectState(value.http, value.dir)
-    } catch {
-      return undefined
-    }
-  })
-
   const [toggleError, setToggleError] = createSignal<string | undefined>(undefined)
   const installed = createMemo(() => state()?.installed ?? [])
   const off = createMemo(() => installed().filter((entry) => !entry.enabled).length)
@@ -291,17 +272,12 @@ export const SettingsPoliciesSection: Component = () => {
             </span>
           </Show>
 
-          <FolderPoliciesEditor
-            installed={installed}
-            requested={() => resolved().requested}
-            project={project}
-            connection={() => connection()?.http}
-            directory={directory}
-            refresh={() => {
-              void refetch()
-              void refetchProject()
-            }}
-          />
+          {/* 🗑️ `<FolderPoliciesEditor>` stood here: the folder's own policy list, made writable
+              through `POST /api/project` touching only its `policies` section, with a preview and a
+              receipt naming the file. The law it kept in front of the control was that a folder may
+              only ever ADD a guard, never remove one. Both the route and the declaration are retired
+              (owner, 2026-09-16), so the installed list above is the whole answer: a policy runs
+              because it is installed and switched on, and nothing else can ask for one. */}
         </div>
       )}
     </Show>
@@ -309,231 +285,8 @@ export const SettingsPoliciesSection: Component = () => {
 }
 
 /**
- * **The folder's own list, as something a person can change.**
- *
- * The gap: *"a folder's policy list is READ-ONLY in the app — wants the section-scoped
- * write Permissions got."* So it got exactly that one: `POST /api/project` touching only the
- * `policies` section, a preview of what will be written, and the shared `WriteReceipt` naming the
- * file. Nothing here is a new pattern — the differences from `ProjectPermissionsSection` are the
- * three the domain forces, and each is written down in `project-policies.ts`.
- *
- * 🔴 **The one law the copy keeps in front of the control: a folder may only ever ADD.** There is no
- * spelling in a `novaclaw.json` for *"do not run that check here"*, and there must not be — a folder
- * able to remove a guard the instance installed is a cloned repository disarming the user's rails.
- * So an always-on policy has no row here at all (its Settings row above says why), and one already
- * sitting in the file is shown as an entry the save will drop.
+ * 🗑️ `FolderPoliciesEditor` lived here: the folder's policy list as a CONTROL, writing only the
+ * `policies` section of its own `novaclaw.json`. It went with the mechanism (owner, 2026-09-16).
+ * What it protected — a folder may only ever ADD a guard, never remove one — is now vacuous rather
+ * than enforced elsewhere, because no folder can express a policy at all.
  */
-const FolderPoliciesEditor: Component<{
-  readonly installed: () => readonly InstalledPolicy[]
-  readonly requested: () => readonly string[]
-  readonly project: () => ProjectState | undefined
-  readonly connection: () => ServerConnection.HttpBase | undefined
-  readonly directory: () => string
-  readonly refresh: () => void
-}> = (props) => {
-  const language = useLanguage()
-  const [busy, setBusy] = createSignal(false)
-  const [receipt, setReceipt] = createSignal<ProjectWriteResult | { readonly failed: string } | undefined>(undefined)
-  /**
-   * The edited list, or `undefined` while it still mirrors the file.
-   *
-   * ⚠️ `undefined` rather than seeding from the file at mount, for `ProjectPermissionsSection`'s
-   * reason: the resource can arrive late or refresh after a write, and a signal seeded once would
-   * show a stale list as if it were the file.
-   */
-  const [draft, setDraft] = createSignal<readonly string[] | undefined>(undefined)
-  const [typed, setTyped] = createSignal("")
-
-  const current = createMemo(() => draft() ?? props.requested())
-  const dirty = createMemo(() => draft() !== undefined)
-  const plan = createMemo(() => planProjectPolicies(current()))
-  const options = createMemo(() => policyAddOptions(props.installed(), current()))
-
-  /**
-   * 🔴 An inherited list is READ-ONLY here, and the refusal is the correctness point rather than
-   * caution — the same one `ProjectExcludeSection` states. `POST /api/project` writes THIS folder's
-   * file and `walk` stops at the nearest one, so "adding one id" to an ancestor's list would in fact
-   * replace that ancestor's whole declaration — its Tune, permissions and never-read list included —
-   * for this folder. Nobody would predict that from a button saying "Ask for it".
-   *
-   * A folder with no project file at all is still editable: writing one is what the user asked for.
-   */
-  const inherited = createMemo(() => {
-    const value = props.project()
-    if (!value || value.kind !== "project") return undefined
-    return governedHere(value, props.directory()) ? undefined : value.file
-  })
-
-  const add = (id: string) => {
-    const value = id.trim()
-    if (!policyIDIsAddable(value, current())) return
-    setDraft([...current(), value])
-    setTyped("")
-  }
-
-  const save = () => {
-    const http = props.connection()
-    const dir = props.directory()
-    if (busy() || !http || !dir) return
-    setBusy(true)
-    setReceipt(undefined)
-    void projectWrite(http, dir, projectPoliciesPayload(plan()))
-      .then((result) => {
-        setReceipt(result)
-        if (result.ok) {
-          // The file is the truth again — drop the draft so the list re-reads from the refresh.
-          setDraft(undefined)
-          props.refresh()
-        }
-      })
-      .catch((error: unknown) => setReceipt({ failed: error instanceof Error ? error.message : String(error) }))
-      .finally(() => setBusy(false))
-  }
-
-  /**
-   * One row's sentence about itself.
-   *
-   * ⚠️ A total RECORD rather than a `switch`, so a fifth `FolderPolicyStatus` is a type error naming
-   * the missing arm — where a switch would just fall out of the bottom and render nothing.
-   */
-  const STATUS_KEY: Record<FolderPolicyStatus, TranslationKey> = {
-    running: "policies.folder.edit.status.running",
-    "switched-off": "policies.folder.edit.status.switchedOff",
-    "always-on": "policies.folder.edit.status.alwaysOn",
-    missing: "policies.folder.edit.status.missing",
-  }
-  const statusOf = (id: string) => language.t(STATUS_KEY[folderPolicyStatus(id, props.installed())])
-
-  return (
-    <div class="flex flex-col gap-2 pt-3" data-component="settings-folder-policies">
-      <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("policies.folder.edit.title")}</span>
-      <Muted>{language.t("policies.folder.edit.description")}</Muted>
-      {/* THE LAW, before the editor rather than after a surprise. */}
-      <Muted>{language.t("policies.folder.edit.narrowing")}</Muted>
-      <Show when={inherited()}>
-        {(file) => (
-          <span class="text-[11px] leading-4 break-all text-v2-text-text-faint" data-folder-policies-elsewhere>
-            {language.t("policies.folder.edit.elsewhere", { file: file() })}
-          </span>
-        )}
-      </Show>
-
-      <Show when={current().length > 0} fallback={<Muted>{language.t("policies.folder.edit.empty")}</Muted>}>
-        <For each={current()}>
-          {(id, index) => (
-            <div class="flex items-start gap-2" data-folder-policy-row data-policy={id}>
-              <div class="flex flex-1 flex-col">
-                <span class="text-[12px] leading-4 break-all text-v2-text-text-base">{authorText(id, 64) || id}</span>
-                <Muted>{statusOf(id)}</Muted>
-              </div>
-              <ButtonV2
-                variant="ghost"
-                size="small"
-                data-action="folder-policy-remove"
-                disabled={inherited() !== undefined}
-                onClick={() => setDraft(current().filter((_, i) => i !== index()))}
-              >
-                {language.t("policies.folder.edit.remove")}
-              </ButtonV2>
-            </div>
-          )}
-        </For>
-      </Show>
-
-      {/* 🔴 Principle 12(b) — offer what EXISTS, which is every installed check not already listed.
-          Always-on ones are offered too: asking for one is a legitimate opt-in, and filtering them
-          out emptied this picker completely (always-on is the DEFAULT, and neither shipped policy
-          opts out). What it costs is the sentence below, stated before the control rather than
-          discovered later by having every tool call refused. */}
-      <Show
-        when={options().length > 0}
-        fallback={
-          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-folder-policies-nothing>
-            {language.t("policies.folder.edit.nothingToOffer")}
-          </span>
-        }
-      >
-        <div class="flex flex-wrap items-center gap-2" data-folder-policies-offer>
-          <For each={options()}>
-            {(entry) => (
-              <ButtonV2
-                variant="outline"
-                size="small"
-                data-action="folder-policy-offer"
-                data-policy={entry.id}
-                disabled={inherited() !== undefined}
-                onClick={() => add(entry.id)}
-              >
-                {authorText(entry.id, 64) || entry.id}
-              </ButtonV2>
-            )}
-          </For>
-        </div>
-      </Show>
-
-      {/* 12(b)'s own fallback: "free text is the fallback for what discovery missed, and it says so."
-          A check installed on a colleague's machine is exactly what discovery here cannot see, and
-          the sentence beneath states the consequence BEFORE the button rather than in a receipt. */}
-      <div class="flex flex-wrap items-center gap-2">
-        <TextInputV2
-          value={typed()}
-          placeholder={language.t("policies.folder.edit.addPlaceholder")}
-          aria-label={language.t("policies.folder.edit.addPlaceholder")}
-          data-action="folder-policy-id"
-          class="min-w-[12rem] flex-1"
-          onInput={(event) => setTyped(event.currentTarget.value)}
-        />
-        <ButtonV2
-          variant="outline"
-          size="small"
-          data-action="folder-policy-add"
-          disabled={inherited() !== undefined || !policyIDIsAddable(typed(), current())}
-          onClick={() => add(typed())}
-        >
-          {language.t("policies.folder.edit.add")}
-        </ButtonV2>
-      </div>
-      <Muted>{language.t("policies.folder.edit.addFallback")}</Muted>
-      <span class="text-[11px] leading-4 text-v2-text-text-faint" data-folder-policies-alwayson-cost>
-        {language.t("policies.folder.edit.alwaysOnCost")}
-      </span>
-
-      <Show when={dirty()}>
-        <span class="text-[11px] leading-4 break-all text-v2-text-text-faint" data-folder-policies-preview>
-          {plan().declared.length === 0
-            ? language.t("policies.folder.edit.previewClear")
-            : language.t("policies.folder.edit.preview", { list: idList(plan().persisted) })}
-        </span>
-      </Show>
-
-      <ButtonV2
-        variant="outline"
-        size="small"
-        class="self-start"
-        data-action="folder-policies-save"
-        disabled={busy() || !dirty() || inherited() !== undefined}
-        onClick={save}
-      >
-        {language.t(busy() ? "policies.folder.edit.saving" : "policies.folder.edit.save")}
-      </ButtonV2>
-
-      <Show when={receipt()}>
-        {(result) => (
-          <WriteReceipt
-            result={result()}
-            extra={(written) => (
-              <Show when={written.refusedPolicies.length > 0}>
-                {/* 🔴 The line that makes the law visible instead of surprising: the SERVER says what
-                    it dropped, and this says so out loud rather than letting a cheerful receipt
-                    imply it landed. */}
-                <span class="text-[11px] leading-4 break-all text-v2-text-text-faint" data-receipt-refused-policies>
-                  {language.t("policies.folder.edit.receipt.refused", { list: idList(written.refusedPolicies) })}
-                </span>
-              </Show>
-            )}
-          />
-        )}
-      </Show>
-    </div>
-  )
-}

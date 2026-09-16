@@ -4,10 +4,9 @@ import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, onCleanup, onMount } from "solid-js"
 import { createSettledResource } from "@/utils/settled-resource"
 import type { PromptInputControls } from "@/components/prompt-input"
-import type { ComposerMakeDefaultState, ComposerRemoteChatState } from "@/components/composer"
+import type { ComposerRemoteChatState } from "@/components/composer"
 import * as ConfigProvenance from "./config-provenance"
 import { useSettingsDialog } from "@/components/settings-dialog"
-import { projectState, projectWrite } from "@/utils/project-api"
 import {
   MessengerApiError,
   messengerAccountChats,
@@ -240,19 +239,13 @@ export function createPromptInputController(input: {
   // returning a fresh `{directory, http}` each read changes identity every time, which is a refetch
   // on every reactive pass — a poll nobody asked for against a route that walks ancestor directories.
   // The connection is read inside the fetcher instead, where it costs nothing.
-  // ⚠️ No `.catch` in the fetcher, deliberately: `createSettledResource` owns the rejection, and a
-  // fetcher that swallows its own failure hides it from `failed` and puts the lie back. The read
-  // still degrades to `undefined`, which is the contract this comment already promised.
-  const [projectDiscovered] = createSettledResource(
-    () => (input.sessionID() === undefined ? sessionView.directory() : undefined),
-    (directory: string) => {
-      const conn = server.current
-      if (!conn) return undefined
-      return projectState(conn.http, directory)
-    },
-  )
+  // 🗑️ A directory-keyed `projectDiscovered` resource stood here, reading `GET /api/project` for a
+  // DRAFT so the Tuning panel could render the folder's own stance where a session-less chat had none.
+  // Both the route and the declaration are retired (owner, 2026-09-16): a draft has nothing beneath it
+  // now, so the panel's provenance is the instance's and the probe has no question to ask.
 
   /**
+   * WHERE each switch's value came from, straight from the kernel's own resolution.  /**
    * WHERE each switch's value came from, straight from the kernel's own resolution.
    *
    * ⚠️ Asked of the server rather than derived here, and that is the point. The browser already
@@ -280,84 +273,14 @@ export function createPromptInputController(input: {
     },
   )
 
-  /**
-   * WHERE each switch's value came from, and what the folder contributed — from the kernel either
-   * way, and from a DIFFERENT kernel answer depending on whether this chat exists yet.
-   *
-   * 🔴 A draft has no session id, so the resolution above is empty and every switch used to read as
-   * the instance's. Measured 2026-08-19: a draft in a folder declaring `quality: true` said *"Using
-   * Settings default: Off"* one line under a sentence naming the very file that sets it on. The
-   * directory-keyed probe now carries the kernel's own fold for the folder, so the draft renders the
-   * folder's stance instead of contradicting itself.
-   *
-   * ⚠️ Never both at once, and never merged. Once a session exists its resolution knows strictly
-   * more (the chain, the ceilings, this chat's own row) and is the only answer that can agree with
-   * the turn; layering a directory probe under it would be the second authority
-   * `config-provenance.ts` warns about.
-   */
+  // 🗑️ `featureOrigins` used to branch on `isDraft()`, with a `projectLayer` beside it and a
+  // `draftStances` fold for the folder's tune. All three read the retired route and all three
+  // collapse to the same answer now: the kernel's own resolution of THIS session, whose provenance is
+  // the instance's or this chat's.
   const isDraft = () => input.sessionID() === undefined
-  const featureOrigins = createMemo(() =>
-    isDraft() ? ConfigProvenance.draftOrigins(projectDiscovered()) : ConfigProvenance.featureOrigins(resolvedConfig()),
-  )
-  const projectLayer = createMemo(() =>
-    isDraft()
-      ? ConfigProvenance.draftProjectLayer(projectDiscovered())
-      : ConfigProvenance.projectLayer(resolvedConfig()),
-  )
-  /** The kernel's stance per switch — the session's resolution, or the folder's fold for a draft. */
-  const kernelStances = () =>
-    isDraft() ? ConfigProvenance.draftStances(projectDiscovered()) : ConfigProvenance.resolvedStances(resolvedConfig())
-
-  /**
-   * "Make Default for this Folder" — write this chat's declared stance into the folder's own
-   * `novaclaw.json` (its Tune and Permissions sections).
-   *
-   * ⚠️ `undefined` rather than a disabled control when there is no folder or no server: a chip that
-   * exists but can never do anything is a worse answer than one that is not there.
-   *
-   * ⚠️ The panel decides WHICH switches travel (the chat's overrides, so the folder keeps tracking
-   * Settings for everything else) and this function only carries them. Splitting it the other way
-   * would put the rule in a place the surface explaining the rule cannot see.
-   */
-  const makeDefaultState = createMemo((): ComposerMakeDefaultState | undefined => {
-    const directory = sessionView.directory()
-    const conn = server.current
-    if (!directory || !conn) return undefined
-    return {
-      folder: directory,
-      governedBy: projectLayer(),
-      // A draft has no session id, so `resolvedConfig` — and therefore `projectLayer()` — is empty,
-      // and the panel used to fall through to "this folder has no project file yet". That sentence
-      // was measured FALSE in folders that had one. This directory-keyed answer is what a draft can
-      // honestly know; `inForceState` keeps "no answer yet" distinct from "answered: none".
-      discovered: projectDiscovered(),
-      write: async (features) => {
-        try {
-          const result = await projectWrite(conn.http, directory, { tune: { features } })
-          // The kernel re-reads the file within its cache TTL, but the PANEL's provenance came from
-          // a response taken before the write. Without this refetch the section above would keep
-          // describing the folder as it was — the surface that explains where a value came from
-          // contradicting the receipt printed directly beneath it.
-          void resolvedConfigRes.refetch()
-          return result.ok
-            ? {
-                kind: "written" as const,
-                file: result.file,
-                created: result.created,
-                sections: result.sections,
-                refused: result.refusedTune,
-              }
-            : { kind: "refused" as const, file: result.file, reason: result.reason, detail: result.detail }
-        } catch (error) {
-          // ⚠️ A transport failure is NOT a refusal. "Your project file is broken" and "the request
-          // did not land" ask the user for opposite things, and this is the one place they could be
-          // flattened together.
-          return { kind: "failed" as const, detail: errorMessage(error, language.t("common.requestFailed")) }
-        }
-      },
-    }
-  })
-
+  const featureOrigins = createMemo(() => ConfigProvenance.featureOrigins(resolvedConfig()))
+  /** The kernel's stance per switch — the session's own resolution. */
+  const kernelStances = () => ConfigProvenance.resolvedStances(resolvedConfig())
   // 🔴 All three carried `initialValue: []`, which is what made a refused `/api/messenger/account`
   // replace the whole application: `initialValue` sets `resolved`, and `.latest`'s getter re-throws
   // the fetcher's error on the `resolved` branch — so the spelling that READ like the fallback was
@@ -523,8 +446,6 @@ export function createPromptInputController(input: {
       current: featureState().current,
       override: featureState().overrides,
       origin: featureOrigins(),
-      project: projectLayer(),
-      makeDefault: makeDefaultState(),
       set: (feature, enabled) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the stance server-side so the runner reads it on the next turn.

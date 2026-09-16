@@ -423,9 +423,7 @@ export const dict = {
   // under one control — the owner quoted it back as "verbose and useless". Each visible line now says
   // what is in force in a few words; the reasoning moved to the `.more` popover beside the title.
   "composer.tune.makeDefault.description": "Save these switches as this folder's default.",
-  "composer.tune.makeDefault.description.more":
-    "The switches you changed in this chat are written into this folder's novaclaw.json, so every new chat here starts the same way. Anything you did not change keeps following your Settings.",
-  "composer.tune.makeDefault.inForce.none": "No project file here yet — saving creates one.",
+  "composer.tune.makeDefault.inForce.none": "No project file here yet - saving creates one.",
   "composer.tune.makeDefault.inForce.pending": "Checking…",
   "composer.tune.makeDefault.inForce.hereUnknown": "{{file}} is here; what it sets is not known yet.",
   "composer.tune.makeDefault.inForce.brokenUnreadable":
@@ -1672,9 +1670,7 @@ export const dict = {
     "File and search tools block these paths; raw shell screening is only best effort, with no working sandbox reported on this instance.",
   "settings.project.excludeDetail.unknown":
     "File and search tools block these paths; raw shell screening is only best effort, and this instance's sandbox status is unknown.",
-  "settings.project.excludeDetail.more":
-    "Dedicated file and search tools enforce this path list. Raw shell screening checks direct path tokens only: it cannot see paths assembled with variables, globs, subshells, or find -exec, and hardlinks can give a file another name. Only an operating-system sandbox is a hard boundary. Turn on Safe mode in a chat's Tuning controls; it sandboxes shell commands where a backend is available and refuses them otherwise. Health & recovery shows what this instance can enforce.",
-  "settings.project.rulesNone": "None — this file changes no permissions",
+  "settings.project.rulesNone": "None - this file changes no permissions",
   "settings.project.excludeNone":
     "No paths are excluded from file and search tools; add patterns here when those tools should skip keys, credentials, personal files, or bulky folders.",
   "settings.project.excludeLabel": "Excluded paths",
@@ -1796,8 +1792,6 @@ export const dict = {
   // would replace rather than extend is the reasoning, and it goes behind the disclosure.
   "settings.project.exclude.elsewhere":
     "This list comes from {{file}}, in a folder above this one — open that file to change it.",
-  "settings.project.exclude.elsewhere.more":
-    "Editing it here would not extend that list: it would create a second novaclaw.json for this folder that takes over from it completely. Use the Permissions section above if you really do want this folder to have its own declaration.",
   "settings.project.exclude.import.elsewhere":
     "Not offered here: this folder's settings come from {{file}}, one or more folders up. Importing would create a second novaclaw.json here that replaces it rather than adding to it.",
   "settings.permissions.project.origin.project": "This folder",
