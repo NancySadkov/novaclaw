@@ -5953,48 +5953,6 @@ class ApiConfig extends NovaClawApiClient {
   }
 }
 
-class ApiProject extends NovaClawApiClient {
-  /**
-   * The `novaclaw.json` governing this location: its root, validity and what it contributes. A folder without one answers `none` and is perfectly usable.
-   */
-  public state<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.ProjectStateResponses, T.ProjectStateErrors, ThrowOnError>({
-      url: "/api/project",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Create or update this location's `novaclaw.json`, replacing ONLY the sections supplied and preserving everything else — including sections this build does not understand. Refuses, without writing, when an existing file does not parse.
-   */
-  public write<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      projectWriteInput: T.ProjectWriteInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = parameters?.["projectWriteInput"]
-    return (options?.client ?? this.client).post<T.ProjectWriteResponses, T.ProjectWriteErrors, ThrowOnError>({
-      url: "/api/project",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
 class ApiWorktree extends NovaClawApiClient {
   /**
    * Create worktree
@@ -7044,10 +7002,6 @@ export class NovaclawClient extends NovaClawApiClient {
   private _config?: ApiConfig
   get config(): ApiConfig {
     return (this._config ??= new ApiConfig({ client: this.client }))
-  }
-  private _project?: ApiProject
-  get project(): ApiProject {
-    return (this._project ??= new ApiProject({ client: this.client }))
   }
   private _worktree?: ApiWorktree
   get worktree(): ApiWorktree {

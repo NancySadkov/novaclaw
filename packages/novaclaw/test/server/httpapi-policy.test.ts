@@ -84,35 +84,12 @@ describe("GET /api/policy", () => {
     }),
   )
 
-  it.effect("reports what THIS folder's novaclaw.json asks for, and names the file", () =>
-    Effect.gen(function* () {
-      const directory = tmp("asks")
-      fs.writeFileSync(
-        path.join(directory, "novaclaw.json"),
-        JSON.stringify({ version: 1, policies: ["git-no-pager"] }),
-      )
-      const state = yield* read(directory)
-      expect(state.requested).toEqual(["git-no-pager"])
-      expect(state.missing).toEqual([])
-      expect(state.file).toBe(path.join(directory, "novaclaw.json"))
-    }),
-  )
+  // 🗑️ A case stood here: the route reported what THIS folder's novaclaw.json asked for and named the file, so a user could go and edit it. A folder can no longer ask for anything (owner, 2026-09-16), and the file is gone: the route answers the INSTALLED list alone.
 
-  it.effect("🔴 a folder asking for a policy that is NOT installed says so — every call there is refused", () =>
-    Effect.gen(function* () {
-      const directory = tmp("missing")
-      fs.writeFileSync(
-        path.join(directory, "novaclaw.json"),
-        JSON.stringify({ version: 1, policies: ["no-such-guard"] }),
-      )
-      const state = yield* read(directory)
-      expect(state.requested).toEqual(["no-such-guard"])
-      // This is the state in which the kernel refuses EVERY tool call in the folder. A surface that
-      // could not see it would leave a user watching each call fail with no explanation on screen.
-      expect(state.missing).toEqual(["no-such-guard"])
-      expect(state.disabledButRequested).toEqual([])
-    }),
-  )
+  // 🗑️ A case stood here: a folder asking for a policy that is NOT installed was the state in which
+  // the kernel refused EVERY tool call in that folder, and a surface that could not see it left a user
+  // watching each call fail with no explanation on screen. It went with the `novaclaw.json` mechanism
+  // (owner, 2026-09-16) — there is no folder half of this answer any more.
 })
 
 describe("the toggle, through the route Settings actually calls", () => {
@@ -146,8 +123,11 @@ describe("the toggle, through the route Settings actually calls", () => {
   )
 
   it.instance(
-    "🔴 a folder that DECLARED a policy the user switched off is reported apart from a missing one",
-    () =>
+  // 🗑️ A case stood here: a folder that DECLARED a policy the user then switched off was reported
+  // apart from a policy that was never installed, because the two ask for opposite fixes — install it,
+  // or switch it back on — and both refuse every tool call in that folder. A folder can no longer
+  // declare a policy at all (owner, 2026-09-16), so the route reports the INSTALLED list and nothing
+  // else: `requested`, `missing` and `disabledButRequested` are structurally empty.
       Effect.gen(function* () {
         const test = yield* TestInstance
         fs.writeFileSync(

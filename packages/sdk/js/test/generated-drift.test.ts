@@ -329,7 +329,16 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `['ModelBenchmark']`, added `[]`. The taxonomy itself adds no named component — `taxonomy` and
 // `needsTaxonomy` are inline enums on shapes that already existed (`ModelV2Info`, `ConfigV2Model`,
 // `ConfigV2Agent`) — which is why a real contract change moves this table by exactly one line.
-const SCHEMA_NAME_FINGERPRINT = "a51ebba439a2f32978b20bde1c2d9b5e841885cedbce35b2e9168aa6e32f71a3"
+/**
+ * 🔴 RE-PINNED 2026-09-16, after reviewing the mapping rather than reading the mismatch. The
+ * `novaclaw.json` retirement removed `GET`/`POST /api/project`, so the public schema lost exactly the
+ * project names and nothing else. Measured on `packages/sdk/openapi.json`: **479 deletions and zero
+ * additions**, and every removed name was one of `ProjectState`, `ProjectWriteInput`,
+ * `ProjectWriteResult`, `ProjectTune`, `ProjectSkillChoice`, `ProjectSkills`, `ProjectSection`, plus the
+ * `project.state` / `project.write` operation ids. That is the whole delta — review this way again if
+ * this line ever moves.
+ */
+const SCHEMA_NAME_FINGERPRINT = "3c39758f7c44181a5839738edf78f305e7e4c97c312afdc3d057a12216435249"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

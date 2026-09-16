@@ -413,7 +413,9 @@ export const INSTANCE_DECLARED_API_PATHS: readonly string[] = [
   "/api/identity/restore",
   "/api/policy",
   "/api/plugin",
-  "/api/project",
+  // 🗑️ `/api/project` stood here. The route was retired with the `novaclaw.json` mechanism on
+  // 2026-09-16, so the spec no longer declares it and this ledger entry leaves with it — which is the
+  // shrink-only rule working in the direction it is meant to.
   "/api/usage",
 ]
 

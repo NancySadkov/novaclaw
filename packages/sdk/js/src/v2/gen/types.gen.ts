@@ -1370,75 +1370,6 @@ export type NotFoundError = {
   }
 }
 
-export type ProjectState =
-  | {
-      kind: "project"
-      root: string
-      file: string
-      name?: string
-      permissionRules: number
-      permissions: PermissionV2Ruleset
-      exclude: Array<string>
-      skills: Array<string>
-      skillsRefused: Array<string>
-      tune: {
-        features: {
-          [key: string]: boolean
-        }
-        applied: Array<string>
-        refused: Array<string>
-        deferred: Array<string>
-      }
-      gitignore?: {
-        file: string
-        add: Array<string>
-        already: Array<string>
-        dropped: Array<{
-          source: string
-          reason: string
-        }>
-        reincludes: Array<string>
-      }
-    }
-  | {
-      kind: "invalid"
-      file: string
-      reason: string
-      detail: string
-    }
-  | {
-      kind: "none"
-    }
-
-export type ProjectWriteInput = {
-  name?: string
-  permissions?: PermissionV2Ruleset
-  tune?: ProjectTune
-  exclude?: Array<string>
-  policies?: Array<string>
-  skills?: ProjectSkills
-  clear?: Array<ProjectSection>
-}
-
-export type ProjectWriteResult =
-  | {
-      ok: true
-      file: string
-      created: boolean
-      sections: Array<string>
-      cleared: Array<string>
-      refusedTune: Array<string>
-      refusedPermissions: PermissionV2Ruleset
-      refusedSkills: Array<string>
-      refusedPolicies: Array<string>
-    }
-  | {
-      ok: false
-      file: string
-      reason: string
-      detail: string
-    }
-
 export type WorktreeCreateInput = {
   name?: string
   /**
@@ -4594,30 +4525,6 @@ export type ConfigInfo = {
   }
   disabled_providers?: Array<string>
 }
-
-export type ProjectTune = {
-  mode?: "interactive"
-  features?: {
-    safeMode?: boolean
-    askBeforeChanges?: boolean
-    surgicalEdits?: boolean
-    contextBudget?: boolean
-    memory?: boolean
-    introspection?: boolean
-    quality?: boolean
-    affective?: boolean
-  }
-}
-
-export type ProjectSkillChoice = {
-  show?: boolean
-}
-
-export type ProjectSkills = {
-  [key: string]: ProjectSkillChoice
-}
-
-export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies" | "skills"
 
 export type DbRegistryTableSummary = {
   name: string
@@ -10887,70 +10794,6 @@ export type ConfigUpdateResponses = {
 }
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
-
-export type ProjectStateData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/api/project"
-}
-
-export type ProjectStateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * Unauthorized
-   */
-  401: void
-}
-
-export type ProjectStateError = ProjectStateErrors[keyof ProjectStateErrors]
-
-export type ProjectStateResponses = {
-  /**
-   * The resolved Project for this location
-   */
-  200: ProjectState
-}
-
-export type ProjectStateResponse = ProjectStateResponses[keyof ProjectStateResponses]
-
-export type ProjectWriteData = {
-  body: ProjectWriteInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/api/project"
-}
-
-export type ProjectWriteErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * Unauthorized
-   */
-  401: void
-}
-
-export type ProjectWriteError = ProjectWriteErrors[keyof ProjectWriteErrors]
-
-export type ProjectWriteResponses = {
-  /**
-   * The receipt, or the refusal
-   */
-  200: ProjectWriteResult
-}
-
-export type ProjectWriteResponse = ProjectWriteResponses[keyof ProjectWriteResponses]
 
 export type WorktreeCreateData = {
   body?: WorktreeCreateInput
