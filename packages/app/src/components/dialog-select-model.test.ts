@@ -7,7 +7,7 @@ import path from "node:path"
 // empty list, or a button that opens the old dialog, both look like a working UI.
 //
 //   1. no models configured → the picker is skipped and the add-model flow opens directly;
-//   2. "Manage models" opens Settings → Models;
+//   2. "Manage models" opens the MODELS APP (`/models`) — it was a Settings tab until 2026-09-16;
 //   3. the obsolete DialogManageModels is gone, so nothing can route back to it.
 
 const HERE = import.meta.dir
@@ -26,11 +26,13 @@ describe("model picker routing", () => {
     expect(selectModel).not.toMatch(/<\s*[\w.]*DialogManageModels/)
   })
 
-  test("both Manage-models handlers open Settings on the Models tab", () => {
+  test("both Manage-models handlers open the Models app", () => {
     // Two entry points exist (the popover's sliders button and the dialog's footer button) and they must
-    // agree; one was previously left behind when the other changed.
-    const opens = selectModel.match(/defaultTab="models"/g) ?? []
+    // agree; one was previously left behind when the other changed. Both navigate to the app now.
+    const opens = selectModel.match(/navigate\("\/models"\)/g) ?? []
     expect(opens.length).toBeGreaterThanOrEqual(2)
+    // No `defaultTab="models"` may survive — the Settings tab is gone, so that would open General.
+    expect(selectModel).not.toContain('defaultTab="models"')
     const managers = selectModel.match(/const (handleManage|manage) = \(\) => \{/g) ?? []
     expect(managers.length).toBe(2)
   })

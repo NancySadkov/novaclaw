@@ -13,6 +13,26 @@ describe("home-screen visual contracts", () => {
     expect(tile).toContain("!!props.app.tileNeedsFrame")
   })
 
+  test("Models uses the shared launcher frame with its own golden glyph", () => {
+    // The tile must match the others: a transparent golden glyph that the renderer frames, exactly
+    // like Skills — not the gradient fallback it shipped with first (owner, 2026-09-16).
+    const builtins = read("../../apps/builtins.tsx")
+    expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/tiles\/models\.svg"/)
+    expect(builtins).toMatch(/id: "models",[\s\S]*?tileNeedsFrame: true/)
+    const svg = read("../../../public/assets/skin/tiles/models.svg")
+    expect(svg.trimStart().startsWith("<svg")).toBe(true)
+  })
+
+  test("every built-in tile URL resolves to a shipped asset", () => {
+    const builtins = read("../../apps/builtins.tsx")
+    const urls = [...builtins.matchAll(/tile: "(\/assets\/skin\/tiles\/[^"]+)"/g)].map((match) => match[1]!)
+    expect(urls.length).toBeGreaterThan(5)
+    const missing = urls.filter(
+      (url) => !fs.existsSync(path.join(import.meta.dir, "../../../public", url.replace(/^\//, ""))),
+    )
+    expect(missing, "a built-in tile points at artwork this build does not ship").toEqual([])
+  })
+
   test("the home agent picker uses the themed popup", () => {
     const control = read("../../components/composer/agent-control.tsx")
 

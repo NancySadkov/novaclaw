@@ -109,9 +109,13 @@ export function useBuiltinApps(): () => HomeApp[] {
       get title() {
         return name("models")
       },
-      // No finished tile PNG yet: a gradient tile with the `cpu` glyph keeps the launcher honest
-      // rather than borrowing another app's artwork. The accent is the cool teal Trash freed.
+      // The owner-supplied `models.svg` is a transparent golden GLYPH, not a finished framed tile, so
+      // `tileNeedsFrame` makes the shared renderer draw the same gold hairline + aubergine inset +
+      // purple ring the other tiles carry — exactly the Skills precedent. `icon` stays the fallback
+      // for surfaces that render a glyph rather than the art. The accent is the cool teal Trash freed.
       icon: "cpu",
+      tile: "/assets/skin/tiles/models.svg",
+      tileNeedsFrame: true,
       accent: "#14b8a6",
       get subtitle() {
         return sub("models")

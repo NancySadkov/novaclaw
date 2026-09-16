@@ -1,4 +1,4 @@
-import { A } from "@solidjs/router"
+import { A, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
@@ -19,7 +19,6 @@ import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPresenceOrphans } from "./debug-presence"
 import { VIEWER_TTL_SECONDS } from "./session/session-presence"
-import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPage, AppPageHeader } from "@/components/app-page"
 import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
@@ -81,7 +80,9 @@ function DebugAppPage() {
   const language = useLanguage()
   const global = useGlobal()
   const server = useServer()
-  const showModels = useSettingsDialog("models")
+  // Models is its own app now — the Debug `ps` row links to `/models`, not a Settings tab.
+  const navigate = useNavigate()
+  const showModels = () => navigate("/models")
 
   const servers = createMemo(() => global.servers.list())
   const focused = createMemo(() => server.current ?? servers()[0])

@@ -15,7 +15,6 @@ import { SettingsStorageV2 } from "./storage"
 import { SettingsUsageV2 } from "./usage"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
-import { SettingsModelsV2 } from "./models"
 import { SettingsTrashV2 } from "./trash"
 import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
@@ -115,12 +114,9 @@ export const DialogSettings: Component<{
                         the memory atlas — now lives in the officer's Memory screen, rendered
                         from the same component. Settings keeps what is instance CONFIGURATION; what
                         Nova knows about you is a thing you go and look at, not a preference. */}
-                          {/* Models sits right under General — adding/configuring/importing models is the
-                        high-value task while local hardware can't run the best model out of the box. */}
-                          <TabsV2.Trigger value="models">
-                            <Icon name="cpu" size="large" />
-                            {language.t("settings.models.title")}
-                          </TabsV2.Trigger>
+                          {/* Models is its OWN app now (owner, 2026-09-16) — a home tile at
+                              `/models`, not a Settings tab. Configuration is a place you go, and the
+                              list outgrew a panel inside a dialog. */}
                           <TabsV2.Trigger value="appearance">
                             <Icon name="palette" size="large" />
                             {language.t("settings.tab.appearance")}
@@ -240,9 +236,6 @@ export const DialogSettings: Component<{
               </TabsV2.Content>
               <TabsV2.Content value="messengers" class="settings-v2-panel">
                 <SettingsMessengersV2 />
-              </TabsV2.Content>
-              <TabsV2.Content value="models" class="settings-v2-panel">
-                <SettingsModelsV2 />
               </TabsV2.Content>
               <Show when={tabVisible("system-prompt")}>
                 <TabsV2.Content value="system-prompt" class="settings-v2-panel">

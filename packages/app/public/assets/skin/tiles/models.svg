@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="Models">
+  <!--
+    The Models app tile glyph, in the same golden-gradient language as the finished tiles and the
+    Skills brain. Transparent background on purpose: `builtins.tsx` marks it `tileNeedsFrame`, so the
+    launcher draws its one gold outer hairline + aubergine inset + purple ring around this glyph
+    instead of the artwork carrying a second frame of its own.
+  -->
+  <defs>
+    <linearGradient id="nc-models-gold" x1="70" y1="56" x2="190" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f9edc4" />
+      <stop offset="0.4" stop-color="#e8c56c" />
+      <stop offset="1" stop-color="#b07d26" />
+    </linearGradient>
+    <mask id="nc-models-die">
+      <rect width="256" height="256" fill="#fff" />
+      <rect x="97" y="97" width="62" height="62" rx="13" fill="#000" />
+    </mask>
+  </defs>
+
+  <!-- pins: three per side, meeting the body edge -->
+  <g fill="url(#nc-models-gold)">
+    <rect x="92" y="42" width="12" height="26" rx="4" />
+    <rect x="122" y="42" width="12" height="26" rx="4" />
+    <rect x="152" y="42" width="12" height="26" rx="4" />
+    <rect x="92" y="188" width="12" height="26" rx="4" />
+    <rect x="122" y="188" width="12" height="26" rx="4" />
+    <rect x="152" y="188" width="12" height="26" rx="4" />
+    <rect x="42" y="92" width="26" height="12" rx="4" />
+    <rect x="42" y="122" width="26" height="12" rx="4" />
+    <rect x="42" y="152" width="26" height="12" rx="4" />
+    <rect x="188" y="92" width="26" height="12" rx="4" />
+    <rect x="188" y="122" width="26" height="12" rx="4" />
+    <rect x="188" y="152" width="26" height="12" rx="4" />
+  </g>
+
+  <!-- chip body with the die punched out, so the tile ground reads through the core -->
+  <rect x="66" y="66" width="124" height="124" rx="24" fill="url(#nc-models-gold)" mask="url(#nc-models-die)" />
+  <rect x="79" y="79" width="98" height="98" rx="17" stroke="#fbeecb" stroke-opacity="0.65" stroke-width="3" />
+
+  <!-- the core: a four-point spark, the model itself -->
+  <path d="M128 102l6.6 19.4L154 128l-19.4 6.6L128 154l-6.6-19.4L102 128l19.4-6.6z" fill="url(#nc-models-gold)" />
+</svg>

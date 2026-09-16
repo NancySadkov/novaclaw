@@ -1,4 +1,5 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
+import { useNavigate } from "@solidjs/router"
 import { type Accessor, Component, ComponentProps, createMemo, JSX, onMount, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
@@ -38,13 +39,15 @@ type ModelState = ReturnType<typeof useLocal>["model"]
 
 // The model-picker "+" opens the Add-models flow (provider preset cards → key → model
 // multi-select — settings-v2/dialog-new-model). Without a live server + directory to probe
-// against there is nothing a picker dialog could save, so degrade to Settings → Models, which
-// resolves its own instance routing robustly (the old DialogSelectProvider fallback is retired
-// — provider-import P3).
+// against there is nothing a picker dialog could save, so degrade to the MODELS APP (`/models`),
+// which resolves its own instance routing robustly (the old DialogSelectProvider fallback is
+// retired — provider-import P3). It was Settings → Models until 2026-09-16, when Models became its
+// own app; a `defaultTab` into a tab that no longer exists would open General.
 function openAddModel(
   dialog: ReturnType<typeof useDialog>,
   http: ServerConnection.HttpBase | undefined,
   directory: Accessor<string | undefined>,
+  navigate: (path: string) => void,
 ) {
   const dir = directory()
   if (http && dir) {
@@ -53,9 +56,7 @@ function openAddModel(
     })
     return
   }
-  void import("./settings-v2").then((x) => {
-    dialog.show(() => <x.DialogSettings defaultTab="models" />)
-  })
+  navigate("/models")
 }
 
 const ModelList: Component<{
@@ -250,6 +251,7 @@ export function ModelSelectorPopover(props: {
   const dialog = useDialog()
   const local = useLocal()
   const server = useServer()
+  const navigate = useNavigate()
   const directory = () => decode64(local.slug())
 
   const close = (dismiss: Dismiss) => {
@@ -257,20 +259,19 @@ export function ModelSelectorPopover(props: {
     setStore("open", false)
   }
 
-  // "Manage models" is Settings → Models now (owner, 2026-07-27). The old DialogManageModels was a
-  // per-provider visibility switchboard from the cloud-catalog era — it grouped by provider, which the
-  // models-primary model rejects, and it could do strictly less than the Models tab (which adds, edits,
-  // clones, tiers and configures). Two surfaces for one job, one of them worse; this is the good one.
+  // "Manage models" is the MODELS APP (`/models`) now (owner, 2026-09-16). The old DialogManageModels
+  // was a per-provider visibility switchboard from the cloud-catalog era — it grouped by provider,
+  // which the models-primary model rejects, and it could do strictly less than the Models screen
+  // (which adds, edits, clones, tiers and configures). Two surfaces for one job, one of them worse;
+  // this is the good one. It was a Settings tab until Models became its own app.
   const handleManage = () => {
     close("manage")
-    void import("./settings-v2").then((x) => {
-      dialog.show(() => <x.DialogSettings defaultTab="models" />)
-    })
+    navigate("/models")
   }
 
   const handleConnectProvider = () => {
     close("provider")
-    openAddModel(dialog, server.current?.http, directory)
+    openAddModel(dialog, server.current?.http, directory, navigate)
   }
   /** True when this instance has no models configured at all — see the onOpenChange note below. */
   const noModels = () => (props.model ?? local.model).list().length === 0
@@ -358,10 +359,11 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
   const language = useLanguage()
   const local = useLocal()
   const server = useServer()
+  const navigate = useNavigate()
   const directory = () => decode64(local.slug())
 
   const provider = () => {
-    openAddModel(dialog, server.current?.http, directory)
+    openAddModel(dialog, server.current?.http, directory, navigate)
   }
 
   // The dialog twin of the popover's empty-state redirect: the composer's /model command opens THIS,
@@ -370,14 +372,13 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
   onMount(() => {
     if ((props.model ?? local.model).list().length > 0) return
     dialog.close()
-    openAddModel(dialog, server.current?.http, directory)
+    openAddModel(dialog, server.current?.http, directory, navigate)
   })
 
   // Same destination as the popover's sliders button — see handleManage above.
   const manage = () => {
-    void import("./settings-v2").then((x) => {
-      dialog.show(() => <x.DialogSettings defaultTab="models" />)
-    })
+    dialog.close()
+    navigate("/models")
   }
 
   return (
