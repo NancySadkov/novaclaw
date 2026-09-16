@@ -216,47 +216,12 @@ export const SettingsPoliciesSection: Component = () => {
               )}
             </For>
 
-            {/* What the FOLDER asks for is shown even when it asks for nothing — the same reason the
-                "Never read" row above it is: a capability that only appears once you already use it
-                teaches nobody that it exists. This row is the FACT; the control is below it. */}
-            <SettingsRowV2
-              title={language.t("policies.folder.title")}
-              description={
-                resolved().requested.length === 0
-                  ? language.t("policies.folder.none")
-                  : language.t("policies.folder.requested", {
-                      file: resolved().file ?? "novaclaw.json",
-                      ids: idList(resolved().requested),
-                    })
-              }
-            >
-              <span />
-            </SettingsRowV2>
-
-            {/* 🔴 Both refusal states get their own row, and they are separate rows because the fix
-                is the opposite one in each case: install the thing, or switch it back on. */}
-            <Show when={resolved().missing.length > 0}>
-              <SettingsRowV2
-                title={language.t("policies.folder.missing.title")}
-                description={language.t("policies.folder.missing", {
-                  file: resolved().file ?? "novaclaw.json",
-                  ids: idList(resolved().missing),
-                })}
-              >
-                <span data-slot="settings-policy-missing" />
-              </SettingsRowV2>
-            </Show>
-            <Show when={resolved().disabledButRequested.length > 0}>
-              <SettingsRowV2
-                title={language.t("policies.folder.disabled.title")}
-                description={language.t("policies.folder.disabled", {
-                  file: resolved().file ?? "novaclaw.json",
-                  ids: idList(resolved().disabledButRequested),
-                })}
-              >
-                <span data-slot="settings-policy-disabled" />
-              </SettingsRowV2>
-            </Show>
+            {/* 🗑️ THE FOLDER'S OWN REQUEST stood here: what this folder's `novaclaw.json` asked for,
+                shown even when it asked for nothing, plus a row each for a requested-but-not-installed
+                policy and a requested-but-switched-off one — separate rows because the two ask for
+                opposite fixes. It went with the mechanism (owner, 2026-09-16), and it was the last
+                live reader of the `policies.folder.*` copy: the typechecker found it the moment those
+                keys were deleted, because the key union is derived from the dictionary. */}
           </SettingsListV2>
 
           {/* 🔴 The switch's own failure, on screen and next to the switch. A control that springs
