@@ -6,9 +6,6 @@ import { FSUtil } from "./fs-util"
 import { Flag } from "./flag/flag"
 import { Global } from "./global"
 import { Location } from "./location"
-import { ProjectExclusion } from "./project-exclusion"
-import { ProjectFileCache } from "./project-file-cache"
-import { ProjectFileResolve } from "./project-file"
 import { AbsolutePath } from "./schema"
 import { SystemContext } from "./system-context/index"
 import { SystemContextRegistry } from "./system-context/registry"
@@ -28,7 +25,6 @@ export const layer = Layer.effectDiscard(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const registry = yield* SystemContextRegistry.Service
-    const projects = yield* ProjectFileCache.Service
 
     const source = (value: ReadonlyArray<File> | SystemContext.Unavailable) =>
       SystemContext.make({
@@ -56,32 +52,13 @@ export const layer = Layer.effectDiscard(
             })
         ).map(FSUtil.resolve),
       )
-      // ⚠️ The one AMBIENT ingest of project file text, and it does not go through a tool — so it
-      // does not inherit `LocationMutation.resolve`'s exclusion gate and has to ask on its own.
-      // Without this, `exclude: ["AGENTS.md"]` would be honoured by every tool and quietly ignored
-      // by the path that loads the file into the system prompt on EVERY turn: the loudest possible
-      // way for "Never read" to be false.
-      //
-      // The instance's OWN `AGENTS.md` (under `global.config`) is never screened — it is not in the
-      // user's project, and a folder must not be able to silence the instance's own instructions.
-      const screened = yield* Effect.forEach(
-        [...discovered],
-        (candidate) =>
-          // ⚠️ The trust root is THIS LOCATION's, not `dirname(candidate)`. Candidates are found by
-          // walking, so most of them sit above the selected folder; anchoring the boundary on each
-          // candidate's own folder would mean a project file could only ever screen a file sitting
-          // directly beside it — including the `stop` root this very walk started from.
-          ProjectExclusion.declarationFor(dirname(candidate), ProjectFileResolve.trustedBoundary(location)).pipe(
-            Effect.provideService(ProjectFileCache.Service, projects),
-            Effect.map((declaration) => {
-              if (declaration === undefined) return candidate
-              const verdict = ProjectExclusion.screen(declaration, candidate, false)
-              return verdict.excluded ? undefined : candidate
-            }),
-          ),
-        { concurrency: "unbounded" },
-      )
-      for (const candidate of [...discovered]) if (!screened.includes(candidate)) discovered.delete(candidate)
+      // 🔴 The exclusion screening that used to sit here is GONE with the `novaclaw.json` mechanism
+      // (owner, 2026-09-16: *"We have retired the entire novaclaw.json mechanism and everything
+      // related to it. Please ensure it is gone for good."*). What it did, recorded because the loss
+      // is a capability and not a surface: this was the ONLY path that screened the ambient
+      // `AGENTS.md` files against a folder's `exclude` list, and it is the one ingest that does not go
+      // through a tool — so `exclude: ["AGENTS.md"]` was honoured by every tool and enforced here. With
+      // the file gone there is no list to enforce, so every discovered `AGENTS.md` loads.
       const paths = Array.dedupe([FSUtil.resolve(join(global.config, "AGENTS.md")), ...discovered])
       const files = yield* Effect.forEach(
         paths,

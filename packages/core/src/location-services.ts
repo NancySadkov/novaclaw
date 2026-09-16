@@ -23,7 +23,6 @@ import { LocationMutation } from "./location-mutation"
 import { LocationServiceMap } from "./location-service-map"
 import { BootProfile } from "./observability/boot-profile"
 import { PermissionV2 } from "./permission"
-import { ProjectFileCache } from "./project-file-cache"
 import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
 import { Policy } from "./policy"
@@ -78,12 +77,6 @@ export const locationServices = LayerNode.group([
   FileMutation.node,
   FileObservation.node,
   PermissionV2.node,
-  // The folder governing THIS location, for consumers that live in the location graph — see
-  // `ProjectFileCache.LocalService`. The CACHE itself is `global` and deliberately stays that way:
-  // hoisting lifts a global node OUT of the per-location half, so listing it here would not make it
-  // visible, and re-tagging it `location` would give every location its own map and split the very
-  // instance the write path invalidates.
-  ProjectFileCache.localNode,
   ToolOutputStore.node,
   ExternalToolSource.node,
   ToolPolicyGate.node,

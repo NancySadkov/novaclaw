@@ -5,9 +5,6 @@ import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FSUtil } from "./fs-util"
 import { Location } from "./location"
-import { ProjectExclusion } from "./project-exclusion"
-import { ProjectFileCache } from "./project-file-cache"
-import { ProjectFileResolve } from "./project-file"
 
 export const Kind = Schema.Literals(["file", "directory"])
 export type Kind = typeof Kind.Type
@@ -91,21 +88,7 @@ export interface Interface {
    * stay inside the Location. Absolute paths outside it require separate
    * `external_directory` approval. This does not approve the mutation.
    */
-  readonly resolve: (
-    input: ResolveInput,
-  ) => Effect.Effect<Target, PathError | FSUtil.Error | ProjectExclusion.ExcludedError | ProjectFileCache.FaultError>
-  /**
-   * The `novaclaw.json` exclusion list governing a canonical directory, for the two tools that
-   * ENUMERATE rather than name (`glob`, `grep`). `resolve` speaks for their search root; only they
-   * can speak for their rows. Everyone else should be using `resolve` and nothing else.
-   *
-   * ⚠️ Takes the directory only. The containment boundary the lookup climbs to is THIS location's
-   * folder, supplied here rather than accepted from the caller — a boundary a caller could pass is
-   * a boundary a caller could widen.
-   */
-  readonly exclusionsFor: (
-    directory: string,
-  ) => Effect.Effect<ProjectExclusion.Declaration | undefined, ProjectFileCache.FaultError>
+  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, PathError | FSUtil.Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/LocationMutation") {}
@@ -131,14 +114,6 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
-    // Captured at layer build and provided below, for the reason `project-file-cache.ts` states:
-    // leaving the requirement to be discharged at call time pushes it into this service's R, which
-    // must be `never`.
-    const projects = yield* ProjectFileCache.Service
-    const exclusionsFor = (directory: string, boundary: string) =>
-      ProjectExclusion.declarationFor(directory, boundary).pipe(
-        Effect.provideService(ProjectFileCache.Service, projects),
-      )
     // Same boot tolerance as the FileSystem layer: a location whose directory was deleted
     // must still boot far enough to serve DB-only requests (e.g. deleting its sessions).
     const locationRoot = yield* fs
@@ -190,66 +165,22 @@ export const layer = Layer.effect(
         return yield* new PathError({ path: input.path, reason: "location_escape" })
       }
 
-      // ── The project exclusion gate ──────────────────────────────────────────────────────────
+      // ── (the project-exclusion gate is retired) ─────────────────────────────────────────────
       //
-      // 🔴 HERE, and deliberately after `resolvePath`. Everything above has already turned whatever
-      // the model typed into ONE canonical string: `path.resolve` collapsed `..` and normalised
-      // separators, `realPath` followed symlinks and (on Windows) folded the path to its true
-      // on-disk casing — measured: `…/SECRETS/key.txt` comes back as `…/Secrets/Key.TXT`. Screening
-      // the canonical path is therefore screening the FILE, not a spelling of it, which is what
-      // makes "prove exclusions cannot be bypassed through alternate tools or path aliases"
-      // a property of this one call site rather than a checklist per tool. The alias vectors and
-      // what each one measured are in `notes/reports/projects-program-2026-08-18.md`.
+      // 🗑️ An exclusion gate used to sit HERE, after `resolvePath`, because this is the one call site
+      // every path-taking tool funnels through: it looked up a `novaclaw.json` from the TARGET directory
+      // (which is what made a nested project, an absolute path into this project from outside it, and a
+      // path into a different project all answer with what the file's own owner wrote), folded two
+      // Windows aliases `realPath` misses, and refused the read with an error naming the pattern and the
+      // declaring file.
       //
-      // The declaration is looked up from the TARGET's directory, so a nested project, an absolute
-      // path into this project from outside it, and a path into a different project all get the
-      // answer the file's own owner wrote. See `project-exclusion.ts`.
-      //
-      // ⚠️ …with ONE thing `realPath` does not do, folded in here: a **mapped / `subst` drive**.
-      // Node's JS `realpath` keeps `Y:\key.txt` as `Y:\key.txt`; `realpath.native` collapses it to
-      // the real volume path (both measured 2026-08-18). That difference was a live bypass, and the
-      // reason it is a bypass is NOT matching — it is the WALK-UP. `exclusionsFor` climbs from the
-      // target's directory looking for a `novaclaw.json`, so with `Y:` mapped at `<root>\secrets`
-      // the climb from `Y:\` hits the root of a drive that holds no project file, answers
-      // `undefined`, and there is nothing left to screen: `Y:\key.txt` returned the excluded file's
-      // BYTES end to end. Mapped at the project root instead, the same climb finds
-      // `Y:\novaclaw.json` without leaving the mapped volume and the exclusion bit normally — which
-      // is exactly why the open half needed its own test rather than being assumed covered.
-      //
-      // 🔴 Both operands are folded, and both are load-bearing: the DIRECTORY so the declaration is
-      // found at all, and the CANONICAL path so `screen` measures it relative to that declaration's
-      // real root. Folding only the first finds the rules and then fails to match a `Y:\…` string
-      // against a `C:\…` root.
-      //
-      // ⚠️ Deliberately NOT in `project-exclusion.ts`. Its `unalias` runs only AFTER a declaration
-      // has been found — never reached in this vector — and its `~\d` gate exists precisely so
-      // `screenAll` does not pay a sync `realpath.native` per row of a thousand-match grep. This
-      // costs one such call per RESOLVE, on the read path only (a `readsContent: false` write pays
-      // nothing), and none at all off win32, where `normalizePath` is the identity. The screened
-      // strings stay LOCAL to this block: `canonical` and `resource` below are the permission
-      // resources that stored user verdicts are keyed on, and re-spelling those to fix a matching
-      // bug would invalidate them.
-      if (input.readsContent !== false) {
-        const screenDirectory = FSUtil.normalizePath(resolved.directory)
-        const screenCanonical = path.resolve(screenDirectory, path.relative(resolved.directory, resolved.canonical))
-        // ⚠️ The boundary is folded by the SAME rule as the two operands above, and for the same
-        // reason. `locationRoot` is already a realpath, but a `subst` drive is not resolved by
-        // `realpath` — so an unfolded boundary would fail `FSUtil.contains` against a folded
-        // `screenDirectory` and `walk` would silently fall back to the queried folder, which is
-        // exactly the collapse this call is fixing. A boundary that does not fold is a boundary
-        // that quietly is not one.
-        const screenBoundary = FSUtil.normalizePath(ProjectFileResolve.trustedBoundary(location))
-        const declaration = yield* exclusionsFor(screenDirectory, screenBoundary)
-        if (declaration) {
-          const verdict = ProjectExclusion.screen(declaration, screenCanonical, resolved.type === "Directory")
-          if (verdict.excluded && verdict.pattern !== undefined)
-            return yield* new ProjectExclusion.ExcludedError({
-              resource: input.path,
-              pattern: verdict.pattern,
-              file: declaration.file,
-            })
-        }
-      }
+      // Owner, 2026-09-16: *"We have retired the entire novaclaw.json mechanism and everything related
+      // to it. Please ensure it is gone for good."* That deletion is the loss of a privacy guarantee,
+      // not of a setting: `exclude` had no other source, so an excluded file is now readable by every
+      // tool. The measurements that made the gate credible — a `subst`-mapped drive defeating the
+      // climb, and the 8.3 short name surviving `realPath` — live in
+      // `notes/reports/projects-program-2026-08-18.md`, which is now the record of a mechanism rather
+      // than of a fix.
 
       const external = !lexicallyInternal
       const resource = external
@@ -271,14 +202,7 @@ export const layer = Layer.effect(
       } satisfies Target
     })
 
-    return Service.of({
-      resolve,
-      // ⚠️ The public method takes the directory ONLY. `glob` and `grep` ask about their search
-      // root, and the trust root is this location's own folder — which is ours to supply, not
-      // theirs to know. Handing the boundary to callers would let a caller widen it.
-      exclusionsFor: (directory: string) =>
-        exclusionsFor(directory, FSUtil.normalizePath(ProjectFileResolve.trustedBoundary(location))),
-    })
+    return Service.of({ resolve })
   }),
 )
 
@@ -287,5 +211,5 @@ export const locationLayer = layer
 export const node = makeLocationNode({
   service: Service,
   layer: layer.pipe(Layer.orDie),
-  deps: [FSUtil.node, Location.node, ProjectFileCache.node],
+  deps: [FSUtil.node, Location.node],
 })
