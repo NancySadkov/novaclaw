@@ -287,11 +287,23 @@ describe("SessionComponentRegistry", () => {
     withRegistry([SessionComponentRegistry.GoalDefinition, SessionComponentRegistry.PlanDefinition], ({ sessionID }) =>
       Effect.gen(function* () {
         const registry = yield* SessionComponentRegistry.Service
-        yield* registry.put({ sessionID, kind: "goal", value: { text: "Ship the verified milestone" } })
+        // 🔴 The goal is written by the HOST (owner, 2026-09-16: *"The goal is something user or agent's
+        // Superior officer sets. Agent can't set its own goal"*), and this line used to write it the way
+        // an AGENT would — no `system: true` — because that was allowed. The guard added to
+        // `GoalDefinition` turned that into a failure, which is the guard working: it found the one
+        // place in the tree that relied on the old contract. `system: true` is the kernel/user path.
+        yield* registry.put({ sessionID, kind: "goal", system: true, value: { text: "Ship the verified milestone" } })
         expect(yield* registry.get({ sessionID, kind: "goal" })).toMatchObject({
           value: { text: "Ship the verified milestone" },
           lifetime: "entity",
         })
+
+        // And the second door carries the same gate, exactly as the forged plan verdict below: an agent
+        // that cannot SET its own objective must not be able to substitute one either.
+        const selfSet = yield* registry
+          .put({ sessionID, kind: "goal", value: { text: "Ship something easier" } })
+          .pipe(Effect.flip)
+        expect(selfSet).toBeInstanceOf(SessionComponentRegistry.RegistryError)
 
         const draft = { position: 0, text: "Run the focused tests", status: "in_progress" as const, verdict: null }
         yield* registry.put({ sessionID, kind: "plan", id: "step-00000000", value: draft })

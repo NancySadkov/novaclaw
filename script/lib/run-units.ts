@@ -253,7 +253,21 @@ export const PACKAGES: Pkg[] = [
   // crash at the summary. 600 s is ~2.5× the healthy maximum. ⚠️ The wall clock alone no longer
   // separates "hung" from "slow" here — if this one fires, read the PeakSampler pressure verdict on
   // the kill line before assuming a hang.
-  { name: "core", dir: "packages/core", args: [], wallclockMs: 600_000 },
+  //
+  // 🔴 **RAISED to 1200 s, 2026-09-16, and the 2.5× margin above is why.** That margin was computed
+  // against a measured healthy maximum of 185–241 s; the unit has since outgrown it on this box, so a
+  // "~2.5×" backstop became a budget that fires on healthy runs — the exact failure the paragraph above
+  // warns destroys the thing the backstop is for. Measured: two whole runs killed at the 600 s line with
+  // the unit demonstrably WORKING (CPU delta 11.62 s over a 10 s wall-clock window, working set moving —
+  // so neither was a hang; the old summary called both one, see `script/test.ts`), and four SHARDED runs
+  // totalling 798 s–938 s. Shards run sequentially and pay per-process startup plus the previous shard's
+  // unreclaimed memory, so the whole unit sits between the 600 s floor and that 938 s ceiling.
+  //
+  // ⚠️ This is a BACKSTOP, not a budget: 1200 s is ~1.3× the worst sharded total observed and leaves a
+  // whole run room to finish. It is NOT a claim about how long `core` should take. Lower it only from a
+  // measured whole run on a quiet box (`tmp/peak-series.jsonl` carries the duration), never from
+  // preference — and if a run of it ever exceeds this, that IS the regression the old note asked for.
+  { name: "core", dir: "packages/core", args: [], wallclockMs: 1_200_000 },
   { name: "app:unit", dir: "packages/app", args: ["--preload", "./happydom.ts", "./src"] },
   {
     name: "app:browser",
@@ -263,14 +277,7 @@ export const PACKAGES: Pkg[] = [
     // listed HERE as well as in the package's `test:browser` script because this array — not the
     // script — is what the gate runs, and wiring only the script left the gate red while a direct
     // `bun run test:browser` was green.
-    args: [
-      "--conditions=browser",
-      "--preload",
-      "./happydom.ts",
-      "--preload",
-      "./solid-preload.ts",
-      "./test-browser",
-    ],
+    args: ["--conditions=browser", "--preload", "./happydom.ts", "--preload", "./solid-preload.ts", "./test-browser"],
   },
   // The packaging seam. `src` covers main + renderer + preload; the electron-builder config test sits at
   // the package ROOT, so it needs its own arg or it silently stays unrun (which is how it got here).

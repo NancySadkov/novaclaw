@@ -67,15 +67,11 @@ import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import * as PeakSeries from "./lib/peak-series"
 import * as RunSchedule from "./lib/run-schedule"
-import { readFailingNames, readSkipCount, readTestCount, stripAnsi } from "./lib/test-output"
+import { readFailingNames, readSkipCount, readTestCount } from "./lib/test-output"
+import { failureExcerpt } from "./lib/failure-excerpt"
 import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
-import {
-  novaclawSubUnits,
-  PACKAGES,
-  PROMOTED_NOVACLAW_SUBDIRS,
-  PROMOTED_NOVACLAW_TEST_FILES,
-} from "./lib/run-units"
+import { novaclawSubUnits, PACKAGES, PROMOTED_NOVACLAW_SUBDIRS, PROMOTED_NOVACLAW_TEST_FILES } from "./lib/run-units"
 
 /**
  * Refuse to run alongside a build, local inference server or another suite, or on a machine whose
@@ -265,28 +261,6 @@ type Result = {
   shards?: number
 }
 const results: Result[] = []
-
-/**
- * A tsgo diagnostic: `src/foo.ts(3,31): error TS4104: The type 'readonly string[]' is 'readonly' ...`.
- * Neither of the other two shapes below matches one, and tsgo's LAST line is often a bare count, so
- * without this a failing typecheck's summary row said `exit 2` and named no file.
- */
-const TS_DIAGNOSTIC = /\berror TS\d+\b/
-
-/** The most actionable single line we can put on a summary row. */
-function failureExcerpt(output: string): string {
-  const lines = stripAnsi(output)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-  const pick =
-    lines.find((line) => TS_DIAGNOSTIC.test(line)) ??
-    lines.find((line) => /^error[:\s]/i.test(line)) ??
-    lines.find((line) => line.includes("(fail)")) ??
-    lines.at(-1)
-  if (!pick) return ""
-  return pick.length > 140 ? `${pick.slice(0, 137)}...` : pick
-}
 
 /**
  * Reap what a wall-clock kill leaves behind.
@@ -700,11 +674,20 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
     // is the FALSE FAILURE the memory guard exists to prevent — so when it happens anyway, say which
     // it was. The sampler already holds the answer; without this the reader hunts a hang that is not
     // there (which is exactly how 2026-07-27's cascade was misread for a week).
+    //
+    // 🔴 **And it does NOT say "hang" any more.** Measured 2026-09-16: `core` was killed here twice and
+    // the line called both "a genuine hang, not memory", while the unit was demonstrably WORKING — CPU
+    // delta 11.62 s over a 10 s wall-clock window with the working set moving. Commit charge cannot see
+    // that, so the old sentence asserted the one thing its evidence could not support (ruling 2: a
+    // fault is never described falsely), and `run-units.ts` had already recorded the same misread for
+    // a different unit ("host commit peaking at 46–48 %, so the summary's 'genuine hang, not memory'
+    // line was reporting a ..."). What commit charge CAN say is that the kill was not paging; what to
+    // do about the rest is a probe, and the probe is named.
     const pressure =
       sample.hostCommitPct !== undefined && sample.hostCommitPct >= 90
-        ? ` — host commit peaked ${sample.hostCommitPct}%, so this is likely PAGING rather than a hang`
+        ? ` — host commit peaked ${sample.hostCommitPct}%, so this is likely PAGING rather than a slow unit`
         : sample.hostCommitPct !== undefined
-          ? ` — host commit peaked only ${sample.hostCommitPct}%, so this is a genuine hang, not memory`
+          ? ` — host commit peaked only ${sample.hostCommitPct}%, so the kill was NOT paging (a slow unit looks the same as a hung one from here: re-run it alone and watch its CPU — moving means slow)`
           : ""
     note = `WALL-CLOCK KILL at ${wallclockMs / 1000}s${pressure} (a SIGKILLed bun child often flushes no stderr)`
   } else if (errno) {
@@ -1325,14 +1308,34 @@ process.stdout.write(`\n\x1b[1m── summary ──\x1b[0m\n`)
 for (const r of results) {
   // A sharded PASS is not a plain PASS and must never print as one — the composition it exercised is
   // not the composition the gate is defined over. `PASS*` plus the note is the whole honesty budget.
+  //
+  // 🔴 **A sharded FAIL is the same asymmetry on the other side, and it cost a real misread.**
+  // `memory-plan.ts:147` records it in the code's own words: *"`core` concealed a wedge that only
+  // exists when the unit runs whole, and `--shard=1/2` wedged where the whole unit did not. A sharded
+  // pass is most of the signal, not the gate."* Measured 2026-09-16: four sharded runs of `core` each
+  // reported a DIFFERENT test failing — a ZIP transport case, a deferred-registration manifest, a KB
+  // generation-recovery case — every one of them passing when the file was run alone (29/29 in 31.7 s
+  // for the four). One of those was a REAL bug (a stale generated manifest, since fixed); the rest were
+  // artefacts of the degraded rung. A summary that prints both as plain `FAIL` invites the reader to
+  // treat a weaker measurement as a verdict, which is exactly what happened.
+  //
+  // So the tag carries the doubt the way `PASS*` does, and the note NAMES the probe. It stays red: a
+  // sharded failure might be real — one of the four was — and the gate must not be talked out of a
+  // possible defect by the mode it was found in.
   const tag = r.ok
     ? r.shards
       ? "\x1b[33mPASS*\x1b[0m"
       : "\x1b[32mPASS\x1b[0m"
     : isPinned(r)
       ? "\x1b[33mPINN\x1b[0m"
-      : "\x1b[31mFAIL\x1b[0m"
-  const degraded = r.shards ? `sharded ×${r.shards} (DEGRADED — composition differs from a whole run)` : ""
+      : r.shards
+        ? "\x1b[31mFAIL*\x1b[0m"
+        : "\x1b[31mFAIL\x1b[0m"
+  const degraded = r.shards
+    ? r.ok
+      ? `sharded ×${r.shards} (DEGRADED — composition differs from a whole run)`
+      : `sharded ×${r.shards} — FAILURE UNCONFIRMED: a sharded pass can wedge where the whole unit does not, so re-run it whole (\`bun run test --only=${r.name}\`) before believing it`
+    : ""
   const failures = r.failing.length ? `failing: ${r.failing.join("; ")}` : ""
   const note = isPinned(r)
     ? `${r.failing.length} pinned failure(s) — see ${BASELINE_PATH}`
@@ -1649,13 +1652,19 @@ if (!countBaselineSeeded) {
     .filter((r) => baseline.counts[r.name] !== r.testCount)
   if (missing.length || changed.length || unreadableCounts.length) {
     testCountDrift = true
-    process.stdout.write(`\n  \x1b[31mTEST COUNTS CHANGED OR UNREADABLE\x1b[0m — update the baseline only with an intentional test diff:\n`)
+    process.stdout.write(
+      `\n  \x1b[31mTEST COUNTS CHANGED OR UNREADABLE\x1b[0m — update the baseline only with an intentional test diff:\n`,
+    )
     for (const r of missing)
       process.stdout.write(`    ${r.name.padEnd(30)} not in baseline  ->  observed ${r.testCount}\n`)
     for (const r of changed)
-      process.stdout.write(`    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name]}  ->  observed ${r.testCount}\n`)
+      process.stdout.write(
+        `    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name]}  ->  observed ${r.testCount}\n`,
+      )
     for (const r of unreadableCounts)
-      process.stdout.write(`    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name] ?? "not recorded"}  ->  no completed count\n`)
+      process.stdout.write(
+        `    ${r.name.padEnd(30)} baseline ${baseline.counts[r.name] ?? "not recorded"}  ->  no completed count\n`,
+      )
   }
 }
 
@@ -1730,4 +1739,5 @@ process.stdout.write(
 // So the refusals go through `abort`, which owns the killing, the sampler and the (synchronous)
 // diagnostic; see `lib/diagnostic.ts` for why the write is synchronous anyway on a target we do not
 // measure from here.
-process.exitCode = failed.length || skipDrift || testCountDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0
+process.exitCode =
+  failed.length || skipDrift || testCountDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0

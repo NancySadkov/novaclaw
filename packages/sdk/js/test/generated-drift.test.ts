@@ -321,7 +321,15 @@ const GENERATE_TIMEOUT_MS = 60_000
 // event's source, sync-envelope and public-event names. The rest of the mapping is unchanged.
 // 2026-09-14: score-aware model routing adds exactly `ModelBenchmark` and `ModelPrefixCache`; both
 // map directly, with no collision suffix, and the prior mapping is otherwise byte-identical.
-const SCHEMA_NAME_FINGERPRINT = "185b8627570760284fac9fe9f1ec58ce7c446495f4df5ae2fe34dd29bcee12b7"
+// 2026-09-16: the model RATING becomes a three-word taxonomy and the Terminal-Bench score leaves the
+// wire, so this is the REVERSE of the 09-14 entry and the first mapping change that REMOVES a name:
+// `ModelBenchmark` is gone and nothing is added (521 entries -> 520, the other 520 byte-identical).
+// ⚠️ Verified by diffing the component names of the committed spec across the four commits that made
+// the change (`git show <rev>:packages/sdk/openapi.json` -> `components.schemas` keys): removed
+// `['ModelBenchmark']`, added `[]`. The taxonomy itself adds no named component — `taxonomy` and
+// `needsTaxonomy` are inline enums on shapes that already existed (`ModelV2Info`, `ConfigV2Model`,
+// `ConfigV2Agent`) — which is why a real contract change moves this table by exactly one line.
+const SCHEMA_NAME_FINGERPRINT = "a51ebba439a2f32978b20bde1c2d9b5e841885cedbce35b2e9168aa6e32f71a3"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
