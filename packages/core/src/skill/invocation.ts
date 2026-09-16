@@ -43,23 +43,6 @@ export * as SkillInvocation from "./invocation"
 // second is your own list. Presenting them as twins would imply that hiding a skill from your menu
 // also keeps the agent off it, which is false.
 //
-// ─── THE THIRD LAYER: THE FOLDER'S OWN `novaclaw.json` ────────────────────────────────────────────
-// Both switches also have a PROJECT-scoped half, and neither of them is a new mechanism:
-//
-//   · **Nova may choose this** — a project's `permissions` section already carries
-//     `{action:"skill", resource:<name>, effect:"deny"}`, and `PermissionV2.evaluateNarrowed` folds
-//     it in as a constraint that can only ever make a verdict stricter. Nothing was needed here.
-//
-//   · **Show it for me to run** — `ProjectFile.Info.skills.<id>.show`, read once through
-//     `ProjectFileCache` beside the folder's rules, tune, exclusions and policies, and folded by
-//     {@link visibility}.
-//
-// 🔴 **A project may HIDE a skill and may never UN-HIDE one the instance hid**, which is the same
-// law as the other two narrowing layers and exists for the same reason: a `novaclaw.json` travels
-// inside a repository the user cloned, so it is untrusted input, and a file that could un-hide would
-// be a stranger's repo putting a skill back into its owner's own menu. The enforcement is
-// `ProjectFile.narrowSkills`, applied at the cache boundary so what reaches this module is a list of
-// ids the folder HIDES — a value with no un-hide in it to forget.
 //
 // ─── THE STABLE ID ────────────────────────────────────────────────────────────────────────────────
 // `SkillV2.Info` has no id — `name · description? · slash? · location · content`, nothing else
@@ -70,7 +53,7 @@ export * as SkillInvocation from "./invocation"
 //      written down.** The name is already the engine's identity — `SkillV2.list()` keys its map on
 //      `skill.name`, so two skills with one name cannot both exist. An ID that is anything else
 //      would be an identity the engine does not honour. It is also the only handle that is portable
-//      (a `novaclaw.json` travels in a repository; an absolute `location` does not) and stable
+//      (a name travels with the skill itself; an absolute `location` does not) and stable
 //      across a re-download, a cache move and every edit to the body.
 //
 //   ❌ `location` — machine-specific, and moving the cache
@@ -180,7 +163,7 @@ export function idOf(name: string): string | undefined {
 /**
  * One saved entry. Sparse on purpose: ABSENT MEANS DEFAULT, never `false`.
  *
- * Same sparse-override discipline `resolveSessionConfig` and `ProjectFile.Tune` run on — a store
+ * Same sparse-override discipline `resolveSessionConfig` runs on — a store
  * that wrote every skill's default would freeze the install against a later change to what the
  * default IS, and would grow a row for every skill a user merely looked at.
  */
@@ -209,18 +192,14 @@ export function entry(store: Store | undefined, id: string): Choice | undefined 
 /**
  * Which layer decided whether this skill is in the user's slash list.
  *
- * ⚠️ Three answers, not two, and principle 12(d) is why: *a user who cannot tell which layer hid a
- * skill cannot fix it.* "You hid this" is fixed by a switch on this screen; "this folder hides it"
- * is fixed by editing a file in the repository — and offering the switch for the second case would
- * be offering a control that cannot win.
+ * ⚠️ Two answers, and principle 12(d) is why the pairing is reported rather than folded: a user
+ * who cannot tell whether their own switch moved cannot fix it.
  */
 export type ShownBy =
   /** Nobody said anything — {@link SHOW_BY_DEFAULT}. */
   | "default"
   /** The user's own instance-wide choice. */
   | "instance"
-  /** The `novaclaw.json` governing the session's folder. Only ever HIDES — see below. */
-  | "project"
 
 export interface Visibility {
   /** Whether it appears in the user's own slash list, all layers folded. */
@@ -229,62 +208,27 @@ export interface Visibility {
   readonly by: ShownBy
   /** What the instance alone says — the position the switch on the Skills page holds. */
   readonly instance: boolean
-  /** Whether the folder's project file hides this skill. Independent of {@link instance}. */
-  readonly project: boolean
 }
 
 /**
- * The two layers, folded.
+ * The instance layer and the default, folded.
  *
- * 🔴 **A project may HIDE, never UN-HIDE, and that law is spelled in the TYPE rather than in this
- * body.** `projectHidden` is a list of ids the folder hides — `ProjectFile.narrowSkills` has already
- * dropped every `show:true` at the `ProjectFileCache` boundary — so there is no direction here in
- * which a folder's file can add a skill back to a menu the user emptied. A `novaclaw.json` travels
- * inside a repository somebody cloned; the same reason `evaluateNarrowed` refuses to let one widen a
- * permission, and `narrowTune` refuses to let one lower a safety rail.
- *
- * ⚠️ The instance layer is reported EVEN WHEN the project overrides it, because the Skills page
- * still has to draw the user's own switch in the position the user left it. Collapsing the two into
- * one boolean would make the switch jump to "off" in a project folder and back on leaving it, i.e.
- * a control that appears to have been changed by a repository.
- *
- * ⚠️ An unaddressable name resolves to the default and to `by:"default"`. A stored key can only ever
- * be an exact id, so a name with no id matches nothing in either layer — which is the point: a
- * project naming `pdf*` cannot glob, it can only ever match a skill literally called `pdf*`, and
- * such a skill has no id.
+ * ⚠️ An unaddressable name resolves to the default and to `by:"default"`: a stored key can only ever
+ * be an exact id, so a key naming `pdf*` cannot glob — it can only ever match a skill literally called
+ * `pdf*`, and such a skill has no id.
  */
-export function visibility(
-  store: Store | undefined,
-  projectHidden: readonly string[] | undefined,
-  name: string,
-): Visibility {
+export function visibility(store: Store | undefined, name: string): Visibility {
   const id = idOf(name)
-  if (id === undefined)
-    return { show: SHOW_BY_DEFAULT, by: "default", instance: SHOW_BY_DEFAULT, project: false }
+  if (id === undefined) return { show: SHOW_BY_DEFAULT, by: "default", instance: SHOW_BY_DEFAULT }
   const saved = entry(store, id)?.show
   const instance = typeof saved === "boolean" ? saved : SHOW_BY_DEFAULT
-  const project = projectHidden !== undefined && projectHidden.includes(id)
-  // The project is named FIRST when it hides, because that is the layer the user must act on: their
-  // own switch is powerless over it, and reporting "you hid this" would send them to the wrong
-  // control. When the instance also hid it the folder's statement is redundant, and the honest
-  // sentence is still the one that says a control on this screen cannot bring it back.
-  if (project) return { show: false, by: "project", instance, project }
-  if (typeof saved === "boolean") return { show: instance, by: "instance", instance, project }
-  return { show: SHOW_BY_DEFAULT, by: "default", instance, project }
+  if (typeof saved === "boolean") return { show: instance, by: "instance", instance }
+  return { show: SHOW_BY_DEFAULT, by: "default", instance }
 }
 
-/**
- * Whether this skill appears in the user's own slash list, with the folder's project file folded in.
- *
- * `projectHidden` is `ProjectFileCache.Entry.skills`. Passing `undefined` asks the instance question
- * alone, which is what a surface with no folder in hand should do.
- */
-export function showsToUser(
-  store: Store | undefined,
-  projectHidden: readonly string[] | undefined,
-  name: string,
-): boolean {
-  return visibility(store, projectHidden, name).show
+/** Whether this skill appears in the user's own slash list. */
+export function showsToUser(store: Store | undefined, name: string): boolean {
+  return visibility(store, name).show
 }
 
 /** The `Config.Info` key these choices live under — one spelling, shared by the patch and the path. */

@@ -314,7 +314,7 @@ export function SkillDetail(props: {
 
             {/* Principle 12(d): what is in force RIGHT NOW, before any control. */}
             <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="skill-invocation-inforce">
-              {t(IN_FORCE_TEXT[invocation().inForce])}
+              {t(IN_FORCE_TEXT[invocation().preset])}
             </p>
 
             {/* 🗑️ A THIRD sentence stood here, naming the folder's `novaclaw.json` as the layer that

@@ -69,25 +69,25 @@ describe("identify — the stable ID is the name, verbatim, or nothing", () => {
 
 describe("showsToUser — the human's own list, ON by default", () => {
   test("no store at all shows everything", () => {
-    expect(SkillInvocation.showsToUser(undefined, undefined, "pdf")).toBe(true)
-    expect(SkillInvocation.showsToUser({}, undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser(undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser({}, "pdf")).toBe(true)
   })
 
   test("a saved false hides it; a saved true shows it", () => {
-    expect(SkillInvocation.showsToUser({ pdf: { show: false } }, undefined, "pdf")).toBe(false)
-    expect(SkillInvocation.showsToUser({ pdf: { show: true } }, undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser({ pdf: { show: false } }, "pdf")).toBe(false)
+    expect(SkillInvocation.showsToUser({ pdf: { show: true } }, "pdf")).toBe(true)
   })
 
   test("another skill's entry does not answer for this one", () => {
-    expect(SkillInvocation.showsToUser({ other: { show: false } }, undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser({ other: { show: false } }, "pdf")).toBe(true)
   })
 
   test("a skill named __proto__ reads its OWN entry, never Object.prototype", () => {
     // `store["__proto__"]` on an ordinary object is a truthy object that nobody saved. `hasOwn`
     // is what makes this a real read rather than a coincidence.
-    expect(SkillInvocation.showsToUser({}, undefined, "__proto__")).toBe(true)
+    expect(SkillInvocation.showsToUser({}, "__proto__")).toBe(true)
     const store = JSON.parse('{"__proto__":{"show":false}}') as SkillInvocation.Store
-    expect(SkillInvocation.showsToUser(store, undefined, "__proto__")).toBe(false)
+    expect(SkillInvocation.showsToUser(store, "__proto__")).toBe(false)
   })
 
   test("a polluted Object.prototype cannot answer for a skill nobody saved", () => {
@@ -98,8 +98,8 @@ describe("showsToUser — the human's own list, ON by default", () => {
     const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "show")
     try {
       Object.defineProperty(Object.prototype, "show", { value: false, configurable: true, writable: true })
-      expect(SkillInvocation.showsToUser({}, undefined, "pdf")).toBe(true)
-      expect(SkillInvocation.showsToUser({}, undefined, "__proto__")).toBe(true)
+      expect(SkillInvocation.showsToUser({}, "pdf")).toBe(true)
+      expect(SkillInvocation.showsToUser({}, "__proto__")).toBe(true)
       expect(SkillInvocation.entry({}, "pdf")).toBeUndefined()
     } finally {
       if (descriptor) Object.defineProperty(Object.prototype, "show", descriptor)
@@ -108,121 +108,41 @@ describe("showsToUser — the human's own list, ON by default", () => {
   })
 
   test("an unaddressable name always falls back to the default", () => {
-    expect(SkillInvocation.showsToUser({ [`bad${ZERO_WIDTH}`]: { show: false } }, undefined, `bad${ZERO_WIDTH}`)).toBe(true)
+    expect(SkillInvocation.showsToUser({ [`bad${ZERO_WIDTH}`]: { show: false } }, `bad${ZERO_WIDTH}`)).toBe(true)
   })
 
   test("a malformed stored value is ignored rather than coerced", () => {
     const store = JSON.parse('{"pdf": "off"}') as SkillInvocation.Store
-    expect(SkillInvocation.showsToUser(store, undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser(store, "pdf")).toBe(true)
   })
 })
 
 /**
- * The PRECEDENCE TABLE for the two layers of "Show it for me to run".
+ * The PRECEDENCE TABLE for "Show it for me to run": the instance store, then the shipped default.
  *
- * 🔴 **A project may HIDE, never UN-HIDE.** The project layer that reaches this module is already
- * `ProjectFile.narrowSkills(...).hidden` — a list of ids the folder hides, with the un-hide dropped
- * at the `ProjectFileCache` boundary. These cases pin BOTH halves: that a folder's hide wins over
- * the instance's silence and over the instance's explicit show, and that the instance's own hide is
- * never softened by anything a folder can say.
- *
- * ⚠️ Every row also pins `by`, because principle 12(d) turns on it: a user who cannot tell which
- * layer hid a skill cannot fix it, and the two fixes are opposite (a switch here, or an edit to a
- * file in the repository).
- *
- * ⚠️ **A/B, run by hand and reported:** make `visibility` return `{show: instance}` and ignore
- * `projectHidden` — every 🔴 row goes red.
+ * ⚠️ Every row also pins `by`, because principle 12(d) turns on it: a user who cannot tell whether
+ * their own switch moved cannot fix it.
  */
-describe("visibility — the instance layer and the folder's own novaclaw.json", () => {
+describe("visibility — the instance store and the default", () => {
   const cases: readonly {
     readonly name: string
     readonly instance: SkillInvocation.Store | undefined
-    readonly project: readonly string[] | undefined
     readonly show: boolean
     readonly by: SkillInvocation.ShownBy
   }[] = [
-    { name: "absent × absent", instance: undefined, project: undefined, show: true, by: "default" },
-    { name: "absent × no project", instance: {}, project: [], show: true, by: "default" },
-    { name: "absent × project hides", instance: {}, project: ["pdf"], show: false, by: "project" },
-    { name: "instance hides × absent", instance: { pdf: { show: false } }, project: [], show: false, by: "instance" },
-    {
-      name: "instance hides × project hides",
-      instance: { pdf: { show: false } },
-      project: ["pdf"],
-      show: false,
-      by: "project",
-    },
-    { name: "instance shows × absent", instance: { pdf: { show: true } }, project: [], show: true, by: "instance" },
-    {
-      name: "🔴 instance shows × project hides — the folder wins",
-      instance: { pdf: { show: true } },
-      project: ["pdf"],
-      show: false,
-      by: "project",
-    },
-    {
-      name: "project names a DIFFERENT skill",
-      instance: {},
-      project: ["docx"],
-      show: true,
-      by: "default",
-    },
+    { name: "absent store", instance: undefined, show: true, by: "default" },
+    { name: "empty store", instance: {}, show: true, by: "default" },
+    { name: "the store hides it", instance: { pdf: { show: false } }, show: false, by: "instance" },
+    { name: "the store shows it", instance: { pdf: { show: true } }, show: true, by: "instance" },
+    { name: "the store names a DIFFERENT skill", instance: { docx: { show: false } }, show: true, by: "default" },
   ]
 
   for (const row of cases)
     test(row.name, () => {
-      const seen = SkillInvocation.visibility(row.instance, row.project, "pdf")
+      const seen = SkillInvocation.visibility(row.instance, "pdf")
       expect({ show: seen.show, by: seen.by }).toEqual({ show: row.show, by: row.by })
-      expect(SkillInvocation.showsToUser(row.instance, row.project, "pdf")).toBe(row.show)
+      expect(SkillInvocation.showsToUser(row.instance, "pdf")).toBe(row.show)
     })
-
-  test("🔴 the instance's own position is reported UNCHANGED while a folder overrides it", () => {
-    // The switch on the Skills page draws from this. Folding the folder in would make the control
-    // read "off" in a project folder and back "on" outside it — a setting a repository appears to
-    // have changed.
-    const seen = SkillInvocation.visibility({ pdf: { show: true } }, ["pdf"], "pdf")
-    expect(seen.instance).toBe(true)
-    expect(seen.project).toBe(true)
-    expect(seen.show).toBe(false)
-  })
-
-  test("🔴 a project list can never ADD a skill back — there is no shape for it", () => {
-    // The un-hide is unspellable by the time it gets here: the type is a list of hidden ids.
-    // `ProjectFile.narrowSkills` is what drops `{show:true}`, and `project-file.test.ts` pins that.
-    const seen = SkillInvocation.visibility({ pdf: { show: false } }, [], "pdf")
-    expect(seen.show).toBe(false)
-    expect(seen.by).toBe("instance")
-  })
-
-  test("a project entry is matched by EXACT id — a wildcard cannot glob", () => {
-    // `pdf*` is not a legal skill id at all (`identify` refuses `*`), so a folder naming it hides
-    // nothing. It certainly does not hide `pdf`.
-    expect(SkillInvocation.showsToUser({}, ["pdf*"], "pdf")).toBe(true)
-    expect(SkillInvocation.showsToUser({}, ["pdf*"], "pdf*")).toBe(true)
-  })
-
-  test("an unaddressable skill name ignores both layers", () => {
-    const name = `bad${ZERO_WIDTH}`
-    const seen = SkillInvocation.visibility({ [name]: { show: false } }, [name], name)
-    expect(seen.show).toBe(true)
-    expect(seen.by).toBe("default")
-    expect(seen.project).toBe(false)
-  })
-
-  test("a folder may hide a skill named `__proto__` and nothing is read off a prototype", () => {
-    expect(SkillInvocation.showsToUser({}, ["__proto__"], "__proto__")).toBe(false)
-    expect(SkillInvocation.showsToUser({}, [], "__proto__")).toBe(true)
-  })
-
-  test("a non-NFC or over-long id in a project file matches nothing", () => {
-    // The combining mark is spelled as an ESCAPE: this source must not carry an invisible
-    // character (AGENTS.md), and the point of the case is that the string is not in NFC, so
-    // `identify` gives it no id and a project file naming it can match nothing.
-    const combining = "e\u0301clair"
-    expect(SkillInvocation.showsToUser({}, [combining], combining)).toBe(true)
-    const long = "x".repeat(SkillInvocation.MAX_ID_LENGTH + 1)
-    expect(SkillInvocation.showsToUser({}, [long], long)).toBe(true)
-  })
 })
 
 describe("showWrite — a patch to set, the REMOVE verb to clear", () => {
@@ -335,7 +255,7 @@ describe("the two switches are independent — all four combinations", () => {
       const write = SkillInvocation.showWrite("pdf", me)
       const store: SkillInvocation.Store = write.kind === "set" ? write.patch : {}
       expect(!SkillInvocation.deniedByName(rules, "pdf")).toBe(nova)
-      expect(SkillInvocation.showsToUser(store, undefined, "pdf")).toBe(me)
+      expect(SkillInvocation.showsToUser(store, "pdf")).toBe(me)
       expect(SkillInvocation.presetOf({ nova, me })).toBe(preset)
     })
 
@@ -343,10 +263,10 @@ describe("the two switches are independent — all four combinations", () => {
     // Start from the corner that a tri-state cannot express.
     let rules = SkillInvocation.permissionRules([], "pdf", true)
     let store: SkillInvocation.Store = { pdf: { show: false } }
-    expect(SkillInvocation.presetOf({ nova: !SkillInvocation.deniedByName(rules, "pdf"), me: SkillInvocation.showsToUser(store, undefined, "pdf") })).toBe("only-nova")
+    expect(SkillInvocation.presetOf({ nova: !SkillInvocation.deniedByName(rules, "pdf"), me: SkillInvocation.showsToUser(store, "pdf") })).toBe("only-nova")
 
     rules = SkillInvocation.permissionRules(rules, "pdf", false)
-    expect(SkillInvocation.showsToUser(store, undefined, "pdf")).toBe(false)
+    expect(SkillInvocation.showsToUser(store, "pdf")).toBe(false)
 
     store = { pdf: { show: true } }
     expect(SkillInvocation.deniedByName(rules, "pdf")).toBe(true)
@@ -375,7 +295,7 @@ describe("unresolved — a saved choice whose skill is not installed", () => {
 
   test("an orphan does NOT change what an installed skill does", () => {
     const store: SkillInvocation.Store = { "gone-skill": { show: false } }
-    expect(SkillInvocation.showsToUser(store, undefined, "pdf")).toBe(true)
+    expect(SkillInvocation.showsToUser(store, "pdf")).toBe(true)
   })
 
   test("a skill whose name became unaddressable counts as unresolved rather than silently matching", () => {

@@ -52,14 +52,6 @@ const savedInvocation = Effect.fn("CommandList.savedInvocation")(function* () {
 })
 
 /**
- * 🗑️ A `projectVisibility` reader used to sit here: the PROJECT half of "Show it for me to run", read
- * through `ProjectFileCache` so the folder's menu and its permissions came from one read of one file.
- *
- * It went with the `novaclaw.json` mechanism (owner, 2026-09-16: *"Please ensure it is gone for good."*).
- * What remains is the INSTANCE half — the user's own `skill_invocation` store, folded `savedInvocation`
- * above — which is the switch that was always the user's; a folder can no longer hide a skill, and the
- * `faulted` suppression it carried (a file we could not read suppressing project-visible skills until
- * it was repaired) left with the file it was about.
  */
 
 export const list: Effect.Effect<
@@ -88,7 +80,7 @@ export const list: Effect.Effect<
     // command outranks a same-named skill which outranks a same-named MCP prompt. Marking a hidden
     // skill as seen would let it suppress the MCP prompt behind it, so hiding one entry would
     // silently delete a different one.
-    if (!SkillInvocation.showsToUser(invocation, [], skill.name)) continue
+    if (!SkillInvocation.showsToUser(invocation, skill.name)) continue
     seen.add(skill.name)
     result.push({
       name: skill.name,
