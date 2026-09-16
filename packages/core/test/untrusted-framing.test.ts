@@ -753,6 +753,15 @@ const NO_EXTERNAL = [
   // and the entry moves to FRAMED with them rather than being argued down.
   "docs-index.ts",
   "docs.ts",
+  // Writes and clears the calling agent's OWN durable-area items. It fetches nothing, and the value it
+  // stores was authored by the very agent that calls it — so the model already knows what is in it, and
+  // there is no third party on the path.
+  //
+  // ⚠️ The CROSS-SESSION read is the one that carries somebody else's words, and it does not run
+  // through this file: `session list` / `session read` frames a foreign component value with
+  // `SessionOrigin.externalContentFrame` and takes the privileged tier for it. This file never reads
+  // another session, which is why it belongs here rather than in FRAMED.
+  "durable.ts",
   "edit-match.ts",
   "edit.ts",
   "exit.ts",

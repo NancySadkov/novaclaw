@@ -46,6 +46,10 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
       // belongs in this exclusion list for the same reason `projectScope` does — its own composition is
       // covered by `session-runner-goal-block.test.ts`.
       | "goal"
+      // Optional, and absent whenever the shadow copy is empty — which is every session that has never
+      // used `durable_set`. Present only after a rewrite materialised it, and composed immediately
+      // after the goal. Covered by `session/durable.test.ts` and `session-runner-durable-block.test.ts`.
+      | "durable"
     >
   > = {
     persona: "Be pragmatic.",

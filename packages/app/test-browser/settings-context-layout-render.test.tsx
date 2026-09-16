@@ -146,7 +146,7 @@ describe("Settings → System prompt — the layout table on screen", () => {
     await settle()
     for (const row of renderedRows()) {
       expect(row.title, "a layout row rendered with no title").not.toBe("")
-      expect(["settings", "agent", "model", "files", "project", "auto"]).toContain(row.origin)
+      expect(["settings", "agent", "model", "files", "project", "session", "auto"]).toContain(row.origin)
     }
   })
 

@@ -34,7 +34,7 @@ describe("Settings → System prompt — the layout screen covers the kernel's t
     // component's own literals. A slot added to the kernel table without copy would otherwise render
     // the raw key ("settings.contextLayout.slot.<name>") to a user, which is the class of lie this
     // whole page is a fix for.
-    const origins: readonly SlotOrigin[] = ["settings", "agent", "model", "files", "project", "auto"]
+    const origins: readonly SlotOrigin[] = ["settings", "agent", "model", "files", "project", "session", "auto"]
     for (const slot of ContextTemplate.SLOTS) {
       expect(en[`settings.contextLayout.slot.${slot.name}` as keyof typeof en], `slot label for ${slot.name}`).toBeString()
       const origin = SLOT_ORIGIN[slot.name] as SlotOrigin
@@ -58,7 +58,7 @@ describe("Settings → System prompt — the layout screen covers the kernel's t
     // NAMED origins are used, and that `auto` is spelled as the absence of a place rather than as
     // "the kernel", which reads as a place and is not one.
     const used = new Set(Object.values(SLOT_ORIGIN))
-    for (const origin of ["settings", "agent", "model", "files", "auto"] as const) expect(used).toContain(origin)
+    for (const origin of ["settings", "agent", "model", "files", "auto", "session"] as const) expect(used).toContain(origin)
     expect(en["settings.contextLayout.origin.auto" as keyof typeof en]).not.toContain("kernel")
   })
 

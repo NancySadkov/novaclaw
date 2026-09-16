@@ -12,6 +12,7 @@ import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { SessionType } from "@novaclaw/schema/session-type"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema"
 import path from "node:path"
+import { Durable } from "./durable"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -43,6 +44,8 @@ export const KERNEL_KIND_NAMES = [
   "responder",
   "strict",
   "goal",
+  "durable",
+  "durable_prompt",
   "plan",
   "control_binding",
   "observation",
@@ -84,6 +87,57 @@ export const Goal = Schema.Struct({
   text: Schema.NonEmptyString,
 }).annotate({ identifier: "SessionComponent.Goal" })
 export type Goal = typeof Goal.Type
+
+/**
+ * The durable area's limits, and where they are enforced.
+ *
+ * ⚠️ The values live in `session/durable.ts` (the pure spec + wording half) and are imported here,
+ * because the codec needs them at MODULE SCOPE and a cycle would then be loaded-order-dependent with
+ * `tsgo` green either way. This file is the codec; that file must never import this one.
+ */
+export const DURABLE_ITEMS_MAX = Durable.DURABLE_ITEMS_MAX
+export const DURABLE_NAME_MAX = Durable.DURABLE_NAME_MAX
+export const DURABLE_VALUE_MAX = Durable.DURABLE_VALUE_MAX
+
+/**
+ * One named item of the durable area.
+ *
+ * ⚠️ The NAME is stored in the VALUE, not used as the component id, and that is deliberate: component
+ * ids are `ComponentID` (`^[a-z0-9][a-z0-9._:-]{0,127}$`), so an id-shaped name could not be
+ * `Report format` or `API key` — the two names a person actually types. The id is a slug of the name
+ * (`session/durable.ts` `keyOf`), so two spellings of one name land on one slot instead of two.
+ *
+ * 🔴 **No newlines, in either field.** The area is rendered as `Name: Value` lines inside the system
+ * prompt, so a value carrying a line break can forge a second item — the block would be
+ * indistinguishable from one the user wrote. That is a framing property, not hygiene: the durable
+ * area is model-authored text reaching the prompt, and the structure has to be un-forgeable from
+ * inside a value.
+ */
+export const DurableItem = Schema.Struct({
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(DURABLE_NAME_MAX), Schema.isPattern(/^[^\r\n]+$/u)),
+  value: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(DURABLE_VALUE_MAX),
+    Schema.isPattern(/^[^\r\n]+$/u),
+  ),
+}).annotate({ identifier: "SessionComponent.DurableItem" })
+export type DurableItem = typeof DurableItem.Type
+
+/**
+ * The durable area as the model sees it, MATERIALISED.
+ *
+ * ⚠️ A second component rather than rendering the items at compose time, because the owner's
+ * invariant is explicit about WHEN the area changes: *"updated only after compaction, from the
+ * housekeeped shadow copy"*. Rendering live would make every `durable_set` a mid-turn edit to the
+ * system prompt; this way the prompt is byte-stable for the whole epoch (see `volatility` in
+ * `context-template.ts`, where this is the slot that finally uses `compaction`), and the area the
+ * model reads is exactly the one the last rewrite committed — not a moving target it cannot reason
+ * about. The `durable` items are the shadow copy; this is the materialisation.
+ */
+export const DurablePrompt = Schema.Struct({
+  text: Schema.String,
+}).annotate({ identifier: "SessionComponent.DurablePrompt" })
+export type DurablePrompt = typeof DurablePrompt.Type
 
 export const PlanVerdict = Schema.Struct({
   check: Schema.NonEmptyString,
@@ -334,6 +388,50 @@ export const GoalDefinition = kernelDefinition({
       : Effect.fail(
           new Error("A session's durable goal is cleared by the user or by a superior officer, not by the agent."),
         ),
+})
+
+export const DurableItemDefinition = kernelDefinition({
+  kind: "durable",
+  description:
+    "One named item of the session's durable area: a short name and a short value the colleague must not lose to a compaction. The AGENT writes these (`durable_set` / `durable_clear`) and the harness reads them to rebuild the area after a rewrite — unlike `goal`, which the colleague may never author, this one is its own working memory.",
+  cardinality: "set",
+  lifetime: "entity",
+  version: 1,
+  codec: DurableItem,
+  // ⚠️ No authority gate, and that is the point rather than an omission: the durable area is the
+  // colleague's own working memory, so the writer is the agent. Its price is paid at the TIER
+  // (`component-tier.ts`: consequential, because the text lands in the system prompt), and the
+  // structural safety lives in the codec above — the value cannot forge a line.
+  //
+  // The one thing checked here is the ID↔NAME agreement: the tool slugs the name into the id, and a
+  // second writer spelling its own id would create two slots for one name (one visible in the area,
+  // one orphaned) without anything failing.
+  validateWrite: ({ id, value }) =>
+    id === Durable.keyOf(value.name)
+      ? Effect.void
+      : Effect.fail(new Error(`Durable item id must be ${Durable.keyOf(value.name)} for the name it carries`)),
+})
+
+export const DurablePromptDefinition = kernelDefinition({
+  kind: "durable_prompt",
+  description:
+    "The durable area as rendered into the system prompt: the materialised `Name: Value` lines of every `durable` item, written by the KERNEL after a context rewrite. READ-ONLY to an agent by construction — a hand-written area would silently disagree with the shadow copy it claims to be a view of.",
+  cardinality: "singleton",
+  lifetime: "entity",
+  version: 1,
+  codec: DurablePrompt,
+  validateWrite: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(
+          new Error(
+            "The durable area is materialised by the kernel after a context rewrite, from the `durable` items. Use `durable_set` and `durable_clear`: writing this would leave the area and the shadow copy it is a view of disagreeing.",
+          ),
+        ),
+  validateRemove: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(new Error("The durable area is cleared by the kernel when its last item is cleared.")),
 })
 
 export const PlanDefinition = kernelDefinition({
@@ -1414,6 +1512,12 @@ const compiledDefinitions = Effect.gen(function* () {
       },
     }),
     GoalDefinition,
+    // 🔴 Beside the goal and for the same reason it is there: a kind named in KERNEL_KIND_NAMES but not
+    // SUPPLIED here is a kind the registry does not advertise, so every `put` of it fails as an unknown
+    // kind at RUNTIME while the typechecker stays green. The two are a pair; adding one without the
+    // other is the defect this comment exists to stop the next author repeating.
+    DurableItemDefinition,
+    DurablePromptDefinition,
     PlanDefinition,
     ObservationDefinition,
     kernelDefinition({

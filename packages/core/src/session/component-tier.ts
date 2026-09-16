@@ -39,6 +39,15 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   // it OFF removes per-step verification from an autonomous run, which is a supervision change.
   strict: "consequential",
   goal: "privileged",
+  // The colleague's own working memory, priced where it can be priced honestly: the value is
+  // model-authored text that reaches the SYSTEM PROMPT, so it is not a routine knob (consequential —
+  // a session permission rule can forbid it). Deliberately NOT privileged: the owner's invariant has
+  // the agent maintaining this area itself (`durable_set`), and a tier that made every note need a
+  // human's approval would be answered by turning the tier off, which is how a real gate gets lost.
+  durable: "consequential",
+  // Host-written only (`validateWrite` refuses anything without kernel authority), so the tier is what
+  // a SYSTEM write costs; privileged is the fail-closed classification, as `goal` and `plan` record.
+  durable_prompt: "privileged",
   plan: "privileged",
   // It may grant one real-desktop application, so the whole kind takes the higher tier. Values are
   // not classified from model-authored strings after the fact.
@@ -71,6 +80,13 @@ export const CROSS_READ_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, 
   responder: "operational",
   strict: "operational",
   goal: "privileged",
+  // 🔴 Cross-session reads of the durable area are PRIVILEGED, and this is the one tier decision here
+  // that is about someone else: an item is free text a colleague chose to keep, which is precisely the
+  // "text that can carry another user's standing instructions or intent" this map's header draws the
+  // line at. Within one's own session the area is already in one's own prompt, so the read costs
+  // nothing — `readTierOf` answers `operational` there, and this entry never applies.
+  durable: "privileged",
+  durable_prompt: "privileged",
   plan: "privileged",
   control_binding: "operational",
   observation: "operational",

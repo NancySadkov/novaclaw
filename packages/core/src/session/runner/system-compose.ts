@@ -290,6 +290,34 @@ export const goalSection = (goal: string | undefined): string | undefined => {
 }
 
 /**
+ * The durable area, as the model reads it.
+ *
+ * Owner, 2026-09-16: *"Durable context area … Right after the agent's goal area … updated only after
+ * compaction, from the housekeeped shadow copy."* The sketch is literal about the shape —
+ * `<goal>`, then `#DURABLE`, then `Name: Value` lines, then the first user prompt — so the header is
+ * the owner's own token rather than prose we invented for it.
+ *
+ * ⚠️ **The FRAMING line is ours, and it earns its place.** `#DURABLE` alone is a header a model has
+ * to guess the meaning of, and the items are pointers it must maintain rather than prose it reads
+ * once: the two tool names are what make the area editable by the model that owns it. That is
+ * AGENTS.md principle 8 applied to a block whose whole audience is the agent — teach what it is for,
+ * do not hope it infers the mechanism from the label.
+ *
+ * ⚠️ `undefined` for an empty area is not cosmetic: an empty block would be a header promising items
+ * that are not there, and it would also differ from "this session has no durable area" for no reader.
+ */
+export const durableSection = (text: string | undefined): string | undefined => {
+  const body = text?.trim()
+  if (!body) return undefined
+  return [
+    "The durable area: short named items kept for you across a context rewrite, rebuilt from your `durable` items after each compaction. Maintain it with `durable_set` and `durable_clear`.",
+    "",
+    "#DURABLE",
+    body,
+  ].join("\n")
+}
+
+/**
  * That the model can SEE, and that an image on disk is therefore its own to look at.
  *
  * 🔴 **The defect (measured 2026-08-19, `notes/reports/vision-on-disk-2026-08-19.md`).** Asked

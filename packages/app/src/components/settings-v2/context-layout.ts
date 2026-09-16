@@ -21,7 +21,7 @@
  * says it once, with the reason. Twenty-one rows each repeating "and you cannot move me" is noise that
  * buries the one column that varies.
  */
-export type SlotOrigin = "settings" | "agent" | "model" | "files" | "project" | "auto"
+export type SlotOrigin = "settings" | "agent" | "model" | "files" | "project" | "session" | "auto"
 
 export const SLOT_ORIGIN: Readonly<Record<string, SlotOrigin>> = {
   // The instance's own settings (this app, these Settings tabs).
@@ -42,6 +42,11 @@ export const SLOT_ORIGIN: Readonly<Record<string, SlotOrigin>> = {
   base: "files",
   // The folder's `novaclaw.json` — portable, travels inside a cloned repo, and may only ever narrow.
   projectScope: "project",
+  // 🔴 `durable` is not "agent": there is no field anywhere that holds it. The COLLEAGUE writes it, at
+  // runtime, through its own tools (`durable_set` / `durable_clear`), and the kernel materialises it
+  // into the prompt after a rewrite. A reader sent to "the colleague's settings" would hunt for an
+  // editor that does not exist, which is the failure `auto` was coined for one line down.
+  durable: "session",
   // Derived at compose time from state that lives elsewhere; there is no field for these.
   toolDiscovery: "auto",
   perception: "auto",

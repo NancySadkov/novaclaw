@@ -97,6 +97,12 @@ const deferredCoreTools = [
   "community",
   "computer",
   "configure",
+  // Occasional, like `log`: a colleague keeps a durable item when something happens worth keeping — a
+  // decision made, a path it must not lose — not every turn. Its only sibling (`session`, the generic
+  // component tool) is deferred for the same reason, and what replaces residency is the hint: the
+  // `#DURABLE` block names both tools, so a session that has an area has been told how to maintain it.
+  "durable_clear",
+  "durable_set",
   // DEFERRED, and the ratchet below is why: a log reader is reached AFTER something failed, so its
   // schema has no claim on every turn's prefix (`` 3g, `tool/log.ts`).
   "log",

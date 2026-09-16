@@ -39,6 +39,7 @@ import { ColleagueTool } from "./colleague"
 import { SpawnTool } from "./spawn"
 import * as CommunityTool from "./deferred/community.gen"
 import { ExitTool } from "./exit"
+import { DurableTool } from "./durable"
 import { WaitTool } from "./wait"
 import { KillTool } from "./kill"
 import { WriteTool } from "./write"
@@ -59,6 +60,7 @@ export const node = makeLocationNode({
     JsTool.node,
     LogTool.node,
     DbRegistryTool.node,
+    DurableTool.node,
     MessengerTool.node,
     NudgeTool.node,
     PermissionTool.node,

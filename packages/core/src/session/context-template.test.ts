@@ -55,6 +55,9 @@ describe("ContextTemplate — one list, and the order is the table's", () => {
       "workspace",
       "base",
       "goal",
+      // Materialised at a rewrite, immediately after the goal — the owner's own sketch puts the durable
+      // area there (`<goal>`, `#DURABLE`, then the first user prompt).
+      "durable",
     ])
     const parts = { persona: "P", goal: "", base: "B" }
     // ⚠️ `""` composes nothing — the non-empty predicate is stated once, in the template. An empty
@@ -90,18 +93,25 @@ describe("ContextTemplate — VOLATILITY, the column that costs gigabytes when i
     expect(frozen).toEqual(["base"])
   })
 
-  test("every other slot is per-turn, and `compaction` is declared but unused", () => {
-    for (const slot of ContextTemplate.SLOTS.filter((entry) => entry.volatility !== "epoch"))
-      expect(slot.volatility).toBe("turn")
-    // ⚠️ `compaction` is the value the durable area needs (owner: *"updated only after compaction, from
-    // the housekeeped shadow copy"*). It has no slot YET, and this line is the record: when the durable
-    // slot lands it must carry `compaction`, not `turn`, or a mid-run `durable_set` churns the prefix.
+  test("🔴 the volatility column PARTITIONS the table: one frozen slot, one materialised, the rest per-turn", () => {
+    // ⚠️ This test used to read *"every other slot is per-turn, and `compaction` is declared but
+    // unused"*, and its own comment was the record: *"when the durable slot lands it must carry
+    // `compaction`, not `turn`, or a mid-run `durable_set` churns the prefix"*. The slot landed
+    // (owner, 2026-09-16), so the claim inverts — and it stays a claim about the WHOLE column rather
+    // than about the one slot, because a SECOND `compaction` slot would be a second thing the runner
+    // has to remember to refresh at a rewrite, which is the knowledge that must not live in two places.
     //
     // ⚠️ Widened to the declared `Volatility` on purpose. Comparing the literal table directly is a TYPE
     // ERROR ("'epoch' | 'turn' and 'compaction' have no overlap") — the compiler proving the same fact,
     // which is nice, but it means the assertion must go through the declared vocabulary to state it.
-    const declared: readonly ContextTemplate.Volatility[] = ContextTemplate.SLOTS.map((slot) => slot.volatility)
-    expect(declared.filter((value) => value === "compaction")).toEqual([])
+    const byVolatility = (volatility: ContextTemplate.Volatility) =>
+      ContextTemplate.SLOTS.filter((slot) => slot.volatility === volatility).map((slot) => slot.name)
+    expect(byVolatility("epoch")).toEqual(["base"])
+    expect(byVolatility("compaction")).toEqual(["durable"])
+    // The rest are per-turn, and asserting the COUNT is what makes a new slot declare itself: a slot
+    // that is neither the frozen baseline nor materialised at a rebuild has to be recomputed every
+    // turn, and a longer life than its producer can honour is the mistake this column exists to catch.
+    expect(byVolatility("turn").length).toBe(ContextTemplate.SLOTS.length - 2)
   })
 
   test("the tool schemas are the `tools` channel, never prose in the system prompt", () => {

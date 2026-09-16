@@ -43,6 +43,7 @@ import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { ContextTemplate } from "../context-template"
+import { Durable } from "../durable"
 import { SessionCompactionArchive } from "../compaction-archive"
 import { SessionCompactionRequest } from "../compaction-request"
 import { SessionEvent } from "../event"
@@ -2222,6 +2223,14 @@ export const layer = Layer.effect(
         Effect.map((entry) => entry?.value),
         Effect.orElseSucceed(() => undefined),
       )
+      // The durable area as last MATERIALISED — the text of the `durable_prompt` singleton the kernel
+      // rewrote after the previous compaction. Read per turn (cheap) but only ever WRITTEN at a
+      // rewrite, which is what makes the block stable inside an epoch; see the writer below and the
+      // `compaction` volatility on the slot.
+      const durableForPrompt = yield* components.get({ sessionID: session.id, kind: "durable_prompt" }).pipe(
+        Effect.map((entry) => entry?.value),
+        Effect.orElseSucceed(() => undefined),
+      )
       // A pure Chat is deliberately a bare model conversation. The only system text it receives is
       // the brief the user wrote in this officer's settings: no Nova persona, identity wrapper,
       // organization, project, model pre-prompt, or upgrade instructions.
@@ -2304,6 +2313,15 @@ export const layer = Layer.effect(
                   }),
                 )
               : undefined,
+            // 🔴 THE DURABLE AREA, immediately after the goal (owner's own sketch: `<goal>`,
+            // `#DURABLE`, then the first user prompt). Deliberately NOT gated on unattended mode the
+            // way the goal is: the area is not about who set the objective, it is the colleague's own
+            // memory of things a rewrite must not take, so every mode can have one.
+            //
+            // ⚠️ Absent from the ShortChat branch above on purpose — a pure Chat is a bare
+            // conversation by invariant ("no default system prompt outside of what user types into
+            // its Personality"), and a durable area is a second place to put standing text.
+            durable: SystemCompose.durableSection(Durable.textOf(durableForPrompt)),
           }
       const promptAccounting = SystemAccounting.of(promptParts)
       // Beside `session.request.footprint`, which measures the request in three lumps and therefore
@@ -2554,6 +2572,34 @@ export const layer = Layer.effect(
           // exactly the question a person debugging one would be asking.
           reportArchiveFailure(session.id, agent.id),
         )
+      // 🔴 THE DURABLE AREA IS MATERIALISED HERE, and "here" is the whole of the owner's rule
+      // (*"updated only after compaction, from the housekeeped shadow copy"*). The `durable` items are
+      // the shadow the colleague writes mid-session with `durable_set` / `durable_clear`; this turn —
+      // the first after a rewrite — is when their rendered form becomes the block the model reads.
+      // Rendering live instead would make every `durable_set` an edit to the system prompt mid-turn,
+      // which is the churn the slot's `compaction` volatility exists to avoid.
+      //
+      // ⚠️ It runs on EVERY committed compaction, including one that folds nothing, and it writes the
+      // area even when the item set is EMPTY (`text: ""`): clearing the last durable item has to
+      // delete the block at the next rewrite, or a cleared item would survive in the prompt forever —
+      // the exact failure the area exists to prevent, one level up.
+      //
+      // ⚠️ Best-effort, like the archive above and for the same reason: the compaction is already
+      // durable, and a stale area is a far smaller loss than a failed turn. The `put` is still
+      // validated by the registry, so a malformed shadow surfaces as a fault where faults belong.
+      if (compacted) {
+        const durableItems = yield* components
+          .list({ sessionID: session.id, kind: "durable" })
+          .pipe(Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []))
+        yield* components
+          .put({
+            sessionID: session.id,
+            kind: "durable_prompt",
+            value: { text: Durable.render(Durable.itemsOf(durableItems)) },
+            system: true,
+          })
+          .pipe(Effect.ignore)
+      }
       if (compacted) {
         const latest = yield* SessionHistory.latestCompaction(db, session.id)
         if (latest)

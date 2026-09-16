@@ -211,6 +211,15 @@ export const SLOTS = [
     placement:
       "After `base`, i.e. last: the owner's own sketch puts the goal and the durable area at the end, immediately before the first user prompt, and a block at the END invalidates the fewest messages when it changes.",
   },
+  {
+    name: "durable",
+    channel: "system",
+    volatility: "compaction",
+    purpose:
+      "The durable area: short named items the colleague must not lose to a rewrite, set with `durable_set` and cleared with `durable_clear`.",
+    placement:
+      "Immediately after `goal`, which is where the owner's own sketch puts it (`<goal>`, `#DURABLE`, then the first user prompt). It is the one `compaction`-volatile slot in the table: materialised from the `durable` items when the context is REBUILT, never mid-turn, so the prompt is byte-stable for the whole epoch.",
+  },
   // ── the tail ────────────────────────────────────────────────────────────────────────────────────
   // Appended AFTER the transcript, in this order. Recalled memory is here rather than in the system
   // prompt because it is the one genuinely per-turn-volatile thing in the request: as a system block it
