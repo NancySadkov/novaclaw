@@ -406,53 +406,13 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     expect(() => Schema.decodeUnknownSync(success as never)(data)).not.toThrow()
   })
 
-  test("🔴 a real `novaclaw.json` reaches the wire as `source`, file and all", async () => {
-    // ⚠️ THE case this endpoint's `source` field exists for, and the one a unit test of
-    // `resolvedConfigView` cannot make: everything between the file on disk and the decoded
-    // response has to work. Three separate things could silently drop it and all three look
-    // identical from the outside — the handler passing the shipped defaults instead of the folded
-    // layer (what it did until 2026-08-13), the fold refusing the switch as unwired, and the
-    // protocol's success schema not declaring `source`, which makes the encoder delete it on the
-    // way out and reads exactly like a stale backend.
-    const { success } = configEndpoint()
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "novaclaw-project-"))
-    fs.writeFileSync(
-      path.join(root, "novaclaw.json"),
-      JSON.stringify({ version: 1, tune: { features: { memory: false } } }),
-      "utf8",
-    )
-    try {
-      const data = await withHandler((call) =>
-        Effect.gen(function* () {
-          const sessions = yield* SessionV2.Service
-          const session = yield* sessions.create({
-            location: { directory: AbsolutePath.make(root) },
-            agent: "build" as never,
-          })
-          return yield* call({ params: { sessionID: session.id } })
-        }),
-      )
-      // Decoded, not read raw: a field the schema does not declare is dropped HERE, which is the
-      // whole point of checking the decoded value rather than the handler's return.
-      const decoded = Schema.decodeUnknownSync(success as never)(data) as {
-        readonly data: {
-          readonly fields: Record<string, { readonly value?: unknown; readonly source?: Record<string, unknown> }>
-          readonly project?: { readonly file: string; readonly applied: readonly string[] }
-        }
-      }
-      expect(decoded.data.fields["memory"]?.value, "the folder's switch did not reach the resolution").toBe(false)
-      expect(decoded.data.fields["memory"]?.source).toEqual({
-        kind: "project",
-        file: path.join(root, "novaclaw.json"),
-      })
-      expect(decoded.data.project?.applied).toContain("memory")
-      // A component the folder did NOT supply must still read as the instance, or "project" would
-      // just be what this endpoint says whenever a project file exists.
-      expect(decoded.data.fields["permissionMode"]?.source).toEqual({ kind: "instance" })
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true })
-    }
-  })
+  // 🗑️ A case stood here, and it was the only one of its kind: it wrote a REAL `novaclaw.json` into a
+  // temp folder and asserted that the folder's tune reached the wire as `source: {kind:"project"}` plus
+  // the `project` field — the end-to-end proof that the handler, the fold and the protocol's success
+  // schema all carried the folder layer. With the mechanism retired (owner, 2026-09-16) there is no
+  // file to write, no source kind to send and no field on the wire, so the case goes with them rather
+  // than being re-pinned: what it protected — a decoded response keeping the field the schema
+  // declares — is covered for `agent` and `instance` by the cases above.
 
   test("a session that does not exist is a 404, not a page of defaults", async () => {
     // The worst possible answer from this endpoint is a confident one about a session that is not
@@ -473,28 +433,19 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
  * indistinguishable from "nothing set it" — which is the one question this surface exists to answer.
  */
 describe("provenance beneath the entity", () => {
-  const layerWithProject = {
-    defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, memory: false, safeMode: true },
-    project: {
-      root: "C:/work/app",
-      file: "C:/work/app/novaclaw.json",
-      applied: ["memory"],
-      // Declared and refused: a folder may raise a supervision switch, never lower one. Carried on
-      // the layer so the surface can say what the file asked for and did not get.
-      refused: ["askBeforeChanges"],
-    },
-  }
+  // 🗑️ A fixture named `layerWithProject` stood here, and a case that used it: the folder's tune over
+  // the shipped defaults, reported as `source: {kind:"project", file}` so the surface could name the
+  // file. Both went with the mechanism (owner, 2026-09-16). What remains below is the same question
+  // asked of the layer that still exists.
 
-  test("a component the folder supplied names the file", () => {
-    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
-    expect(view.fields.memory?.source).toEqual({ kind: "project", file: "C:/work/app/novaclaw.json" })
-    expect(view.fields.memory?.origin).toBeUndefined()
-    expect(view.fields.memory?.value).toBe(false)
-  })
+  // 🗑️ A case stood here: a component the FOLDER supplied named the file, so the config surface
+  // could say "set by this folder's project file" rather than blaming the instance. The folder
+  // layer is retired (owner, 2026-09-16) and the case below is what remains of the ranking it was
+  // half of — a colleague's own choice, named as the colleague's.
 
   test("a default the folder did NOT supply reads as the instance", () => {
     // `safeMode` is in the folded defaults but not in `applied`, so it came from below the folder.
-    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithAgent)
     expect(view.fields.safeMode?.source).toEqual({ kind: "instance" })
   })
 
@@ -522,17 +473,21 @@ describe("provenance beneath the entity", () => {
     // Matching the fold order — `ProjectDefaults.fold(AgentDefaults.fold(DEFAULTS, colleague), tune)`
     // — so the folder's value is what survives and the folder is what gets named. Reporting the
     // colleague here would send a user to edit a setting that is being overridden.
+    // 🔴 RE-PINNED 2026-09-16, and the property it exists for is unchanged: when two layers beneath
+    // the entity both declare a component, the one that WINS the fold is the one NAMED. The folder
+    // used to win that fold and used to be named; with the folder gone the colleague is both the
+    // winner and the name — and reporting the instance there would send a user to edit a setting
+    // that is being overridden.
     const both = {
       defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, memory: false },
-      project: { root: "C:/work/app", file: "C:/work/app/novaclaw.json", applied: ["memory"], refused: [] },
       agent: { id: "veritas", applied: ["memory"] },
     }
     const view = resolvedConfigView("s1", ["s1"], [{}], both)
-    expect(view.fields.memory?.source).toEqual({ kind: "project", file: "C:/work/app/novaclaw.json" })
+    expect(view.fields.memory?.source).toEqual({ kind: "agent", agentID: "veritas" })
   })
 
   test("🔴 a session that declares the component OUTRANKS the folder, and says so", () => {
-    const view = resolvedConfigView("s1", ["s1"], [{ memory: true }], layerWithProject)
+    const view = resolvedConfigView("s1", ["s1"], [{ memory: true }], layerWithAgent)
     expect(view.fields.memory?.value).toBe(true)
     expect(view.fields.memory?.origin).toBe("s1")
     // No source: a session set it, so "where did the default come from" is not the answer to give.
@@ -540,7 +495,7 @@ describe("provenance beneath the entity", () => {
   })
 
   test("a component nothing supplies has neither an origin nor a source", () => {
-    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithProject)
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithAgent)
     expect(view.fields.quality?.value).toBeUndefined()
     expect(view.fields.quality?.origin).toBeUndefined()
     expect(view.fields.quality?.source).toBeUndefined()

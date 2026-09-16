@@ -323,16 +323,11 @@ const SessionCatalogHandler = handlerLayer(
                     // WHO chose each default. Without it every colleague-declared field reported
                     // `source: {kind: "instance"}` by elimination — see `AgentLayer`.
                     ...(layer.agent === undefined ? {} : { agent: layer.agent }),
-                    ...(layer.project === undefined
-                      ? {}
-                      : {
-                          project: {
-                            root: layer.project.root,
-                            file: layer.project.file,
-                            applied: layer.applied,
-                            refused: layer.refused,
-                          },
-                        }),
+                    // 🗑️ A `project` layer used to ride here — the folder's `novaclaw.json`, named so
+                    // the config surface could say "set by this folder's project file" instead of
+                    // blaming the instance. It went with the mechanism (owner, 2026-09-16), and with
+                    // it the last consumer of `Resolution.project`: the field is gone from the type
+                    // rather than left permanently undefined, so nothing can quietly read it again.
                   },
                 ),
               }

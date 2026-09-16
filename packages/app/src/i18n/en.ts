@@ -373,7 +373,6 @@ export const dict = {
   "prompt.features.popover.description":
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
   "prompt.features.source.inherit": "Using Settings default: {{state}}",
-  "prompt.features.source.project": "Set by this folder's project file: {{state}}",
   "prompt.features.source.parent": "Inherited from the chat that started this one: {{state}}",
   "prompt.project.title": "This folder's project file",
   "prompt.project.applied": "It sets: {{list}}",

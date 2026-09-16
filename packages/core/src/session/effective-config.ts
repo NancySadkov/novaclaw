@@ -67,11 +67,13 @@ export interface Resolution {
   readonly refused: readonly string[]
   readonly deferred: readonly string[]
   /**
-   * 🗑️ The project file that governed the session's folder — never set any more, for the reason above.
-   * Kept in the type so the consumers that read it (the composer's provenance line, the session-config
-   * handler) keep compiling through the removal; they report "no folder layer", which is now always true.
+   * 🗑️ The project file that governed the session's folder — GONE, not "never set". It was kept one
+   * pass longer than the mechanism to hold the consumers still, and the retirement is only complete
+   * when the noun is out of the types: a field that can never be produced is a standing invitation to
+   * write `if (resolution.project)` again, and the copy it fed ("set by this folder's project file")
+   * has no source any more. Owner, 2026-09-16: *"please proceed to completion."*
    */
-  readonly project?: { readonly root: string; readonly file: string }
+
   /**
    * The COLLEAGUE whose chat this is, and which defaults it supplied.
    *

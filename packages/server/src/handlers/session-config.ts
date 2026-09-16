@@ -58,14 +58,12 @@ export interface FieldResolution<ID extends string = string> {
 /** The non-session layers that can supply a component. */
 export type DefaultSource =
   | { readonly kind: "instance" }
-  | { readonly kind: "project"; readonly file: string }
   /** A colleague's own standing choice — its model, posture, Strict or permission mode. */
   | { readonly kind: "agent"; readonly agentID: string }
 
 /** What the entity resolves against: the folded defaults, and which components the folder supplied. */
 export interface DefaultsLayer {
   readonly defaults: EffectiveConfig
-  readonly project?: ProjectLayer
   readonly agent?: AgentLayer
 }
 
@@ -156,22 +154,21 @@ export const resolvedConfigView = <ID extends string>(
     chain.forEach((entry, index) => {
       if (entry[key] !== undefined) declaredBy.push(layerIDs[index]!)
     })
-    // A component no session layer moved got its value from beneath the entity: the folder if it
-    // supplied this key, otherwise the shipped defaults. Only reported when there IS a value —
+    // A component no session layer moved got its value from beneath the entity: the colleague if it
+    // declared this key, otherwise the shipped defaults. Only reported when there IS a value —
     // "nothing set it and it has no default" is absence, not a source.
+    //
+    // 🗑️ A `project` ARM stood between those two, and it was the one place the retirement's ORDER
+    // mattered: a `novaclaw.json` ranked ABOVE the colleague, matching the fold order, so a folder
+    // that tuned a field the colleague also declared was the one NAMED — naming the colleague would
+    // send a user to edit a setting being overridden. With no folder layer there is nothing above
+    // the colleague, so the ranking is gone with the arm (owner, 2026-09-16).
     const source: DefaultSource | undefined =
       originIndex !== undefined || resolved[key] === undefined
         ? undefined
-        : layer.project?.applied.includes(key)
-          ? { kind: "project", file: layer.project.file }
-          : // ⚠️ RANKED BELOW the project file, matching the fold order in `effective-config.ts`:
-            // `ProjectDefaults.fold(AgentDefaults.fold(DEFAULTS, colleague), tune)`. A folder that
-            // tunes a field the colleague also declared wins, so it must also be the one NAMED —
-            // reporting the colleague there would send a user to edit a setting that is being
-            // overridden.
-            layer.agent?.applied.includes(key)
-            ? { kind: "agent", agentID: layer.agent.id }
-            : { kind: "instance" }
+        : layer.agent?.applied.includes(key)
+          ? { kind: "agent", agentID: layer.agent.id }
+          : { kind: "instance" }
     fields[key] = {
       ...(resolved[key] === undefined ? {} : { value: resolved[key] }),
       merge: SESSION_CONFIG_FIELDS[key].merge,
@@ -187,7 +184,6 @@ export const resolvedConfigView = <ID extends string>(
     defaults: projectFields(base),
     resolved: projectFields(resolved),
     fields,
-    ...(layer.project === undefined ? {} : { project: layer.project }),
   }
 }
 

@@ -205,18 +205,10 @@ export const SessionConfigResolved = Schema.Struct({
    * with this folder's applied tune folded on top, so it is the base the TURN used, not a generic one.
    */
   defaults: Schema.Record(Schema.String, Schema.Unknown),
-  /** The `novaclaw.json` governing the session's folder, when one does. */
-  project: Schema.optional(
-    Schema.Struct({
-      /** The directory holding the file. */
-      root: Schema.String,
-      file: Schema.String,
-      /** The switches the file supplied — every one of them shows as `source.kind === "project"`. */
-      applied: Schema.Array(Schema.String),
-      /** Declared and refused: a folder may raise a supervision switch, never lower one. */
-      refused: Schema.Array(Schema.String),
-    }),
-  ),
+  // 🗑️ A `project` field stood here: the `novaclaw.json` governing the session's folder, with its root,
+  // file and the switches it supplied or was refused. It went with the mechanism (owner, 2026-09-16);
+  // the wire no longer carries the noun, so no client can render a folder layer that does not exist.
+
   /** The merged effective config, flat. Every entry equals its `fields[key].value`. */
   resolved: Schema.Record(Schema.String, Schema.Unknown),
   /** Per-field provenance, keyed by `SessionConfig` field name (see the block above). */

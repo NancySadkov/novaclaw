@@ -86,12 +86,8 @@ describe("TuningPanel feature provenance", () => {
     expect(document.body.textContent).not.toContain("Using Settings default: Off")
   })
 
-  test("meaningful project provenance remains visible", () => {
-    mount(state({ origin: { safeMode: { kind: "project", file: "novaclaw.json" } } }))
-
-    expect(document.querySelectorAll("[data-feature-source]").length).toBe(1)
-    expect(document.querySelector("[data-feature-source]")?.textContent).toBe(
-      en["prompt.features.source.project"].replace("{{state}}", "Off"),
-    )
-  })
+  // 🗑️ A case stood here: a folder-supplied switch rendered its file, so a user reading
+  // "Using Settings default" one line under a sentence naming the file that set it could see the
+  // contradiction and fix it. With no folder layer there is no such label to render (owner,
+  // 2026-09-16), and the case above is the one that survives: an instance default stays silent.
 })

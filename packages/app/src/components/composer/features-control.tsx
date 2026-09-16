@@ -44,8 +44,10 @@ export type ComposerFeatureOrigin =
    * silent one.
    */
   | { kind: "session" }
-  /** The folder's `novaclaw.json` supplied it. `file` is the path, because opening it is the next move. */
-  | { kind: "project"; file: string }
+  // 🗑️ `| { kind: "project"; file: string }` stood here: the arm that said the folder's
+  // `novaclaw.json` supplied a switch, carrying the path because opening the file was the next move.
+  // The wire cannot produce it any more (owner, 2026-09-16), and an arm nothing can produce is how a
+  // retired mechanism gets read back in by a later `if`.
   /** Nothing above the instance chose it — the app's own default. */
   | { kind: "instance" }
 
@@ -561,7 +563,6 @@ export function TuningPanel(props: { state: ComposerFeaturesControlState; onDism
     const state = language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`)
     if (props.state.override[feature] !== undefined) return language.t("prompt.features.source.override")
     const origin = props.state.origin[feature]
-    if (origin?.kind === "project") return language.t("prompt.features.source.project", { state })
     if (origin?.kind === "session") return language.t("prompt.features.source.parent", { state })
     return undefined
   }
