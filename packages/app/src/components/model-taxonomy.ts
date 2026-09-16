@@ -37,16 +37,28 @@ export const classify = (value: string | undefined): Taxonomy =>
 export const classifyRequirement = (value: string | undefined): Requirement | undefined =>
   value === "smart" || value === "usual" || value === "fast" ? value : undefined
 
-/** The client's copy of the instance's one rank order (`ModelTaxonomy.rank`). Needed locally so the
+/** The client's copy of the instance's one ordering (`ModelTaxonomy.rank`). Needed locally so the
  *  officer dialog can say "this model is below what you asked for" while both choices are on screen,
  *  with no round trip — the instance still owns the decision that matters.
  *
- *  `special` is BELOW `fast`: it is not a weaker general-purpose model but one for something else, so
- *  it is beneath every requirement a colleague can state. */
-const RANK: Readonly<Record<Taxonomy, number>> = { special: -1, fast: 0, usual: 1, smart: 2 }
+ *  ⚠️ `special` is NOT in this table, because it is not a rank (owner, 2026-09-16: *"Special is not
+ *  even a rank - it is a way to specify that the model is unranked"*). It is `undefined` from
+ *  `rankOf`, and an unranked model is beneath EVERY requirement — which is what a comparison against
+ *  absence naturally says, rather than a fabricated low score. */
+const RANK: Readonly<Record<Requirement, number>> = { fast: 0, usual: 1, smart: 2 }
 
-/** Is a model rated `bound` beneath a role that asks for `needs`? Higher rank is more capable. */
-export const isBelow = (bound: Taxonomy, needs: Requirement): boolean => RANK[bound] < RANK[needs]
+/** The model's rank, or `undefined` when it is UNRANKED (`special`). An unclassified model reads as
+ *  `Usual`, the instance's default. */
+export const rankOf = (value: Taxonomy | undefined): number | undefined => {
+  if (value === undefined) return RANK.usual
+  return value === "special" ? undefined : RANK[value]
+}
+
+/** Is a model classified `bound` beneath a role that asks for `needs`? */
+export const isBelow = (bound: Taxonomy, needs: Requirement): boolean => {
+  const have = rankOf(bound)
+  return have === undefined || have < RANK[needs]
+}
 
 /** The human word for a class. Shared so the model picker and the colleague's requirement cannot
  *  drift into two vocabularies for the same things. */

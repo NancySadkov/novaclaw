@@ -35,12 +35,11 @@ describe("the class a model is rated as", () => {
     expect(ModelTaxonomy.of({ taxonomy: "smart" })).toBe("smart")
   })
 
-  test("rank is fast < usual < smart, and label is the human word", () => {
-    expect(ModelTaxonomy.rank("fast")).toBeLessThan(ModelTaxonomy.rank("usual"))
-    expect(ModelTaxonomy.rank("usual")).toBeLessThan(ModelTaxonomy.rank("smart"))
+  test("label is the human word for each classification", () => {
     expect(ModelTaxonomy.label("smart")).toBe("Smart")
     expect(ModelTaxonomy.label("usual")).toBe("Usual")
     expect(ModelTaxonomy.label("fast")).toBe("Fast")
+    expect(ModelTaxonomy.label("special")).toBe("Special")
   })
 })
 
@@ -105,40 +104,58 @@ describe("requestModel — the general 'give me a model for this job'", () => {
   })
 })
 
-describe("special — a scope marker, not a capability rank", () => {
-  test("it satisfies NOTHING, at every rung", () => {
-    // Owner ruling: *"Special (wont be used to power agents, unless agent settings explicitly pick
-    // it)."* A floor comparison is the first place that has to be false, or `requestModel` and the
-    // officer's fit warning would both let it through.
-    expect(ModelTaxonomy.satisfies("special", "fast")).toBe(false)
-    expect(ModelTaxonomy.satisfies("special", "usual")).toBe(false)
-    expect(ModelTaxonomy.satisfies("special", "smart")).toBe(false)
+describe("special — UNRANKED, not a low rank", () => {
+  test("it has no rank at all, which is the owner's word for it", () => {
+    // 🔴 Owner, 2026-09-16: *"Special is not even a rank - it is a way to specify that the model is
+    // unranked and used for specific purposes by specific agents."* So `rankOf` answers `undefined`,
+    // and NOT a low number: the first version gave it `-1` and had to guard `satisfies` and penalise
+    // `fit`, which is a rank in disguise and was rejected.
+    expect(ModelTaxonomy.rankOf({ taxonomy: "special" })).toBeUndefined()
+    for (const rank of ["smart", "usual", "fast"] as const) expect(ModelTaxonomy.rankOf({ taxonomy: rank })).toBe(rank)
+    // An unclassified model is `usual`, so it HAS a rank — absence is never unranked.
+    expect(ModelTaxonomy.rankOf({ taxonomy: undefined })).toBe("usual")
   })
 
-  test("it has the lowest fit for EVERY request, so it can never win a sort tie-break", () => {
-    // ⚠️ The claim is per-REQUEST, not across requests. `fit` measures DISTANCE from the wanted class,
-    // so `special` versus a `fast` request ties with `fast` versus a `usual` request — both are one
-    // step below. What is true, and what a sort needs, is that for a FIXED request nothing scores
-    // lower than `special`: `rank(-1)` puts it one step under `fast`, and the shortfall penalty
-    // applies on top.
+  test("the rank order only knows the three ranks", () => {
+    expect(ModelTaxonomy.rank("fast")).toBeLessThan(ModelTaxonomy.rank("usual"))
+    expect(ModelTaxonomy.rank("usual")).toBeLessThan(ModelTaxonomy.rank("smart"))
+    expect(ModelTaxonomy.RANKS).toEqual(["smart", "usual", "fast"])
+    // `special` is not expressible as a Rank, so no comparison can be handed one — the type is the
+    // guard. This pins the LIST, which is what a picker or a loop iterates.
+    expect(ModelTaxonomy.RANKS).not.toContain("special")
+  })
+
+  test("it satisfies NOTHING, at every rung", () => {
+    // Owner ruling: *"Special (wont be used to power agents, unless agent settings explicitly pick
+    // it)."* The rank has to be absent before any comparison, or `requestModel` and the officer's fit
+    // warning would both let it through.
     for (const want of ["smart", "usual", "fast"] as const) {
-      const special = ModelTaxonomy.fit("special", want)
+      const have = ModelTaxonomy.rankOf({ taxonomy: "special" })
+      expect(have === undefined, `special must have no rank to compare against ${want}`).toBe(true)
+    }
+  })
+
+  test("`fitOf` answers -Infinity for it, so a sort stays total without inventing a rank", () => {
+    // ⚠️ `-Infinity` is not a score: it says "cannot be ordered against the request at all". It is
+    // reachable only from a caller that forgot to filter unranked models out, and `leastLoaded` does.
+    for (const want of ["smart", "usual", "fast"] as const) {
+      const special = ModelTaxonomy.fitOf({ taxonomy: "special" }, want)
+      expect(special).toBe(Number.NEGATIVE_INFINITY)
       for (const have of ["smart", "usual", "fast"] as const)
         expect(special, `special vs ${have} for a ${want} request`).toBeLessThan(ModelTaxonomy.fit(have, want))
     }
-    expect(ModelTaxonomy.rank("special")).toBeLessThan(ModelTaxonomy.rank("fast"))
   })
 
   test("autoSelectable is false for special alone, and it is what every pool asks", () => {
     expect(ModelTaxonomy.autoSelectable({ taxonomy: "special" })).toBe(false)
     for (const taxonomy of ["smart", "usual", "fast"] as const)
       expect(ModelTaxonomy.autoSelectable({ taxonomy })).toBe(true)
-    // ⚠️ An unrated model is Usual, so it IS auto-selectable — absence must never read as `special`,
-    // or every hand-added endpoint would silently become unroutable.
+    // ⚠️ An unclassified model is Usual, so it IS auto-selectable — absence must never read as
+    // `special`, or every hand-added endpoint would silently become unroutable.
     expect(ModelTaxonomy.autoSelectable({ taxonomy: undefined })).toBe(true)
   })
 
-  test("`of` never materialises special from an absent rating", () => {
+  test("`of` never materialises special from an absent classification", () => {
     expect(ModelTaxonomy.of({ taxonomy: undefined })).toBe("usual")
     expect(ModelTaxonomy.of({ taxonomy: "special" })).toBe("special")
   })

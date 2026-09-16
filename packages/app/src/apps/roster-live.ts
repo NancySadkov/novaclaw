@@ -111,6 +111,45 @@ export const chatToClear = (
   return routed ?? chatFor(sessions, agentID) ?? archived
 }
 
+/**
+ * EVERY chat a Clear must take — `chatToClear`, plus any OTHER live root of the same colleague.
+ *
+ * 🔴 Owner, 2026-09-16: *"Clearing chat should also clear the context related stats, the ones shown by
+ * clicking the context indicator circle."* The stats themselves were never the leak — every number on
+ * that surface is derived from the transcript or the session row, and removing a session removes
+ * both (verified). The leak is the SESSION: Clear acting on one chat while the successor is another.
+ *
+ * The mechanism, measured against `createSessionRecord`: a colleague root's id is canonical
+ * (`ses_<agent>`) and creation is IDEMPOTENT — *"a LIVE chat at the canonical id IS this colleague's
+ * chat: the idempotent answer"*. So clearing a legacy-id root (or an archived one, which
+ * `chatToClear` deliberately allows) while a canonical live root exists does not produce a fresh chat
+ * at all: the successor is that OTHER conversation, handed straight back with its transcript, its
+ * tokens and its cost. To the user, Clear returned them to the very stats they asked to be rid of.
+ *
+ * ⚠️ **Taking the extras is not over-reach, because the product rule is ONE chat per colleague**
+ * (owner, 2026-08-23) and `createSessionRecord` enforces it on every create. A second live root is
+ * therefore always a legacy row, and the same file already records what it costs to leave one
+ * standing: *"the loser became UNREACHABLE while its tokens still rolled up into the colleague's
+ * totals: a chat that, to the user, vanished."* Clear is the one gesture that means "start this
+ * colleague fresh", so it is the right place to retire them.
+ *
+ * ⚠️ ARCHIVED roots are deliberately NOT collected. An archived chat is history the picker still
+ * shows, and only the one the user actually named (`chatToClear`, rule 1) may be taken.
+ */
+export const rootsToClear = (
+  sessions: readonly SessionLike[],
+  agentID: string,
+  routePath: string,
+): readonly SessionLike[] => {
+  const intended = chatToClear(sessions, agentID, routePath)
+  if (intended === undefined) return []
+  const extras = sessions.filter(
+    (session) =>
+      session.agent === agentID && isRoot(session) && session.time.archived === undefined && session.id !== intended.id,
+  )
+  return [intended, ...extras]
+}
+
 /** A chat and every thread spawned under it, transitively — the unit token spend is measured over. */
 export const threadOf = (sessions: readonly SessionLike[], rootID: string): readonly SessionLike[] => {
   const byParent = new Map<string, SessionLike[]>()

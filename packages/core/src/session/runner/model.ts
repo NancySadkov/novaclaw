@@ -386,7 +386,8 @@ export const perTurnFacts = (
 } => ({
   /** Catalog identity — the stable user-facing id, NOT the wire `api.id`. */
   ref: { providerID: model.providerID, id: model.id },
-  /** Materialised: an unrated model reads as `usual`, never `undefined` (`ModelTaxonomy.of`). */
+  /** Materialised: an unclassified model reads as `usual`, never `undefined` (`ModelTaxonomy.of`).
+   *  A model classified `special` is UNRANKED and reports so — see `taxonomyOf`/`ModelTaxonomy.rankOf`. */
   taxonomy: ModelTaxonomy.of(model),
   prePrompt: model.prePrompt,
   retryAttempts: model.retry?.attempts,
@@ -935,8 +936,8 @@ export const leastLoaded = (input: {
 }): ModelV2.Info | undefined => {
   // 🔴 `special` is filtered out FIRST, and the position is the point: it must not be reachable even
   // through the `adequate.length > 0 ? adequate : capable` fallback below, which exists so an
-  // undersized officer still runs. A model the user rated "not for agents" is not an undersized
-  // general-purpose model; routing to it is the one thing the rating forbids.
+  // undersized officer still runs. An UNRANKED model is not an undersized one; routing to it is the
+  // one thing the classification forbids.
   const capable = input.available.filter(
     (model) =>
       ModelTaxonomy.autoSelectable(model) &&
@@ -966,10 +967,12 @@ export const leastLoaded = (input: {
     if (a.ratio !== b.ratio) return a.ratio - b.ratio
     if (a.work !== b.work) return a.work - b.work
     // Class fit breaks ties so an exact match is chosen over an over-provisioned one, and load
-    // balancing still decides between two models of the same fit.
+    // balancing still decides between two models of the same fit. `fitOf` is how the rank is read
+    // off a model; `capable` above already excluded the unranked ones, so no comparison here can see
+    // one — `-Infinity` exists only so the sort stays total.
     if (input.taxonomy !== undefined) {
-      const leftFit = ModelTaxonomy.fit(ModelTaxonomy.of(left), input.taxonomy)
-      const rightFit = ModelTaxonomy.fit(ModelTaxonomy.of(right), input.taxonomy)
+      const leftFit = ModelTaxonomy.fitOf(left, input.taxonomy)
+      const rightFit = ModelTaxonomy.fitOf(right, input.taxonomy)
       if (leftFit !== rightFit) return rightFit - leftFit
     }
     const leftPreferred = left.providerID === input.preferred?.providerID && left.id === input.preferred.id

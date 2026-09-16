@@ -210,6 +210,14 @@ export function createServerSession(
       inflight.delete(sessionID)
       inflightDiff.delete(sessionID)
       inflightTodo.delete(sessionID)
+      // 🔴 The LIVE RATE is per-session state that outlived removal until 2026-09-16, and it is the
+      // shape AGENTS.md names: a session-scoped cache that the ONE eviction path forgot. Every other
+      // per-session map is deleted just above and the store keys are dropped by `dropSessionCaches`
+      // below; this one is a closure-local Map, so nothing else could reach it. Measured consequence
+      // of the omission: a cleared chat's token rate kept feeding the timeline's live counter, the
+      // Contacts row rate and the Models tab's throughput sum — numbers attributed to a conversation
+      // that no longer exists.
+      clearLive(sessionID)
     })
     setData(
       produce((draft) => {

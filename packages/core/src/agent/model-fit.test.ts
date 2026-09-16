@@ -34,6 +34,14 @@ describe("the class comparison", () => {
     expect(AgentModelFit.below({ needs: "usual", bound: unrated })).toBe(false)
     expect(AgentModelFit.below({ needs: "smart", bound: unrated })).toBe(true)
   })
+
+  test("an UNRANKED model is beneath EVERY requirement", () => {
+    // 🔴 `special` is "a way to specify that the model is unranked" (owner, 2026-09-16), so there is
+    // no rank to compare and the honest answer to "is it beneath what this role asked for?" is yes at
+    // every rung. That falls out of `rankOf` answering `undefined` — there is no `special` case here.
+    for (const needs of ["smart", "usual", "fast"] as const)
+      expect(AgentModelFit.below({ needs, bound: "special" }), `special vs a ${needs} role`).toBe(true)
+  })
 })
 
 describe("what the colleague is told", () => {

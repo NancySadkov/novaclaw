@@ -8,6 +8,7 @@ import {
   ratePerMinute,
   rosterState,
   rosterTask,
+  rootsToClear,
   terminalAttention,
   threadRate,
   threadOf,
@@ -120,6 +121,62 @@ describe("the chat Clear acts on", () => {
   test("a colleague that has never had a chat still reports nothing to clear", () => {
     expect(chatToClear(umbris, "nobody", "/")).toBeUndefined()
     expect(chatToClear([], "umbris", "/session/local/anything")).toBeUndefined()
+  })
+})
+
+describe("rootsToClear — every chat a Clear must take", () => {
+  const ids = (sessions: readonly SessionLike[], agentID: string, routePath: string) =>
+    rootsToClear(sessions, agentID, routePath).map((row) => row.id)
+  // Same shape as the fixture above — every root archived, which is the state this colleague was
+  // really in — plus a LIVE root, because that is the one `createSessionRecord` would hand back.
+  const archivedRoots = [
+    session({ id: "one", agent: "umbris", time: { created: 1, updated: 10, archived: 20 } }),
+    session({ id: "two", agent: "umbris", time: { created: 2, updated: 30, archived: 40 } }),
+    session({ id: "three", agent: "umbris", time: { created: 3, updated: 25, archived: 50 } }),
+  ]
+  const live = session({ id: "ses_umbris", agent: "umbris", time: { created: 4, updated: 60 } })
+  const withLive = [...archivedRoots, live]
+
+  test("🔴 a live root that would be handed straight back is cleared WITH the one the user meant", () => {
+    // The defect: `createSessionRecord` is idempotent on the canonical `ses_<agent>` id, so clearing an
+    // archived root while a live one exists does not produce a fresh chat — the "successor" is that
+    // other conversation, returned with its transcript, tokens and cost intact. To the user, Clear
+    // handed back the very stats they asked to be rid of.
+    expect(ids(withLive, "umbris", "/session/local/one")).toEqual(["one", "ses_umbris"])
+  })
+
+  test("the live root alone is taken when the route names no chat of this colleague", () => {
+    // `chatToClear`'s rule 2: from Contacts there is no route to go on, so the colleague's live chat is
+    // the one meant — and there are no extras, because it IS the live root.
+    expect(ids(withLive, "umbris", "/")).toEqual(["ses_umbris"])
+  })
+
+  test("every live root is taken when several exist — the legacy-row case this exists for", () => {
+    // Two live roots for one colleague is always a legacy anomaly (`createSessionRecord` enforces one),
+    // and whichever one Clear picks, the OTHER would be handed back as the successor.
+    const second = session({ id: "legacy", agent: "umbris", time: { created: 5, updated: 61 } })
+    expect(ids([...withLive, second], "umbris", "/session/local/legacy")).toEqual(["legacy", "ses_umbris"])
+  })
+
+  test("ARCHIVED roots are left alone — history the picker still shows", () => {
+    // Only the one the user named may be taken. `three` is archived and NOT named by this route.
+    const taken = ids(withLive, "umbris", "/session/local/one")
+    expect(taken).toContain("one")
+    expect(taken).not.toContain("three")
+  })
+
+  test("another colleague's roots and this colleague's sub-agents are never taken", () => {
+    const sessions: readonly SessionLike[] = [
+      live,
+      session({ id: "child", parentID: "ses_umbris", agent: "umbris", time: { created: 6, updated: 62 } }),
+      session({ id: "ses_theron", agent: "theron", time: { created: 7, updated: 63 } }),
+    ]
+    expect(ids(sessions, "umbris", "/")).toEqual(["ses_umbris"])
+  })
+
+  test("a colleague that has never had a chat still reports nothing", () => {
+    expect(rootsToClear(archivedRoots, "nobody", "/")).toEqual([])
+    expect(rootsToClear([], "umbris", "/")).toEqual([])
   })
 })
 

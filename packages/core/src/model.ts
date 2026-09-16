@@ -16,6 +16,8 @@ export const DEFAULT_IMAGE_LIMIT = Model.DEFAULT_IMAGE_LIMIT
 
 export const Taxonomy = Model.Taxonomy
 export type Taxonomy = Model.Taxonomy
+export const Rank = Model.Rank
+export type Rank = Model.Rank
 export const Requirement = Model.Requirement
 export type Requirement = Model.Requirement
 export const DEFAULT_TAXONOMY = Model.DEFAULT_TAXONOMY

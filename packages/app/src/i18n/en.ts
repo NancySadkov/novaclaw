@@ -2134,7 +2134,7 @@ export const dict = {
   "settings.models.config.taxonomy.name": "Model class",
   "settings.models.config.taxonomy.desc": "What this model is for.",
   "settings.models.config.taxonomy.desc.more":
-    "Smart — knowledge-heavy work like writing and design. Usual — coding and running your OS and sites. Fast — labeling and searching. Special — not for agents at all: a test model, or one kept for a single job; Nova never picks it on its own, only a colleague you point at it by name. Unset means Usual.",
+    "Smart — knowledge-heavy work like writing and design. Usual — coding and running your OS and sites. Fast — labeling and searching. Special — unranked, kept for one job or for testing; Nova never picks it on its own, only a colleague you point at it by name. Unset means Usual.",
   // The one vocabulary a person is asked to learn. Shared by the model picker and the colleague's
   // requirement so the two can never drift into different words for the same things.
   "taxonomy.smart": "Smart",

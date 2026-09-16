@@ -17,7 +17,7 @@ import { listSessions, startChat } from "@/apps/agent-list"
 import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
-import { chatFor, chatToClear } from "@/apps/roster-live"
+import { chatFor, chatToClear, rootsToClear } from "@/apps/roster-live"
 import {
   GOVERNING_ID,
   displayName,
@@ -706,9 +706,16 @@ export function AgentConfigScreen(props: {
        * rows, which is right for the roster and wrong here: the owner's `umbris` had four root chats,
        * every one of them archived, and the newest was the transcript in the open tab. Clear reported
        * *"There is no chat to clear yet"* about a conversation on screen. See `chatToClear`.
+       *
+       * 🔴 And not `chatToClear` ALONE either (owner, 2026-09-16). Clearing one chat while another
+       * live root exists does not give the user a fresh chat — `createSessionRecord` is idempotent on
+       * the canonical `ses_<agent>` id, so the "successor" is that other conversation, handed back
+       * with its transcript, tokens and cost still on screen. `rootsToClear` takes every live root of
+       * the colleague, which is what "Clear chat" promises and what the one-chat-per-colleague rule
+       * makes safe.
        */
-      const chat = chatToClear(sessions, id, location.pathname)
-      if (chat === undefined) {
+      const targets = rootsToClear(sessions, id, location.pathname)
+      if (targets.length === 0) {
         showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
         return
       }
@@ -726,9 +733,15 @@ export function AgentConfigScreen(props: {
        * `session.remove` is not a bare row delete: it takes the children, the session-scoped
        * memories and the Strict artifacts with it. That is what "Clear chat" promises.
        */
-      const removed = await client.session.remove({ sessionID: chat.id })
-      if (removed.error) throw removed.error
-      const viewingCleared = location.pathname.includes(chat.id)
+      for (const target of targets) {
+        const removed = await client.session.remove({ sessionID: target.id })
+        if (removed.error) throw removed.error
+      }
+      // WHICH of the cleared chats the open tab was seated on — there can now be more than one, and
+      // the tab is seated on at most one of them (`AGENTS.md`: one chat per colleague, one tab per
+      // colleague). `undefined` means the user was looking at something else entirely.
+      const seated = targets.find((target) => location.pathname.includes(target.id))?.id
+      const viewingCleared = seated !== undefined
       showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
       props.onChanged?.()
       props.onDismiss()
@@ -757,8 +770,9 @@ export function AgentConfigScreen(props: {
         if (viewingCleared) navigate("/")
       } else if (successor === undefined) {
         // No successor to sit in the seat. Closing beats stranding the tab on a deleted chat, which
-        // is the dead end this whole path exists to avoid.
-        tabs.closeSessionTab(key, chat.id)
+        // is the dead end this whole path exists to avoid. With nothing seated there is nothing to
+        // strand, so the close is skipped rather than aimed at an id from another screen.
+        if (seated !== undefined) tabs.closeSessionTab(key, seated)
       } else {
         const tab = tabs.addSessionTab({ server: key, sessionId: successor, agent: id })
         if (viewingCleared) navigate(tabHref(tab))
@@ -1270,6 +1284,41 @@ export function AgentConfigScreen(props: {
                   </button>
                 </Show>
               </div>
+              {/* 🔴 THE REPORTING LINE IS PART OF WHO THIS COLLEAGUE IS, so it lives in PROFILE
+                  (owner, 2026-09-16), beside the name, title and portrait — not in Mind, which is
+                  where it landed when it was the first use of a picker and has been read as a
+                  thinking setting ever since. The org chart is an identity structure
+                  (`AGENTS.md`, the structural metaphor): the superior is who the colleague answers
+                  to, which is a fact about the role, not about how it reasons.
+
+                  ⚠️ NOVA REPORTS TO NOBODY, so the selector is not rendered for it.
+                  `resolveSuperior` answers `undefined` for the governing agent by construction, which
+                  makes this field inert for Nova — and the rule this dialog already states is that a
+                  field the system would discard is not rendered as editable. */}
+              <Show when={!governing()}>
+                <div class="mt-4 border-t border-v2-border-border-muted pt-4">
+                  <label class="block text-xs text-v2-text-text-muted" for="agent-superior">
+                    {language.t("agentConfig.superior")}
+                  </label>
+                  <SelectV2
+                    id="agent-superior"
+                    aria-label={language.t("agentConfig.superior")}
+                    class="mt-1 w-full"
+                    options={superiorOptions()}
+                    current={
+                      superiorOptions().find((option) =>
+                        superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
+                      ) ?? superiorOptions()[0]
+                    }
+                    value={(option) => option.key}
+                    label={(option) => option.label}
+                    onSelect={(option) => option && setSuperior(option.value)}
+                  />
+                  <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                    {language.t("agentConfig.superiorDescription")}
+                  </p>
+                </div>
+              </Show>
             </section>
 
             <section class="agent-settings-card" data-section="memory" data-settings-tab="memory">
@@ -1336,21 +1385,6 @@ export function AgentConfigScreen(props: {
                   (owner, 2026-09-15). They are standing choices about how this officer OPERATES, the
                   same family as posture, permission mode and Strict — and the Mind tab is about how it
                   thinks (its model). Splitting one decision across two tabs is how a user loses it. */}
-              <label class="mt-4 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={affectiveValue()}
-                  onChange={(event) => setAffective(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Mood sampling</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
-                  </span>
-                </span>
-              </label>
-              <div class="my-5 border-t border-v2-border-border-muted" />
               {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
                 same colleague clever in one conversation and poor in the next, for reasons the user
                 could not see. A colleague has one mind. */}
@@ -1425,27 +1459,6 @@ export function AgentConfigScreen(props: {
                     ? language.t("agentConfig.reasoningBudgetOff")
                     : language.t("agentConfig.reasoningBudgetCustom", { tokens: reasoningBudgetValue() })}
               </p>
-              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
-                {language.t("agentConfig.maxToolTimeout")}
-              </label>
-              <input
-                id="agent-tool-timeout"
-                aria-label={language.t("agentConfig.maxToolTimeout")}
-                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                type="number"
-                min="1"
-                step="1"
-                value={maxToolTimeoutMinutesValue()}
-                placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
-                onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
-              />
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                {maxToolTimeoutMinutesValue().trim() === ""
-                  ? language.t("agentConfig.maxToolTimeoutHelpDefault")
-                  : language.t("agentConfig.maxToolTimeoutHelpCustom", {
-                      minutes: maxToolTimeoutMinutesValue(),
-                    })}
-              </p>
               {/* 🔴 The class this ROLE needs, which is a different statement from the model bound
                 above. A colleague can end up on the instance default without anyone choosing it —
                 its own model may be unavailable or have been failing — and a demanding role on a
@@ -1472,30 +1485,24 @@ export function AgentConfigScreen(props: {
               <Show when={belowFloor()}>
                 <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTaxonomyBelow")}</p>
               </Show>
-              {/* 🔴 NOVA REPORTS TO NOBODY, so the selector is not rendered for it. `resolveSuperior`
-                  answers `undefined` for the governing agent by construction, which makes this field
-                  inert for Nova — and the rule this dialog already states is that a field the system
-                  would discard is not rendered as editable. */}
-              <Show when={!governing()}>
-                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-superior">
-                  {language.t("agentConfig.superior")}
-                </label>
-                <SelectV2
-                  id="agent-superior"
-                  aria-label={language.t("agentConfig.superior")}
-                  class="mt-1 w-full"
-                  options={superiorOptions()}
-                  current={
-                    superiorOptions().find((option) =>
-                      superiorValue() === GOVERNING_ID ? option.value === "" : option.value === superiorValue(),
-                    ) ?? superiorOptions()[0]
-                  }
-                  value={(option) => option.key}
-                  label={(option) => option.label}
-                  onSelect={(option) => option && setSuperior(option.value)}
+              {/* 🔴 MOOD SAMPLING SITS LAST (owner, 2026-09-16). It is the one control here that
+                  changes the WEIGHTS' behaviour rather than choosing which weights run, so it reads as
+                  an aside after the model decisions above it — and at the top it pushed the model
+                  picker, which is what this tab is for, below the fold. */}
+              <label class="mt-4 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affectiveValue()}
+                  onChange={(event) => setAffective(event.currentTarget.checked)}
                 />
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
-              </Show>
+                <span>
+                  <span class="block">Mood sampling</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
+                  </span>
+                </span>
+              </label>
             </section>
 
             <section class="agent-settings-card" data-section="work" data-settings-tab="work">
@@ -1553,6 +1560,34 @@ export function AgentConfigScreen(props: {
                   />
                   <span>{language.t("agentConfig.strict")}</span>
                 </label>
+
+                {/* 🔴 MAXIMUM TOOL WAIT BELONGS HERE (owner, 2026-09-16), immediately under Strict,
+                    because the two answer the same question from its two ends: Strict says a step that
+                    fails is retried and verified, and this says how long ONE step may hold the floor
+                    before it is cut off and control comes back. In Mind it sat under the model
+                    pickers, where it read as a property of the weights rather than a rule about this
+                    officer's work. */}
+                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
+                  {language.t("agentConfig.maxToolTimeout")}
+                </label>
+                <input
+                  id="agent-tool-timeout"
+                  aria-label={language.t("agentConfig.maxToolTimeout")}
+                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={maxToolTimeoutMinutesValue()}
+                  placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
+                  onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+                />
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                  {maxToolTimeoutMinutesValue().trim() === ""
+                    ? language.t("agentConfig.maxToolTimeoutHelpDefault")
+                    : language.t("agentConfig.maxToolTimeoutHelpCustom", {
+                        minutes: maxToolTimeoutMinutesValue(),
+                      })}
+                </p>
 
                 {/* 🔴 ONE SWITCH, NOT TWO CARDS (owner ruling 2026-09-15: *"switching from
                     Interactive<->Unattended is a toggle switch (default Interactive), instead of being

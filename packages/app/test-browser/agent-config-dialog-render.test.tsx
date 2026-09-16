@@ -334,14 +334,25 @@ describe("AgentConfigDialog renders", () => {
 
     const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
     // 🔴 Re-pinned 2026-09-15 (twice): the Interactive/Unattended PAIR became ONE switch, and then
-    // that switch and the durable Goal moved to the WORK tab. The translator echoes keys, so Mind is
-    // asserted to hold what it still owns — how this officer THINKS.
+    // that switch and the durable Goal moved to the WORK tab. Re-pinned again 2026-09-16 (owner): Mood
+    // sampling moved to the END of this list, and Superior and Maximum tool wait moved OUT of it.
+    // The translator echoes keys, so Mind is asserted to hold what it still owns — how this officer
+    // THINKS (its models) and how its thinking is bounded.
     expect(mind?.textContent).toContain("Mood sampling")
     expect(mind?.textContent).not.toContain("agentConfig.unattended")
     expect(mind?.textContent).not.toContain("Goal")
+    // The two that left: the reporting line is identity, and a per-step timeout is how the officer
+    // works. Neither is a fact about its model.
+    expect(mind?.textContent).not.toContain("agentConfig.superior")
+    expect(mind?.textContent).not.toContain("agentConfig.maxToolTimeout")
+    // 🔴 "At the end of the list" is a DOM-ORDER claim, not a membership one: Mood sampling is the
+    // LAST labelled control in the Mind card. A membership assertion would pass with it back at the
+    // top, which is the state the owner asked to leave.
+    const mindLabels = [...(mind?.querySelectorAll("label") ?? [])]
+    expect(mindLabels.at(-1)?.textContent).toContain("Mood sampling")
 
     const work = document.querySelector('[data-section="work"][data-settings-tab="work"]')
-    // 🔴 The operating choices — posture, permissions, Strict, and now Unattended + Goal — live here.
+    // 🔴 The operating choices — posture, permissions, Strict, and now Maximum tool wait — live here.
     expect(work?.textContent).toContain("agentConfig.unattended")
     expect(work?.textContent).toContain("agentConfig.unattended.off")
     // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
@@ -349,6 +360,7 @@ describe("AgentConfigDialog renders", () => {
     expect((work?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
     expect((work?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
     expect(work?.textContent).toContain("Goal")
+    expect(work?.textContent).toContain("agentConfig.maxToolTimeout")
     expect(work?.textContent).toContain("Context guard")
     expect(work?.textContent).toContain("Edits instead of overwriting")
     expect(work?.textContent).toContain("Stuck detector")
@@ -363,6 +375,12 @@ describe("AgentConfigDialog renders", () => {
     expect(profile?.textContent).toContain("Import personality")
     expect(profile?.textContent).toContain("Export personality")
     expect(profile?.querySelector('[data-action="agent-personality-import"]')?.classList.contains("w-full")).toBe(true)
+    // 🔴 The reporting line is identity, so it lives here (owner, 2026-09-16), LAST — after the name,
+    // title, personality, job brief and portrait. Asserted in DOM order for the same reason as Mood
+    // sampling above: "moved to Profile" is satisfied by any position, and this pins the position.
+    expect(profile?.textContent).toContain("agentConfig.superior")
+    const profileLabels = [...(profile?.querySelectorAll("label") ?? [])]
+    expect(profileLabels.at(-1)?.textContent).toContain("agentConfig.superior")
 
     // 🔴 The mode control is a SWITCH now (owner ruling 2026-09-15), and it lives in the WORK tab
     // (owner, 2026-09-15), so this drives it the way a person does: one click turns Unattended ON.

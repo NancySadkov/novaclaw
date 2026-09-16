@@ -20,13 +20,15 @@ import { ModelTaxonomy, type Requirement, type Taxonomy } from "../model-taxonom
 /**
  * Is the bound model beneath the class this role declared?
  *
- * ⚠️ Both sides are already materialised (`ModelTaxonomy.of`), so there is no "unknown" case to
- * special-case here: an unrated model reads as `usual` wherever it is compared, which is exactly
- * what makes `usual` the default rather than a missing value. A model rated `special` IS beneath
- * every requirement — that is what the rating means.
+ * ⚠️ An UNRANKED model (`special`) is beneath EVERY requirement, and that falls out of `rankOf`
+ * answering `undefined` rather than being a special case: a model the harness may not route to by
+ * itself cannot serve a role that asks for a rank. A model with no classification at all reads as
+ * `usual` (`ModelTaxonomy.of`), which is what makes `usual` the default rather than a missing value.
  */
-export const below = (input: { readonly needs: Requirement; readonly bound: Taxonomy }): boolean =>
-  !ModelTaxonomy.satisfies(input.bound, input.needs)
+export const below = (input: { readonly needs: Requirement; readonly bound: Taxonomy }): boolean => {
+  const have = ModelTaxonomy.rankOf({ taxonomy: input.bound })
+  return have === undefined || !ModelTaxonomy.satisfies(have, input.needs)
+}
 
 /**
  * What the colleague is told.
