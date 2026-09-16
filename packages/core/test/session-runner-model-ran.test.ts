@@ -30,7 +30,7 @@ import { SettingsConfigStore } from "../src/settings-config-store"
  *
  * `SessionRunnerModel.resolve` owns two fallbacks — a configured model the catalog cannot serve, and
  * one `ModelHealth` says is failing — and both used to reassign a LOCAL that nothing downstream
- * could see. Every other fact about "this turn's model" (`tier`, `prePrompt`, `retryAttempts`,
+ * could see. Every other fact about "this turn's model" (`taxonomy`, `prePrompt`, `retryAttempts`,
  * `capabilities`, `imageLimit`, `ref`, `device`) re-entered `select()`, which applies NEITHER
  * fallback, so a demoted session held two models at once: the substitute served the request while
  * the facts described the sick original.
@@ -146,7 +146,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
     editor.model.update(SEER, VISION, (model) => {
       model.name = "Vision"
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
-      model.benchmark = { name: "terminal-bench-4.0", score: 75, source: "user" }
+      model.taxonomy = "smart"
       model.prePrompt = "SEER PRE-PROMPT"
       model.retry = { attempts: 7 }
       model.limit = { context: 4096, output: 512, images: 9 }
@@ -166,7 +166,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
       // A fallback must cover the unavailable model's architectural capabilities. This substitute
       // retains vision while changing every other per-turn fact exercised below.
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
-      model.benchmark = { name: "terminal-bench-4.0", score: 8, source: "user" }
+      model.taxonomy = "fast"
       model.prePrompt = "SCRIBE PRE-PROMPT"
       model.retry = { attempts: 2 }
       model.limit = { context: 2048, output: 256, images: 3 }
@@ -177,7 +177,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
   })
 
 describe("SessionRunnerModel — the per-turn facts follow the fallback", () => {
-  it.live("a health demotion moves capabilities, tier, pre-prompt, retry, image cap and ref onto the substitute", () =>
+  it.live("a health demotion moves capabilities, class, pre-prompt, retry, image cap and ref onto the substitute", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
@@ -227,7 +227,7 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             // Every fact, each with a value only the SUBSTITUTE has.
             expect(facts.capabilities?.input).toEqual(["text", "image"])
             expect(facts.ref).toEqual({ providerID: SCRIBE, id: TEXT })
-            expect(facts.tier).toBe("micro")
+            expect(facts.taxonomy).toBe("fast")
             expect(facts.prePrompt).toBe("SCRIBE PRE-PROMPT")
             expect(facts.retryAttempts).toBe(2)
             expect(facts.imageLimit).toBe(3)
@@ -236,7 +236,7 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             // ── And the accessors AGREE with the resolution: one answer, not two. ───────────────
             expect(yield* models.capabilities(session)).toEqual(facts.capabilities!)
             expect(yield* models.ref(session)).toEqual(facts.ref)
-            expect(yield* models.tier(session)).toBe("micro")
+            expect(yield* models.taxonomy(session)).toBe("fast")
             expect(yield* models.prePrompt(session)).toBe("SCRIBE PRE-PROMPT")
             expect(yield* models.retryAttempts(session)).toBe(2)
             expect(yield* models.imageLimit(session)).toBe(3)

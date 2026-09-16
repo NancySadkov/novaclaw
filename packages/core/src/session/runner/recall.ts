@@ -21,17 +21,7 @@ export const recallQuery = (context: ReadonlyArray<SessionMessage.Message>): str
   lastRealUserText(context)
 
 /** How many memories to inject — scaled down for weak models (the JH floor: don't crowd the window). */
-export const recallBudget = (tier: ModelV2.Tier | undefined): number => {
-  switch (tier) {
-    case "micro":
-    case "tiny":
-      return 3
-    case "small":
-      return 5
-    default:
-      return 8
-  }
-}
+export const recallBudget = (taxonomy: ModelV2.Taxonomy | undefined): number => (taxonomy === "fast" ? 3 : 8)
 
 /** How many candidates to RETRIEVE before ranking — deliberately DECOUPLED from `recallBudget`.
  *  The budget bounds what the model SEES (window pressure, correctly small for weak models); the pool
@@ -115,35 +105,25 @@ export const memoriesMentioningPath = (
 
 // ── the BOUNDED CONTEXT PACK (P3) ────────────────────────────────────────────────────────────────
 
+const FAST_RECALL = 200
+const DEFAULT_RECALL = 900
+
 /**
- * How many TOKENS of recalled memory a turn may spend, by model tier.
+ * How many TOKENS of recalled memory a turn may spend, by model class.
  *
- * 🔴 **A count of items is not a bound on context, and that is what this replaces.** `recallBudget`
- * caps the NUMBER of memories, so five one-line preferences and five ingested passages cost the same
- * budget while differing by two orders of magnitude in window pressure. On the tiers this harness is
- * built for — where the whole window is the scarce resource — that is the difference between recall
- * helping and recall crowding out the task.
+ * 🔴 **`fast` is the only class bounded down, and its number is the old `micro`/`tiny` one.** A count
+ * of items is not a bound on context: five one-line preferences and five ingested passages cost the
+ * same `recallBudget` while differing by orders of magnitude in window pressure. On the classes this
+ * harness is built for the whole window is the scarce resource, so what the model is SHOWN is bounded
+ * here while `recallBudget` continues to size only the candidate pool (rerank latency).
  *
- * ⚠️ Both bounds survive, and they bound different things: `recallBudget` sizes the CANDIDATE POOL
- * (rerank cost, measured in latency), and this bounds what the model is actually shown (window
- * cost). Conflating them is the mistake `recallPoolSize` already exists to avoid, one level up.
- *
- * The numbers are deliberately round, because the estimator below is not precise enough for them to
- * be anything else: a micro/tiny model on a 4–8K window can spare a couple of hundred tokens of
- * background before the task starts losing room; a full-tier model can spare an order of magnitude
- * more without noticing.
+ * The three-word taxonomy has no middle band: a model somebody rated `fast` is the one they use for
+ * labeling on the smallest window we support, and it must not have most of that window spent on
+ * background. Everything else takes the default. The numbers stay round because `estimateTokens`
+ * below is not precise enough for them to be anything else.
  */
-export const recallTokenBudget = (tier: ModelV2.Tier | undefined): number => {
-  switch (tier) {
-    case "micro":
-    case "tiny":
-      return 200
-    case "small":
-      return 400
-    default:
-      return 900
-  }
-}
+export const recallTokenBudget = (taxonomy: ModelV2.Taxonomy | undefined): number =>
+  taxonomy === "fast" ? FAST_RECALL : DEFAULT_RECALL
 
 /**
  * TOKENS, ESTIMATED — four characters to a token, and what this estimate's error costs.

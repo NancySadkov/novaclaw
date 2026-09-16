@@ -12,7 +12,7 @@ import { SpawnTool } from "@novaclaw/core/tool/spawn"
 
 describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
-  // MUST match the array in llm.ts: persona, expertiseHint, tierHint, override, identity, agent, base.
+  // MUST match the array in llm.ts: persona, expertiseHint, taxonomyHint, override, identity, agent, base.
   // (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
@@ -45,7 +45,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   > = {
     persona: "Be pragmatic.",
     expertiseHint: "Explain in plain language.",
-    tierHint: "You are a small local model.",
+    taxonomyHint: "You are a small local model.",
     systemPromptOverride: "Session override text.",
     agentIdentity: SystemCompose.agentIdentitySection({ id: "iris", name: "Iris", title: "Reviewer" }),
     agentSystem: "Build agent instructions.",
@@ -55,7 +55,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   const todayOrder = [
     baseParts.persona,
     baseParts.expertiseHint,
-    baseParts.tierHint,
+    baseParts.taxonomyHint,
     baseParts.systemPromptOverride,
     baseParts.agentIdentity,
     baseParts.agentSystem,
@@ -221,7 +221,7 @@ describe("toolDiscoverySection — the model must know its tool list is partial"
 const KERNEL_BASE = {
   persona: "You are Nova.",
   expertiseHint: "Explain in plain language.",
-  tierHint: "You are a small local model.",
+  taxonomyHint: "You are a small local model.",
   systemPromptOverride: "Session override text.",
   agentSystem: "Build agent instructions.",
   base: "Initial context (kernel base).",
@@ -229,7 +229,7 @@ const KERNEL_BASE = {
 const KERNEL_ORDER = [
   KERNEL_BASE.persona,
   KERNEL_BASE.expertiseHint,
-  KERNEL_BASE.tierHint,
+  KERNEL_BASE.taxonomyHint,
   KERNEL_BASE.systemPromptOverride,
   KERNEL_BASE.agentSystem,
   KERNEL_BASE.base,

@@ -82,7 +82,7 @@ describe("every field the wire schema declares is accounted for", () => {
       introspection: true,
       quality: true,
       affective: true,
-      needsScore: 42,
+      needsTaxonomy: "smart",
       reasoningBudget: 0,
       maxToolTimeoutMs: 600_000,
       permissionMode: "build",

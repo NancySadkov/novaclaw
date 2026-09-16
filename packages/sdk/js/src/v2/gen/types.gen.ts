@@ -3881,7 +3881,7 @@ export type ConfigV2Agent = {
   memory?: "own" | "none"
   archiveChats?: boolean
   toolLabels?: boolean
-  needsScore?: number
+  needsTaxonomy?: "smart" | "usual" | "fast"
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
@@ -4243,13 +4243,6 @@ export type ConfigV2ModelCost = {
   cache?: ConfigV2ModelCostCache
 }
 
-export type ModelBenchmark = {
-  name: "terminal-bench-4.0"
-  score: number
-  source: "user" | "measured"
-  measuredAt?: number
-}
-
 export type ModelPrefixCache = {
   enabled: boolean
   ttlMinutes?: number
@@ -4310,8 +4303,7 @@ export type ConfigV2Model = {
     }
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
-  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
-  benchmark?: ModelBenchmark
+  taxonomy?: "smart" | "usual" | "fast"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
@@ -4374,8 +4366,7 @@ export type ConfigV2ModelEntry = {
     }
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
-  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
-  benchmark?: ModelBenchmark
+  taxonomy?: "smart" | "usual" | "fast"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: ConfigV2ModelRetry
@@ -4701,8 +4692,7 @@ export type ModelV2Info = {
   id: string
   providerID: string
   family?: string
-  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
-  benchmark?: ModelBenchmark
+  taxonomy?: "smart" | "usual" | "fast"
   prefixCache?: ModelPrefixCache
   prePrompt?: string
   retry?: {
@@ -4769,7 +4759,7 @@ export type AgentV2Info = {
   memory?: AgentMemory
   archiveChats?: boolean
   toolLabels?: boolean
-  needsScore?: number
+  needsTaxonomy?: "smart" | "usual" | "fast"
   description?: string
   directory?: string
   workspace?: string

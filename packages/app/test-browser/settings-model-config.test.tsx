@@ -32,6 +32,25 @@ const fill = (name: string, value: string) => {
   node.value = value
   node.dispatchEvent(new Event("input", { bubbles: true }))
 }
+/** Open a `SelectV2` trigger and click one option by its key (`[role="option"][data-key]`). */
+const choose = async (select: HTMLElement, key: string) => {
+  select.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.dataset.key === key)
+  expect(option, `option ${key} should be present`).toBeDefined()
+  option!.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  option!.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
+const selectText = (select: HTMLElement) =>
+  select.querySelector<HTMLElement>('[data-slot="select-v2-value-text"]')?.textContent ?? ""
 function merge(target: any, patch: any): any {
   for (const [key, value] of Object.entries(patch))
     target[key] = value && typeof value === "object" && !Array.isArray(value) ? merge(target[key] ?? {}, value) : value
@@ -173,24 +192,46 @@ test("unrelated model edits preserve inherited limits and retire connection-atte
   expect(saved().retry).toBeUndefined()
 })
 
-test("benchmark score and prefix-cache lifetime survive save and reopening", async () => {
+test("model class and prefix-cache lifetime survive save and reopening", async () => {
   const saved = mount()
   click(button("Configure test"))
   await settle()
-  fill("Terminal-Bench 4.0 score (%)", "42.5")
+  await choose(document.querySelector<HTMLElement>('[data-action="settings-model-taxonomy"]')!, "smart")
   const switches = document.querySelectorAll('input[role="switch"]')
   expect(switches).toHaveLength(2)
   click(switches[1]!)
   fill("Prefix lifetime (minutes)", "7")
   click(button("Save"))
   await settle()
-  expect(saved().benchmark).toEqual({ name: "terminal-bench-4.0", score: 42.5, source: "user" })
+  expect(saved().taxonomy).toBe("smart")
   expect(saved().prefixCache).toEqual({ enabled: true, ttlMinutes: 7 })
 
   click(button("Configure test"))
   await settle()
-  expect(field("Terminal-Bench 4.0 score (%)").value).toBe("42.5")
+  expect(selectText(document.querySelector<HTMLElement>('[data-action="settings-model-taxonomy"]')!)).toBe("Smart")
   expect(field("Prefix lifetime (minutes)").value).toBe("7")
+})
+
+test("the class picker starts on Usual when the model has never been rated", async () => {
+  // `Usual` IS the documented default for an unrated model, so the control states what is in force
+  // rather than showing an empty picker (AGENTS.md 12d).
+  mount()
+  click(button("Configure test"))
+  await settle()
+  expect(selectText(document.querySelector<HTMLElement>('[data-action="settings-model-taxonomy"]')!)).toBe("Usual")
+})
+
+test("every field's explanation is behind a `?` beside its NAME, not a paragraph under it", async () => {
+  mount()
+  click(button("Configure test"))
+  await settle()
+  const rows = [...document.querySelectorAll<HTMLElement>('[data-slot="settings-v2-row-title"]')]
+  expect(rows.length).toBeGreaterThan(4)
+  // ⚠️ INSIDE the title element is the whole claim: a `?` on the next line is what the owner asked to
+  // get rid of (2026-09-16), and it is indistinguishable from the wrong one by count alone.
+  for (const title of rows) expect(title.querySelector('[data-slot="settings-explain"]')).not.toBeNull()
+  // And the inline paragraph is gone from every row of this screen.
+  expect(document.querySelectorAll('[data-slot="settings-v2-row-description"]')).toHaveLength(0)
 })
 
 test("device concurrency round-trips through the endpoint's Device entry", async () => {

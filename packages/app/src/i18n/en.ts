@@ -1453,8 +1453,7 @@ export const dict = {
   "settings.appearance.feedDisplay.expanded": "Expanded",
   "settings.appearance.feedDisplay.collapsed": "Collapsed",
   "settings.appearance.row.commandTiming.title": "Command timer",
-  "settings.appearance.row.commandTiming.description":
-    "Show elapsed and timeout seconds while a command runs.",
+  "settings.appearance.row.commandTiming.description": "Show elapsed and timeout seconds while a command runs.",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.sounds": "Sound effects",
 
@@ -2091,11 +2090,9 @@ export const dict = {
   "settings.models.stats.prefixBytes": "Matching prefix bytes",
   "settings.models.stats.prefixBytes.desc":
     "Exact common bytes across measured outgoing prompts, with their share of all prompt bytes.",
-  "settings.models.stats.benchmark": "Coding test score",
-  "settings.models.stats.benchmark.desc": "Raw, unharnessed Terminal-Bench 4.0 result; parameter count is not used.",
-  "settings.models.stats.benchmark.user": "entered",
-  "settings.models.stats.benchmark.measured": "measured",
-  "settings.models.stats.unscored": "Not scored",
+  "settings.models.stats.taxonomy": "Model class",
+  "settings.models.stats.taxonomy.desc": "What this model is rated for — Smart, Usual or Fast.",
+  "settings.models.stats.taxonomy.unrated": "default",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "Endpoint and generation are healthy",
   "settings.models.probe.unreachable": "Couldn't connect",
@@ -2134,11 +2131,15 @@ export const dict = {
   "settings.models.config.modelID.desc": "The exact model identifier Nova sends to the API.",
   "settings.models.config.modelName.name": "Model name",
   "settings.models.config.modelName.desc": "The friendly name shown in Nova.",
-  "settings.models.config.benchmark.name": "Terminal-Bench 4.0 score (%)",
-  "settings.models.config.benchmark.desc": "A raw, unharnessed coding-agent test score.",
-  "settings.models.config.benchmark.desc.more":
-    "Use the Terminal-Bench 4.0 percentage, not parameter count. Enter a score you trust or one Nova measured with the raw model; Codex skills and other harness help must not be included.",
-  "settings.models.config.benchmark.invalid": "The Terminal-Bench score must be between 0 and 100.",
+  "settings.models.config.taxonomy.name": "Model class",
+  "settings.models.config.taxonomy.desc": "What this model is for.",
+  "settings.models.config.taxonomy.desc.more":
+    "Smart — knowledge-heavy work like writing and design. Usual — coding and running your OS and sites. Fast — labeling and searching. Unset means Usual.",
+  // The one vocabulary a person is asked to learn. Shared by the model picker and the colleague's
+  // requirement so the two can never drift into different words for the same three things.
+  "taxonomy.smart": "Smart",
+  "taxonomy.usual": "Usual",
+  "taxonomy.fast": "Fast",
   "settings.models.config.prefixCache.name": "Measure prompt prefixes",
   "settings.models.config.prefixCache.desc": "Keep a short local diagnostic cache of exact outgoing prompt bytes.",
   "settings.models.config.prefixCache.ttl.name": "Prefix lifetime (minutes)",
@@ -2905,12 +2906,12 @@ export const dict = {
   "agentConfig.superiorNova": "Nova — CEO (default)",
   "agentConfig.superiorDescription":
     "This colleague asks its superior to resolve overlapping work and conflicts. Reporting lines cannot form a loop.",
-  "agentConfig.needsScore": "Minimum Terminal-Bench 4.0 score",
-  "agentConfig.needsScoreNone": "No minimum",
-  "agentConfig.needsScoreHelp":
-    "When Default Model is selected, NovaClaw routes each turn to the least loaded model that meets this score and can do the job.",
-  "agentConfig.needsScoreBelow":
-    "The model chosen above is below this. Nothing is blocked, and they will say so themselves.",
+  "agentConfig.needsTaxonomy": "Model class this colleague needs",
+  "agentConfig.needsTaxonomyNone": "No requirement",
+  "agentConfig.needsTaxonomyHelp":
+    "When Default Model is selected, NovaClaw routes each turn to the least loaded model of this class. Smart is knowledge-heavy work like writing and design; Usual is coding and running your OS; Fast is labeling and searching.",
+  "agentConfig.needsTaxonomyBelow":
+    "The model chosen above is rated below this. Nothing is blocked, and they will say so themselves.",
   // The colleague's PROJECT. Named for the relationship ("works on"), not for the mechanism ("cwd"):
   // the user is assigning a person to a job, and the folder is how that is expressed.
   // The standing WORK choices — how this colleague operates, every time. Moved off the composer

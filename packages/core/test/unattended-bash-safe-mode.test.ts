@@ -184,7 +184,7 @@ describe("③ the project-scope instruction is in every non-yolo prompt, and abs
     const parts = {
       persona: "P",
       expertiseHint: "E",
-      tierHint: "T",
+      taxonomyHint: "T",
       systemPromptOverride: "O",
       agentSystem: "A",
       base: "B",

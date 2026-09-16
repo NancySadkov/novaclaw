@@ -506,7 +506,7 @@ export const SettingsModelsV2: Component<{
                                   models?: Record<
                                     string,
                                     {
-                                      benchmark?: { name: string; score: number; source: string }
+                                      taxonomy?: string
                                       prefixCache?: { enabled: boolean; ttlMinutes?: number }
                                     }
                                   >
@@ -543,7 +543,7 @@ export const SettingsModelsV2: Component<{
                                       http={cn.http}
                                       modelRef={ref}
                                       modelName={item.name}
-                                      benchmark={configuredModel()?.benchmark ?? item.benchmark}
+                                      taxonomy={configuredModel()?.taxonomy ?? item.taxonomy}
                                       prefixCache={configuredModel()?.prefixCache ?? item.prefixCache}
                                     />
                                   ))

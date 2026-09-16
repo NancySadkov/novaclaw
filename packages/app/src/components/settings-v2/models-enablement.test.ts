@@ -121,7 +121,7 @@ describe("A switched-off model is not a resolution anywhere", () => {
 describe("Models tab — quiet overview, details on demand", () => {
   test("moves measured quality and prefix diagnostics into Configure and keeps endpoint URLs out of the list", () => {
     expect(tab).not.toContain("<DialogModelTier")
-    expect(dialog).toContain("settings.models.config.benchmark.name")
+    expect(dialog).toContain("settings.models.config.taxonomy.name")
     expect(dialog).toContain("prefixCacheEnabled")
     expect(tab).toContain("<DialogModelStats")
     expect(tab).toContain("description={modelProviderLabel(props.item.provider.name)}")

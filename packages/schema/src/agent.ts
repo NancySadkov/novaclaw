@@ -47,9 +47,9 @@ export const Info = Schema.Struct({
   /** Caption each shell/spawn tool call with a generated title (default on). Costs a model call per
    *  call, so it is opt-out for agents whose work is shell-heavy. Read by the status sampler. */
   toolLabels: Schema.Boolean.pipe(optional),
-  /** Minimum raw Terminal-Bench 4.0 score this role expects. Warns when the bound model is beneath
-   *  it; never refuses. Absent = no measured floor. */
-  needsScore: Model.Score.pipe(optional),
+  /** The model class this role expects (`smart` | `usual` | `fast`). Warns when the bound model is
+   *  beneath it; never refuses. Absent = no declared floor. */
+  needsTaxonomy: Model.Taxonomy.pipe(optional),
   description: Schema.String.pipe(optional),
   /** The FOLDER this colleague works on. Absent = its own scratch (`AgentWorkspace.folderFor`). */
   directory: Schema.String.pipe(optional),

@@ -14,14 +14,9 @@ export type Family = Model.Family
 export const DEFAULT_LIMIT = Model.DEFAULT_LIMIT
 export const DEFAULT_IMAGE_LIMIT = Model.DEFAULT_IMAGE_LIMIT
 
-export const Tier = Model.Tier
-export type Tier = Model.Tier
-export const Benchmark = Model.Benchmark
-export type Benchmark = Model.Benchmark
-export const BENCHMARK_NAME = Model.BENCHMARK_NAME
-export const Score = Model.Score
-export type Score = Model.Score
-export const scoreBand = Model.scoreBand
+export const Taxonomy = Model.Taxonomy
+export type Taxonomy = Model.Taxonomy
+export const DEFAULT_TAXONOMY = Model.DEFAULT_TAXONOMY
 export const PrefixCache = Model.PrefixCache
 export type PrefixCache = Model.PrefixCache
 

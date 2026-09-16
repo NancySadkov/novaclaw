@@ -73,7 +73,7 @@ import { SessionMaintenance } from "./maintenance"
 import { SystemAccounting } from "./system-accounting"
 import { Scratch } from "../../scratch"
 import { SystemCompose } from "./system-compose"
-import { TierScaffold } from "./tier-scaffold"
+import { TaxonomyScaffold } from "./taxonomy-scaffold"
 import { SessionRecall } from "./recall"
 import { MemoryCorrection } from "./memory-correction"
 import { WorldMemory } from "../../kb-graph/world-memory"
@@ -1332,7 +1332,7 @@ export const layer = Layer.effect(
       const resolvedModel = yield* tap(
         models.resolveWithDevice(modelSession, {
           requested: session.model !== undefined,
-          requiredScore: resolution.workerProfile?.needsScore ?? agent.info?.needsScore,
+          taxonomy: resolution.workerProfile?.needsTaxonomy ?? agent.info?.needsTaxonomy,
           // An empty requirement still marks this as an automatic interactive pick. Tool support is
           // a one-way need: a tool-capable model is also perfectly valid for a tool-free short chat.
           requiredCapabilities: ShortChat.enabled(config.shortChat) ? {} : { tools: true },
@@ -1593,8 +1593,7 @@ export const layer = Layer.effect(
         ran === undefined
           ? {
               ref: yield* models.ref(modelSession),
-              tier: yield* models.tier(modelSession),
-              benchmarkScore: yield* models.benchmarkScore(modelSession),
+              taxonomy: yield* models.taxonomy(modelSession),
               prePrompt: yield* models.prePrompt(modelSession),
               retryAttempts: yield* models.retryAttempts(modelSession),
               capabilities: yield* models.capabilities(modelSession),
@@ -1614,14 +1613,13 @@ export const layer = Layer.effect(
       // under `api.id` while users and live config know it by a different stable catalog id.
       const modelRef = facts.ref
       // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
-      // the resolved model's capability tier; best-effort (never gates the turn).
-      const tier = facts.tier
-      const tierHint = TierScaffold.tierScaffold(tier)
+      // the resolved model's capability class; best-effort (never gates the turn).
+      const taxonomyHint = TaxonomyScaffold.scaffold(facts.taxonomy)
       // 🔴 ROLE/MODEL FIT — tell the colleague when the model behind it is beneath what its role
       // declared (`agent/model-fit.ts`; `notes/named-agents.md`). It warns and never refuses.
       //
       // Placed HERE because this is the first point that holds all three facts at once: the role's
-      // floor, the model the turn will actually run on (after any fallback), and its tier. Reading
+      // floor, the model the turn will actually run on (after any fallback), and its class. Reading
       // the floor at config-write time instead would miss the case this exists for — a colleague put
       // onto the default model because its own was unavailable or failing.
       //
@@ -1632,11 +1630,15 @@ export const layer = Layer.effect(
       // "warned once" flag would leave a compacted colleague confidently unaware.
       //
       // ⚠️ Best-effort. A notice that cannot be published must never cost the turn it was about.
-      const roleNeedsScore = prepared.workerProfile?.needsScore ?? prepared.agent.info?.needsScore
+      const roleNeedsTaxonomy = prepared.workerProfile?.needsTaxonomy ?? prepared.agent.info?.needsTaxonomy
+      const boundTaxonomy = facts.taxonomy
+      // ⚠️ `boundTaxonomy !== undefined` is the seam's "no catalog answer" arm, and silence is the
+      // honest response: an unresolved synthetic route has no class to judge, which is not the same
+      // as a low one. A genuine catalog model is always materialised (`perTurnFacts`).
       if (
-        AgentModelFit.below({ needs: roleNeedsScore, bound: facts.benchmarkScore }) &&
-        roleNeedsScore !== undefined &&
-        facts.benchmarkScore !== undefined
+        roleNeedsTaxonomy !== undefined &&
+        boundTaxonomy !== undefined &&
+        AgentModelFit.below({ needs: roleNeedsTaxonomy, bound: boundTaxonomy })
       ) {
         // ⚠️ The CATALOG identity (`models.ref`), not the wire id. Two reasons, and the second is the
         // one that made this a bug worth avoiding: the catalog id is what the user sees in Settings,
@@ -1655,8 +1657,8 @@ export const layer = Layer.effect(
               messageID: SessionMessage.ID.create(),
               timestamp: yield* DateTime.now,
               text: AgentModelFit.notice({
-                needs: roleNeedsScore,
-                bound: facts.benchmarkScore,
+                needs: roleNeedsTaxonomy,
+                bound: boundTaxonomy,
                 model: boundName,
               }),
             })
@@ -1824,8 +1826,8 @@ export const layer = Layer.effect(
          * here later must join the guards, which is why the pack itself is taken from `remembered`
          * rather than recomputed and discarded.
          */
-        const recallBudgetTokens = SessionRecall.recallBudget(tier)
-        const recallTokenBudget = SessionRecall.recallTokenBudget(tier)
+        const recallBudgetTokens = SessionRecall.recallBudget(facts.taxonomy)
+        const recallTokenBudget = SessionRecall.recallTokenBudget(facts.taxonomy)
         const legKey = SessionRecall.recallLegKey({
           agentID: memoryOwnerAgent,
           scopes: memoryScopes,
@@ -2226,7 +2228,7 @@ export const layer = Layer.effect(
             persona: harness.persona,
             modelPrePrompt,
             expertiseHint: harness.expertiseHint,
-            tierHint,
+            taxonomyHint,
             systemPromptOverride: config.systemPromptOverride,
             agentIdentity,
             agentSystem: prototypeBrief ?? agent.info?.system,
@@ -2773,160 +2775,162 @@ export const layer = Layer.effect(
           : retryAuthorization?.action === "stop"
             ? Stream.succeed(overflowRecovery!.failure)
             : ProviderDispatch.stream({
-              llm,
-              request,
-              preparedOpening: request,
-              enabled: budgetEnforced && !isLastStep,
-              budget: thinkingBudget,
-              ...(reasoningModel === undefined ? {} : { reasoningModel }),
-              ...(reasoningModel === undefined
-                ? {}
-                : {
-                    prepareAnswer: (answer) =>
-                      ProviderDispatch.prepare({
-                        request: answer,
-                        promptCacheKey,
-                        contextSize: model.route.defaults.limits?.context,
-                        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
-                        profile: ContextBudget.enabled(harness.context, config.contextBudget)
-                          ? ContextBudget.resolve(harness.context, config.type)
-                          : undefined,
-                        memoryRecall: recallMessage,
-                        promptCorrectionTokens: promptEstimate.correctionTokens,
-                        promptMarginTokens: promptEstimate.marginTokens,
-                        imagePatchPixels: routeProfile.imagePatchPixels,
-                        minimumResponseReserveTokens: harness.compaction.settings.buffer,
-                      }).request,
-                  }),
-              ...(reasoningScheduledDevice === undefined || reasoningScheduledDevice.key === scheduledDevice.key
-                ? {}
-                : {
-                    reasoningPhase: {
-                      // The outer dispatch owns the ordinary device. Move that lease, rather than
-                      // holding two devices or attributing one model's work to the other's queue.
-                      enter: scheduler
-                        .release({ sessionID: session.id as string, deviceKey: scheduledDevice.key })
-                        .pipe(
-                          Effect.andThen(
-                            scheduler.admit({
-                              sessionID: session.id as string,
-                              deviceKey: reasoningScheduledDevice.key,
-                              sessionClass: SessionScheduler.classForSessionType(config.type),
-                              ...(config.priority > 0 ? { priority: config.priority } : {}),
-                              ...(reasoningScheduledDevice.concurrency === undefined
-                                ? {}
-                                : { concurrency: reasoningScheduledDevice.concurrency }),
-                              ...(reasoningScheduledDevice.minRunMs === undefined
-                                ? {}
-                                : { minRunMs: reasoningScheduledDevice.minRunMs }),
-                              ...(reasoningScheduledDevice.locality === undefined
-                                ? {}
-                                : { locality: reasoningScheduledDevice.locality }),
-                            }),
+                llm,
+                request,
+                preparedOpening: request,
+                enabled: budgetEnforced && !isLastStep,
+                budget: thinkingBudget,
+                ...(reasoningModel === undefined ? {} : { reasoningModel }),
+                ...(reasoningModel === undefined
+                  ? {}
+                  : {
+                      prepareAnswer: (answer) =>
+                        ProviderDispatch.prepare({
+                          request: answer,
+                          promptCacheKey,
+                          contextSize: model.route.defaults.limits?.context,
+                          prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
+                          profile: ContextBudget.enabled(harness.context, config.contextBudget)
+                            ? ContextBudget.resolve(harness.context, config.type)
+                            : undefined,
+                          memoryRecall: recallMessage,
+                          promptCorrectionTokens: promptEstimate.correctionTokens,
+                          promptMarginTokens: promptEstimate.marginTokens,
+                          imagePatchPixels: routeProfile.imagePatchPixels,
+                          minimumResponseReserveTokens: harness.compaction.settings.buffer,
+                        }).request,
+                    }),
+                ...(reasoningScheduledDevice === undefined || reasoningScheduledDevice.key === scheduledDevice.key
+                  ? {}
+                  : {
+                      reasoningPhase: {
+                        // The outer dispatch owns the ordinary device. Move that lease, rather than
+                        // holding two devices or attributing one model's work to the other's queue.
+                        enter: scheduler
+                          .release({ sessionID: session.id as string, deviceKey: scheduledDevice.key })
+                          .pipe(
+                            Effect.andThen(
+                              scheduler.admit({
+                                sessionID: session.id as string,
+                                deviceKey: reasoningScheduledDevice.key,
+                                sessionClass: SessionScheduler.classForSessionType(config.type),
+                                ...(config.priority > 0 ? { priority: config.priority } : {}),
+                                ...(reasoningScheduledDevice.concurrency === undefined
+                                  ? {}
+                                  : { concurrency: reasoningScheduledDevice.concurrency }),
+                                ...(reasoningScheduledDevice.minRunMs === undefined
+                                  ? {}
+                                  : { minRunMs: reasoningScheduledDevice.minRunMs }),
+                                ...(reasoningScheduledDevice.locality === undefined
+                                  ? {}
+                                  : { locality: reasoningScheduledDevice.locality }),
+                              }),
+                            ),
                           ),
-                        ),
-                      leave: (costTokens: number | undefined) =>
-                        (costTokens === undefined
-                          ? Effect.void
-                          : scheduler.report({
-                              sessionID: session.id as string,
-                              deviceKey: reasoningScheduledDevice.key,
-                              costTokens,
-                            })
-                        ).pipe(
-                          Effect.andThen(
-                            scheduler.release({
-                              sessionID: session.id as string,
-                              deviceKey: reasoningScheduledDevice.key,
-                            }),
+                        leave: (costTokens: number | undefined) =>
+                          (costTokens === undefined
+                            ? Effect.void
+                            : scheduler.report({
+                                sessionID: session.id as string,
+                                deviceKey: reasoningScheduledDevice.key,
+                                costTokens,
+                              })
+                          ).pipe(
+                            Effect.andThen(
+                              scheduler.release({
+                                sessionID: session.id as string,
+                                deviceKey: reasoningScheduledDevice.key,
+                              }),
+                            ),
+                            Effect.andThen(
+                              scheduler.admit({
+                                sessionID: session.id as string,
+                                deviceKey: scheduledDevice.key,
+                                sessionClass: SessionScheduler.classForSessionType(config.type),
+                                ...(config.priority > 0 ? { priority: config.priority } : {}),
+                                ...(scheduledDevice.concurrency === undefined
+                                  ? {}
+                                  : { concurrency: scheduledDevice.concurrency }),
+                                ...(scheduledDevice.minRunMs === undefined
+                                  ? {}
+                                  : { minRunMs: scheduledDevice.minRunMs }),
+                                ...(scheduledDevice.locality === undefined
+                                  ? {}
+                                  : { locality: scheduledDevice.locality }),
+                              }),
+                            ),
+                            Effect.uninterruptible,
                           ),
-                          Effect.andThen(
-                            scheduler.admit({
-                              sessionID: session.id as string,
-                              deviceKey: scheduledDevice.key,
-                              sessionClass: SessionScheduler.classForSessionType(config.type),
-                              ...(config.priority > 0 ? { priority: config.priority } : {}),
-                              ...(scheduledDevice.concurrency === undefined
-                                ? {}
-                                : { concurrency: scheduledDevice.concurrency }),
-                              ...(scheduledDevice.minRunMs === undefined
-                                ? {}
-                                : { minRunMs: scheduledDevice.minRunMs }),
-                              ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
-                            }),
-                          ),
-                          Effect.uninterruptible,
-                        ),
-                    },
-                  }),
-              onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable, phase }) => {
-                // The reasoning request has a different model, prompt shape and cache history. Its
-                // usage is aggregated into the turn below, but feeding it into the ordinary route's
-                // calibration would poison the next prompt estimate.
-                if (phase === "reasoning") return Effect.void
-                const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
-                const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
-                const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)
-                const observationScope: PromptEstimate.Scope = {
-                  ...promptScope,
-                  ...(servedBy === undefined ? {} : { servedBy }),
-                }
-                // Re-resolve the exact outbound request: packing can make it differ from the pre-pack
-                // opening request. Only a compatible durable anchor is eligible for the
-                // residual series; whole-request fallbacks continue feeding the separate bias ratio.
-                const providerEstimate = PromptEstimate.resolve({
-                  request: providerRequest,
-                  messages: entries.map((entry) => entry.message),
-                  scope: observationScope,
-                  calibrationFactor: routeProfile.promptFactor,
-                  anchoredResidualRatios: routeProfile.promptResidualRatios,
-                  imagePatchPixels: routeProfile.imagePatchPixels,
-                })
-                const anchoredEstimatedPrompt =
-                  anchorable && providerEstimate.confidence !== "whole" ? providerEstimate.estimatedTokens : undefined
-                if (anchorable) {
-                  const observed = PromptEstimate.observe({
+                      },
+                    }),
+                onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable, phase }) => {
+                  // The reasoning request has a different model, prompt shape and cache history. Its
+                  // usage is aggregated into the turn below, but feeding it into the ordinary route's
+                  // calibration would poison the next prompt estimate.
+                  if (phase === "reasoning") return Effect.void
+                  const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
+                  const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
+                  const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)
+                  const observationScope: PromptEstimate.Scope = {
+                    ...promptScope,
+                    ...(servedBy === undefined ? {} : { servedBy }),
+                  }
+                  // Re-resolve the exact outbound request: packing can make it differ from the pre-pack
+                  // opening request. Only a compatible durable anchor is eligible for the
+                  // residual series; whole-request fallbacks continue feeding the separate bias ratio.
+                  const providerEstimate = PromptEstimate.resolve({
                     request: providerRequest,
-                    usage,
+                    messages: entries.map((entry) => entry.message),
                     scope: observationScope,
+                    calibrationFactor: routeProfile.promptFactor,
+                    anchoredResidualRatios: routeProfile.promptResidualRatios,
                     imagePatchPixels: routeProfile.imagePatchPixels,
                   })
-                  if (observed !== undefined) providerPromptAnchor = observed
-                }
-                const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
-                const remember = comparable
-                  ? routeProfiles
-                      .observe(
-                        routeProfileScope,
-                        {
-                          estimatedTokens: estimatedPrompt,
-                          reportedTokens: reportedPrompt!,
-                          ...(anchoredEstimatedPrompt === undefined
-                            ? {}
-                            : { anchoredEstimatedTokens: anchoredEstimatedPrompt }),
-                        },
-                        servedBy,
-                      )
-                      .pipe(Effect.ignore)
-                  : Effect.void
-                return remember.pipe(
-                  Effect.andThen(
-                    Log.event("session.context.estimate.drift", {
-                      "session.id": session.id,
-                      "provider.id": attemptModelRef.providerID,
-                      "model.id": attemptModelRef.id,
-                      "session.prompt.reported": reportedPrompt !== undefined,
-                      "session.prompt.tokens": reportedPrompt ?? 0,
-                      "session.estimated.tokens": estimatedPrompt,
-                      "session.estimate.comparable": comparable,
-                      "session.estimate.ratio": comparable
-                        ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
-                        : 0,
-                    }),
-                  ),
-                )
-              },
-            })
+                  const anchoredEstimatedPrompt =
+                    anchorable && providerEstimate.confidence !== "whole" ? providerEstimate.estimatedTokens : undefined
+                  if (anchorable) {
+                    const observed = PromptEstimate.observe({
+                      request: providerRequest,
+                      usage,
+                      scope: observationScope,
+                      imagePatchPixels: routeProfile.imagePatchPixels,
+                    })
+                    if (observed !== undefined) providerPromptAnchor = observed
+                  }
+                  const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
+                  const remember = comparable
+                    ? routeProfiles
+                        .observe(
+                          routeProfileScope,
+                          {
+                            estimatedTokens: estimatedPrompt,
+                            reportedTokens: reportedPrompt!,
+                            ...(anchoredEstimatedPrompt === undefined
+                              ? {}
+                              : { anchoredEstimatedTokens: anchoredEstimatedPrompt }),
+                          },
+                          servedBy,
+                        )
+                        .pipe(Effect.ignore)
+                    : Effect.void
+                  return remember.pipe(
+                    Effect.andThen(
+                      Log.event("session.context.estimate.drift", {
+                        "session.id": session.id,
+                        "provider.id": attemptModelRef.providerID,
+                        "model.id": attemptModelRef.id,
+                        "session.prompt.reported": reportedPrompt !== undefined,
+                        "session.prompt.tokens": reportedPrompt ?? 0,
+                        "session.estimated.tokens": estimatedPrompt,
+                        "session.estimate.comparable": comparable,
+                        "session.estimate.ratio": comparable
+                          ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
+                          : 0,
+                      }),
+                    ),
+                  )
+                },
+              })
       // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
       // must not be interrupted is a TOOL, because a half-written file or a half-sent message is real damage.
       // So a durable steer arriving mid-generation stops the stream at the next event and the following step

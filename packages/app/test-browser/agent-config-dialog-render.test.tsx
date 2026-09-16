@@ -217,6 +217,25 @@ const choose = async (select: HTMLElement, key: string) => {
   option!.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
   await settle()
 }
+/**
+ * Pick an option by its VISIBLE text rather than its key.
+ *
+ * ⚠️ Needed for the "No requirement" choice: its key is a sentinel (`none`), and reading the control
+ * back by the word a user actually picks is the assertion that matters.
+ */
+const chooseText = async (select: HTMLElement, label: string) => {
+  await openSelect(select)
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent?.trim() === label,
+  )
+  expect(option, `option "${label}" should be present`).toBeDefined()
+  option!.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
+  await Promise.resolve()
+  option!.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
 const saveButton = () =>
   [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
     | HTMLButtonElement
@@ -546,16 +565,15 @@ test("returning a colleague to default model and no requirement deletes both ove
   const writes: unknown[] = []
   const removals: string[][][] = []
   mount({
-    agents: [{ ...AGENT, config: { needsScore: 50, reasoningBudget: 512 } }],
+    agents: [{ ...AGENT, config: { needsTaxonomy: "smart", reasoningBudget: 512 } }],
     write: (patch) => writes.push(patch),
     remove: (paths) => removals.push(paths),
   })
   await settle()
   const model = document.querySelector<HTMLElement>('[aria-label="agentConfig.mind"]')!
-  const score = document.querySelector<HTMLInputElement>("#agent-needs-score")!
+  const taxonomy = document.querySelector<HTMLElement>("#agent-needs-taxonomy")!
   await choose(model, "inherit")
-  score.value = ""
-  score.dispatchEvent(new Event("input", { bubbles: true }))
+  await chooseText(taxonomy, "agentConfig.needsTaxonomyNone")
   const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
   budget.value = ""
   budget.dispatchEvent(new Event("input", { bubbles: true }))
@@ -563,11 +581,11 @@ test("returning a colleague to default model and no requirement deletes both ove
   await settle()
   const patch = writes[0] as { agents: { theron: Record<string, unknown> } }
   expect(patch.agents.theron.model).toBeUndefined()
-  expect(patch.agents.theron.needsScore).toBeUndefined()
+  expect(patch.agents.theron.needsTaxonomy).toBeUndefined()
   expect(removals).toEqual([
     [
       ["agents", "theron", "model"],
-      ["agents", "theron", "needsScore"],
+      ["agents", "theron", "needsTaxonomy"],
       ["agents", "theron", "reasoningBudget"],
     ],
   ])

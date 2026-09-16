@@ -41,11 +41,10 @@ describe("SessionRecall", () => {
     expect(SessionRecall.recallQuery([])).toBeUndefined()
   })
 
-  test("recallBudget shrinks for weak models (JH floor)", () => {
-    expect(SessionRecall.recallBudget("micro")).toBe(3)
-    expect(SessionRecall.recallBudget("tiny")).toBe(3)
-    expect(SessionRecall.recallBudget("small")).toBe(5)
-    expect(SessionRecall.recallBudget("large")).toBe(8)
+  test("recallBudget shrinks for a model rated Fast (JH floor)", () => {
+    expect(SessionRecall.recallBudget("fast")).toBe(3)
+    expect(SessionRecall.recallBudget("usual")).toBe(8)
+    expect(SessionRecall.recallBudget("smart")).toBe(8)
     expect(SessionRecall.recallBudget(undefined)).toBe(8)
   })
 
@@ -99,7 +98,7 @@ describe("the bounded context pack", () => {
     const long = passage("x".repeat(4000), "b")
     // The old item budget admitted both at a budget of 2. A thousand estimated tokens does not fit
     // in two hundred, and that is the whole difference.
-    const pack = SessionRecall.packRecall([short, long], SessionRecall.recallTokenBudget("micro"))
+    const pack = SessionRecall.packRecall([short, long], SessionRecall.recallTokenBudget("fast"))
     expect(pack.shown.map((row) => row.id)).toEqual(["a"])
     expect(pack.omitted).toBe(1)
   })
@@ -157,9 +156,10 @@ describe("the bounded context pack", () => {
     expect(SessionRecall.recallTier(claim("flagged", { status: "needs_review" }))).not.toBe(0)
   })
 
-  test("token budgets shrink for weak models, and the estimate is characters over four", () => {
-    expect(SessionRecall.recallTokenBudget("micro")).toBe(200)
-    expect(SessionRecall.recallTokenBudget("small")).toBe(400)
+  test("token budgets shrink for a model rated Fast, and the estimate is characters over four", () => {
+    expect(SessionRecall.recallTokenBudget("fast")).toBe(200)
+    expect(SessionRecall.recallTokenBudget("usual")).toBe(900)
+    expect(SessionRecall.recallTokenBudget("smart")).toBe(900)
     expect(SessionRecall.recallTokenBudget(undefined)).toBe(900)
     expect(SessionRecall.estimateTokens("abcd".repeat(25))).toBe(25)
   })
@@ -168,14 +168,14 @@ describe("the bounded context pack", () => {
 describe("recallPoolSize", () => {
   // The pool is what the RANKER chooses from; the budget is what the MODEL SEES. Keeping them
   // separate is the point — see the D20 bisection (answer at hybrid rank 12-18).
-  test("weak tiers get a pool far wider than their context budget", () => {
-    const micro = SessionRecall.recallBudget("micro")
-    expect(micro).toBe(3)
+  test("a Fast model gets a pool far wider than its context budget", () => {
+    const fast = SessionRecall.recallBudget("fast")
+    expect(fast).toBe(3)
     // 3x3=9 could not contain an answer measured at rank 12-18; the floor fixes exactly that.
-    expect(SessionRecall.recallPoolSize(micro)).toBe(16)
+    expect(SessionRecall.recallPoolSize(fast)).toBe(16)
   })
 
-  test("stronger tiers scale past the floor", () => {
+  test("stronger classes scale past the floor", () => {
     expect(SessionRecall.recallPoolSize(SessionRecall.recallBudget(undefined))).toBe(24)
   })
 

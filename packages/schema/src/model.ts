@@ -59,36 +59,26 @@ export const DEFAULT_LIMIT = { context: 65_536, output: 16_384 } as const
 // lifting this floor.
 export const DEFAULT_IMAGE_LIMIT = 1
 
-// Internal harness band derived from a measured coding score. It is deliberately not shown as a
-// model-size rating: parameter count is not a capability measurement. `scoreBand` below is the only
-// conversion, so selection, fit warnings and scaffold intensity cannot invent different ladders.
-export const Tier = Schema.Literals(["micro", "tiny", "small", "medium", "large", "frontier"])
-export type Tier = typeof Tier.Type
+/**
+ * What a model is FOR — the one rating a person can hold in their head.
+ *
+ * 🔴 Owner ruling, 2026-09-16: this REPLACES the raw Terminal-Bench 4.0 percentage. A benchmark
+ * number is a value no normal user has a way to know (AGENTS.md principle 12), and it had leaked into
+ * three independent ladders — selection, role-fit warnings and harness scaffold intensity — each of
+ * which could pick a different answer. One three-word rating is the whole vocabulary now:
+ *
+ *  - `smart` — knowledge-heavy work: writing, design, analysis.
+ *  - `usual` — coding, running your OS and sites. THE DEFAULT: an unrated model is this.
+ *  - `fast`  — labeling and searching; the cheapest model that can do the job.
+ *
+ * Capability is a floor (fast < usual < smart), and the single conversion lives in
+ * `core/src/model-taxonomy.ts` so selection, fit warnings and scaffold cannot invent different ranks.
+ */
+export const Taxonomy = Schema.Literals(["smart", "usual", "fast"])
+export type Taxonomy = typeof Taxonomy.Type
 
-export const BENCHMARK_NAME = "terminal-bench-4.0" as const
-export const Score = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }))
-export type Score = typeof Score.Type
-
-export const Benchmark = Schema.Struct({
-  name: Schema.Literal(BENCHMARK_NAME),
-  /** Percentage score, 0..100. */
-  score: Score,
-  /** Whether a person supplied the result or NovaClaw ran the raw benchmark. */
-  source: Schema.Literals(["user", "measured"]),
-  measuredAt: Schema.Finite.pipe(optional),
-}).annotate({ identifier: "Model.Benchmark" })
-export type Benchmark = typeof Benchmark.Type
-
-/** Score bands tune harness help; they do not claim a parameter count or architecture. */
-export const scoreBand = (score: number | undefined): Tier | undefined => {
-  if (score === undefined || !Number.isFinite(score)) return undefined
-  if (score < 10) return "micro"
-  if (score < 20) return "tiny"
-  if (score < 35) return "small"
-  if (score < 50) return "medium"
-  if (score < 70) return "large"
-  return "frontier"
-}
+/** What an unrated model reads as. `usual` is the mainstream job, not the weakest one. */
+export const DEFAULT_TAXONOMY: Taxonomy = "usual"
 
 export const PrefixCache = Schema.Struct({
   enabled: Schema.Boolean,
@@ -137,12 +127,11 @@ export const Info = Schema.Struct({
   id: ID,
   providerID: Provider.ID,
   family: Family.pipe(optional),
-  tier: Tier.pipe(optional),
-  benchmark: Benchmark.pipe(optional),
+  taxonomy: Taxonomy.pipe(optional),
   prefixCache: PrefixCache.pipe(optional),
   // Optional user-authored per-model PRE-PROMPT (owner ruling, 2026-07-29): a correction
   // for THIS model's known behaviour, prepended to the system context for every session that
-  // resolves to it. It rides here — beside `tier`, which the property mirrors — because the defect
+  // resolves to it. It rides here — beside `taxonomy`, which the property mirrors — because the defect
   // being corrected belongs to the weights, so it travels with the model, not the agent. Absent =
   // inert (the composition rides the runner's `.filter(non-empty)`, so undefined changes nothing).
   prePrompt: Schema.String.pipe(optional),

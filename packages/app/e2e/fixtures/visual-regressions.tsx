@@ -91,7 +91,6 @@ export function mount() {
     setVisibility: () => {},
     enabled: () => true,
     setEnabled: async () => {},
-    tier: { get: () => "guess", set: () => {} },
   }
 
   const dispose = render(

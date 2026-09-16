@@ -235,7 +235,7 @@ describe("ConfigStoreWrite.apply", () => {
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
           model: "qwen3.6-35b",
-          models: { "qwen3.6-35b": { url: "http://10.0.0.5:8000/v1", name: "Qwen", tier: "large" } },
+          models: { "qwen3.6-35b": { url: "http://10.0.0.5:8000/v1", name: "Qwen", taxonomy: "smart" } },
         }),
       )
       expect([...consumed].sort()).toEqual(["model", "models"])

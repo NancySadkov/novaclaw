@@ -21,6 +21,7 @@ import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { LocalModelManager } from "../../local-model-manager"
 import { ModelV2 } from "../../model"
+import { ModelTaxonomy } from "../../model-taxonomy"
 import { SettingsConfigStore } from "../../settings-config-store"
 import { PluginV2 } from "../../plugin"
 import { ProbeWindow } from "../../probe-window"
@@ -166,8 +167,14 @@ export type Error =
 
 export interface ResolveOptions {
   readonly requested?: boolean
-  /** Automatic/default selection prefers models at or above this raw Terminal-Bench 4.0 score. */
-  readonly requiredScore?: number
+  /**
+   * The class of model this turn wants, from the colleague's own role (`needsTaxonomy`).
+   *
+   * Absent = no declaration, then `leastLoaded` keeps its ordinary default-first behaviour. When set
+   * it is a FLOOR, never a veto (`ModelTaxonomy.requestModel`): if nothing clears it the officer
+   * still runs, and `AgentModelFit` explains the shortfall in the chat.
+   */
+  readonly taxonomy?: ModelV2.Taxonomy
   /** Hard protocol needs for this turn. Unknown is never invented: catalog capabilities are exact. */
   readonly requiredCapabilities?: { readonly tools?: boolean }
   /** Exact visibility around the durable provider-backoff sleep; absent callers keep it silent. */
@@ -239,20 +246,21 @@ export interface Interface {
    * every one of these off it. These stay for callers that hold nothing but a session — and for a
    * seam, where there is no catalog entry to read.
    */
-  /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
-   *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
-  readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
-  /** Raw Terminal-Bench 4.0 score for role-fit diagnostics. */
-  readonly benchmarkScore: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
+  /**
+   * Models item (c): the resolved catalog model's capability class, for the system-prompt scaffold
+   * and the recall budget. Best-effort — an unresolvable model yields `undefined` rather than
+   * failing the turn.
+   */
+  readonly taxonomy: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Taxonomy | undefined>
   /** The resolved catalog model's optional user-authored pre-prompt (owner 2026-07-29). Read the
-   *  same best-effort way as `tier`: it only decorates the system prompt, so an unresolvable model
-   *  yields `undefined` rather than failing the turn. */
+   *  same best-effort way as `taxonomy`: it only decorates the system prompt, so an unresolvable
+   *  model yields `undefined` rather than failing the turn. */
   readonly prePrompt: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
   /** Per-model total connection attempts. Undefined selects the runner's safe default. */
   readonly retryAttempts: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /**
    * The resolved catalog model's declared capabilities, for the runner's attachment gate. Read the
-   * same best-effort way as `tier`/`prePrompt`: an unresolvable model yields `undefined` rather
+   * same best-effort way as `taxonomy`/`prePrompt`: an unresolvable model yields `undefined` rather
    * than failing the turn.
    *
    * ⚠️ `undefined` means NO EVIDENCE, never "text-only" — see `to-llm-message.ts`
@@ -263,7 +271,7 @@ export interface Interface {
   /**
    * How many images the resolved model accepts in ONE request, or `undefined` for unlimited.
    *
-   * Read the same best-effort way as `tier`/`prePrompt`/`capabilities`, and `undefined` is the
+   * Read the same best-effort way as `taxonomy`/`prePrompt`/`capabilities`, and `undefined` is the
    * pass-everything answer, which is what every endpoint that never had this cap wants. See
    * `budgetImages` for why a guessed default would be wrong.
    */
@@ -287,7 +295,7 @@ export interface Interface {
   readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
   /**
    * The SCHEDULER's device key for the model this session would resolve to (`deviceKeyFor` below).
-   * Best-effort like `tier`/`ref` — an unresolvable model yields `undefined` and the runner keeps
+   * Best-effort like `taxonomy`/`ref` — an unresolvable model yields `undefined` and the runner keeps
    * its own fallback, because a scheduling key must never be able to fail a turn.
    */
   readonly device: (session: SessionSchema.Info) => Effect.Effect<ScheduledDevice | undefined>
@@ -316,7 +324,7 @@ export const dispatchGuard = (
  * 🔴 **`ran` is the whole point, and it is the model that ACTUALLY RAN.** `resolve` owns two
  * fallbacks — an unavailable configured model, and a model `ModelHealth` says is failing — and both
  * used to reassign a LOCAL nothing downstream could see. So a caller that wanted the turn's
- * capabilities, tier, pre-prompt, retry policy or image cap had to ask `select()` again, which
+ * capabilities, class, pre-prompt, retry policy or image cap had to ask `select()` again, which
  * applies neither fallback, and got the model the session SELECTED while the request went to the
  * substitute. A screenshot then passed a vision-capable gate on its way into a text-only request —
  * the provider media-type 400 the gate exists to prevent — and the mirror case silently told a
@@ -360,8 +368,7 @@ export const perTurnFacts = (
   model: ModelV2.Info,
 ): {
   readonly ref: ModelV2.Ref
-  readonly tier: ModelV2.Tier | undefined
-  readonly benchmarkScore: number | undefined
+  readonly taxonomy: ModelV2.Taxonomy
   readonly prePrompt: string | undefined
   readonly retryAttempts: number | undefined
   readonly capabilities: ModelV2.Capabilities | undefined
@@ -369,8 +376,8 @@ export const perTurnFacts = (
 } => ({
   /** Catalog identity — the stable user-facing id, NOT the wire `api.id`. */
   ref: { providerID: model.providerID, id: model.id },
-  tier: ModelV2.scoreBand(model.benchmark?.score),
-  benchmarkScore: model.benchmark?.score,
+  /** Materialised: an unrated model reads as `usual`, never `undefined` (`ModelTaxonomy.of`). */
+  taxonomy: ModelTaxonomy.of(model),
   prePrompt: model.prePrompt,
   retryAttempts: model.retry?.attempts,
   capabilities: model.capabilities,
@@ -380,7 +387,7 @@ export const perTurnFacts = (
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam. `tier`/`prePrompt`/`capabilities` default to always-undefined so
+/** Test or embedding seam. `taxonomy`/`prePrompt`/`capabilities` default to always-undefined so
  *  existing callers need not supply them — and `undefined` capabilities is the pass-everything
  *  "no evidence" answer, so a seam that omits it never starts refusing attachments. */
 /**
@@ -504,14 +511,14 @@ export const substitutionNotice = (input: {
 
 export const layerWith = (
   resolve: Interface["resolve"],
-  tier: Interface["tier"] = () => Effect.succeed(undefined),
+  taxonomy: Interface["taxonomy"] = () => Effect.succeed(undefined),
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
   device: Interface["device"] = () => Effect.succeed(undefined),
   // ⚠️ LAST, deliberately. Inserting a parameter mid-list silently rebinds every positional argument
-  // after it — a caller passing `tier` second would have been handing it a default-model resolver,
+  // after it — a caller passing `taxonomy` second would have been handing it a default-model resolver,
   // and both compile. (`imageLimit` was briefly added mid-list on 2026-08-19 and is now appended
   // below; no caller passes past `resolve` today, so nothing broke, but the rule stands.)
   /** Seams that never do session-free work leave this alone; calling it then says so by name. */
@@ -532,8 +539,6 @@ export const layerWith = (
   dispatchAllowed: Interface["dispatchAllowed"] = () => Effect.succeed(true),
   /** ⚠️ Added LAST. Synthetic seams have no persisted switch to consult. */
   guardDispatch: Interface["guardDispatch"] = (_model, attempt) => attempt,
-  /** ⚠️ Added LAST. Synthetic seams may expose a measured score without fabricating a catalog row. */
-  benchmarkScore: Interface["benchmarkScore"] = () => Effect.succeed(undefined),
 ) =>
   Layer.succeed(
     Service,
@@ -555,8 +560,7 @@ export const layerWith = (
       resolveDefault,
       learnedImageLimit,
       rememberImageLimit,
-      tier,
-      benchmarkScore,
+      taxonomy,
       prePrompt,
       retryAttempts,
       capabilities,
@@ -913,7 +917,8 @@ export const supported = (model: ModelV2.Info) =>
 export const leastLoaded = (input: {
   readonly available: readonly ModelV2.Info[]
   readonly preferred?: ModelV2.Info
-  readonly requiredScore?: number
+  /** The class the caller asked for (`ResolveOptions.taxonomy`); absent asks nothing. */
+  readonly taxonomy?: ModelV2.Taxonomy
   readonly tools?: boolean
   readonly endpoints?: DeviceRegistry.EndpointMap
   readonly devices: readonly SessionScheduler.DeviceSnapshot[]
@@ -921,16 +926,12 @@ export const leastLoaded = (input: {
   const capable = input.available.filter(
     (model) => supported(model) && (input.tools === undefined || model.capabilities.tools === input.tools),
   )
-  const adequate =
-    input.requiredScore === undefined
-      ? capable
-      : capable.filter((model) => model.benchmark !== undefined && model.benchmark.score >= input.requiredScore!)
-  const measured = capable.filter((model) => model.benchmark !== undefined)
-  // A role score is guidance, never a veto. If nothing measured clears it, keep the officer working
-  // on the measured capable pool and let the existing in-chat fit notice explain the shortfall.
-  // Unknown scores are used only when there is no measurement at all; silence must not outrank evidence.
-  const candidates =
-    adequate.length > 0 ? adequate : input.requiredScore !== undefined && measured.length > 0 ? measured : capable
+  // 🔴 The ONE place a class becomes a candidate pool (`ModelTaxonomy.requestModel`). Adequate models
+  // win when they exist; otherwise the officer keeps working on everything capable and the in-chat fit
+  // notice (`AgentModelFit`) explains the shortfall. A class is guidance, never a veto — an install
+  // with one undersized model must still answer.
+  const adequate = ModelTaxonomy.requestModel({ taxonomy: input.taxonomy, available: capable })
+  const candidates = adequate.length > 0 ? adequate : capable
   const snapshots = new Map(input.devices.map((snapshot) => [snapshot.deviceKey, snapshot]))
   const load = (model: ModelV2.Info) => {
     const snapshot = snapshots.get(deviceKeyFor(model, input))
@@ -947,6 +948,13 @@ export const leastLoaded = (input: {
     const b = load(right)
     if (a.ratio !== b.ratio) return a.ratio - b.ratio
     if (a.work !== b.work) return a.work - b.work
+    // Class fit breaks ties so an exact match is chosen over an over-provisioned one, and load
+    // balancing still decides between two models of the same fit.
+    if (input.taxonomy !== undefined) {
+      const leftFit = ModelTaxonomy.fit(ModelTaxonomy.of(left), input.taxonomy)
+      const rightFit = ModelTaxonomy.fit(ModelTaxonomy.of(right), input.taxonomy)
+      if (leftFit !== rightFit) return rightFit - leftFit
+    }
     const leftPreferred = left.providerID === input.preferred?.providerID && left.id === input.preferred.id
     const rightPreferred = right.providerID === input.preferred?.providerID && right.id === input.preferred.id
     if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1
@@ -993,11 +1001,11 @@ export const locationLayer = Layer.effect(
       const available = yield* catalog.model.available()
       return session.model
         ? available.find((model) => model.providerID === session.model?.providerID && model.id === session.model.id)
-        : options?.requiredScore !== undefined || options?.requiredCapabilities !== undefined
+        : options?.taxonomy !== undefined || options?.requiredCapabilities !== undefined
           ? leastLoaded({
               available,
               preferred: defaultModel,
-              requiredScore: options.requiredScore,
+              taxonomy: options.taxonomy,
               tools: options.requiredCapabilities?.tools,
               endpoints: yield* devices.endpoints(),
               devices: yield* scheduler.snapshot(),
@@ -1210,21 +1218,18 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
       }),
-      // Models item (c): best-effort tier lookup for the system-prompt scaffold. Reuses `turnModel`
-      // (no boot-latch wait — this only decorates the prompt, never gates the turn) and never fails.
+      // Models item (c): best-effort class lookup for the system-prompt scaffold and recall budget.
+      // Reuses `turnModel` (no boot-latch wait — this only decorates the prompt, never gates the
+      // turn) and never fails.
       //
       // ⚠️ `turnModel`, NOT `select`. `select` answers "what did this session CHOOSE", and after a
       // fallback that is not the model the turn runs on — which is how six of these accessors came
       // to describe a model that served nothing.
-      tier: Effect.fn("SessionRunnerModel.tier")(function* (session) {
-        return ModelV2.scoreBand(
-          (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.benchmark?.score,
-        )
+      taxonomy: Effect.fn("SessionRunnerModel.taxonomy")(function* (session) {
+        const model = yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined))
+        return model === undefined ? undefined : ModelTaxonomy.of(model)
       }),
-      benchmarkScore: Effect.fn("SessionRunnerModel.benchmarkScore")(function* (session) {
-        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.benchmark?.score
-      }),
-      // The optional per-model pre-prompt, read the same best-effort way as `tier` — it only
+      // The optional per-model pre-prompt, read the same best-effort way as `taxonomy` — it only
       // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
       prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
@@ -1232,7 +1237,7 @@ export const locationLayer = Layer.effect(
       retryAttempts: Effect.fn("SessionRunnerModel.retryAttempts")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.retry?.attempts
       }),
-      // The attachment gate's evidence, read exactly like `tier` above — no boot-latch wait, never
+      // The attachment gate's evidence, read exactly like `taxonomy` above — no boot-latch wait, never
       // fails. An unresolved model returns undefined, which the gate reads as "no evidence" and
       // lets through; the turn's real model resolution (`resolve`) is what fails a missing model.
       imageLimit: Effect.fn("SessionRunnerModel.imageLimit")(function* (session) {
@@ -1301,7 +1306,7 @@ export const locationLayer = Layer.effect(
      * WHICH catalog model a session runs on — `select()` plus BOTH fallbacks, and nothing else.
      *
      * 🔴 **Every reader of a per-turn model fact resolves through HERE, and that is the fix for a
-     * whole class of bug rather than one instance of it.** `tier`, `prePrompt`, `retryAttempts`,
+     * whole class of bug rather than one instance of it.** `taxonomy`, `prePrompt`, `retryAttempts`,
      * `capabilities`, `imageLimit`, `ref` and `device` each used to call `select()` directly, which
      * applies NEITHER fallback — so after a health demotion the runner held two models at once and
      * described the sick one while the request went to the substitute. The visible failure was a
@@ -1510,7 +1515,7 @@ export const locationLayer = Layer.effect(
     })
 
     /**
-     * The model alone, for the best-effort per-turn fact readers (`tier`, `prePrompt`, …). The turn's
+     * The model alone, for the best-effort per-turn fact readers (`taxonomy`, `prePrompt`, …). The turn's
      * own resolution wants `turnDecision` — it also carries WHY a substitute was used, which the
      * transcript notice needs and a decoration must never pay for.
      */

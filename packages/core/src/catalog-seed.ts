@@ -32,7 +32,7 @@ export const providerIdForUrl = (url: string | undefined, fallback: string): str
 // of the seed already consumes, so the CatalogStore + model resolution stay UNCHANGED — the flip
 // lives entirely at this authoring boundary. Operates on RAW parsed JSON (before decode) to avoid
 // reconstructing schema classes. Each flat model's `url` becomes its synthesized provider's
-// openai-compatible `api`; `tier` rides through onto the nested model (the catalog plugin carries
+// openai-compatible `api`; `taxonomy` rides through onto the nested model (the catalog plugin carries
 // it to ModelV2.Info); a bare default-model id is expanded to `providerID/modelID`. Configs without `models` pass
 // through untouched (no regression to the nested path). Merges into any hand-authored `providers`.
 export const expandFlatModels = (raw: unknown): unknown => {
@@ -158,7 +158,6 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     for (const info of infos) if (info.model !== undefined) defaultModel = info.model
     if (defaultModel !== undefined) yield* store.setDefaultIfEmpty(defaultModel)
   })
-
 
 /**
  * 🔴 **Which config documents in the config dir cannot be read, RIGHT NOW.**

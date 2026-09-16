@@ -74,7 +74,6 @@ function mount(options: { removeFails: boolean }) {
       (
         sync().data.config?.providers as Record<string, { models?: Record<string, { disabled?: boolean }> }> | undefined
       )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
-    tier: { get: () => "guess", set: () => {} },
   }
 
   const sdk = {

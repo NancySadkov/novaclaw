@@ -11,7 +11,7 @@ name: "tool/register-app",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "register-app",
-  "description": "Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens a built-in app by route id (contacts, notes, files, calendar, recipes, skills, registry, debug, trash, terminal), an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.",
+  "description": "Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens a built-in app by route id (contacts, notes, models, files, calendar, recipes, skills, registry, debug, terminal), an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -79,13 +79,13 @@ definition: new ToolDefinition({
             "enum": [
               "contacts",
               "notes",
+              "models",
               "files",
               "calendar",
               "recipes",
               "skills",
               "registry",
               "debug",
-              "trash",
               "terminal"
             ]
           },
@@ -93,7 +93,7 @@ definition: new ToolDefinition({
             "type": "null"
           }
         ],
-        "description": "Built-in app to open when open_type is 'route'. Choose one of: contacts, notes, files, calendar, recipes, skills, registry, debug, trash, terminal"
+        "description": "Built-in app to open when open_type is 'route'. Choose one of: contacts, notes, models, files, calendar, recipes, skills, registry, debug, terminal"
       },
       "open_value": {
         "anyOf": [

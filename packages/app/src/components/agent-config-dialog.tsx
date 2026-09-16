@@ -41,6 +41,7 @@ import { AgentRemoteChat } from "@/components/agent-remote-chat"
 import { PERSONALITY_FORMAT, downloadOfficerPersonality, parseOfficerPersonality } from "@/apps/agent-personality"
 import { switchType } from "@/utils/fs-api"
 import { createSettledResource } from "@/utils/settled-resource"
+import { classify, isBelow, TAXONOMIES, taxonomyLabel } from "@/components/model-taxonomy"
 
 const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
@@ -131,7 +132,7 @@ export function AgentConfigScreen(props: {
   const [maxWorkers, setMaxWorkers] = createSignal<string | undefined>()
   const [spawnDepth, setSpawnDepth] = createSignal<string | undefined>()
   const [runtimeHeartbeatMinutes, setRuntimeHeartbeatMinutes] = createSignal<string | undefined>()
-  const [needsScore, setNeedsScore] = createSignal<string | undefined>()
+  const [needsTaxonomy, setNeedsTaxonomy] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
@@ -355,13 +356,13 @@ export function AgentConfigScreen(props: {
     if (!models.enabled({ providerID: ref.providerID, modelID: ref.id })) return "switched-off"
     return undefined
   }
-  const modelBlocked = createMemo<{ readonly value: string; readonly kind: "switched-off" | "unavailable" } | undefined>(
-    () => {
-      const value = modelValue()
-      const kind = blockedKind(value)
-      return kind === undefined ? undefined : { value, kind }
-    },
-  )
+  const modelBlocked = createMemo<
+    { readonly value: string; readonly kind: "switched-off" | "unavailable" } | undefined
+  >(() => {
+    const value = modelValue()
+    const kind = blockedKind(value)
+    return kind === undefined ? undefined : { value, kind }
+  })
   /** Append the current value when it is not among the runnable options, so the select can show it. */
   const withBlockedCurrent = (options: { key: string; value: string; label: string }[], current: string) => {
     // ⚠️ An EMPTY catalog is "not loaded yet", not "your model is gone". Appending a badged entry
@@ -392,19 +393,13 @@ export function AgentConfigScreen(props: {
   )
   const reasoningModelOptions = createMemo(() =>
     withBlockedCurrent(
-      [
-        { key: "ordinary", value: "", label: "Use the ordinary model" },
-        ...runnableModels().map(modelChoice),
-      ],
+      [{ key: "ordinary", value: "", label: "Use the ordinary model" }, ...runnableModels().map(modelChoice)],
       reasoningModelValue(),
     ),
   )
   const workerModelOptions = createMemo(() =>
     withBlockedCurrent(
-      [
-        { key: "officer", value: "", label: "Use this officer’s model" },
-        ...runnableModels().map(modelChoice),
-      ],
+      [{ key: "officer", value: "", label: "Use this officer’s model" }, ...runnableModels().map(modelChoice)],
       workerModelValue(),
     ),
   )
@@ -475,27 +470,29 @@ export function AgentConfigScreen(props: {
   }
   const maxToolTimeoutValid = () => !Number.isNaN(parsedMaxToolTimeoutMs())
   const superiorValue = () => superior() ?? agent()?.superior ?? ""
-  const boundScore = createMemo(() => {
+  const boundTaxonomy = createMemo(() => {
     const ref = parseModelRef(modelValue())
     if (ref === undefined) return undefined
     const found = models.list().find((item) => item.id === ref.id && item.provider.id === ref.providerID) as
-      | { benchmark?: { score?: unknown } }
+      | { taxonomy?: string }
       | undefined
-    return typeof found?.benchmark?.score === "number" ? found.benchmark.score : undefined
+    return found === undefined ? undefined : classify(found.taxonomy)
   })
-  const needsScoreValue = () => {
-    const chosen = needsScore()
+  /**
+   * The value for "no requirement declared".
+   *
+   * ⚠️ NOT the empty string. Kobalte's Select builds an option's key from `optionValue`, and an empty
+   * key is dropped from the collection — measured 2026-09-16: the `""` option never rendered, so the
+   * control had no way back to "No requirement". A named sentinel is also what the user reads.
+   */
+  const NO_REQUIREMENT = "none"
+  /** `NO_REQUIREMENT` when nothing is declared; `undefined` means the user has not touched it. */
+  const needsTaxonomyValue = () => {
+    const chosen = needsTaxonomy()
     if (chosen !== undefined) return chosen
-    const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsScore"]
-    return typeof declared === "number" ? String(declared) : ""
+    const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsTaxonomy"]
+    return typeof declared === "string" ? declared : NO_REQUIREMENT
   }
-  const parsedNeedsScore = () => {
-    const value = needsScoreValue().trim()
-    if (value === "") return undefined
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : Number.NaN
-  }
-  const needsScoreValid = () => !Number.isNaN(parsedNeedsScore())
   const superiorOptions = createMemo(() => [
     { key: "nova", value: "", label: language.t("agentConfig.superiorNova") },
     ...superiorCandidates(agents() ?? [], props.agentID ?? "").map((candidate) => ({
@@ -504,13 +501,14 @@ export function AgentConfigScreen(props: {
       label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
     })),
   ])
-  /** Is the model bound above ALREADY beneath the floor chosen here? Shown live, in the dialog where
+  /** Is the model bound above ALREADY beneath the class chosen here? Shown live, in the dialog where
    *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
    *  for the model but the wrong place for the person setting this up. */
   const belowFloor = createMemo(() => {
-    const needs = parsedNeedsScore()
-    const bound = boundScore()
-    return needs !== undefined && !Number.isNaN(needs) && bound !== undefined && bound < needs
+    const needs = needsTaxonomyValue()
+    if (needs === NO_REQUIREMENT) return false
+    const bound = boundTaxonomy()
+    return bound !== undefined && isBelow(bound, classify(needs))
   })
   const dirty = () =>
     renamed() !== undefined ||
@@ -532,7 +530,7 @@ export function AgentConfigScreen(props: {
     toolLabels() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
-    needsScore() !== undefined ||
+    needsTaxonomy() !== undefined ||
     model() !== undefined ||
     reasoningModel() !== undefined ||
     workerModel() !== undefined ||
@@ -883,8 +881,8 @@ export function AgentConfigScreen(props: {
       // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
       // what was loaded or touched closes the class.
-      const score = parsedNeedsScore()
-      const binding: Pick<ConfigV2Agent, "model" | "needsScore"> & {
+      const taxonomy = needsTaxonomyValue()
+      const binding: Pick<ConfigV2Agent, "model" | "needsTaxonomy"> & {
         reasoningModel?: string
         workerModel?: string
         reasoningBudget?: number
@@ -902,7 +900,7 @@ export function AgentConfigScreen(props: {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
         ...(workerModelValue() === "" ? {} : { workerModel: workerModelValue() }),
-        ...(needsScore() === undefined || score === undefined || Number.isNaN(score) ? {} : { needsScore: score }),
+        ...(needsTaxonomy() === undefined || taxonomy === NO_REQUIREMENT ? {} : { needsTaxonomy: classify(taxonomy) }),
         ...(reasoningBudget() === undefined || parsedReasoningBudget() === undefined
           ? {}
           : { reasoningBudget: parsedReasoningBudget() }),
@@ -1011,7 +1009,7 @@ export function AgentConfigScreen(props: {
         ...(model() === "" ? [["agents", id, "model"]] : []),
         ...(reasoningModel() === "" ? [["agents", id, "reasoningModel"]] : []),
         ...(workerModel() === "" ? [["agents", id, "workerModel"]] : []),
-        ...(needsScore() === "" ? [["agents", id, "needsScore"]] : []),
+        ...(needsTaxonomy() === NO_REQUIREMENT ? [["agents", id, "needsTaxonomy"]] : []),
         ...(reasoningBudget() === "" ? [["agents", id, "reasoningBudget"]] : []),
         ...(maxToolTimeoutMinutes() === "" ? [["agents", id, "maxToolTimeoutMs"]] : []),
         ...(superior() === "" ? [["agents", id, "superior"]] : []),
@@ -1055,7 +1053,7 @@ export function AgentConfigScreen(props: {
       setSpawnDepth(undefined)
       setRuntimeHeartbeatMinutes(undefined)
       setSuperior(undefined)
-      setNeedsScore(undefined)
+      setNeedsTaxonomy(undefined)
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
@@ -1156,76 +1154,76 @@ export function AgentConfigScreen(props: {
                   {language.t("agentConfig.governingNote")}
                 </p>
               </Show>
-                <label class="block text-xs text-v2-text-text-muted">
-                  {language.t("agentConfig.name")}
-                  <TextInputV2
-                    class="mt-1"
-                    value={nameValue()}
-                    onInput={(event) => setRenamed(event.currentTarget.value)}
-                  />
-                </label>
-                {/* Why a rename is safe, said once where someone is about to do it. */}
-                <label class="mt-3 block text-xs text-v2-text-text-muted">
-                  {language.t("agentConfig.jobTitle")}
-                  <TextInputV2
-                    class="mt-1"
-                    value={titleValue()}
-                    onInput={(event) => setTitle(event.currentTarget.value)}
-                    placeholder={language.t("agentConfig.jobTitlePlaceholder")}
-                  />
-                </label>
-                <label class="mt-3 block text-xs text-v2-text-text-muted">
-                  {language.t("agentConfig.personality")}
-                  <textarea
-                    class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    value={personalityValue()}
-                    onInput={(event) => setPersonality(event.currentTarget.value)}
-                    placeholder={language.t("agentConfig.personalityPlaceholder")}
-                  />
-                </label>
-                <label class="mt-3 block text-xs text-v2-text-text-muted">
-                  Job instructions
-                  <textarea
-                    aria-label="Job instructions"
-                    class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    value={jobValue()}
-                    onInput={(event) => setJob(event.currentTarget.value)}
-                    placeholder="What this officer is responsible for, and what a good result looks like."
-                  />
-                </label>
-                <div class="mt-4 flex flex-col gap-2 border-t border-v2-border-border-muted pt-4 sm:flex-row">
-                  <input
-                    ref={(element) => (personalityInput = element)}
-                    type="file"
-                    accept="application/json,.json"
-                    class="hidden"
-                    onChange={(event) => {
-                      void importPersonality(event.currentTarget.files?.[0])
-                      event.currentTarget.value = ""
-                    }}
-                  />
-                  <button
-                    type="button"
-                    data-action="agent-personality-import"
-                    class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium hover:bg-v2-background-bg-layer-02 sm:w-auto"
-                    onClick={() => personalityInput?.click()}
-                  >
-                    Import personality
-                  </button>
-                  <button
-                    type="button"
-                    data-action="agent-personality-export"
-                    class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 sm:w-auto"
-                    onClick={exportPersonality}
-                  >
-                    Export personality
-                  </button>
-                </div>
-                <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                  Portable JSON contains the name, job title, personality, and job instructions only. Models, folders,
-                  authority, memories, and chat history stay with this instance.
-                </p>
-                {/* Why this is a profile field and not something you type into the chat. */}
+              <label class="block text-xs text-v2-text-text-muted">
+                {language.t("agentConfig.name")}
+                <TextInputV2
+                  class="mt-1"
+                  value={nameValue()}
+                  onInput={(event) => setRenamed(event.currentTarget.value)}
+                />
+              </label>
+              {/* Why a rename is safe, said once where someone is about to do it. */}
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                {language.t("agentConfig.jobTitle")}
+                <TextInputV2
+                  class="mt-1"
+                  value={titleValue()}
+                  onInput={(event) => setTitle(event.currentTarget.value)}
+                  placeholder={language.t("agentConfig.jobTitlePlaceholder")}
+                />
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                {language.t("agentConfig.personality")}
+                <textarea
+                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={personalityValue()}
+                  onInput={(event) => setPersonality(event.currentTarget.value)}
+                  placeholder={language.t("agentConfig.personalityPlaceholder")}
+                />
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Job instructions
+                <textarea
+                  aria-label="Job instructions"
+                  class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={jobValue()}
+                  onInput={(event) => setJob(event.currentTarget.value)}
+                  placeholder="What this officer is responsible for, and what a good result looks like."
+                />
+              </label>
+              <div class="mt-4 flex flex-col gap-2 border-t border-v2-border-border-muted pt-4 sm:flex-row">
+                <input
+                  ref={(element) => (personalityInput = element)}
+                  type="file"
+                  accept="application/json,.json"
+                  class="hidden"
+                  onChange={(event) => {
+                    void importPersonality(event.currentTarget.files?.[0])
+                    event.currentTarget.value = ""
+                  }}
+                />
+                <button
+                  type="button"
+                  data-action="agent-personality-import"
+                  class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium hover:bg-v2-background-bg-layer-02 sm:w-auto"
+                  onClick={() => personalityInput?.click()}
+                >
+                  Import personality
+                </button>
+                <button
+                  type="button"
+                  data-action="agent-personality-export"
+                  class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 sm:w-auto"
+                  onClick={exportPersonality}
+                >
+                  Export personality
+                </button>
+              </div>
+              <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
+                Portable JSON contains the name, job title, personality, and job instructions only. Models, folders,
+                authority, memories, and chat history stay with this instance.
+              </p>
+              {/* Why this is a profile field and not something you type into the chat. */}
               <div class="mt-3 text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.portrait")}
                 <span class="mt-1 block text-[11px] text-v2-text-text-faint">
@@ -1441,29 +1439,31 @@ export function AgentConfigScreen(props: {
                       minutes: maxToolTimeoutMinutesValue(),
                     })}
               </p>
-              {/* 🔴 The floor this ROLE needs, which is a different statement from the model bound above.
-                A colleague can end up on the instance default without anyone choosing it — its own
-                model may be unavailable or have been failing — and a demanding role on a model with a
-                low measured score does not error, it just gets things wrong. The
-                floor is what lets the colleague notice and SAY so. */}
-              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-score">
-                {language.t("agentConfig.needsScore")}
+              {/* 🔴 The class this ROLE needs, which is a different statement from the model bound
+                above. A colleague can end up on the instance default without anyone choosing it —
+                its own model may be unavailable or have been failing — and a demanding role on a
+                model of the wrong class does not error, it just gets things wrong. The requirement
+                is what lets the colleague notice and SAY so. */}
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-taxonomy">
+                {language.t("agentConfig.needsTaxonomy")}
               </label>
-              <input
-                id="agent-needs-score"
-                aria-label={language.t("agentConfig.needsScore")}
-                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={needsScoreValue()}
-                placeholder={language.t("agentConfig.needsScoreNone")}
-                onInput={(event) => setNeedsScore(event.currentTarget.value)}
+              <SelectV2
+                id="agent-needs-taxonomy"
+                aria-label={language.t("agentConfig.needsTaxonomy")}
+                class="mt-1 w-full"
+                options={[NO_REQUIREMENT, ...TAXONOMIES]}
+                current={needsTaxonomyValue()}
+                value={(option) => option}
+                label={(option) =>
+                  option === NO_REQUIREMENT
+                    ? language.t("agentConfig.needsTaxonomyNone")
+                    : taxonomyLabel(language.t, classify(option))
+                }
+                onSelect={(option) => setNeedsTaxonomy(option ?? NO_REQUIREMENT)}
               />
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.needsScoreHelp")}</p>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.needsTaxonomyHelp")}</p>
               <Show when={belowFloor()}>
-                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsScoreBelow")}</p>
+                <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTaxonomyBelow")}</p>
               </Show>
               {/* 🔴 NOVA REPORTS TO NOBODY, so the selector is not rendered for it. `resolveSuperior`
                   answers `undefined` for the governing agent by construction, which makes this field
@@ -1487,9 +1487,7 @@ export function AgentConfigScreen(props: {
                   label={(option) => option.label}
                   onSelect={(option) => option && setSuperior(option.value)}
                 />
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                  {language.t("agentConfig.superiorDescription")}
-                </p>
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.superiorDescription")}</p>
               </Show>
             </section>
 
@@ -1977,36 +1975,35 @@ export function AgentConfigScreen(props: {
       {/* The Save/Cancel row is unconditional now: the governing agent's profile is edited on this
             surface like any other officer's, so it needs the same door out and the same commit. */}
       <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
-          <button
-            type="button"
-            class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-            onClick={props.onDismiss}
-          >
-            {language.t("agentConfig.cancel")}
-          </button>
-          <button
-            type="button"
-            class="rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-            // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
-            // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
-            // without it a save fired before the roster landed wrote the fields it had not read yet.
-            disabled={
-              !dirty() ||
-              !reasoningBudgetValid() ||
-              !maxToolTimeoutValid() ||
-              !needsScoreValid() ||
-              Number.isNaN(parsedMaxWorkers()) ||
-              Number.isNaN(parsedSpawnDepth()) ||
-              Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
-              saving() ||
-              props.agentID === undefined ||
-              agent() === undefined
-            }
-            onClick={() => void save()}
-          >
-            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-          </button>
-        </div>
+        <button
+          type="button"
+          class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+          onClick={props.onDismiss}
+        >
+          {language.t("agentConfig.cancel")}
+        </button>
+        <button
+          type="button"
+          class="rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+          // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
+          // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
+          // without it a save fired before the roster landed wrote the fields it had not read yet.
+          disabled={
+            !dirty() ||
+            !reasoningBudgetValid() ||
+            !maxToolTimeoutValid() ||
+            Number.isNaN(parsedMaxWorkers()) ||
+            Number.isNaN(parsedSpawnDepth()) ||
+            Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
+            saving() ||
+            props.agentID === undefined ||
+            agent() === undefined
+          }
+          onClick={() => void save()}
+        >
+          {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
+        </button>
+      </div>
     </div>
   )
 }

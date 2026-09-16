@@ -58,7 +58,6 @@ test("marks the effective default and saves keyboard reordering through instance
     remove: () => {},
     enabled: () => true,
     setEnabled: async () => {},
-    tier: { get: () => "guess", set: () => {} },
   }
   const globalStub = {
     servers: { list: () => [connection] },

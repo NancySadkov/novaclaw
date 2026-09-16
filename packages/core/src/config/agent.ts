@@ -68,21 +68,22 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   toolLabels: Schema.Boolean.pipe(Schema.optional),
   /**
-   * The capability floor this role needs, as a Terminal-Bench 4.0 percentage (`agent/model-fit.ts`).
+   * The model class this role expects (`smart` | `usual` | `fast`; `agent/model-fit.ts`).
    *
    * 🔴 A role can outrun its model SILENTLY, and the fallback added on 2026-08-22 is why: when a
    * colleague's chosen model is unavailable or has been failing, the turn runs on the instance
    * default instead. That is the right behaviour — it keeps the colleague working — but a bookkeeper
-   * written for a frontier model quietly thinking with a micro one does not error, it just gets
+   * written for a `smart` model quietly thinking with a `fast` one does not error, it just gets
    * things wrong in ways that read as the colleague being bad at its job.
    *
    * ⚠️ It WARNS, never refuses. This is the role author's estimate rather than a measurement, the
    * same role runs fine on a smaller model for an easy request, and the user may have exactly one
    * model on the machine — refusing would turn a guess into a veto over somebody's hardware.
    *
-   * Absent = no floor declared, which is silence, not "micro".
+   * Absent = no floor declared. `usual` is the default a person sees in the picker, so declaring it
+   * is a real answer and not the same as silence.
    */
-  needsScore: ModelV2.Score.pipe(Schema.optional),
+  needsTaxonomy: ModelV2.Taxonomy.pipe(Schema.optional),
   /**
    * The FOLDER this colleague works on — its project (owner, 2026-08-21).
    *

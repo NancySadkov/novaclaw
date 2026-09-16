@@ -303,11 +303,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * rather than the tapped `prepare`. See `session-runner-pre-turn-notice.test.ts`.
      */
     modelResolveFailure: undefined as SessionRunnerModel.Error | undefined,
-    /** The CATALOG tier of the resolved model. `undefined` = unknown, which is the shipped default and
-     *  what almost every hand-added local model reports. Set it to exercise anything that reads a
-     *  tier — `TierScaffold`, and the role/model fit notice (`agent/model-fit.ts`). */
-    modelTier: undefined as ModelV2.Tier | undefined,
-    modelBenchmarkScore: undefined as number | undefined,
+    /** The CATALOG class of the resolved model. `undefined` = unresolved, and the seam then answers
+     *  `undefined` — so the scaffold and the role/model fit notice see "no class", which is what
+     *  `SessionRunnerModel.layerWith`'s default does. Set it to exercise either
+     *  (`TaxonomyScaffold`, and the fit notice in `agent/model-fit.ts`). */
+    modelTaxonomy: undefined as ModelV2.Taxonomy | undefined,
     /**
      * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch
      * before emitting anything. That window — turn in flight, nothing emitted yet — is where steering
@@ -619,8 +619,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         return controls.currentModel ?? model
       }),
     // ⚠️ Read through `controls` on every call rather than captured, like every other control here:
-    // a test that changes the tier mid-run is exactly the shape the fit notice is about.
-    () => Effect.succeed(controls.modelTier),
+    // a test that changes the class mid-run is exactly the shape the fit notice is about.
+    () => Effect.succeed(controls.modelTaxonomy),
     undefined,
     undefined,
     undefined,
@@ -631,12 +631,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    () => Effect.succeed(controls.modelBenchmarkScore),
   )
 
   const systemContextKey = SystemContext.Key.make("test/harness-context")

@@ -1,6 +1,7 @@
 export * as WorkerProfile from "./worker-profile"
 
 import type { AgentV2 } from "../agent"
+import type { Taxonomy } from "../model-taxonomy"
 
 /**
  * The immutable, session-owned part of a prototype worker.
@@ -25,7 +26,7 @@ export interface Snapshot {
   readonly shortChat?: boolean
   readonly reasoningBudget?: number
   readonly maxToolTimeoutMs?: number
-  readonly needsScore?: number
+  readonly needsTaxonomy?: Taxonomy
 }
 
 const modelString = (model: AgentV2.Info["model"]): string | undefined =>
@@ -44,13 +45,17 @@ export const capture = (prototype: AgentV2.Info): Snapshot => ({
   shortChat: prototype.shortChat,
   reasoningBudget: prototype.reasoningBudget,
   maxToolTimeoutMs: prototype.maxToolTimeoutMs,
-  needsScore: prototype.needsScore,
+  needsTaxonomy: prototype.needsTaxonomy,
 })
 
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value : undefined
 const optionalNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
+/** Read a class back through the closed vocabulary so a hand-edited metadata blob cannot smuggle a
+ *  fourth word into the selection path. */
+const optionalTaxonomy = (value: unknown): Taxonomy | undefined =>
+  value === "smart" || value === "usual" || value === "fast" ? value : undefined
 
 /** Read only a spawner-authored, versioned profile from a child session. */
 export const read = (session: {
@@ -84,7 +89,7 @@ export const read = (session: {
     shortChat: typeof value["shortChat"] === "boolean" ? value["shortChat"] : undefined,
     reasoningBudget: optionalNumber(value["reasoningBudget"]),
     maxToolTimeoutMs: optionalNumber(value["maxToolTimeoutMs"]),
-    needsScore: optionalNumber(value["needsScore"]),
+    needsTaxonomy: optionalTaxonomy(value["needsTaxonomy"]),
   }
 }
 

@@ -1,44 +1,48 @@
 import { describe, expect, test } from "bun:test"
 import { AgentModelFit } from "./model-fit"
+import { ModelTaxonomy } from "../model-taxonomy"
 
 // Whether the model behind a colleague is up to its job (`notes/named-agents.md`).
 
-describe("the floor comparison", () => {
-  test("a model beneath the declared floor is below it", () => {
-    expect(AgentModelFit.below({ needs: 70, bound: 12 })).toBe(true)
-    expect(AgentModelFit.below({ needs: 50, bound: 35 })).toBe(true)
+describe("the class comparison", () => {
+  test("a model beneath the declared class is below it", () => {
+    expect(AgentModelFit.below({ needs: "smart", bound: "fast" })).toBe(true)
+    expect(AgentModelFit.below({ needs: "smart", bound: "usual" })).toBe(true)
+    expect(AgentModelFit.below({ needs: "usual", bound: "fast" })).toBe(true)
   })
 
-  test("meeting the floor exactly is NOT below it", () => {
-    // Off-by-one here warns every single turn on a correctly configured colleague, which trains the
-    // user to ignore the warning that matters.
-    expect(AgentModelFit.below({ needs: 50, bound: 50 })).toBe(false)
+  test("meeting the class exactly is NOT below it", () => {
+    // An off-by-one here warns every single turn on a correctly configured colleague, which trains
+    // the user to ignore the warning that matters.
+    expect(AgentModelFit.below({ needs: "usual", bound: "usual" })).toBe(false)
+    expect(AgentModelFit.below({ needs: "fast", bound: "fast" })).toBe(false)
   })
 
   test("a stronger model is never a complaint", () => {
-    expect(AgentModelFit.below({ needs: 25, bound: 80 })).toBe(false)
+    expect(AgentModelFit.below({ needs: "fast", bound: "smart" })).toBe(false)
+    expect(AgentModelFit.below({ needs: "usual", bound: "smart" })).toBe(false)
   })
 
-  // 🔴 The two silences, which are different from a low score and from each other.
-  test("no declared floor is SILENCE, not a score of zero", () => {
-    expect(AgentModelFit.below({ needs: undefined, bound: 5 })).toBe(false)
-  })
-
-  test("an UNKNOWN model score is not a low one", () => {
-    // ⚠️ Most models on a local-first install are hand-added and may carry no score. Treating "we do not
-    // know" as "too weak" would warn on nearly every endpoint the owner actually runs — a warning
-    // that fires on normal is not a warning.
-    expect(AgentModelFit.below({ needs: 80, bound: undefined })).toBe(false)
+  // ⚠️ There is no "unknown model" case any more, and that is the taxonomy's doing rather than an
+  // omission: an unrated model READS as `usual` at every comparison (`ModelTaxonomy.of`), which is
+  // what makes Usual a real default instead of a gap. A role that asks for `smart` is therefore told
+  // when its unrated model is only Usual-grade — the honest answer under a three-word scale — while
+  // a role that never declared a class stays silent, because `llm.ts` simply does not call this.
+  test("an unrated model is compared as Usual, never as Fast", () => {
+    const unrated = ModelTaxonomy.of({ taxonomy: undefined })
+    expect(unrated).toBe("usual")
+    expect(AgentModelFit.below({ needs: "usual", bound: unrated })).toBe(false)
+    expect(AgentModelFit.below({ needs: "smart", bound: unrated })).toBe(true)
   })
 })
 
 describe("what the colleague is told", () => {
-  const spoken = AgentModelFit.notice({ needs: 70, bound: 18.2, model: "spark-holo/holo3.1" })
+  const spoken = AgentModelFit.notice({ needs: "smart", bound: "fast", model: "spark-holo/holo3.1" })
 
-  test("names both scores, the model, and what to DO about it", () => {
+  test("names both classes, the model, and what to DO about it", () => {
     expect(spoken).toContain("spark-holo/holo3.1")
-    expect(spoken).toContain("18.2%")
-    expect(spoken).toContain("70.0%")
+    expect(spoken).toContain("Fast")
+    expect(spoken).toContain("Smart")
     // "It warns; it never refuses" — the text must not tell a model to stop.
     expect(spoken.toLowerCase()).toContain("carry on")
   })

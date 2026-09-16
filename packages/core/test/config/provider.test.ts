@@ -59,10 +59,10 @@ const decode = Schema.decodeUnknownSync(Config.Info)
 
 // Models-primary (notes/models-primary-plan.md P1): the flat top-level `models` map is accepted
 // IN PARALLEL with the nested `providers` shape. This just proves the schema round-trips the flat
-// shape (url + params + tier + variants) and that the two shapes coexist in one document; the P2
+// shape (url + params + class + variants) and that the two shapes coexist in one document; the P2
 // seed-equivalence gate proves they produce the SAME catalog.
 describe("Config.Info models-primary schema (P1)", () => {
-  it.effect("decodes a flat top-level models map with url, params and tier", () =>
+  it.effect("decodes a flat top-level models map with url, params and class", () =>
     Effect.sync(() => {
       const info = decode({
         model: "qwen3.6-35b",
@@ -70,7 +70,7 @@ describe("Config.Info models-primary schema (P1)", () => {
           "qwen3.6-35b": {
             name: "Qwen 3.6 35B",
             url: "http://192.168.178.40:8000/v1",
-            tier: "small",
+            taxonomy: "fast",
             capabilities: { tools: true, input: ["text"], output: ["text"] },
             request: { body: { temperature: 0.7, top_p: 0.8 } },
             variants: [{ id: "high", body: { reasoning_effort: "high" } }],
@@ -80,7 +80,7 @@ describe("Config.Info models-primary schema (P1)", () => {
       })
       const model = required(info.models?.["qwen3.6-35b"])
       expect(model.url).toBe("http://192.168.178.40:8000/v1")
-      expect(model.tier).toBe("small")
+      expect(model.taxonomy).toBe("fast")
       expect(model.name).toBe("Qwen 3.6 35B")
       expect(model.request?.body).toEqual({ temperature: 0.7, top_p: 0.8 })
       expect(model.variants?.[0]?.id).toBe(ModelV2.VariantID.make("high"))
@@ -99,31 +99,31 @@ describe("Config.Info models-primary schema (P1)", () => {
     }),
   )
 
-  it.effect("rejects an unknown capability tier", () =>
+  it.effect("rejects an unknown capability class", () =>
     Effect.sync(() => {
-      expect(() => decode({ models: { m: { tier: "supergalactic" } } })).toThrow()
+      expect(() => decode({ models: { m: { taxonomy: "supergalactic" } } })).toThrow()
     }),
   )
 
-  it.effect("carries a configured capability tier through to the catalog ModelV2.Info", () =>
+  it.effect("carries a configured capability class through to the catalog ModelV2.Info", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
       const store = yield* CatalogStore.Service
-      const providerID = ProviderV2.ID.make("tiered")
+      const providerID = ProviderV2.ID.make("classed")
       const modelID = ModelV2.ID.make("small-model")
       yield* store.setLayers(providerID, [
         decode({
           providers: {
-            tiered: {
-              api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://tiered.test/v1" },
-              models: { "small-model": { name: "Small", tier: "small" } },
+            classed: {
+              api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://classed.test/v1" },
+              models: { "small-model": { name: "Small", taxonomy: "fast" } },
             },
           },
-        }).providers!.tiered,
+        }).providers!.classed,
       ])
       yield* addPlugin()
       const model = required(yield* catalog.model.get(providerID, modelID))
-      expect(model.tier).toBe("small")
+      expect(model.taxonomy).toBe("fast")
     }),
   )
 })

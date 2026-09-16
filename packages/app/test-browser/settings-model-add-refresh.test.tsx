@@ -81,7 +81,6 @@ function mount(options: { refreshFails?: boolean }) {
       (
         sync().data.config?.providers as Record<string, { models?: Record<string, { disabled?: boolean }> }> | undefined
       )?.[key.providerID]?.models?.[key.modelID]?.disabled !== true,
-    tier: { get: () => "guess", set: () => {} },
   }
   const connection = { type: "http", url: "http://localhost:4096", http: { url: "http://localhost:4096" } }
   const sdk = { client: { path: { get: async () => ({ data: { directory: "/tmp/models" } }) }, v2: {} } }

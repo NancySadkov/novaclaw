@@ -21,6 +21,7 @@ import { PresetFieldV2 } from "./parts/preset-field"
 import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-value"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
+import { DEFAULT_TAXONOMY, TAXONOMIES, type Taxonomy, taxonomyLabel } from "../model-taxonomy"
 
 // Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
@@ -35,7 +36,6 @@ type DeviceConfig = {
 }
 
 type ExtendedModelConfig = ModelConfig & {
-  benchmark?: { name: "terminal-bench-4.0"; score: number; source: "user" | "measured"; measuredAt?: number }
   prefixCache?: { enabled: boolean; ttlMinutes?: number }
 }
 
@@ -182,7 +182,9 @@ export const ModelConfigScreen: Component<{
     // the unit a person thinks in (principle 12c). Blank means "no stickiness", same as 0.
     minRunSeconds:
       initialDevice?.device.minRunMs === undefined ? "" : String(Math.round(initialDevice.device.minRunMs / 1000)),
-    benchmarkScore: nstr(init.benchmark?.score),
+    // Defaults to Usual: that IS the documented default for an unrated model, and showing the
+    // effective rating rather than an empty picker is what principle 12(d) asks for.
+    taxonomy: (init.taxonomy ?? "usual") as Taxonomy,
     prefixCacheEnabled: init.prefixCache?.enabled ?? false,
     prefixCacheTtlMinutes: nstr(init.prefixCache?.ttlMinutes),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
@@ -209,7 +211,11 @@ export const ModelConfigScreen: Component<{
     { id: "identity" as const, label: language.t("settings.models.config.tab.identity"), icon: "user" as const },
     { id: "sampling" as const, label: language.t("settings.models.config.tab.sampling"), icon: "sliders" as const },
     { id: "capabilities" as const, label: language.t("settings.models.config.tab.capabilities"), icon: "cpu" as const },
-    { id: "corrections" as const, label: language.t("settings.models.config.tab.corrections"), icon: "prompt" as const },
+    {
+      id: "corrections" as const,
+      label: language.t("settings.models.config.tab.corrections"),
+      icon: "prompt" as const,
+    },
     { id: "scheduler" as const, label: language.t("settings.models.config.tab.scheduler"), icon: "share" as const },
   ])
 
@@ -277,13 +283,18 @@ export const ModelConfigScreen: Component<{
     else delete body.reasoning_effort
 
     // Connection recovery is a kernel policy, not a model tuning knob. Strip legacy per-model
-    // attempt counts whenever this row is saved so old config cannot silently retain the retired UI.
-    const { retry: _retiredRetry, tier: _retiredSizeTier, ...savedWithoutRetry } = saved
-    const benchmarkScore = num(form.benchmarkScore)
-    if (benchmarkScore !== undefined && (benchmarkScore < 0 || benchmarkScore > 100)) {
-      showToast({ variant: "error", title: language.t("settings.models.config.benchmark.invalid") })
-      return
-    }
+    // attempt counts and the retired capability vocabulary whenever this row is saved, so old config
+    // cannot silently retain fields the runtime no longer reads.
+    //
+    // ⚠️ The loose intersection is deliberate: `ConfigV2.Model` no longer DECLARES `tier`/`benchmark`,
+    // so reading them off the typed row would be a compile error even though a stored row may still
+    // carry one. A leftover is a second, contradictory rating, and deleting it is not tidiness.
+    const {
+      retry: _retiredRetry,
+      tier: _retiredSizeTier,
+      benchmark: _retiredBenchmark,
+      ...savedWithoutRetry
+    } = saved as ExtendedModelConfig & { tier?: unknown; benchmark?: unknown }
     const prefixCacheTtlMinutes = num(form.prefixCacheTtlMinutes)
     if (prefixCacheTtlMinutes !== undefined && prefixCacheTtlMinutes <= 0) {
       showToast({ variant: "error", title: language.t("settings.models.config.prefixCache.ttl.invalid") })
@@ -296,9 +307,7 @@ export const ModelConfigScreen: Component<{
       limit,
       capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
-      ...(benchmarkScore === undefined
-        ? {}
-        : { benchmark: { name: "terminal-bench-4.0", score: benchmarkScore, source: "user" } }),
+      taxonomy: form.taxonomy,
       prefixCache: {
         enabled: form.prefixCacheEnabled,
         ...(prefixCacheTtlMinutes === undefined ? {} : { ttlMinutes: prefixCacheTtlMinutes }),
@@ -388,8 +397,10 @@ export const ModelConfigScreen: Component<{
       const base = ["providers", props.providerID, "models", props.modelID]
       await serverSync().removeConfig([
         [...base, "retry"],
+        // The retired capability vocabulary. Deleting is not tidiness: a leftover `benchmark` or
+        // `tier` row is a second, contradictory rating that a later reader could still pick up.
         [...base, "tier"],
-        ...(benchmarkScore === undefined ? [[...base, "benchmark"]] : []),
+        [...base, "benchmark"],
         ...(prefixCacheTtlMinutes === undefined ? [[...base, "prefixCache", "ttlMinutes"]] : []),
         ...(deviceID !== undefined && concurrency === undefined ? [["devices", deviceID, "concurrency"]] : []),
         ...(deviceID !== undefined && minRunMs === undefined ? [["devices", deviceID, "minRunMs"]] : []),
@@ -410,14 +421,19 @@ export const ModelConfigScreen: Component<{
     }
   }
 
-  // The explain node is passed in rather than derived from `field`: a template-literal `.desc.more`
-  // key would type-check for every field and render NOTHING for the ones that have no second half
-  // — a miss resolves to the fallback, never to the key id (`i18n/resolve.ts`) — and a `?` with
-  // nothing behind it is a dead control besides. Opt in per row instead.
+  // 🔴 Owner, 2026-09-16: every field's explanation moves behind a `?` circle RIGHT OF THE NAME
+  // (uix.md §1.4; AGENTS.md 12d). The inline paragraph used to sit under the title and competed with
+  // the control for the same space — and the state a person needs before touching a control is what
+  // the control already shows, so the prose was reading cost with no return.
+  //
+  // ⚠️ The `?` is passed in rather than derived from a `.desc.more` template key: a `.desc.more` key
+  // would type-check for every field and render NOTHING for the ones that have no second half — a
+  // miss resolves to the fallback, never to the key id (`i18n/resolve.ts`) — and a `?` with nothing
+  // behind it is a dead control besides. Opt in per row instead.
   const paramRow = (field: FieldKey, more?: JSX.Element) => (
     <SettingsRowV2
       title={language.t(`settings.models.config.${field}.name`)}
-      description={
+      info={
         <>
           {language.t(`settings.models.config.${field}.desc`)}
           {more}
@@ -436,7 +452,7 @@ export const ModelConfigScreen: Component<{
   const modalityRow = (dir: "in" | "out") => (
     <SettingsRowV2
       title={language.t(`settings.models.config.modalities.${dir}.name`)}
-      description={language.t(`settings.models.config.modalities.${dir}.desc`)}
+      info={language.t(`settings.models.config.modalities.${dir}.desc`)}
     >
       <div class="flex gap-1.5 flex-wrap justify-end">
         <For each={MODALITIES}>
@@ -494,329 +510,321 @@ export const ModelConfigScreen: Component<{
       </div>
 
       <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
-          {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
+        {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
               scrollable strip on phones, a sidebar from `md` up. Configure used to be one long scroll
               with identity, sampling, limits and capabilities interleaved, which is what the owner
               called disorganized. */}
-          <nav
-            class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base pb-2 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:pb-0 md:pr-3"
-            aria-label={language.t("settings.models.config.title", { model: props.modelName })}
-          >
-            <For each={tabs()}>
-              {(item) => (
-                <button
-                  type="button"
-                  class={`flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-[13px] transition-colors ${
-                    tab() === item.id
-                      ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
-                      : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
-                  }`}
-                  aria-current={tab() === item.id ? "page" : undefined}
-                  onClick={() => setTab(item.id)}
-                >
-                  <Icon name={item.icon} class="hidden size-4 shrink-0 sm:block" />
-                  <span>{item.label}</span>
-                </button>
-              )}
-            </For>
-          </nav>
-          {/* Every panel stays MOUNTED and inactive ones are hidden by CSS — the same
+        <nav
+          class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base pb-2 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:pb-0 md:pr-3"
+          aria-label={language.t("settings.models.config.title", { model: props.modelName })}
+        >
+          <For each={tabs()}>
+            {(item) => (
+              <button
+                type="button"
+                class={`flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-[13px] transition-colors ${
+                  tab() === item.id
+                    ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
+                    : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
+                }`}
+                aria-current={tab() === item.id ? "page" : undefined}
+                onClick={() => setTab(item.id)}
+              >
+                <Icon name={item.icon} class="hidden size-4 shrink-0 sm:block" />
+                <span>{item.label}</span>
+              </button>
+            )}
+          </For>
+        </nav>
+        {/* Every panel stays MOUNTED and inactive ones are hidden by CSS — the same
               `data-active-tab`/`data-settings-tab` contract the officer settings screen uses, so a
               control is in the DOM (and a render harness can reach it) regardless of the open tab. */}
-          <div
-            class="model-settings-panels model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4"
-            data-active-tab={tab()}
-          >
-            <div class="flex flex-col gap-4">
-              <div data-settings-tab="identity">
-                <SettingsListV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.providerName.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.providerName.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.providerName.name")}>
-                    {language.t("settings.models.config.providerName.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <TextInputV2
-                class="w-64 max-w-full"
-                value={form.providerName}
-                onInput={(event) => setForm("providerName", event.currentTarget.value)}
-                placeholder={defaultProviderName()}
-                aria-label={language.t("settings.models.config.providerName.name")}
-              />
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.apiPath.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.apiPath.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.apiPath.name")}>
-                    {language.t("settings.models.config.apiPath.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <TextInputV2
-                class="w-64 max-w-full"
-                value={form.apiPath}
-                onInput={(event) => setForm("apiPath", event.currentTarget.value)}
-                spellcheck={false}
-                autocorrect="off"
-                autocomplete="off"
-                autocapitalize="off"
-                aria-label={language.t("settings.models.config.apiPath.name")}
-              />
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.apiKey.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.apiKey.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.apiKey.name")}>
-                    {language.t("settings.models.config.apiKey.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <div class="flex w-full min-w-0 items-center gap-2">
-                <TextInputV2
-                  class="min-w-0 flex-1"
-                  type={revealKey() ? "text" : "password"}
-                  value={form.apiKey}
-                  onInput={(event) => setForm("apiKey", event.currentTarget.value)}
-                  spellcheck={false}
-                  autocorrect="off"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  aria-label={language.t("settings.models.config.apiKey.name")}
-                />
-                {/* Masked by DEFAULT and revealed on request: the ask was to see it, and a secret
+        <div
+          class="model-settings-panels model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4"
+          data-active-tab={tab()}
+        >
+          <div class="flex flex-col gap-4">
+            <div data-settings-tab="identity">
+              <SettingsListV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.providerName.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.providerName.desc")}{" "}
+                      {language.t("settings.models.config.providerName.desc.more")}
+                    </>
+                  }
+                >
+                  <TextInputV2
+                    class="w-64 max-w-full"
+                    value={form.providerName}
+                    onInput={(event) => setForm("providerName", event.currentTarget.value)}
+                    placeholder={defaultProviderName()}
+                    aria-label={language.t("settings.models.config.providerName.name")}
+                  />
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.apiPath.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.apiPath.desc")}{" "}
+                      {language.t("settings.models.config.apiPath.desc.more")}
+                    </>
+                  }
+                >
+                  <TextInputV2
+                    class="w-64 max-w-full"
+                    value={form.apiPath}
+                    onInput={(event) => setForm("apiPath", event.currentTarget.value)}
+                    spellcheck={false}
+                    autocorrect="off"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    aria-label={language.t("settings.models.config.apiPath.name")}
+                  />
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.apiKey.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.apiKey.desc")}{" "}
+                      {language.t("settings.models.config.apiKey.desc.more")}
+                    </>
+                  }
+                >
+                  <div class="flex w-full min-w-0 items-center gap-2">
+                    <TextInputV2
+                      class="min-w-0 flex-1"
+                      type={revealKey() ? "text" : "password"}
+                      value={form.apiKey}
+                      onInput={(event) => setForm("apiKey", event.currentTarget.value)}
+                      spellcheck={false}
+                      autocorrect="off"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      aria-label={language.t("settings.models.config.apiKey.name")}
+                    />
+                    {/* Masked by DEFAULT and revealed on request: the ask was to see it, and a secret
                     that is legible to anyone glancing at a shared screen is a different promise.
                     An eye rather than a word — the control sits beside the field it acts on, so its
                     meaning is positional, and a text button made the row wrap on narrow dialogs. */}
-                <IconButtonV2
-                  variant="ghost-muted"
-                  size="small"
-                  onClick={() => setRevealKey(!revealKey())}
-                  icon={<Icon name={revealKey() ? "eye-off" : "eye"} size="normal" />}
-                  aria-label={language.t(
-                    revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
-                  )}
-                />
-              </div>
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.modelID.name")}
-              description={language.t("settings.models.config.modelID.desc")}
-            >
-              <TextInputV2
-                class="w-64 max-w-full"
-                value={form.modelID}
-                onInput={(event) => setForm("modelID", event.currentTarget.value)}
-                spellcheck={false}
-                autocorrect="off"
-                autocomplete="off"
-                autocapitalize="off"
-                aria-label={language.t("settings.models.config.modelID.name")}
-              />
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.modelName.name")}
-              description={language.t("settings.models.config.modelName.desc")}
-            >
-              <TextInputV2
-                class="w-64 max-w-full"
-                value={form.modelName}
-                onInput={(event) => setForm("modelName", event.currentTarget.value)}
-                aria-label={language.t("settings.models.config.modelName.name")}
-              />
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.benchmark.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.benchmark.desc")}
-                  <SettingsExplainV2 label={language.t("settings.models.config.benchmark.name")}>
-                    {language.t("settings.models.config.benchmark.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <TextInputV2
-                class="w-24 max-w-full"
-                value={form.benchmarkScore}
-                onInput={(event) => setForm("benchmarkScore", event.currentTarget.value)}
-                inputmode="decimal"
-                placeholder={language.t("settings.models.config.defaultPlaceholder")}
-                aria-label={language.t("settings.models.config.benchmark.name")}
-              />
-            </SettingsRowV2>
-          </SettingsListV2>
-              </div>
+                    <IconButtonV2
+                      variant="ghost-muted"
+                      size="small"
+                      onClick={() => setRevealKey(!revealKey())}
+                      icon={<Icon name={revealKey() ? "eye-off" : "eye"} size="normal" />}
+                      aria-label={language.t(
+                        revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
+                      )}
+                    />
+                  </div>
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.modelID.name")}
+                  info={language.t("settings.models.config.modelID.desc")}
+                >
+                  <TextInputV2
+                    class="w-64 max-w-full"
+                    value={form.modelID}
+                    onInput={(event) => setForm("modelID", event.currentTarget.value)}
+                    spellcheck={false}
+                    autocorrect="off"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    aria-label={language.t("settings.models.config.modelID.name")}
+                  />
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.modelName.name")}
+                  info={language.t("settings.models.config.modelName.desc")}
+                >
+                  <TextInputV2
+                    class="w-64 max-w-full"
+                    value={form.modelName}
+                    onInput={(event) => setForm("modelName", event.currentTarget.value)}
+                    aria-label={language.t("settings.models.config.modelName.name")}
+                  />
+                </SettingsRowV2>
+                {/* 🔴 The rating, and the ONLY one: the retired Terminal-Bench percentage sat here. A
+                normal user has no way to know a benchmark number (AGENTS.md principle 12), and the
+                classes are the one vocabulary the harness and the person share. Defaults to Usual —
+                an unrated model already reads as Usual (`ModelTaxonomy.of`), so the picker says what
+                is in force rather than showing an empty control. */}
+                <SettingsRowV2
+                  title={language.t("settings.models.config.taxonomy.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.taxonomy.desc")}{" "}
+                      {language.t("settings.models.config.taxonomy.desc.more")}
+                    </>
+                  }
+                >
+                  <SelectV2
+                    data-action="settings-model-taxonomy"
+                    options={TAXONOMIES}
+                    current={form.taxonomy}
+                    value={(option) => option}
+                    label={(option) => taxonomyLabel(language.t, option)}
+                    onSelect={(option) => setForm("taxonomy", (option ?? DEFAULT_TAXONOMY) as Taxonomy)}
+                  />
+                </SettingsRowV2>
+              </SettingsListV2>
+            </div>
 
-              <div data-settings-tab="corrections">
-                <div class="flex flex-col gap-1.5">
-            <span class="text-[12px] text-v2-text-text-muted leading-snug">
-              {language.t("settings.models.config.prePrompt.desc")}
-              <SettingsExplainV2 label={language.t("settings.models.config.prePrompt.name")}>
-                {language.t("settings.models.config.prePrompt.desc.more")}
-              </SettingsExplainV2>
-            </span>
-            <TextareaV2
-              rows={3}
-              value={form.prePrompt}
-              onInput={(event) => setForm("prePrompt", event.currentTarget.value)}
-              placeholder={language.t("settings.models.config.prePrompt.placeholder")}
-              aria-label={language.t("settings.models.config.prePrompt.name")}
-            />
+            <div data-settings-tab="corrections">
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center text-[12px] font-medium text-v2-text-text-base">
+                  <span>{language.t("settings.models.config.prePrompt.name")}</span>
+                  <SettingsExplainV2 label={language.t("settings.models.config.prePrompt.name")}>
+                    {language.t("settings.models.config.prePrompt.desc")}{" "}
+                    {language.t("settings.models.config.prePrompt.desc.more")}
+                  </SettingsExplainV2>
                 </div>
-              </div>
-
-              <div data-settings-tab="sampling">
-                <SettingsListV2>
-                  <For each={SAMPLING}>{(k) => paramRow(k)}</For>
-                </SettingsListV2>
-              </div>
-
-              <div data-settings-tab="capabilities">
-                <SettingsListV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.tool_call.name")}
-              description={language.t("settings.models.config.tool_call.desc")}
-            >
-              <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={language.t("settings.models.config.prefixCache.name")}
-              description={language.t("settings.models.config.prefixCache.desc")}
-            >
-              <Switch checked={form.prefixCacheEnabled} onChange={(value) => setForm("prefixCacheEnabled", value)} />
-            </SettingsRowV2>
-            <Show when={form.prefixCacheEnabled}>
-              <SettingsRowV2
-                title={language.t("settings.models.config.prefixCache.ttl.name")}
-                description={language.t("settings.models.config.prefixCache.ttl.desc")}
-              >
-                <TextInputV2
-                  class="w-24 max-w-full"
-                  value={form.prefixCacheTtlMinutes}
-                  onInput={(event) => setForm("prefixCacheTtlMinutes", event.currentTarget.value)}
-                  inputmode="decimal"
-                  placeholder="5"
-                  aria-label={language.t("settings.models.config.prefixCache.ttl.name")}
+                <TextareaV2
+                  rows={3}
+                  value={form.prePrompt}
+                  onInput={(event) => setForm("prePrompt", event.currentTarget.value)}
+                  placeholder={language.t("settings.models.config.prePrompt.placeholder")}
+                  aria-label={language.t("settings.models.config.prePrompt.name")}
                 />
-              </SettingsRowV2>
-            </Show>
-            {modalityRow("in")}
-            {modalityRow("out")}
-            {paramRow("context")}
-            {paramRow("maxTokens")}
-            {/* Only for a model that declares image input — a picture cap on a text-only model is a
-                row the reader has to read and then dismiss. */}
-            <Show when={form.inImage}>{paramRow("images")}</Show>
-            {paramRow(
-              "thinkingBudget",
-              <SettingsExplainV2 label={language.t("settings.models.config.thinkingBudget.name")}>
-                {language.t("settings.models.config.thinkingBudget.desc.more")}
-              </SettingsExplainV2>,
-            )}
-            {/* Endpoint support varies; the row explains the server-owned effort parameter. */}
-            <SettingsRowV2
-              title={language.t("settings.models.config.thinkingEffort.name")}
-              description={
-                <>
-                  {language.t("settings.models.config.thinkingEffort.desc")}{" "}
-                  <SettingsExplainV2 label={language.t("settings.models.config.thinkingEffort.name")}>
-                    {language.t("settings.models.config.thinkingEffort.desc.more")}
-                  </SettingsExplainV2>
-                </>
-              }
-            >
-              <SelectV2
-                appearance="inline"
-                data-action="settings-model-thinking-effort"
-                options={["", ...THINKING_EFFORTS]}
-                current={form.thinkingEffort}
-                placement="bottom-end"
-                gutter={6}
-                value={(option) => option}
-                label={(option) =>
-                  option === ""
-                    ? language.t("settings.models.config.thinkingEffort.unset")
-                    : language.t(`settings.models.config.thinkingEffort.value.${option}` as never)
-                }
-                onSelect={(option) => setForm("thinkingEffort", option ?? "")}
-              />
-            </SettingsRowV2>
-                </SettingsListV2>
               </div>
+            </div>
 
-              <div data-settings-tab="scheduler">
-                <SettingsListV2>
+            <div data-settings-tab="sampling">
+              <SettingsListV2>
+                <For each={SAMPLING}>{(k) => paramRow(k)}</For>
+              </SettingsListV2>
+            </div>
+
+            <div data-settings-tab="capabilities">
+              <SettingsListV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.tool_call.name")}
+                  info={language.t("settings.models.config.tool_call.desc")}
+                >
+                  <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.prefixCache.name")}
+                  info={language.t("settings.models.config.prefixCache.desc")}
+                >
+                  <Switch
+                    checked={form.prefixCacheEnabled}
+                    onChange={(value) => setForm("prefixCacheEnabled", value)}
+                  />
+                </SettingsRowV2>
+                <Show when={form.prefixCacheEnabled}>
                   <SettingsRowV2
-                    title={language.t("settings.models.config.deviceConcurrency.name")}
-                    description={language.t("settings.models.config.deviceConcurrency.desc")}
+                    title={language.t("settings.models.config.prefixCache.ttl.name")}
+                    info={language.t("settings.models.config.prefixCache.ttl.desc")}
                   >
                     <TextInputV2
                       class="w-24 max-w-full"
-                      value={form.deviceConcurrency}
-                      onInput={(event) => setForm("deviceConcurrency", event.currentTarget.value)}
-                      inputmode="numeric"
-                      aria-label={language.t("settings.models.config.deviceConcurrency.name")}
-                      placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                      value={form.prefixCacheTtlMinutes}
+                      onInput={(event) => setForm("prefixCacheTtlMinutes", event.currentTarget.value)}
+                      inputmode="decimal"
+                      placeholder="5"
+                      aria-label={language.t("settings.models.config.prefixCache.ttl.name")}
                     />
                   </SettingsRowV2>
-                  <SettingsRowV2
-                    title={language.t("settings.models.config.minRun.name")}
-                    description={
-                      <>
-                        {language.t("settings.models.config.minRun.desc")}
-                        <SettingsExplainV2 label={language.t("settings.models.config.minRun.name")}>
-                          {language.t("settings.models.config.minRun.desc.more")}
-                        </SettingsExplainV2>
-                      </>
+                </Show>
+                {modalityRow("in")}
+                {modalityRow("out")}
+                {paramRow("context")}
+                {paramRow("maxTokens")}
+                {/* Only for a model that declares image input — a picture cap on a text-only model is a
+                row the reader has to read and then dismiss. */}
+                <Show when={form.inImage}>{paramRow("images")}</Show>
+                {paramRow("thinkingBudget", <> {language.t("settings.models.config.thinkingBudget.desc.more")}</>)}
+                {/* Endpoint support varies; the row explains the server-owned effort parameter. */}
+                <SettingsRowV2
+                  title={language.t("settings.models.config.thinkingEffort.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.thinkingEffort.desc")}{" "}
+                      {language.t("settings.models.config.thinkingEffort.desc.more")}
+                    </>
+                  }
+                >
+                  <SelectV2
+                    appearance="inline"
+                    data-action="settings-model-thinking-effort"
+                    options={["", ...THINKING_EFFORTS]}
+                    current={form.thinkingEffort}
+                    placement="bottom-end"
+                    gutter={6}
+                    value={(option) => option}
+                    label={(option) =>
+                      option === ""
+                        ? language.t("settings.models.config.thinkingEffort.unset")
+                        : language.t(`settings.models.config.thinkingEffort.value.${option}` as never)
                     }
-                  >
-                    <TextInputV2
-                      class="w-24 max-w-full"
-                      value={form.minRunSeconds}
-                      onInput={(event) => setForm("minRunSeconds", event.currentTarget.value)}
-                      inputmode="numeric"
-                      aria-label={language.t("settings.models.config.minRun.name")}
-                      placeholder={language.t("settings.models.config.defaultPlaceholder")}
-                    />
-                  </SettingsRowV2>
-                </SettingsListV2>
-                <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                  {language.t("settings.models.config.scheduler.note")}
-                </p>
-              </div>
+                    onSelect={(option) => setForm("thinkingEffort", option ?? "")}
+                  />
+                </SettingsRowV2>
+              </SettingsListV2>
+            </div>
+
+            <div data-settings-tab="scheduler">
+              <SettingsListV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.deviceConcurrency.name")}
+                  info={language.t("settings.models.config.deviceConcurrency.desc")}
+                >
+                  <TextInputV2
+                    class="w-24 max-w-full"
+                    value={form.deviceConcurrency}
+                    onInput={(event) => setForm("deviceConcurrency", event.currentTarget.value)}
+                    inputmode="numeric"
+                    aria-label={language.t("settings.models.config.deviceConcurrency.name")}
+                    placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                  />
+                </SettingsRowV2>
+                <SettingsRowV2
+                  title={language.t("settings.models.config.minRun.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.minRun.desc")}{" "}
+                      {language.t("settings.models.config.minRun.desc.more")}
+                    </>
+                  }
+                >
+                  <TextInputV2
+                    class="w-24 max-w-full"
+                    value={form.minRunSeconds}
+                    onInput={(event) => setForm("minRunSeconds", event.currentTarget.value)}
+                    inputmode="numeric"
+                    aria-label={language.t("settings.models.config.minRun.name")}
+                    placeholder={language.t("settings.models.config.defaultPlaceholder")}
+                  />
+                </SettingsRowV2>
+              </SettingsListV2>
+              <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
+                {language.t("settings.models.config.scheduler.note")}
+              </p>
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
-          <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>
-            {isDefault()
-              ? language.t("settings.models.config.default.isDefault")
-              : language.t("settings.models.config.default.make")}
-          </ButtonV2>
-          <ButtonV2 size="normal" variant="ghost-muted" onClick={() => props.onDismiss()}>
-            {language.t("common.cancel")}
-          </ButtonV2>
-          <ButtonV2
-            size="normal"
-            variant="gold"
-            disabled={!form.modelID.trim() || !form.modelName.trim()}
-            onClick={() => void save()}
-          >
-            {language.t("common.save")}
-          </ButtonV2>
-        </div>
+      <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
+        <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>
+          {isDefault()
+            ? language.t("settings.models.config.default.isDefault")
+            : language.t("settings.models.config.default.make")}
+        </ButtonV2>
+        <ButtonV2 size="normal" variant="ghost-muted" onClick={() => props.onDismiss()}>
+          {language.t("common.cancel")}
+        </ButtonV2>
+        <ButtonV2
+          size="normal"
+          variant="gold"
+          disabled={!form.modelID.trim() || !form.modelName.trim()}
+          onClick={() => void save()}
+        >
+          {language.t("common.save")}
+        </ButtonV2>
+      </div>
     </div>
   )
 }

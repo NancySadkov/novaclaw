@@ -5,10 +5,10 @@ import { ProviderV2 } from "../provider"
 import { ModelV2 } from "../model"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 
-// Models-primary capability tier — the single source of truth is `ModelV2.Tier` (schema/model.ts),
-// re-exported here for config authoring.
-export const Tier = ModelV2.Tier
-export type Tier = ModelV2.Tier
+// Models-primary capability class — the single source of truth is `ModelV2.Taxonomy`
+// (schema/model.ts), re-exported here for config authoring.
+export const Taxonomy = ModelV2.Taxonomy
+export type Taxonomy = ModelV2.Taxonomy
 
 export class Request extends Schema.Class<Request>("ConfigV2.Provider.Request")({
   // Reached from five places — `providers.<id>.request`, `providers.<id>.models.<m>.request`, that
@@ -99,11 +99,10 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
     ...Request.fields,
   }).pipe(Schema.Array, Schema.optional),
   cost: Schema.Union([Cost, Cost.pipe(Schema.Array)]).pipe(Schema.optional),
-  tier: Tier.pipe(Schema.optional),
-  benchmark: ModelV2.Benchmark.pipe(Schema.optional),
+  taxonomy: Taxonomy.pipe(Schema.optional),
   prefixCache: ModelV2.PrefixCache.pipe(Schema.optional),
   // Optional per-model pre-prompt (owner 2026-07-29): a user-authored correction for THIS model's
-  // known behaviour, prepended to the system context. Declared beside `tier`, and carried onto
+  // known behaviour, prepended to the system context. Declared beside `taxonomy`, and carried onto
   // ModelV2.Info by the catalog plugin the same way. Optional ⇒ no on-read migration, no DB break.
   prePrompt: Schema.String.pipe(Schema.optional),
   retry: Retry.pipe(Schema.optional),
@@ -120,10 +119,10 @@ export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
 }) {}
 
 // The MODELS-PRIMARY model entry: a top-level `Config.Info.models`
-// map keys these by model id, each carrying its OWN endpoint `url` + params + `tier` — the flat
+// map keys these by model id, each carrying its OWN endpoint `url` + params + `taxonomy` — the flat
 // successor to the provider-nested `providers.<id>.models.<id>` shape (pre-detachment residue). Reuses
 // every field of the nested `Model` above and adds `url` (the served-from endpoint, the vision's
-// "a provider is just the URL") + `tier`. Decoded in parallel with `providers` through P6; the
+// "a provider is just the URL") + `taxonomy`. Decoded in parallel with `providers` through P6; the
 // nested path is retired only once the seed-equivalence gate (P2) and the app flip (P4) land.
 export class ModelEntry extends Schema.Class<ModelEntry>("ConfigV2.ModelEntry")({
   name: Schema.String.pipe(Schema.optional),
@@ -140,8 +139,7 @@ export class ModelEntry extends Schema.Class<ModelEntry>("ConfigV2.ModelEntry")(
     ...Request.fields,
   }).pipe(Schema.Array, Schema.optional),
   cost: Schema.Union([Cost, Cost.pipe(Schema.Array)]).pipe(Schema.optional),
-  tier: Tier.pipe(Schema.optional),
-  benchmark: ModelV2.Benchmark.pipe(Schema.optional),
+  taxonomy: Taxonomy.pipe(Schema.optional),
   prefixCache: ModelV2.PrefixCache.pipe(Schema.optional),
   // See the nested `Model.prePrompt` above — the flat models-primary entry carries the same optional
   // field, so a config authored either way (nested `providers` or flat `models`) reaches the catalog.

@@ -8,6 +8,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import { fetchUsage } from "@/utils/usage-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { classify, taxonomyLabel } from "../model-taxonomy"
 
 const integer = (value: number) => Math.round(value).toLocaleString()
 const rate = (value: number | undefined) => (value === undefined ? "—" : `${value.toFixed(1)} tok/s`)
@@ -16,7 +17,8 @@ export const DialogModelStats: Component<{
   http: ServerConnection.HttpBase
   modelRef: string
   modelName: string
-  benchmark?: { readonly name: string; readonly score: number; readonly source: string }
+  /** The model's class (`smart` | `usual` | `fast`); absent reads as the default, Usual. */
+  taxonomy?: string
   prefixCache?: { readonly enabled: boolean; readonly ttlMinutes?: number }
 }> = (props) => {
   const dialog = useDialog()
@@ -111,17 +113,12 @@ export const DialogModelStats: Component<{
                 </span>
               </SettingsRowV2>
               <SettingsRowV2
-                title={language.t("settings.models.stats.benchmark")}
-                description={language.t("settings.models.stats.benchmark.desc")}
+                title={language.t("settings.models.stats.taxonomy")}
+                info={language.t("settings.models.stats.taxonomy.desc")}
               >
                 <span>
-                  {props.benchmark
-                    ? `${props.benchmark.score.toFixed(1)}% · ${props.benchmark.name} · ${language.t(
-                        props.benchmark.source === "measured"
-                          ? "settings.models.stats.benchmark.measured"
-                          : "settings.models.stats.benchmark.user",
-                      )}`
-                    : language.t("settings.models.stats.unscored")}
+                  {taxonomyLabel(language.t, classify(props.taxonomy))}
+                  {props.taxonomy === undefined ? ` · ${language.t("settings.models.stats.taxonomy.unrated")}` : ""}
                 </span>
               </SettingsRowV2>
             </SettingsListV2>

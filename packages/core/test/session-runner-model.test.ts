@@ -54,8 +54,8 @@ const model = (api: Api, variants: ModelV2.Info["variants"] = []) =>
   })
 
 describe("SessionRunnerModel", () => {
-  test("automatic selection chooses the least loaded capable model that clears the role score", () => {
-    const candidate = (id: string, score: number, tools = true) =>
+  test("automatic selection chooses the least loaded capable model that clears the role class", () => {
+    const candidate = (id: string, taxonomy: ModelV2.Taxonomy, tools = true) =>
       ModelV2.Info.make({
         ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: `http://${id}.test/v1` }),
         id: ModelV2.ID.make(id),
@@ -67,12 +67,12 @@ describe("SessionRunnerModel", () => {
           settings: {},
         },
         capabilities: { tools, input: ["text"], output: ["text"] },
-        benchmark: { name: "terminal-bench-4.0", score, source: "user" },
+        taxonomy,
       })
-    const preferred = candidate("preferred", 80)
-    const idle = candidate("idle", 72)
-    const tooWeak = candidate("weak", 30)
-    const noTools = candidate("chat", 90, false)
+    const preferred = candidate("preferred", "smart")
+    const idle = candidate("idle", "usual")
+    const tooWeak = candidate("weak", "fast")
+    const noTools = candidate("chat", "smart", false)
     const snapshot = (model: ModelV2.Info, work: number) =>
       ({
         deviceKey: SessionRunnerModel.deviceKeyFor(model),
@@ -90,7 +90,7 @@ describe("SessionRunnerModel", () => {
         SessionRunnerModel.leastLoaded({
           available: [preferred, idle, tooWeak, noTools],
           preferred,
-          requiredScore: 70,
+          taxonomy: "usual",
           tools: true,
           devices: [snapshot(preferred, 2), snapshot(idle, 0)],
         })?.id,
@@ -98,12 +98,12 @@ describe("SessionRunnerModel", () => {
     ).toBe("idle")
   })
 
-  test("a score floor never vetoes work when no capable model clears it", () => {
+  test("a class floor never vetoes work when no capable model clears it", () => {
     const weak = ModelV2.Info.make({
       ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://weak.test/v1" }),
-      benchmark: { name: "terminal-bench-4.0", score: 12, source: "user" },
+      taxonomy: "fast",
     })
-    expect(SessionRunnerModel.leastLoaded({ available: [weak], requiredScore: 90, tools: true, devices: [] })).toBe(
+    expect(SessionRunnerModel.leastLoaded({ available: [weak], taxonomy: "smart", tools: true, devices: [] })).toBe(
       weak,
     )
   })
@@ -1039,7 +1039,7 @@ describe("SessionRunnerModel.resolveDefault", () => {
     // points at the model. A source ledger because the sharing is invisible once it compiles.
     const src = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/model.ts"), "utf8")
     const start = src.indexOf('resolveDefault: Effect.fn("SessionRunnerModel.resolveDefault")')
-    const end = src.indexOf("tier: Effect.fn(", start)
+    const end = src.indexOf("taxonomy: Effect.fn(", start)
     expect(start).toBeGreaterThan(0)
     expect(end).toBeGreaterThan(start)
     const body = src.slice(start, end)

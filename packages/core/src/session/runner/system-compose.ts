@@ -525,8 +525,8 @@ export interface SystemPromptParts {
   readonly modelPrePrompt?: string
   /** T9 plain-language stance line for a Normal-level user. */
   readonly expertiseHint?: string
-  /** Tier scaffold for a weak model (tier-scaffold.ts). */
-  readonly tierHint?: string
+  /** Class scaffold for a `fast` model (taxonomy-scaffold.ts). */
+  readonly taxonomyHint?: string
   /** Per-session system-prompt override (the config-inheritance walk). */
   readonly systemPromptOverride?: string
   /** The selected officer's resolved name/title/personality — immediately before its job brief. */
@@ -581,7 +581,7 @@ export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ bl
   { block: "persona", text: parts.persona },
   { block: "modelPrePrompt", text: parts.modelPrePrompt },
   { block: "expertiseHint", text: parts.expertiseHint },
-  { block: "tierHint", text: parts.tierHint },
+  { block: "taxonomyHint", text: parts.taxonomyHint },
   { block: "systemPromptOverride", text: parts.systemPromptOverride },
   { block: "agentIdentity", text: parts.agentIdentity },
   { block: "agentSystem", text: parts.agentSystem },

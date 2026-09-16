@@ -36214,10 +36214,9 @@
           "toolLabels": {
             "type": "boolean"
           },
-          "needsScore": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
+          "needsTaxonomy": {
+            "type": "string",
+            "enum": ["smart", "usual", "fast"]
           },
           "directory": {
             "type": "string"
@@ -37332,29 +37331,6 @@
         "required": ["input", "output"],
         "additionalProperties": false
       },
-      "ModelBenchmark": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["terminal-bench-4.0"]
-          },
-          "score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "source": {
-            "type": "string",
-            "enum": ["user", "measured"]
-          },
-          "measuredAt": {
-            "type": "number"
-          }
-        },
-        "required": ["name", "score", "source"],
-        "additionalProperties": false
-      },
       "ModelPrefixCache": {
         "type": "object",
         "properties": {
@@ -37519,12 +37495,9 @@
               }
             ]
           },
-          "tier": {
+          "taxonomy": {
             "type": "string",
-            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
-          },
-          "benchmark": {
-            "$ref": "#/components/schemas/ModelBenchmark"
+            "enum": ["smart", "usual", "fast"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
@@ -37696,12 +37669,9 @@
               }
             ]
           },
-          "tier": {
+          "taxonomy": {
             "type": "string",
-            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
-          },
-          "benchmark": {
-            "$ref": "#/components/schemas/ModelBenchmark"
+            "enum": ["smart", "usual", "fast"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
@@ -38596,12 +38566,9 @@
           "family": {
             "type": "string"
           },
-          "tier": {
+          "taxonomy": {
             "type": "string",
-            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
-          },
-          "benchmark": {
-            "$ref": "#/components/schemas/ModelBenchmark"
+            "enum": ["smart", "usual", "fast"]
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
@@ -38809,10 +38776,9 @@
           "toolLabels": {
             "type": "boolean"
           },
-          "needsScore": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
+          "needsTaxonomy": {
+            "type": "string",
+            "enum": ["smart", "usual", "fast"]
           },
           "description": {
             "type": "string"

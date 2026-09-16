@@ -43,6 +43,7 @@
 @import "../v2/components/diff-changes-v2.css" layer(components);
 @import "../v2/components/divider-v2.css" layer(components);
 @import "../v2/components/icon-button-v2.css" layer(components);
+@import "../v2/components/info-popover-v2.css" layer(components);
 @import "../v2/components/keybind-v2.css" layer(components);
 @import "../v2/components/menu-v2.css" layer(components);
 @import "../v2/components/progress-circle-v2.css" layer(components);

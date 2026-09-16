@@ -1,32 +1,31 @@
 export * as AgentModelFit from "./model-fit"
 
+import { ModelTaxonomy, type Taxonomy } from "../model-taxonomy"
+
 // WHETHER THE MODEL BEHIND A COLLEAGUE IS UP TO ITS JOB (`notes/named-agents.md` — "role/model fit
 // warning"; the owner's rule is *"it warns; it never refuses"*).
 //
 // 🔴 **A role can now outrun its model silently, and this session is why.** A colleague's model is
 // part of its job description, and `runner/model.ts` falls back to the instance default when that
 // model is unavailable or has been failing — deliberately, so the colleague keeps working. But
-// "keeps working" can mean a bookkeeper expecting a 70% raw test score quietly thinking with a model
-// that scored 15%: it does not error, it just gets things wrong in ways that read as the colleague being bad at
+// "keeps working" can mean a bookkeeper set up for a `smart` model quietly thinking with a `fast`
+// one: it does not error, it just gets things wrong in ways that read as the colleague being bad at
 // its job. The fallback made the failure survivable and, in doing so, made it invisible.
 //
-// ⚠️ **It never refuses, and that is not timidity.** A capability floor is the ROLE AUTHOR's estimate,
+// ⚠️ **It never refuses, and that is not timidity.** A class floor is the ROLE AUTHOR's estimate,
 // not a measurement — the same role runs fine on a smaller model for an easy request, and the user
 // may have exactly one model on the machine. Refusing would turn an author's guess into a veto over
 // the user's hardware. Saying so leaves the judgement where it belongs.
 
 /**
- * Is the bound model beneath the measured floor this role declared?
+ * Is the bound model beneath the class this role declared?
  *
- * ⚠️ **An UNKNOWN score is not a low one.** A model with no measured score answers `false` here —
- * a local model somebody added by hand may have no result, and treating "we do not know" as "too weak"
- * would warn on every hand-configured endpoint, which is most of them on a local-first install.
- * `false` when the role declares no floor, for the same reason: silence is not a requirement.
+ * ⚠️ Both sides are already materialised (`ModelTaxonomy.of`), so there is no "unknown" case to
+ * special-case here: an unrated model reads as `usual` wherever it is compared, which is exactly
+ * what makes `usual` the default rather than a missing value.
  */
-export const below = (input: { readonly needs: number | undefined; readonly bound: number | undefined }): boolean => {
-  if (input.needs === undefined || input.bound === undefined) return false
-  return input.bound < input.needs
-}
+export const below = (input: { readonly needs: Taxonomy; readonly bound: Taxonomy }): boolean =>
+  !ModelTaxonomy.satisfies(input.bound, input.needs)
 
 /**
  * What the colleague is told.
@@ -36,12 +35,13 @@ export const below = (input: { readonly needs: number | undefined; readonly boun
  * see — so the model would go on promising work it cannot do while a warning sat above the
  * conversation. Told this way it can decide what is worth attempting, and say so as itself.
  *
- * ⚠️ Names both scores and gives an ACTION. "Your model is weak" invites either paralysis or bravado;
- * what a model can act on is: tell the person, work smaller, do not silently attempt the big thing.
+ * ⚠️ Names both classes and gives an ACTION. "Your model is weak" invites either paralysis or
+ * bravado; what a model can act on is: tell the person, work smaller, do not silently attempt the
+ * big thing.
  */
-export const notice = (input: { readonly needs: number; readonly bound: number; readonly model: string }): string =>
-  `${opening(input.model)}, which scored ${input.bound.toFixed(1)}% on raw Terminal-Bench 4.0 — your role is set up expecting at ` +
-  `least ${input.needs.toFixed(1)}%. Nothing is blocked and you should carry on. But say so plainly to the ` +
+export const notice = (input: { needs: Taxonomy; bound: Taxonomy; model: string }): string =>
+  `${opening(input.model)}, which is rated ${ModelTaxonomy.label(input.bound)} — your role is set up expecting a ` +
+  `${ModelTaxonomy.label(input.needs)} model. Nothing is blocked and you should carry on. But say so plainly to the ` +
   `user the first time it matters, work in smaller and more carefully checked steps than you ` +
   `otherwise would, and do not quietly take on something large as though nothing had changed.`
 
