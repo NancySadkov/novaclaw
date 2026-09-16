@@ -41,6 +41,11 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
       // carries the working folder. An ordinary chat leaves it absent — its horizon rides the
       // grounding cadence — which is what keeps this file's byte-identity claim true.
       | "workingFolder"
+      // 🔴 Optional, and present in exactly ONE mode: Unattended / goal-oriented, where the officer's
+      // assigned objective is what the turn is for. An interactive chat carries no goal block, so it
+      // belongs in this exclusion list for the same reason `projectScope` does — its own composition is
+      // covered by `session-runner-goal-block.test.ts`.
+      | "goal"
     >
   > = {
     persona: "Be pragmatic.",

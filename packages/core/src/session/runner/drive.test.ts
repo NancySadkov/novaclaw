@@ -42,7 +42,12 @@ describe("SessionDrive.decide", () => {
     expect(auto.message).not.toBe(goal.message)
   })
 
-  test("goal drive names the durable goal and first unfinished plan step", () => {
+  test("the goal drive names the first unfinished plan step and does NOT repeat the goal", () => {
+    // 🔴 Re-pinned 2026-09-16 (owner): the goal moved into the SYSTEM PROMPT
+    // (*"Goal prompt is appended to system prompt, right after the tool specification and before the
+    // user prompt"*), so this steer stopped restating it. One objective, one place: two copies in the
+    // same request is how the steer and the prompt come to disagree, and the copy the model acts on
+    // would be whichever it read last.
     const decision = SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, {
       goal: "Ship C8",
       steps: [
@@ -52,9 +57,54 @@ describe("SessionDrive.decide", () => {
     })
     expect(decision).toMatchObject({ kind: "continue" })
     if (decision.kind !== "continue") throw new Error("expected continue")
-    expect(decision.message).toContain("Ship C8")
     expect(decision.message).toContain("wire self-drive")
     expect(decision.message).not.toContain("already checked")
+    expect(decision.message).not.toContain("Ship C8")
+    expect(decision.message).toContain("set out at the end of your system prompt")
+  })
+
+  test("🔴 a session with NO goal is never told to author one", () => {
+    // Owner, 2026-09-16: *"The goal is something user or agent's Superior officer sets. Agent can't set
+    // its own goal (i.e. no set your durable goal nudges)."* The steer used to say *"Declare the durable
+    // `goal` component from the opening request"* — an instruction to author its own objective, naming a
+    // write that a default install DENIES. Both halves were wrong, so both are asserted gone.
+    const decision = SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, {
+      steps: [],
+    })
+    if (decision.kind !== "continue") throw new Error("expected continue")
+    expect(decision.message).not.toContain("Declare the durable")
+    expect(decision.message).not.toContain("durable `goal` component")
+    expect(decision.message).toContain("No durable goal is set")
+  })
+
+  test("assignedGoal prefers the officer's brief and falls back to the session component", () => {
+    // One precedence, two readers (the drain and the system prompt). The officer's configured goal is
+    // what the user or a superior officer assigned; the component is the kernel's narrower carrier.
+    expect(SessionDrive.assignedGoal({ officerGoal: "Ship C8", component: { text: "component goal" } })).toBe("Ship C8")
+    expect(SessionDrive.assignedGoal({ officerGoal: "   ", component: { text: "component goal" } })).toBe(
+      "component goal",
+    )
+    expect(SessionDrive.assignedGoal({ officerGoal: undefined, component: { text: "component goal" } })).toBe(
+      "component goal",
+    )
+    // Nothing assigned is nothing, not an empty string dressed as a goal — and never a non-goal value
+    // that merely happens to be an object.
+    expect(SessionDrive.assignedGoal({ officerGoal: undefined, component: undefined })).toBeUndefined()
+    expect(SessionDrive.assignedGoal({ officerGoal: undefined, component: { other: 1 } })).toBeUndefined()
+    expect(SessionDrive.assignedGoal({ officerGoal: undefined, component: "Ship C8" })).toBeUndefined()
+  })
+
+  test("🔴 unattendedMode is decided from the ROLE, so the switch lands on the next turn", () => {
+    // Owner, 2026-09-16: *"Switching agent from Interactive mode to Unattended or back should take
+    // immediate effects with adding/removing goal to its context, even if that will lead to prompt
+    // prefix cache misses."* `operationMode` is read per turn; the type column is stamped at creation,
+    // so on its own it would make the switch wait for the UI's second `switchType` call.
+    expect(SessionDrive.unattendedMode({ operationMode: "unattended", sessionType: "interactive" })).toBe(true)
+    expect(SessionDrive.unattendedMode({ operationMode: "interactive", sessionType: "goal-oriented" })).toBe(false)
+    // Absent role statement: the chat's classification is the only one there is.
+    expect(SessionDrive.unattendedMode({ operationMode: undefined, sessionType: "goal-oriented" })).toBe(true)
+    expect(SessionDrive.unattendedMode({ operationMode: undefined, sessionType: "interactive" })).toBe(false)
+    expect(SessionDrive.unattendedMode({ operationMode: undefined, sessionType: undefined })).toBe(false)
   })
 
   test("accepted plan evidence asks the agent to exit instead of completing on its behalf", () => {

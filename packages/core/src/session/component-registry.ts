@@ -302,11 +302,38 @@ export const ObservationDefinition = kernelDefinition({
 
 export const GoalDefinition = kernelDefinition({
   kind: "goal",
-  description: "The session's durable objective. It survives transcript compaction and steers goal-oriented work.",
+  description:
+    "The session's durable objective. It survives transcript compaction and steers goal-oriented work. READ-ONLY to an agent: the goal is set by the user or by a superior officer, never by the colleague that must deliver it.",
   cardinality: "singleton",
   lifetime: "entity",
   version: 1,
   codec: Goal,
+  // 🔴 A colleague may not author its own objective (owner, 2026-09-16: *"The goal is something user or
+  // agent's Superior officer sets. Agent can't set its own goal"*). Authority narrows downward and never
+  // widens (AGENTS.md, the structural metaphor), so the hard gate runs BEFORE the permission tier —
+  // the same rung its `agent` and `session_type` siblings use, and for the same reason: permission
+  // rules are operator dials that may be widened, and a widened dial must not be able to hand an
+  // officer the power to decide what it is for.
+  //
+  // ⚠️ The user and a superior officer reach the goal through CONFIG (`agents.<id>.goal`), which is the
+  // operator's own surface and the right home for a durable job description; this component is the
+  // per-session carrier the kernel and the harness write. An agent-writing path here would be a second
+  // door onto the same escalation, and there is deliberately no `system`-free way through it.
+  validateWrite: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(
+          new Error(
+            "A session's durable goal is set by the user or by a superior officer, not by the agent that must deliver it: an agent that can rewrite its own objective can walk away from the one it was given.",
+          ),
+        ),
+  // Clearing reaches the same escalation through inheritance, so the second door carries the same gate.
+  validateRemove: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(
+          new Error("A session's durable goal is cleared by the user or by a superior officer, not by the agent."),
+        ),
 })
 
 export const PlanDefinition = kernelDefinition({

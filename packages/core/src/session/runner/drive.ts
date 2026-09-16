@@ -62,13 +62,18 @@ const SUB_AGENT_CONTINUE =
   "so this worker is not complete. Continue the assigned task, or if it is genuinely finished call the `exit` " +
   "tool with a short result summary."
 
-// ⚠️ "the goal you were given" was a lie the model could see through. Nothing hands a
-// goal-oriented session a goal out of band — the goal IS the request that opened it, so a session
-// spawned for a one-line question would hunt for a goal it never received, narrate that it couldn't
-// find one, and exit with THAT as its result (observed live 2026-07-23 on the WhatsApp console:
-// "No goal was assigned to this unattended session"). Point it at the real thing, and say plainly
-// that an already-answered question is finished — self-driving exists to keep long work moving, not
-// to manufacture work after the answer is in.
+// 🔴 **"Declare the durable `goal` component" was a harness steer that told an agent to author its own
+// objective, and it is GONE (owner, 2026-09-16: *"The goal is something user or agent's Superior officer
+// sets. Agent can't set its own goal (i.e. no set your durable goal nudges)"*). Two things were wrong
+// with it at once: the authority model — an objective a colleague can rewrite is one it can walk away
+// from — and the mechanics, because the write it named is `session_privileged` and a default install
+// converts that to a DENY, so the line asked for something the agent could not do.
+//
+// The comment that used to justify it ("Nothing hands a goal-oriented session a goal out of band — the
+// goal IS the request that opened it") was true before the durable goal existed and false since: the
+// user's Goal field writes `agents.<id>.goal`, which is now the goal's only home, and the runner prefers
+// it over the per-session component. A session with no goal is a session nobody gave one; the honest
+// instruction is to work the request that opened it and say so.
 const goalContinue = (context: GoalContext | undefined) => {
   const goal = context?.goal?.trim()
   const next = context?.steps.find((step) => step.status !== "completed" || step.verdict === null)
@@ -79,11 +84,15 @@ const goalContinue = (context: GoalContext | undefined) => {
     )
   return (
     "You are an unattended goal-oriented session — no user is present and none will reply. " +
-    (goal ? `Your durable goal is: ${goal}\n` : "Declare the durable `goal` component from the opening request.\n") +
+    // The goal itself is in the system prompt now (owner, 2026-09-16), so this steer does not repeat
+    // it: two copies of the objective in one request is how the two drift apart.
+    (goal
+      ? "Your durable goal is set out at the end of your system prompt. Work it.\n"
+      : "No durable goal is set for this session. Work the request that opened it, then `exit` with a short result summary.\n") +
     (next
       ? `Take the next unfinished plan step now: ${next.text}\n`
       : "Create a short ordered `plan` component set, then take its first concrete step.\n") +
-    "Keep the goal and plan current through the `session` tool. A step is not verified merely because " +
+    "Keep the plan current through the `session` tool. A step is not verified merely because " +
     "you mark it completed; the kernel records a verdict only after its check runs. If the goal is " +
     "reached, call the `exit` tool to checkpoint this work unit. The officer remains alive until Stop. " +
     "If an external condition prevents progress for now, say what you are waiting for; the harness will " +
@@ -93,6 +102,50 @@ const goalContinue = (context: GoalContext | undefined) => {
 
 export const UNATTENDED_SLEEP_MS = 10 * 60_000
 const STAGNANT_ROUNDS_BEFORE_SLEEP = 6
+
+/**
+ * THE objective a goal-oriented session works to — one precedence, two readers.
+ *
+ * 🔴 Owner, 2026-09-16: *"The goal is something user or agent's Superior officer sets."* So the
+ * ASSIGNED goal is the officer's configured one (`agents.<id>.goal`, which the user and a superior write
+ * through the operator's own surface); the per-session component is the kernel's narrower carrier and is
+ * consulted only when the role has no brief. That is the order this function encodes.
+ *
+ * ⚠️ **It exists because the same question is asked twice** — once by the drain, to decide whether a
+ * session has stalled against its objective, and once when the system prompt is composed, to show the
+ * model what it is for. Two copies of a precedence are two answers that drift (the exact defect
+ * `system-compose.ts`'s own header records for its block list), and a session steering by one goal
+ * while being shown another is worse than either alone.
+ */
+export const assignedGoal = (input: {
+  readonly officerGoal: string | undefined
+  readonly component: unknown
+}): string | undefined => {
+  if (typeof input.officerGoal === "string" && input.officerGoal.trim()) return input.officerGoal
+  const value = input.component
+  return typeof value === "object" && value !== null && "text" in value ? String(value.text) : undefined
+}
+
+/**
+ * Is this session UNATTENDED — i.e. does the goal belong in its context?
+ *
+ * 🔴 Owner, 2026-09-16: *"Switching agent from Interactive mode to Unattended or back should take
+ * immediate effects with adding/removing goal to its context, even if that will lead to prompt prefix
+ * cache misses."*
+ *
+ * ⚠️ **The officer's own standing choice wins over the session's stamped `type`, and that is the whole
+ * point.** `operationMode` is read per turn from the agent record, so a config write takes effect on the
+ * next turn; the `type` column is stamped at session CREATION, so on its own it would make the switch
+ * wait for the UI's compensating `switchType` call — which is a second request that silently no-ops when
+ * there is no chat, folder or connection. When the role declares nothing, the chat's classification is
+ * the only statement there is. A chat-level difference loses to the role here on purpose: the goal is
+ * the object of the ROLE, and a role that works unattended owns its objective in every chat it has.
+ */
+export const unattendedMode = (input: {
+  readonly operationMode: "interactive" | "unattended" | undefined
+  readonly sessionType: string | undefined
+}): boolean =>
+  input.operationMode === "unattended" || (input.operationMode === undefined && input.sessionType === "goal-oriented")
 
 const progressKey = (context: GoalContext | undefined): string =>
   JSON.stringify((context?.steps ?? []).map((step) => [step.status, step.verdict?.check ?? null]))

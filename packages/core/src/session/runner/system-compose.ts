@@ -275,6 +275,20 @@ export const toolDiscoverySection = (deferredCount: number): string | undefined 
 }
 
 /**
+ * The officer's durable objective, for an unattended / goal-oriented session.
+ *
+ * 🔴 Owner, 2026-09-16. The sentence names WHOSE goal it is, because provenance is the whole point of
+ * having the block: *"the goal is something user or agent's Superior officer sets"*, and a colleague
+ * that knows it did not author its own objective treats it differently from one that thinks it did.
+ * The block exists only while the session is unattended — the mode switch adds and removes it.
+ */
+export const goalSection = (goal: string | undefined): string | undefined => {
+  const text = goal?.trim()
+  if (!text) return undefined
+  return `Your durable goal, set for you by whoever assigned this work:\n\n${text}`
+}
+
+/**
  * That the model can SEE, and that an image on disk is therefore its own to look at.
  *
  * 🔴 **The defect (measured 2026-08-19, `notes/reports/vision-on-disk-2026-08-19.md`).** Asked
@@ -549,6 +563,22 @@ export interface SystemPromptParts {
   readonly workspace?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
   readonly base?: string
+  /**
+   * The officer's durable objective, for an unattended / goal-oriented session.
+   *
+   * 🔴 Owner, 2026-09-16: *"Goal prompt is appended to system prompt, right after the tool
+   * specification and before the user prompt."* In this codebase the tool SPECIFICATION is the
+   * request's `tools` field, not a system block — the only tool-ish block is `toolDiscovery` — so
+   * "right after the tool specification, before the user prompt" means LAST in this array: the last
+   * thing the system prefix says before the message history begins.
+   *
+   * ⚠️ That placement is also the tie-break the owner's own instruction implies. `system-compose.ts`
+   * forbids per-turn-volatile material here because a changed prefix throws away the server's prefix
+   * cache for everything after it; a block at the END invalidates the fewest messages, and the owner
+   * accepted the cost explicitly (*"even if that will lead to prompt prefix cache misses"*) because a
+   * switch that does not take effect is worse than a cache miss.
+   */
+  readonly goal?: string
 }
 
 /**
@@ -606,6 +636,14 @@ export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ bl
   // LAST: the durable context the session carries. It is the largest block on most turns and the one
   // a reader scrolls to, so everything that frames how to behave comes before what to work on.
   { block: "base", text: parts.base },
+  // 🔴 END OF THE PROMPT, and deliberately after `base` (owner, 2026-09-16). The goal is what this
+  // turn is FOR, and the owner's own sketch puts it last: goal, then the DURABLE area, then the first
+  // user prompt. It is the only block that may change WITHOUT a compaction (when the mode switches) —
+  // the durable area, which will sit immediately after it, changes only WITH one — so keeping it at the
+  // very end bounds what a change invalidates to the message history, the cost the owner accepted
+  // (*"even if that will lead to prompt prefix cache misses"*), and leaves every framing block's cache
+  // intact.
+  { block: "goal", text: parts.goal },
 ]
 
 /** The system prompt's parts, in order, with the absent ones dropped. */

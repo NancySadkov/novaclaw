@@ -2214,6 +2214,13 @@ export const layer = Layer.effect(
           ? {}
           : { superior: { id: superior.id, ...(superior.name === undefined ? {} : { name: superior.name }) } }),
       })
+      // The goal's per-session carrier, read ONCE per turn for the same reason the drain reads it: the
+      // precedence must have a single answer (`SessionDrive.assignedGoal`). Best-effort — the block
+      // decorates the prompt and must never cost the turn it describes.
+      const goalForPrompt = yield* components.get({ sessionID: session.id, kind: "goal" }).pipe(
+        Effect.map((entry) => entry?.value),
+        Effect.orElseSucceed(() => undefined),
+      )
       // A pure Chat is deliberately a bare model conversation. The only system text it receives is
       // the brief the user wrote in this officer's settings: no Nova persona, identity wrapper,
       // organization, project, model pre-prompt, or upgrade instructions.
@@ -2280,6 +2287,22 @@ export const layer = Layer.effect(
               scratch: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
             }),
             base: system.baseline,
+            // 🔴 THE GOAL, as the LAST block (owner, 2026-09-16: *"Goal prompt is appended to system
+            // prompt, right after the tool specification and before the user prompt"*). Composed only
+            // while the session is UNATTENDED, so the Interactive ⇄ Unattended switch adds and removes
+            // it — decided per turn from the role's standing choice, which is what makes the switch
+            // immediate rather than a second UI call (`SessionDrive.unattendedMode`).
+            goal: SessionDrive.unattendedMode({
+              operationMode: prepared.agent.info?.operationMode,
+              sessionType: config.type,
+            })
+              ? SystemCompose.goalSection(
+                  SessionDrive.assignedGoal({
+                    officerGoal: prepared.agent.info?.goal,
+                    component: goalForPrompt,
+                  }),
+                )
+              : undefined,
           }
       const promptAccounting = SystemAccounting.of(promptParts)
       // Beside `session.request.footprint`, which measures the request in three lumps and therefore
@@ -5057,12 +5080,9 @@ export const layer = Layer.effect(
           const officerGoal = officer?.goal
           const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
             acceptedExit: acceptedGoalExit,
-            goal:
-              typeof officerGoal === "string" && officerGoal.trim()
-                ? officerGoal
-                : typeof goalEntry?.value === "object" && goalEntry.value !== null && "text" in goalEntry.value
-                  ? String(goalEntry.value.text)
-                  : undefined,
+            // ⚠️ Through the SAME helper the system prompt uses (`assignedGoal`), so the goal a session
+            // is steered by and the goal it is shown cannot be two different things.
+            goal: SessionDrive.assignedGoal({ officerGoal, component: goalEntry?.value }),
             steps: planEntries.map((entry) => {
               const value = entry.value as SessionComponentRegistry.PlanStep
               return { text: value.text, status: value.status, verdict: value.verdict }
