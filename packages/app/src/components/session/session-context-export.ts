@@ -56,12 +56,12 @@ export function serializeContextSegment(input: {
   )
 }
 
-export function sessionExportFilename(name: string, suffix: string): string {
+export function sessionExportFilename(name: string, suffix: string, extension: "txt" | "json" = "txt"): string {
   const stem = name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
-  return `${stem || "session"}-${suffix}.txt`
+  return `${stem || "session"}-${suffix}.${extension}`
 }

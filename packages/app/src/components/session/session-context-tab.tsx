@@ -1,5 +1,8 @@
 import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { base64Encode } from "@novaclaw/core/util/encode"
+import { SessionPortability } from "@novaclaw/core/session/portability"
 import { createQuery } from "@tanstack/solid-query"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
@@ -22,12 +25,7 @@ import { displayName } from "@/apps/contacts"
 import { agentColor } from "@/utils/agent"
 import { getSessionContext, getSessionTokenTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
-import {
-  downloadPlainText,
-  serializeContextSegment,
-  serializeSessionTranscript,
-  sessionExportFilename,
-} from "./session-context-export"
+import { downloadPlainText, serializeContextSegment, sessionExportFilename } from "./session-context-export"
 import { createSessionContextFormatter } from "./session-context-format"
 import { sessionCompactionEvents } from "./session-compaction-events"
 import { showToast } from "@/utils/toast"
@@ -223,14 +221,63 @@ export function SessionContextTab() {
     downloadPlainText(sessionExportFilename(officerName(), "prompt"), initial)
   }
 
-  // The LATEST request, exactly as it left for the provider — the encoded wire body, no wrapper.
-  // Falls back to the transcript records only before a turn has been captured at all.
-  const exportJson = () => {
-    const raw = promptSource.data?.latest ?? promptSource.data?.initial
-    downloadPlainText(
-      sessionExportFilename(officerName(), "request"),
-      raw ?? serializeSessionTranscript(messages()),
-    )
+  // THE WHOLE SESSION, as a portable document another harness (or this one) can import back.
+  // `SessionPortability` owns the envelope, shared with the server's importer, so the round trip is
+  // by construction rather than by two hand-kept mappings.
+  const exportSession = () => {
+    const current = info()
+    const model = ctx()?.message.model
+    const document = SessionPortability.exportDocument({
+      info: {
+        ...(current?.title === undefined ? {} : { title: current.title }),
+        ...(officerID() === undefined ? {} : { agent: officerID()! }),
+        ...(model === undefined
+          ? {}
+          : {
+              model: {
+                providerID: model.providerID,
+                id: model.id,
+                ...(model.variant === undefined ? {} : { variant: model.variant }),
+              },
+            }),
+        ...(current?.time.created === undefined ? {} : { time: { created: current.time.created } }),
+      },
+      messages: messages(),
+    })
+    downloadPlainText(sessionExportFilename(officerName(), "session", "json"), document)
+  }
+
+  // IMPORT SESSION — read another harness's export (opencode's `{info,messages}` and relatives) as a
+  // new session. The server does the writing; this reads the file, fails fast on bad JSON, and opens
+  // the result. `message.recorded` is not folded by the live transcript store, so opening the session
+  // (rather than trusting the current view to update) is what makes the imported history visible.
+  const navigate = useNavigate()
+  const [importing, setImporting] = createSignal(false)
+  let importInput: HTMLInputElement | undefined
+  const importSession = async (file: File | undefined) => {
+    if (!file) return
+    setImporting(true)
+    try {
+      const data = JSON.parse(await file.text())
+      const response = await sdk().client.v2.session.import({ data })
+      const result = response.data?.data
+      if (!result) throw new Error(language.t("context.import.failed"))
+      showToast({
+        variant: "success",
+        title: language.t("context.import.done", { count: result.imported }),
+        ...(result.skipped === 0 ? {} : { description: language.t("context.import.skipped", { count: result.skipped }) }),
+      })
+      // A posture session lands in the request's directory, which is what the route needs to resolve.
+      navigate(`/${base64Encode(sdk().directory)}/session/${result.sessionID}`)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("context.import.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setImporting(false)
+    }
   }
 
   let scroll: HTMLDivElement | undefined
@@ -516,9 +563,31 @@ export function SessionContextTab() {
             <ButtonV2 type="button" variant="gold" icon="download" onClick={exportPrompt}>
               {language.t("context.export.prompt")}
             </ButtonV2>
-            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportJson}>
-              {language.t("context.export.json")}
+            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportSession}>
+              {language.t("context.export.session")}
             </ButtonV2>
+            {/* Import pairs with Export Session here so the two read as one round trip. It CREATES a
+                session (a `build` posture root, so importing on demand never collides with a
+                colleague's one chat) and opens it. */}
+            <ButtonV2
+              type="button"
+              variant="outline"
+              icon="cloud-upload"
+              disabled={importing()}
+              onClick={() => importInput?.click()}
+            >
+              {language.t(importing() ? "context.import.working" : "context.import.session")}
+            </ButtonV2>
+            <input
+              ref={(element) => (importInput = element)}
+              type="file"
+              accept="application/json,.json"
+              class="hidden"
+              onChange={(event) => {
+                void importSession(event.currentTarget.files?.[0])
+                event.currentTarget.value = ""
+              }}
+            />
           </div>
         </div>
       </div>
