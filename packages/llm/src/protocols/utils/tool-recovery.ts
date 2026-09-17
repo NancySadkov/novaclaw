@@ -149,20 +149,26 @@ function recoverHermes(text: string, names: ReadonlyArray<string>): RecoveredCal
 }
 
 // bare JSON object / array carrying `"name"` as the entire message content, OR a run of several of
-// them emitted back to back. Observed live 2026-09-17 from `openrouter-ai-api-v1/stealth/union-alpha`:
-// the model dumped the SAME call twice on separate lines, and the single-value parse failed on the
-// concatenation — the turn ended `finish="stop"` while the call sat in text, so the agent narrated
-// and stalled. `dedupeCalls` collapses the exact repeat; different calls (read a, read b) survive.
+// them emitted back to back, OR one appended AFTER PROSE. Observed live 2026-09-17 from
+// `openrouter-ai-api-v1/stealth/union-alpha`, all three: the same call twice on separate lines (the
+// single-value parse failed on the concatenation), and — the shape that survived every earlier fix —
+// a normal sentence followed by the call object, which a starts-with-`{` gate never even looked at.
+// `dedupeCalls` collapses an exact repeat; different calls survive.
 function recoverBareJson(text: string, names: ReadonlyArray<string>): RecoveredCall[] {
+  if (!text.includes('"name"')) return []
   const trimmed = text.trim()
-  if (!(trimmed.startsWith("{") || trimmed.startsWith("[")) || !trimmed.includes('"name"')) return []
+  const wholeIsJson = trimmed.startsWith("{") || trimmed.startsWith("[")
   const out: RecoveredCall[] = []
-  for (const parsed of scanTopLevelJson(trimmed)) {
+  for (const parsed of scanTopLevelJson(text)) {
     const items = Array.isArray(parsed) ? parsed : isRecord(parsed) ? [parsed] : []
     for (const item of items) {
       if (!isRecord(item) || typeof item["name"] !== "string") continue
       const name = resolveToolName(item["name"], names)
       if (!name) continue
+      // Embedded in prose, only a STRUCTURED arguments object counts. A sentence may quote a small
+      // JSON blob that happens to name a tool; requiring `"arguments": {…}` is what keeps that from
+      // becoming an executed call. A whole-message JSON value keeps the flat hermes form.
+      if (!wholeIsJson && !isRecord(item["arguments"]) && !isRecord(item["parameters"])) continue
       out.push({ name, arguments: normalizeArgs(item) })
     }
   }
@@ -174,17 +180,17 @@ function recoverBareJson(text: string, names: ReadonlyArray<string>): RecoveredC
  *
  * A model that emits its call twice makes the whole blob invalid JSON, which is why one `JSON.parse`
  * of the blob cannot see either copy. This walks bracket-balanced slices instead, so a run of calls
- * is read as a run. Skips whitespace and stray commas between values; stops at the first thing that
- * is not a value (prose after a call ends the scan). Strings and escapes are respected, so a `}` in
- * a command string does not close the object early.
+ * is read as a run. Whitespace and prose between values are skipped — a call appended after a
+ * sentence is found, which the old starts-with-`{` gate never reached. Stops only at the end of the
+ * text; strings and escapes are respected, so a `}` in a command string does not close an object early.
  */
 function scanTopLevelJson(text: string): unknown[] {
   const out: unknown[] = []
   let i = 0
   while (i < text.length) {
-    while (i < text.length && /[\s,]/.test(text[i]!)) i++
-    const open = text[i]
-    if (open !== "{" && open !== "[") break
+    while (i < text.length && text[i] !== "{" && text[i] !== "[") i++
+    if (i >= text.length) break
+    const open = text[i]!
     const close = open === "{" ? "}" : "]"
     let depth = 0
     let inString = false

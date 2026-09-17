@@ -119,6 +119,20 @@ describe("recoverToolCallsFromText — bare JSON", () => {
     expect(
       recoverToolCallsFromText('{"name":"read","arguments":{"path":"a"}}\n\nLet me continue.', TOOLS),
     ).toEqual([{ name: "read", arguments: '{"path":"a"}' }]))
+  // The shape that survived every earlier fix (live 2026-09-17): a normal sentence and then the call
+  // object, which the old starts-with-`{` gate never even looked at. This is what ended turns
+  // `finish=stop` with the call stranded in text.
+  test("a call appended AFTER a sentence is recovered", () =>
+    expect(
+      recoverToolCallsFromText(
+        "I'll start by getting oriented: read the progress log. {\"name\":\"bash\",\"arguments\":{\"command\":\"ls\"}}",
+        TOOLS,
+      ),
+    ).toEqual([{ name: "bash", arguments: '{"command":"ls"}' }]))
+  test("a JSON blob in prose that merely names a tool is NOT a call", () =>
+    expect(recoverToolCallsFromText('The event shape is {"name":"bash"} and nothing else.', TOOLS)).toEqual([]))
+  test("an embedded flat-hermes object without arguments is NOT a call", () =>
+    expect(recoverToolCallsFromText('for example {"name":"read","filePath":"a"} right there', TOOLS)).toEqual([]))
 })
 
 describe("recoverToolCallsFromText — XML-ish", () => {
