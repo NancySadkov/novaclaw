@@ -32,7 +32,6 @@ const VALID: Record<string, unknown> = {
   virtualFs: false,
   folder_bookmarks: ["/home/nancy/code"],
   instances: [{ name: "spark", url: "http://127.0.0.1:4097" }],
-  instructions: ["AGENTS.md"],
   disabled_providers: ["openai"],
   username: "nancy",
   server: {},

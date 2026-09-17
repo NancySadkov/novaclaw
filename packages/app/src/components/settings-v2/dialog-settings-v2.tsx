@@ -18,7 +18,6 @@ import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsTrashV2 } from "./trash"
 import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
-import { SettingsSystemPromptV2 } from "./system-prompt"
 import { SettingsAffectiveV2 } from "./affective"
 import { SettingsStrictV2 } from "./strict"
 import { SettingsComputerV2 } from "./computer"
@@ -33,7 +32,6 @@ import { SettingsNudgesV2 } from "./nudges"
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
-  "system-prompt": "advanced",
   tunes: "advanced",
   nudges: "advanced",
   computer: "advanced",
@@ -135,12 +133,6 @@ export const DialogSettings: Component<{
                             <Icon name="speech-bubble" size="large" />
                             {language.t("settings.messengers.title")}
                           </TabsV2.Trigger>
-                          <Show when={tabVisible("system-prompt")}>
-                            <TabsV2.Trigger value="system-prompt">
-                              <Icon name="prompt" size="large" />
-                              {language.t("settings.contextLayout.title")}
-                            </TabsV2.Trigger>
-                          </Show>
                           <Show when={tabVisible("tunes")}>
                             <TabsV2.Trigger value="tunes">
                               <Icon name="sliders" size="large" />
@@ -237,11 +229,6 @@ export const DialogSettings: Component<{
               <TabsV2.Content value="messengers" class="settings-v2-panel">
                 <SettingsMessengersV2 />
               </TabsV2.Content>
-              <Show when={tabVisible("system-prompt")}>
-                <TabsV2.Content value="system-prompt" class="settings-v2-panel">
-                  <SettingsSystemPromptV2 />
-                </TabsV2.Content>
-              </Show>
               <Show when={tabVisible("tunes")}>
                 <TabsV2.Content value="tunes" class="settings-v2-panel">
                   <SettingsTunesV2 />

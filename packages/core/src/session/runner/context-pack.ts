@@ -1187,8 +1187,8 @@ const reportSystemOverrun = (input: {
 /**
  * The `memory` category budget, applied to the TAIL-INJECTED auto-recall message.
  *
- * Auto-recall moved out of the system prompt on 2026-08-05 (see system-compose.ts's ⚠️ header): it is
- * the one per-turn-volatile block, and in the system array it invalidated the server-side prefix cache
+ * Auto-recall moved out of the system prompt on 2026-08-05: it is the one per-turn-volatile block, and
+ * in the (now epoch-frozen) system message it invalidated the server-side prefix cache
  * for the entire request. The budget follows it here rather than being dropped — `input.memoryRecall`
  * is the EXACT wire text the runner injected (provenance prefix included), so the match stays as
  * precise as the old `part.text === memoryRecall` one was.

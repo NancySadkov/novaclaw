@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { ContextTemplate } from "./context-template"
 import { Durable } from "./durable"
 import { DurableItem, DurableItemDefinition, DurablePromptDefinition } from "./component-registry"
-import { SystemCompose } from "./runner/system-compose"
 
 const decodeItem = Schema.decodeUnknownSync(DurableItem)
 const valid = { name: "Report format", value: "Markdown, one heading per section" }
@@ -100,27 +98,6 @@ describe("Durable — the pure half", () => {
   })
 })
 
-describe("Durable — the block, and where it sits", () => {
-  test("an empty area produces NO block, and a filled one carries the owner's own header", () => {
-    expect(SystemCompose.durableSection(undefined)).toBeUndefined()
-    expect(SystemCompose.durableSection("   ")).toBeUndefined()
-    const section = SystemCompose.durableSection("Alpha: 1")!
-    expect(section).toContain("#DURABLE")
-    expect(section).toContain("Alpha: 1")
-    // The framing line names the two tools, because the block's reader is the agent that owns it and
-    // has to know it is editable (AGENTS.md principle 8).
-    expect(section).toContain("memo_set")
-    expect(section).toContain("memo_clear")
-  })
-
-  test("🔴 it is composed immediately after the goal, and it is the only compaction-volatile slot", () => {
-    // The owner's own sketch: `<goal>`, then `#DURABLE`, then the first user prompt. Order is what the
-    // table exists to declare, so this asserts the POSITION rather than trusting the array literal.
-    const names = ContextTemplate.SLOTS.map((slot) => slot.name)
-    expect(names[names.indexOf("goal") + 1]).toBe("durable")
-    const compaction = ContextTemplate.SLOTS.filter((slot) => slot.volatility === "compaction").map((slot) => slot.name)
-    expect(compaction).toEqual(["durable"])
-    // And it rides the SYSTEM channel, so it composes with the other system blocks rather than the tail.
-    expect(ContextTemplate.SLOTS.find((slot) => slot.name === "durable")?.channel).toBe("system")
-  })
-})
+// 🗑️ "the block, and where it sits" stood here. The `#DURABLE` system slot is retired with the
+// per-turn part assembly; the memo area is rendered by `PromptManager.renderMemos` and pinned in
+// `session/runner/prompt-manager.test.ts`.

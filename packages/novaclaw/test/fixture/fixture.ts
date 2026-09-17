@@ -370,7 +370,7 @@ const applyConfigScoped = (config: Partial<Config.Info>) =>
  * Async flavour: build the store layers AND the Config service in the SHARED memo map.
  *
  * `tmpdir()`'s `config` callers are the in-process HTTP-server suites (`test/server/**`: `formatter`
- * 23×, plus `username`/`instructions` in the compression suite and one `references`). Their handler
+ * 23×, plus `username`/`disabled_providers` in the compression suite and one `references`). Their handler
  * context is built by `HttpApiApp.webHandler` through the SHARED memo map
  * (`@novaclaw/core/effect/memo-map`), so provisioning has to reach THAT graph. Three properties of
  * the code below are load-bearing rather than incidental:
@@ -443,7 +443,7 @@ type Routed = {
  * (`settings.set(key, mergePatch(current[key], value))`) and the layered stores fold the incoming
  * fragment onto the stored layers (`collapseLayers`) — so a provision has to be UNDO-then-apply or
  * each test inherits its predecessor's document: the compression suite's bare `{ formatter: false }`
- * test would still be served the previous test's `username` and 50 `instructions`, putting the
+ * test would still be served the previous test's `username` and 50 `disabled_providers`, putting the
  * response over the 1024-byte threshold it asserts it is under. For a provider the same shape is
  * worse than stale bytes — the previous test's `api.url` survives the fold, so a later test points
  * at an endpoint it never configured.

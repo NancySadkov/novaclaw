@@ -274,25 +274,22 @@ it.instance("serves providers/model from the catalog store and agents/default_ag
   }),
 )
 
-it.instance("routes every updateConfig key into the stores — instructions + provider filters included", () =>
+it.instance("routes every updateConfig key into the stores — provider filters included", () =>
   Effect.gen(function* () {
-    // Step 9: instructions + disabled_providers joined SETTINGS_KEYS — the router
-    // consumes them (no legacy jsonc fallback remains) and the service serves them back.
+    // Every Config.Info key routes (no legacy jsonc fallback remains) and the service serves it back.
+    // `instructions` left the schema 2026-09-17 with the AGENTS.md auto-embed.
     // The HTTP route hands the router a DECODED Config.Info instance — mirror that here.
     const consumed = yield* withStores(
       ConfigStoreWrite.apply(
         Schema.decodeUnknownSync(ConfigV2.Info)({
-          instructions: ["docs/rules.md"],
           disabled_providers: ["openai"],
         }),
       ),
     )
-    expect(consumed.has("instructions")).toBe(true)
     expect(consumed.has("disabled_providers")).toBe(true)
     yield* Config.use.invalidate()
 
     const config = yield* Config.use.get()
-    expect(config.instructions).toEqual(["docs/rules.md"])
     expect(config.disabled_providers).toEqual(["openai"])
   }),
 )
@@ -308,13 +305,12 @@ it.instance("gets config directories", () =>
 
 it.effect("imports the global-dir jsonc into the stores on first read — and never reads it again", () =>
   withGlobalConfig(
-    { config: { model: "seeded/model", username: "seeded-user", instructions: ["seeded.md"] }, name: "novaclaw.jsonc" },
+    { config: { model: "seeded/model", username: "seeded-user" }, name: "novaclaw.jsonc" },
     ({ dir }) =>
       Effect.gen(function* () {
         const first = yield* Config.use.get().pipe(provideInstanceEffect(dir))
         expect(first.model).toBe("seeded/model")
         expect(first.username).toBe("seeded-user")
-        expect(first.instructions).toEqual(["seeded.md"])
 
         // Delete the file and invalidate: the values survive — they are STORE truth now,
         // the file was only the one-time import source.
@@ -322,7 +318,6 @@ it.effect("imports the global-dir jsonc into the stores on first read — and ne
         yield* Config.use.invalidate()
         const second = yield* Config.use.get().pipe(provideInstanceEffect(dir))
         expect(second.model).toBe("seeded/model")
-        expect(second.instructions).toEqual(["seeded.md"])
 
         // And a LATER file edit is invisible at runtime — jsonc is not a runtime source.
         yield* writeConfigEffect(dir, schemaConfig({ model: "edited/model" }), "novaclaw.jsonc")
@@ -333,18 +328,9 @@ it.effect("imports the global-dir jsonc into the stores on first read — and ne
   ),
 )
 
-it.effect("import concats + dedups instructions across the global dir and NOVACLAW_CONFIG_CONTENT", () =>
-  withGlobalConfig({ config: { instructions: ["dup.md", "global-only.md"] }, name: "novaclaw.jsonc" }, ({ dir }) =>
-    withProcessEnv(
-      "NOVACLAW_CONFIG_CONTENT",
-      JSON.stringify(schemaConfig({ instructions: ["dup.md", "content-only.md"] })),
-      Effect.gen(function* () {
-        const config = yield* Config.use.get().pipe(provideInstanceEffect(dir))
-        expect(config.instructions).toEqual(["dup.md", "global-only.md", "content-only.md"])
-      }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(CrossSpawnSpawner.defaultLayer)),
-    ),
-  ),
-)
+// 🗑️ "import concats + dedups instructions across the global dir and NOVACLAW_CONFIG_CONTENT" stood
+// here. `instructions` was retired 2026-09-17 with the AGENTS.md auto-embed; the multi-document
+// concat rule it pinned no longer exists.
 
 it.instance("a project-directory jsonc is NOT a runtime config source", () =>
   Effect.gen(function* () {

@@ -32,9 +32,9 @@ import { SettingsConfigStore } from "./settings-config-store"
 // `updateConfig` contract is patch-MERGE over the effective config; this module routes each
 // top-level key of such a patch into its owning SQLite store — and mirrors the same keys back
 // over the served view so the UI reads what it wrote. Since step 9 EVERY Config.Info key
-// routes (`instructions` + `disabled_providers` joined SETTINGS_KEYS); there is no
-// jsonc fallback anymore — and a key that routes nowhere is now REFUSED BY NAME rather than
-// ignored (`NOT_ROUTED_KEYS` + `unroutedKeys` below).
+// routes; there is no jsonc fallback anymore — and a key that routes nowhere is now REFUSED BY NAME
+// rather than ignored (`NOT_ROUTED_KEYS` + `unroutedKeys` below). `instructions` left SETTINGS_KEYS
+// 2026-09-17 with the AGENTS.md auto-embed; it had no reader left.
 //
 // ⚠️ "Every key routes" was FALSE for `models` until v0.2.0-prep B7: the models-primary flat map
 // (`Config.Info.models`) decoded cleanly, routed nowhere and

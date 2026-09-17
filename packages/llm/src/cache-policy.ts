@@ -44,8 +44,8 @@ const resolve = (policy: CachePolicy | undefined): CachePolicyObject => {
 // An implicit, content-addressed prefix cache has no breakpoints to place; the
 // levers that DO work on that path are (a) `prompt_cache_key`, lowered by
 // `protocols/openai-chat.ts` and `openai-responses.ts`, and (b) simply not
-// mutating the front of the prompt — which is a caller-side property, enforced
-// in `core/session/runner/system-compose.ts`. Measured on a local DeepSeek V4
+// mutating the front of the prompt — which is a caller-side property, enforced by
+// the epoch-frozen `core/session/runner/prompt-manager.ts`. Measured on a local DeepSeek V4
 // Flash server: one edited token near the front of a 13.5K-token prompt turns a
 // 0.3s time-to-first-token back into 12.9s, and no hint here can change that.
 const RESPECTS_INLINE_HINTS = new Set(["anthropic-messages"])

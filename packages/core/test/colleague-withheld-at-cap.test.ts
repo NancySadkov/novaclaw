@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { ColleagueTool } from "@novaclaw/core/tool/colleague"
-import { SystemCompose } from "@novaclaw/core/session/runner/system-compose"
 
 /**
  * WITHHELD AT THE CAP, NOT ADVERTISED AND REFUSED.
@@ -82,37 +81,7 @@ describe("the variant mechanism itself", () => {
   })
 })
 
-describe("and the prompt says WHY", () => {
-  test("🔴 a capped turn is told the ops are missing on purpose", () => {
-    // Withholding alone teaches nothing: a model that cannot see `ask` does not conclude "the chain
-    // is too long", it concludes nothing and tries something else. The refusal text used to carry
-    // that lesson, and withholding removes the refusal — so the sentence has to move here.
-    const text = SystemCompose.delegationSection({
-      canSpawn: false,
-      canAddressColleagues: true,
-      colleaguesAtCap: true,
-    })
-    expect(text).toBeDefined()
-    expect(text!).toMatch(/cannot ASK a colleague/i)
-    // Names the way out, which is the same remedy the bound's own refusal names.
-    expect(text!).toContain("user")
-    // …and says what is still possible, so the absence does not read as the tool being broken.
-    expect(text!).toContain("list")
-  })
-
-  test("an uncapped turn is told none of it", () => {
-    const text = SystemCompose.delegationSection({ canSpawn: false, canAddressColleagues: true })
-    expect(text!).not.toMatch(/cannot ASK a colleague/i)
-  })
-
-  test("a turn with no colleague access at all is not told about a cap", () => {
-    // The cap is a fact about a chain, not about permission. Explaining it to a session that could
-    // never address anybody is noise that reads as a denial.
-    const text = SystemCompose.delegationSection({
-      canSpawn: true,
-      canAddressColleagues: false,
-      colleaguesAtCap: true,
-    })
-    expect(text ?? "").not.toMatch(/cannot ASK a colleague/i)
-  })
-})
+// 🗑️ "and the prompt says WHY" stood here, testing `SystemCompose.delegationSection`'s cap sentence.
+// The section is retired with the per-turn part assembly; the one prompt's delegation paragraph is
+// fixed. Note the cap sentence was already inert in the runner — it composed `colleaguesAtCap: false`
+// to keep live hop pressure out of the frozen prefix — so nothing reachable was lost.

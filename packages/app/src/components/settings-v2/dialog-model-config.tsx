@@ -315,8 +315,10 @@ export const ModelConfigScreen: Component<{
     }
     // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
     // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
-    // over the wire — and the runtime treats "" as inert (system-compose.ts). Never write "" for a
-    // model that never had one.
+    // over the wire, and never write "" for a model that never had one.
+    // ⚠️ RETIRED FROM THE PROMPT (owner, 2026-09-17): the one `PromptManager` prompt does not carry a
+    // per-model pre-prompt, so this value is stored but never sent. Kept as a control pending the
+    // owner's decision on whether to keep, fold, or remove the field.
     const pre = form.prePrompt.trim()
     if (pre) model.prePrompt = pre
     else if (saved.prePrompt !== undefined) model.prePrompt = ""

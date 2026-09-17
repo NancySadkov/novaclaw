@@ -2117,47 +2117,9 @@ export const dict = {
   // 🔴 Owner, 2026-09-17: the shared persona editor that stood here is GONE — a global working style
   // composed around every agent contradicted the role of a roleplayer, a chat companion or an artist.
   // Each colleague's Job instructions box is the single source now.
-  // ── the layout ───────────────────────────────────────────────────────────────────────────────────
-  "settings.contextLayout.title": "Where everything goes",
-  "settings.contextLayout.description":
-    "The {{count}} named parts of a request, in the order they are sent. The chat itself sits between the system blocks and the tail.",
-  "settings.contextLayout.description.more":
-    "The order is fixed by the kernel, on purpose: editable text must not be able to bury the reporting line or the folder rules, and reordering would also throw away a model server's cached prompt. What you CAN change is each part's content — the second column says where. Tool schemas are a separate field, not a block, so they are not listed.",
-  "settings.contextLayout.origin.settings": "This instance's settings",
-  "settings.contextLayout.origin.agent": "the colleague's or chat's settings",
-  "settings.contextLayout.origin.model": "Settings → Models → Configure",
-  "settings.contextLayout.origin.files": "AGENTS.md",
-  "settings.contextLayout.origin.project": "the rule for this folder, by permission mode",
-  "settings.contextLayout.origin.session": "this chat, through its own tools",
-  "settings.contextLayout.origin.auto": "supplied automatically",
-  "settings.contextLayout.channel.system": "in the system prompt",
-  "settings.contextLayout.channel.tools": "as tool schemas",
-  "settings.contextLayout.channel.messages": "as a message in the chat",
-  "settings.contextLayout.channel.tail": "with the last message",
-  "settings.contextLayout.volatility.epoch": "Frozen until the context is rebuilt (a compaction).",
-  "settings.contextLayout.volatility.compaction": "Refreshed only after a compaction.",
-  "settings.contextLayout.volatility.turn": "Rebuilt every turn; changing it is free.",
-  "settings.contextLayout.slot.modelPrePrompt": "Correction for this model",
-  "settings.contextLayout.slot.expertiseHint": "Plain-language stance",
-  "settings.contextLayout.slot.taxonomyHint": "Small-model scaffold",
-  "settings.contextLayout.slot.systemPromptOverride": "This chat's system override",
-  "settings.contextLayout.slot.agentIdentity": "Colleague's name and personality",
-  "settings.contextLayout.slot.agentSystem": "Job instructions",
-  "settings.contextLayout.slot.organization": "Reporting line",
-  "settings.contextLayout.slot.toolDiscovery": "Note that the tool list is partial",
-  "settings.contextLayout.slot.perception": "What this model can see",
-  "settings.contextLayout.slot.delegation": "Who else can take work",
-  "settings.contextLayout.slot.memoryStance": "What this colleague keeps",
-  "settings.contextLayout.slot.projectScope": "Folder rules",
-  "settings.contextLayout.slot.workspace": "Scratch folder",
-  "settings.contextLayout.slot.base": "Environment and standing instructions",
-  "settings.contextLayout.slot.goal": "Durable goal",
-  "settings.contextLayout.slot.durable": "Durable area",
-  "settings.contextLayout.slot.projectGrounding": "What the folder looks like now",
-  "settings.contextLayout.slot.memoryRecall": "Recalled memories",
-  "settings.contextLayout.slot.todoReminder": "Plan reminder",
-  "settings.contextLayout.slot.toolCatalogueUpdate": "Tool-list changes",
-  "settings.contextLayout.slot.maxSteps": "Step-budget notice",
+  // 🗑️ The "Where everything goes" layout tab went with the slot table (owner, 2026-09-17): the prompt
+  // is one `PromptManager` render, not the ordered block array it described. The prompt that was sent
+  // is shown and exported from a chat's Context Inspect instead.
   "settings.profile.title": "Profile",
   "settings.profile.description":
     "Tell the assistant who you are. When enabled, it can look your profile up on demand through a tool — your name and background stay out of every prompt until it actually needs them.",

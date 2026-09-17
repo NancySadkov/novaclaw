@@ -4455,7 +4455,6 @@ export type ConfigInfo = {
   commands?: {
     [key: string]: ConfigV2Command
   }
-  instructions?: Array<string>
   references?: {
     [key: string]: string | ConfigV2ReferenceGit | ConfigV2ReferenceLocal
   }

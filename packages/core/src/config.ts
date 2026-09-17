@@ -560,9 +560,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   commands: Schema.Record(Schema.String, ConfigCommand.Info).pipe(Schema.optional).annotate({
     description: "Named slash command definitions",
   }),
-  instructions: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
-    description: "Additional paths or URLs supplying ambient instructions",
-  }),
   references: ConfigReference.Info.pipe(Schema.optional).annotate({
     description: "Named local directories or Git repositories available as external context",
   }),

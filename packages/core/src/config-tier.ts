@@ -231,8 +231,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   experimental: "privileged",
   // `command: string[]`, executed over the user's files. An execution surface.
   formatter: "privileged",
-  // Paths or URLs whose contents become ambient instructions in the prompt.
-  instructions: "privileged",
   // A peer URL plus its token. Ruling 5: the peer token is ACCOUNT-EQUIVALENT, and `config.ts`
   // documents the entry as granting full API access — sessions, registry, config.
   instances: "privileged",

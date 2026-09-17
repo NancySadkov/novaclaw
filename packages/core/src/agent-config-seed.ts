@@ -38,12 +38,28 @@ const SEEDED_OFFICERS: ReadonlyArray<{
    * harness-authored system prompt.
    */
   readonly shortChat?: boolean
+  /** The roster kind (owner, 2026-09-17). Absent = `agent`. */
+  readonly kind?: "agent" | "chat" | "human"
+  /** Keep this entity out of the chat picker while it stays a roster/profile row. */
+  readonly hidden?: boolean
   readonly permissions?: ReadonlyArray<{
     readonly action: string
     readonly resource: string
     readonly effect: "allow"
   }>
 }> = [
+  {
+    // 🔴 THE OWNING USER, as a first-class entity (owner, 2026-09-17). A `human` never runs a model
+    // turn: `AgentV2.kindOf` is `human`, so its prompt is empty and the derived `shortChat` posture
+    // withdraws every tool. Seeded HIDDEN so it is a directory/profile row rather than a chat target
+    // — a colleague you can `colleague message` is not the same thing as the person you are. Unhide
+    // it in Contacts if you want it on the main roster.
+    id: "owner",
+    name: "Owner",
+    title: "Instance Owner",
+    kind: "human",
+    hidden: true,
+  },
   {
     id: "xenia",
     name: "Xenia",
@@ -154,10 +170,12 @@ export const seedFromDirectory = (globalConfigDir: string) =>
               ? {}
               : { system: `${OfficerPrompt.DEFAULT_OFFICER_PROMPT}\n\n${officer.brief}` }),
             description: `${officer.name}, ${officer.title}.`,
-            // A chat stance carries no memory: recall is the other half of what makes a companion
-            // turn slow, and `shortChat` already denies the tools that would use it.
-            memory: officer.shortChat ? "none" : "own",
+            // A chat stance (and any human) carries no memory: recall is the other half of what makes
+            // a companion turn slow, and `shortChat` already denies the tools that would use it.
+            memory: officer.shortChat || officer.kind === "human" ? "none" : "own",
             mode: "primary",
+            ...(officer.kind === undefined ? {} : { kind: officer.kind }),
+            ...(officer.hidden === true ? { hidden: true } : {}),
             ...(officer.shortChat ? { shortChat: true } : {}),
             ...(officer.permissions === undefined ? {} : { permissions: officer.permissions }),
           }),

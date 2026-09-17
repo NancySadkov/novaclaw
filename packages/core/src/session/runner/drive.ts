@@ -113,9 +113,9 @@ const STAGNANT_ROUNDS_BEFORE_SLEEP = 6
  *
  * ⚠️ **It exists because the same question is asked twice** — once by the drain, to decide whether a
  * session has stalled against its objective, and once when the system prompt is composed, to show the
- * model what it is for. Two copies of a precedence are two answers that drift (the exact defect
- * `system-compose.ts`'s own header records for its block list), and a session steering by one goal
- * while being shown another is worse than either alone.
+ * model what it is for. Two copies of a precedence are two answers that drift — the defect that
+ * retired the hand-kept prompt block lists — and a session steering by one goal while being shown
+ * another is worse than either alone.
  */
 export const assignedGoal = (input: {
   readonly officerGoal: string | undefined

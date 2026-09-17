@@ -55,9 +55,10 @@ import { makeLocationNode } from "./effect/app-node"
  *
  * ⚠️ **Volatility.** These lines ride the `<env>` block, which `system-context/builtins.ts` keeps as an
  * Effect precisely so `SystemContext.reconcile` can emit a delta in the message TAIL rather than
- * re-rendering the prompt prefix — see `session/runner/system-compose.ts`'s per-turn-volatility law
- * (one token edited near the front measured 0.3 s → 12.9 s TTFT). A server that flaps therefore costs
- * an update line, never a re-prefill. Do not move this text into a `composeSystemParts` part.
+ * re-rendering the prompt prefix (one token edited near the front measured 0.3 s → 12.9 s TTFT). A
+ * server that flaps therefore costs an update line, never a re-prefill. The one prompt is an
+ * epoch-frozen `session/runner/prompt-manager.ts` render, so do NOT move this text into the prompt:
+ * it would then either go stale for the epoch or churn the prefix.
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 export interface Interface {
@@ -159,7 +160,7 @@ export const UNREADABLE = ["MCP server health could not be read for this session
  *
  * Sorted by name so two consecutive turns over an unchanged server set render byte-identically: an
  * unstable ORDER is indistinguishable from a real change to `SystemContext.reconcile` and would spend
- * an update line per turn saying nothing — the trap `memoryRecall` fell into (see system-compose.ts).
+ * an update line per turn saying nothing — the trap `memoryRecall` fell into before it moved to the tail.
  */
 export const lines = (servers: ReadonlyArray<ServerHealth>): ReadonlyArray<string> => {
   const result: string[] = []
