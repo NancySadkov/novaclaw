@@ -222,12 +222,13 @@ export function SessionContextTab() {
   }
 
   const exportTranscript = () => {
-    const raw = promptSource.data?.latest
-    const body = serializeSessionTranscript(messages())
-    const contents = raw
-      ? `===== RAW PROVIDER PROMPT (latest request) =====\n\n${raw}\n\n===== TRANSCRIPT =====\n\n${body}`
-      : body
-    downloadPlainText(sessionExportFilename(officerName(), "transcript"), contents)
+    // The raw captured request JSON, with nothing added. Falls back to the transcript records only
+    // before a turn has been captured at all.
+    const raw = promptSource.data?.latest ?? promptSource.data?.initial
+    downloadPlainText(
+      sessionExportFilename(officerName(), "request"),
+      raw ?? serializeSessionTranscript(messages()),
+    )
   }
 
   let scroll: HTMLDivElement | undefined
