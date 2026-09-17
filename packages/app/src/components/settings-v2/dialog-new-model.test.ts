@@ -110,6 +110,32 @@ describe("Add-models — the local-runtime probe wiring", () => {
   })
 })
 
+describe("Add-models — the default selection is the FIRST model, not the whole catalog", () => {
+  test("🔴 a probe preselects exactly one model", () => {
+    // OpenRouter-style endpoints list hundreds of ids. Preselecting them all made "Find models" an
+    // import-the-catalog button: hundreds of config entries and a Models list nobody asked for.
+    expect(dialog).toContain("const pickFirst = (models: readonly string[])")
+    expect(dialog).toMatch(/pickFirst\(r\.models\)/)
+    // The old behaviour must not come back at either call site.
+    expect(code).not.toMatch(/for \(const id of r\.models\) setPicked\(id, true\)/)
+    expect(code).not.toMatch(/for \(const id of outcome\.models\) setPicked\(id, true\)/)
+  })
+
+  test("the local sweep's adopt uses the same one-model default", () => {
+    expect(dialog).toMatch(/pickFirst\(outcome\.models\)/)
+  })
+
+  test("a huge list is searchable and bulk-toggleable", () => {
+    // The controls that make the first-model default usable on a 300-model catalog: narrow the list,
+    // then add a family in one go — or clear everything.
+    expect(dialog).toContain("visibleModels")
+    expect(dialog).toContain("selectAllVisible")
+    expect(dialog).toContain("clearPicked")
+    expect(dialog).toContain('t("settings.models.new.filter")')
+    expect(dialog).toContain('t("settings.models.new.selected"')
+  })
+})
+
 describe("Add-models — the module the dialog imports is browser-safe", () => {
   test("`@novaclaw/core/config/local-runtime` loads under the app's conditions and pulls no node builtins", () => {
     // It is imported into the renderer bundle. `provider-preset.ts` (its neighbour) drags in `effect`,

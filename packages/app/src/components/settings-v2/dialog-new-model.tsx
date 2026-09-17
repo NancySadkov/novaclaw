@@ -100,6 +100,7 @@ export const DialogNewModel: Component<{
   const [probing, setProbing] = createSignal(false)
   const [result, setResult] = createSignal<ProbeResult>()
   const [picked, setPicked] = createStore<Record<string, boolean>>({})
+  const [filter, setFilter] = createSignal("")
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [managed, setManaged] = createSignal<LocalModelStatus>()
@@ -211,6 +212,32 @@ export const DialogNewModel: Component<{
   const validID = () => PROVIDER_ID.test(effectiveProviderID())
   const canDiscover = () => !!form.baseURL.trim() && validID() && !probing()
   const pickedIDs = () => discoveredModels().filter((id) => picked[id])
+  /**
+   * 🔴 ONLY the first discovered model is preselected (owner, 2026-09-17).
+   *
+   * An OpenRouter-style endpoint serves hundreds of ids, and preselecting them all turned "find
+   * models" into "import the whole catalog" — a write of hundreds of entries and a Models list nobody
+   * asked for, from a button whose label promised a search. Selecting exactly one keeps the action the
+   * user pressed (add a model) the size of the intent; every other model is one click away, and the
+   * filter and bulk controls below are what make a huge list navigable.
+   */
+  const pickFirst = (models: readonly string[]) => {
+    const first = models[0]
+    if (first !== undefined) setPicked(first, true)
+  }
+  /** The models the filter lets through. Empty filter = the whole discovered list. */
+  const visibleModels = () => {
+    const query = filter().trim().toLowerCase()
+    return query === "" ? discoveredModels() : discoveredModels().filter((id) => id.toLowerCase().includes(query))
+  }
+  const selectedCount = () => pickedIDs().length
+  /** Bulk-add what is ON SCREEN, so "filter then select all" is a sane way to pick a family. */
+  const selectAllVisible = () => {
+    for (const id of visibleModels()) setPicked(id, true)
+  }
+  const clearPicked = () => {
+    for (const id of discoveredModels()) setPicked(id, false)
+  }
   const visiblePresets = () => Object.entries(presets()).filter(([, entry]) => entry.hidden !== true)
   const discoveredLimits = (id: string) => result()?.limits?.[id]
   const tokenLabel = (tokens: number) =>
@@ -315,7 +342,8 @@ export const DialogNewModel: Component<{
         models: outcome.models,
         ...(outcome.limits === undefined ? {} : { limits: outcome.limits }),
       })
-      for (const id of outcome.models) setPicked(id, true)
+      setFilter("")
+      pickFirst(outcome.models)
       setStep("choose")
       return
     }
@@ -343,7 +371,8 @@ export const DialogNewModel: Component<{
       setError(statusMessage(r) || t("settings.models.new.noModels"))
       return
     }
-    for (const id of r.models) setPicked(id, true)
+    setFilter("")
+    pickFirst(r.models)
     setStep("choose")
   }
 
@@ -879,11 +908,56 @@ export const DialogNewModel: Component<{
         <Show when={step() === "choose"}>
           <div class="flex flex-col gap-2">
             <BackButton to="connect" />
-            <label class="text-[12px] font-medium text-v2-text-text-faint">
-              {t("settings.models.new.pick", { count: discoveredModels().length })}
-            </label>
+            <div class="flex items-baseline justify-between gap-2">
+              <label class="text-[12px] font-medium text-v2-text-text-faint">
+                {t("settings.models.new.pick", { count: discoveredModels().length })}
+              </label>
+              <span class="shrink-0 text-[11px] tabular-nums text-v2-text-text-faint">
+                {t("settings.models.new.selected", {
+                  selected: selectedCount(),
+                  count: discoveredModels().length,
+                })}
+              </span>
+            </div>
+            {/* Teach the default rather than leaving an unexplained single checkbox. */}
+            <span class="text-[11px] leading-snug text-v2-text-text-faint">
+              {t("settings.models.new.pickHint")}
+            </span>
+            <Show when={discoveredModels().length > 8}>
+              <TextInputV2
+                appearance="base"
+                value={filter()}
+                onInput={(event) => setFilter(event.currentTarget.value)}
+                placeholder={t("settings.models.new.filter")}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+              />
+            </Show>
+            <div class="flex items-center gap-3 text-[11px] font-medium">
+              <button
+                type="button"
+                class="text-v2-text-text-accent hover:underline"
+                onClick={selectAllVisible}
+              >
+                {t("settings.models.new.selectAll")}
+              </button>
+              <button
+                type="button"
+                class="text-v2-text-text-muted hover:text-v2-text-text-base"
+                onClick={clearPicked}
+              >
+                {t("settings.models.new.clear")}
+              </button>
+            </div>
             <div class="-mx-1 flex max-h-[36vh] flex-col gap-1.5 overflow-y-auto overflow-x-hidden px-1">
-              <For each={discoveredModels()}>
+              <Show when={discoveredModels().length > 0 && visibleModels().length === 0}>
+                <span class="px-3 py-2 text-[12px] text-v2-text-text-faint">
+                  {t("settings.models.new.filterEmpty")}
+                </span>
+              </Show>
+              <For each={visibleModels()}>
                 {(id) => (
                   <button
                     type="button"
