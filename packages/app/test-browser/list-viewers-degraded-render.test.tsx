@@ -14,7 +14,6 @@ import { SettingsProvider } from "@/context/settings"
 import { SettingsTrashV2 } from "@/components/settings-v2/trash"
 import { FilesPage } from "@/pages/files"
 import { CalendarPage } from "@/pages/calendar"
-import { SkillsPage } from "@/pages/skills"
 import { RecipesPage } from "@/pages/recipes"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
@@ -66,7 +65,6 @@ const FILE_ROWS = [
 const NOTE_ROWS = [
   { name: "shopping-list.md", path: "shopping-list.md", absolute: `${HOME}/notes/shopping-list.md`, type: "file", ignored: false },
 ]
-const SKILL_ROWS = [{ name: "brew-tea", description: "Makes a pot", location: `${HOME}/.novaclaw/skills/brew-tea.md`, content: "Boil water." }]
 const RECIPE_ROWS = [
   { slug: "hundred-digits", name: "Hundred digits of pi", description: "A Machin-like formula", prompt: "Compute it.", assets: [], builtin: true, updatedAt: 1 },
 ]
@@ -113,9 +111,6 @@ const serverCtx = {
       v2: {
         directory: {
           browse: async () => (faulty("list") ? boom() : { data: blank("list") ? [] : [...FILE_ROWS, ...NOTE_ROWS] }),
-        },
-        skill: {
-          list: async () => (faulty("skills") ? boom() : { data: { data: blank("skills") ? [] : SKILL_ROWS } }),
         },
         agent: { list: async () => ({ data: { data: [] } }) },
       },
@@ -279,14 +274,6 @@ const VIEWERS: readonly Viewer[] = [
     failure: "Could not read your scheduled tasks",
     empty: "No tasks yet",
     loaded: "Water the plants",
-  },
-  {
-    title: "Skills",
-    page: () => <SkillsPage />,
-    target: "skills",
-    failure: en["skills.loadFailed"],
-    empty: en["skills.empty.none"],
-    loaded: "brew-tea",
   },
   {
     title: "Recipes",

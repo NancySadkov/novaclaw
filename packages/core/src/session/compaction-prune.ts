@@ -82,12 +82,14 @@ export const PROTECT_RECENT_TURNS = 2
 export const MIN_RECLAIM_TOKENS = 20_000
 
 /**
- * Tools whose output prune never touches — and never COUNTS either, so a skill's manual cannot
- * consume the 40k protection budget on behalf of the tool results around it. `skill` output is a
- * loaded instruction set the agent is expected to keep following for the rest of the task; erasing
- * it removes capability rather than stale evidence.
+ * Tools whose output prune never touches — and never COUNTS either, so one exempt result cannot
+ * consume the 40k protection budget on behalf of the tool results around it.
+ *
+ * ⚠️ Empty since 2026-09-17: the single entry was `skill`, and the skill tool is retired. The
+ * mechanism stays because a future tool whose output is loaded instruction rather than stale
+ * evidence needs exactly this treatment, and re-deriving it on that day is the point of the list.
  */
-export const EXEMPT_TOOLS: readonly string[] = ["skill"]
+export const EXEMPT_TOOLS: readonly string[] = []
 
 /** What an erased tool result reads as, to the model and in the transcript. */
 export const ERASED_NOTICE = "[Tool output erased to reclaim context. The call and its arguments are unchanged.]"

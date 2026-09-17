@@ -26,7 +26,7 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  *
  * Deliberately EXCLUDED:
  * - `model` + `default_agent` — owned by the Catalog/AgentConfig stores (steps 1-2).
- * - `agents`/`commands`/`skills`/`references`/`plugins`/`providers` — per-subsystem stores.
+ * - `agents`/`commands`/`references`/`plugins`/`providers` — per-subsystem stores.
  *
  * Step 9 moved the last three V1-side keys in: `instructions` CONCAT+dedups across documents
  * (the V1 service's historical Set union); `disabled_providers` is whole-value (last document
@@ -95,17 +95,10 @@ export const SETTINGS_KEYS = [
   // Machine-written reconnect circuit shared by fresh session workers. A successful request clears
   // its row; failures retain their exponential backoff across processes and app restarts.
   "provider_recovery",
-  // Per-skill invocation choices — the skill-invocation controls. A settings key
-  // rather than a per-subsystem store: it is a sparse map of user DECISIONS, not a resource the
-  // skill loader materialises, and `command/list.ts` reads it through `config.entries()` on every
-  // list — so it needs no reload trigger, unlike `skills` (the discovery sources) next to it.
-  // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
-  // then bricks the next boot when the synthetic document fails to decode.
-  "skill_invocation",
-  // Which installed pre-action policies run (AGENTS.md design principle 11). A
-  // settings key for `skill_invocation`'s reason: a sparse map of user DECISIONS, not a resource
-  // any subsystem materialises, and `tool-policy-gate.ts` reads it through `config.entries()` on
-  // every screened call — so there is nothing to invalidate and no reload trigger to register.
+  // Which installed pre-action policies run (AGENTS.md design principle 11). A settings key: a
+  // sparse map of user DECISIONS, not a resource any subsystem materialises, and
+  // `tool-policy-gate.ts` reads it through `config.entries()` on every screened call — so there is
+  // nothing to invalidate and no reload trigger to register.
   // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
   // then bricks the next boot when the synthetic document fails to decode.
   "tool_policy",

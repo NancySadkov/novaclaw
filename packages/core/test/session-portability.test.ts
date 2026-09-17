@@ -12,8 +12,8 @@ import { SessionPortability } from "@novaclaw/core/session/portability"
  *     signature on every later turn, so dropping it turns a legal import into one the provider refuses.
  */
 
-/** A representative slice of an opencode V2 export, including a signed (encrypted) thinking block. */
-const opencodeDocument = {
+/** A representative slice of a foreign V2 export, including a signed (encrypted) thinking block. */
+const foreignDocument = {
   info: { id: "ses_source", agent: "build", title: "Reverse engineering functions", model: { id: "m", providerID: "p" } },
   messages: [
     { id: "msg_u", type: "user", time: { created: 1 }, text: "do the thing", files: [], agents: [] },
@@ -21,7 +21,7 @@ const opencodeDocument = {
       id: "msg_a",
       type: "assistant",
       agent: "build",
-      model: { id: "muse", providerID: "opencode", variant: "default" },
+      model: { id: "muse", providerID: "vendor", variant: "default" },
       time: { created: 2, completed: 5 },
       content: [
         {
@@ -52,8 +52,8 @@ const opencodeDocument = {
 }
 
 describe("SessionPortability", () => {
-  test("reads an opencode export into NovaClaw-shaped messages", () => {
-    const parsed = SessionPortability.parse(opencodeDocument)
+  test("reads a foreign export into NovaClaw-shaped messages", () => {
+    const parsed = SessionPortability.parse(foreignDocument)
     expect(parsed.title).toBe("Reverse engineering functions")
     expect(parsed.agent).toBe("build")
     expect(parsed.messages.map((message) => message.type)).toEqual(["user", "assistant"])
@@ -66,13 +66,13 @@ describe("SessionPortability", () => {
       content: Array<Record<string, unknown>>
     }
     expect(assistant.agent).toBe("build")
-    expect(assistant.model).toEqual({ providerID: "opencode", id: "muse" })
+    expect(assistant.model).toEqual({ providerID: "vendor", id: "muse" })
     expect(assistant.content.map((part) => part.type)).toEqual(["reasoning", "text", "tool"])
     // `step-start` is an unknown part kind: dropped, never guessed at.
   })
 
   test("🔴 an encrypted reasoning trace keeps its providerMetadata verbatim", () => {
-    const assistant = SessionPortability.parse(opencodeDocument).messages[1] as {
+    const assistant = SessionPortability.parse(foreignDocument).messages[1] as {
       content: Array<{ type: string; text?: string; providerMetadata?: Record<string, Record<string, unknown>> }>
     }
     const reasoning = assistant.content.find((part) => part.type === "reasoning")!
@@ -109,7 +109,7 @@ describe("SessionPortability", () => {
   })
 
   test("a completed tool keeps its input, text content and structured metadata", () => {
-    const assistant = SessionPortability.parse(opencodeDocument).messages[1] as {
+    const assistant = SessionPortability.parse(foreignDocument).messages[1] as {
       content: Array<{ type: string; name?: string; state?: Record<string, unknown>; time?: Record<string, number> }>
     }
     const tool = assistant.content.find((part) => part.type === "tool")!
@@ -128,14 +128,14 @@ describe("SessionPortability", () => {
     // schema. Decoding here is what stops a mapping mistake from becoming a failed import at the
     // endpoint — the server validates, but a unit test names WHICH shape was wrong.
     const decode = Schema.decodeUnknownSync(SessionMessage.Message)
-    for (const message of SessionPortability.parse(opencodeDocument).messages) {
+    for (const message of SessionPortability.parse(foreignDocument).messages) {
       const decoded = decode({ ...message, id: SessionMessage.ID.create() }) as { type: string }
       expect(decoded.type).toBe(message.type as string)
     }
   })
 
   test("our own export round-trips through the reader", () => {
-    const parsed = SessionPortability.parse(opencodeDocument)
+    const parsed = SessionPortability.parse(foreignDocument)
     const exported = SessionPortability.exportDocument({ info: { title: parsed.title }, messages: parsed.messages })
     const again = SessionPortability.parse(exported)
     expect(again.messages).toEqual(parsed.messages)

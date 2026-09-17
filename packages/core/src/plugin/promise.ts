@@ -98,10 +98,6 @@ export function fromPromise(plugin: Plugin): EffectPlugin {
             declare: declare(host.reference),
             reload: () => run(host.reference.reload()),
           },
-          skill: {
-            declare: declare(host.skill),
-            reload: () => run(host.skill.reload()),
-          },
           tool: {
             register: (name, definition) => register(host.tool.register(name, definition)),
           },

@@ -4,7 +4,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
 import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
-import { SkillV2 } from "@novaclaw/core/skill"
 import { AdhocApi } from "./groups/adhoc"
 import { CapabilityApi } from "./groups/capability"
 import { CommunityApi, CommunityPeerApi } from "./groups/community"
@@ -97,7 +96,6 @@ export const NovaClawHttpApi: HttpApi.HttpApi<"novaclaw", HttpApiGroup.Any> = Ht
     Integration.Inputs,
     Integration.Method,
     Integration.Ref,
-    SkillV2.Source,
   ])
 
 export type RootHttpApiType = typeof RootHttpApi

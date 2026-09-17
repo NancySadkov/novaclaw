@@ -24,7 +24,6 @@ import { KeyedMutex } from "./effect/keyed-mutex"
 import { Location } from "./location"
 import { PluginHost } from "./plugin/host"
 import { Reference } from "./reference"
-import { SkillV2 } from "./skill"
 import { State } from "./state"
 import { PluginTools } from "./tool/plugin-tools"
 
@@ -214,7 +213,6 @@ export const locationLayer = layer.pipe(
   Layer.provideMerge(CommandV2.locationLayer),
   Layer.provideMerge(Integration.locationLayer),
   Layer.provideMerge(Reference.locationLayer),
-  Layer.provideMerge(SkillV2.locationLayer),
   Layer.provideMerge(PluginTools.layer),
 )
 
@@ -231,7 +229,6 @@ export const node = makeLocationNode({
     // it needs to know which directory it is — see `plugin/host.ts`.
     Location.node,
     Reference.node,
-    SkillV2.node,
     PluginTools.node,
   ],
 })

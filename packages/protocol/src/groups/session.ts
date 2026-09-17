@@ -395,7 +395,7 @@ export const makeSessionGroups = <
           ),
       )
       .add(
-        // SESSION IMPORT — read another harness's export (opencode's `{info,messages}` and relatives)
+        // SESSION IMPORT — read another harness's export (`{info,messages}` and relatives)
         // as a new session. `data` is `Schema.Unknown` on purpose: the document is a foreign format,
         // and validating it at the edge would mean re-typing every harness's schema here. The handler
         // runs the one tolerant reader (`SessionPortability.parse`) and answers InvalidRequest when it
@@ -424,7 +424,7 @@ export const makeSessionGroups = <
               identifier: "v2.session.import",
               summary: "Import session",
               description:
-                "Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.",
+                "Create a session from an exported transcript (agent-harness compatible). No model is called; the messages are recorded as history.",
             }),
           ),
       )

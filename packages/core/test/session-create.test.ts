@@ -419,21 +419,6 @@ describe("SessionV2.create", () => {
     }),
   )
 
-  it.effect("reports unfinished Session operations as unavailable", () =>
-    Effect.gen(function* () {
-      const session = yield* SessionV2.Service
-      const created = yield* session.create({ location, agent })
-      const unavailable = (
-        effect: Effect.Effect<void, SessionV2.NotFoundError | SessionV2.OperationUnavailableError>,
-      ) =>
-        effect.pipe(
-          Effect.flip,
-          Effect.map((error) => (error instanceof SessionV2.OperationUnavailableError ? error.operation : "not-found")),
-        )
-
-      expect(yield* unavailable(session.skill({ sessionID: created.id, skill: "review" }))).toBe("skill")
-    }),
-  )
 
   it.live("runs a shell command and records it as a shell message", () =>
     Effect.gen(function* () {

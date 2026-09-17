@@ -126,5 +126,6 @@ export const migrations = (
     import("./migration/20260905110000_calendar_fire_outcome"),
     import("./migration/20260908181923_add_session_nudge_delivery"),
     import("./migration/20260914015547_model_prefix_cache"),
+    import("./migration/20260917133451_smiling_red_ghost"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

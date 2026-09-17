@@ -176,16 +176,14 @@ describe("Settings → System prompt — the layout table on screen", () => {
     expect(rowFor("goal").origin).toBe("agent")
   })
 
-  test("the persona editor is still the editable control on the page, and the prompt says so", async () => {
-    // "View AND edit": the layout table is the map, and the edit affordances stay where the values
-    // live. The persona textarea is the one on this page, and it must survive as the live control.
+  test("the removed project-instructions control is gone, not still promising paths", async () => {
+    // "View": the layout table is the map. The persona textarea this page used to carry retired with
+    // the shared persona (2026-09-17); identity is per-officer now. What stays checked is that the
+    // dead control (config `instructions`, which no reader ever consulted) is gone rather than still
+    // promising paths on the page that explains the prompt.
     mount()
     await settle()
-    expect(document.querySelector("textarea")).not.toBeNull()
     expect(document.body.textContent).toContain(label("settings.contextLayout.title"))
-    expect(document.body.textContent).toContain(label("settings.systemPrompt.persona.prompt.description"))
-    // The removed dead control (config `instructions`, which no reader ever consulted) is gone rather
-    // than still promising paths on the page that explains the prompt.
     expect(document.body.textContent).not.toContain("Project instructions")
   })
 })

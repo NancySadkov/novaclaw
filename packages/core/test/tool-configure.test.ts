@@ -213,13 +213,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "provider_capability",
       "provider_presets",
       "resource_pressure",
-      // Which skills appear in the USER'S OWN slash list. Consequential rather than operational for
-      // the reason `watcher` and `snapshots` are: nothing runs, nothing leaves, no text reaches a
-      // prompt — but an agent that writes it makes a skill disappear from its owner's own menu, and
-      // "the instance behaves differently afterwards in a way the user should get to see" is exactly
-      // what this tier is. Not privileged: whether the AGENT may choose a skill is the `skill`
-      // permission action, which is gated under `permissions` and stays gated there.
-      "skill_invocation",
       "snapshots",
       "strict",
       "tool_routing",
@@ -263,12 +256,10 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "quality",
       "references",
       "server",
-      "skills",
       "telemetry",
       // Which pre-action policies are switched off. PRIVILEGED because switching one off is the only
       // way to stop a guard that screens every tool call before it runs — it changes who may do what,
-      // which is this tier's own definition. The contrast with `skill_invocation` two tiers up is
-      // deliberate: that one decides what a HUMAN sees in their own menu and grants the agent nothing.
+      // which is this tier's own definition.
       "tool_policy",
       "user_profile",
       "username",
@@ -471,16 +462,16 @@ describe("ruling 4: an operational write proceeds, a consequential one asks, a p
 })
 
 describe("the tool reaches EVERY store the router writes to", () => {
-  it.live("a patch touching all six store-backed keys commits, and every key is consumed", () => {
+  it.live("a patch touching every store-backed key commits, and every key is consumed", () => {
     const asserted: Asserted[] = []
     return withTool(recording(asserted), ({ registry, catalog }) =>
       Effect.gen(function* () {
         // ⚠️ This is not a duplicate of the routing-ledger suite, and what it catches is precise:
-        // `layeredArm`/`listArm` resolve their store ONLY when the patch carries their key, so a
+        // `layeredArm` resolves its store ONLY when the patch carries its key, so a
         // store missing from `ConfigureTool.node`'s `deps` is invisible — the tool registers, reads
-        // work, four of the six writes work — until somebody writes THAT key, and it then surfaces
+        // work, most of the writes work — until somebody writes THAT key, and it then surfaces
         // as a `Service not found` defect in production. Measured 2026-07-31 by deleting
-        // `SkillConfigStore.node` from those deps: this test fails with exactly that message.
+        // `SkillConfigStore.node` from those deps: this test failed with exactly that message.
         // (It does NOT stand in for a typecheck of the layer's captured context: `Effect.context`'s
         // type argument is erased at runtime, so an under-declared union is a compile error only.)
         const result = yield* call(registry, {
@@ -490,20 +481,19 @@ describe("the tool reaches EVERY store the router writes to", () => {
             agents: { build: { description: "the builder" } },
             commands: { deploy: { template: "run it" } },
             references: { docs: { path: "/docs" } },
-            skills: ["/opt/skills"],
           },
         })
         expect(result.type).toBe("text")
-        for (const key of ["providers", "agents", "commands", "references", "skills"])
+        for (const key of ["providers", "agents", "commands", "references"])
           expect(textOf(result)).toContain(key)
         expect(textOf(result)).not.toContain("DISCARDED")
 
         // Read one of them back through its own store, so "it committed" is not the tool's opinion.
         expect(Object.keys(yield* catalog.providers())).toContain("spark")
-        // All five are privileged, so exactly one card, carrying all five.
+        // All four are privileged, so exactly one card, carrying all four.
         expect(asserted).toHaveLength(1)
         expect(asserted[0]!.action).toBe("configure_privileged")
-        expect([...asserted[0]!.resources].sort()).toEqual(["agents", "commands", "providers", "references", "skills"])
+        expect([...asserted[0]!.resources].sort()).toEqual(["agents", "commands", "providers", "references"])
       }),
     )
   })

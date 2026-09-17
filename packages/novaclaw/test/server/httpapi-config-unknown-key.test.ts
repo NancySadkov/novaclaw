@@ -289,7 +289,7 @@ describe("the guard actually bites (negative control)", () => {
     // ⚠️ Arrays replace wholesale, so a null INSIDE one is the payload decoder's fault to describe —
     // the same rule `unknownConfigKeys` follows for a non-object body, and the same refusal
     // `MergePatch.removeAt` makes.
-    expect(nullConfigPaths({ skills: [null] })).toEqual([])
+    expect(nullConfigPaths({ instructions: [null] })).toEqual([])
     expect(nullConfigPaths([null])).toEqual([])
     expect(nullConfigPaths(null)).toEqual([])
     expect(nullConfigPaths(undefined)).toEqual([])

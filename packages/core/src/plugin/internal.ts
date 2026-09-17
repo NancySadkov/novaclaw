@@ -11,7 +11,6 @@ import { CatalogStore } from "../catalog-store"
 import { CommandConfigStore } from "../command-config-store"
 import { ReferenceConfigStore } from "../reference-config-store"
 import { SettingsConfigStore } from "../settings-config-store"
-import { SkillConfigStore } from "../skill-config-store"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
 import { ConfigAgentPlugin } from "../config/plugin/agent"
@@ -19,7 +18,6 @@ import { ConfigCommandPlugin } from "../config/plugin/command"
 import { ConfigExternalPlugin } from "../config/plugin/external"
 import { ConfigProviderPlugin } from "../config/plugin/provider"
 import { ConfigReferencePlugin } from "../config/plugin/reference"
-import { ConfigSkillPlugin } from "../config/plugin/skill"
 import { EventV2 } from "../event"
 import { FileSystem } from "../filesystem"
 import { FSUtil } from "../fs-util"
@@ -29,7 +27,6 @@ import { Location } from "../location"
 import { ModelsDev } from "../models-dev"
 import { PluginV2 } from "../plugin"
 import { Reference } from "../reference"
-import { SkillV2 } from "../skill"
 import { State } from "../state"
 import { FetchHttpClient } from "effect/unstable/http"
 import { AgentPlugin } from "./agent"
@@ -81,7 +78,6 @@ export type Requirements =
   | Location.Service
   | ModelsDev.Service
   | ReferenceConfigStore.Service
-  | SkillConfigStore.Service
 
 /**
  * ⚠️ **`Npm.Service` is deliberately NOT in this union** (removed 2026-09-04). Ruling 5 deleted the
@@ -134,8 +130,6 @@ export const CAPABILITIES = [
   "modelsDev",
   "reference",
   "referenceConfigStore",
-  "skill",
-  "skillConfigStore",
 ] as const
 
 export type Capability = (typeof CAPABILITIES)[number]
@@ -164,8 +158,6 @@ export const CAPABILITY_SERVICE: Readonly<Record<Capability, string>> = {
   modelsDev: "ModelsDev",
   reference: "Reference",
   referenceConfigStore: "ReferenceConfigStore",
-  skill: "SkillV2",
-  skillConfigStore: "SkillConfigStore",
 }
 
 export interface Plugin<R = never> {
@@ -199,7 +191,6 @@ const layer = Layer.effectDiscard(
     const agentConfigStore = yield* AgentConfigStore.Service
     const commandConfigStore = yield* CommandConfigStore.Service
     const referenceConfigStore = yield* ReferenceConfigStore.Service
-    const skillConfigStore = yield* SkillConfigStore.Service
     // ⚠️ `R` is CONSTRAINED here, and that constraint is the whole point of narrowing the list
     // above. `define<R>` still accepts anything (see its own note), but nothing may be ADDED whose
     // requirements this block does not satisfy — so the compiler, not a boot, is what tells you the
@@ -221,7 +212,6 @@ const layer = Layer.effectDiscard(
               Effect.provideService(AgentConfigStore.Service, agentConfigStore),
               Effect.provideService(CommandConfigStore.Service, commandConfigStore),
               Effect.provideService(ReferenceConfigStore.Service, referenceConfigStore),
-              Effect.provideService(SkillConfigStore.Service, skillConfigStore),
             ),
       }
       // The declaration travels with the plugin. `capabilities` is REQUIRED on an internal plugin
@@ -242,7 +232,6 @@ const layer = Layer.effectDiscard(
         yield* add(ModelsDevPlugin)
         yield* add(ConfigAgentPlugin.Plugin)
         yield* add(ConfigCommandPlugin.Plugin)
-        yield* add(ConfigSkillPlugin.Plugin)
         yield* add(ConfigExternalPlugin.Plugin)
         yield* add(ConfigProviderPlugin.Plugin)
         yield* add(VariantPlugin.Plugin)
@@ -276,7 +265,6 @@ export const node = makeLocationNode({
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
     CommandV2.node,
     PluginV2.node,
     Integration.node,
@@ -289,7 +277,6 @@ export const node = makeLocationNode({
     FileSystem.node,
     Global.node,
     httpClient,
-    SkillV2.node,
     Reference.node,
   ],
 })

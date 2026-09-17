@@ -205,7 +205,9 @@ describe("DbRegistry", () => {
       // 9 → 8 on 2026-08-19: `plugin_config` left with the `plugins[]` key and the `npm.add` arm
       // (ruling 5 / step 17), and its table is DROPPED by a migration, so the existence check above
       // would fail on it too.
-      expect(declared.size).toBe(8)
+      // 8 → 7 on 2026-09-17: `skill_config` left with the skills subsystem and is dropped by
+      // migration `20260917133451_smiling_red_ghost`.
+      expect(declared.size).toBe(7)
       // The settings store's own table is the one that carries every tiered key.
       expect(declared.has("runtime_setting")).toBe(true)
       // And a plainly non-config table is NOT in it — otherwise the set could be "every table".

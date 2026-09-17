@@ -27,7 +27,6 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { tmpdirScoped, provideInstanceEffect, testInstanceStoreLayer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { NpmTest } from "../fake/npm"
@@ -46,7 +45,6 @@ const layer = Config.layer.pipe(
   Layer.provide(CommandConfigStore.defaultLayer),
   Layer.provide(ReferenceConfigStore.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
-  Layer.provide(SkillConfigStore.defaultLayer),
 )
 
 const it = testEffect(layer)

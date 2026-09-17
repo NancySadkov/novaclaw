@@ -19,7 +19,6 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { Database } from "@novaclaw/core/database/database"
@@ -301,7 +300,6 @@ const configStores = LayerNode.compile(
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
     // 🔴 `Config.node` is here so the write below can INVALIDATE. Without it there is no Config
     // service in this graph to invalidate, and `Config`'s global view is
     // `cachedInvalidateWithTTL(…, Duration.infinity)` with nothing on the request path refreshing
@@ -397,7 +395,6 @@ const serverStores = LayerNode.compile(
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
     Config.node,
   ]),
 )
@@ -479,16 +476,11 @@ const SETTINGS_KEYS: ReadonlySet<string> = new Set(SettingsConfigSeed.SETTINGS_K
  * missing whatever the write wiped, which is the same cross-test leak one step removed — it is "put
  * the previous list back", and that needs a snapshot this fixture deliberately does not take.
  *
- * (`plugins` was the second entry here until ruling 5 / step 17 deleted the key and its store. The
- * map stays a map: the next array-shaped key inherits the same problem and the same refusal.)
+ * (`plugins` was the second entry here until ruling 5 / step 17 deleted the key and its store; `skills`
+ * was the last, retired with the skills subsystem on 2026-09-17. The map stays a map: the next
+ * array-shaped key inherits the same problem and the same refusal.)
  */
-const REFUSED: Record<string, string> = {
-  skills:
-    `"skills" is an array key: a write REPLACES the whole skill-source list (config-store-write.ts ` +
-    `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
-    `the new entries removed — this fixture takes no such snapshot. Provision skills through the ` +
-    `store in your own test, or use test/fixture/skills/.`,
-}
+const REFUSED: Record<string, string> = {}
 
 /**
  * The provider ids a flat `models` map expands into.
@@ -571,7 +563,6 @@ const PRESERVED_TABLES: ReadonlySet<string> = new Set([
   "agent_setting",
   "command_config",
   "reference_config",
-  "skill_config",
   "instance_identity",
 ])
 

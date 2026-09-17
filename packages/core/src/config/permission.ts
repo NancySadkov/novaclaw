@@ -57,9 +57,8 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // ⚠️ The filing said removing it would NARROW a live path. It does not, and the reason is worth
 // keeping: the rules that authored it lived in `packages/novaclaw/src/agent/agent.ts`, whose ruleset
 // is NOT the gate. `packages/core` cannot import `packages/novaclaw` (see `config-store-write.ts`),
-// so the live evaluator in `permission.ts` structurally never sees that ruleset; its only two
-// consumers evaluate `skill` (`novaclaw/src/skill/index.ts`) and `task`
-// (`novaclaw/src/tool/truncate.ts`). A premise about a live path is worth one grep before it is worth
+// so the live evaluator in `permission.ts` structurally never sees that ruleset; its only live legacy
+// consumer evaluates `task` (`novaclaw/src/tool/truncate.ts`). A premise about a live path is worth one grep before it is worth
 // a deferral.
 // `doom_loop` and `question` were removed on 2026-09-04, for the same reason and by the
 // same test that now derives this list. Neither named an action: nothing in the tree ever called
@@ -96,7 +95,6 @@ const InputObject = Schema.StructWithRest(
     resource_status: Schema.optional(Action),
     webfetch: Schema.optional(Action),
     websearch: Schema.optional(Action),
-    skill: Schema.optional(Rule),
   }),
   [Schema.Record(Schema.String, Rule)],
 )

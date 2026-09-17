@@ -79,7 +79,6 @@ const residentTools = [
   // a question about the agent itself gives the model no cue that a tool exists to answer it, and a
   // wrong guess about your own configuration reads to a user as a lie rather than as ignorance.
   "self",
-  "skill",
   "spawn",
   "todowrite",
   "tool_call",

@@ -15,7 +15,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -47,7 +46,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
-      SkillConfigStore.node,
     ]),
   ),
 )
@@ -261,14 +259,6 @@ describe("ConfigStoreWrite.remove — ruling 2: a failed removal never reports s
 })
 
 describe("ConfigStoreWrite.remove — the refusal ledger redirects instead of shrugging", () => {
-  it.effect("an ARRAY key names the merge that already deletes from it", () =>
-    Effect.gen(function* () {
-      const refused = yield* refusalOf([["skills", "some-skill"]])
-      expect(refused.message).toContain("PATCH /config")
-      expect(refused.message).toContain("replace wholesale")
-    }),
-  )
-
   it.effect("the flat `models` authoring shape names the stored path instead", () =>
     Effect.gen(function* () {
       const refused = yield* refusalOf([["models", "holo3.1"]])

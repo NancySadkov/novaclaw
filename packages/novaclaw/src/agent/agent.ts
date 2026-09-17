@@ -19,7 +19,6 @@ import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@novaclaw/core/global"
 import path from "path"
-import { Skill } from "../skill"
 import { Effect, Context, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { AbsolutePath, type DeepMutable } from "@novaclaw/core/schema"
@@ -180,12 +179,12 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Agent.state")(function* (ctx) {
         const cfg = yield* config.get()
-        // ⚠️ **Only `*`, `skill` and `task` are ever read out of this ruleset.** It is not the gate —
+        // ⚠️ **Only `*` and `task` are ever read out of this ruleset.** It is not the gate —
         // `packages/novaclaw/src/permission/index.ts` says so at the top, and it is structural rather
         // than a convention: `packages/core` cannot import `packages/novaclaw`, so the live evaluator
-        // (`core/src/permission.ts`) never sees what is written here. The two consumers are
-        // `skill/index.ts` (`evaluate("skill", …)`) and `tool/truncate.ts` (`evaluate("task", …)`).
-        // Any other action written below is a rule nobody reads.
+        // (`core/src/permission.ts`) never sees what is written here. The one consumer is
+        // `tool/truncate.ts` (`evaluate("task", …)`). Any other action written below is a rule nobody
+        // reads.
         //
         // 🔴 That is why the `external_directory` whitelist that used to sit here is gone (2026-09-04)
         // along with the `skillDirs`/`referenceDirs` walk that built it and the
@@ -286,8 +285,8 @@ export const layer = Layer.effect(
                 // them: `list` never named a tool or an action anywhere in the tree, and glob/grep were
                 // remapped onto the single `explore` action, which the V2 tools assert through
                 // `PermissionV2` — not through this legacy ruleset. No `explore` grant replaces them
-                // for the same reason: the only names this island actually evaluates are `task`
-                // (`tool/truncate.ts`) and `skill` (`skill/index.ts`), so a grant here would be one
+                // for the same reason: the only name this island actually evaluates is `task`
+                // (`tool/truncate.ts`), so a grant here would be one
                 // more rule nobody reads. The V2 explore subagent's grants live in
                 // `core/src/plugin/agent.ts` and are pinned by `core/test/permission-baseline.test.ts`.
                 bash: "allow",
@@ -530,14 +529,13 @@ export const layer = Layer.effect(
 // here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
   Layer.provide(Config.defaultLayer),
-  Layer.provide(Skill.defaultLayer),
   Layer.provide(ServerLocationServiceMap.layer),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Skill.node, ServerLocationServiceMap.node],
+  deps: [Config.node, ServerLocationServiceMap.node],
 })
 
 export * as Agent from "./agent"

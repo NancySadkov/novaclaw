@@ -12,7 +12,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -37,7 +36,6 @@ const it = testEffect(
       CatalogStore.node,
       AgentConfigStore.node,
       CommandConfigStore.node,
-      SkillConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
       FSUtil.node,

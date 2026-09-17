@@ -106,8 +106,8 @@ describe("plugin capability declarations", () => {
     // Non-vacuity: an empty scan would make the assertion below pass forever, and this file's whole
     // job is to still be looking after the next refactor moves a plugin.
     const found = plugins()
-    expect(found.length).toBeGreaterThanOrEqual(10)
-    expect(found.map((entry) => entry.file)).toContain("config/plugin/skill.ts")
+    expect(found.length).toBeGreaterThanOrEqual(9)
+    expect(found.map((entry) => entry.file)).toContain("config/plugin/reference.ts")
     // A plugin that genuinely needs nothing must still be found, or "declared []" and "not scanned"
     // become the same observation.
     expect(found.some((entry) => entry.declared?.length === 0)).toBe(true)

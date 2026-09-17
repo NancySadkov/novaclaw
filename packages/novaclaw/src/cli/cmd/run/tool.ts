@@ -44,9 +44,6 @@ type BashToolInfo = Tool.Info<typeof BashParameters>
 const TodoWriteParameters = Schema.Struct({ todos: Schema.optional(Schema.Any) })
 type TodoWriteToolInfo = Tool.Info<typeof TodoWriteParameters>
 
-const SkillParameters = Schema.Struct({ name: Schema.optional(Schema.String) })
-type SkillToolInfo = Tool.Info<typeof SkillParameters>
-
 const ApplyPatchParameters = Schema.Struct({})
 type ApplyPatchToolInfo = Tool.Info<typeof ApplyPatchParameters, { files: ReadonlyArray<unknown> }>
 
@@ -96,7 +93,6 @@ type ToolDefs = {
   list: Tool.Info
   webfetch: WebFetchToolInfo
   websearch: WebSearchToolInfo
-  skill: SkillToolInfo
   plan_exit: PlanExitToolInfo
 }
 
@@ -241,10 +237,6 @@ function runTodo(p: ToolProps<TodoWriteToolInfo>): ToolInline {
   }
 }
 
-function runSkill(p: ToolProps<SkillToolInfo>): ToolInline {
-  return { icon: "→", title: `Skill "${p.input.name ?? ""}"` }
-}
-
 function runPatch(p: ToolProps<ApplyPatchToolInfo>): ToolInline {
   const files = p.metadata.files?.length ?? 0
   return files === 0
@@ -310,7 +302,6 @@ const TOOL_RULES = {
   list: { run: runList },
   webfetch: { run: runWebfetch },
   websearch: { run: runWebSearch },
-  skill: { run: runSkill },
   plan_exit: { run: runPlanExit },
 } as const satisfies ToolRegistry
 

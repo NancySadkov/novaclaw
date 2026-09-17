@@ -95,7 +95,6 @@ const RESERVED_IDS = new Set([
   "settings",
   "calendar",
   "recipes",
-  "skills",
   // Its own home app since 2026-09-16; reserved so no contributed app can impersonate the model list.
   "models",
 ])

@@ -137,7 +137,6 @@ export const dict = {
   "ui.tool.questions": "Questions",
   "ui.tool.agent": "{{type}} Agent",
   "ui.tool.agent.default": "Agent",
-  "ui.tool.skill": "Skill",
 
   "ui.basicTool.called": "Called `{{tool}}`",
   "ui.toolErrorCard.failed": "Failed",
@@ -263,7 +262,6 @@ export const dict = {
   "ui.transcript.tool.patch.files.one": "{{count}} file",
   "ui.transcript.tool.patch.files.other": "{{count}} files",
   "ui.transcript.tool.question": "Question",
-  "ui.transcript.tool.skill": "Skill",
   "ui.transcript.colleague.hired": "Hired a colleague",
   "ui.transcript.colleague.retired": "Retired a colleague",
   "ui.transcript.colleague.listed": "Looked up colleagues",

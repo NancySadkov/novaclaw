@@ -30,7 +30,6 @@ const CORE_TOOLS = [
   "revert",
   "self",
   "session",
-  "skill",
   "spawn",
   "todowrite",
   "tool-call",

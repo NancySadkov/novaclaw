@@ -16,7 +16,6 @@ import { PluginV2 } from "../plugin"
 import { ProviderV2 } from "../provider"
 import { Reference } from "../reference"
 import type { DeepMutable } from "../schema"
-import { SkillV2 } from "../skill"
 import { PluginTools } from "../tool/plugin-tools"
 import { AppRegistry } from "../app-registry"
 import { AppEvent } from "@novaclaw/schema/app-event"
@@ -154,7 +153,6 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const integration = yield* Integration.Service
   const location = yield* Location.Service
   const reference = yield* Reference.Service
-  const skill = yield* SkillV2.Service
   const pluginTools = yield* PluginTools.Service
 
   const host: Interface = {
@@ -429,21 +427,6 @@ export const make = Effect.fn("PluginHost.make")(function* (
           callback({
             add: (name, source) => draft.add(name, Schema.decodeUnknownSync(Reference.Source)(source)),
             remove: draft.remove,
-            list: draft.list,
-          }),
-        ),
-    },
-    skill: {
-      reload: skill.reload,
-      // Skills are an append-only list of sources with no id, so the declaration IS the list.
-      declare: (sources) =>
-        skill.transform((draft) => {
-          for (const source of sources) draft.source(Schema.decodeUnknownSync(SkillV2.Source)(source))
-        }),
-      transform: (callback) =>
-        skill.transform((draft) =>
-          callback({
-            source: (source) => draft.source(Schema.decodeUnknownSync(SkillV2.Source)(source)),
             list: draft.list,
           }),
         ),

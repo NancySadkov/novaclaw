@@ -235,11 +235,10 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     // …while an event with no correlator still egresses. Without this the block above would also
     // pass on a tree where `mayEgress` had simply been made to return false for everything.
     expect(mayEgress("session.compaction.prune.planned")).toBe(true)
-    expect(mayEgress("skill.registry.init")).toBe(true)
+    expect(mayEgress("git.tree.diff.truncated")).toBe(true)
     expect(mayEgress("kb.memory.open.failed")).toBe(false)
     expect(mayEgress("credential.setting.unreadable")).toBe(false)
     expect(mayEgress("config.file.load")).toBe(false)
-    expect(mayEgress("git.tree.diff.truncated")).toBe(true)
     expect(mayEgress("resource.headroom.measure.failed")).toBe(false)
     expect(mayEgress("messenger.discord.backfill.truncated")).toBe(false)
     expect(mayEgress("messenger.operator.notice.failed")).toBe(false)
@@ -538,9 +537,11 @@ describe("a keyed record lands in the SAME line as every other log record", () =
   })
 
   test("the key sits in a fixed column, right after run=", () => {
-    const [line] = lines(Log.event("skill.registry.init", { count: 12 }))
+    const [line] = lines(
+      Log.event("session.compaction.archived", { "session.id": "s", "agent.id": "a", "archive.passages": 12 }),
+    )
     expect(columns(line ?? "").slice(0, 5)).toEqual(["timestamp", "level", "run", "event", "message"])
-    expect(line).toContain("count=12")
+    expect(line).toContain("archive.passages=12")
   })
 
   test("the DECLARED level is the level that is emitted", () => {
@@ -550,7 +551,9 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(
       lines(Log.event("server.request.fail", { ref: "err_1", "server.error": "x", "server.cause": "y" }))[0],
     ).toContain("level=ERROR")
-    expect(lines(Log.event("skill.registry.init", { count: 1 }))[0]).toContain("level=INFO")
+    expect(
+      lines(Log.event("session.compaction.archived", { "session.id": "s", "agent.id": "a", "archive.passages": 1 }))[0],
+    ).toContain("level=INFO")
   })
 
   test("the two unrelated `failed` sites are finally distinguishable", () => {

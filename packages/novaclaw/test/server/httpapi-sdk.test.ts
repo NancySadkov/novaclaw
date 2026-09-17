@@ -485,10 +485,9 @@ describe("HttpApi SDK", () => {
         const findFiles = yield* capture(() => sdk.find.files({ query: "hello", limit: 10 }))
         const findText = yield* capture(() => sdk.find.text({ pattern: "sdk-parity" }))
         const agents = yield* capture(() => sdk.app.agents())
-        // The legacy `GET /skill` route is DELETED (ruling 11 ratchet 83 → 82): `Skill.Service` is
-        // `InstanceState.make` and registers for no reload domain, so it served a stale list after
-        // any config write. Skills are read through core's `SkillV2` at `/api/skill`, which is
-        // registered for the `skills` reload domain — covered by the core config-plugin suite.
+        // The legacy `GET /skill` route was deleted long before the skills subsystem itself retired
+        // (2026-09-17); the subsystem's `/api/skill` route went with it. Nothing skill-shaped is
+        // reachable from the SDK any more.
         // `/api/vcs` since 2026-09-03, when the family left the legacy surface. Reached through
         // `sdk.v2` and answering the `{ location, data }` envelope, which is why the branch is read
         // one level deeper below.

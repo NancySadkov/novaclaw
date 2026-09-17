@@ -27,7 +27,6 @@ import { ProviderV2 } from "./provider"
 import { ReferenceConfigStore } from "./reference-config-store"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
-import { SkillConfigStore } from "./skill-config-store"
 
 // Config→SQLite step 7→9: the Settings-UI write router + read overlay. The app's
 // `updateConfig` contract is patch-MERGE over the effective config; this module routes each
@@ -262,37 +261,6 @@ const layeredArm = <Item, R>(spec: {
     }),
 })
 
-/** The store operations one list arm needs. `keys()` yields exactly what `remove()` accepts. */
-interface ListWriter<Entry> {
-  readonly keys: () => Effect.Effect<string[]>
-  readonly put: (entry: Entry) => Effect.Effect<void>
-  readonly remove: (key: string) => Effect.Effect<void>
-}
-
-/**
- * One list-store arm: the config value is an array (replace-wholesale contract), so the stored
- * content is wiped and reinserted. ⚠️ That is only safe because `apply` runs the whole route inside
- * ONE transaction — un-transacted, a failure landing between the two loops leaves the store EMPTY,
- * which is the ruling-2 defect the transaction was added for.
- */
-const listArm = <Entry, Item, R>(spec: {
-  readonly key: keyof Config.Info & string
-  readonly items: (patch: Config.Info) => readonly Item[] | undefined
-  readonly store: Effect.Effect<ListWriter<Entry>, never, R>
-  readonly normalize: (item: Item) => Entry
-}) => ({
-  key: spec.key,
-  route: (patch: Config.Info): Effect.Effect<boolean, never, R> =>
-    Effect.gen(function* () {
-      const items = spec.items(patch)
-      if (items === undefined) return false
-      const store = yield* spec.store
-      for (const key of yield* store.keys()) yield* store.remove(key)
-      for (const item of items) yield* store.put(spec.normalize(item))
-      return true
-    }),
-})
-
 const LAYERED_ARMS = [
   layeredArm({
     key: "providers",
@@ -365,24 +333,6 @@ const LAYERED_ARMS = [
       }
     }),
     ...referenceCodec,
-  }),
-]
-
-const LIST_ARMS = [
-  listArm({
-    key: "skills",
-    items: (patch) => patch.skills,
-    // UI/import writes are expected to carry absolute paths or URLs (there is no declaring file to
-    // resolve a relative entry against here), so the entry is stored as given.
-    normalize: (item: string) => item,
-    store: Effect.gen(function* () {
-      const skills = yield* SkillConfigStore.Service
-      return {
-        keys: () => skills.sources(),
-        put: (source: string) => skills.addSource(source),
-        remove: (source) => skills.removeSource(source),
-      }
-    }),
   }),
 ]
 
@@ -503,10 +453,6 @@ const applyToStores = (patch: Config.Info, writer: AgentV2.ConfigWriter) =>
       consumed.add("default_agent")
     }
 
-    // The list arms. `skills` is the last store to write, which is what the rollback test in
-    // config-store-write.test.ts fails on purpose — every other store has committed by then.
-    for (const arm of LIST_ARMS) if (yield* arm.route(patch)) consumed.add(arm.key)
-
     // Ruling 2, second clause — *a failed mutation never reports success.* Everything above is a
     // per-key arm — three hand-written `if`s and six table rows — so the failure mode of forgetting
     // one is not a compile error and not a test failure: it is a 200 for a write that went nowhere.
@@ -584,7 +530,6 @@ export const RELOAD_DOMAINS = [
   "agents",
   "commands",
   "references",
-  "skills",
   "catalog",
   "formatter",
   "mcp",
@@ -701,7 +646,6 @@ const RELOAD_TRIGGERS: Record<ReloadDomain, readonly (keyof Config.Info)[]> = {
   agents: ["agents", "default_agent", "permissions"],
   commands: ["commands"],
   references: ["references"],
-  skills: ["skills"],
   catalog: ["providers", "models", "model"],
   formatter: ["formatter"],
   mcp: ["mcp"],
@@ -716,7 +660,6 @@ const registered: Record<ReloadDomain, Set<ReloadRegistration>> = {
   agents: new Set(),
   commands: new Set(),
   references: new Set(),
-  skills: new Set(),
   catalog: new Set(),
   formatter: new Set(),
   mcp: new Set(),
@@ -727,7 +670,6 @@ const dispatched: Record<ReloadDomain, number> = {
   agents: 0,
   commands: 0,
   references: 0,
-  skills: 0,
   catalog: 0,
   formatter: 0,
   mcp: 0,
@@ -1219,12 +1161,6 @@ export const REMOVE_REFUSED_KEYS: ReadonlyMap<string, string> = new Map([
       "nothing to remove. Omit it from the next export and it is gone.",
   ],
   [
-    "skills",
-    "an ARRAY, and arrays replace wholesale under the merge contract — so `PATCH /config` already " +
-      'deletes an entry: send `{"skills": [...]}` without it. Commit 53051cca8 ruled on this and ' +
-      "deliberately left the array-shaped keys without delete routes for the same reason.",
-  ],
-  [
     "models",
     "the FLAT authoring shape, which normalizes into `providers` on write and is never stored under " +
       'this key. Remove the stored entry: `["providers", "<providerID>", "models", "<modelID>"]`.',
@@ -1511,10 +1447,6 @@ export const overlay = (base: Record<string, unknown>) =>
     if (Object.keys(referenceLayers).length > 0) {
       result.references = foldLayers(referenceLayers, Schema.encodeSync(ConfigReference.Entry))
     }
-
-    const skills = yield* SkillConfigStore.Service
-    const sources = yield* skills.sources()
-    if (sources.length > 0) result.skills = sources
 
     return result
   })

@@ -289,29 +289,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // inside a disposable container to clicking on the operator's real desktop -- which is P6, and the
   // build order's sequence law puts P6 behind the P4 guardrails. A value, but not an inert one.
   computer: "privileged",
-  // Paths or URLs skills are discovered from — a skill is instructions the model reads, and a URL
-  // entry fetches them from a third party.
-  skills: "privileged",
-  // Which skills appear in the USER'S OWN slash list.
-  //
-  // Deliberately NOT privileged, and the contrast with `skills` above is the whole point: that one
-  // adds a source the model reads from, this one only decides what the human sees in their own menu.
-  // It grants the agent nothing — whether the agent may CHOOSE a skill is the `skill` permission
-  // action, which is gated under `permissions` and stays gated there.
-  //
-  // ⚠️ It is CONSEQUENTIAL rather than operational, and the line is the one this table's header
-  // draws: operational is "neither", consequential is "the instance behaves differently afterwards
-  // in a way the user should get to see". An agent that writes this makes a skill vanish from its
-  // OWNER'S menu with no card — structurally the same thing `watcher` does ("a write here can make
-  // the agent's own edits invisible in the user's live view") and `snapshots` does ("nothing runs,
-  // nothing leaves, but a guard the user relies on is gone"), both of which are priced here. One
-  // savable `configure` card is the whole cost.
-  skill_invocation: "consequential",
   // Which installed pre-action policies actually run.
   //
-  // ⛔ PRIVILEGED, and the contrast with `skill_invocation` directly above is the line this table
-  // draws. That one decides what the HUMAN sees in their own menu and grants the agent nothing.
-  // This one decides whether the guard that refuses `rm -rf /` is consulted at all — a write here
+  // ⛔ PRIVILEGED: it decides whether the guard that refuses `rm -rf /` is consulted at all — a write here
   // REMOVES a gate from the agent's own path, which is the definition of a capability grant, and
   // `tool-policy-gate.ts` promises in the refusal itself that "no permission change made from
   // inside this session can widen it". An agent that could flip this without a card would make that

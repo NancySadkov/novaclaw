@@ -24,14 +24,9 @@ const enabledByExperimental = (name: string) =>
  */
 const fields = {
   disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),
-  disableExternalSkills: bool("NOVACLAW_DISABLE_EXTERNAL_SKILLS"),
   disableClaudeCodePrompt: Config.all({
     broad: bool("NOVACLAW_DISABLE_CLAUDE_CODE"),
     direct: bool("NOVACLAW_DISABLE_CLAUDE_CODE_PROMPT"),
-  }).pipe(Config.map((flags) => flags.broad || flags.direct)),
-  disableClaudeCodeSkills: Config.all({
-    broad: bool("NOVACLAW_DISABLE_CLAUDE_CODE"),
-    direct: bool("NOVACLAW_DISABLE_CLAUDE_CODE_SKILLS"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
   enableExa: Config.all({
     experimental,

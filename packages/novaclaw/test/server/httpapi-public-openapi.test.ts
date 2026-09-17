@@ -80,7 +80,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
         "IntegrationInputs",
         "IntegrationMethod",
         "IntegrationRef",
-        "SkillV2Source",
       ]),
     )
   })

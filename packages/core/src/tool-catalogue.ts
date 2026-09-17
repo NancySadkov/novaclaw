@@ -47,7 +47,6 @@ const CORE_CATEGORIES: Readonly<Record<string, string>> = {
   resource_status: "system",
   "register-app": "apps",
   revert: "files",
-  skill: "knowledge",
   spawn: "agents",
   todowrite: "agents",
   tool_call: "knowledge",

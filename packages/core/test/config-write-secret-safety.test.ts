@@ -12,7 +12,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { RuntimeSettingTable } from "@novaclaw/core/settings-config/sql"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 
 // Two invariants of the config write path, both about the instance's own incoming API token:
@@ -29,7 +28,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
-      SkillConfigStore.node,
     ]),
   ),
 )
@@ -61,10 +59,9 @@ describe("a config write that fails must not change what the API authenticates a
   /**
    * 🔴 The mirror case: the process accepts a password that was never stored.
    *
-   * The failure is injected into `skills`, the LAST arm `applyToStores` runs, so every earlier
-   * store — the settings loop that writes `server` — has already written when it lands. ⚠️ If a new
-   * list arm is ever appended after `skills`, move the injection onto it (same note as
-   * `config-store-write.test.ts`) or this stops testing "last".
+   * The failure is injected into `references`, the LAST layered arm `applyToStores` runs, so every
+   * earlier store — the settings loop that writes `server` — has already written when it lands.
+   * (It used to be the `skills` list arm, retired 2026-09-17.)
    *
    * A/B: restore `if (key === "server") serverPassword = passwordOf(value)` in
    * `SettingsConfigStore.set` and the last assertion reads `"never-stored"`.
@@ -72,20 +69,23 @@ describe("a config write that fails must not change what the API authenticates a
   it.effect("🔴 a rolled-back apply leaves the live incoming password on the COMMITTED value", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
-      const skills = yield* SkillConfigStore.Service
+      const references = yield* ReferenceConfigStore.Service
       yield* store.set("server", { port: 4096, password: COMMITTED })
       expect(yield* store.serverPassword()).toBe(COMMITTED)
 
-      const failingSkills = SkillConfigStore.Service.of({
-        sources: () => skills.sources(),
-        removeSource: (source) => skills.removeSource(source),
-        isEmpty: () => skills.isEmpty(),
-        addSource: () => Effect.die(new Error("skill store write failed")),
+      const failingReferences = ReferenceConfigStore.Service.of({
+        references: () => references.references(),
+        removeReference: (name) => references.removeReference(name),
+        isEmpty: () => references.isEmpty(),
+        setLayers: () => Effect.die(new Error("reference store write failed")),
       })
 
       const exit = yield* ConfigStoreWrite.apply(
-        decodeInfo({ server: { password: "never-stored" }, skills: ["/replacement/skills"] }),
-      ).pipe(Effect.provideService(SkillConfigStore.Service, failingSkills), Effect.exit)
+        decodeInfo({
+          server: { password: "never-stored" },
+          references: { docs: "https://git.example.test/example/docs.git" },
+        }),
+      ).pipe(Effect.provideService(ReferenceConfigStore.Service, failingReferences), Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
 
       // SQLite rolled back, so the row still holds the committed password…

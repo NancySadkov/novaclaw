@@ -26,7 +26,6 @@ import * as ReadHexTool from "./deferred/read-hex.gen"
 import * as RecipeTool from "./deferred/recipe.gen"
 import * as RegisterAppTool from "./deferred/register-app.gen"
 import * as RevertTool from "./deferred/revert.gen"
-import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { ToolManualTool } from "./tool-manual"
 import { ToolCallTool } from "./tool-call"
@@ -80,7 +79,6 @@ export const node = makeLocationNode({
     ResourceStatusTool.node,
     RegisterAppTool.node,
     RevertTool.node,
-    SkillTool.node,
     TodoWriteTool.node,
     ToolManualTool.node,
     ToolCallTool.node,

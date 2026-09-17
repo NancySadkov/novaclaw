@@ -59,8 +59,6 @@ import { Config } from "./config"
 import { SettingsConfigStore } from "./settings-config-store"
 import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
-import { SkillCommand } from "./command/skill-command"
-import { SkillV2 } from "./skill"
 import { SessionRead } from "./session/read"
 import { moveArchivedToHistory } from "./session/rekey"
 import { SessionSpawner } from "./session/spawner"
@@ -265,7 +263,7 @@ export class OwnerRequiredError extends Schema.TaggedErrorClass<OwnerRequiredErr
 export class OperationUnavailableError extends Schema.TaggedErrorClass<OperationUnavailableError>()(
   "Session.OperationUnavailableError",
   {
-    operation: Schema.Literals(["move", "shell", "skill", "switchAgent", "compact", "wait"]),
+    operation: Schema.Literals(["move", "shell", "switchAgent", "compact", "wait"]),
   },
 ) {}
 
@@ -451,12 +449,6 @@ export interface Interface {
     command: string
     resume?: boolean
   }) => Effect.Effect<SessionMessage.ID, NotFoundError>
-  readonly skill: (input: {
-    id?: EventV2.ID
-    sessionID: SessionSchema.ID
-    skill: string
-    resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
   /**
    * ⚠️ `OperationUnavailableError` because a command may declare its own `agent:`, and repointing a
    * session onto a colleague who already has a chat is refused — the same rule `switchAgent` applies,
@@ -1320,19 +1312,15 @@ export const layer = Layer.effect(
         })
         return messageID
       }),
-      skill: Effect.fn("V2Session.skill")(function* () {
-        return yield* new OperationUnavailableError({ operation: "skill" })
-      }),
       // The `/command` op: expand a saved slash-command template and submit it as a prompt —
       // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
       // delegates to `prompt()`). CommandV2 + the shell machinery + SessionSpawner are location
       // services, resolved via the session's Location. Covers arg substitution + `` !`shell` ``
       // substitution + cmd.agent/cmd.model override + the subtask (command-as-subagent) branch +
       // submit — returning a discriminated `CommandResult` (prompt vs subtask). A name that
-      // misses CommandV2 falls back to a SKILL (every skill is slash-invokable, V1 parity) and
-      // then to the ExternalCommandSource seam (MCP prompts, resolved lazily) — the same union
-      // the `/command` list serves; only then does a missing command die (the caller validates
-      // existence). A spawn-quota trip dies for now (residue).
+      // misses CommandV2 falls back to the ExternalCommandSource seam (MCP prompts, resolved
+      // lazily) — the same union the `/command` list serves; only then does a missing command die
+      // (the caller validates existence). A spawn-quota trip dies for now (residue).
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
@@ -1344,14 +1332,6 @@ export const layer = Layer.effect(
               found
                 ? Effect.succeed(found)
                 : Effect.gen(function* () {
-                    const skills = yield* SkillV2.Service
-                    const skill = (yield* skills.list()).find((item) => item.name === input.command)
-                    if (skill)
-                      return {
-                        name: skill.name,
-                        template: SkillCommand.template(skill),
-                        ...(skill.description !== undefined ? { description: skill.description } : {}),
-                      } as CommandV2.Info
                     const external = yield* ExternalCommandSource.Service
                     const entry = (yield* external.entries()).get(input.command)
                     if (entry)

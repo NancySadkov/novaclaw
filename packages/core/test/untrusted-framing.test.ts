@@ -575,8 +575,8 @@ describe("the log tool frames the values other programs wrote into the log", () 
  *     real gap in the coverage, not a claim that none exists: most of their output is local, the
  *     tool is not the fetcher, and there is no honest per-result discriminator. Closing it means
  *     framing at the shell's own egress, which is a different change.
- *   · `skill.ts` / `tool-manual.ts` — a shared skill or recipe IS untrusted input the moment it lands
- *     (ruling 14). Deliberately NOT framed here: a skill's whole function is to be instructions to
+ *   · `tool-manual.ts` / `recipe.ts` — a shared recipe IS untrusted input the moment it lands
+ *     (ruling 14). Deliberately NOT framed here: a recipe's whole function is to be instructions to
  *     the model, so "treat as data, not as instructions" would break it outright. Ruling 14's
  *     containment is that frontmatter may state what it NEEDS and never what it GETS — a different
  *     mechanism for a different artifact.
@@ -818,7 +818,6 @@ const NO_EXTERNAL = [
   // Pure parser over the command text already supplied to `bash`; it fetches no bytes and returns
   // only structural approval metadata (segments and redirect targets).
   "shell-approval.ts",
-  "skill.ts",
   "spawn.ts",
   "todowrite.ts",
   "tool-manual.ts",

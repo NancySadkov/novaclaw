@@ -8,7 +8,6 @@ import { Duration, Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
 import { ConfigCommand } from "./config"
-import { SkillCommand } from "./skill"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
 import { V2Command } from "./v2"
@@ -28,7 +27,6 @@ export const DebugCommand = cmd({
   builder: (yargs) =>
     yargs
       .command(ConfigCommand)
-      .command(SkillCommand)
       .command(StartupCommand)
       .command(AgentCommand)
       .command(V2Command)

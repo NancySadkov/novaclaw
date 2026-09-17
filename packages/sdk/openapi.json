@@ -12562,7 +12562,7 @@
             }
           }
         },
-        "description": "Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.",
+        "description": "Create a session from an exported transcript (agent-harness compatible). No model is called; the messages are recorded as history.",
         "summary": "Import session",
         "requestBody": {
           "content": {
@@ -21924,87 +21924,6 @@
         ]
       }
     },
-    "/api/skill": {
-      "get": {
-        "tags": ["skills"],
-        "operationId": "v2.skill.list",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "location": {
-                      "$ref": "#/components/schemas/LocationInfo"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/SkillV2Info"
-                      }
-                    }
-                  },
-                  "required": ["location", "data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve currently registered skills.",
-        "summary": "List skills",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.skill.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/event": {
       "get": {
         "tags": ["events"],
@@ -28595,7 +28514,7 @@
           },
           "source": {
             "type": "string",
-            "enum": ["command", "mcp", "skill"]
+            "enum": ["command", "mcp"]
           },
           "template": {
             "type": "string"
@@ -30240,19 +30159,6 @@
         },
         "required": ["id", "name"],
         "additionalProperties": false
-      },
-      "SkillV2Source": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/SkillV2DirectorySource"
-          },
-          {
-            "$ref": "#/components/schemas/SkillV2UrlSource"
-          },
-          {
-            "$ref": "#/components/schemas/SkillV2EmbeddedSource"
-          }
-        ]
       },
       "MoveSessionDestination": {
         "type": "object",
@@ -36247,10 +36153,6 @@
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
               },
-              "skill": {
-                "type": "string",
-                "enum": ["debug", "info", "warn", "error"]
-              },
               "snapshot": {
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
@@ -37852,24 +37754,6 @@
               }
             },
             "additionalProperties": false
-          },
-          "skills": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "skill_invocation": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "show": {
-                  "type": "boolean"
-                }
-              },
-              "additionalProperties": false
-            }
           },
           "tool_policy": {
             "type": "object",
@@ -43620,7 +43504,7 @@
           },
           "source": {
             "type": "string",
-            "enum": ["command", "mcp", "skill"]
+            "enum": ["command", "mcp"]
           },
           "hints": {
             "type": "array",
@@ -43630,28 +43514,6 @@
           }
         },
         "required": ["name", "template"],
-        "additionalProperties": false
-      },
-      "SkillV2Info": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "slash": {
-            "type": "boolean"
-          },
-          "location": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": ["name", "location", "content"],
         "additionalProperties": false
       },
       "Models-devRefreshed": {
@@ -49767,48 +49629,6 @@
         "required": ["type", "key"],
         "additionalProperties": false
       },
-      "SkillV2DirectorySource": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["directory"]
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "path"],
-        "additionalProperties": false
-      },
-      "SkillV2UrlSource": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["url"]
-          },
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "url"],
-        "additionalProperties": false
-      },
-      "SkillV2EmbeddedSource": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["embedded"]
-          },
-          "skill": {
-            "$ref": "#/components/schemas/SkillV2Info"
-          }
-        },
-        "required": ["type", "skill"],
-        "additionalProperties": false
-      },
       "BadRequestError": {
         "type": "object",
         "required": ["name", "data"],
@@ -50002,10 +49822,6 @@
     {
       "name": "quality",
       "description": "Quality-command detection for a location."
-    },
-    {
-      "name": "skills",
-      "description": "Experimental skill routes."
     },
     {
       "name": "events",

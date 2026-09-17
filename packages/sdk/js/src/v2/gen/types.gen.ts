@@ -1476,7 +1476,7 @@ export type Command = {
   description?: string
   agent?: string
   model?: string
-  source?: "command" | "mcp" | "skill"
+  source?: "command" | "mcp"
   template: string
   subtask?: boolean
   hints: Array<string>
@@ -2056,8 +2056,6 @@ export type IntegrationRef = {
   id: string
   name: string
 }
-
-export type SkillV2Source = SkillV2DirectorySource | SkillV2UrlSource | SkillV2EmbeddedSource
 
 export type MoveSessionDestination = {
   directory: string
@@ -3894,7 +3892,6 @@ export type ConfigV2Log = {
     resource?: "debug" | "info" | "warn" | "error"
     server?: "debug" | "info" | "warn" | "error"
     session?: "debug" | "info" | "warn" | "error"
-    skill?: "debug" | "info" | "warn" | "error"
     snapshot?: "debug" | "info" | "warn" | "error"
     storage?: "debug" | "info" | "warn" | "error"
     tool?: "debug" | "info" | "warn" | "error"
@@ -4449,12 +4446,6 @@ export type ConfigInfo = {
       perHostConcurrency?: number
       dailyPerHost?: number
       sameUrlLimit?: number
-    }
-  }
-  skills?: Array<string>
-  skill_invocation?: {
-    [key: string]: {
-      show?: boolean
     }
   }
   tool_policy?: {
@@ -6312,16 +6303,8 @@ export type CommandV2Info = {
   agent?: string
   model?: ModelRef
   subtask?: boolean
-  source?: "command" | "mcp" | "skill"
+  source?: "command" | "mcp"
   hints?: Array<string>
-}
-
-export type SkillV2Info = {
-  name: string
-  description?: string
-  slash?: boolean
-  location: string
-  content: string
 }
 
 export type ModelsDevRefreshed = {
@@ -8322,21 +8305,6 @@ export type CredentialKey = {
   metadata?: {
     [key: string]: unknown
   }
-}
-
-export type SkillV2DirectorySource = {
-  type: "directory"
-  path: string
-}
-
-export type SkillV2UrlSource = {
-  type: "url"
-  url: string
-}
-
-export type SkillV2EmbeddedSource = {
-  type: "embedded"
-  skill: SkillV2Info
 }
 
 export type BadRequestError = {
@@ -17909,43 +17877,6 @@ export type V2QualityDetectResponses = {
 }
 
 export type V2QualityDetectResponse = V2QualityDetectResponses[keyof V2QualityDetectResponses]
-
-export type V2SkillListData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/skill"
-}
-
-export type V2SkillListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2SkillListError = V2SkillListErrors[keyof V2SkillListErrors]
-
-export type V2SkillListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: Array<SkillV2Info>
-  }
-}
-
-export type V2SkillListResponse = V2SkillListResponses[keyof V2SkillListResponses]
 
 export type V2EventSubscribeData = {
   body?: never

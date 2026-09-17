@@ -15,7 +15,6 @@ describe("RuntimeFlags", () => {
         Effect.provide(
           fromConfig({
             NOVACLAW_DISABLE_EMBEDDED_WEB_UI: "true",
-            NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
             NOVACLAW_EXPERIMENTAL: "true",
             NOVACLAW_ENABLE_EXA: "true",
             NOVACLAW_ENABLE_PARALLEL: "true",
@@ -26,7 +25,6 @@ describe("RuntimeFlags", () => {
       )
 
       expect(flags.disableEmbeddedWebUi).toBe(true)
-      expect(flags.disableExternalSkills).toBe(true)
       expect(flags.disableClaudeCodePrompt).toBe(false)
       expect(flags.enableExa).toBe(true)
       expect(flags.enableParallel).toBe(true)
@@ -67,13 +65,11 @@ describe("RuntimeFlags", () => {
   it.effect("layer accepts partial test overrides and fills defaults from Config definitions", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
-        Effect.provide(RuntimeFlags.layer({ disableExternalSkills: true, bashDefaultTimeoutMs: 1_000 })),
+        Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: 1_000 })),
       )
 
       expect(flags.disableEmbeddedWebUi).toBe(false)
-      expect(flags.disableExternalSkills).toBe(true)
       expect(flags.disableClaudeCodePrompt).toBe(false)
-      expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)
       expect(flags.experimentalIconDiscovery).toBe(false)
       expect(flags.experimentalOxfmt).toBe(false)
@@ -89,22 +85,6 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
 
       expect(flags.experimentalIconDiscovery).toBe(false)
-    }),
-  )
-
-  it.effect("disableExternalSkills defaults to false", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
-
-      expect(flags.disableExternalSkills).toBe(false)
-    }),
-  )
-
-  it.effect("disableExternalSkills reads NOVACLAW_DISABLE_EXTERNAL_SKILLS", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true" })))
-
-      expect(flags.disableExternalSkills).toBe(true)
     }),
   )
 
@@ -275,9 +255,7 @@ describe("RuntimeFlags", () => {
       )
 
       expect(flags.disableEmbeddedWebUi).toBe(false)
-      expect(flags.disableExternalSkills).toBe(false)
       expect(flags.disableClaudeCodePrompt).toBe(false)
-      expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)
       expect(flags.experimentalIconDiscovery).toBe(false)
       expect(flags.experimentalOxfmt).toBe(false)
@@ -287,27 +265,4 @@ describe("RuntimeFlags", () => {
     }),
   )
 
-  it.effect("disableClaudeCodeSkills defaults to false", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
-
-      expect(flags.disableClaudeCodeSkills).toBe(false)
-    }),
-  )
-
-  it.effect("disableClaudeCodeSkills reads NOVACLAW_DISABLE_CLAUDE_CODE_SKILLS", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ NOVACLAW_DISABLE_CLAUDE_CODE_SKILLS: "true" })))
-
-      expect(flags.disableClaudeCodeSkills).toBe(true)
-    }),
-  )
-
-  it.effect("disableClaudeCodeSkills inherits NOVACLAW_DISABLE_CLAUDE_CODE", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ NOVACLAW_DISABLE_CLAUDE_CODE: "true" })))
-
-      expect(flags.disableClaudeCodeSkills).toBe(true)
-    }),
-  )
 })

@@ -329,16 +329,23 @@ const GENERATE_TIMEOUT_MS = 60_000
 // `['ModelBenchmark']`, added `[]`. The taxonomy itself adds no named component — `taxonomy` and
 // `needsTaxonomy` are inline enums on shapes that already existed (`ModelV2Info`, `ConfigV2Model`,
 // `ConfigV2Agent`) — which is why a real contract change moves this table by exactly one line.
+// 2026-09-17: the skills subsystem retired. Pure REMOVAL, reviewed against the previous commit:
+// removed `['SkillV2Source','SkillV2Info','SkillV2DirectorySource','SkillV2UrlSource',
+// 'SkillV2EmbeddedSource']` and the `/api/skill` path; added `[]`. There are no additions, so there
+// is no rename to catch — nothing arrived to take a removed name's place. 520 -> 515 entries, the
+// rest byte-identical.
 /**
- * 🔴 RE-PINNED 2026-09-16, after reviewing the mapping rather than reading the mismatch. The
- * `novaclaw.json` retirement removed `GET`/`POST /api/project`, so the public schema lost exactly the
- * project names and nothing else. Measured on `packages/sdk/openapi.json`: **479 deletions and zero
- * additions**, and every removed name was one of `ProjectState`, `ProjectWriteInput`,
- * `ProjectWriteResult`, `ProjectTune`, `ProjectSkillChoice`, `ProjectSkills`, `ProjectSection`, plus the
- * `project.state` / `project.write` operation ids. That is the whole delta — review this way again if
- * this line ever moves.
+ * 🔴 RE-PINNED 2026-09-17, after reviewing the mapping rather than reading the mismatch. The skills
+ * subsystem retired, so the public schema lost exactly the skill names and the `/api/skill` path and
+ * nothing else. Measured on `packages/sdk/openapi.json` against the previous commit: **5 schemas and
+ * 1 path removed, ZERO additions** — `SkillV2Source`, `SkillV2Info`, `SkillV2DirectorySource`,
+ * `SkillV2UrlSource`, `SkillV2EmbeddedSource`, and `/api/skill`. Pure removal, so there is no rename
+ * to catch: nothing arrived to take a removed name's place. Review this way again if this line moves.
+ *
+ * Previous pin, 2026-09-16: the `novaclaw.json` retirement removed `GET`/`POST /api/project`, so the
+ * public schema lost exactly the project names and nothing else — 479 deletions and zero additions.
  */
-const SCHEMA_NAME_FINGERPRINT = "3c39758f7c44181a5839738edf78f305e7e4c97c312afdc3d057a12216435249"
+const SCHEMA_NAME_FINGERPRINT = "542ef4763ffdb7830a4c0831635a21b69e1c7316e80e556e975dfce7f99be1ab"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

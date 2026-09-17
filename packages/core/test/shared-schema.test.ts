@@ -24,7 +24,6 @@ import { Plugin } from "@novaclaw/schema/plugin"
 import { Pty } from "@novaclaw/schema/pty"
 import { Reference } from "@novaclaw/schema/reference"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
-import { Skill } from "@novaclaw/schema/skill"
 import { AbsolutePath, DateTimeUtcFromMillis, optional, statics } from "@novaclaw/schema/schema"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PluginV2 } from "@novaclaw/core/plugin"
@@ -45,7 +44,6 @@ test("Core reuses the canonical shared schemas", async () => {
     coreSessionMessage,
     coreSessionTodo,
     corePrompt,
-    coreSkill,
     coreV2Schema,
     coreSchema,
     coreWorkspace,
@@ -64,7 +62,6 @@ test("Core reuses the canonical shared schemas", async () => {
     import("@novaclaw/core/session/message"),
     import("@novaclaw/core/session/todo"),
     import("@novaclaw/core/session/prompt"),
-    import("@novaclaw/core/skill"),
     import("@novaclaw/core/v2-schema"),
     import("@novaclaw/core/schema"),
     import("@novaclaw/core/workspace"),
@@ -157,11 +154,6 @@ test("Core reuses the canonical shared schemas", async () => {
     [corePrompt.FileAttachment, FileAttachment],
     [corePrompt.AgentAttachment, AgentAttachment],
     [corePrompt.Prompt, Prompt],
-    [coreSkill.DirectorySource, Skill.DirectorySource],
-    [coreSkill.UrlSource, Skill.UrlSource],
-    [coreSkill.EmbeddedSource, Skill.EmbeddedSource],
-    [coreSkill.Source, Skill.Source],
-    [coreSkill.Info, Skill.Info],
     [coreV2Schema.DateTimeUtcFromMillis, DateTimeUtcFromMillis],
     [coreSchema.optional, optional],
     [coreSchema.statics, statics],
@@ -174,9 +166,6 @@ test("Core reuses the canonical shared schemas", async () => {
     ModelV2.Info.empty(ProviderV2.ID.make("test"), ModelV2.ID.make("model")),
   )
   expect(Provider.Info.empty(Provider.ID.make("test"))).toEqual(ProviderV2.Info.empty(ProviderV2.ID.make("test")))
-  expect(Skill.Source.key(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make("/tmp") }))).toBe(
-    "directory:/tmp",
-  )
 })
 
 test("shared record schemas construct and decode plain objects", () => {

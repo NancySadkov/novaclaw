@@ -127,7 +127,6 @@ export const BUILTIN_APP_LABELS = {
   social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },
   help: { name: "Help", subtitle: "A short tour of what NovaClaw can do" },
   settings: { name: "Settings", subtitle: "Providers, models, servers, recovery" },
-  skills: { name: "Skills", subtitle: "Extra instructions your agents can follow, and who wrote each one" },
 } as const satisfies Record<string, { readonly name: string; readonly subtitle: string }>
 
 export type BuiltinAppId = keyof typeof BUILTIN_APP_LABELS

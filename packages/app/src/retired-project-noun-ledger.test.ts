@@ -38,9 +38,9 @@ const EXCLUDED = ["node_modules", "dist", "out", ".ts-dist", "gen"]
 
 /** Remaining mentions per package. LOWER THESE; never raise one. */
 const BASELINE: Record<string, number> = {
-  core: 94,
-  app: 45,
-  novaclaw: 31,
+  core: 83,
+  app: 40,
+  novaclaw: 30,
   server: 6,
   ui: 4,
   protocol: 2,

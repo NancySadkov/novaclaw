@@ -60,18 +60,18 @@ describe("the legacy permission island", () => {
     expect(importers).toContain("src/agent/agent.ts")
   })
 
-  test("🔴 exactly three files touch it: the one that BUILDS and the two that SPEND", () => {
+  test("🔴 exactly two files touch it: the one that BUILDS and the one that SPENDS", () => {
     expect(
       importers,
-      "a fourth reader of the legacy ruleset — either it wants the live gate (core/src/permission.ts), " +
+      "a third reader of the legacy ruleset — either it wants the live gate (core/src/permission.ts), " +
         "or this island grew a consumer and its comment, agent.ts's seam note and this test all need updating",
-    ).toEqual(["src/agent/agent.ts", "src/skill/index.ts", "src/tool/truncate.ts"])
+    ).toEqual(["src/agent/agent.ts", "src/tool/truncate.ts"])
   })
 
-  test("🔴 the ruleset answers exactly two actions", () => {
+  test("🔴 the ruleset answers exactly one action", () => {
     // Everything else `agent/agent.ts` writes is decoration. When this list grows, the seam note in
-    // `agent/agent.ts` ("only `*`, `skill` and `task` are ever read out of this ruleset") has become
+    // `agent/agent.ts` ("only `*` and `task` are ever read out of this ruleset") has become
     // false, and a reader who trusts it will file another finding about a path that is not live.
-    expect([...spent].sort(), "the island's spent actions changed").toEqual(["skill", "task"])
+    expect([...spent].sort(), "the island's spent actions changed").toEqual(["task"])
   })
 })

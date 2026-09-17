@@ -162,7 +162,6 @@ export const dict = {
   "ui.fileSearch.nextMatch": "下一個",
   "ui.fileSearch.close": "關閉搜尋",
   "ui.tool.task": "任務",
-  "ui.tool.skill": "技能",
   "ui.basicTool.called": "呼叫了 `{{tool}}`",
   "ui.toolErrorCard.failed": "失敗",
   "ui.toolErrorCard.copyError": "複製錯誤",

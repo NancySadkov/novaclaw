@@ -13,7 +13,6 @@ import { Database } from "./database/database"
 import { LayerNode } from "./effect/layer-node"
 import { ReferenceConfigStore } from "./reference-config-store"
 import { SettingsConfigStore } from "./settings-config-store"
-import { SkillConfigStore } from "./skill-config-store"
 import {
   Offline,
   PROXY_SINK,
@@ -324,7 +323,6 @@ describe("A3: a config write engages the airgap without a restart", () => {
         CommandConfigStore.node,
         ReferenceConfigStore.node,
         SettingsConfigStore.node,
-        SkillConfigStore.node,
         Offline.node,
       ]),
       [

@@ -108,7 +108,6 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "pages/session/composer/session-lost-folder-dock.tsx": 1,
     "pages/session/composer/session-responder-dock.tsx": 1,
     "pages/session/timeline/model.ts": 1,
-    "pages/skills.tsx": 1,
     "utils/persist.ts": 1,
   },
   folds: {

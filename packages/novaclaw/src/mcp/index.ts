@@ -26,7 +26,6 @@ import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Database } from "@novaclaw/core/database/database"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { NamedError } from "@novaclaw/core/util/error"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { withTimeout } from "@/util/timeout"
@@ -361,7 +360,6 @@ export const layer = Layer.effect(
       database: yield* Database.Service,
       references: yield* ReferenceConfigStore.Service,
       settings: yield* SettingsConfigStore.Service,
-      skills: yield* SkillConfigStore.Service,
     }
     const provideConfigStores = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
@@ -371,7 +369,6 @@ export const layer = Layer.effect(
         Effect.provideService(Database.Service, configStores.database),
         Effect.provideService(ReferenceConfigStore.Service, configStores.references),
         Effect.provideService(SettingsConfigStore.Service, configStores.settings),
-        Effect.provideService(SkillConfigStore.Service, configStores.skills),
       )
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
@@ -1425,7 +1422,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(CommandConfigStore.defaultLayer),
   Layer.provide(ReferenceConfigStore.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
-  Layer.provide(SkillConfigStore.defaultLayer),
   Layer.provide(Database.defaultLayer),
 )
 
@@ -1449,7 +1445,6 @@ export const node = LayerNode.make({
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
     Database.node,
   ],
 })

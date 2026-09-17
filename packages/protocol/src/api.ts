@@ -10,7 +10,6 @@ import { DirectoryBrowseGroup, FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
 import { QualityGroup } from "./groups/quality"
 import { VcsGroup } from "./groups/vcs"
-import { SkillGroup } from "./groups/skill"
 import { EventGroup } from "./groups/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
@@ -79,7 +78,6 @@ const makeApiFromGroup = <
     .add(VcsGroup.middleware(locationMiddleware))
     // Location-scoped: the manifests it reads are the ones in THAT working tree.
     .add(QualityGroup.middleware(locationMiddleware))
-    .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
     // Instance-wide aggregation enumerates already-active location graphs; applying location
@@ -159,7 +157,6 @@ type ApiFromGroup<
       | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof VcsGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof QualityGroup, LocationId>
-      | HttpApiGroup.AddMiddleware<typeof SkillGroup, LocationId>
       | Group
       | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>
       | typeof PtyInstanceGroup

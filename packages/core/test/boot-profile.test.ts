@@ -13,7 +13,6 @@ import { PluginV2 } from "@novaclaw/core/plugin"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Database } from "../src/database/database"
 import { EventV2 } from "../src/event"
 import { tmpdir } from "./fixture/tmpdir"
@@ -262,7 +261,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CommandConfigStore.node,
       ReferenceConfigStore.node,
-      SkillConfigStore.node,
       LocationServiceMap.node,
     ]),
   ).pipe(Layer.provide(flagsLayer)),

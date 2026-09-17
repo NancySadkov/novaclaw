@@ -1821,8 +1821,6 @@ function toolMeta(part: SessionMessageAssistantTool, i18n: UiI18n, messages: rea
     // rule and the test that runs it (this file cannot be imported by `bun test`).
     case "colleague":
       return colleagueRow(input, i18n.t)
-    case "skill":
-      return { title: str(input.name) ?? i18n.t("ui.transcript.tool.skill") }
     default:
       return { title: part.name }
   }

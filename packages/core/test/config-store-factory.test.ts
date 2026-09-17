@@ -14,7 +14,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -46,7 +45,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
-      SkillConfigStore.node,
     ]),
   ),
 )
@@ -370,57 +368,6 @@ describe("every key/value store (one factory, three tables)", () => {
       yield* settings.remove("snapshots")
       expect(yield* settings.all()).toEqual({})
       expect(yield* settings.isEmpty()).toBe(true)
-    }),
-  )
-})
-
-// ─── the list stores ─────────────────────────────────────────────────────────────────────────────
-
-interface ListCase {
-  readonly label: string
-  readonly keys: () => Effect.Effect<string[]>
-  readonly put: (key: string) => Effect.Effect<void>
-  readonly remove: (key: string) => Effect.Effect<void>
-  readonly isEmpty: () => Effect.Effect<boolean>
-}
-
-// ⚠️ ONE case, and the plural machinery stays. `PluginConfigStore` was the second — deleted with the
-// `plugins[]` key by ruling 5 / step 17 — and collapsing this into a single hand-written store would
-// mean re-deriving the table on the day a third list store lands. The loop is the invariant; the
-// number of rows in it is not.
-const listCases = Effect.gen(function* () {
-  const skills = yield* SkillConfigStore.Service
-  const cases: ListCase[] = [
-    {
-      label: "SkillConfigStore",
-      keys: () => skills.sources(),
-      put: (key) => skills.addSource(key),
-      remove: (key) => skills.removeSource(key),
-      isEmpty: () => skills.isEmpty(),
-    },
-  ]
-  return cases
-})
-
-describe("every list store (one row skeleton)", () => {
-  it.effect("keeps INSERTION order, and re-putting an existing key does not reorder it", () =>
-    Effect.gen(function* () {
-      for (const store of yield* listCases) {
-        expect(yield* store.isEmpty(), store.label).toBe(true)
-        for (const key of ["/a", "/b", "/c"]) yield* store.put(key)
-        expect(yield* store.keys(), store.label).toEqual(["/a", "/b", "/c"])
-
-        // The identity IS the key: a second write updates in place. `selectAll` has no ORDER BY, so
-        // this is the rowid order the list stores' documented "insertion order" contract rests on
-        // — a store that deleted-and-reinserted on conflict would move "/a" to the end here.
-        yield* store.put("/a")
-        expect(yield* store.keys(), `${store.label} reordered on re-put`).toEqual(["/a", "/b", "/c"])
-
-        yield* store.remove("/b")
-        expect(yield* store.keys(), store.label).toEqual(["/a", "/c"])
-        for (const key of ["/a", "/c"]) yield* store.remove(key)
-        expect(yield* store.isEmpty(), store.label).toBe(true)
-      }
     }),
   )
 })

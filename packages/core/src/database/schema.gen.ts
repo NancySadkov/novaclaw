@@ -718,13 +718,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`skill_config\` (
-          \`source\` text PRIMARY KEY,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`tool_catalogue\` (
           \`scope\` text NOT NULL,
           \`name\` text NOT NULL,

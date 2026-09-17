@@ -14,7 +14,6 @@ import { Location } from "@novaclaw/core/location"
 import { Npm } from "@novaclaw/core/npm"
 import { PluginV2 } from "@novaclaw/core/plugin"
 import { Reference } from "@novaclaw/core/reference"
-import { SkillV2 } from "@novaclaw/core/skill"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { Effect, Layer } from "effect"
 import { tempLocationLayer } from "../fixture/location"
@@ -44,7 +43,6 @@ export const PluginTestLayer = AppNodeBuilder.build(
     CommandV2.node,
     Integration.node,
     Reference.node,
-    SkillV2.node,
     PluginTools.node,
   ]),
   [

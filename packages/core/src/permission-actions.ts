@@ -52,8 +52,8 @@ const SESSION = ["todowrite", "resource_status"] as const
 // same fault the `websearch` key had before that gate was built. Offering it here would invite a
 // user to write a rule that can never fire. Filed rather than quietly listed.
 
-/** Durable or privileged surfaces: memory, skills, recipes, quality commands, new tools, apps. */
-const CAPABILITY = ["skill", "recipe", "revert", "provision", "define_tool", "register-app"] as const
+/** Durable or privileged surfaces: memory, recipes, quality commands, new tools, apps. */
+const CAPABILITY = ["recipe", "revert", "provision", "define_tool", "register-app"] as const
 
 /** Delegation: staffing, directing, and stopping sub-agents, plus handing work to a colleague. */
 const DELEGATION = ["spawn", "kill", "colleague"] as const

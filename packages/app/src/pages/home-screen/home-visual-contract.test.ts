@@ -5,17 +5,16 @@ import path from "node:path"
 const read = (relative: string) => fs.readFileSync(path.join(import.meta.dir, relative), "utf8")
 
 describe("home-screen visual contracts", () => {
-  test("Skills declares that its transparent glyph needs the shared launcher frame", () => {
-    const builtins = read("../../apps/builtins.tsx")
+  test("a tile that declares a transparent glyph gets the shared launcher frame", () => {
+    // The one live tile using this is Models (owner, 2026-09-16); the Skills tile that first
+    // introduced `tileNeedsFrame` retired with the skills subsystem on 2026-09-17.
     const tile = read("app-tile.tsx")
-
-    expect(builtins).toMatch(/id: "skills",[\s\S]*?tileNeedsFrame: true/)
     expect(tile).toContain("!!props.app.tileNeedsFrame")
   })
 
   test("Models uses the shared launcher frame with its own golden glyph", () => {
-    // The tile must match the others: a transparent golden glyph that the renderer frames, exactly
-    // like Skills — not the gradient fallback it shipped with first (owner, 2026-09-16).
+    // The tile must match the others: a transparent golden glyph that the renderer frames, like the
+    // other framed tiles — not the gradient fallback it shipped with first (owner, 2026-09-16).
     const builtins = read("../../apps/builtins.tsx")
     expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/tiles\/models\.svg"/)
     expect(builtins).toMatch(/id: "models",[\s\S]*?tileNeedsFrame: true/)

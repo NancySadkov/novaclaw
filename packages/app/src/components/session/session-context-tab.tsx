@@ -247,7 +247,7 @@ export function SessionContextTab() {
     downloadPlainText(sessionExportFilename(officerName(), "session", "json"), document)
   }
 
-  // IMPORT SESSION — read another harness's export (opencode's `{info,messages}` and relatives) as a
+  // IMPORT SESSION — read another harness's export (`{info,messages}` and relatives) as a
   // new session. The server does the writing; this reads the file, fails fast on bad JSON, and opens
   // the result. `message.recorded` is not folded by the live transcript store, so opening the session
   // (rather than trusting the current view to update) is what makes the imported history visible.

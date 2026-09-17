@@ -51,7 +51,6 @@ export const ACTION_LABEL_KEY = {
   "register-app": "settings.permissions.tool.register-app.title",
   resource_status: "settings.permissions.tool.resource_status.title",
   revert: "settings.permissions.tool.revert.title",
-  skill: "settings.permissions.tool.skill.title",
   spawn: "settings.permissions.tool.spawn.title",
   task: "settings.permissions.tool.task.title",
   todowrite: "settings.permissions.tool.todowrite.title",

@@ -149,8 +149,11 @@ describe("routeConfig", () => {
     }
   }
 
-  /** The array-shaped key whose write REPLACES the store's list — see `REFUSED` in fixture.ts. */
-  const REFUSED = ["skills"]
+  /**
+   * The array-shaped keys whose write REPLACES the store's list — see `REFUSED` in fixture.ts. Empty
+   * since skills retired on 2026-09-17; the ratchet below is what makes a future entry land here.
+   */
+  const REFUSED: string[] = []
 
   test("every Config.Info key is either routed or refused BY NAME", () => {
     // The ratchet. A new top-level config key added to `Config.Info` lands here first: it is either
@@ -162,19 +165,6 @@ describe("routeConfig", () => {
     expect(keys).toContain("providers") // ...and it reaches the key this unit was opened for
 
     expect(keys.filter((key) => refusal(key) !== "").sort()).toEqual(REFUSED)
-  })
-
-  test("refuses skills and plugins with the reason, not with generic advice", () => {
-    for (const key of REFUSED) {
-      // Names the key, states WHY (replace-wholesale), and points somewhere useful. It must NOT
-      // tell the reader to teach `clearProvisioned` a remove op: both stores already have one, and
-      // using it would leave the store missing whatever the write wiped.
-      const message = refusal(key)
-      expect(message).toContain(`"${key}"`)
-      expect(message).toContain("REPLACES the whole")
-      expect(message).toContain("no such snapshot")
-      expect(message).not.toContain("teach clearProvisioned")
-    }
   })
 
   test("refuses an unknown key with the generic, actionable message", () => {

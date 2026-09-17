@@ -10,14 +10,12 @@ import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ReferenceConfigStore } from "./reference-config-store"
 import { SettingsConfigStore } from "./settings-config-store"
-import { SkillConfigStore } from "./skill-config-store"
 import { AgentConfigSeed } from "./agent-config-seed"
 import { CatalogSeed } from "./catalog-seed"
 import { CommandConfigSeed } from "./command-config-seed"
 import { ReferenceConfigSeed } from "./reference-config-seed"
 import { SettingsConfigMigrate } from "./settings-config-migrate"
 import { SettingsConfigSeed } from "./settings-config-seed"
-import { SkillConfigSeed } from "./skill-config-seed"
 
 /**
  * The filenames every seed reads, and the one env source that stands in for a file.
@@ -67,7 +65,6 @@ const populatedStores = Effect.gen(function* () {
   if (!(yield* (yield* CatalogStore.Service).isEmpty())) populated.push("catalog")
   if (!(yield* (yield* AgentConfigStore.Service).isEmpty())) populated.push("agent")
   if (!(yield* (yield* CommandConfigStore.Service).isEmpty())) populated.push("command")
-  if (!(yield* (yield* SkillConfigStore.Service).isEmpty())) populated.push("skill")
   if (!(yield* (yield* ReferenceConfigStore.Service).isEmpty())) populated.push("reference")
   if (!(yield* (yield* SettingsConfigStore.Service).isEmpty())) populated.push("settings")
   return populated
@@ -117,7 +114,6 @@ export const seedAll = (globalConfigDir: string, home: string) =>
     yield* CatalogSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
     yield* AgentConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
     yield* CommandConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
-    yield* SkillConfigSeed.seedFromDirectory(globalConfigDir, home).pipe(Effect.ignore)
     yield* ReferenceConfigSeed.seedFromDirectory(globalConfigDir, home).pipe(Effect.ignore)
     // (There is no plugin seed. Ruling 5 / step 17 deleted the `plugins[]` key and its store; a
     // user's own `{plugin,plugins}/*.ts` files are filesystem-walked by `config/plugin/external.ts`

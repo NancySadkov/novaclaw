@@ -35,14 +35,12 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { RuntimeSettingTable } from "@novaclaw/core/settings-config/sql"
 import { CatalogProviderTable, CatalogSettingTable } from "@novaclaw/core/catalog/sql"
 import { AgentConfigTable, AgentSettingTable } from "@novaclaw/core/agent-config/sql"
 import { CommandConfigTable } from "@novaclaw/core/command-config/sql"
 import { ReferenceConfigTable } from "@novaclaw/core/reference-config/sql"
-import { SkillConfigTable } from "@novaclaw/core/skill-config/sql"
 
 /** Infra layer that provides FileSystem, Path, ChildProcessSpawner for test fixtures */
 const infra = CrossSpawnSpawner.defaultLayer.pipe(
@@ -62,7 +60,6 @@ const configLayer = () =>
     Layer.provide(CommandConfigStore.defaultLayer),
     Layer.provide(ReferenceConfigStore.defaultLayer),
     Layer.provide(SettingsConfigStore.defaultLayer),
-    Layer.provide(SkillConfigStore.defaultLayer),
   )
 
 const layer = configLayer()
@@ -82,7 +79,6 @@ const storeAccess = Layer.mergeAll(
   CommandConfigStore.defaultLayer,
   ReferenceConfigStore.defaultLayer,
   SettingsConfigStore.defaultLayer,
-  SkillConfigStore.defaultLayer,
   Database.defaultLayer,
 )
 
@@ -101,7 +97,6 @@ const wipeStores = withStores(
       AgentSettingTable,
       CommandConfigTable,
       ReferenceConfigTable,
-      SkillConfigTable,
     ]) {
       yield* db.delete(table).run().pipe(Effect.orDie)
     }

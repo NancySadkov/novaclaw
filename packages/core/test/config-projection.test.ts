@@ -14,7 +14,6 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { ConfigureTool } from "@novaclaw/core/tool/configure"
 import { it } from "./lib/effect"
 
@@ -563,7 +562,6 @@ const stores = AppNodeBuilder.build(
     AgentConfigStore.node,
     CommandConfigStore.node,
     ReferenceConfigStore.node,
-    SkillConfigStore.node,
   ]),
   [],
 ) as Layer.Layer<
@@ -573,7 +571,6 @@ const stores = AppNodeBuilder.build(
   | AgentConfigStore.Service
   | CommandConfigStore.Service
   | ReferenceConfigStore.Service
-  | SkillConfigStore.Service
 >
 
 describe("a repair the projection describes actually lands", () => {

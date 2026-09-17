@@ -10,7 +10,6 @@ import { CapabilityRegistry } from "../../effect/capability-registry"
 import { PermissionV2 } from "../../permission"
 import { ReferenceConfigStore } from "../../reference-config-store"
 import { SettingsConfigStore } from "../../settings-config-store"
-import { SkillConfigStore } from "../../skill-config-store"
 import { ToolRegistry } from ".././registry"
 
 export const node = makeLocationNode({
@@ -217,7 +216,6 @@ deps: [
     AgentConfigStore.node,
     CommandConfigStore.node,
     ReferenceConfigStore.node,
-    SkillConfigStore.node,
     CapabilityRegistry.node,
   ],
 })

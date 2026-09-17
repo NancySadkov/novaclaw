@@ -70,7 +70,6 @@ describe("reload domain order", () => {
     expect(domainsFor("agents")).toContain("agents")
     expect(domainsFor("commands")).toEqual(["commands"])
     expect(domainsFor("references")).toEqual(["references"])
-    expect(domainsFor("skills")).toEqual(["skills"])
     expect(domainsFor("providers")).toEqual(["catalog"])
   })
 

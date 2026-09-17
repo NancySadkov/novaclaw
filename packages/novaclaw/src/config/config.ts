@@ -14,7 +14,6 @@ import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { isRecord } from "@/util/record"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
@@ -51,10 +50,6 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
   // the shared Permission.evaluate sees an identically-ordered ruleset. Rule objects aren't dedupable.
   if (target.permissions && source.permissions) {
     merged.permissions = [...target.permissions, ...source.permissions]
-  }
-  // V2 `skills` is a flat array (V1 spelled it `{paths,urls}`); concat + dedup like instructions.
-  if (target.skills && source.skills) {
-    merged.skills = Array.from(new Set([...target.skills, ...source.skills]))
   }
   return merged
 }
@@ -145,7 +140,6 @@ export const layer = Layer.effect(
     const commandStore = yield* CommandConfigStore.Service
     const referenceStore = yield* ReferenceConfigStore.Service
     const settingsStore = yield* SettingsConfigStore.Service
-    const skillStore = yield* SkillConfigStore.Service
     const provideStores = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.provideService(AgentConfigStore.Service, agentStore),
@@ -153,7 +147,6 @@ export const layer = Layer.effect(
         Effect.provideService(CommandConfigStore.Service, commandStore),
         Effect.provideService(ReferenceConfigStore.Service, referenceStore),
         Effect.provideService(SettingsConfigStore.Service, settingsStore),
-        Effect.provideService(SkillConfigStore.Service, skillStore),
         Effect.provideService(FSUtil.Service, fs),
       )
 
@@ -524,7 +517,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(CommandConfigStore.defaultLayer),
   Layer.provide(ReferenceConfigStore.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
-  Layer.provide(SkillConfigStore.defaultLayer),
 )
 
 export const node = LayerNode.make({
@@ -538,7 +530,6 @@ export const node = LayerNode.make({
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
   ],
 })
 

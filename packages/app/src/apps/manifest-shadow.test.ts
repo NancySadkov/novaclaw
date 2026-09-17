@@ -61,7 +61,8 @@ describe("a manifest may not claim a built-in tile's id", () => {
     const warn = spyOn(console, "warn").mockImplementation(() => {})
     try {
       const ids = Object.keys(BUILTIN_APP_LABELS)
-      expect(ids.length).toBeGreaterThanOrEqual(13)
+      // A floor, not the roster: Notes and Skills tiles were retired on 2026-09-17, taking two ids.
+      expect(ids.length).toBeGreaterThanOrEqual(11)
       expect(unshadowedManifests(ids.map(manifest))).toEqual([])
     } finally {
       warn.mockRestore()

@@ -45,7 +45,6 @@ import { isSteerText } from "@novaclaw/core/session/steer-provenance"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
-import { SkillGuidance } from "@novaclaw/core/skill/guidance"
 import { ReferenceGuidance } from "@novaclaw/core/reference/guidance"
 import { Location } from "@novaclaw/core/location"
 import { PluginV2 } from "@novaclaw/core/plugin"
@@ -338,10 +337,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * turn already assembling.
      */
     systemLoadHook: undefined as Effect.Effect<void> | undefined,
-    /**
-     * Per-agent skill guidance. Absent agent ⇒ no guidance, which is the default for every other claim.
-     */
-    skillBaselines: new Map<string, string>(),
     /**
      * Compaction settings, read on every `Config.entries()` call so a claim can change them mid-test.
      * The compaction family is about behaviour AT a threshold, so the threshold has to be reachable.
@@ -667,21 +662,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     ),
   ).pipe(Layer.provideMerge(AppNodeBuilder.build(SystemContextRegistry.node)))
 
-  const skillGuidance = Layer.mock(SkillGuidance.Service, {
-    load: (agent: { id: string }) =>
-      Effect.succeed(
-        controls.skillBaselines.has(agent.id)
-          ? SystemContext.make({
-              key: SystemContext.Key.make("test/skill-guidance"),
-              codec: Schema.toCodecJson(Schema.String),
-              load: Effect.succeed(controls.skillBaselines.get(agent.id)!),
-              baseline: String,
-              update: (_previous, current) => current,
-              removed: () => "Skill guidance removed",
-            })
-          : SystemContext.empty,
-      ),
-  })
   const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
 
   const snapshotCaptures: Snapshot.ID[] = []
@@ -743,7 +723,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     [SessionRunnerModel.node, models],
     [SystemContextRegistry.node, systemContext],
     [Location.node, Location.boundNode({ directory })],
-    [SkillGuidance.node, skillGuidance],
     [ReferenceGuidance.node, referenceGuidance],
     [PermissionV2.node, permission],
     [Config.node, config],
@@ -783,7 +762,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       policyNode,
       SessionRunnerModel.node,
       SystemContextRegistry.node,
-      SkillGuidance.node,
       ReferenceGuidance.node,
       Config.node,
       Snapshot.node,
@@ -812,8 +790,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       [SessionRunnerModel.node, models],
       [SystemContextRegistry.node, systemContext],
       [Location.node, Location.boundNode({ directory })],
-      [SkillGuidance.node, skillGuidance],
-      [ReferenceGuidance.node, referenceGuidance],
+        [ReferenceGuidance.node, referenceGuidance],
       [Snapshot.node, snapshotLayer],
       [SessionExecution.node, execution],
       [Config.node, config],

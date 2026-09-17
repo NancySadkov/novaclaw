@@ -109,11 +109,11 @@ describe("instance HttpApi", () => {
       // The declarations the core checker derives from source must be the ones served here — this is
       // the join between the two halves, and a join is exactly what nothing tests by accident.
       const byId = new Map(body.map((item) => [item.id, item]))
-      expect(byId.get("config-skill")?.capabilities?.slice().sort()).toEqual([
+      expect(byId.get("core/config-reference")?.capabilities?.slice().sort()).toEqual([
         "config",
         "global",
         "location",
-        "skillConfigStore",
+        "referenceConfigStore",
       ])
       expect(byId.get("agent")?.capabilities).toEqual(["location"])
       // A plugin that genuinely needs nothing declares an EMPTY set, and that must not arrive as

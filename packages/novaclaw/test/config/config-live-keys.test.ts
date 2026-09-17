@@ -8,7 +8,6 @@ import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Database } from "@novaclaw/core/database/database"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Config } from "@/config/config"
 import { Format } from "@/format"
@@ -64,7 +63,6 @@ const configStores = LayerNode.compile(
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
-    SkillConfigStore.node,
   ]),
 )
 

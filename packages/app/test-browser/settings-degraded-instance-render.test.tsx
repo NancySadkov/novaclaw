@@ -66,8 +66,6 @@ const PROJECT = {
   permissionRules: 0,
   permissions: [],
   exclude: [],
-  skills: [],
-  skillsRefused: [],
 }
 /** A folder with no project file — the successful EMPTY answer, which is not a fault. */
 const PROJECT_NONE = { kind: "none" }

@@ -140,32 +140,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/recipes"),
     },
     {
-      id: "skills",
-      get title() {
-        return name("skills")
-      },
-      // Owner-supplied artwork (2026-08-20), so this tile no longer takes the gradient fallback:
-      // the gold brain from `doc/gfx/other/brain.png`, downscaled 1024 -> 256 like every other tile
-      // and kept on transparency so the aubergine field shows through. `icon` stays as the fallback
-      // for surfaces that render a glyph rather than the tile art — `brain` is the knowledge glyph
-      // and is used by no other built-in, and an unknown v2 name would silently render a "plus".
-      icon: "brain",
-      tile: "/assets/skin/tiles/skills.png",
-      // Unlike every other built-in tile PNG, the owner-supplied file is the transparent GLYPH,
-      // not a finished framed icon. Keep that artwork intact and have the shared tile renderer add
-      // the same aubergine/gold frame around it; otherwise Skills alone floats borderless on Home.
-      tileNeedsFrame: true,
-      accent: "#06b6d4",
-      get subtitle() {
-        return sub("skills")
-      },
-      source: "builtin",
-      // NORMAL level, on purpose. A skill is instructions from someone else that change what your
-      // agent does; the people most likely to ask "what did I just install?" are exactly the ones an
-      // expertise gate would stop from looking (the same argument that put Memory at Normal).
-      open: () => navigate("/skills"),
-    },
-    {
       id: "files",
       get title() {
         return name("files")

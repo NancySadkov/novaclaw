@@ -2,7 +2,7 @@ import { For, Show, createMemo, createResource, createSignal, type Component } f
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
-import { authorText } from "@/apps/skills"
+import { authorText } from "@/apps/author-text"
 import { useGlobal } from "@/context/global"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServer } from "@/context/server"

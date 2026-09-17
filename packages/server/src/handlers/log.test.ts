@@ -50,11 +50,18 @@ import {
 /**
  * One declared event carrying all three shapes this route has to tell apart: a content-free column
  * (`id`), a withheld-but-ours column (`path`), and a withheld column that speaks for others
- * (`fault`). Asserted below rather than assumed — if the declaration loses one of them, this file
+ * (`text`). Asserted below rather than assumed — if the declaration loses one of them, this file
  * says so instead of quietly testing two thirds of the question.
+ *
+ * ⚠️ It was `skill.scan.failed` until 2026-09-17; the skills subsystem is retired, so the fixture
+ * moved to a live event with the same three classes rather than keeping a dead declaration alive.
  */
-const FIXTURE_EVENT = "skill.scan.failed" as const
-const FIXTURE_SHAPE = { "skill.scope": "id", "skill.directory": "path", "skill.error": "fault" } as const
+const FIXTURE_EVENT = "worktree.start.command.failed" as const
+const FIXTURE_SHAPE = {
+  "worktree.start.kind": "id",
+  "worktree.directory": "path",
+  "worktree.cause": "text",
+} as const
 
 const SCOPE = "zzsentinelscopezz"
 const DIRECTORY = "/zzsentineldirzz/projects"
@@ -78,9 +85,9 @@ function emit(effect: Effect.Effect<void>): string {
 const fixtureLine = () =>
   emit(
     Log.event(FIXTURE_EVENT, {
-      "skill.scope": SCOPE,
-      "skill.directory": DIRECTORY,
-      "skill.error": FAULT,
+      "worktree.start.kind": SCOPE,
+      "worktree.directory": DIRECTORY,
+      "worktree.cause": FAULT,
     }),
   )
 
@@ -125,7 +132,7 @@ describe("diagnostic export", () => {
     const text = new TextDecoder().decode(Buffer.concat(Array.from(chunks, (chunk) => Buffer.from(chunk))))
 
     expect(text).toContain("projection=maintenance source=instance-log window=1d")
-    expect(text).toContain("skill.directory=‹user›")
+    expect(text).toContain("worktree.directory=‹user›")
     expect(text).not.toContain(DIRECTORY)
     expect(text).not.toContain(FAULT)
   })
@@ -200,8 +207,8 @@ describe("the plane projection is the class table, and the default is local", ()
     expect(maintenance.text).not.toContain(DIRECTORY)
     expect(maintenance.text).not.toContain("zzsentinelfaultzz")
     // …and NAMED, not dropped: a silently shorter line is a lie about what the log contains.
-    expect(maintenance.text).toContain("skill.directory=‹user›")
-    expect(maintenance.text).toContain("skill.error=‹user›")
+    expect(maintenance.text).toContain("worktree.directory=‹user›")
+    expect(maintenance.text).toContain("worktree.cause=‹user›")
     // …while the content-free column and the line's own columns survive, which is what makes the
     // two assertions above about the CLASS rather than about redacting everything.
     expect(maintenance.text).toContain(SCOPE)
@@ -217,8 +224,8 @@ describe("the plane projection is the class table, and the default is local", ()
 
   test("the untrusted frame rides the LOCAL block and is absent from maintenance", () => {
     const source = fixtureSource([fixtureLine()])
-    // The line carries a `fault` column, which `SPEAKS_FOR_OTHERS` declares foreign.
-    expect(LogRead.SPEAKS_FOR_OTHERS.fault).toBe(true)
+    // The line carries a `text` column, which `SPEAKS_FOR_OTHERS` declares foreign.
+    expect(LogRead.SPEAKS_FOR_OTHERS.text).toBe(true)
     expect(read({}, source).text.startsWith(`[${LogTool.FOREIGN_LABEL}`)).toBe(true)
     // Under maintenance every foreign class has already been withheld, so announcing a source that
     // sent nothing would be a false statement about the content beneath it.
@@ -254,11 +261,11 @@ describe("filters and empty states", () => {
   test("subsystem and level narrow the same walk", () => {
     const source = fixtureSource([fixtureLine(), otherLine()])
     expect(read({}, source).lines).toBe(2)
-    expect(read({ subsystem: "skill" }, source).lines).toBe(1)
+    expect(read({ subsystem: "worktree" }, source).lines).toBe(1)
     expect(read({ subsystem: "log" }, source).lines).toBe(1)
     expect(read({ level: "error" }, source).lines).toBe(1)
     expect(read({ match: "zzsentineldirzz" }, source).lines).toBe(1)
-    expect(read({ key: "skill." }, source).lines).toBe(1)
+    expect(read({ key: "worktree." }, source).lines).toBe(1)
   })
 
   test("an absent log is scanned:0, a filtered-out log is not — two different facts", () => {

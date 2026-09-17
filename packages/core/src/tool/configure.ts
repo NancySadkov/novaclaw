@@ -134,7 +134,6 @@ import { CapabilityRegistry } from "../effect/capability-registry"
 import { PermissionV2 } from "../permission"
 import { ReferenceConfigStore } from "../reference-config-store"
 import { SettingsConfigStore } from "../settings-config-store"
-import { SkillConfigStore } from "../skill-config-store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -486,7 +485,6 @@ export const layer = Layer.effectDiscard(
       | AgentConfigStore.Service
       | CommandConfigStore.Service
       | ReferenceConfigStore.Service
-      | SkillConfigStore.Service
     >()
 
     yield* tools
@@ -768,7 +766,6 @@ export const node = makeLocationNode({
     AgentConfigStore.node,
     CommandConfigStore.node,
     ReferenceConfigStore.node,
-    SkillConfigStore.node,
     CapabilityRegistry.node,
   ],
 })

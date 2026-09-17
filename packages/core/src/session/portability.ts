@@ -3,9 +3,9 @@ export * as SessionPortability from "./portability"
 /**
  * SESSION PORTABILITY — read another harness's session export, and write one of ours.
  *
- * 🔴 The goal is to move a transcript between coding agents: an opencode (or compatible) export is
- * imported as a NovaClaw session so work can continue here, and a NovaClaw session can be exported so
- * another harness can read it back.
+ * 🔴 The goal is to move a transcript between coding agents: another harness's export is imported as
+ * a NovaClaw session so work can continue here, and a NovaClaw session can be exported so another
+ * harness can read it back.
  *
  * ## Why this module is dependency-free
  *
@@ -15,7 +15,7 @@ export * as SessionPortability from "./portability"
  *
  * ## The shape, and the two dialects
  *
- * The corpus this was written against is an opencode V2 export: `{ info, messages }`, where a message
+ * The corpus this was written against is a foreign V2 export: `{ info, messages }`, where a message
  * is `{ type: "user" | "assistant" | …, … }` and an assistant carries `content[]` of
  * `{ type: "text" | "reasoning" | "tool", … }`. NovaClaw's own messages are descendants of the same
  * format, so one tolerant reader handles both and the writer emits a superset that round-trips through
@@ -173,8 +173,8 @@ const toolPart = (raw: Json, index: number): Json | undefined => {
   const id = text(raw.id) ?? text(raw.callID) ?? nextPartId("tool")
   const inputValue = state.input ?? raw.input
   const input = isRecord(inputValue) ? inputValue : {}
-  // `structured` is NovaClaw's field; opencode keeps the same object under `state.metadata`. Reading
-  // both is what makes an export round-trip through this reader without losing it.
+  // `structured` is NovaClaw's field; a foreign export keeps the same object under `state.metadata`.
+  // Reading both is what makes an export round-trip through this reader without losing it.
   const structured = record(state.structured ?? state.metadata)
   const content = toolContent(state, raw)
   const time = isRecord(raw.time) ? raw.time : {}
@@ -197,7 +197,7 @@ const toolPart = (raw: Json, index: number): Json | undefined => {
         : status === "error"
           ? { status: "error", input, structured, content, error: { type: "unknown", message: errorMessage } }
           : { status: "completed", input, structured, content }
-  // A native tool carries `provider`; an opencode one carries `executed`. Preserve whichever is there.
+  // A native tool carries `provider`; a foreign export's one carries `executed`. Preserve whichever is there.
   const provider = isRecord(raw.provider) ? { provider: raw.provider } : raw.executed === true ? { provider: { executed: true } } : {}
   return { type: "tool", id, name, ...provider, state: stateNow, time: timing }
 }

@@ -1569,7 +1569,7 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Import session
    *
-   * Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.
+   * Create a session from an exported transcript (agent-harness compatible). No model is called; the messages are recorded as history.
    */
   public import<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4149,30 +4149,6 @@ class ApiV2Quality extends NovaClawApiClient {
   }
 }
 
-class ApiV2Skill extends NovaClawApiClient {
-  /**
-   * List skills
-   *
-   * Retrieve currently registered skills.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<T.V2SkillListResponses, T.V2SkillListErrors, ThrowOnError>({
-      url: "/api/skill",
-      ...options,
-      query,
-    })
-  }
-}
-
 class ApiV2Event extends NovaClawApiClient {
   /**
    * Subscribe to events
@@ -4715,11 +4691,6 @@ class ApiV2 extends NovaClawApiClient {
   private _quality?: ApiV2Quality
   get quality(): ApiV2Quality {
     return (this._quality ??= new ApiV2Quality({ client: this.client }))
-  }
-
-  private _skill?: ApiV2Skill
-  get skill(): ApiV2Skill {
-    return (this._skill ??= new ApiV2Skill({ client: this.client }))
   }
 
   private _event?: ApiV2Event

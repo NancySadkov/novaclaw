@@ -30,7 +30,6 @@ import { CommunitySync } from "@novaclaw/core/community/sync"
 import { CommunityTransport } from "@novaclaw/core/community/transport"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
 import { Agent } from "@/agent/agent"
@@ -44,8 +43,6 @@ import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
-import { Skill } from "@/skill"
-import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { HostPressure } from "@/storage/host-pressure"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
@@ -294,7 +291,6 @@ const app = LayerNode.group([
   CommunityTransport.node,
   CommunityDht.node,
   CommunityPost.node,
-  SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,
   // The graph-memory engine — a per-process (per-instance) singleton like the DB. Provided at the
@@ -327,8 +323,6 @@ const app = LayerNode.group([
   LocalModelRuntime.managerNode,
   ModelsDev.node,
   Agent.node,
-  Skill.node,
-  SkillDiscovery.node,
   PermissionSaved.node,
   SessionProjector.node,
   // 🔴 The reassignment DELIVERY, registered where the sessions and the event bus are.

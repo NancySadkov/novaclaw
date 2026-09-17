@@ -16,8 +16,6 @@ import { Reference } from "@novaclaw/core/reference"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillV2 } from "@novaclaw/core/skill"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Database } from "../src/database/database"
 import { EventV2 } from "../src/event"
@@ -63,7 +61,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CommandConfigStore.node,
       ReferenceConfigStore.node,
-      SkillConfigStore.node,
       LocationServiceMap.node,
     ]),
   ).pipe(Layer.provide(flagsLayer)),
@@ -73,8 +70,6 @@ const decodeInfo = Schema.decodeUnknownSync(Config.Info)
 
 /** No `/`, whitespace, backtick or comma — `ConfigReference.validAlias` rejects those. */
 const PROBE = "wired-through-the-write"
-
-const sourcePath = (source: SkillV2.Source) => (source.type === "directory" ? source.path : undefined)
 
 const withLocation = <A, E, R>(body: (location: Location.Ref, directory: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireRelease(
@@ -132,21 +127,19 @@ describe("a config write re-materialises the domain it edited", () => {
     ),
   )
 
-  it.live("an edited COMMAND, REFERENCE and SKILL are live on their same service instances", () =>
+  it.live("an edited COMMAND and REFERENCE are live on their same service instances", () =>
     Effect.scoped(
       withLocation((location, directory) =>
         Effect.gen(function* () {
           const plugins = yield* PluginV2.Service
           yield* plugins.ready
 
-          // All three resolved ONCE, before any write.
+          // Both resolved ONCE, before any write.
           const commands = yield* CommandV2.Service
           const references = yield* Reference.Service
-          const skills = yield* SkillV2.Service
 
           expect(yield* commands.get(PROBE)).toBeUndefined()
           expect((yield* references.list()).map((entry) => entry.name)).not.toContain(PROBE)
-          expect((yield* skills.sources()).map(sourcePath)).not.toContain(directory)
 
           yield* ConfigStoreWrite.apply(
             decodeInfo({ commands: { [PROBE]: { template: "run the probe", description: "a probe" } } }),
@@ -158,9 +151,6 @@ describe("a config write re-materialises the domain it edited", () => {
           // git repository. A `{ path }` entry is local on every platform.
           yield* ConfigStoreWrite.apply(decodeInfo({ references: { [PROBE]: { path: directory } } }))
           expect((yield* references.list()).map((entry) => String(entry.name))).toContain(PROBE)
-
-          yield* ConfigStoreWrite.apply(decodeInfo({ skills: [directory] }))
-          expect((yield* skills.sources()).map((source) => String(sourcePath(source)))).toContain(directory)
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),
@@ -193,9 +183,6 @@ describe("the reload guard is per-key, and a failed reload is described honestly
       // state exactly the way an edited agent is, and it has to re-materialise too.
       yield* ConfigStoreWrite.apply(decodeInfo({ permissions: [{ action: "read", resource: "*", effect: "allow" }] }))
       expect(seen).toEqual(["agents", "agents"])
-
-      yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/opt/probe-skills"] }))
-      expect(seen).toEqual(["agents", "agents", "skills"])
     }),
   )
 

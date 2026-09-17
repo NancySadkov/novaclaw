@@ -39,7 +39,6 @@ const ICONS: Readonly<Record<string, IconName>> = {
   revert: "reset",
   self: "user",
   session: "chats",
-  skill: "models",
   spawn: "fork",
   task: "task",
   todowrite: "checklist",

@@ -7,7 +7,6 @@ import { PermissionHandler } from "./handlers/permission"
 import { FileSystemHandler } from "./handlers/fs"
 import { DirectoryBrowseHandler } from "./handlers/directory-browse"
 import { CommandHandler } from "./handlers/command"
-import { SkillHandler } from "./handlers/skill"
 import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { HealthHandler } from "./handlers/health"
@@ -46,7 +45,6 @@ type HandlerLayers =
   | typeof FileSystemHandler
   | typeof DirectoryBrowseHandler
   | typeof CommandHandler
-  | typeof SkillHandler
   | typeof EventHandler
   | typeof PtyHandler
   | typeof PtyInstanceHandler
@@ -79,7 +77,6 @@ export const handlers: Layer.Layer<
   FileSystemHandler,
   DirectoryBrowseHandler,
   CommandHandler,
-  SkillHandler,
   EventHandler,
   PtyHandler,
   PtyInstanceHandler,

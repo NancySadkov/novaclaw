@@ -179,9 +179,9 @@ const SPECIFIER_PATTERNS: RegExp[] = [
   /^[ \t]*export\s+(?:type\s+)?(?:\*|\{)[^'";]*?from\s*["']([^"']+)["']/gm,
   /^[ \t]*import\s*["']([^"']+)["']/gm,
   /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
-  // ⚠️ `require` must not be a METHOD. `packages/novaclaw/test/skill/skill.test.ts` calls
-  // `skill.require("missing-skill")`, and an unguarded `\brequire\s*\(` read that as a CommonJS
-  // require of a package called `missing-skill`. Sixth instance of "writing ABOUT (or near) a
+  // ⚠️ `require` must not be a METHOD. A method call like `client.require("missing-package")` would
+  // be read by an unguarded `\brequire\s*\(` as a CommonJS require of a package called
+  // `missing-package`. Sixth instance of "writing ABOUT (or near) a
   // pattern trips the guard against it": the word is the same, the syntax is not.
   /(?<![.\w$])require\s*\(\s*["']([^"']+)["']\s*\)/g,
   // ⚠️ ANCHORED to the start of a line, and that anchor is load-bearing. Unanchored, this pattern
@@ -484,7 +484,7 @@ describe("workspace dependency ledger", () => {
     const fixture = [
       `// Baileys dynamic-imports them: without externalizing, \`import("audio-decode")\` fails`,
       ` * a comment line inside a block: require("phantom-block")`,
-      `const error = yield* Effect.flip(skill.require("missing-skill"))`,
+      `const error = yield* Effect.flip(client.require("missing-package"))`,
       `import("novaclaw-web-ui.gen.ts").then((m) => m.default)`,
       `import { real } from "real-package"`,
       `const lazy = await import("lazy-package")`,

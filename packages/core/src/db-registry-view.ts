@@ -64,10 +64,6 @@ export const SECRET_COLUMN_PATTERN =
  *    `catalog_provider` lifts to `{providers: {<id>: layer}}`, and `Config.Info.providers` is
  *    `Record<string, ConfigProvider.Info>`. That is the table that matters most: a provider's
  *    `request.headers` is where an Authorization token lives, and `request.body.apiKey` with it.
- *
- * `skill_config` is `(source, timestamps)` — there is no payload to walk, and `none` says so
- * explicitly rather than leaving the table unlisted, because an unlisted config table FAILS CLOSED
- * below and would strand a reader on a table that never held a secret.
  */
 export type ConfigRoute =
   | { readonly kind: "entry"; readonly key: string; readonly value: string }
@@ -82,7 +78,6 @@ const CONFIG_ROUTES: ReadonlyMap<string, ConfigRoute> = new Map<string, ConfigRo
   ["agent_config", { kind: "layers", name: "name", value: "layers", field: "agents" }],
   ["command_config", { kind: "layers", name: "name", value: "layers", field: "commands" }],
   ["reference_config", { kind: "layers", name: "name", value: "layers", field: "references" }],
-  ["skill_config", { kind: "none" }],
 ])
 
 /** Exported for the ledger test that pins this against `DbRegistry.configBackedTables()`. */

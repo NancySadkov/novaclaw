@@ -15,8 +15,8 @@ import { DateTime, Effect, Stream } from "effect"
 // A2-a — `prune()`, the non-LLM reclaim lost in the V1 nuke ( §A2).
 //
 // Every clause of the spec is asserted here against the PURE module, because the thresholds are the
-// feature: "protect the newest 40k tokens of tool output and the last 2 turns, exempt `skill`
-// output, erase older tool results, commit only if the reclaim clears 20k". A prune that erases
+// feature: "protect the newest 40k tokens of tool output and the last 2 turns, erase older tool
+// results, commit only if the reclaim clears 20k". A prune that erases
 // history it should have protected is unrecoverable from inside a session, so the protections get
 // negative controls (a fixture that WOULD be erased if the clause were absent), not just a
 // happy-path check.
@@ -105,11 +105,11 @@ const sixReads = () => [
 ]
 
 describe("the thresholds are the real numbers the spec names", () => {
-  test("40k protected, 2 turns protected, 20k minimum reclaim, skill exempt", () => {
+  test("40k protected, 2 turns protected, 20k minimum reclaim, nothing exempt", () => {
     expect(CompactionPrune.PROTECT_TOOL_OUTPUT_TOKENS).toBe(40_000)
     expect(CompactionPrune.PROTECT_RECENT_TURNS).toBe(2)
     expect(CompactionPrune.MIN_RECLAIM_TOKENS).toBe(20_000)
-    expect(CompactionPrune.EXEMPT_TOOLS).toEqual(["skill"])
+    expect(CompactionPrune.EXEMPT_TOOLS).toEqual([])
   })
 
   test("outputTokens estimates what lowering actually sends, not the row", () => {
@@ -174,27 +174,6 @@ describe("prune protects the last 2 turns", () => {
     const plan = CompactionPrune.plan(messages)
     expect(targeted(plan)).not.toContain(toolsOf(recent)[0]!.id)
     expect(targeted(plan)).toEqual([old[2]!.id, old[1]!.id, old[0]!.id])
-  })
-})
-
-describe("prune exempts skill output", () => {
-  test("a huge skill result is neither erased nor charged against the 40k ceiling", () => {
-    const skill = tool({ tokens: 200_000, name: "skill" })
-    const old = sixReads()
-    // The skill result is the NEWEST part of the old message, so without the exemption it alone
-    // exceeds the ceiling and every `read` behind it would be erased.
-    const plan = CompactionPrune.plan(transcript({ old: [...old, skill] }).messages)
-    expect(targeted(plan)).not.toContain(skill.id)
-    expect(targeted(plan)).toEqual([old[2]!.id, old[1]!.id, old[0]!.id])
-    expect(plan.scanned).toBeLessThan(80_000)
-    // And the erase leaves the skill part byte-identical (same object).
-    const messages = transcript({ old: [...old, skill] }).messages
-    const erased = CompactionPrune.erase(messages, CompactionPrune.plan(messages), AT)
-    const survivor = toolsOf(erased[1]!).find((part) => part.name === "skill")
-    expect(survivor?.state.status === "completed" && survivor.state.content[0]).toEqual({
-      type: "text",
-      text: chars(200_000),
-    })
   })
 })
 

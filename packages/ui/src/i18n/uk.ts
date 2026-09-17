@@ -119,7 +119,6 @@ export const dict = {
   "ui.tool.questions": "Питання",
   "ui.tool.agent": "Агент {{type}}",
   "ui.tool.agent.default": "Агент",
-  "ui.tool.skill": "Навичка",
 
   "ui.basicTool.called": "Викликано `{{tool}}`",
   "ui.toolErrorCard.failed": "Помилка",

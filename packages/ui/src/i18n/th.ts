@@ -164,7 +164,6 @@ export const dict = {
   "ui.fileSearch.nextMatch": "ถัดไป",
   "ui.fileSearch.close": "ปิดการค้นหา",
   "ui.tool.task": "งาน",
-  "ui.tool.skill": "ทักษะ",
   "ui.basicTool.called": "เรียกใช้ `{{tool}}`",
   "ui.toolErrorCard.failed": "ล้มเหลว",
   "ui.toolErrorCard.copyError": "คัดลอกข้อผิดพลาด",

@@ -13,7 +13,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 import { stripComments } from "./lib/source-scan"
 
@@ -72,7 +71,6 @@ const armTable = (name: string): string =>
   ROUTER_SOURCE.match(new RegExp(`const ${name} = \\[[\\s\\S]*?\\n\\]`))?.[0] ?? ""
 
 const LAYERED_TABLE = armTable("LAYERED_ARMS")
-const LIST_TABLE = armTable("LIST_ARMS")
 
 /**
  * The keys routed by a per-key arm, read out of the router itself rather than re-declared here.
@@ -83,13 +81,13 @@ const LIST_TABLE = armTable("LIST_ARMS")
  *    blocks, because each does something no table row could express: `models` runs the flat→nested
  *    expansion and must land AFTER `providers`, while `model` and `default_agent` are single
  *    whole-value writes into a `*_setting` table.
- *  · Six are ROWS in `LAYERED_ARMS` / `LIST_ARMS`, whose `key:` field the loop hands to
- *    `consumed.add(arm.key)`.
+ *  · Four are ROWS in `LAYERED_ARMS`, whose `key:` field the loop hands to `consumed.add(arm.key)`.
+ *    (A `LIST_ARMS` table existed for the array-shaped `skills` key until 2026-09-17.)
  * Together they are the whole drift surface: forgetting one is what this file exists to catch.
  */
 const LITERAL_ROUTED = [...ROUTER_SOURCE.matchAll(/consumed\.add\("([^"]+)"\)/g)].map((match) => match[1]!)
 
-const TABLE_ROUTED = [LAYERED_TABLE, LIST_TABLE].flatMap((table) =>
+const TABLE_ROUTED = [LAYERED_TABLE].flatMap((table) =>
   // `\r?` because the router is checked out CRLF on Windows and `$` would otherwise never match.
   [...table.matchAll(/^[ \t]*key: "([^"]+)",[ \t]*\r?$/gm)].map((match) => match[1]!),
 )
@@ -118,7 +116,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
-      SkillConfigStore.node,
     ]),
   ),
 )
@@ -132,11 +129,10 @@ describe("the sweep", () => {
     expect(fs.existsSync(ROUTER_PATH), `${ROUTER_PATH} is gone — repoint the sweep`).toBe(true)
     expect(ROUTER_SOURCE.length).toBeGreaterThan(2_000)
     expect(CONFIG_INFO_KEYS.length).toBeGreaterThan(30)
-    // …including the two arm TABLES. A renamed or reshaped table would otherwise make `armTable`
-    // return "" and quietly drop six routed keys out of the sweep, which the partition test would
-    // then report as six unrouted `Config.Info` fields — a loud failure with a misleading cause.
+    // …including the arm TABLE. A renamed or reshaped table would otherwise make `armTable`
+    // return "" and quietly drop routed keys out of the sweep, which the partition test would
+    // then report as unrouted `Config.Info` fields — a loud failure with a misleading cause.
     expect(LAYERED_TABLE, "LAYERED_ARMS is gone from the router — repoint the sweep").not.toBe("")
-    expect(LIST_TABLE, "LIST_ARMS is gone from the router — repoint the sweep").not.toBe("")
   })
 
   test("the settings half is still a loop over SETTINGS_KEYS, not a hand-written list", () => {
@@ -147,7 +143,7 @@ describe("the sweep", () => {
     expect(SETTINGS_ROUTED.size).toBeGreaterThan(20)
   })
 
-  test("the eight per-key arms are what the sweep found", () => {
+  test("the seven per-key arms are what the sweep found", () => {
     // Named explicitly so that DELETING an arm fails here too — the regex alone would just return a
     // shorter list and the partition test would blame `config.ts` for a key the router lost.
     expect([...STORE_ROUTED].sort()).toEqual([
@@ -158,16 +154,15 @@ describe("the sweep", () => {
       "models",
       "providers",
       "references",
-      "skills",
     ])
   })
 
-  test("…and the 3/5 split between the hand-written arms and the table rows is what it claims", () => {
+  test("…and the 3/4 split between the hand-written arms and the table rows is what it claims", () => {
     // The union above would still pass if a table row were quietly rewritten as a hand-written `if`,
     // or a special-cased arm folded into a row it cannot express — so pin WHICH form each key uses.
     // Moving one is legitimate; doing it without noticing is what this line prevents.
     expect([...LITERAL_ROUTED].sort()).toEqual(["default_agent", "model", "models"])
-    expect([...TABLE_ROUTED].sort()).toEqual(["agents", "commands", "providers", "references", "skills"])
+    expect([...TABLE_ROUTED].sort()).toEqual(["agents", "commands", "providers", "references"])
   })
 
   test("every routed key is a real Config.Info key", () => {
@@ -263,7 +258,6 @@ describe("the router refuses an unrouted key at runtime", () => {
           default_agent: "build",
           commands: { deploy: { template: "run it" } },
           references: { docs: { path: "/docs" } },
-          skills: ["/opt/skills"],
         }),
       )
       expect([...consumed].sort()).toEqual([...STORE_ROUTED].sort())

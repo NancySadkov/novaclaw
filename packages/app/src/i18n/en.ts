@@ -301,7 +301,6 @@ export const dict = {
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.dropzone.file.label": "Drop to @mention file",
   "prompt.slash.badge.custom": "custom",
-  "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
@@ -2124,7 +2123,7 @@ export const dict = {
   "settings.contextLayout.origin.settings": "This instance's settings",
   "settings.contextLayout.origin.agent": "the colleague's or chat's settings",
   "settings.contextLayout.origin.model": "Settings → Models → Configure",
-  "settings.contextLayout.origin.files": "AGENTS.md and skills",
+  "settings.contextLayout.origin.files": "AGENTS.md",
   "settings.contextLayout.origin.project": "the rule for this folder, by permission mode",
   "settings.contextLayout.origin.session": "this chat, through its own tools",
   "settings.contextLayout.origin.auto": "supplied automatically",
@@ -2393,8 +2392,6 @@ export const dict = {
   "settings.permissions.tool.bash.description": "Run shell commands",
   "settings.permissions.tool.task.title": "Task",
   "settings.permissions.tool.task.description": "Start helper agents to work on part of the task",
-  "settings.permissions.tool.skill.title": "Skill",
-  "settings.permissions.tool.skill.description": "Load a skill by name",
   "settings.permissions.tool.todowrite.title": "Todo Write",
   "settings.permissions.tool.todowrite.description": "Update the todo list",
   "settings.permissions.tool.webfetch.title": "Web Fetch",
@@ -2740,8 +2737,6 @@ export const dict = {
   "home.app.help.subtitle": "A short tour of what NovaClaw can do",
   "home.app.settings.name": "Settings",
   "home.app.settings.subtitle": "Providers, models, servers, recovery",
-  "home.app.skills.name": "Skills",
-  "home.app.skills.subtitle": "Extra instructions your agents can follow, and who wrote each one",
   "command.session.previous.unseen": "Previous unread chat",
   "command.session.next.unseen": "Next unread chat",
   // ── Community: the consent screen ────────────────────────────────────────────────────────────
@@ -2879,165 +2874,6 @@ export const dict = {
   "community.channels.archivedEntry.one": "{{name}} — {{count}} message",
   "community.channels.archivedEntry.other": "{{name}} — {{count}} messages",
 
-  // ─── The Skills app (`pages/skills.tsx`, logic in `apps/skills.ts`) ───────────────────────────
-  // ⚠️ The wording here IS the safety surface, so read the rules before editing a line:
-  //   · "Where it came from" is the only section stating something NovaClaw looked at. Every other
-  //     section is the skill describing itself, and `skills.what.authorship` says so out loud.
-  //   · `skills.capabilities.undeclared` and `skills.compatibility.undeclared` say the FORMAT has no
-  //     such field. They must never shorten to "none declared", which a reader hears as "harmless".
-  //   · `skills.mentions.*` describes a word search. It must never be phrased as a finding about
-  //     what the skill does — in either direction, which is why the empty case says so too.
-  "skills.title": "Skills",
-  "skills.tagline": "Instructions someone wrote for your agents. Read one before you let it be followed.",
-  "skills.action.refresh": "Refresh",
-  "skills.search.placeholder": "Search skills",
-  "skills.empty.none": "No skills yet. NovaClaw looks for them in the places listed below.",
-  "skills.empty.filtered": "No skill matches that search.",
-  "skills.loading": "Loading…",
-  // An unavailable subsystem names itself instead of rendering empty — and it says which of the two
-  // it is, because "no skills" and "could not ask" send a person to entirely different remedies.
-  "skills.loadFailed":
-    "Could not read the skill list. Your skills are still installed — this page could not reach them.",
-  "skills.intro.pick": "Pick a skill on the left to see who wrote it and what it tells your agent to do.",
-  "skills.badge.slash": "Slash command",
-
-  "skills.what.title": "What this changes",
-  "skills.what.mechanism":
-    "A skill is a page of instructions someone wrote. Your agent is shown every skill's name and one-line summary while it works; when it decides one fits the job, it reads the whole page and follows it.",
-  "skills.what.powers":
-    "Following a skill does not hand your agent new powers — but it changes what your agent decides to do with the powers it already has, and the instructions may tell it to run programs, change your files, or go online. A skill's folder can also hold scripts it may run.",
-  "skills.what.authorship":
-    "Everything on this page except “Where it came from” was written by whoever made the skill. NovaClaw has not checked any of it, and a skill can claim anything about itself.",
-
-  "skills.origin.title": "Where it came from",
-  "skills.origin.downloaded.badge": "Downloaded",
-  "skills.origin.downloaded.text":
-    "NovaClaw downloaded this skill from the web and keeps its copy in the download folder. Someone outside this computer wrote it.",
-  "skills.origin.downloaded.candidates": "It came from one of the web addresses on your list:",
-  "skills.origin.downloaded.noCandidates":
-    "No web address is on your list any more, so this is a leftover copy from a source you have since removed.",
-  "skills.origin.instance.badge": "NovaClaw's folder",
-  "skills.origin.instance.text":
-    "This skill sits in NovaClaw's own skills folder on this computer. Anything placed in that folder is picked up, so being here is not a sign that you wrote it.",
-  "skills.origin.configured.badge": "Added folder",
-  "skills.origin.configured.text": "This skill sits in a folder you added to the places NovaClaw looks.",
-  "skills.origin.configured.source": "The folder you added: {{source}}",
-  "skills.origin.local.badge": "On this computer",
-  "skills.origin.local.text":
-    "This skill sits in a folder on this computer that is not on your list — usually a skills folder inside the project you have open.",
-  "skills.origin.folder": "Its folder",
-  "skills.origin.folderNote": "Open this folder to read the file yourself and see anything shipped beside it.",
-
-  "skills.description.title": "What it says about itself",
-  "skills.description.none":
-    "This skill does not describe itself. Your agent is given only its name, so it has to guess from that when to use it.",
-  "skills.description.none.short": "No description",
-  "skills.description.note": "The author wrote this line, and NovaClaw shows it to your agents on every message.",
-
-  "skills.capabilities.title": "What it is allowed to do",
-  "skills.capabilities.undeclared":
-    "Skills have no way to declare what they can do, so there is no list here to check and nothing to hold the author to. The instructions below are the only description of this skill's behaviour, which is why they are shown in full.",
-
-  "skills.mentions.title": "Words found in the instructions",
-  "skills.mentions.none":
-    "None of the words we look for appear. That is not a sign the skill is limited — it can do any of these things without naming them.",
-  "skills.mentions.caveat":
-    "This is a plain search for a fixed list of words in the text below. It is not a check of what the skill does: a skill can do any of these without mentioning them, and mentioning one is not proof that it does it.",
-  "skills.mentions.topic.run": "Running programs",
-  "skills.mentions.topic.modify": "Changing or deleting things",
-  "skills.mentions.topic.install": "Installing software",
-  "skills.mentions.topic.network": "Going online",
-  "skills.mentions.topic.secrets": "Passwords and keys",
-
-  "skills.compatibility.title": "Does it fit this NovaClaw?",
-  "skills.compatibility.undeclared":
-    "Unknown. Skills carry no version and no list of what they need, so there is nothing to check in advance. If a skill does not fit, you find out when your agent tries to follow it.",
-
-  "skills.enablement.title": "Who can use it",
-  "skills.enablement.open": "All {{allow}} of your agents can open this skill without asking you first.",
-  // ⚠️ `asks` and `mixed` name all three counts on purpose. Measured live 2026-08-18: a stock
-  // instance has 4 visible agents, three at "ask" and `explore` carrying a catch-all deny — so the
-  // shorter wording ("the rest may open it") was reporting an ask as an open door on the very first
-  // instance anyone will look at.
-  "skills.enablement.asks":
-    "No agent of yours refuses this skill. {{ask}} will ask you before opening it; {{allow}} can open it without asking.",
-  "skills.enablement.mixed":
-    "Your agents disagree: {{deny}} refuse this skill, {{ask}} would ask you first, {{allow}} can open it without asking.",
-  "skills.enablement.blocked":
-    "Every one of your agents refuses this skill. It is loaded, but none of them will open it.",
-  "skills.enablement.unknown": "NovaClaw could not read your agent list, so it cannot say who may open this skill.",
-  // ⚠️ **This sentence describes the switches below it and must change WITH them** (AGENTS.md
-  // principle 12). It has been wrong once already, telling readers there was no per-skill switch
-  // while one sat underneath it — a fixed control under a sentence describing the old one leaves
-  // the reader following an instruction the product no longer needs.
-  "skills.enablement.noSwitch":
-    "This is the whole permission picture. The switch below changes one part of it — whether your agents are offered this skill at all. Removing the skill entirely is still a matter of taking its folder off the list of places NovaClaw looks.",
-
-  "skills.invocation.title": "How it gets used",
-  // AGENTS.md principle 12(d): say what is in force RIGHT NOW, before any control.
-  "skills.invocation.inForce.everywhere":
-    "Right now: Nova may pick this skill by itself, and it is in your slash menu for you to run.",
-  "skills.invocation.inForce.onlyWhenIChoose":
-    "Right now: only when you choose it. Nova will never pick this skill by itself; it stays in your slash menu for you.",
-  "skills.invocation.inForce.onlyNova":
-    "Right now: Nova may pick this skill by itself, and it is kept out of your slash menu.",
-  "skills.invocation.inForce.nowhere":
-    "Right now: neither. Nova will not pick it and it is not in your slash menu. It stays installed, and you can still read it here.",
-  "skills.invocation.independent":
-    "Two separate switches, not one setting with three positions. Keep a skill for yourself, keep it for Nova, or keep it for both — whichever you leave alone stays where it is.",
-  "skills.invocation.nova.label": "Nova may choose this",
-  "skills.invocation.nova.help":
-    "On, your agents are told this skill exists and may open it when a task matches. Off writes one permission rule: the skill is no longer mentioned to them at all, and it is refused if an agent names it anyway.",
-  "skills.invocation.me.label": "Show it for me to run",
-  "skills.invocation.me.help":
-    "On, it appears in the slash menu in the message box. Off, it does not. This is your own menu rather than a lock — if you type its exact name it still runs.",
-  "skills.invocation.preset.onlyWhenIChoose": "Only when I choose it",
-  "skills.invocation.preset.help":
-    "A shortcut that sets both switches at once: “Nova may choose this” off, “Show it for me to run” on.",
-  "skills.invocation.preset.applied": "Both switches are already set that way.",
-  // The THIRD layer, and the three sentences below are deliberately different from one another:
-  // "this folder hides it" is fixed by editing a file in the repository, "you hid it" is fixed by
-  // the switch on this screen, and "your agents may not choose it" is a permission rule. A user who
-  // cannot tell which one is in force cannot fix any of them (AGENTS.md principle 12d).
-  // ⚠️ These two sentences describe the control below them and must change WITH it (principle 12).
-  // The visible half is the FACT plus the one control that answers it; the law about what a folder
-  // may and may not do is on demand. Named and unnamed keep their own line because "which file" is
-  // the actionable part — the fix is editing that file.
-  "skills.invocation.blockedElsewhere":
-    "Careful: another permission rule of yours already refuses this skill, so leaving this switch on changes nothing until that rule does. “Who can use it” above shows what your agents actually do.",
-  "skills.invocation.locked.title": "These switches are unavailable for this skill",
-  "skills.invocation.locked.empty":
-    "This skill's name is empty once the invisible characters are removed, so there is no name to save a choice against. Ask whoever wrote it for a real name.",
-  "skills.invocation.locked.tooLong":
-    "This skill's name is too long to save a choice against ({{max}} characters at most). Shortening it in the skill's own file makes these switches work.",
-  "skills.invocation.locked.invisible":
-    "This skill's name contains characters you cannot see — the kind that make a name read as something other than what it is. NovaClaw will not save a setting against a name it cannot show you truthfully.",
-  "skills.invocation.locked.wildcard":
-    "This skill's name contains * or ?, which are the “match anything” characters in a permission rule. A rule written for this name would also cover other skills, so NovaClaw refuses to write one.",
-  "skills.invocation.locked.unnormalized":
-    "This skill's name is spelled with combining accents rather than the ordinary single letters, so two names that look identical would be saved as two different ones. NovaClaw refuses rather than guess which you meant.",
-  // Split under uix.md §1.4 (*teach on demand, state on sight*): the line is what is in force, the
-  // caveat is one tap away.
-  "skills.invocation.unknowns": "These switches decide when the skill is offered — not whether it is safe.",
-  "skills.invocation.unknowns.detail":
-    "NovaClaw cannot tell you what a skill is allowed to do, whether it fits this version, or who really wrote it: the skill format has nowhere to say any of it. What is above — where the file came from, what it says about itself, and the words in its instructions — is everything NovaClaw actually knows.",
-  "skills.invocation.orphans.title": "Saved choices for skills that are not here",
-  "skills.invocation.orphans.text":
-    "You decided something about these, and NovaClaw no longer finds a skill by that name. They are kept in case the skill comes back — a source can be offline, or a folder temporarily moved.",
-  "skills.invocation.orphans.forget": "Forget",
-  "skills.invocation.error":
-    "That change could not be saved. Nothing was altered — your agents and your menu are as they were.",
-
-  "skills.instructions.title": "The instructions themselves",
-  "skills.instructions.note": "This is the text your agent is given, word for word, when it opens this skill.",
-  "skills.instructions.empty": "(this skill's instructions are empty)",
-
-  // Shown only when the user HAS extra sources, folded behind a summary (owner, 2026-08-20). There
-  // is deliberately NO empty state: a person who has added nothing does not need to be told so on
-  // every visit.
-  "skills.sources.title": "Extra sources",
-  "skills.sources.note":
-    "This list decides which skills exist at all; each skill's own switches decide when it is offered.",
 
   // The composer, when a read it depends on did not answer. Each of these replaces a sentence that
   // would otherwise be false: an empty message box that looks like "you had no draft", and a

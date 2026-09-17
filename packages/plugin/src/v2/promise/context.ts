@@ -6,7 +6,6 @@ import type { EventHooks } from "./event.js"
 import type { IntegrationHooks } from "./integration.js"
 import type { PluginDomain } from "./plugin.js"
 import type { ReferenceHooks } from "./reference.js"
-import type { SkillHooks } from "./skill.js"
 import type { ToolHooks } from "./tool.js"
 import type { Reload } from "./registration.js"
 import type { AppHooks } from "./app.js"
@@ -32,6 +31,5 @@ export interface PluginContext {
   readonly integration: IntegrationHooks & Reload
   readonly plugin: PluginDomain
   readonly reference: Pick<ReferenceHooks, "declare"> & Reload
-  readonly skill: Pick<SkillHooks, "declare"> & Reload
   readonly tool: ToolHooks
 }

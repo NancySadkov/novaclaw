@@ -11,7 +11,6 @@ export const MANIFEST_ROUTE_TARGETS = {
   files: "/files",
   calendar: "/calendar",
   recipes: "/recipes",
-  skills: "/skills",
   registry: "/registry",
   debug: "/debug",
   terminal: "/terminal",

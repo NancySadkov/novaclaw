@@ -37,9 +37,9 @@ export const SLOT_ORIGIN: Readonly<Record<string, SlotOrigin>> = {
   memoryStance: "agent",
   workspace: "agent",
   goal: "agent",
-  // Files on disk: AGENTS.md (the instance's, the project's walk-up) and the loaded skills.
+  // Files on disk: AGENTS.md (the instance's, the project's walk-up).
   base: "files",
-  // The folder's `novaclaw.json` — portable, travels inside a cloned repo, and may only ever narrow.
+  // The kernel's own rule for the working folder, from the permission mode — not a file.
   projectScope: "project",
   // 🔴 `durable` is not "agent": there is no field anywhere that holds it. The COLLEAGUE writes it, at
   // runtime, through its own tools (`durable_set` / `durable_clear`), and the kernel materialises it

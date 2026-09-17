@@ -109,12 +109,10 @@ const VALID: Record<string, unknown> = {
   memory: { enabled: true },
   quality: { enabled: true, cadence: 3 },
   web_search: { timeoutMs: 8000 },
-  // Added with the projects/skills program (2026-08-19). Both are SPARSE per-id switch maps whose
-  // absent entry means ON, so a fixture entry has to write the OFF state or it exercises nothing —
-  // `enabled: true` / `show: true` is defined to be the same as writing no entry at all.
-  // `tool_policy`'s key follows `ProjectFile.POLICY_ID_PATTERN`, the grammar shared by novaclaw.json
-  // and the provider registry, so the three surfaces can always name each other.
-  skill_invocation: { "pdf-report": { show: false } },
+  // `tool_policy` is a SPARSE per-id switch map whose absent entry means ON, so a fixture entry has
+  // to write the OFF state or it exercises nothing — `enabled: true` is defined to be the same as
+  // writing no entry at all. Its key follows `ProjectFile.POLICY_ID_PATTERN`, the grammar shared by
+  // novaclaw.json and the provider registry, so the three surfaces can always name each other.
   tool_policy: { "acme.no-secrets": { enabled: false } },
   provider_presets: {},
   local_model_catalog: {},

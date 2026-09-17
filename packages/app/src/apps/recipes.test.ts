@@ -3,7 +3,7 @@ import { dict as en } from "@/i18n/en"
 import fs from "node:fs"
 import path from "node:path"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
-import { authorBody as skillsAuthorBody, authorText as skillsAuthorText } from "./skills"
+import { authorBody as sharedAuthorBody, authorText as sharedAuthorText } from "./author-text"
 import {
   authorBody,
   authorText,
@@ -93,7 +93,7 @@ describe("the shelves are the ENGINE's shelves", () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
-describe("author text — one containment function, and it is the SAME one Skills uses", () => {
+describe("author text — one containment function, and it is the SAME one the shared module uses", () => {
   const HOSTILE = [
     `helper${RLO}gpj.exe`,
     `a${ZWSP}b${BOM}c`,
@@ -103,12 +103,12 @@ describe("author text — one containment function, and it is the SAME one Skill
     "<img src=x onerror=alert(1)>",
   ]
 
-  test("agrees with apps/skills.ts on every hostile fixture — a divergence FAILS here", () => {
+  test("agrees with apps/author-text.ts on every hostile fixture — a divergence FAILS here", () => {
     for (const value of HOSTILE) {
-      expect(authorText(value)).toBe(skillsAuthorText(value))
-      expect(authorBody(value)).toBe(skillsAuthorBody(value))
+      expect(authorText(value)).toBe(sharedAuthorText(value))
+      expect(authorBody(value)).toBe(sharedAuthorBody(value))
     }
-    expect(authorText(undefined)).toBe(skillsAuthorText(undefined))
+    expect(authorText(undefined)).toBe(sharedAuthorText(undefined))
   })
 
   test("the fixtures are actually hostile — negative control on the test above", () => {

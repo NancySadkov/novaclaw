@@ -12,7 +12,6 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { LogSettings } from "@novaclaw/core/observability/log-settings"
-import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { testEffect } from "./lib/effect"
 
 // Config→SQLite step 7 gates: the updateConfig patch router (per-store semantics) + the
@@ -27,7 +26,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
-      SkillConfigStore.node,
     ]),
   ),
 )
@@ -200,22 +198,17 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  it.effect("replaces the list store wholesale (skills); step 9 routes the last settings keys", () =>
+  it.effect("routes the last settings keys (instructions, disabled_providers)", () =>
     Effect.gen(function* () {
-      const skills = yield* SkillConfigStore.Service
-      yield* skills.addSource("/old/skills")
-
       // Step 9: instructions + disabled_providers joined SETTINGS_KEYS — every
       // Config.Info key now routes (nothing falls back to a jsonc patch anymore).
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
-          skills: ["/new/skills"],
           instructions: ["now-routed.md"],
           disabled_providers: ["x"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions", "skills"])
-      expect(yield* skills.sources()).toEqual(["/new/skills"])
+      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions"])
       const settings = yield* SettingsConfigStore.Service
       const all = yield* settings.all()
       expect(all.instructions).toEqual(["now-routed.md"])
@@ -252,76 +245,42 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  // Ruling 2, the ATOMICITY half. `apply` writes to seven stores; before the transaction those were
-  // seven independent writes, so a failure at step 5 left steps 1-4 committed. Worse, the list store
-  // is wipe-then-reinsert, so a failure between the two loops left it EMPTY.
+  // Ruling 2, the ATOMICITY half. `apply` writes to several stores; before the transaction those were
+  // independent writes, so a failure part-way left the earlier ones committed.
   //
-  // ⚠️ Both failures below are injected into `skills`, the LAST arm `applyToStores` runs — so each
-  // one lands after every other store has already written. It used to be `plugins`; that arm and its
-  // store went with the `plugins[]` key under ruling 5 / step 17. **If a new list arm is ever
-  // appended after `skills`, move these injections onto it** or they stop testing "last".
+  // ⚠️ The failure is injected into `references`, the LAST layered arm `applyToStores` runs — so it
+  // lands after the settings writes AND the earlier layered arms have already written. (It used to
+  // be the `skills` list arm, which went with the skills subsystem on 2026-09-17.)
   it.effect("a mid-apply failure rolls back every earlier store write", () =>
     Effect.gen(function* () {
-      const skills = yield* SkillConfigStore.Service
+      const references = yield* ReferenceConfigStore.Service
       const settings = yield* SettingsConfigStore.Service
-      yield* skills.addSource("/survives/skills")
       yield* settings.set("snapshots", false)
       yield* settings.set("log", { level: "info" })
       yield* settings.all() // hydrate the synchronous log projection from the committed baseline
-      const skillsBefore = yield* skills.sources()
 
-      // Real store for the reads and the DELETE loop; the FIRST insert dies. Un-transacted, the two
-      // settings writes AND the skills delete are already committed by the time it does.
-      const failingSkills = SkillConfigStore.Service.of({
-        sources: () => skills.sources(),
-        removeSource: (source) => skills.removeSource(source),
-        isEmpty: () => skills.isEmpty(),
-        addSource: () => Effect.die(new Error("skill store write failed")),
+      // Real store for the reads; the write dies. Un-transacted, the two settings writes would
+      // already be committed by the time it does.
+      const failingReferences = ReferenceConfigStore.Service.of({
+        references: () => references.references(),
+        removeReference: (name) => references.removeReference(name),
+        isEmpty: () => references.isEmpty(),
+        setLayers: () => Effect.die(new Error("reference store write failed")),
       })
 
       const exit = yield* ConfigStoreWrite.apply(
         decodeInfo({
           snapshots: true,
           log: { level: "error" },
-          skills: ["/replacement/skills"],
+          references: { docs: "https://git.example.test/example/docs.git" },
         }),
-      ).pipe(Effect.provideService(SkillConfigStore.Service, failingSkills), Effect.exit)
+      ).pipe(Effect.provideService(ReferenceConfigStore.Service, failingReferences), Effect.exit)
 
       expect(Exit.isFailure(exit)).toBe(true)
-      // Nothing the failed patch touched survives — not the settings write, and (the sharp edge)
-      // not the skills DELETE that ran before the failure.
-      expect(yield* skills.sources()).toEqual(skillsBefore)
+      // Nothing the failed patch touched survives.
       expect((yield* settings.all()).snapshots).toBe(false)
       expect(LogSettings.level()).toBe("info")
-    }),
-  )
-
-  // The same invariant one step deeper: the failure lands INSIDE the reinsert loop, after the delete
-  // loop has emptied the table AND after the first replacement row is already in.
-  it.effect("the skills wipe-then-reinsert is atomic — a failure mid-loop restores the stored list", () =>
-    Effect.gen(function* () {
-      const skills = yield* SkillConfigStore.Service
-      yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/keeper-a", "/keeper-b"] }))
-      const before = yield* skills.sources()
-      expect(before).toEqual(["/keeper-a", "/keeper-b"])
-
-      // Real store for the reads and the DELETE loop; only the SECOND insert dies.
-      let inserts = 0
-      const flaky = SkillConfigStore.Service.of({
-        sources: () => skills.sources(),
-        removeSource: (source) => skills.removeSource(source),
-        isEmpty: () => skills.isEmpty(),
-        addSource: (source) =>
-          ++inserts === 2 ? Effect.die(new Error("skill insert failed")) : skills.addSource(source),
-      })
-
-      const exit = yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/new-a", "/new-b"] })).pipe(
-        Effect.provideService(SkillConfigStore.Service, flaky),
-        Effect.exit,
-      )
-
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(yield* skills.sources()).toEqual(before)
+      expect(yield* references.references()).toEqual({})
     }),
   )
 })
@@ -340,7 +299,6 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
           agents: { build: { description: "the builder" } },
           commands: { review: { template: "review it" } },
           references: { docs: "https://git.example.test/example/docs.git" },
-          skills: ["/opt/skills"],
         }),
       )
       // A second provider patch: the export must FOLD the two layers into one fragment.
@@ -360,8 +318,6 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
       for (const name of Object.keys(yield* commands.commands())) yield* commands.removeCommand(name)
       const references = yield* ReferenceConfigStore.Service
       for (const name of Object.keys(yield* references.references())) yield* references.removeReference(name)
-      const skills = yield* SkillConfigStore.Service
-      for (const source of yield* skills.sources()) yield* skills.removeSource(source)
       const settings = yield* SettingsConfigStore.Service
       for (const key of Object.keys(yield* settings.all())) yield* settings.remove(key)
 

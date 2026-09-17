@@ -5,7 +5,7 @@ import type { createEditorCore } from "./editor-core"
 import type { AtOption, SlashCommand } from "./slash-popover"
 import { atOptionKey, visibleAgentOptions, type PromptAgentOption } from "./popover-options"
 
-type CustomCommand = { name: string; description?: string; source?: "command" | "mcp" | "skill" }
+type CustomCommand = { name: string; description?: string; source?: "command" | "mcp" }
 type BuiltinCommand = {
   id: string
   disabled?: boolean
