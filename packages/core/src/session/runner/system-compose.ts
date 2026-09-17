@@ -171,17 +171,7 @@ export const workspaceSection = (input: {
   const directory = input.directory?.trim()
   if (!scratch || !directory) return undefined
   if (isOwnScratch(directory, scratch)) return undefined
-  return (
-    `Your own workspace: as well as this chat's working folder, you have a private workspace at ` +
-    `${scratch}. You may read and write there freely — it needs no permission and it is not part of ` +
-    `the user's project.
-
-` +
-    `Use it for anything that is YOURS rather than the project's: notes to yourself, drafts, probe ` +
-    `scripts, downloaded references, intermediate output. Prefer it over leaving working files in the ` +
-    `project folder. Anything that is part of the WORK still belongs in the working folder — this is ` +
-    `where you keep the things you would otherwise have had to ask about.`
-  )
+  return `You have a private workspace at ${scratch}. Use it for your temporary files, not intended for the user or the user's project.`
 }
 
 /**

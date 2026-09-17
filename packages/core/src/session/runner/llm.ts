@@ -2798,8 +2798,6 @@ export const layer = Layer.effect(
       // error, so a debug artifact can never fail a turn.
       if (scratchFolder !== undefined) {
         const capturedText = PromptCapture.render({
-          sessionID: session.id,
-          at: new Date(),
           system: request.system,
           messages: request.messages,
           tools: request.tools,

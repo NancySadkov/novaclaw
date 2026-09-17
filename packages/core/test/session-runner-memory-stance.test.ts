@@ -81,7 +81,7 @@ describe("SessionRunnerLLM — memory stance", () => {
   test("an assigned colleague is told about its own workspace", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("call_1", "ok")] })
     await runTurn(harness, "own")
-    expect(systemOf(harness)).toContain("Your own workspace")
+    expect(systemOf(harness)).toContain("You have a private workspace at")
   })
 
   test("the text in the prompt is the section's own, not a second copy", async () => {

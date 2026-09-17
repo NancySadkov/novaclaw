@@ -3,7 +3,6 @@ export * as PromptCapture from "./prompt-capture"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Message, SystemPart } from "@novaclaw/llm"
-import { OldContext } from "./old-context"
 
 /**
  * The EXACT provider request, written where a person can read it.
@@ -27,9 +26,6 @@ import { OldContext } from "./old-context"
 /** Inside the agent's scratch folder, beside its other throwaway work. */
 export const DIR = "tmp"
 
-/** A cap so one enormous request cannot fill the disk; the tail is dropped with a visible marker. */
-export const MAX_CHARS = 4_000_000
-
 export const latestFile = (input: { readonly scratchFolder: string; readonly sessionID: string }): string =>
   path.join(input.scratchFolder, DIR, `prompt-${input.sessionID}.txt`)
 
@@ -37,35 +33,15 @@ export const initialFile = (input: { readonly scratchFolder: string; readonly se
   path.join(input.scratchFolder, DIR, `prompt-${input.sessionID}.initial.txt`)
 
 /**
- * Render a request as readable text — the system parts verbatim, the provider messages through the
- * SAME renderer the folded-context artifact uses (so both files read in one vocabulary), and the tool
- * definitions as JSON.
+ * The request EXACTLY as the harness built it, with nothing added: no headers, no counts, no
+ * commentary. `system`, `messages` and `tools` are the three fields the provider adapter lowers into
+ * the wire body, so a reader sees the real content and the real order.
  */
 export const render = (input: {
-  readonly sessionID: string
-  readonly model?: string
-  readonly at: Date
   readonly system: ReadonlyArray<SystemPart>
   readonly messages: ReadonlyArray<Message>
   readonly tools: ReadonlyArray<unknown>
-}): string => {
-  const header = [
-    "===== NOVACLAW PROVIDER REQUEST =====",
-    `session: ${input.sessionID}`,
-    ...(input.model === undefined ? [] : [`model: ${input.model}`]),
-    `captured: ${input.at.toISOString()}`,
-    "",
-  ].join("\n")
-  const system = [`===== SYSTEM (${input.system.length}) =====`, input.system.map((part) => part.text).join("\n\n")]
-  const messages = [`===== MESSAGES (${input.messages.length}) =====`, OldContext.render(input.messages)]
-  const tools = [
-    `===== TOOLS (${input.tools.length}) =====`,
-    input.tools.map((tool) => JSON.stringify(tool, undefined, 2)).join("\n\n"),
-  ]
-  const text = [header, ...system, "", ...messages, "", ...tools].join("\n")
-  if (text.length <= MAX_CHARS) return text
-  return `${text.slice(0, MAX_CHARS)}\n\n[truncated at ${MAX_CHARS} characters of ${text.length}]`
-}
+}): string => JSON.stringify({ system: input.system, messages: input.messages, tools: input.tools })
 
 /**
  * Write the latest request, and the first one only if it is not there yet.
