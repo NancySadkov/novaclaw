@@ -8,24 +8,21 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PermissionV2 } from "@novaclaw/core/permission"
-import { SkillBuiltin } from "@novaclaw/core/skill/builtin"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 /**
- * THE RESEARCH OFFICER, AND THE SKILL IT STANDS ON.
+ * THE RESEARCHER, AND THE DOCTRINE IT CARRIES AS ITS OWN PROMPT.
  *
- * 🔴 Shipping an officer whose prompt names a skill has three ways to become a lie, and each is
- * silent: the skill is not bundled, the officer is not registered, or the officer is registered but
- * cannot REACH the skill because nothing granted it. Each produces a confident agent with opinions
- * about rigour instead of the commandments it was supposed to read.
- *
- * ⚠️ The drift this file really exists to catch is a RENAME. The officer's grant is written as
- * `SkillBuiltin.RESEARCH_SKILL`, and the skill's own frontmatter declares `name: research`; if those
- * two ever disagree the permission points at a skill that does not exist and the failure surfaces as
- * "the model didn't use the skill", which reads like a model problem.
+ * 🔴 The doctrine used to ship as a bundled skill the officer was granted access to. Skills are
+ * retired (owner, 2026-09-17): a named officer's own prompt is the single source of what it does, so
+ * the commandments are now the officer's job brief — a document beside `agent/`, not a second,
+ * model-addressable copy that can drift from it. These pin the three silent ways that can become a
+ * lie: the document is not bundled, the officer is not seeded, or its prompt lost the doctrine.
  */
+
+const doctrine = () =>
+  fs.readFile(path.join(import.meta.dir, "..", "src", "agent", "research-officer.txt"), "utf8")
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, AgentConfigStore.node, FSUtil.node])))
 
@@ -41,59 +38,47 @@ const seededResearcher = Effect.gen(function* () {
   return layers === undefined ? undefined : AgentConfigStore.fold(layers)
 })
 
-describe("the bundled research skill", () => {
+describe("the research doctrine", () => {
   it.effect("🔴 ships in the binary — it is not a file the user has to have", () =>
-    Effect.sync(() => {
-      const research = SkillBuiltin.ALL.find((skill) => skill.name === SkillBuiltin.RESEARCH_SKILL)
-      expect(research).toBeDefined()
-      expect(research!.description.length).toBeGreaterThan(40)
-      expect(research!.content.length).toBeGreaterThan(2000)
+    Effect.gen(function* () {
+      const content = yield* Effect.promise(doctrine)
+      expect(content.length).toBeGreaterThan(2000)
     }),
   )
 
-  it.effect("⚠️ the frontmatter is STRIPPED — `name:` and `description:` are not guidance", () =>
-    Effect.sync(() => {
-      const research = SkillBuiltin.ALL.find((skill) => skill.name === SkillBuiltin.RESEARCH_SKILL)!
-      expect(research.content.startsWith("---")).toBe(false)
-      // The first line of the body, not of the file.
-      expect(research.content.split("\n")[0]).toContain("Research")
-    }),
-  )
-
-  it.effect("carries the commandments it is named for, so a truncated bundle is caught", () =>
-    Effect.sync(() => {
-      const research = SkillBuiltin.ALL.find((skill) => skill.name === SkillBuiltin.RESEARCH_SKILL)!
-      // Three rules from three different sections: a bundle that lost its tail still fails here.
-      expect(research.content).toContain("Check the instrument before you trust the number")
-      expect(research.content).toContain("Control the ENVIRONMENT, not just the variable")
-      expect(research.content).toContain("Your own rig is the most likely confound")
+  it.effect("carries the commandments it is named for, so a truncated document is caught", () =>
+    Effect.gen(function* () {
+      const content = yield* Effect.promise(doctrine)
+      // Three rules from three different sections: a document that lost its tail still fails here.
+      expect(content).toContain("Check the instrument before you trust the number")
+      expect(content).toContain("Control the ENVIRONMENT, not just the variable")
+      expect(content).toContain("Your own rig is the most likely confound")
     }),
   )
 })
 
-describe("the research officer", () => {
+describe("the researcher", () => {
   it.effect("🔴 is seeded as a PRIMARY officer on a clean install", () =>
     Effect.gen(function* () {
       const researcher = yield* seededResearcher
       expect(researcher).toBeDefined()
       expect(researcher!.mode).toBe("primary")
-      expect(researcher!.title).toBe("Research Officer")
+      expect(researcher!.title).toBe("Researcher")
     }),
   )
 
-  it.effect("🔴 may invoke the bundled skill as well as carrying its doctrine", () =>
+  it.effect("⚠️ the doctrine IS its prompt — the officer reads the commandments as its brief", () =>
     Effect.gen(function* () {
       const researcher = (yield* seededResearcher)!
-      const rules = researcher.permissions as PermissionV2.Ruleset
-      expect(PermissionV2.evaluate("skill", SkillBuiltin.RESEARCH_SKILL, rules).effect).toBe("allow")
+      expect(researcher.system).toContain("Check the instrument before you trust the number")
     }),
   )
 
-  it.effect("⚠️ the skill body itself is the officer's personality prompt", () =>
+  it.effect("holds no skill grant — the mechanism is gone, not merely unused", () =>
     Effect.gen(function* () {
       const researcher = (yield* seededResearcher)!
-      const skill = SkillBuiltin.ALL.find((item) => item.name === SkillBuiltin.RESEARCH_SKILL)!
-      expect(researcher.personality).toBe(skill.content)
+      // No permission rules at all: the grant went with the skill it named.
+      expect(researcher.permissions ?? []).toHaveLength(0)
     }),
   )
 })

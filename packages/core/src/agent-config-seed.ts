@@ -7,9 +7,9 @@ import { AgentConfigStore } from "./agent-config-store"
 import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
 import { OfficerPrompt } from "./officer-prompt"
+import RESEARCHER_JOB from "./agent/research-officer.txt"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
-import { SkillBuiltin } from "./skill/builtin"
 
 const NAMES = ["config.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
@@ -87,15 +87,11 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   {
     id: "researcher",
     name: "Researcher",
-    title: "Research Officer",
-    brief:
-      "Answer questions that need evidence rather than opinion: measurements, benchmarks, ablations, " +
-      "comparisons and investigations. Report what was observed, under which conditions, and what the " +
-      "evidence does not establish.",
-    // The skill IS the personality prompt. Keeping a second summary here would create two research
-    // doctrines that can drift while both still sound plausible.
-    personality: SkillBuiltin.ALL.find((skill) => skill.name === SkillBuiltin.RESEARCH_SKILL)!.content,
-    permissions: [{ action: "skill", resource: SkillBuiltin.RESEARCH_SKILL, effect: "allow" }],
+    title: "Researcher",
+    // 🔴 The research doctrine IS this officer's job brief (owner, 2026-09-17). It shipped as a
+    // bundled skill; the doctrine now lives here as one document, so the officer's own prompt is the
+    // single source of what it does rather than a second, model-addressable copy that can drift.
+    brief: RESEARCHER_JOB,
   },
 ]
 
