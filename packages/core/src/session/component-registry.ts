@@ -35,7 +35,6 @@ export const KERNEL_KIND_NAMES = [
   "permission_mode",
   "working_folder",
   "missing_working_folder",
-  "system_prompt_override",
   "device",
   "priority",
   "model",
@@ -976,7 +975,6 @@ const compiledDefinitions = Effect.gen(function* () {
   const current = (sessionID: SessionSchema.ID) =>
     db
       .select({
-        override: SessionTable.system_prompt_override,
         device: SessionTable.device,
         priority: SessionTable.priority,
         controlBinding: SessionTable.control_binding,
@@ -992,13 +990,6 @@ const compiledDefinitions = Effect.gen(function* () {
       .where(eq(SessionTable.id, sessionID))
       .get()
       .pipe(Effect.orDie)
-  const publish = (sessionID: SessionSchema.ID, override: string | null) =>
-    events.publish(SessionEvent.PromptOverrideSwitched, {
-      sessionID,
-      messageID: SessionMessage.ID.create(),
-      timestamp: DateTime.nowUnsafe(),
-      override,
-    })
   const publishDevice = (sessionID: SessionSchema.ID, device: string | null) =>
     events.publish(SessionEvent.DeviceSwitched, {
       sessionID,
@@ -1102,33 +1093,6 @@ const compiledDefinitions = Effect.gen(function* () {
     })
 
   return [
-    kernelDefinition({
-      kind: "system_prompt_override",
-      description:
-        "This session's full standing-instruction override. It composes above the immutable base prompt and is inherited by descendants.",
-      cardinality: "singleton",
-      lifetime: "entity",
-      version: 1,
-      codec: Schema.String,
-      projection: {
-        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.override ?? undefined)),
-        put: (sessionID, value) =>
-          Effect.gen(function* () {
-            const row = yield* current(sessionID)
-            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
-            if (row.override !== value) yield* publish(sessionID, value)
-            return undefined
-          }),
-        remove: (sessionID) =>
-          Effect.gen(function* () {
-            const row = yield* current(sessionID)
-            if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
-            if (row.override === null) return false
-            yield* publish(sessionID, null)
-            return true
-          }),
-      },
-    }),
     kernelDefinition({
       kind: "device",
       description:

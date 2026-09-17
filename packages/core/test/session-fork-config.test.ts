@@ -93,7 +93,6 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
       // be scheduled against capacity its source never claimed.
       device: "spark",
       controlBinding: ":99",
-      systemPromptOverride: "You are Neo.",
       type: "goal-oriented",
       priority: 7,
       permissionMode: "plan",
@@ -132,7 +131,6 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         id: "ses_probe",
         model: { providerID: "p", id: "m", variant: "v" },
         agent: "a",
-        systemPromptOverride: "s",
         type: "goal-oriented",
         priority: 1,
         responder: "operator",
@@ -206,13 +204,12 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
 })
 
 describe("forkOverrides — the pure fold", () => {
-  const parent: SessionConfig = { systemPromptOverride: "You are Neo.", permissionMode: "plan", type: "goal-oriented" }
+  const parent: SessionConfig = { permissionMode: "plan", type: "goal-oriented" }
   const child: SessionConfig = { permissionMode: "yolo", agent: "build" }
 
   it.effect("materialises what the CHAIN declared, not what the row declared", () =>
     Effect.sync(() => {
       const overrides = forkOverrides([parent, child])
-      expectField("systemPromptOverride", overrides.systemPromptOverride, "You are Neo.")
       expectField("type", overrides.type, "goal-oriented")
       expectField("agent", overrides.agent, "build")
     }),
@@ -227,7 +224,6 @@ describe("forkOverrides — the pure fold", () => {
       const rawRow = child
       expectField("chain-resolved permissionMode", overrides.permissionMode, "plan")
       expectField("raw-row permissionMode", rawRow.permissionMode, "yolo")
-      expectField("raw-row systemPromptOverride", rawRow.systemPromptOverride, undefined)
       expect(overrides).not.toEqual(rawRow)
     }),
   )

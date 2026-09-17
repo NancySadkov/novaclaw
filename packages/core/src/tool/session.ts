@@ -72,28 +72,6 @@ const description =
 
 const failure = (message: string) => new ToolFailure({ message })
 
-/** Pure diff breadcrumb retained from the retired one-field `reconfigure` tool. */
-export function diffSummary(previous: string, next: string | null) {
-  const target = next ?? ""
-  if (previous === target) return `System-prompt override unchanged (${previous.length} chars).`
-  if (next === null) return `System-prompt override cleared (${previous.length} -> 0 chars).`
-  const previousLines = previous.split("\n")
-  const nextLines = next.split("\n")
-  const count = Math.max(previousLines.length, nextLines.length)
-  let detail = "Texts differ."
-  for (let index = 0; index < count; index++) {
-    if (previousLines[index] === nextLines[index]) continue
-    const clip = (line: string | undefined) =>
-      line === undefined ? "<none>" : JSON.stringify(line.length > 80 ? `${line.slice(0, 77)}...` : line)
-    detail = `First difference at line ${index + 1}: ${clip(previousLines[index])} -> ${clip(nextLines[index])}.`
-    break
-  }
-  return (
-    `System-prompt override replaced (${previous.length} -> ${target.length} chars). ${detail} ` +
-    "It applies from the next turn; the immutable base prompt is untouched. Remove this component to revert."
-  )
-}
-
 const renderEntry = (entry: SessionComponentRegistry.Entry) =>
   JSON.stringify({
     sessionID: entry.sessionID,
@@ -246,10 +224,7 @@ export const layer = Layer.effectDiscard(
                 if (input.op === "remove" && previous === undefined)
                   return {
                     op: input.op,
-                    message:
-                      input.kind === "system_prompt_override"
-                        ? diffSummary("", null)
-                        : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`,
+                    message: `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`,
                   }
                 if (input.op === "remove")
                   yield* components.validateRemoval({
@@ -260,10 +235,7 @@ export const layer = Layer.effectDiscard(
                 if (input.op === "set" && previous && isDeepStrictEqual(previous.value, validated))
                   return {
                     op: input.op,
-                    message:
-                      input.kind === "system_prompt_override" && typeof validated === "string"
-                        ? diffSummary(validated, validated)
-                        : `Nothing changed: ${input.kind}${input.id ? `/${input.id}` : ""} already has that value.`,
+                    message: `Nothing changed: ${input.kind}${input.id ? `/${input.id}` : ""} already has that value.`,
                   }
 
                 const tier = SessionComponentTier.tierOf(input.kind)
@@ -290,12 +262,9 @@ export const layer = Layer.effectDiscard(
                     kind: input.kind,
                     ...(input.id === undefined ? {} : { id: input.id }),
                   })
-                  const message =
-                    input.kind === "system_prompt_override"
-                      ? diffSummary(typeof previous?.value === "string" ? previous.value : "", null)
-                      : removed
-                        ? `Removed ${input.kind}${input.id ? `/${input.id}` : ""}.`
-                        : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`
+                  const message = removed
+                    ? `Removed ${input.kind}${input.id ? `/${input.id}` : ""}.`
+                    : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`
                   return { op: input.op, message }
                 }
 
@@ -307,10 +276,7 @@ export const layer = Layer.effectDiscard(
                 })
                 return {
                   op: input.op,
-                  message:
-                    input.kind === "system_prompt_override" && typeof entry.value === "string"
-                      ? diffSummary(typeof previous?.value === "string" ? previous.value : "", entry.value)
-                      : `Stored ${entry.kind}${entry.id ? `/${entry.id}` : ""}: ${JSON.stringify(entry.value)}`,
+                  message: `Stored ${entry.kind}${entry.id ? `/${entry.id}` : ""}: ${JSON.stringify(entry.value)}`,
                 }
               }).pipe(
                 Effect.mapError((error) => {

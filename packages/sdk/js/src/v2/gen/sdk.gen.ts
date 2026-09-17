@@ -1511,7 +1511,6 @@ class ApiV2Session extends NovaClawApiClient {
       model?: T.ModelRef
       device?: string
       controlBinding?: string
-      systemPromptOverride?: string
       type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
       priority?: number
       permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
@@ -1539,7 +1538,6 @@ class ApiV2Session extends NovaClawApiClient {
       model: parameters?.["model"],
       device: parameters?.["device"],
       controlBinding: parameters?.["controlBinding"],
-      systemPromptOverride: parameters?.["systemPromptOverride"],
       type: parameters?.["type"],
       priority: parameters?.["priority"],
       permissionMode: parameters?.["permissionMode"],
@@ -1718,7 +1716,7 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Resolve session config
    *
-   * Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.
+   * Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further.
    */
   public config<ThrowOnError extends boolean = false>(
     parameters: {
@@ -2057,33 +2055,6 @@ class ApiV2Session extends NovaClawApiClient {
       ThrowOnError
     >({
       url: "/api/session/{sessionID}/type",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Set the session's system-prompt override layer
-   *
-   * Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.
-   */
-  public switchPromptOverride<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      override: string | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = { override: parameters?.["override"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionSwitchPromptOverrideResponses,
-      T.V2SessionSwitchPromptOverrideErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/prompt-override",
       ...options,
       path,
       body,

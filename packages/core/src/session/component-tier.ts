@@ -17,7 +17,6 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   permission_mode: "consequential",
   working_folder: "consequential",
   missing_working_folder: "operational",
-  system_prompt_override: "privileged",
   device: "operational",
   priority: "operational",
   // Which model answers changes the CHARACTER of every later turn, so it is not a routine knob. A
@@ -69,7 +68,6 @@ export const CROSS_READ_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, 
   permission_mode: "operational",
   working_folder: "operational",
   missing_working_folder: "operational",
-  system_prompt_override: "privileged",
   device: "operational",
   priority: "operational",
   // None of the five carries free text another user could have authored, so reading them across

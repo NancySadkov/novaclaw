@@ -46,9 +46,8 @@
  *
  * **A key's tier is the highest privilege ANY value it can carry commands.** The table is per
  * TOP-LEVEL key (ruling 4's "scope it per-key"), so a key with one dangerous leaf is dangerous:
- * `providers` would look operational if you only read `api.url`, but `providers.<id>.models.<id>.
- * prePrompt` is *"prepended to the system context"* (`config/provider.ts`), so the key carries a
- * prompt-text channel and is priced at the top tier.
+ * `providers` looks operational if you only read one `api.url`, but it carries a `url` per model —
+ * an egress destination the write chooses — so the key is priced at the top tier.
  *
  * Privileged means the write can, by itself: (a) execute something on the host, (b) send user data
  * to a destination the write chooses, (c) put text into a future session's prompt, (d) change who
@@ -245,8 +244,8 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   mcp: "privileged",
   // `memory.embedding.url` is the endpoint the user's own memories are POSTed to for embedding.
   memory: "privileged",
-  // The flat models-primary map: every entry carries its own endpoint `url` AND a `prePrompt` that is
-  // prepended to the system context. Both halves are top-tier on their own.
+  // The flat models-primary map: every entry carries its own endpoint `url`, an egress destination the
+  // write chooses, so it is top-tier on its own.
   models: "privileged",
   // The airgap itself. Turning it off RELEASES the egress guard, which is the one switch that makes
   // every other egress possible.
@@ -271,8 +270,7 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // completeness test cannot ask for it. Third-party code reaches NovaClaw out-of-process (`mcp`,
   // privileged above) or as a file the user drops in their own config dir, which no config write and
   // therefore no tier can reach.
-  // Endpoint URLs (egress of every prompt and the Authorization header) plus per-model `prePrompt`,
-  // which `config/provider.ts` describes as "prepended to the system context".
+  // Endpoint URLs (egress of every prompt and the Authorization header).
   providers: "privileged",
   // `quality.commands` are command lines the runner executes. An execution surface (S2 names it).
   quality: "privileged",

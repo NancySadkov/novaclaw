@@ -52,8 +52,6 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
     }
     case "session.next.type.switched":
       return { sessionID, patch: { type: props.sessionType } }
-    case "session.next.prompt-override.switched":
-      return { sessionID, patch: { systemPromptOverride: props.override ?? undefined } }
     // A STAGED revert is a per-session control like any other, and it was missing here — which is
     // half of why `/undo` shipped broken (2026-07-29). `revert.stage` publishes `.staged`, the server
     // projector writes it straight to SessionTable, and NO `session.updated` follows — so without

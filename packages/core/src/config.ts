@@ -726,9 +726,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "health timing. Live load/health state is observed by the governor, not stored here. PRIVILEGED: " +
         "HTTP URLs choose an egress destination and stdio commands choose executable bytes.",
     }),
-  // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
-  // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key
-  // is a prompt-text channel as well as an endpoint, and it fails ruling 4's fourth test outright.
+  // ⚠️ Ruling 4: PRIVILEGED. Every nested model carries its own endpoint `url` (egress) and request
+  // defaults, so the key is an egress surface. (`prePrompt`, which also made it a prompt-text channel,
+  // was retired 2026-09-17 with the monolithic prompt.)
   providers: Schema.Record(Schema.String, ConfigProvider.Info)
     .pipe(Schema.optional)
     .annotate({

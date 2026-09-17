@@ -43,7 +43,6 @@ const SPLIT_DESC = [
   "settings.models.config.apiPath",
   "settings.models.config.apiKey",
   "settings.models.config.providerName",
-  "settings.models.config.prePrompt",
   "settings.models.config.thinkingBudget",
 ]
 

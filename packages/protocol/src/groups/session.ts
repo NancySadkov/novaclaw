@@ -129,7 +129,7 @@ const SessionActive = Schema.Struct({
 //     OpenAPI spec and the generated SDK so nothing advertises it any more. ⚠️ It is DROPPED, not
 //     REFUSED — see the note on `device` below. Old clients that still send it are ignored, which is
 //     the residue recorded with the removal rather than a claim that the edge rejects it.
-//   · The COMPOSED system prompt. `systemPromptOverride` is a config field and is reported; the text
+//   · The COMPOSED system prompt. The text
 //     the model actually receives is rendered when the context epoch is established (a new session or
 //     a compaction) by `session/runner/prompt-manager.ts` from the agent definition, the roster, the
 //     memo area and the project. Computing it here would be a second composition site — and it
@@ -328,7 +328,6 @@ export const makeSessionGroups = <
             // perform is its own honesty defect (ruling 2), not something to re-derive from here.
             device: Schema.NonEmptyString.pipe(Schema.optional),
             controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
-            systemPromptOverride: Schema.String.pipe(Schema.optional),
             type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(
               Schema.optional,
             ),
@@ -598,7 +597,7 @@ export const makeSessionGroups = <
               identifier: "v2.session.config",
               summary: "Resolve session config",
               description:
-                "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.",
+                "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further.",
             }),
           ),
       )
@@ -920,23 +919,6 @@ export const makeSessionGroups = <
               summary: "Set the session's kernel thread type (Mode)",
               description:
                 "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.",
-            }),
-          ),
-      )
-      .add(
-        HttpApiEndpoint.post("session.switchPromptOverride", "/api/session/:sessionID/prompt-override", {
-          params: { sessionID: Session.ID },
-          payload: Schema.Struct({ override: Schema.NullOr(Schema.String) }),
-          success: HttpApiSchema.NoContent,
-          error: SessionNotFoundError,
-        })
-          .middleware(sessionLocationMiddleware)
-          .annotateMerge(
-            OpenApi.annotations({
-              identifier: "v2.session.switchPromptOverride",
-              summary: "Set the session's system-prompt override layer",
-              description:
-                "Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.",
             }),
           ),
       )

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "07b336dd-38f4-4f33-9e2e-2bff257f3edf",
+  "id": "24e1f49d-c4f1-4373-a824-e45c8ae8cce9",
   "prevIds": [
-    "229e796c-4eed-480c-bca0-959ad3c0bc65"
+    "07b336dd-38f4-4f33-9e2e-2bff257f3edf"
   ],
   "ddl": [
     {
@@ -4225,16 +4225,6 @@
       "default": null,
       "generated": null,
       "name": "control_binding",
-      "entityType": "columns",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "system_prompt_override",
       "entityType": "columns",
       "table": "session"
     },

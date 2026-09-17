@@ -361,7 +361,6 @@ export interface SessionConfig {
   readonly device?: string
   /** Explicit X display for this session. Absent = inherit, then use instance `computer.display`. */
   readonly controlBinding?: string
-  readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
   readonly responder?: Responder
@@ -439,7 +438,6 @@ export interface EffectiveConfig {
   readonly device?: string
   /** The chain-resolved computer display. Absent = use instance `computer.display`. */
   readonly controlBinding?: string
-  readonly systemPromptOverride?: string
   readonly type: SessionType
   readonly priority: number
   readonly responder: Responder
@@ -516,7 +514,6 @@ export interface SessionLike {
   /** Device affinity (see `SessionConfig.device`); `undefined` = inherit. */
   readonly device?: string
   readonly controlBinding?: string
-  readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
   readonly responder?: Responder
@@ -659,8 +656,8 @@ export const resolveSessionConfig = <E, R>(
 // inheritance test in the tree goes through spawn, and they all pass. `fork` deliberately creates
 // a ROOT (`parentID` undefined: a fork is an independent chat, not a sub-agent), so there is no
 // parent left to inherit from and whatever the source's raw row does not itself carry is simply
-// GONE. Measured 2026-07-29 against the then-current tree: a fork dropped `systemPromptOverride`,
-// `type`, `priority`, `responder`, `thinkingBudget`, `surgicalEdits` and `askBeforeChanges`
+// GONE. Measured 2026-07-29 against the then-current tree: a fork dropped `type`, `priority`,
+// `responder`, `thinkingBudget`, `surgicalEdits` and `askBeforeChanges`
 // outright, and dropped EVERY field a child had inherited rather than declared. `type` and
 // `askBeforeChanges` are restrictions, so forking a constrained session returned a less
 // constrained one with no user action that reads as "loosen this".
@@ -797,12 +794,6 @@ export const SESSION_CONFIG_FIELDS = {
   // gives, and the reason the phantom was deleted first rather than repaired in place.
   device: { column: "device", merge: "override", fallback: { kind: "derived", by: "the resolved model's endpoint" } },
   controlBinding: { column: "control_binding", merge: "override", fallback: { kind: "instance", block: "computer" } },
-  systemPromptOverride: {
-    column: "system_prompt_override",
-    merge: "override",
-    // Absence is not a missing value here — it is the agent's own prompt, unoverridden.
-    fallback: { kind: "derived", by: "the agent's base prompt" },
-  },
   type: { column: "type", merge: "override", fallback: { kind: "base", value: "interactive" } },
   priority: { column: "priority", merge: "override", fallback: { kind: "base", value: 0 } },
   responder: { column: "responder", merge: "override", fallback: { kind: "base", value: "nova" } },

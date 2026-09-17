@@ -22,7 +22,6 @@ export type Event =
   | EventSessionNextStrictSwitched
   | EventSessionNextFeatureSwitched
   | EventSessionNextTypeSwitched
-  | EventSessionNextPromptOverrideSwitched
   | EventSessionNextDeviceSwitched
   | EventSessionNextPrioritySwitched
   | EventSessionNextControlBindingSwitched
@@ -445,16 +444,6 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
-        }
-      }
-    | {
-        id: string
-        type: "session.next.prompt-override.switched"
-        properties: {
-          timestamp: number
-          sessionID: string
-          messageID: string
-          override: string | null
         }
       }
     | {
@@ -1309,7 +1298,6 @@ export type GlobalEvent = {
     | SyncEventSessionNextStrictSwitched
     | SyncEventSessionNextFeatureSwitched
     | SyncEventSessionNextTypeSwitched
-    | SyncEventSessionNextPromptOverrideSwitched
     | SyncEventSessionNextDeviceSwitched
     | SyncEventSessionNextPrioritySwitched
     | SyncEventSessionNextControlBindingSwitched
@@ -1723,7 +1711,6 @@ export type SessionDurableEvent =
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
-  | SessionNextPromptOverrideSwitched
   | SessionNextDeviceSwitched
   | SessionNextPrioritySwitched
   | SessionNextControlBindingSwitched
@@ -1892,7 +1879,6 @@ export type V2Event =
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
   | SessionNextTypeSwitched
-  | SessionNextPromptOverrideSwitched
   | SessionNextDeviceSwitched
   | SessionNextPrioritySwitched
   | SessionNextControlBindingSwitched
@@ -2134,7 +2120,6 @@ export type SessionV2Info = {
   model?: ModelRef
   device?: string
   controlBinding?: string
-  systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
   responder?: "nova" | "operator"
@@ -2921,23 +2906,6 @@ export type SyncEventSessionNextTypeSwitched = {
       sessionID: string
       messageID: string
       sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
-    }
-  }
-}
-
-export type SyncEventSessionNextPromptOverrideSwitched = {
-  type: "sync"
-  id: string
-  syncEvent: {
-    type: "session.next.prompt-override.switched.1"
-    id: string
-    seq: number
-    aggregateID: string
-    data: {
-      timestamp: number
-      sessionID: string
-      messageID: string
-      override: string | null
     }
   }
 }
@@ -4227,7 +4195,6 @@ export type ConfigV2Model = {
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
-  prePrompt?: string
   retry?: ConfigV2ModelRetry
   disabled?: boolean
   limit?: ConfigV2ModelLimit
@@ -4290,7 +4257,6 @@ export type ConfigV2ModelEntry = {
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
-  prePrompt?: string
   retry?: ConfigV2ModelRetry
   disabled?: boolean
   limit?: ConfigV2ModelLimit
@@ -4581,7 +4547,6 @@ export type ModelV2Info = {
   family?: string
   taxonomy?: "smart" | "usual" | "fast" | "special"
   prefixCache?: ModelPrefixCache
-  prePrompt?: string
   retry?: {
     attempts: number
   }
@@ -4981,26 +4946,6 @@ export type SessionNextTypeSwitched = {
     sessionID: string
     messageID: string
     sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
-  }
-}
-
-export type SessionNextPromptOverrideSwitched = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "session.next.prompt-override.switched"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    timestamp: number
-    sessionID: string
-    messageID: string
-    override: string | null
   }
 }
 
@@ -7361,17 +7306,6 @@ export type EventSessionNextTypeSwitched = {
     sessionID: string
     messageID: string
     sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
-  }
-}
-
-export type EventSessionNextPromptOverrideSwitched = {
-  id: string
-  type: "session.next.prompt-override.switched"
-  properties: {
-    timestamp: number
-    sessionID: string
-    messageID: string
-    override: string | null
   }
 }
 
@@ -13459,7 +13393,6 @@ export type V2SessionCreateData = {
     model?: ModelRef
     device?: string
     controlBinding?: string
-    systemPromptOverride?: string
     type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
     priority?: number
     permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
@@ -14496,45 +14429,6 @@ export type V2SessionSwitchTypeResponses = {
 }
 
 export type V2SessionSwitchTypeResponse = V2SessionSwitchTypeResponses[keyof V2SessionSwitchTypeResponses]
-
-export type V2SessionSwitchPromptOverrideData = {
-  body: {
-    override: string | null
-  }
-  path: {
-    sessionID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/prompt-override"
-}
-
-export type V2SessionSwitchPromptOverrideErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError
-   */
-  404: SessionNotFoundError
-}
-
-export type V2SessionSwitchPromptOverrideError =
-  V2SessionSwitchPromptOverrideErrors[keyof V2SessionSwitchPromptOverrideErrors]
-
-export type V2SessionSwitchPromptOverrideResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2SessionSwitchPromptOverrideResponse =
-  V2SessionSwitchPromptOverrideResponses[keyof V2SessionSwitchPromptOverrideResponses]
 
 export type V2SessionShellData = {
   body: {

@@ -1191,7 +1191,6 @@
 .model-settings-panels[data-active-tab="identity"] [data-settings-tab="identity"],
 .model-settings-panels[data-active-tab="sampling"] [data-settings-tab="sampling"],
 .model-settings-panels[data-active-tab="capabilities"] [data-settings-tab="capabilities"],
-.model-settings-panels[data-active-tab="corrections"] [data-settings-tab="corrections"],
 .model-settings-panels[data-active-tab="scheduler"] [data-settings-tab="scheduler"] {
   display: block;
 }

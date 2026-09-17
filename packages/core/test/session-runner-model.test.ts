@@ -1044,7 +1044,6 @@ describe("SessionRunnerModel.resolveDefault", () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         () => Effect.succeed(stub),
       )
       const got = yield* Effect.gen(function* () {

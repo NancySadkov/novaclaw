@@ -911,11 +911,6 @@ export const dict = {
   "session.info.adhoc.manual": "Manual",
   "session.info.adhoc.hint":
     "Tools this chat's agent defined for itself. Promote copies one into this instance's configuration for every chat; Discard throws it away.",
-  "session.info.prompt.title": "System prompt (this chat)",
-  "session.info.prompt.placeholder": "Extra standing instructions for this chat…",
-  "session.info.prompt.hint":
-    "Standing instructions layered on top of the agent's base prompt — for this chat only (chats spawned from it inherit them). Applies from the next reply; the base prompt is never changed.",
-
   "session.tab.session": "Chat",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
@@ -1855,16 +1850,9 @@ export const dict = {
   "settings.models.config.tab.identity": "Identity",
   "settings.models.config.tab.sampling": "Sampling",
   "settings.models.config.tab.capabilities": "Capabilities",
-  "settings.models.config.tab.corrections": "Corrections",
   "settings.models.config.tab.scheduler": "Scheduler",
   "settings.models.config.section.sampling": "Sampling",
   "settings.models.config.section.capabilities": "Capabilities",
-  "settings.models.config.section.corrections": "Behaviour corrections",
-  "settings.models.config.prePrompt.name": "Model-specific corrections",
-  "settings.models.config.prePrompt.desc": "A short note added to every chat with this model.",
-  "settings.models.config.prePrompt.desc.more":
-    "For correcting a quirk in how the model behaves — e.g. “Never wrap replies in markdown code fences” or “Stop apologising; answer directly”. It travels with the model, not the task, so keep it to behaviour fixes — not task instructions.",
-  "settings.models.config.prePrompt.placeholder": "e.g. Don’t wrap answers in code fences.",
   "settings.models.config.temperature.name": "Temperature",
   "settings.models.config.temperature.desc":
     "Higher is more creative and varied; lower is more focused and repeatable. Around 0.7 for chat, 0 for code.",

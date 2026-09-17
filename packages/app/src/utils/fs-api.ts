@@ -403,15 +403,6 @@ export function switchType(
   return sessionPost(server, input.directory, input.sessionID, "type", { type: input.type })
 }
 
-// B4/T2: the per-session system-prompt override layer (the info-sheet editor; the agent-side
-// counterpart is the `session` tool). `override: null` clears the layer.
-export function switchPromptOverride(
-  server: ServerConnection.HttpBase,
-  input: { directory: string; sessionID: string; override: string | null },
-) {
-  return sessionPost(server, input.directory, input.sessionID, "prompt-override", { override: input.override })
-}
-
 // 4E (small-tails T5): the session-defined ad-hoc recipe review surface.
 export type AdhocRecipe = { name: string; description: string; manual: string; enabled?: boolean }
 

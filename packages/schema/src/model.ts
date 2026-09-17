@@ -154,12 +154,6 @@ export const Info = Schema.Struct({
   family: Family.pipe(optional),
   taxonomy: Taxonomy.pipe(optional),
   prefixCache: PrefixCache.pipe(optional),
-  // Optional user-authored per-model PRE-PROMPT (owner ruling, 2026-07-29): a correction
-  // for THIS model's known behaviour, prepended to the system context for every session that
-  // resolves to it. It rides here — beside `taxonomy`, which the property mirrors — because the defect
-  // being corrected belongs to the weights, so it travels with the model, not the agent. Absent =
-  // inert (the composition rides the runner's `.filter(non-empty)`, so undefined changes nothing).
-  prePrompt: Schema.String.pipe(optional),
   /** Per-model connection recovery policy. Attempts includes the original request. */
   retry: Schema.Struct({
     attempts: Schema.Int,

@@ -30,7 +30,7 @@ import { SettingsConfigStore } from "../src/settings-config-store"
  *
  * `SessionRunnerModel.resolve` owns two fallbacks — a configured model the catalog cannot serve, and
  * one `ModelHealth` says is failing — and both used to reassign a LOCAL that nothing downstream
- * could see. Every other fact about "this turn's model" (`taxonomy`, `prePrompt`, `retryAttempts`,
+ * could see. Every other fact about "this turn's model" (`taxonomy`, `retryAttempts`,
  * `capabilities`, `imageLimit`, `ref`, `device`) re-entered `select()`, which applies NEITHER
  * fallback, so a demoted session held two models at once: the substitute served the request while
  * the facts described the sick original.
@@ -147,7 +147,6 @@ const seedCatalog = (catalog: Catalog.Interface) =>
       model.name = "Vision"
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
       model.taxonomy = "smart"
-      model.prePrompt = "SEER PRE-PROMPT"
       model.retry = { attempts: 7 }
       model.limit = { context: 4096, output: 512, images: 9 }
     })
@@ -167,7 +166,6 @@ const seedCatalog = (catalog: Catalog.Interface) =>
       // retains vision while changing every other per-turn fact exercised below.
       model.capabilities = { tools: true, input: ["text", "image"], output: ["text"] }
       model.taxonomy = "fast"
-      model.prePrompt = "SCRIBE PRE-PROMPT"
       model.retry = { attempts: 2 }
       model.limit = { context: 2048, output: 256, images: 3 }
     })
@@ -177,7 +175,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
   })
 
 describe("SessionRunnerModel — the per-turn facts follow the fallback", () => {
-  it.live("a health demotion moves capabilities, class, pre-prompt, retry, image cap and ref onto the substitute", () =>
+  it.live("a health demotion moves capabilities, class, retry, image cap and ref onto the substitute", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
@@ -228,7 +226,6 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             expect(facts.capabilities?.input).toEqual(["text", "image"])
             expect(facts.ref).toEqual({ providerID: SCRIBE, id: TEXT })
             expect(facts.taxonomy).toBe("fast")
-            expect(facts.prePrompt).toBe("SCRIBE PRE-PROMPT")
             expect(facts.retryAttempts).toBe(2)
             expect(facts.imageLimit).toBe(3)
             expect(demoted.device.key).toBe("http://127.0.0.1:9102")
@@ -237,7 +234,6 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             expect(yield* models.capabilities(session)).toEqual(facts.capabilities!)
             expect(yield* models.ref(session)).toEqual(facts.ref)
             expect(yield* models.taxonomy(session)).toBe("fast")
-            expect(yield* models.prePrompt(session)).toBe("SCRIBE PRE-PROMPT")
             expect(yield* models.retryAttempts(session)).toBe(2)
             expect(yield* models.imageLimit(session)).toBe(3)
             expect((yield* models.device(session))?.key).toBe(demoted.device.key)

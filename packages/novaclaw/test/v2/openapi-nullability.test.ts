@@ -13,12 +13,13 @@ import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
  * `Schema.NullOr(T)` emits the byte-identical `anyOf: [T, {type:"null"}]`. It read neither the enclosing
  * `required` array nor the arm count, so it stripped both.
  *
- * The cost was not cosmetic. `POST /api/session/{sessionID}/strict`, `.../feature` and
- * `.../prompt-override` each take one `Schema.NullOr` field whose own OpenAPI description says *"null
- * clears the override back to inherit"* — that is architecture.md's `undefined`-means-inherit keystone,
- * the sparse-override column of the ECS lens, reached over HTTP. The shipped SDK typed those bodies as
- * `{ strict: SessionStrictOverride }` / `{ override: string }`, so **a typed caller could not clear an
- * override at all**. Forty-nine positions in total lost their `null`.
+ * The cost was not cosmetic. `POST /api/session/{sessionID}/strict` and `.../feature` each take one
+ * `Schema.NullOr` field whose own OpenAPI description says *"null clears the override back to
+ * inherit"* — that is architecture.md's `undefined`-means-inherit keystone, the sparse-override
+ * column of the ECS lens, reached over HTTP. (`.../prompt-override` was a third until it retired
+ * 2026-09-17 with the per-session system-prompt override.) The shipped SDK typed those bodies as
+ * `{ strict: SessionStrictOverride }`, so **a typed caller could not clear an override at all**.
+ * Forty-nine positions in total lost their `null`.
  *
  * ⚠️ **Why this test lives here and not next to the committed artifact.** The drift test in
  * `packages/sdk/js/test/generated-drift.test.ts` compares the committed spec against a fresh run of
@@ -191,13 +192,12 @@ describe("the OpenAPI transform preserves meaningful nulls", () => {
     expect(contract.size).toBeGreaterThan(30)
   })
 
-  test("the three per-session override endpoints can still say `null` (inherit)", () => {
+  test("the per-session override endpoints can still say `null` (inherit)", () => {
     // architecture.md's keystone on the wire. Named separately from the sweep above because these are
-    // the three that make the sweep worth having, and a failure here should say so in one line.
+    // the ones that make the sweep worth having, and a failure here should say so in one line.
     const overrides = [
       ["/api/session/{sessionID}/strict", "strict"],
       ["/api/session/{sessionID}/feature", "enabled"],
-      ["/api/session/{sessionID}/prompt-override", "override"],
     ] as const
 
     for (const [path, field] of overrides) {

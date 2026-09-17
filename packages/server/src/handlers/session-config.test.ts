@@ -147,20 +147,18 @@ describe("origin says WHICH ancestor supplied each field", () => {
     )
   })
 
-  test("THE ITEM'S OWN CASE — the child ran under the INHERITED prompt, and you can see whose", () => {
-    const result = view({ systemPromptOverride: "you are the parent" }, {})
-    const field = result.fields["systemPromptOverride"]!
-    expect(field.value, "the child did not inherit the parent's prompt").toBe("you are the parent")
-    expect(field.origin, "the inherited prompt was not attributed to the ancestor that set it").toBe(ROOT)
-    expect(field.declaredBy, "the child was reported as having declared a prompt it never set").toEqual([ROOT])
+  test("THE ITEM'S OWN CASE — the child ran under the INHERITED value, and you can see whose", () => {
+    const result = view({ type: "goal-oriented" }, {})
+    const field = result.fields["type"]!
+    expect(field.value, "the child did not inherit the parent's thread type").toBe("goal-oriented")
+    expect(field.origin, "the inherited value was not attributed to the ancestor that set it").toBe(ROOT)
+    expect(field.declaredBy, "the child was reported as having declared a value it never set").toEqual([ROOT])
     expect(result.chain).toEqual([ROOT, MIDDLE])
   })
 
   test("an override moves the origin to the declaring layer, and both stay in declaredBy", () => {
-    const field = view({ systemPromptOverride: "parent" }, { systemPromptOverride: "child" }).fields[
-      "systemPromptOverride"
-    ]!
-    expect(field.value).toBe("child")
+    const field = view({ type: "goal-oriented" }, { type: "auto-prompting" }).fields["type"]!
+    expect(field.value).toBe("auto-prompting")
     expect(field.origin).toBe(MIDDLE)
     expect(field.declaredBy).toEqual([ROOT, MIDDLE])
   })
@@ -330,7 +328,6 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
         const parent = yield* sessions.create({
           location: { directory: DIRECTORY },
           agent: "build" as never,
-          systemPromptOverride: "inherited from the parent",
           permissionMode: "ask",
           type: "goal-oriented",
         })
@@ -352,11 +349,11 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     const resolved = result.data["resolved"] as Row
 
     // The premise: `session.get` genuinely cannot answer this. The child's own ROW carries no
-    // prompt, so the raw record is silent about what the session actually runs with — which is the
-    // gap this endpoint closes, and it is asserted rather than asserted-about.
+    // thread type, so the raw record is silent about what the session actually runs with — which is
+    // the gap this endpoint closes, and it is asserted rather than asserted-about.
     expect(
-      result.stored["systemPromptOverride"],
-      "the child's raw row carries a prompt, so this test is no longer about inheritance — re-aim it",
+      result.stored["type"],
+      "the child's raw row carries a type, so this test is no longer about inheritance — re-aim it",
     ).toBeUndefined()
 
     expect(result.data["chain"], "the chain is not [root … session], root-first").toEqual([
@@ -365,14 +362,6 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     ])
 
     // INHERITED — the item's acceptance criterion.
-    expect(fields["systemPromptOverride"]!["value"]).toBe("inherited from the parent")
-    expect(
-      fields["systemPromptOverride"]!["origin"],
-      "the inherited prompt was not attributed to the parent that set it",
-    ).toBe(result.parent.id)
-    expect(fields["systemPromptOverride"]!["declaredBy"]).toEqual([result.parent.id])
-
-    // INHERITED, second field — one example is a coin flip.
     expect(fields["type"]!["value"]).toBe("goal-oriented")
     expect(fields["type"]!["origin"]).toBe(result.parent.id)
 
