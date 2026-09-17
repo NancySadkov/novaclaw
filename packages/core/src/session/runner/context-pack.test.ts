@@ -603,10 +603,10 @@ describe("packRequest typed system shares", () => {
     expect(overcount.dropped).toBe(0)
   })
 
-  // Auto-recall lives in the message TAIL since 2026-08-05 (system-compose.ts's ⚠️ header): in the
-  // system array it was the one per-turn-volatile part and it invalidated the server-side prefix
-  // cache for the whole request. The `memory` category budget followed it, so this asserts the
-  // trimming against a tail MESSAGE — and that nothing puts recall back into the system prompt.
+  // Auto-recall lives in the message TAIL since 2026-08-05: in the system array it was the one
+  // per-turn-volatile part and it invalidated the server-side prefix cache for the whole request.
+  // The `memory` category budget followed it, so this asserts the trimming against a tail MESSAGE —
+  // and that nothing puts recall back into the epoch-frozen system prompt.
   test("memory is line-trimmed in the message tail while an oversized system prompt is protected", () => {
     const memory = `Remember these:\n${Array.from({ length: 20 }, (_, index) => `- fact ${index} ${"x".repeat(80)}`).join("\n")}`
     const request = LLM.request({

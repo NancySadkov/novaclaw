@@ -340,31 +340,24 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
     }),
   )
 
-  it.effect("seedFromInfos folds instructions with concat + dedup (step 9)", () =>
+  it.effect("seedFromInfos folds whole-value settings latest-wins, in document order", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
       // Two DOCUMENTS from one directory (NAMES order: config.json then novaclaw.jsonc).
+      // (`instructions` used the same fixture until 2026-09-17; it left the schema with the AGENTS.md
+      // auto-embed, so the surviving whole-value rule is pinned through `disabled_providers`.)
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.writeFile(
-          path.join(globalDir, "config.json"),
-          JSON.stringify({ instructions: ["dup.md", "first-only.md"], disabled_providers: ["openai"] }),
-        )
-        await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
-          JSON.stringify({ instructions: ["dup.md", "second-only.md"], disabled_providers: ["google"] }),
-        )
+        await fs.writeFile(path.join(globalDir, "config.json"), JSON.stringify({ disabled_providers: ["openai"] }))
+        await fs.writeFile(path.join(globalDir, "novaclaw.jsonc"), JSON.stringify({ disabled_providers: ["google"] }))
       })
 
       yield* SettingsConfigSeed.seedFromDirectory(globalDir)
       const all = yield* store.all()
-      // instructions: the V1 config service's historical Set union — concat in document
-      // order, first occurrence wins the position.
-      expect(all.instructions).toEqual(["dup.md", "first-only.md", "second-only.md"])
-      // disabled_providers: whole-value latest() — the more specific doc wins.
+      // Whole-value latest() — the more specific doc wins.
       expect(all.disabled_providers).toEqual(["google"])
     }),
   )

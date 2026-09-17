@@ -9,9 +9,7 @@ import {
   MODE_RULES,
   SESSION_CONFIG_FIELDS,
   resolveConfig,
-  type PermissionMode,
 } from "@novaclaw/core/session/config-resolve"
-import { SystemCompose } from "@novaclaw/core/session/runner/system-compose"
 
 /**
  * The owner's 2026-07-30 directive, mechanically (ruling 1 — an invariant whose violation would
@@ -34,7 +32,6 @@ const NONE = AgentJail.NO_BACKEND
 const FULL: AgentJail.BackendInfo = { kind: "namespaces", fs: true, net: true }
 const UNATTENDED = ["auto-prompting", "goal-oriented"] as const
 const ATTENDED = ["interactive", "sub-agent"] as const
-const ALL_MODES: PermissionMode[] = ["plan", "ask", "surgical", "bypass", "yolo"]
 
 const coreSrc = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "src")
 const source = (relative: string) => readFileSync(path.join(coreSrc, relative), "utf8")
@@ -160,49 +157,10 @@ describe("② safe mode restores the refusal, and the refusal NAMES ITSELF (ruli
   })
 })
 
-describe("③ the project-scope instruction is in every non-yolo prompt, and absent in yolo", () => {
-  test("present in plan / ask / surgical / bypass, ABSENT in yolo", () => {
-    for (const mode of ALL_MODES) {
-      const section = SystemCompose.projectScopeSection(mode)
-      if (mode === "yolo") expect(section, "yolo means everything — it must carry no scope rule").toBeUndefined()
-      else expect(section, `${mode} lost the project-scope rule`).toBe(SystemCompose.PROJECT_SCOPE_INSTRUCTION)
-    }
-  })
-
-  test("it says the thing the owner asked for, in both directions", () => {
-    const text = SystemCompose.PROJECT_SCOPE_INSTRUCTION
-    // the prohibition
-    for (const verb of ["CREATE", "MODIFY", "MOVE", "DELETE"]) expect(text).toContain(verb)
-    expect(text.toLowerCase()).toContain("outside")
-    // …and the permission, which is not decoration: `permission.ts`'s read baseline ALLOWS
-    // out-of-folder reads by default, so a prompt forbidding them would contradict the evaluator
-    // and leave the model choosing which of the two to believe.
-    expect(text).toContain("READ")
-  })
-
-  test("it composes into the runner's part array before the base context, exactly once", () => {
-    const parts = {
-      modelPrePrompt: "P",
-      expertiseHint: "E",
-      taxonomyHint: "T",
-      systemPromptOverride: "O",
-      agentSystem: "A",
-      base: "B",
-    }
-    const withScope = SystemCompose.composeSystemParts({
-      ...parts,
-      projectScope: SystemCompose.projectScopeSection("bypass"),
-    })
-    expect(withScope.filter((p) => p === SystemCompose.PROJECT_SCOPE_INSTRUCTION)).toHaveLength(1)
-    // after the agent's own prompt (so an agent prompt cannot bury it) and before the base.
-    expect(withScope.indexOf(SystemCompose.PROJECT_SCOPE_INSTRUCTION)).toBeGreaterThan(withScope.indexOf("A"))
-    expect(withScope.indexOf(SystemCompose.PROJECT_SCOPE_INSTRUCTION)).toBeLessThan(withScope.indexOf("B"))
-    // yolo yields the byte-identical pre-feature array — it rides the non-empty filter.
-    expect(
-      SystemCompose.composeSystemParts({ ...parts, projectScope: SystemCompose.projectScopeSection("yolo") }),
-    ).toEqual(SystemCompose.composeSystemParts(parts))
-  })
-})
+// 🗑️ "③ the project-scope instruction is in every non-yolo prompt" stood here. The project-scope
+// system-prompt section is retired with the per-turn part assembly (owner, 2026-09-17): the one
+// `PromptManager` prompt does not carry it. The permission evaluator still bounds path tools, and the
+// shell's command string remains unguarded — see `PromptManager`'s header and the slice ledger.
 
 describe("④ the WIRING — the half that compiles green when it goes missing", () => {
   // These are source assertions for the same reason three other suites in this tree use them: the

@@ -28,9 +28,10 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  * - `model` + `default_agent` — owned by the Catalog/AgentConfig stores (steps 1-2).
  * - `agents`/`commands`/`references`/`plugins`/`providers` — per-subsystem stores.
  *
- * Step 9 moved the last three V1-side keys in: `instructions` CONCAT+dedups across documents
- * (the V1 service's historical Set union); `disabled_providers` is whole-value (last document
- * wins — mergeDeep replaced arrays). Its allow-list twin `enabled_providers` was retired 2026-09-03.
+ * Step 9 moved the last V1-side keys in: `disabled_providers` is whole-value (last document
+ * wins — mergeDeep replaced arrays). Its allow-list twin `enabled_providers` was retired 2026-09-03,
+ * and `instructions` (paths/URLs of ambient instructions) was retired 2026-09-17 with the AGENTS.md
+ * auto-embed — it had no reader left.
  */
 export const SETTINGS_KEYS = [
   // Presentation order for the instance model catalog. A whole-value list: drag-reordering writes
@@ -43,7 +44,6 @@ export const SETTINGS_KEYS = [
   "virtualFs",
   "folder_bookmarks",
   "instances",
-  "instructions",
   "disabled_providers",
   "username",
   "server",
@@ -239,13 +239,6 @@ const seedFromInfos = (infos: readonly Config.Info[]) =>
         // historical `files.flatMap(info.permissions)`.
         const rules = plains.flatMap((info) => (info.permissions as unknown[] | undefined) ?? [])
         if (rules.length > 0) yield* store.set(key, rules)
-        continue
-      }
-      if (key === "instructions") {
-        // Concat + dedup in document order — the V1 config service's historical
-        // `Array.from(new Set([...target, ...source]))` union across sources.
-        const items = plains.flatMap((info) => (info.instructions as string[] | undefined) ?? [])
-        if (items.length > 0) yield* store.set(key, Array.from(new Set(items)))
         continue
       }
       if (key === "experimental") {

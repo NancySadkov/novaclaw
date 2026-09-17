@@ -938,9 +938,10 @@ export const layer = Layer.effect(
       // Nothing here changes as a result, and that is deliberate rather than an omission: adding a
       // `bash` deny row would refuse the capability the directive exists to grant, and adding any
       // command-string rule would restore exactly the false promise `MODE_RULES.plan`'s comment
-      // rejects. What covers the gap meanwhile is stated where it is enforced — the project-scope
-      // system-prompt section (`session/runner/system-compose.ts`, an INFORMATIONAL lever, named as
-      // one) plus every path-gated tool below — and what closes it is a real Windows/macOS backend,
+      // rejects. What covers the gap meanwhile is every path-gated tool below — and, since
+      // 2026-09-17, NOTHING on the prompt side: the project-scope system-prompt section the owner's
+      // 2026-07-30 directive added was retired with the per-turn part assembly, so the command string
+      // now has no informational lever at all. What closes it is a real Windows/macOS backend,
       // deferred to v0.3.0 with Auth. If you are here because you want a mechanical bound on
       // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
       const stance = unattendedStanceRules(rootType, mode)

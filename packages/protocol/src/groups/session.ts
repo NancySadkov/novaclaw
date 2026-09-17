@@ -130,10 +130,10 @@ const SessionActive = Schema.Struct({
 //     REFUSED — see the note on `device` below. Old clients that still send it are ignored, which is
 //     the residue recorded with the removal rather than a claim that the edge rejects it.
 //   · The COMPOSED system prompt. `systemPromptOverride` is a config field and is reported; the text
-//     the model actually receives is assembled per turn by `session/runner/system-compose.ts` from
-//     the agent definition, project files, memory recall and the tool list. Computing it here would
-//     be a second composition site — and it carries far more user content than an override the user
-//     typed.
+//     the model actually receives is rendered when the context epoch is established (a new session or
+//     a compaction) by `session/runner/prompt-manager.ts` from the agent definition, the roster, the
+//     memo area and the project. Computing it here would be a second composition site — and it
+//     carries far more user content than an override the user typed.
 //   · The RUNTIME permission mode. `permissionMode` here is what the config walk resolves. Auto-mode
 //     self-grants (`chainAutoGrant`) and the unattended-confinement stance narrow it FURTHER at
 //     evaluation time, through the permission service rather than through this walk.

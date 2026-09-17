@@ -292,10 +292,10 @@ export const attendedRoot = (rootType: RootType): boolean => {
  * `permission.ts` says in its own words that matching one is not containment. So an unattended
  * command that now runs raw (the owner's reversal — see `AgentJail.decideBash`) can write outside
  * the folder without any rule here seeing it. That gap is not new and it is not closed by adding a
- * row here; it is what the project-scope system-prompt section
- * (`session/runner/system-compose.ts`) and, in v0.3.0, a real Windows/macOS backend are for. Naming
- * it is ruling 2 applied to our own documentation: the stance denies out-of-folder writes through
- * every seam that can see a path, and no others.
+ * row here. The project-scope system-prompt section that used to cover it was retired with the
+ * per-turn part assembly (2026-09-17); what remains is a real Windows/macOS backend, in v0.3.0.
+ * Naming it is ruling 2 applied to our own documentation: the stance denies out-of-folder writes
+ * through every seam that can see a path, and no others.
  */
 export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
   { action: "external_directory_write", resource: "*", effect: "deny" },

@@ -198,20 +198,18 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  it.effect("routes the last settings keys (instructions, disabled_providers)", () =>
+  it.effect("routes the settings key (disabled_providers)", () =>
     Effect.gen(function* () {
-      // Step 9: instructions + disabled_providers joined SETTINGS_KEYS — every
-      // Config.Info key now routes (nothing falls back to a jsonc patch anymore).
+      // Every Config.Info key routes; nothing falls back to a jsonc patch anymore.
+      // `instructions` left SETTINGS_KEYS 2026-09-17 with the AGENTS.md auto-embed.
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
-          instructions: ["now-routed.md"],
           disabled_providers: ["x"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions"])
+      expect([...consumed].sort()).toEqual(["disabled_providers"])
       const settings = yield* SettingsConfigStore.Service
       const all = yield* settings.all()
-      expect(all.instructions).toEqual(["now-routed.md"])
       expect(all.disabled_providers).toEqual(["x"])
     }),
   )

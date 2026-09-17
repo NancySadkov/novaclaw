@@ -34,9 +34,13 @@
  *    9(c)) — and the owner's rationale ("the model can't do useful work") does not apply to it: a
  *    stranger's turn being unable to run raw shell blocks nobody's work but the stranger's.
  *
- * The trade is deliberate and it is legible rather than hidden: capability now, **guidance instead
- * of walls** (`session/runner/system-compose.ts` puts a project-scope rule in every non-yolo system
- * prompt), and a switch for anyone who wants the walls back.
+ * The trade is deliberate and it is legible rather than hidden: capability now, a switch for anyone
+ * who wants the walls back, and — since 2026-09-17 — **no prompt-side guidance at all**. The
+ * project-scope instruction that used to accompany this arm went with the per-turn part assembly;
+ * the one `PromptManager` prompt does not carry it. So on an unattended Windows chain with no
+ * sandbox backend, a model-authored `bash` command string is bounded by the permission evaluator on
+ * path tools only, not by anything the prompt says. Recorded rather than glossed: this is the window
+ * v0.3.0's OS-sandbox backends exist to close.
  */
 export * as AgentJail from "./agent-jail"
 

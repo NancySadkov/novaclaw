@@ -107,7 +107,7 @@ describe("the companion is a chat", () => {
   test("a chat stance carries no memory, and an ordinary colleague still does", () => {
     // Read as the conditional the seed actually writes, so a future edit that hardcodes "own" back
     // for everyone fails here rather than at a user's first slow companion turn.
-    expect(SEED_SOURCE).toContain('memory: officer.shortChat ? "none" : "own"')
+    expect(SEED_SOURCE).toContain('memory: officer.shortChat || officer.kind === "human" ? "none" : "own"')
   })
 
   test("the brief does not instruct a move the permission floor denies", () => {

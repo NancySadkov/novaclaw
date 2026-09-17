@@ -223,8 +223,8 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
 
     // The execution surfaces ruling 4 names by hand (`mcp`, `commands`), the prompt-text surfaces its
     // fourth test names (`adhoc_tools`, `introspection`), and the ones only reading the
-    // code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models` (whose
-    // per-model `prePrompt` is prepended to the system context).
+    // code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models`.
+    // (`instructions` stood here until 2026-09-17; it left the schema with the AGENTS.md auto-embed.)
     expect(of("privileged")).toEqual([
       "adhoc_tools",
       "agents",
@@ -241,7 +241,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "experimental",
       "formatter",
       "instances",
-      "instructions",
       "introspection",
       "local_model_catalog",
       "mcp",

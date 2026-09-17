@@ -1825,9 +1825,9 @@ export function AgentConfigScreen(props: {
                 </div>
                 {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
                 ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
-                even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
-                `SystemCompose.workspaceSection` tells the colleague about it — so the notes, drafts and
-                probe scripts it writes there were real files nobody had a way to open.
+                even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and its prompt
+                names it — so the notes, drafts and probe scripts it writes there were real files nobody
+                had a way to open.
 
                 ⚠️ Rendered whether or not a project is assigned, because the workspace exists either
                 way: when there is no project it IS the working folder, and when there is one it is the

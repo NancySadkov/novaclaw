@@ -37771,12 +37771,6 @@
               "$ref": "#/components/schemas/ConfigV2Command"
             }
           },
-          "instructions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "references": {
             "type": "object",
             "additionalProperties": {

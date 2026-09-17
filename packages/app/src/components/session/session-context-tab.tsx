@@ -25,7 +25,12 @@ import { displayName } from "@/apps/contacts"
 import { agentColor } from "@/utils/agent"
 import { getSessionContext, getSessionTokenTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
-import { downloadPlainText, serializeContextSegment, sessionExportFilename } from "./session-context-export"
+import {
+  downloadPlainText,
+  serializeContextSegment,
+  sessionExportFilename,
+  wireSystemPrompt,
+} from "./session-context-export"
 import { createSessionContextFormatter } from "./session-context-format"
 import { sessionCompactionEvents } from "./session-compaction-events"
 import { showToast } from "@/utils/toast"
@@ -104,10 +109,33 @@ export function SessionContextTab() {
     }
   })
 
-  // Native transcripts carry the injected/updated system context as `system` messages
-  // (from `session.next.context.updated`); surface the most recent one. The full resolved base
-  // prompt is server-side session state (F1e deep-tail #2) — sourcing it needs a dedicated endpoint.
+  // The exact request the runner captured at dispatch (server-side; the composed prompt is not in the
+  // client). `latest` is the most recent request — the one the provider was last sent, and the one
+  // Export Prompt downloads so it can be replayed against another OpenAI-compatible endpoint. `initial`
+  // is the session's first request, kept for a session that has captured no newer one.
+  const promptSource = createQuery(() => ({
+    queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
+    queryFn: async () => {
+      const id = params.id
+      if (!id) return {}
+      const response = await sdk().client.v2.session.promptSource({ sessionID: id })
+      return response.data?.data ?? {}
+    },
+    enabled: params.id !== undefined,
+  }))
+
+  // The prompt the provider was actually sent, read out of the captured wire body (`role: "system"`).
+  // 🔴 The one `PromptManager` prompt is the epoch baseline, not a `system` session message, so the
+  // old session-message read shows nothing after this change. The captured body IS the wire request.
+  const wirePrompt = createMemo(() => {
+    const body = promptSource.data?.latest ?? promptSource.data?.initial
+    return body === undefined ? undefined : wireSystemPrompt(body)
+  })
+  // Fallback for a protocol/capture with no OpenAI-shaped system message, and for old sessions whose
+  // context updates were recorded as `system` messages.
   const systemPrompt = createMemo(() => {
+    const wire = wirePrompt()
+    if (wire !== undefined) return wire
     const msg = findLast(messages(), (m) => m.type === "system")
     const system = msg?.type === "system" ? msg.text : undefined
     const trimmed = system?.trim()
@@ -197,28 +225,16 @@ export function SessionContextTab() {
     )
   }
 
-  // The exact request the runner captured at dispatch (server-side; the composed prompt is not in the
-  // client). `initial` is the session's first request, `latest` the most recent.
-  const promptSource = createQuery(() => ({
-    queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
-    queryFn: async () => {
-      const id = params.id
-      if (!id) return {}
-      const response = await sdk().client.v2.session.promptSource({ sessionID: id })
-      return response.data?.data ?? {}
-    },
-    enabled: params.id !== undefined,
-  }))
-
-  // The officer's FIRST request — the prompt it was born with, ending at the first user message.
-  // Same artifact the Work tab's Export Prompt downloads, so the two names mean one thing.
+  // Export the EXACT request the provider was last sent — byte-for-byte the body captured at
+  // dispatch, system message included — so it can be replayed with `curl` against any other
+  // OpenAI-compatible endpoint. `initial` is the fallback for a session with only a first request.
   const exportPrompt = () => {
-    const initial = promptSource.data?.initial ?? promptSource.data?.latest
-    if (!initial) {
+    const body = promptSource.data?.latest ?? promptSource.data?.initial
+    if (!body) {
       showToast({ variant: "error", title: language.t("context.export.promptEmpty") })
       return
     }
-    downloadPlainText(sessionExportFilename(officerName(), "prompt"), initial)
+    downloadPlainText(sessionExportFilename(officerName(), "prompt"), body)
   }
 
   // THE WHOLE SESSION, as a portable document another harness (or this one) can import back.

@@ -7,9 +7,8 @@ import { fileURLToPath } from "node:url"
  * BROWSING A COLLEAGUE'S OWN WORKSPACE (owner, 2026-08-22).
  *
  * 🔴 A colleague keeps its own workspace even when assigned to a project: the floor grants it
- * (`AgentPlugin.scratchDirsFor`) and the prompt tells the colleague about it
- * (`SystemCompose.workspaceSection`). Both of those are invisible to the USER — the notes, drafts and
- * probe scripts written there were real files with no route to open them.
+ * (`AgentPlugin.scratchDirsFor`) and the prompt names it. Both of those are invisible to the USER —
+ * the notes, drafts and probe scripts written there were real files with no route to open them.
  *
  * Three links have to hold for the route to work, and each is in a different package, so a source
  * ledger is what can see all three at once:

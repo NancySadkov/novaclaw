@@ -2363,24 +2363,21 @@ export const layer = Layer.effect(
         : undefined
       const ordinaryRequest = LLM.request({
         model,
-        // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
-        // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
-        // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
-        // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
-        // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
+        // ONE monolithic system message, rendered by `PromptManager` and frozen with the context
+        // epoch (owner, 2026-09-17). There is no part array to order and no per-turn section: a new
+        // session or a compaction regenerates it, a casual turn reuses it byte for byte.
         system: systemParts,
         messages: [
           ...providerMessages,
           // Derived provider context only — never a transcript row. The provenance prefix makes
           // every downstream real-user detector treat it as harness guidance rather than speech.
           //
-          // Auto-recall rides the TAIL, not the system prompt (see system-compose.ts's ⚠️ header):
-          // it is recomputed and re-ranked every turn, so in the system array it invalidated the
-          // server-side prefix cache for the entire request — measured 0.3s -> 12.9s to first token
-          // on a 13.5K-token agent turn. Here, a change costs only the tokens after it.
-          // 🔴 The TAIL, in the order `ContextTemplate.SLOTS` declares (owner, 2026-09-16). It used to be
-          // a hand-written spread list right here, which is how "what comes after the transcript" became
-          // a second place to keep in step with the first.
+          // Auto-recall rides the TAIL, never the epoch-frozen prompt: it is recomputed and re-ranked
+          // every turn, and in the system array it threw away the server-side prefix cache for the
+          // entire request — measured 0.3s -> 12.9s to first token on a 13.5K-token agent turn. Here,
+          // a change costs only the tokens after it.
+          // 🔴 The TAIL, in the order `ContextTemplate.SLOTS` declares. It is the one place after the
+          // transcript, and the order is the table's rather than a hand-written spread here.
           ...ContextTemplate.tailMessages({
             projectGrounding: projectGrounding === undefined ? undefined : Message.user(projectGrounding),
             memoryRecall: recallMessage === undefined ? undefined : Message.user(recallMessage),

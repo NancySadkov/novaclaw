@@ -171,10 +171,16 @@ describe("the roster a CLEAN install opens with", () => {
 
       yield* AgentConfigSeed.seedFromDirectory(globalDir)
       const agents = yield* store.agents()
-      for (const id of ["xenia", "daedalus", "myron", "researcher"]) expect(Object.keys(agents), id).toContain(id)
+      for (const id of ["owner", "xenia", "daedalus", "myron", "researcher"])
+        expect(Object.keys(agents), id).toContain(id)
       expect(agents.xenia).toHaveLength(1)
       expect(agents.xenia?.[0]?.shortChat).toBe(true)
       expect(agents.xenia?.[0]?.system).toBeUndefined()
+      // The owning user is a first-class roster entity (owner, 2026-09-17): kind `human`, no memory,
+      // and HIDDEN so it is a profile row rather than a chat target.
+      expect(agents.owner?.[0]?.kind).toBe("human")
+      expect(agents.owner?.[0]?.hidden).toBe(true)
+      expect(agents.owner?.[0]?.memory).toBe("none")
     }),
   )
 

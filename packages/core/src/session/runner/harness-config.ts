@@ -18,7 +18,7 @@ export * as HarnessConfig from "./harness-config"
 //    the runner), so a claim about behaviour inside it is unverifiable on a Windows box. A pure
 //    `derive` can be exercised directly — against a real `Config.Service` over a real settings
 //    store — which converts "the harness now reads through" from an assertion into a measurement.
-//    Same move that made `system-compose.ts` testable.
+//    Same move that made `prompt-manager.ts` testable.
 // 2. It puts the list of config keys the harness consumes in ONE place, so the ratchet in
 //    `test/runner-config-per-turn.test.ts` can ask the runner a structural question — "does any
 //    LAYER-scope declaration still derive one of these?" — instead of chasing a growing list of names that a

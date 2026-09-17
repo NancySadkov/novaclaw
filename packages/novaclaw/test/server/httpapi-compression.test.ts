@@ -15,15 +15,17 @@ function app() {
 
 // /config echoes the config back. Padding the config pushes the response body
 // well past the 1024 B threshold so we can observe compression behavior.
+// (The padding used to ride `instructions`; that key left the schema 2026-09-17, so it uses
+// `disabled_providers`, the other whole-value string array in SETTINGS_KEYS.)
 function fatConfig() {
-  const instructions: string[] = []
+  const disabled_providers: string[] = []
   for (let i = 0; i < 50; i++) {
-    instructions.push(`padding-instruction-${i}-${"x".repeat(40)}`)
+    disabled_providers.push(`padding-provider-${i}-${"x".repeat(40)}`)
   }
   return {
     formatter: false,
     username: "compression-test-user",
-    instructions,
+    disabled_providers,
   }
 }
 

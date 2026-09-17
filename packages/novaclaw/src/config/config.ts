@@ -40,9 +40,8 @@ function mergeConfig(target: Info, source: Info): Info {
 
 function mergeConfigConcatArrays(target: Info, source: Info): Info {
   const merged = mergeConfig(target, source)
-  if (target.instructions && source.instructions) {
-    merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
-  }
+  // (`instructions` used to be concat+deduped here; it left the config schema 2026-09-17 with the
+  // AGENTS.md auto-embed, and had no reader left.)
   // V2 `permissions` is an ordered Ruleset array (V1 spelled it as a per-key dict that mergeDeep
   // merged key-by-key). mergeDeep REPLACES arrays, which would silently drop earlier sources' rules,
   // so concat instead — general (target) first, more-specific (source) appended. This reproduces the

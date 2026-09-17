@@ -7,9 +7,9 @@ import { instanceBase, instanceFileReader, instanceMediaNote, instanceTicketMint
 // links to the files on the host machine, which user can just click in the chat log to download, as
 // well as link images, like say generated svgs or pngs"*).
 //
-// 🔴 **The gap this closes is the other half of a workspace.** A colleague now has somewhere to write
-// (`AgentPlugin.scratchDirsFor`) and knows about it (`SystemCompose.workspaceSection`), and the user
-// can browse it (`/files?path=`). What it could not do is HAND something over: it would say "I've
+// 🔴 **The gap this closes is the other half of a workspace.** A colleague has somewhere to write
+// (`AgentPlugin.scratchDirsFor`) and its prompt names it, and the user can browse it (`/files?path=`).
+// What it could not do is HAND something over: it would say "I've
 // written the chart to C:\…\chart.svg" and that sentence was inert text. Under the metaphor an
 // officer that produces work has to be able to give it to you.
 //

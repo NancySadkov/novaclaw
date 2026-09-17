@@ -158,7 +158,7 @@ describe("the measured case — a session with zero user messages", () => {
   })
 
   test("openai-chat: CONTROL — the PRODUCTION floor still compiles, because system lands in `messages`", () => {
-    // `@novaclaw/core`'s `SystemCompose` always supplies a baseline, which is why this defect was
+    // `@novaclaw/core` always supplies a system message, which is why this defect was
     // production-mitigated and reachable only through the public surface. That mitigation must keep
     // working: on THIS wire the system prompt is a `messages` entry, so the same dropped assistant
     // leaves a legal one-entry body.
