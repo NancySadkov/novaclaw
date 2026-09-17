@@ -97,13 +97,11 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.system !== undefined) agent.system = item.system
   if (item.name !== undefined) agent.name = item.name
   if (item.title !== undefined) agent.title = item.title
-  if (item.personality !== undefined) agent.personality = item.personality
   if (item.superior !== undefined) agent.superior = AgentV2.ID.make(item.superior)
   if (item.avatar !== undefined) agent.avatar = item.avatar
   if (item.memory !== undefined) agent.memory = item.memory
   if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
   if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
-  if (item.instructions !== undefined) agent.instructions = item.instructions
   if (item.needsTaxonomy !== undefined) agent.needsTaxonomy = item.needsTaxonomy
   if (item.description !== undefined) agent.description = item.description
   if (item.directory !== undefined) agent.directory = item.directory
@@ -115,6 +113,9 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.strict !== undefined) agent.strict = item.strict
   if (item.shortChat !== undefined) agent.shortChat = item.shortChat
   const runtime = agent as unknown as Record<string, unknown>
+  // `kind` is the newer posture spelling; the draft's schema predates it, so it rides the same
+  // runtime cast the other late fields use.
+  if (item.kind !== undefined) runtime["kind"] = item.kind
   if (item.operationMode !== undefined) runtime["operationMode"] = item.operationMode
   if (item.goal !== undefined) runtime["goal"] = item.goal
   if (item.contextBudget !== undefined) runtime["contextBudget"] = item.contextBudget

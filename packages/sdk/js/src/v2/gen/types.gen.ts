@@ -3798,13 +3798,11 @@ export type ConfigV2Agent = {
   system?: string
   name?: string
   title?: string
-  personality?: string
   superior?: string
   avatar?: string
   memory?: "own" | "none"
   archiveChats?: boolean
   toolLabels?: boolean
-  instructions?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
@@ -3814,6 +3812,7 @@ export type ConfigV2Agent = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  kind?: "agent" | "chat" | "human"
   operationMode?: "interactive" | "unattended"
   goal?: string
   contextBudget?: boolean
@@ -4642,13 +4641,11 @@ export type AgentV2Info = {
   system?: string
   name?: string
   title?: string
-  personality?: string
   superior?: string
   avatar?: string
   memory?: AgentMemory
   archiveChats?: boolean
   toolLabels?: boolean
-  instructions?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"
   description?: string
   directory?: string
@@ -4664,6 +4661,7 @@ export type AgentV2Info = {
     wallMinutes?: number
   }
   shortChat?: boolean
+  kind?: "agent" | "chat" | "human"
   operationMode?: "interactive" | "unattended"
   goal?: string
   contextBudget?: boolean

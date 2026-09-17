@@ -44,7 +44,6 @@ const identifyHarnessSession = Effect.gen(function* () {
     editor.update(AgentV2.ID.make("reviewer"), (agent) => {
       agent.name = "Iris"
       agent.title = "Reviewer"
-      agent.personality = "Compaction identity marker."
       agent.system = "Compaction standing job brief."
       agent.mode = "primary"
     }),
@@ -61,12 +60,10 @@ const identifyHarnessSession = Effect.gen(function* () {
 const expectCurrentIdentity = (request: { readonly system?: ReadonlyArray<{ readonly text: string }> }) => {
   const parts = (request.system ?? []).map((part) => part.text)
   const text = parts.join("\n")
-  expect(text.split("Iris")).toHaveLength(2)
-  expect(text.split("Compaction identity marker.")).toHaveLength(2)
-  // Identity is the LAST system block (owner, 2026-09-17), so the job brief precedes it.
-  expect(parts.indexOf("Compaction standing job brief.")).toBeLessThan(
-    parts.findIndex((part) => part.includes("<agent_identity>")),
-  )
+  // ONE monolithic prompt (owner, 2026-09-17): the officer's name and job instructions must both be
+  // in it, and it must have been regenerated for this post-compaction epoch.
+  expect(text).toContain("Your name is Iris")
+  expect(text).toContain("Compaction standing job brief.")
 }
 
 describe("SessionRunnerLLM — compaction", () => {

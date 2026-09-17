@@ -8,7 +8,6 @@ const source: AgentLike = {
   system: "Own the books. Never move money without approval.",
   name: "Theron",
   title: "Bookkeeper",
-  personality: "Blunt. Shows the arithmetic.",
   avatar: "📒",
   memory: "own",
   mode: "primary",
@@ -47,7 +46,7 @@ describe("what a clone inherits", () => {
     expect(clone.id).not.toBe("alexios")
   })
 
-  test("the BRIEF — job, personality, face, memory setting", () => {
+  test("the BRIEF — job instructions, face, memory setting", () => {
     const clone = planClone({ source, taken: [], random: () => 0 })
     expect(clone.fragment).toMatchObject({
       // The standing BRIEF is the substance of the copy: a clone with the job title and none of the
@@ -55,7 +54,6 @@ describe("what a clone inherits", () => {
       // 2026-08-21 — the first clone carried no `system` because the loader never read it.
       system: "Own the books. Never move money without approval.",
       title: "Bookkeeper",
-      personality: "Blunt. Shows the arithmetic.",
       avatar: "📒",
       memory: "own",
       mode: "primary",

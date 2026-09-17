@@ -191,7 +191,6 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
         .hire({
           title: request.title,
           brief: request.brief,
-          ...(request.personality === undefined ? {} : { personality: request.personality }),
           bySession: input.lease.sessionID,
         })
         .pipe(Effect.exit)

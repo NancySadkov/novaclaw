@@ -26,7 +26,7 @@ import { Tools } from "./tools"
 
 export const name = "self"
 
-export const description = `Look up your own configuration on this NovaClaw's roster — the model you think with, whether you keep memories, your step budget, your job title and personality, your portrait, and whether you may hand work to colleagues. Call this when a question is about YOU rather than about the work: why you did or did not remember something, whether you can take on a longer task, what you look like, or what you are set up to do. Your name and working folder are already in your prompt and are not repeated here.`
+export const description = `Look up your own configuration on this NovaClaw's roster — the model you think with, whether you keep memories, your step budget, your job title, your portrait, and whether you may hand work to colleagues. Call this when a question is about YOU rather than about the work: why you did or did not remember something, whether you can take on a longer task, what you look like, or what you are set up to do. Your name and working folder are already in your prompt and are not repeated here.`
 
 /** No arguments: a colleague's own profile is small, and there is nothing to filter on. */
 export const Input = Schema.Struct({})
@@ -39,7 +39,6 @@ const PortraitImage = Schema.Struct({
 
 const ModelOutput = Schema.Struct({
   title: Schema.optional(Schema.String),
-  personality: Schema.optional(Schema.String),
   portrait: Schema.optional(PortraitImage),
   portraitGlyph: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
@@ -53,7 +52,6 @@ const ModelOutput = Schema.Struct({
 
 export const Output = Schema.Struct({
   title: Schema.optional(Schema.String),
-  personality: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   pinnedModel: Schema.optional(Schema.String),
   memory: Schema.optional(Schema.String),
@@ -74,7 +72,6 @@ type ModelOutput = typeof ModelOutput.Type
 export const toModelOutput = (output: Output): string => {
   const lines: string[] = []
   if (output.title) lines.push(`Your job here: ${output.title}.`)
-  if (output.personality) lines.push(`How you are meant to come across: ${output.personality}`)
   const modelPortrait = output as Output & { readonly portraitGlyph?: string; readonly portrait?: unknown }
   if (modelPortrait.portraitGlyph) lines.push(`Your portrait is the glyph ${modelPortrait.portraitGlyph}.`)
   else if (modelPortrait.portrait) lines.push("Your instance-owned portrait is attached below.")
@@ -204,7 +201,6 @@ export const layer = Layer.effectDiscard(
               const portrait = yield* Effect.promise(() => Avatar.portrait(id, text("avatar"), text("name")))
               return {
                 ...(text("title") === undefined ? {} : { title: text("title")! }),
-                ...(text("personality") === undefined ? {} : { personality: text("personality")! }),
                 ...(model === undefined ? {} : { model }),
                 ...(pinnedModel === undefined ? {} : { pinnedModel }),
                 ...(text("memory") === undefined ? {} : { memory: text("memory")! }),

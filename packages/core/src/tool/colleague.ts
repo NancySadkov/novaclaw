@@ -94,9 +94,6 @@ const HireOp = Schema.Struct({
       "What this colleague owns, and what it must never do without asking. This is its standing " +
       "instruction — it outlives every conversation, so write it for the job, not for today.",
   }),
-  personality: Schema.String.pipe(Schema.optional).annotate({
-    description: "How it should speak and carry itself. Optional.",
-  }),
 })
 
 const RetireOp = Schema.Struct({
@@ -328,7 +325,6 @@ export const layer = Layer.effectDiscard(
                 const hired = yield* handoff.hire({
                   title: input.title,
                   brief: input.brief,
-                  ...(input.personality === undefined ? {} : { personality: input.personality }),
                   // WHICH SESSION is staffing, so the host can derive the agent itself. `mayStaff`
                   // ran above, but that was this tool checking itself inside the worker — see
                   // `bySession` on the handoff interface.

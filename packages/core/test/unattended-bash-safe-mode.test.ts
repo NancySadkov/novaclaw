@@ -257,14 +257,11 @@ describe("④ the WIRING — the half that compiles green when it goes missing",
     )
   })
 
-  test("the runner composes the project-scope section from the RESOLVED mode", () => {
-    const text = source("session/runner/llm.ts")
+  test("the Strict runner carries safeMode, or `bash` and Strict would disagree", () => {
+    // 🗑️ The project-scope system-prompt section this test used to pin is RETIRED (owner,
+    // 2026-09-17): the one prompt is `PromptManager.generate`, and the old per-mode scope prose is
+    // gone with the other slots. The switch itself still reaches every execution surface below.
     const strictDrain = source("session/runner/strict-drain.ts")
-    expectSource(
-      "session/runner/llm.ts",
-      "never composes projectScope into the system prompt — the section would be inert",
-      has(text, "projectScope: SystemCompose.projectScopeSection(config.permissionMode)"),
-    )
     // …and the Strict runner gets the switch too, or safe mode would be honoured by `bash` and
     // silently ignored by every Strict command (ruling 6's whole point).
     expectSource(

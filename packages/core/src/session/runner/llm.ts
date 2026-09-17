@@ -15,8 +15,9 @@ import {
   type ProviderErrorEvent,
   isModelMissing,
 } from "@novaclaw/llm"
-import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Schema, Semaphore, Stream } from "effect"
 import path from "path"
+import * as OSModule from "node:os"
 import { AgentV2 } from "../../agent"
 import { AgentModelFit } from "../../agent/model-fit"
 import { ModelHealth } from "./model-health"
@@ -36,7 +37,6 @@ import { SystemContextRegistry } from "../../system-context/registry"
 import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
 import { OwnedRuntimeContext } from "../owned-runtime-context"
 import { ToolDiscovery } from "../../tool-discovery"
-import { InstructionContext } from "../../instruction-context"
 import { OfficerPrompt } from "../../officer-prompt"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
@@ -74,10 +74,8 @@ import { WaitTool } from "../../tool/wait"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
-import { SystemAccounting } from "./system-accounting"
 import { Scratch } from "../../scratch"
-import { SystemCompose } from "./system-compose"
-import { TaxonomyScaffold } from "./taxonomy-scaffold"
+import { PromptManager } from "./prompt-manager"
 import { SessionRecall } from "./recall"
 import { MemoryCorrection } from "./memory-correction"
 import { WorldMemory } from "../../kb-graph/world-memory"
@@ -158,6 +156,20 @@ import { ResourcePressureContext } from "../../resource-pressure-context"
 import { Shell } from "../../shell"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
+
+/** The one prompt source in the context epoch. One key, because there is one system message. */
+const PROMPT_CONTEXT_KEY = SystemContext.Key.make("core/prompt")
+
+/** The instance owner's username, from the OS. */
+const instanceOwner = (): string => {
+  try {
+    const name = OSModule.userInfo().username
+    if (name.trim().length > 0) return name
+  } catch {
+    // A sandbox with no passwd entry — fall through to the environment.
+  }
+  return process.env.USERNAME ?? process.env.USER ?? "owner"
+}
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -384,7 +396,13 @@ const prepareDispatch = Effect.fnUntraced(function* (input: {
   const saved = yield* Effect.tryPromise({
     // `save` recomputes the path from the SAME `at` the request was packed against, so the file
     // written is the file named by construction rather than by two call sites agreeing.
-    try: () => OldContext.save({ scratchFolder, at, text }),
+    try: async () => {
+      const saved = await OldContext.save({ scratchFolder, at, text })
+      // The JSON work-log sibling, named by the prompt template. Best-effort: the `.txt` was already
+      // promised by the tombstone, and a second convenience file must not lose it.
+      await OldContext.saveWorkLog({ scratchFolder, at, text }).catch(() => undefined)
+      return saved
+    },
     catch: (cause) => cause,
   }).pipe(
     Effect.tap((file) =>
@@ -441,13 +459,11 @@ export const layer = Layer.effect(
     // through it, which is what lets a folder's tune reach the turn at all.
     const effective = yield* SessionEffectiveConfig.Service
     const location = yield* Location.Service
+    // The SystemContext registry is no longer composed into the prompt (the one prompt renders its
+    // own environment), but its LOAD is still awaited as the pre-provider interruptibility and
+    // health-observation checkpoint — the MCP/capability health lines are produced by that load, and
+    // a turn must be able to take an interrupt during startup work rather than only after prefill.
     const systemContext = yield* SystemContextRegistry.Service
-    // Ambient AGENTS.md, per-agent opt-in (`AgentV2.Info.instructions`). A service, not a registry
-    // entry, because the switch lives on the agent and the registry is location-scoped.
-    const instructionContext = yield* InstructionContext.Service
-    const toolCatalogueGuidance = yield* ToolCatalogueGuidance.Service
-    const referenceGuidance = yield* ReferenceGuidance.Service
-    const adhocGuidance = yield* AdhocGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     // Strict's half of the ONE host-execution gate (ruling 6): the chain-root type comes from
@@ -1075,7 +1091,6 @@ export const layer = Layer.effect(
     // exact array at this session's first request; live capability changes belong in deferred
     // tool-search results at the transcript tail, never in this prefix.
     const residentToolPrefix = new Map<string, import("@novaclaw/llm").ToolDefinition[]>()
-    const deferredToolPrefixCount = new Map<string, number>()
     const deferredToolCatalogue = new Map<string, ReadonlySet<string>>()
     const residentToolCatalogue = new Map<string, ReadonlySet<string>>()
     const promptPrefixEpoch = new Map<string, number>()
@@ -1196,24 +1211,138 @@ export const layer = Layer.effect(
     const continueAfterOverflowCompaction = (step: number, recovery: OverflowRecovery) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step, recovery })
 
-    const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID, shortChat = false) =>
-      shortChat
-        ? Effect.succeed(SystemContext.empty)
-        : Effect.all(
-            [
-              systemContext.load(),
-              instructionContext.load(agent),
-              referenceGuidance.load(),
-              adhocGuidance.load(sessionID),
-              toolCatalogueGuidance.load(),
-              OwnedRuntimeContext.load({
-                db,
-                sessionID,
-                heartbeatMinutes: agent.info?.runtimeHeartbeatMinutes ?? OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES,
-              }),
-            ],
-            { concurrency: "unbounded" },
-          ).pipe(Effect.map(SystemContext.combine))
+    /**
+     * THE PROMPT, as the ONE epoch source.
+     *
+     * 🔴 Owner, 2026-09-17: one monolithic `role: "system"` message, regenerated only at a new session
+     * and after a compaction. That cadence is the EPOCH's, not a new mechanism: `initialize` renders
+     * the baseline once, a casual turn reconciles to `Unchanged` (the comparator below is always
+     * equivalent), and a compaction whose sequence advanced forces `replace` — regenerating the
+     * prompt. So this function is the single source of authority for what every model reads, and
+     * `PromptManager.generate` is the single thing that decides its text.
+     *
+     * ⚠️ The prompt is ONE source rather than a `combine([])`: an empty render throws
+     * (`SystemContext.requireText`), so the "no system prompt at all" case — a pure Chat with empty
+     * job instructions — returns `SystemContext.empty`, which renders to the empty baseline the
+     * runner then drops.
+     */
+    const loadPromptContext = (
+      session: {
+        readonly id: SessionSchema.ID
+        readonly parentID?: SessionSchema.ID | undefined
+        readonly agent?: AgentV2.ID | undefined
+        readonly location?: { readonly directory: string } | undefined
+      },
+      agent: AgentV2.Selection,
+      shortChat: boolean,
+      sessionType: string | undefined,
+      workerProfile: { readonly system?: string | undefined } | undefined,
+    ) =>
+      Effect.gen(function* () {
+        const prototype = workerProfile
+        // Interruptible, pre-provider, and the one place the instance's ambient health is observed.
+        // Its TEXT is deliberately not composed — `PromptManager` renders the environment itself — so
+        // it is OBSERVED and discarded: `initialize` is what actually runs each source's load (the
+        // registry's `load` only builds the context), which is the work a user is waiting through
+        // when they press stop. A blocked observation is not fatal here: the prompt does not depend
+        // on it, and a corrupt ambient source must not cost the turn.
+        yield* SystemContext.initialize(yield* systemContext.load()).pipe(Effect.orElseSucceed(() => undefined))
+        // The three roster kinds (owner, 2026-09-17). `human` is the instance's owning user: it is a
+        // first-class roster entity that never runs a model turn, so its prompt is empty and it stays
+        // tool-free through the same derived `shortChat` posture as a pure Chat. The resolved
+        // `shortChat` still counts: a chat may be opened in the Chat posture from the session row even
+        // when the colleague's own kind is `agent`.
+        const declared = AgentV2.kindOf(agent.info)
+        const kind: PromptManager.Kind = declared === "human" ? "human" : shortChat ? "chat" : "agent"
+        const roster = yield* agents.all()
+        const scratch = agent.id ? Scratch.forAgent(String(agent.id)) : undefined
+        const parentAgent = session.parentID
+          ? yield* effective.resolve(session.parentID).pipe(
+              Effect.flatMap((parent) => agents.select(parent.agent as typeof session.agent)),
+              Effect.orElseSucceed(() => undefined),
+            )
+          : undefined
+        const configuredSuperior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
+        const superiorName =
+          parentAgent !== undefined
+            ? (parentAgent.info?.name ?? String(parentAgent.id))
+            : // Nova reports to the owner, and `PromptManager` renders an absent superior as the owner.
+              // Every other officer falls back to Nova, the immutable root of the org chart.
+              (configuredSuperior?.name ?? (String(agent.id) === AgentV2.NOVA_ID ? undefined : "Nova"))
+        const role = parentAgent === undefined ? "agent" : "worker"
+        const subordinates =
+          role === "agent"
+            ? roster
+                .filter(
+                  (candidate) =>
+                    AgentV2.resolveSuperior(String(candidate.id), candidate.superior, roster)?.id === agent.id,
+                )
+                .map((candidate) => candidate.name ?? String(candidate.id))
+            : []
+        const jobInstructions =
+          prototype?.system ??
+          agent.info?.system ??
+          (kind !== "agent" || shortChat || agent.info === undefined
+            ? undefined
+            : OfficerPrompt.DEFAULT_OFFICER_PROMPT)
+        const goalEntry = yield* components.get({ sessionID: session.id, kind: "goal" }).pipe(
+          Effect.map((entry) => entry?.value),
+          Effect.orElseSucceed(() => undefined),
+        )
+        const unattended = SessionDrive.unattendedMode({
+          operationMode: agent.info?.operationMode,
+          sessionType,
+        })
+        const memoRows = yield* components.list({ sessionID: session.id, kind: "durable" }).pipe(
+          Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []),
+        )
+        const memos = [...Durable.itemsOf(memoRows)].sort((left, right) =>
+          left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+        )
+        const directory = session.location?.directory
+        const listing =
+          directory === undefined || directory.trim().length === 0
+            ? undefined
+            : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
+        const workLog =
+          scratch === undefined ? undefined : yield* Effect.promise(() => OldContext.latestWorkLog(scratch))
+        const text = PromptManager.generate({
+          kind,
+          name: agent.info?.name,
+          title: agent.info?.title,
+          superior: superiorName,
+          subordinates,
+          jobInstructions,
+          os: OSModule.type(),
+          kernelRelease: OSModule.release(),
+          arch: OSModule.arch(),
+          shell: Shell.agentDefault(),
+          owner: instanceOwner(),
+          scratch,
+          goal: SessionDrive.assignedGoal({
+            officerGoal: agent.info?.goal,
+            component: goalEntry,
+          }),
+          unattended,
+          memos: memos.map((memo) => ({ name: memo.name, value: memo.value })),
+          project: directory,
+          projectFiles: listing?.entries.map((entry) => (entry.directory ? `${entry.name}/` : entry.name)),
+          workLog,
+        })
+        if (text.length === 0) return SystemContext.empty
+        return SystemContext.make({
+          key: PROMPT_CONTEXT_KEY,
+          codec: Schema.toCodecJson(Schema.Struct({ text: Schema.String })),
+          load: Effect.succeed({ text }),
+          // The comparator is ALWAYS equivalent on purpose: the prompt must not be regenerated by a
+          // casual turn, and the only two events that may replace it are handled by the epoch itself
+          // (`SessionContextEpoch.initialize` on a new session, `replace` when a compaction advanced
+          // the baseline sequence).
+          baseline: (value) => value.text,
+          update: (value) => value.text,
+          equivalent: () => true,
+        })
+      })
 
     /**
      * The pre-turn assembly, shared by `runTurnAttempt` and `runManualCompaction`.
@@ -1282,15 +1411,18 @@ export const layer = Layer.effect(
         resolution.memoryOwnerAgent === undefined || resolution.memoryOwnerAgent === agent.id
           ? agent
           : yield* tap(agents.select(resolution.memoryOwnerAgent as typeof session.agent))
-      // Resolve this turn's system context ONCE, so `initialize`/`prepare` share one observation and
-      // the epoch can be told which runner-chosen sources it actually supplied (see `SourcePresence`).
-      const systemContextValue = yield* loadSystemContext(
+      // ONE prompt source, resolved lazily by the epoch: `initialize` renders it for a new session,
+      // `replace` re-renders it when a compaction advanced the baseline, and a casual turn reconciles
+      // it to `Unchanged` without touching the stored bytes. The comparator lives in
+      // `loadPromptContext`; the cadence is owner-fixed at "new session + compaction only".
+      const promptContext = loadPromptContext(
+        session,
         agent,
-        session.id,
         ShortChat.enabled(config.shortChat),
+        config.type,
+        resolution.workerProfile,
       )
-      const systemContextKeys = SystemContext.keys(systemContextValue)
-      const initialized = yield* SessionContextEpoch.initialize(db, Effect.succeed(systemContextValue), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(db, promptContext, session.id)
       let promoted = 0
       if (options.promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
@@ -1306,16 +1438,12 @@ export const layer = Layer.effect(
           SessionContextEpoch.prepare(
             db,
             events,
-            Effect.succeed(systemContextValue),
+            promptContext,
             session.id,
             (update) =>
               SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
                 SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
               ),
-            // The AGENTS.md opt-in is a runner supply decision, not a world change: when it flips, the
-            // established baseline no longer matches and is rebuilt rather than left stale behind a
-            // "no longer apply" notice (owner report, 2026-09-17).
-            [{ key: InstructionContext.KEY, present: systemContextKeys.includes(InstructionContext.KEY) }],
           ),
         ))
       // The RESOLVED config overlaid on the row, so every `models.*` read downstream sees what the
@@ -1625,9 +1753,6 @@ export const layer = Layer.effect(
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
       const modelRef = facts.ref
-      // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
-      // the resolved model's capability class; best-effort (never gates the turn).
-      const taxonomyHint = TaxonomyScaffold.scaffold(facts.taxonomy)
       // 🔴 ROLE/MODEL FIT — tell the colleague when the model behind it is beneath what its role
       // declared (`agent/model-fit.ts`; `notes/named-agents.md`). It warns and never refuses.
       //
@@ -1706,15 +1831,6 @@ export const layer = Layer.effect(
               .pipe(Effect.ignore)
         }
       }
-      // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
-      // behaviour correction, wrapped as a distinct labelled section. Read off the model that RAN
-      // exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
-      //
-      // ⚠️ It has to be the model that ran, and this is the false-description ruling rather than
-      // tidiness: a pre-prompt is a correction for THESE weights' known behaviour, so injecting the
-      // demoted model's into a request for its substitute tells the substitute to compensate for a
-      // defect it does not have.
-      const modelPrePrompt = SystemCompose.modelPrePromptSection(facts.prePrompt)
       const context = entries.map((entry) => entry.message)
       const discoveredTools = ToolDiscovery.discovered(context)
       const todoReminderConfig = TodoReminder.resolve(harness.context?.todo_reminder)
@@ -2097,17 +2213,12 @@ export const layer = Layer.effect(
       if (promptPrefixEpoch.get(promptPrefixKey) !== system.baselineSeq) {
         promptPrefixEpoch.set(promptPrefixKey, system.baselineSeq)
         residentToolPrefix.delete(promptPrefixKey)
-        deferredToolPrefixCount.delete(promptPrefixKey)
         deferredToolCatalogue.delete(promptPrefixKey)
         residentToolCatalogue.delete(promptPrefixKey)
       }
       const frozenDefinitions = residentToolPrefix.get(promptPrefixKey)
       const stableDefinitions = frozenDefinitions ?? [...liveToolMaterialization.definitions]
       if (frozenDefinitions === undefined) residentToolPrefix.set(promptPrefixKey, stableDefinitions)
-      const stableDeferredCount =
-        deferredToolPrefixCount.get(promptPrefixKey) ?? liveToolMaterialization.deferred.length
-      if (!deferredToolPrefixCount.has(promptPrefixKey))
-        deferredToolPrefixCount.set(promptPrefixKey, stableDeferredCount)
       const toolMaterialization = { ...liveToolMaterialization, definitions: stableDefinitions }
       const catalogueNow = new Set(toolMaterialization.deferred.map((source) => source.definition.name))
       const catalogueBefore = deferredToolCatalogue.get(promptPrefixKey)
@@ -2193,164 +2304,21 @@ export const layer = Layer.effect(
           if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
         }
       }
-      // The resolved profile is the ONE identity source the model sees. It precedes the standing job
-      // brief in both postures; Short Chat changes tools/memory/project reach, never who the officer is.
-      const profile = workerProfile
-      const prototypeBrief =
-        profile === undefined
-          ? undefined
-          : [profile.personality, profile.system].filter((part): part is string => part !== undefined).join("\n\n") ||
-            undefined
-      const agentIdentity = SystemCompose.agentIdentitySection({
-        id: String(agent.id),
-        name: agent.info?.name,
-        title: agent.info?.title,
-        personality: agent.info?.personality,
-      })
-      const roster = yield* agents.all()
-      const parentAgent = session.parentID
-        ? yield* effective
-            .resolve(session.parentID)
-            .pipe(Effect.flatMap((parent) => agents.select(parent.agent as typeof session.agent)))
-        : undefined
-      const configuredSuperior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
-      const superior = parentAgent
-        ? { id: String(parentAgent.id), name: parentAgent.info?.name }
-        : configuredSuperior === undefined
-          ? undefined
-          : { id: String(configuredSuperior.id), name: configuredSuperior.name }
-      const organization = SystemCompose.organizationSection({
-        agentID: String(agent.id),
-        officer: agent.info !== undefined && AgentV2.isColleague(agent.info),
-        worker: session.parentID !== undefined,
-        ...(superior === undefined
-          ? {}
-          : { superior: { id: superior.id, ...(superior.name === undefined ? {} : { name: superior.name }) } }),
-      })
-      // The goal's per-session carrier, read ONCE per turn for the same reason the drain reads it: the
-      // precedence must have a single answer (`SessionDrive.assignedGoal`). Best-effort — the block
-      // decorates the prompt and must never cost the turn it describes.
-      const goalForPrompt = yield* components.get({ sessionID: session.id, kind: "goal" }).pipe(
-        Effect.map((entry) => entry?.value),
-        Effect.orElseSucceed(() => undefined),
-      )
-      // The durable area as last MATERIALISED — the text of the `durable_prompt` singleton the kernel
-      // rewrote after the previous compaction. Read per turn (cheap) but only ever WRITTEN at a
-      // rewrite, which is what makes the block stable inside an epoch; see the writer below and the
-      // `compaction` volatility on the slot.
-      const durableForPrompt = yield* components.get({ sessionID: session.id, kind: "durable_prompt" }).pipe(
-        Effect.map((entry) => entry?.value),
-        Effect.orElseSucceed(() => undefined),
-      )
-      // A pure Chat is deliberately a bare model conversation. The only system text it receives is
-      // the brief the user wrote in this officer's settings: no identity wrapper, organization,
-      // project, model pre-prompt, or upgrade instructions.
-      //
-      // 🔴 Owner, 2026-09-17: the working style is no longer a shared persona block. An officer's own
-      // prompt is the ONE identity source, and an officer that has none falls back to
-      // `OfficerPrompt.DEFAULT_OFFICER_PROMPT` — the same text its settings box shows. See
-      // `officer-prompt.ts` for why the shared persona was removed.
-      const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
-        ? {
-            // A pure-chat officer has exactly the instructions visible in its Personality field.
-            // Ignoring the legacy `system` column here makes an empty field an actually empty
-            // system prompt, including for existing instances seeded before that invariant landed.
-            agentSystem: prototypeBrief ?? agent.info?.personality,
-          }
-        : {
-            modelPrePrompt,
-            expertiseHint: harness.expertiseHint,
-            taxonomyHint,
-            systemPromptOverride: config.systemPromptOverride,
-            agentIdentity,
-            agentSystem: prototypeBrief ?? agent.info?.system ?? OfficerPrompt.DEFAULT_OFFICER_PROMPT,
-            organization,
-            // The tool list the model is about to receive is `toolMaterialization.definitions`; the
-            // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
-            // see the section's own note on why a count and not a hedge.
-            toolDiscovery: SystemCompose.toolDiscoverySection(stableDeferredCount),
-            // That the model can SEE, when the catalog says it can. The `canSpawn` half is read off
-            // the tools the model is ACTUALLY about to receive rather than off the registry: the
-            // delegation paragraph is an instruction, and an instruction naming a tool this turn
-            // cannot call is the false description ruling 2 forbids.
-            perception: SystemCompose.perceptionSection({
-              capabilities: modelCapabilities,
-              // ⚠️ The literal, not `SpawnTool.name`: `tool/spawn.ts` reaches `session/spawner.ts`,
-              // which is on this runner's own import path, so naming the module here would close a
-              // cycle for one string. The coupling is pinned instead by
-              // `test/session-system-compose.test.ts`, which fails if `SpawnTool.name` ever moves.
-              canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
-            }),
-            // ⚠️ From the AGENT record, not from the session's resolved memory stance: `memory:
-            // "none"` is a property of WHO this colleague is — a throwaway keeps nothing by
-            // construction — while the session-level switch can turn recall off for a colleague that
-            // normally remembers, which is a different sentence and not this one.
-            memoryStance: SystemCompose.memoryStanceSection({
-              memory: prepared.memoryOwner.info?.memory,
-              archiveChats: prepared.memoryOwner.info?.archiveChats,
-            }),
-            // 🔴 Both flags read from the tools this turn ACTUALLY received, never from the registry
-            // or the ruleset — a section naming a tool the turn cannot call is a false description.
-            // Same source `perception`'s `canSpawn` already uses, and for the same reason.
-            delegation: SystemCompose.delegationSection({
-              // Read from the SAME condition that withheld the ops, so the sentence and the tool
-              // list cannot disagree — "a section naming a tool the turn cannot call is a false
-              // description", and a silent absence is the converse.
-              // Hop pressure is live transcript state. Keep it out of the immutable system prefix;
-              // the colleague tool enforces the cap at execution and reports the precise refusal.
-              colleaguesAtCap: false,
-              canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
-              canAddressColleagues: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "colleague"),
-            }),
-            projectScope: SystemCompose.projectScopeSection(config.permissionMode),
-            // ⚠️ The scratch path is derived from the AGENT id, not from the session: a colleague's
-            // workspace is a property of who it is, and every chat it has reaches the same one. A
-            // session-derived path would give it a fresh empty folder per conversation, which is the
-            // opposite of the durable place these instructions promise.
-            workspace: SystemCompose.workspaceSection({
-              directory: session.location?.directory,
-              scratch: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
-            }),
-            base: system.baseline,
-            // 🔴 THE GOAL, as the LAST block (owner, 2026-09-16: *"Goal prompt is appended to system
-            // prompt, right after the tool specification and before the user prompt"*). Composed only
-            // while the session is UNATTENDED, so the Interactive ⇄ Unattended switch adds and removes
-            // it — decided per turn from the role's standing choice, which is what makes the switch
-            // immediate rather than a second UI call (`SessionDrive.unattendedMode`).
-            goal: SessionDrive.unattendedMode({
-              operationMode: prepared.agent.info?.operationMode,
-              sessionType: config.type,
-            })
-              ? SystemCompose.goalSection(
-                  SessionDrive.assignedGoal({
-                    officerGoal: prepared.agent.info?.goal,
-                    component: goalForPrompt,
-                  }),
-                )
-              : undefined,
-            // 🔴 THE DURABLE AREA, immediately after the goal (owner's own sketch: `<goal>`,
-            // `#DURABLE`, then the first user prompt). Deliberately NOT gated on unattended mode the
-            // way the goal is: the area is not about who set the objective, it is the colleague's own
-            // memory of things a rewrite must not take, so every mode can have one.
-            //
-            // ⚠️ Absent from the ShortChat branch above on purpose — a pure Chat is a bare
-            // conversation by invariant ("no default system prompt outside of what user types into
-            // its Personality"), and a durable area is a second place to put standing text.
-            durable: SystemCompose.durableSection(Durable.textOf(durableForPrompt)),
-          }
-      const promptAccounting = SystemAccounting.of(promptParts)
-      // Beside `session.request.footprint`, which measures the request in three lumps and therefore
-      // cannot say WHICH part of the system prompt grew. Debug level: one line a turn, and the line a
-      // regression is read from.
+      // THE ONE SYSTEM MESSAGE. `PromptManager` built it when this context epoch was established (a
+      // new session) or replaced (after a compaction), and it is reused byte-for-byte on every casual
+      // turn — the epoch's comparator makes a casual turn `Unchanged`, so nothing here recomputes it.
+      // The part-assembly mechanism this replaces (per-turn slots, the persona baseline, the model
+      // pre-prompt, the tool-discovery and delegation sections) is retired; see `prompt-manager.ts`.
+      const systemParts = system.baseline.length > 0 ? [SystemPart.make(system.baseline)] : []
+      const promptTokens = Token.estimate(system.baseline)
       yield* Log.event("session.prompt.blocks", {
         "session.id": session.id,
-        "prompt.tokens": promptAccounting.tokens,
-        "prompt.chars": promptAccounting.chars,
-        "prompt.blocks": promptAccounting.blocks.length,
-        "prompt.largest": promptAccounting.largest?.block ?? "none",
-        "prompt.largest.tokens": promptAccounting.largest?.tokens ?? 0,
+        "prompt.tokens": promptTokens,
+        "prompt.chars": system.baseline.length,
+        "prompt.blocks": systemParts.length,
+        "prompt.largest": systemParts.length === 0 ? "none" : "system",
+        "prompt.largest.tokens": systemParts.length === 0 ? 0 : promptTokens,
       })
-      const systemParts = SystemCompose.composeSystemParts(promptParts).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
       const freshImages = freshImageCount(providerMessages)
       if (modelImageLimit !== undefined && freshImages > modelImageLimit) {
@@ -5311,7 +5279,6 @@ export const node = makeLocationNode({
     SessionEffectiveConfig.node,
     Location.node,
     SystemContextRegistry.node,
-    InstructionContext.node,
     ReferenceGuidance.node,
     AdhocGuidance.node,
     Config.node,

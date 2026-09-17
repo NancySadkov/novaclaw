@@ -88,7 +88,7 @@ describe("Durable — the pure half", () => {
   test("the refusals name the remedy, not just the rule", () => {
     expect(Durable.overLongValueNotice("Big", 900)).toContain("file")
     expect(Durable.nameTooLongNotice("x".repeat(31))).toContain("30")
-    expect(Durable.areaFullNotice([{ id: "a", name: "Alpha", value: "1" }])).toContain("durable_clear")
+    expect(Durable.areaFullNotice([{ id: "a", name: "Alpha", value: "1" }])).toContain("memo_clear")
     expect(Durable.areaFullNotice([{ id: "a", name: "Alpha", value: "1" }])).toContain("Alpha")
   })
 
@@ -109,8 +109,8 @@ describe("Durable — the block, and where it sits", () => {
     expect(section).toContain("Alpha: 1")
     // The framing line names the two tools, because the block's reader is the agent that owns it and
     // has to know it is editable (AGENTS.md principle 8).
-    expect(section).toContain("durable_set")
-    expect(section).toContain("durable_clear")
+    expect(section).toContain("memo_set")
+    expect(section).toContain("memo_clear")
   })
 
   test("🔴 it is composed immediately after the goal, and it is the only compaction-volatile slot", () => {

@@ -456,7 +456,6 @@ export const ColleagueRequest = Schema.Struct({
       op: Schema.Literal("hire"),
       title: Schema.String,
       brief: Schema.String,
-      personality: Schema.String.pipe(Schema.optional),
     }),
     Schema.Struct({ op: Schema.Literal("retire"), colleague: Schema.String }),
     Schema.Struct({ op: Schema.Literal("set_superior"), colleague: Schema.String, superior: Schema.String }),

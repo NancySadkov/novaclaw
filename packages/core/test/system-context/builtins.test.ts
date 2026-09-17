@@ -11,8 +11,6 @@ import { SystemContext } from "@novaclaw/core/system-context"
 import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
-import { InstructionContext } from "@novaclaw/core/instruction-context"
-import { AgentV2 } from "@novaclaw/core/agent"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
@@ -22,7 +20,6 @@ import { testEffect } from "../lib/effect"
 
 const directory = AbsolutePath.make(FSUtil.resolve("/repo/packages/core"))
 const projectDirectory = AbsolutePath.make(FSUtil.resolve("/repo"))
-const instructionFile = FSUtil.resolve("/repo/AGENTS.md")
 const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(
@@ -36,25 +33,6 @@ const builtInsNode = LayerNode.group([SystemContextBuiltIns.node, SystemContextR
 const it = testEffect(
   AppNodeBuilder.build(builtInsNode, [
     [Location.node, locationLayer],
-    [Global.node, Global.layerWith({ config: "/global", data: "/data" })],
-  ]),
-)
-const instructionFS = Layer.effect(
-  FSUtil.Service,
-  FSUtil.Service.pipe(
-    Effect.map((fs) =>
-      FSUtil.Service.of({
-        ...fs,
-        up: () => Effect.succeed([instructionFile]),
-        readFileStringSafe: (path) => Effect.succeed(path === instructionFile ? "Be precise." : undefined),
-      }),
-    ),
-  ),
-).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
-const itWithInstructions = testEffect(
-  AppNodeBuilder.build(builtInsNode, [
-    [Location.node, locationLayer],
-    [FSUtil.node, instructionFS],
     [Global.node, Global.layerWith({ config: "/global", data: "/data" })],
   ]),
 )
@@ -188,29 +166,4 @@ describe("SystemContextBuiltIns", () => {
     }),
   )
 
-  itWithInstructions.effect("composes ambient instructions after built-in context", () =>
-    Effect.gen(function* () {
-      const context = yield* SystemContextRegistry.Service
-      // Instructions are a per-agent opt-in service now (`AgentV2.Info.instructions`), not a registry
-      // entry — this is the runner's combination, at the seam that used to be a registry register.
-      const instructions = yield* InstructionContext.Service
-      const optedIn = {
-        id: AgentV2.ID.make("test"),
-        info: { instructions: true } as unknown as AgentV2.Info,
-      }
-      const combined = SystemContext.combine([yield* context.load(), yield* instructions.load(optedIn)])
-
-      expect((yield* SystemContext.initialize(combined)).baseline).toBe(
-        [
-          "Here is some useful information about the environment you are running in:",
-          "<env>",
-          `  Platform: ${process.platform}`,
-          `  Shell: ${Shell.agentDefault()}`,
-          "</env>",
-          "",
-          `Instructions from: ${instructionFile}\nBe precise.`,
-        ].join("\n"),
-      )
-    }),
-  )
 })

@@ -173,3 +173,47 @@ export const save = async (input: {
   await fs.writeFile(target, input.text, { encoding: "utf8", flag: "w" })
   return target
 }
+
+/**
+ * The JSON work-log — the same folded conversation, machine-readable, named the way the owner's
+ * prompt template names it (`<scratch>/tmp/oldlog-<date>-<time>.json`).
+ *
+ * ⚠️ It is a SIBLING of the `.txt` file, not a replacement: the text file is what an agent greps,
+ * the JSON is what a tool or a later process can parse back into messages. Both are written from the
+ * same fold, and a failure to write either is swallowed (the summary is the rescue; a convenience
+ * file must never fail a compaction).
+ */
+export const workLogName = (at: Date): string => {
+  const iso = at.toISOString()
+  return `oldlog-${iso.slice(0, 10)}-${iso.slice(11, 19).replaceAll(":", "")}.json`
+}
+
+export const workLogFile = (input: { readonly scratchFolder: string; readonly at: Date }): string =>
+  path.join(input.scratchFolder, DIR, workLogName(input.at))
+
+export const saveWorkLog = async (input: {
+  readonly scratchFolder: string
+  readonly at: Date
+  readonly text: string
+}): Promise<string> => {
+  const target = workLogFile({ scratchFolder: input.scratchFolder, at: input.at })
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.writeFile(target, JSON.stringify({ at: input.at.toISOString(), text: input.text }, undefined, 2), {
+    encoding: "utf8",
+    flag: "w",
+  })
+  return target
+}
+
+const WORK_LOG = /^oldlog-.*\.json$/
+
+/** The newest work-log in the agent's scratch, or `undefined` when there is none. */
+export const latestWorkLog = async (scratchFolder: string): Promise<string | undefined> => {
+  try {
+    const names = await fs.readdir(path.join(scratchFolder, DIR))
+    const newest = names.filter((name) => WORK_LOG.test(name)).sort().at(-1)
+    return newest === undefined ? undefined : path.join(scratchFolder, DIR, newest)
+  } catch {
+    return undefined
+  }
+}

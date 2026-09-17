@@ -766,7 +766,13 @@ export const make = (dependencies: Dependencies) => {
   }) {
     const at = DateTime.toDate(yield* DateTime.now)
     return yield* Effect.tryPromise({
-      try: () => OldContext.save({ scratchFolder: input.scratchFolder, at, text: input.text }),
+      try: async () => {
+        const saved = await OldContext.save({ scratchFolder: input.scratchFolder, at, text: input.text })
+        // The JSON sibling rides the same fold; a failure to write it must not lose the `.txt` file,
+        // so it is best-effort and separate.
+        await OldContext.saveWorkLog({ scratchFolder: input.scratchFolder, at, text: input.text }).catch(() => undefined)
+        return saved
+      },
       catch: (cause) => cause,
     }).pipe(
       Effect.tap((file) =>

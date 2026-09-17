@@ -34,7 +34,7 @@ import { dict } from "@/i18n/en"
  *
  *   **D3** — Save was enabled before the dialog had LOADED the fields it writes. `dirty()` needs one
  *   touched field, and the `*Value()` accessors fall back draft → stored → `""`, so one character
- *   typed into Name before the fetch landed wrote `title` and `personality` away as empty strings.
+ *   typed into Name before the fetch landed wrote `title` away as an empty string.
  *
  * ⚠️ These stubs supply context VALUES directly through the raw Context objects rather than the real
  * providers, because `createSimpleContext`'s `provider` calls the real `init` — which wants a server
@@ -46,7 +46,6 @@ const AGENT = {
   id: "theron",
   name: "Theron",
   title: "Bookkeeper",
-  personality: "Precise and dry.",
   memory: "own" as const,
   // ⚠️ An OBJECT, not a ref string — `AgentLike.model` is `{ providerID, id }` and `modelValue()`
   // re-serialises it with `modelRef`. A string here silently yields "" and would have looked
@@ -372,11 +371,11 @@ describe("AgentConfigDialog renders", () => {
     expect(io?.querySelector('[data-section="remote-chat"]')).not.toBeNull()
 
     const profile = document.querySelector('[data-section="profile"][data-settings-tab="profile"]')
-    expect(profile?.textContent).toContain("Import personality")
-    expect(profile?.textContent).toContain("Export personality")
+    expect(profile?.textContent).toContain("Import profile")
+    expect(profile?.textContent).toContain("Export profile")
     expect(profile?.querySelector('[data-action="agent-personality-import"]')?.classList.contains("w-full")).toBe(true)
     // 🔴 The reporting line is identity, so it lives here (owner, 2026-09-16), LAST — after the name,
-    // title, personality, job brief and portrait. Asserted in DOM order for the same reason as Mood
+    // title, job brief and portrait. Asserted in DOM order for the same reason as Mood
     // sampling above: "moved to Profile" is satisfied by any position, and this pins the position.
     expect(profile?.textContent).toContain("agentConfig.superior")
     const profileLabels = [...(profile?.querySelectorAll("label") ?? [])]
@@ -507,8 +506,8 @@ describe("AgentConfigDialog renders", () => {
   })
 
   test("D3 · Save is disabled while the roster is still in flight", async () => {
-    // `agents: undefined` is the blank window — `agent()` is undefined, so `titleValue()` and
-    // `personalityValue()` resolve to "". Save must not be reachable here even once a field is dirty.
+    // `agents: undefined` is the blank window — `agent()` is undefined, so `titleValue()` resolves
+    // to "". Save must not be reachable here even once a field is dirty.
     mount({ agents: undefined })
     await settle()
     const save = saveButton()

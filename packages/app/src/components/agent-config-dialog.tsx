@@ -52,7 +52,9 @@ import {
   type Requirement,
 } from "@/components/model-taxonomy"
 
-const POSTURE_CHOICES: ("agent" | "chat")[] = ["agent", "chat"]
+// The three roster kinds (owner, 2026-09-17): a full officer, a pure Chat, and the instance's
+// owning user. Human is a first-class entity, not an absence.
+const POSTURE_CHOICES: ("agent" | "chat" | "human")[] = ["agent", "chat", "human"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
 
 // ONE addressable officer-settings screen, opened from two places (AGENTS.md → *the structural metaphor*;
@@ -126,7 +128,6 @@ export function AgentConfigScreen(props: {
   // the roster while an untouched field keeps tracking the server.
   const [renamed, setRenamed] = createSignal<string | undefined>()
   const [title, setTitle] = createSignal<string | undefined>()
-  const [personality, setPersonality] = createSignal<string | undefined>()
   const [job, setJob] = createSignal<string | undefined>()
   const [avatarFile, setAvatarFile] = createSignal<File | undefined>()
   const [avatarRemoved, setAvatarRemoved] = createSignal(false)
@@ -147,7 +148,7 @@ export function AgentConfigScreen(props: {
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
   // from Cancel.
   const [directory, setDirectory] = createSignal<string | undefined>()
-  const [posture, setPosture] = createSignal<boolean | undefined>()
+  const [posture, setPosture] = createSignal<"agent" | "chat" | "human" | undefined>()
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
   const [strict, setStrict] = createSignal<boolean | undefined>()
   const [operationMode, setOperationMode] = createSignal<"interactive" | "unattended" | undefined>()
@@ -163,12 +164,6 @@ export function AgentConfigScreen(props: {
    * caption that never reaches the model.
    */
   const [toolLabels, setToolLabels] = createSignal<boolean | undefined>()
-  /**
-   * Load the working folder's ambient instructions (`AGENTS.md`), drafted as the OPT-IN. `undefined` =
-   * untouched; the default is OFF, so `true` is the only value that turns it on and a stored `false`
-   * is only ever a user's explicit decline. Owner, 2026-09-17.
-   */
-  const [instructions, setInstructions] = createSignal<boolean | undefined>()
   /**
    * Computer Use, drafted as the OPT-OUT rather than as the permission. `undefined` = untouched;
    * `true` = hand the officer back to the floor's grant (the rule goes away); `false` = store the deny.
@@ -201,7 +196,6 @@ export function AgentConfigScreen(props: {
 
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
-  const personalityValue = () => personality() ?? agent()?.personality ?? ""
   // 🔴 The box SHOWS the prompt that will actually run (owner, 2026-09-17). An officer with no stored
   // prompt falls back to `OfficerPrompt.DEFAULT_OFFICER_PROMPT` at runtime, so the box shows that same
   // text rather than an empty field with an invisible default behind it. Clearing it to "" is a real
@@ -212,7 +206,7 @@ export function AgentConfigScreen(props: {
   // records a thing for it, so an ON toggle there would be a promise the stance cannot keep. Every
   // other colleague defaults ON — one that cannot learn its work is not much of a colleague. A
   // stored value always wins over this default, so nothing here rewrites an explicit choice.
-  const memoryValue = () => memory() ?? agent()?.memory ?? (postureValue() ? "none" : "own")
+  const memoryValue = () => memory() ?? agent()?.memory ?? (postureValue() === "agent" ? "own" : "none")
   const directoryValue = () => {
     const draft = directory()
     if (draft !== undefined) return draft.trim() === "" ? undefined : draft
@@ -222,7 +216,13 @@ export function AgentConfigScreen(props: {
   // Each reads the DRAFT first, then the colleague's stored value, then the shipped baseline — the
   // same "absent means inherit" the config layer itself uses, so the dialog shows what a chat with
   // this colleague would actually start with.
-  const postureValue = () => posture() ?? (agent()?.config?.["shortChat"] as boolean | undefined) ?? false
+  const postureValue = (): "agent" | "chat" | "human" => {
+    const draft = posture()
+    if (draft !== undefined) return draft
+    const stored = agent()?.config?.["kind"]
+    if (stored === "agent" || stored === "chat" || stored === "human") return stored
+    return agent()?.config?.["shortChat"] === true ? "chat" : "agent"
+  }
   const permissionModeValue = () =>
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
@@ -318,8 +318,6 @@ export function AgentConfigScreen(props: {
   // Default ON, exactly like `archiveChats`: absent means on, and only an explicit `false` skips the
   // per-tool-call captioning request.
   const toolLabelsValue = () => toolLabels() ?? agent()?.toolLabels ?? true
-  // Default OFF — opt-in: absent means this colleague loads no AGENTS.md.
-  const instructionsValue = () => instructions() ?? agent()?.instructions ?? false
   // "" is the INHERIT choice, and it is a real value rather than a missing one: a colleague with no
   // model of its own follows the instance default, which is a decision the user can return to.
   const modelValue = () => {
@@ -534,7 +532,6 @@ export function AgentConfigScreen(props: {
   const dirty = () =>
     renamed() !== undefined ||
     title() !== undefined ||
-    personality() !== undefined ||
     job() !== undefined ||
     memory() !== undefined ||
     directory() !== undefined ||
@@ -549,7 +546,6 @@ export function AgentConfigScreen(props: {
     quality() !== undefined ||
     affective() !== undefined ||
     toolLabels() !== undefined ||
-    instructions() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
     needsTaxonomy() !== undefined ||
@@ -622,13 +618,12 @@ export function AgentConfigScreen(props: {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "") || "officer"
-    downloadOfficerPersonality(`${slug}-personality.json`, {
+    downloadOfficerPersonality(`${slug}-profile.json`, {
       format: PERSONALITY_FORMAT,
       version: 1,
       profile: {
         name: nameValue(),
         title: titleValue(),
-        personality: personalityValue(),
         job: jobValue(),
       },
     })
@@ -637,14 +632,13 @@ export function AgentConfigScreen(props: {
     if (!file) return
     const parsed = parseOfficerPersonality(await file.text())
     if (!parsed) {
-      showToast({ variant: "error", title: "That is not a NovaClaw officer personality file" })
+      showToast({ variant: "error", title: "That is not a NovaClaw officer profile file" })
       return
     }
     if (parsed.profile.name !== undefined) setRenamed(parsed.profile.name)
     if (parsed.profile.title !== undefined) setTitle(parsed.profile.title)
-    if (parsed.profile.personality !== undefined) setPersonality(parsed.profile.personality)
     if (parsed.profile.job !== undefined) setJob(parsed.profile.job)
-    showToast({ variant: "success", title: "Personality loaded — review it, then Save" })
+    showToast({ variant: "success", title: "Profile loaded — review it, then Save" })
   }
 
   /** Hire a copy: same brief, new identity (`apps/agent-clone.ts`). */
@@ -994,9 +988,6 @@ export function AgentConfigScreen(props: {
           [id]: {
             ...(renamed() === undefined && agent()?.name === undefined ? {} : { name: nameValue() }),
             ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
-            ...(personality() === undefined && agent()?.personality === undefined
-              ? {}
-              : { personality: personalityValue() }),
             ...(job() === undefined && agent()?.system === undefined ? {} : { system: jobValue() }),
             memory: memoryValue(),
             // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
@@ -1005,18 +996,17 @@ export function AgentConfigScreen(props: {
             // save changed another field, so a stale hidden folder cannot spring back later.
             ...(governing()
               ? {}
-              : postureValue()
+              : postureValue() !== "agent"
                 ? { directory: "" }
                 : directory() === undefined
                   ? {}
                   : { directory: directory()!.trim() }),
-            ...(posture() === undefined ? {} : { shortChat: posture()! }),
+            ...(posture() === undefined ? {} : { kind: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
             ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
             ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
             ...(goal() === undefined ? {} : { goal: goalValue() }),
             ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
-            ...(instructions() === undefined ? {} : { instructions: instructions()! }),
             // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
             // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
             ...(computerUse() === undefined || computerRuleset().length === 0
@@ -1086,7 +1076,6 @@ export function AgentConfigScreen(props: {
       else if (avatarRemoved()) await removeAgentAvatar(current.http, id)
       setRenamed(undefined)
       setTitle(undefined)
-      setPersonality(undefined)
       setJob(undefined)
       setAvatarFile(undefined)
       setAvatarRemoved(false)
@@ -1235,15 +1224,6 @@ export function AgentConfigScreen(props: {
                 />
               </label>
               <label class="mt-3 block text-xs text-v2-text-text-muted">
-                {language.t("agentConfig.personality")}
-                <textarea
-                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  value={personalityValue()}
-                  onInput={(event) => setPersonality(event.currentTarget.value)}
-                  placeholder={language.t("agentConfig.personalityPlaceholder")}
-                />
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
                 Job instructions
                 <textarea
                   aria-label="Job instructions"
@@ -1270,7 +1250,7 @@ export function AgentConfigScreen(props: {
                   class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium hover:bg-v2-background-bg-layer-02 sm:w-auto"
                   onClick={() => personalityInput?.click()}
                 >
-                  Import personality
+                  Import profile
                 </button>
                 <button
                   type="button"
@@ -1278,11 +1258,11 @@ export function AgentConfigScreen(props: {
                   class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 sm:w-auto"
                   onClick={exportPersonality}
                 >
-                  Export personality
+                  Export profile
                 </button>
               </div>
               <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Portable JSON contains the name, job title, personality, and job instructions only. Models, folders,
+                Portable JSON contains the name, job title, and job instructions only. Models, folders,
                 authority, memories, and chat history stay with this instance.
               </p>
               {/* Why this is a profile field and not something you type into the chat. */}
@@ -1573,19 +1553,25 @@ export function AgentConfigScreen(props: {
                     appearance="inline"
                     aria-label={language.t("agentConfig.posture")}
                     options={POSTURE_CHOICES}
-                    current={postureValue() ? "chat" : "agent"}
+                    current={postureValue()}
                     label={(value) =>
-                      language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")
+                      language.t(
+                        value === "chat"
+                          ? "prompt.posture.chat.title"
+                          : value === "human"
+                            ? "prompt.posture.human.title"
+                            : "prompt.posture.agent.title",
+                      )
                     }
                     onSelect={(value) => {
                       if (!value) return
-                      setPosture(value === "chat")
-                      if (value === "chat") setDirectory("")
+                      setPosture(value)
+                      if (value !== "agent") setDirectory("")
                     }}
                   />
                 </div>
                 <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(postureValue() ? "prompt.posture.chat.description" : "prompt.posture.agent.description")}
+                  {language.t(`prompt.posture.${postureValue()}.description`)}
                 </p>
 
                 <div class="flex items-center justify-between gap-2 text-xs">
@@ -1793,7 +1779,7 @@ export function AgentConfigScreen(props: {
               )}
             </Show>
 
-            <Show when={!postureValue()}>
+            <Show when={postureValue() === "agent"}>
               <section class="agent-settings-card" data-settings-tab="work">
                 <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                   {language.t("agentConfig.folder")}
@@ -1876,21 +1862,6 @@ export function AgentConfigScreen(props: {
                     </a>
                   )}
                 </Show>
-                {/* The working folder's AGENTS.md is opt-in (owner, 2026-09-17). It belongs here beside the
-                    folder because it is a fact about that folder, and the row states the default in words
-                    rather than leaving a bare unchecked box the user has to interpret. */}
-                <label class="mt-4 flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={instructionsValue()}
-                    onChange={(event) => setInstructions(event.currentTarget.checked)}
-                  />
-                  <span>{language.t("agentConfig.instructions")}</span>
-                </label>
-                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                  {language.t(instructionsValue() ? "agentConfig.instructions.on" : "agentConfig.instructions.off")}
-                </p>
               </section>
             </Show>
 

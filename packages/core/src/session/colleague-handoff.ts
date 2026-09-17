@@ -235,7 +235,6 @@ export interface Interface {
   readonly hire: (input: {
     readonly title: string
     readonly brief: string
-    readonly personality?: string | undefined
     /**
      * WHO is staffing. Checked here, not only at the tool.
      *
@@ -574,7 +573,6 @@ export const fromParts = (input: {
         title: request.title,
         system: request.brief,
         mode: "primary",
-        ...(request.personality === undefined ? {} : { personality: request.personality }),
       }),
     ])
     yield* input.refresh

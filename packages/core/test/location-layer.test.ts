@@ -68,6 +68,12 @@ const residentTools = [
   "grep",
   "js",
   "kill",
+  // RESIDENT (owner, 2026-09-17): the system prompt names `memo_set` and `memo_clear` by name, so a
+  // colleague that must `tool_search` for a tool the prompt just told it to use is doing the prompt's
+  // work. A memo is also REACTIVE in the same way `self` is: the model writes one the moment a fact
+  // matters, with no cue that a capability exists to keep it.
+  "memo_clear",
+  "memo_set",
   // ⚠️ `question` is NOT here any more — removed by `bf39088eb` ("a refusal is instant"), which took
   // ASK out as a permission outcome. This ledger kept listing it for days afterwards and went red
   // unnoticed, because the change was verified by its own changed-area suites: exactly the failure
@@ -96,12 +102,6 @@ const deferredCoreTools = [
   "community",
   "computer",
   "configure",
-  // Occasional, like `log`: a colleague keeps a durable item when something happens worth keeping — a
-  // decision made, a path it must not lose — not every turn. Its only sibling (`session`, the generic
-  // component tool) is deferred for the same reason, and what replaces residency is the hint: the
-  // `#DURABLE` block names both tools, so a session that has an area has been told how to maintain it.
-  "durable_clear",
-  "durable_set",
   // DEFERRED, and the ratchet below is why: a log reader is reached AFTER something failed, so its
   // schema has no claim on every turn's prefix (`` 3g, `tool/log.ts`).
   "log",
@@ -335,7 +335,21 @@ describe("LocationServiceMap", () => {
           //
           // *Could it be deferred?* No: discovery after launch is too late, and hiding the flag
           // would return to shell-level `&`, outside the durable job supervisor.
-          expect(residentBytes).toBeLessThan(37_500) // observed 37,045 on 2026-09-13 (98.8% of 37,500)
+          //
+          // ── Raised 2026-09-17 for the resident memo tools (37,045 → 37,918) ────────────────────
+          //
+          // *Who pays?* Every agent turn, because `memo_set`/`memo_clear` are named in the system
+          // prompt by the owner's own format, so a model asked to maintain its durable memos must not
+          // have to `tool_search` for the tool the prompt just told it to use.
+          //
+          // *What buys the 873 bytes?* Two tool schemas plus their descriptions: `memo_set` (name and
+          // value) and `memo_clear` (name). They are REACTIVE like `self` — the write happens the
+          // moment a fact matters, with no cue that a capability exists to keep it.
+          //
+          // *Could it be deferred?* It was, and the prompt made that a contradiction: the old
+          // `#DURABLE` block named both tools, so a session that had an area had been told how to
+          // maintain it while being unable to reach either without a discovery round trip.
+          expect(residentBytes).toBeLessThan(38_500) // observed 37,918 on 2026-09-17 (98.5% of 38,500)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the

@@ -38,12 +38,13 @@ import { ColleagueTool } from "./colleague"
 import { SpawnTool } from "./spawn"
 import * as CommunityTool from "./deferred/community.gen"
 import { ExitTool } from "./exit"
-// ⚠️ The GENERATED schema-only modules, never `./durable-set` / `./durable-clear` themselves: the whole
-// point of a deferred registration is that the worker graph never imports the implementation. Importing
-// the tool file here made `tool-deferred-manifest.test.ts`'s "a fresh worker graph evaluates no deferred
-// implementation" red, which is exactly what that test is for.
-import * as DurableClearTool from "./deferred/durable-clear.gen"
-import * as DurableSetTool from "./deferred/durable-set.gen"
+// The memo tools are RESIDENT (owner, 2026-09-17: "part of the basic tools list, like edit and spawn"),
+// so their real modules are imported here rather than a generated schema-only stand-in. A deferred
+// registration is what keeps the worker graph from importing an implementation, and residency is the
+// deliberate opposite of that: the prompt names `memo_set` / `memo_clear`, so reaching them must not
+// cost a `tool_search` round trip.
+import { MemoClearTool } from "./memo-clear"
+import { MemoSetTool } from "./memo-set"
 import { WaitTool } from "./wait"
 import { KillTool } from "./kill"
 import { WriteTool } from "./write"
@@ -64,8 +65,8 @@ export const node = makeLocationNode({
     JsTool.node,
     LogTool.node,
     DbRegistryTool.node,
-    DurableClearTool.node,
-    DurableSetTool.node,
+    MemoClearTool.node,
+    MemoSetTool.node,
     MessengerTool.node,
     NudgeTool.node,
     PermissionTool.node,

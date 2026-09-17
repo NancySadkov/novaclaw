@@ -1,5 +1,8 @@
 export * as SystemAccounting from "./system-accounting"
 
+// 🗑️ RETIRED with `system-compose.ts` (owner, 2026-09-17). The one prompt is logged by character
+// count and part count in `runner/llm.ts`; the runner no longer builds a slot array to account for.
+
 import { Token } from "../../util/token"
 import { SystemCompose } from "./system-compose"
 

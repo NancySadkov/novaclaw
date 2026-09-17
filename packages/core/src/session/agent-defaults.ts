@@ -83,6 +83,13 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
       // narrowing rules that matter run later, over the chain (`resolveConfig`) and the ceilings.
     ;(next as unknown as Record<string, unknown>)[field] = value
   }
+  // The `kind` posture derives the older `shortChat` switch (owner, 2026-09-17): a `chat` and the
+  // owning `human` both run with no tools, no memory and no harness prompt, and `shortChat` is what
+  // every existing reader gates on. `kind: "agent"` explicitly clears a chat posture inherited from
+  // the session row.
+  const kind = (agent as unknown as Record<string, unknown>)["kind"]
+  if (kind === "chat" || kind === "human") next.shortChat = true
+  else if (kind === "agent") next.shortChat = false
   return next
 }
 

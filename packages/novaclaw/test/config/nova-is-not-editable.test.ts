@@ -184,7 +184,7 @@ describe("the operator edits nova like any other officer", () => {
   const EDITABLE: ReadonlyArray<{ readonly what: string; readonly patch: Record<string, unknown> }> = [
     { what: "its brief", patch: { agents: { nova: { system: "route every request to the bookkeeper" } } } },
     { what: "its name", patch: { agents: { nova: { name: "Nova Prime" } } } },
-    { what: "its personality", patch: { agents: { nova: { personality: "terse" } } } },
+    { what: "its description", patch: { agents: { nova: { description: "governs the instance" } } } },
     { what: "its job title", patch: { agents: { nova: { title: "Chief Executive" } } } },
     { what: "its mode", patch: { agents: { nova: { mode: "primary" } } } },
     { what: "its operation mode", patch: { agents: { nova: { operationMode: "interactive" } } } },
@@ -207,9 +207,9 @@ describe("the operator edits nova like any other officer", () => {
       // The assertion that separates "the write was accepted" from "the write happened". A refusal
       // that reported success and stored nothing is this codebase's oldest recurring bug.
       const store = yield* AgentConfigStore.Service
-      yield* applyPatch({ agents: { nova: { personality: "terse" } } }, "operator")
+      yield* applyPatch({ agents: { nova: { name: "Nova Prime" } } }, "operator")
       const folded = AgentConfigStore.fold((yield* store.agents()).nova ?? [])
-      expect(folded?.personality).toBe("terse")
+      expect(folded?.name).toBe("Nova Prime")
     }),
   )
 
@@ -253,7 +253,7 @@ describe("the operator edits nova like any other officer", () => {
     Effect.gen(function* () {
       // The control for the whole block: if this passed, the operator arm would prove nothing about
       // the actor and everything would simply be open.
-      const exit = yield* applyPatch({ agents: { nova: { personality: "terse" } } }).pipe(Effect.exit)
+      const exit = yield* applyPatch({ agents: { nova: { name: "Nova Prime" } } }).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
     }),
   )

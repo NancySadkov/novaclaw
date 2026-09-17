@@ -704,10 +704,9 @@ const NO_EXTERNAL = [
   "deferred/computer.gen.ts",
   "deferred/configure.gen.ts",
   "deferred/db-registry.gen.ts",
-  // The durable area's two generated registrations. They carry ONLY the schema (`metadata`), no
-  // execute body and no fetching — see the `durable*.ts` entries below for what the implementations do.
-  "deferred/durable-clear.gen.ts",
-  "deferred/durable-set.gen.ts",
+  // 🗑️ The memo tools' generated registrations are gone: `memo_set`/`memo_clear` are RESIDENT now
+  // (owner, 2026-09-17), so there is no schema-only stand-in to classify. The implementations are the
+  // `memo*.ts` entries above.
   "deferred/log.gen.ts",
   "deferred/messenger.gen.ts",
   "deferred/nudge.gen.ts",
@@ -766,12 +765,11 @@ const NO_EXTERNAL = [
   // `SessionOrigin.externalContentFrame` and takes the privileged tier for it. These files never read
   // another session, which is why they belong here rather than in FRAMED.
   //
-  // ⚠️ THREE entries for one feature, because the sweep counts FILES: `durable-set.ts` and
-  // `durable-clear.ts` each register one tool (the deferred-manifest generator is one-tool-per-file),
-  // and `durable.ts` holds the half they share.
-  "durable-clear.ts",
-  "durable-set.ts",
-  "durable.ts",
+  // ⚠️ THREE entries for one feature, because the sweep counts FILES: `memo-set.ts` and
+  // `memo-clear.ts` each register one tool, and `memo.ts` holds the half they share.
+  "memo-clear.ts",
+  "memo-set.ts",
+  "memo.ts",
   "edit-match.ts",
   "edit.ts",
   "exit.ts",
@@ -806,7 +804,7 @@ const NO_EXTERNAL = [
   "resource-status.ts",
   "revert.ts",
   // Reads the CALLING AGENT'S OWN configuration row and says it back to that same agent — its model,
-  // memory setting, step budget, job title, personality. No party other than the user is on the path.
+  // memory setting, step budget, job title. No party other than the user is on the path.
   //
   // ⚠️ The judgement call, recorded rather than hidden: a colleague's `system` and `title` can be
   // written by NOVA rather than typed by the user (`colleague hire` composes a brief with a model).

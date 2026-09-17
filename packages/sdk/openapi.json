@@ -35833,9 +35833,6 @@
           "title": {
             "type": "string"
           },
-          "personality": {
-            "type": "string"
-          },
           "superior": {
             "type": "string"
           },
@@ -35850,9 +35847,6 @@
             "type": "boolean"
           },
           "toolLabels": {
-            "type": "boolean"
-          },
-          "instructions": {
             "type": "boolean"
           },
           "needsTaxonomy": {
@@ -35883,6 +35877,10 @@
           },
           "shortChat": {
             "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["agent", "chat", "human"]
           },
           "operationMode": {
             "type": "string",
@@ -38306,9 +38304,6 @@
           "title": {
             "type": "string"
           },
-          "personality": {
-            "type": "string"
-          },
           "superior": {
             "type": "string"
           },
@@ -38322,9 +38317,6 @@
             "type": "boolean"
           },
           "toolLabels": {
-            "type": "boolean"
-          },
-          "instructions": {
             "type": "boolean"
           },
           "needsTaxonomy": {
@@ -38374,6 +38366,10 @@
           },
           "shortChat": {
             "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["agent", "chat", "human"]
           },
           "operationMode": {
             "type": "string",

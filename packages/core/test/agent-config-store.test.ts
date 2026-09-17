@@ -175,7 +175,6 @@ describe("the roster a CLEAN install opens with", () => {
       expect(agents.xenia).toHaveLength(1)
       expect(agents.xenia?.[0]?.shortChat).toBe(true)
       expect(agents.xenia?.[0]?.system).toBeUndefined()
-      expect(agents.xenia?.[0]?.personality).toBeUndefined()
     }),
   )
 

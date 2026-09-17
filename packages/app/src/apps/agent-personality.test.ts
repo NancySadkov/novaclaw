@@ -8,14 +8,14 @@ describe("officer personality JSON", () => {
         JSON.stringify({
           format: PERSONALITY_FORMAT,
           version: 1,
-          profile: { name: "Iris", title: "Editor", personality: "Warm", job: "Polish prose", superior: "nova" },
+          profile: { name: "Iris", title: "Editor", job: "Polish prose", superior: "nova" },
           permissions: [{ action: "*", resource: "*", effect: "allow" }],
         }),
       ),
     ).toEqual({
       format: PERSONALITY_FORMAT,
       version: 1,
-      profile: { name: "Iris", title: "Editor", personality: "Warm", job: "Polish prose" },
+      profile: { name: "Iris", title: "Editor", job: "Polish prose" },
     })
   })
 

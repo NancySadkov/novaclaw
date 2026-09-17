@@ -42,7 +42,7 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   // The colleague's own working memory, priced where it can be priced honestly: the value is
   // model-authored text that reaches the SYSTEM PROMPT, so it is not a routine knob (consequential —
   // a session permission rule can forbid it). Deliberately NOT privileged: the owner's invariant has
-  // the agent maintaining this area itself (`durable_set`), and a tier that made every note need a
+  // the agent maintaining this area itself (`memo_set`), and a tier that made every note need a
   // human's approval would be answered by turning the tier off, which is how a real gate gets lost.
   durable: "consequential",
   // Host-written only (`validateWrite` refuses anything without kernel authority), so the tier is what

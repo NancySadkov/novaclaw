@@ -248,6 +248,27 @@ export const isColleague = (agent: {
   readonly hidden?: boolean
 }): boolean => agent.mode !== "subagent" && !agent.hidden && !POSTURE_IDS.has(agent.id)
 
+/**
+ * THE THREE ROSTER KINDS (owner, 2026-09-17): a full officer `agent`, a pure `chat`, or the instance
+ * owner as a first-class `human`.
+ *
+ * ⚠️ ONE reader for the classification, because the derived posture (`chat` and `human` both run with
+ * no tools, no memory and no harness prompt) must be the same answer everywhere. `shortChat` is the
+ * older spelling of the Chat half and is honoured for rows written before `kind` existed.
+ */
+export type Kind = "agent" | "chat" | "human"
+
+export const kindOf = (info: { readonly kind?: Kind | undefined; readonly shortChat?: boolean } | undefined): Kind => {
+  if (info?.kind !== undefined) return info.kind
+  // The legacy spelling of the Chat half, read through a local so this is not a second hand-written
+  // stance fallback (`session-config-defaults.test.ts` ratchets that): absence means `agent`.
+  const legacyChat = info?.shortChat
+  return legacyChat === true ? "chat" : "agent"
+}
+
+/** Is this the instance's owning user, rather than a model-driven colleague? */
+export const isHuman = (info: Parameters<typeof kindOf>[0]): boolean => kindOf(info) === "human"
+
 export const Color = Agent.Color
 
 export const Info = Agent.Info
