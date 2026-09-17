@@ -1969,6 +1969,13 @@ export const dict = {
   "settings.models.new.discovering": "Checking…",
   "settings.models.new.noModels": "Connected, but this endpoint didn't list any models.",
   "settings.models.new.pick": "Pick models to add — {{count}} found",
+  "settings.models.new.selected": "{{selected}} of {{count}} selected",
+  "settings.models.new.pickHint":
+    "Only the first model is selected to start with. Add as many as you need — or clear the selection and pick none.",
+  "settings.models.new.filter": "Filter by name…",
+  "settings.models.new.filterEmpty": "No model here matches that filter.",
+  "settings.models.new.selectAll": "Select all shown",
+  "settings.models.new.clear": "Clear selection",
   "settings.models.new.preset": "{{family}} defaults",
   "settings.models.new.limits.reported": "Server-reported: {{context}} context · {{output}} max response",
   "settings.models.new.limits.contextOnly":
@@ -2112,18 +2119,9 @@ export const dict = {
   "settings.quality.command.test.description": "Runs once per completed turn that wrote files",
   "settings.quality.command.lint.title": "Structural pass",
   "settings.quality.command.lint.description": "Lint/structure check at the same turn-end gate",
-  "settings.systemPrompt.title": "System Prompt",
-  "settings.systemPrompt.description":
-    "The prompt, in layers: the persona you can edit, and the layout underneath it. The shipped base is never forked — clearing a field restores the default.",
-  "settings.systemPrompt.toast.failed": "Saving system-prompt settings failed",
-  "settings.systemPrompt.persona.title": "Persona",
-  "settings.systemPrompt.persona.enabled.title": "Persona baseline",
-  "settings.systemPrompt.persona.enabled.description": "Add the persona to the start of every agent's system prompt.",
-  "settings.systemPrompt.persona.enabled.description.more":
-    "So its behaviour stays consistent even when you switch models.",
-  "settings.systemPrompt.persona.prompt.title": "Persona prompt",
-  "settings.systemPrompt.persona.prompt.description":
-    "Replaces the canonical persona wholesale. Leave empty to use the default shown below.",
+  // 🔴 Owner, 2026-09-17: the shared persona editor that stood here is GONE — a global working style
+  // composed around every agent contradicted the role of a roleplayer, a chat companion or an artist.
+  // Each colleague's Job instructions box is the single source now.
   // ── the layout ───────────────────────────────────────────────────────────────────────────────────
   "settings.contextLayout.title": "Where everything goes",
   "settings.contextLayout.description":
@@ -2144,7 +2142,6 @@ export const dict = {
   "settings.contextLayout.volatility.epoch": "Frozen until the context is rebuilt (a compaction).",
   "settings.contextLayout.volatility.compaction": "Refreshed only after a compaction.",
   "settings.contextLayout.volatility.turn": "Rebuilt every turn; changing it is free.",
-  "settings.contextLayout.slot.persona": "Nova's persona",
   "settings.contextLayout.slot.modelPrePrompt": "Correction for this model",
   "settings.contextLayout.slot.expertiseHint": "Plain-language stance",
   "settings.contextLayout.slot.taxonomyHint": "Small-model scaffold",

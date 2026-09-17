@@ -25,7 +25,6 @@ export type SlotOrigin = "settings" | "agent" | "model" | "files" | "project" | 
 
 export const SLOT_ORIGIN: Readonly<Record<string, SlotOrigin>> = {
   // The instance's own settings (this app, these Settings tabs).
-  persona: "settings",
   expertiseHint: "settings",
   // The model's entry in Settings → Models → Configure: the correction and the operator's rank.
   modelPrePrompt: "model",

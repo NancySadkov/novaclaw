@@ -60,11 +60,11 @@ describe("the memory stance section", () => {
     expect(SystemCompose.memoryStanceSection({ memory: undefined, archiveChats: undefined })).toBeUndefined()
   })
 
-  test("it composes as KERNEL material a persona cannot bury", () => {
-    // Ordered after the agent's own system prompt and the persona, so a brief that says "I'll
+  test("it composes as KERNEL material an officer prompt cannot bury", () => {
+    // Ordered after the officer's own prompt and its per-session override, so a brief that says "I'll
     // remember that for you" cannot sit on top of the fact that nothing is kept.
     const parts = SystemCompose.composeSystemParts({
-      persona: "You are Mnemo. You never forget.",
+      systemPromptOverride: "You are Mnemo. You never forget.",
       agentSystem: "Keep notes for the user.",
       memoryStance: SystemCompose.memoryStanceSection({ memory: "none", archiveChats: undefined }),
       base: "kernel base",

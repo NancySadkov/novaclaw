@@ -3,7 +3,7 @@ export * as ConfigAffective from "./affective"
 import { Schema } from "effect"
 
 // P3 — the affective-mode config. Same shape on V1 and V2 configs; migrate.ts copies it
-// through (the persona pattern). When enabled, a per-session mood modulates sampling around
+// through (the generic migrate-through pattern). When enabled, a per-session mood modulates sampling around
 // the model's configured baseline and injects a redirect at high frustration/urgency.
 export const Info = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({

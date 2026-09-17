@@ -3,7 +3,7 @@ export * as ConfigAdhocTools from "./adhoc-tools"
 import { Schema } from "effect"
 
 // P4 (4D, global/project scopes): config-defined ad-hoc tool recipes. Same shape on V1 and
-// V2 configs; migrate.ts copies it through (the persona pattern). Session-scoped recipes are
+// V2 configs; migrate.ts copies it through (the generic migrate-through pattern). Session-scoped recipes are
 // NOT config — `define_tool` persists them per session so a model can never silently mutate
 // the user's config.
 export const Recipe = Schema.Struct({

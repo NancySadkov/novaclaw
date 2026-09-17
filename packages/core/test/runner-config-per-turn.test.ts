@@ -25,7 +25,7 @@ import { SettingsConfigStore } from "../src/settings-config-store"
  *
  * The first half (app `3757af64a`) made `Config.entries()` read through to `SettingsConfigStore` per
  * call. That changed nothing for the harness, because `runner/llm.ts` called it ONCE at
- * `Layer.effect` scope and hung the harness derivations off the result — persona, expertise hint, quality,
+ * `Layer.effect` scope and hung the harness derivations off the result — expertise hint, quality,
  * strict, affective, introspection and the compactor were all frozen at location boot. A user
  * who edited any of them in Settings still needed a restart.
  *
@@ -58,8 +58,6 @@ const document = (info: ConstructorParameters<typeof Config.Info>[0]) =>
 describe("HarnessConfig.derive", () => {
   test("an empty config yields the compiled defaults the runner used to hardcode", () => {
     const derived = HarnessConfig.derive([])
-    expect(derived.persona).toContain("pragmatic")
-    expect(derived.persona).not.toContain("Nova")
     expect(derived.expertiseHint).toBeUndefined()
     expect(derived.quality.enabled).toBe(false)
     expect(derived.quality.cadence).toBe(2)
@@ -74,9 +72,8 @@ describe("HarnessConfig.derive", () => {
   test("every key is picked up, and later documents win (the `latest` fold)", () => {
     const derived = HarnessConfig.derive(
       [
-        document({ persona: { prompt: "Ignored style" }, expertise: "developer" }),
+        document({ expertise: "developer" }),
         document({
-          persona: { prompt: "Probe style" },
           expertise: "normal",
           quality: { enabled: true, cadence: 7 },
           strict: { enabled: true, attempts: 3 },
@@ -91,10 +88,8 @@ describe("HarnessConfig.derive", () => {
           provider_connection: new ConfigProviderConnection.Info({ stall_timeout_ms: 420_000 }),
         }),
       ],
-      { notesDir: "/home/u/notes", shell: "/bin/supplied" },
+      { shell: "/bin/supplied" },
     )
-    expect(derived.persona).toContain("Probe")
-    expect(derived.persona).toContain("/home/u/notes")
     expect(derived.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
     expect(derived.quality).toMatchObject({ enabled: true, cadence: 7 })
     expect(derived.shell).toBe("/bin/supplied")
@@ -104,12 +99,6 @@ describe("HarnessConfig.derive", () => {
     expect(derived.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
     expect(derived.providerStallTimeoutMs).toBe(420_000)
-  })
-
-  test("`persona: { enabled: false }` still turns the baseline off", () => {
-    expect(
-      HarnessConfig.derive([document({ persona: { enabled: false } })], { notesDir: "/n" }).persona,
-    ).toBeUndefined()
   })
 
   test("the supplied shell wins over the pure-test default", () => {
@@ -145,7 +134,6 @@ const withLocation = <A, E, R>(body: (location: Location.Ref) => Effect.Effect<A
 
 /** Every settings key the harness derivation consumes. */
 const HARNESS_KEYS = [
-  "persona",
   "expertise",
   "quality",
   "strict",
@@ -167,13 +155,11 @@ describe("the harness derivation follows the settings store", () => {
             // the whole harness frozen, which is the trap this file exists to avoid.
             const config = yield* Config.Service
             const derive = Effect.fnUntraced(function* () {
-              return HarnessConfig.derive(yield* config.entries(), { notesDir: "/n" })
+              return HarnessConfig.derive(yield* config.entries())
             })
 
             for (const key of HARNESS_KEYS) yield* store.remove(key)
             const before = yield* derive()
-            expect(before.persona).toContain("pragmatic")
-            expect(before.persona).not.toContain("Nova")
             expect(before.expertiseHint).toBeUndefined()
             expect(before.quality.enabled).toBe(false)
             expect(before.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
@@ -183,7 +169,6 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.context).toBeUndefined()
             expect(before.toolRouting).toBeUndefined()
 
-            yield* store.set("persona", { prompt: "Probe style" })
             yield* store.set("expertise", "normal")
             yield* store.set("quality", { enabled: true, cadence: 7 })
             yield* store.set("strict", { enabled: true })
@@ -193,7 +178,6 @@ describe("the harness derivation follows the settings store", () => {
             yield* store.set("tool_routing", { rules: [{ provider: "qwen", tools: { write: false } }] })
 
             const after = yield* derive()
-            expect(after.persona).toContain("Probe")
             expect(after.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
             expect(after.quality).toMatchObject({ enabled: true, cadence: 7 })
             expect(after.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
@@ -206,8 +190,6 @@ describe("the harness derivation follows the settings store", () => {
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
             for (const key of HARNESS_KEYS) yield* store.remove(key)
             const restored = yield* derive()
-            expect(restored.persona).toContain("pragmatic")
-            expect(restored.persona).not.toContain("Nova")
             expect(restored.expertiseHint).toBeUndefined()
             expect(restored.quality.enabled).toBe(false)
             expect(restored.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
@@ -234,7 +216,6 @@ const DERIVATIONS = [
   "config.entries()",
   "Config.latest(",
   "HarnessConfig.derive(",
-  "Persona.resolve(",
   "Quality.resolve(",
   "Introspection.resolve(",
   "SessionCompaction.make(",

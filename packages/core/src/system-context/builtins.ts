@@ -2,6 +2,7 @@ export * as SystemContextBuiltIns from "./builtins"
 
 import { makeLocationNode } from "../effect/app-node"
 import { DateTime, Effect, Layer, Schema } from "effect"
+import { join } from "path"
 import { Location } from "../location"
 import { SystemContext } from "./index"
 import { InstructionContext } from "../instruction-context"
@@ -61,6 +62,7 @@ export const environmentEquivalent = (previous: EnvironmentObservation, current:
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* SystemContextRegistry.Service
+    const global = yield* Global.Service
     const settingsStore = yield* SettingsConfigStore.Service
     const mcpHealth = yield* McpHealthContext.Service
     const capabilities = yield* CapabilityRegistry.Service
@@ -97,6 +99,11 @@ const builtIns = Layer.effectDiscard(
           // for a folder line to be missing from.
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
+          // 🔴 THE SHARED NOTES FOLDER, moved here from the retired persona baseline (owner,
+          // 2026-09-17). It is an environment fact — a path that exists on this machine — not
+          // identity, so it belongs in `<env>` and must NOT be baked into a colleague's stored
+          // prompt, where a machine-specific path would travel with it.
+          `  Shared notes folder: ${join(global.data, "notes")} belongs to the user; any chat session may read it or append to it (free-form facts: phone numbers, sites, birthdays, reminders). Prefer appending over rewriting, and never delete notes.`,
           // 🔴 The image toolkit, NAMED (owner, 2026-08-23). A binary the model does not know about
           // is a binary that never gets used — the "built, tested and never called" shape. One line,
           // and it is the line that turns 32 MB on disk into a capability: without it a colleague

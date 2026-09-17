@@ -32,7 +32,7 @@ import {
  *
  * ⚠️ **These do NOT assert the whole system array, and the reason is now a rule.** The old tests pinned
  * it to a single element (`["Initial context"]`). The request now carries several parts — a base
- * persona, the agent's system, the project-scope guidance — none of which existed when these were
+ * expertiseHint, the agent's system, the project-scope guidance — none of which existed when these were
  * written. So each claim asserts the part it is ABOUT and ignores the rest; see
  * `session-runner-agent.test.ts` for the same treatment and the measurement behind it.
  */

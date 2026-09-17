@@ -38,6 +38,7 @@ import { OwnedRuntimeContext } from "../owned-runtime-context"
 import { ToolDiscovery } from "../../tool-discovery"
 import { SkillGuidance } from "../../skill/guidance"
 import { InstructionContext } from "../../instruction-context"
+import { OfficerPrompt } from "../../officer-prompt"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
@@ -498,7 +499,6 @@ export const layer = Layer.effect(
      */
     const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* () {
       const derived = HarnessConfig.derive(yield* config.entries(), {
-        notesDir: path.join(Global.Path.data, "notes"),
         shell: Shell.agentDefault(),
       })
       // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
@@ -2238,8 +2238,13 @@ export const layer = Layer.effect(
         Effect.orElseSucceed(() => undefined),
       )
       // A pure Chat is deliberately a bare model conversation. The only system text it receives is
-      // the brief the user wrote in this officer's settings: no Nova persona, identity wrapper,
-      // organization, project, model pre-prompt, or upgrade instructions.
+      // the brief the user wrote in this officer's settings: no identity wrapper, organization,
+      // project, model pre-prompt, or upgrade instructions.
+      //
+      // 🔴 Owner, 2026-09-17: the working style is no longer a shared persona block. An officer's own
+      // prompt is the ONE identity source, and an officer that has none falls back to
+      // `OfficerPrompt.DEFAULT_OFFICER_PROMPT` — the same text its settings box shows. See
+      // `officer-prompt.ts` for why the shared persona was removed.
       const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
         ? {
             // A pure-chat officer has exactly the instructions visible in its Personality field.
@@ -2248,13 +2253,12 @@ export const layer = Layer.effect(
             agentSystem: prototypeBrief ?? agent.info?.personality,
           }
         : {
-            persona: harness.persona,
             modelPrePrompt,
             expertiseHint: harness.expertiseHint,
             taxonomyHint,
             systemPromptOverride: config.systemPromptOverride,
             agentIdentity,
-            agentSystem: prototypeBrief ?? agent.info?.system,
+            agentSystem: prototypeBrief ?? agent.info?.system ?? OfficerPrompt.DEFAULT_OFFICER_PROMPT,
             organization,
             // The tool list the model is about to receive is `toolMaterialization.definitions`; the
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —

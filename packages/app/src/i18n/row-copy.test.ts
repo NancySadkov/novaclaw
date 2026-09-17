@@ -35,7 +35,6 @@ const SPLIT = [
   "settings.confinement.probe",
   "settings.profile.enabled",
   "settings.storage.logs.level",
-  "settings.systemPrompt.persona.enabled",
   "settings.tunes.context.enabled",
 ]
 

@@ -6,16 +6,16 @@ import { SystemCompose } from "./system-compose"
 
 describe("per-block accounting", () => {
   test("every block a prompt actually has is counted, in emission order", () => {
-    const accounting = SystemAccounting.of({ persona: "abcd", agentSystem: "efghijkl", base: "mn" })
-    expect(accounting.blocks.map((b) => b.block)).toEqual(["persona", "agentSystem", "base"])
+    const accounting = SystemAccounting.of({ expertiseHint: "abcd", agentSystem: "efghijkl", base: "mn" })
+    expect(accounting.blocks.map((b) => b.block)).toEqual(["expertiseHint", "agentSystem", "base"])
     expect(accounting.chars).toBe(14)
   })
 
   test("an ABSENT block is omitted, never reported as zero", () => {
     // "This block is here and empty" and "this session has no project scope" are different facts, and
     // a table full of zeroes is how a reader stops reading the table.
-    const accounting = SystemAccounting.of({ persona: "abcd", projectScope: undefined, memoryStance: "" })
-    expect(accounting.blocks.map((b) => b.block)).toEqual(["persona"])
+    const accounting = SystemAccounting.of({ expertiseHint: "abcd", projectScope: undefined, memoryStance: "" })
+    expect(accounting.blocks.map((b) => b.block)).toEqual(["expertiseHint"])
   })
 
   test("the order matches what `composeSystemParts` actually emits", () => {
@@ -26,7 +26,7 @@ describe("per-block accounting", () => {
   })
 
   test("the largest block is named — that is what a regression has to point at", () => {
-    const accounting = SystemAccounting.of({ persona: "a".repeat(40), base: "b".repeat(400) })
+    const accounting = SystemAccounting.of({ expertiseHint: "a".repeat(40), base: "b".repeat(400) })
     expect(accounting.largest?.block).toBe("base")
   })
 
@@ -40,9 +40,9 @@ describe("per-block accounting", () => {
   // the two roles actually pack is a product decision that has not been made yet, so this asserts the
   // instrument can tell them apart rather than that they already differ.
   test("two roles' prompts are comparable by total and by block", () => {
-    const chitchat = SystemAccounting.of({ persona: "You are Iris. Be warm and brief.", base: "kernel" })
+    const chitchat = SystemAccounting.of({ agentSystem: "You are Iris. Be warm and brief.", base: "kernel" })
     const engineering = SystemAccounting.of({
-      persona: "You are Theron.",
+      systemPromptOverride: "You are Theron.",
       agentSystem: "x".repeat(2_000),
       toolDiscovery: "y".repeat(500),
       projectScope: "z".repeat(300),
@@ -55,7 +55,7 @@ describe("per-block accounting", () => {
   })
 
   test("the report shows shares of the SYSTEM PROMPT, and says so by summing to ~100", () => {
-    const accounting = SystemAccounting.of({ persona: "a".repeat(100), base: "b".repeat(300) })
+    const accounting = SystemAccounting.of({ expertiseHint: "a".repeat(100), base: "b".repeat(300) })
     const shares = [...SystemAccounting.report(accounting).matchAll(/(\d+)%/g)].map((m) => Number(m[1]))
     expect(shares.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(99)
     expect(shares.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(101)

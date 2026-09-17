@@ -182,7 +182,7 @@ describe("③ the project-scope instruction is in every non-yolo prompt, and abs
 
   test("it composes into the runner's part array before the base context, exactly once", () => {
     const parts = {
-      persona: "P",
+      modelPrePrompt: "P",
       expertiseHint: "E",
       taxonomyHint: "T",
       systemPromptOverride: "O",

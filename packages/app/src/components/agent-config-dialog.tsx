@@ -15,6 +15,7 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { downloadPlainText, sessionExportFilename } from "@/components/session/session-context-export"
 import { listSessions, startChat } from "@/apps/agent-list"
+import { OfficerPrompt } from "@novaclaw/core/officer-prompt"
 import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
@@ -201,7 +202,11 @@ export function AgentConfigScreen(props: {
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
   const personalityValue = () => personality() ?? agent()?.personality ?? ""
-  const jobValue = () => job() ?? agent()?.system ?? ""
+  // 🔴 The box SHOWS the prompt that will actually run (owner, 2026-09-17). An officer with no stored
+  // prompt falls back to `OfficerPrompt.DEFAULT_OFFICER_PROMPT` at runtime, so the box shows that same
+  // text rather than an empty field with an invisible default behind it. Clearing it to "" is a real
+  // choice: an empty prompt is an empty prompt, and the model receives no identity block.
+  const jobValue = () => job() ?? agent()?.system ?? OfficerPrompt.DEFAULT_OFFICER_PROMPT
   // A chat-mode colleague (posture `shortChat`) DEFAULTS off: the runner's own gate
   // (`maintenance.ts` — `ShortChat.enabled(config.shortChat) || !stanceOf("memory", ...)`) never
   // records a thing for it, so an ON toggle there would be a promise the stance cannot keep. Every

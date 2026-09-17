@@ -67,7 +67,6 @@ export const SETTINGS_KEYS = [
   "context",
   "provider_connection",
   "permissions",
-  "persona",
   "user_profile",
   "introspection",
   // The harness-drive switches. Routed like every other operational key — an UNDECLARED key
@@ -142,7 +141,7 @@ const PERMISSIONS_BACKSTOP = { action: "*", resource: "*", effect: "ask" } as co
  *
  * PER-KEY, like `decodeText` below — and for the same reason, only worse on this path. A whole-
  * document decode meant ONE bad row silently discarded all of `SETTINGS_KEYS` at once, reverting
- * `permissions`, `offline`, `persona`, `mcp` and the telemetry choice to compiled defaults
+ * `permissions`, `offline`, `user_profile`, `mcp` and the telemetry choice to compiled defaults
  * together, with nothing logged. So: whole-document fast path (the overwhelmingly common all-valid
  * snapshot, byte-for-byte the old behaviour), then a salvage that keeps every key which decodes on
  * its own and NAMES the rest in `skipped`.

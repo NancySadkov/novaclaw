@@ -64,9 +64,9 @@ describe("the delegation section", () => {
   })
 
   test("it composes as kernel material, after the agent's own brief", () => {
-    // A persona saying "do everything yourself" must not sit on top of what the runtime can do.
+    // An officer prompt saying "do everything yourself" must not sit on top of what the runtime can do.
     const parts = SystemCompose.composeSystemParts({
-      persona: "You are Marshal.",
+      systemPromptOverride: "You are Marshal.",
       agentSystem: "Do the work personally.",
       delegation: SystemCompose.delegationSection({ canSpawn: true, canAddressColleagues: true }),
       base: "kernel base",

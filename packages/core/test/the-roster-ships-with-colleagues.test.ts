@@ -117,7 +117,12 @@ describe("the companion is a chat", () => {
     expect(xenia).not.toContain("hand it over")
   })
 
-  test("an absent brief stays absent instead of becoming a hidden system prompt", () => {
-    expect(SEED_SOURCE).toContain("...(officer.brief === undefined ? {} : { system: officer.brief })")
+  test("an absent brief stays absent; a present one gets the working style PREPENDED", () => {
+    // The absent arm is still `{}` — Xenia, the pure-chat companion, has no hidden system prompt.
+    expect(SEED_SOURCE).toContain("...(officer.brief === undefined")
+    // 🔴 The present arm PREPENDS the default officer prompt into the colleague's OWN prompt, so what
+    // its settings box shows is the whole prompt (owner, 2026-09-17). A brief that merely set
+    // `system: officer.brief` would leave the shared style as a block the user cannot see or remove.
+    expect(SEED_SOURCE).toContain("OfficerPrompt.DEFAULT_OFFICER_PROMPT}\\n\\n${officer.brief}")
   })
 })

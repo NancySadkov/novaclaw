@@ -51,7 +51,7 @@ describe("what the accounting counts", () => {
 
   test("an absent block is OMITTED, not counted as zero", () => {
     // Preserved behaviour: a zero row reads as "here and empty", a different fact from "not here".
-    const accounting = SystemAccounting.of({ persona: "hello" } as unknown as SystemCompose.SystemPromptParts)
-    expect(accounting.blocks.map((entry) => entry.block)).toEqual(["persona"])
+    const accounting = SystemAccounting.of({ expertiseHint: "hello" } as unknown as SystemCompose.SystemPromptParts)
+    expect(accounting.blocks.map((entry) => entry.block)).toEqual(["expertiseHint"])
   })
 })

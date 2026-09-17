@@ -6,6 +6,7 @@ import { Effect, Option, Schema } from "effect"
 import { AgentConfigStore } from "./agent-config-store"
 import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
+import { OfficerPrompt } from "./officer-prompt"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { SkillBuiltin } from "./skill/builtin"
@@ -155,7 +156,13 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             title: officer.title,
             // No `avatar`: each of these ships a portrait, and the renderer shows it exactly when the
             // row carries no glyph of its own. A seeded glyph here would hide the face (2026-09-03).
-            ...(officer.brief === undefined ? {} : { system: officer.brief }),
+            // 🔴 The working style is PREPENDED, explicitly, into the colleague's own prompt (owner,
+            // 2026-09-17). It used to be a shared persona block composed around every agent; baking it
+            // here is what makes each officer's settings box show the whole prompt and lets a role
+            // that should not have it (a roleplayer, an artist) delete it.
+            ...(officer.brief === undefined
+              ? {}
+              : { system: `${OfficerPrompt.DEFAULT_OFFICER_PROMPT}\n\n${officer.brief}` }),
             ...(officer.personality === undefined ? {} : { personality: officer.personality }),
             description: `${officer.name}, ${officer.title}.`,
             // A chat stance carries no memory: recall is the other half of what makes a companion

@@ -32,7 +32,6 @@ export * as HarnessConfig from "./harness-config"
 import { Config } from "../../config"
 import { ConfigHarnessDrives } from "../../config/harness-drives"
 import { ConfigProviderConnection } from "../../config/provider-connection"
-import { Persona } from "../../persona"
 import { Introspection } from "./introspection"
 import { Quality } from "./quality"
 
@@ -52,8 +51,6 @@ export const DEFAULT_AGENT_SHELL = "bash"
  * keeps `derive` pure, and what lets the supplied shell be asserted from one box.
  */
 export interface Options {
-  /** The shared-notes folder (B6). Absent ⇒ the persona carries no notes line. */
-  readonly notesDir?: string
   /** NovaClaw's supplied agent shell. The runner passes `Shell.agentDefault()`; tests may pin it. */
   readonly shell?: string
 }
@@ -66,10 +63,6 @@ export interface Derived {
    * one — two reads inside one turn is the incoherence this whole item exists to remove.
    */
   readonly entries: readonly Config.Entry[]
-  /** The B3 persona baseline, composed FIRST in the system prompt. `undefined` ⇒ persona disabled. */
-  readonly persona: string | undefined
-  /** Persona without the shared-notes capability line, for Short Chat's no-memory/tool posture. */
-  readonly chatPersona: string | undefined
   readonly expertiseHint: string | undefined
   readonly quality: Quality.Config
   /** The supplied shell used for spawning quality checks. */
@@ -94,11 +87,6 @@ export interface Derived {
 export const derive = (entries: readonly Config.Entry[], options: Options = {}): Derived => {
   return {
     entries,
-    persona: Persona.resolve(
-      Config.latest(entries, "persona"),
-      options.notesDir === undefined ? undefined : { notesDir: options.notesDir },
-    ),
-    chatPersona: Persona.resolve(Config.latest(entries, "persona")),
     expertiseHint: Config.latest(entries, "expertise") === "normal" ? EXPERTISE_HINT : undefined,
     quality: Quality.resolve(Config.latest(entries, "quality")),
     shell: options.shell ?? DEFAULT_AGENT_SHELL,

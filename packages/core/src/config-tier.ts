@@ -266,8 +266,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   offline: "privileged",
   // The gate itself. Nothing else on this list is worth much if an agent can rewrite this one.
   permissions: "privileged",
-  // Prepended to EVERY agent's system prompt. Ruling 4 names it.
-  persona: "privileged",
   // ⚠️ There is no `plugins` row, and there must never be one again. It used to read "`npm.add` +
   // `import()` — outside code in our process", i.e. the single most dangerous thing an agent could
   // write. Ruling 5 / step 17 removed the target instead of classifying it: the key is gone from

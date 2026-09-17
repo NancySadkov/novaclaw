@@ -101,18 +101,12 @@ export interface Slot {
  */
 export const SLOTS = [
   {
-    name: "persona",
-    channel: "system",
-    volatility: "turn",
-    purpose: "Who Nova is: the standing product identity, before anything an officer or a person adds.",
-  },
-  {
     name: "modelPrePrompt",
     channel: "system",
     volatility: "turn",
     purpose: "The operator's correction for THIS model's known behaviour, which is why it travels with the weights.",
     placement:
-      "Immediately after the persona baseline: the correction applies to everything the model reads, including its own identity text.",
+      "FIRST: the correction applies to everything the model reads, including the officer's own identity and job text immediately below it.",
   },
   {
     name: "expertiseHint",

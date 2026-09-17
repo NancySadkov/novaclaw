@@ -39,7 +39,6 @@ describe("ContextTemplate — one list, and the order is the table's", () => {
     // The order the runner has always had, restated as an expectation so a reorder is a visible diff
     // rather than a silent prompt change.
     expect([...names]).toEqual([
-      "persona",
       "modelPrePrompt",
       "expertiseHint",
       "taxonomyHint",
@@ -63,12 +62,12 @@ describe("ContextTemplate — one list, and the order is the table's", () => {
       "agentIdentity",
       "workspace",
     ])
-    const parts = { persona: "P", goal: "", base: "B" }
+    const parts = { expertiseHint: "P", goal: "", base: "B" }
     // ⚠️ `""` composes nothing — the non-empty predicate is stated once, in the template. An empty
     // block would otherwise be a slot the model reads and learns nothing from, on every turn.
-    expect(ContextTemplate.composedBlocks(parts)).toEqual(["persona", "base"])
+    expect(ContextTemplate.composedBlocks(parts)).toEqual(["expertiseHint", "base"])
     // And `systemBlocks` keeps the table's order for the parts it was given, absent or not.
-    expect(ContextTemplate.systemBlocks({ base: "B", persona: "P" }).map((part) => part.block)).toEqual([...names])
+    expect(ContextTemplate.systemBlocks({ base: "B", expertiseHint: "P" }).map((part) => part.block)).toEqual([...names])
   })
 
   test("the tail is a SEPARATE channel and never leaks into the system parts", () => {
@@ -161,7 +160,7 @@ describe("ContextTemplate — DETERMINISM: static arguments, static results", ()
    */
 
   test("the same arguments produce byte-identical output, every time", () => {
-    const parts = { persona: "P", agentSystem: "J", base: "B", goal: "G" }
+    const parts = { expertiseHint: "P", agentSystem: "J", base: "B", goal: "G" }
     const once = JSON.stringify(ContextTemplate.systemBlocks(parts))
     const twice = JSON.stringify(ContextTemplate.systemBlocks(parts))
     expect(once).toBe(twice)
@@ -174,11 +173,11 @@ describe("ContextTemplate — DETERMINISM: static arguments, static results", ()
     // depend on the order keys were SET, which differs between a test, a config walk and a reload — so
     // the same logical prompt would be a different prefix in different processes. The table decides, so
     // two objects with the same content and different insertion orders must be byte-identical.
-    const a = ContextTemplate.composedBlocks({ persona: "P", base: "B", goal: "G" })
-    const b = ContextTemplate.composedBlocks({ goal: "G", base: "B", persona: "P" })
+    const a = ContextTemplate.composedBlocks({ expertiseHint: "P", base: "B", goal: "G" })
+    const b = ContextTemplate.composedBlocks({ goal: "G", base: "B", expertiseHint: "P" })
     expect(a).toEqual(b)
-    expect(JSON.stringify(ContextTemplate.systemBlocks({ persona: "P", base: "B" }))).toBe(
-      JSON.stringify(ContextTemplate.systemBlocks({ base: "B", persona: "P" })),
+    expect(JSON.stringify(ContextTemplate.systemBlocks({ expertiseHint: "P", base: "B" }))).toBe(
+      JSON.stringify(ContextTemplate.systemBlocks({ base: "B", expertiseHint: "P" })),
     )
   })
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { COMPACTION_SYSTEM } from "./compaction-system-prompt"
-import { Persona } from "./persona"
+import { OfficerPrompt } from "./officer-prompt"
 import { SessionCompaction } from "./session/compaction"
 import { SystemCompose } from "./session/runner/system-compose"
 
@@ -9,13 +9,13 @@ const providerBrand = /\b(?:anthropic|claude|codex|grok|openai|sglang|vllm|xai)\
 describe("survey-derived standing prompt contracts", () => {
   test("universal blocks are deterministic, provider-neutral, and deliberately bounded", () => {
     const render = () => ({
-      persona: Persona.resolve(undefined)!,
+      officer: OfficerPrompt.DEFAULT_OFFICER_PROMPT,
       compaction: `${COMPACTION_SYSTEM}\n${SessionCompaction.SUMMARY_TEMPLATE}`,
       delegation: SystemCompose.delegationSection({ canSpawn: true, canAddressColleagues: true })!,
     })
     const first = render()
     expect(render()).toEqual(first)
-    expect(first.persona.length).toBeLessThan(1_200)
+    expect(first.officer.length).toBeLessThan(1_200)
     expect(first.compaction.length).toBeLessThanOrEqual(2_060)
     expect(first.delegation.length).toBeLessThan(1_500)
     for (const block of Object.values(first)) expect(block).not.toMatch(providerBrand)
@@ -27,15 +27,16 @@ describe("survey-derived standing prompt contracts", () => {
     expect(SystemCompose.delegationSection({ canSpawn: false, canAddressColleagues: false })).toBeUndefined()
   })
 
-  test("standing approach, durable role, current job, and kernel remain separate ordered blocks", () => {
+  test("model correction, durable role, current job, and kernel remain separate ordered blocks", () => {
     expect(
       SystemCompose.composeSystemParts({
-        persona: "standing approach",
+        modelPrePrompt: "standing approach",
         agentSystem: "durable role brief",
         workspace: "current job scope",
         base: "kernel",
       }),
-    ).toEqual(["standing approach", "durable role brief", "current job scope", "kernel"])
+      // `workspace` is the LAST system block (owner, 2026-09-17), so it lands after the kernel base.
+    ).toEqual(["standing approach", "durable role brief", "kernel", "current job scope"])
   })
 
   test("prior summaries are re-evaluated, not promoted to permanent authority", () => {

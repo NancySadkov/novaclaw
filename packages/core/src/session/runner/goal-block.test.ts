@@ -24,7 +24,7 @@ import { SessionComponentRegistry } from "../component-registry"
 
 describe("the goal block's PLACE in the system prompt", () => {
   test("🔴 it is LAST, after `base`, so it is the final thing before the message history", () => {
-    const parts = SystemCompose.systemPartsInOrder({ persona: "P", base: "B", goal: "G" })
+    const parts = SystemCompose.systemPartsInOrder({ expertiseHint: "P", base: "B", goal: "G" })
     const blocks = parts.filter((part) => part.text !== undefined).map((part) => part.block)
     expect(blocks.at(-1)).toBe("goal")
     // And AFTER base, not merely present: the owner's "right after the tool specification" is the tool
@@ -33,7 +33,7 @@ describe("the goal block's PLACE in the system prompt", () => {
   })
 
   test("an interactive session composes no goal block at all", () => {
-    const blocks = SystemCompose.systemPartsInOrder({ persona: "P", base: "B" })
+    const blocks = SystemCompose.systemPartsInOrder({ expertiseHint: "P", base: "B" })
       .filter((part) => part.text !== undefined)
       .map((part) => part.block)
     expect(blocks).not.toContain("goal")

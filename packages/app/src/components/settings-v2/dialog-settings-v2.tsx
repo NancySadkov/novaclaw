@@ -138,7 +138,7 @@ export const DialogSettings: Component<{
                           <Show when={tabVisible("system-prompt")}>
                             <TabsV2.Trigger value="system-prompt">
                               <Icon name="prompt" size="large" />
-                              {language.t("settings.systemPrompt.title")}
+                              {language.t("settings.contextLayout.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("tunes")}>

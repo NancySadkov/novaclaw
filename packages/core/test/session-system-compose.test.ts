@@ -7,15 +7,15 @@ import { SpawnTool } from "@novaclaw/core/tool/spawn"
 // Pure unit test for the per-model PRE-PROMPT composition (owner ruling, 2026-07-29).
 // The two binding claims of the feature, proven without executing the live runner:
 //   (a) INERT by default — with no pre-prompt the composed system prompt is byte-identical to today;
-//   (b) when set, the pre-prompt appears exactly once, in the correct slot (after the persona
-//       baseline, before the base context and every other part).
+//   (b) when set, the pre-prompt appears exactly once, in the correct slot (FIRST — the shared
+//       persona baseline it used to follow is gone — and before the base context and every other part).
 
 describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
-  // MUST match `ContextTemplate.SLOTS`: persona, expertiseHint, taxonomyHint, override, agent, base,
-  // then identity LAST (owner, 2026-09-17 — identity sits immediately before the workspace notice, at
-  // the end of the system prompt: see context-template.ts).
-  // (`persona` composed first, `base` after the framing material — see system-compose.ts and persona.ts.)
+  // MUST match `ContextTemplate.SLOTS`: expertiseHint, taxonomyHint, override, agent, base, then
+  // identity LAST (owner, 2026-09-17 — identity sits immediately before the workspace notice, at the
+  // end of the system prompt: see context-template.ts).
+  // (No shared persona baseline: the working style is seeded into each officer's own prompt.)
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
@@ -54,7 +54,6 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
       | "durable"
     >
   > = {
-    persona: "Be pragmatic.",
     expertiseHint: "Explain in plain language.",
     taxonomyHint: "You are a small local model.",
     systemPromptOverride: "Session override text.",
@@ -64,7 +63,6 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   }
 
   const todayOrder = [
-    baseParts.persona,
     baseParts.expertiseHint,
     baseParts.taxonomyHint,
     baseParts.systemPromptOverride,
@@ -136,7 +134,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     ).toEqual(todayOrder.filter((p) => p !== baseParts.systemPromptOverride))
   })
 
-  it("(b) inserts the pre-prompt exactly once, after the persona and before the base", () => {
+  it("(b) leads with the pre-prompt, exactly once, before the officer prompt and the base", () => {
     const text = "Never wrap replies in markdown code fences."
     const section = SystemCompose.modelPrePromptSection(text)
     expect(section).toBeDefined()
@@ -147,11 +145,10 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     expect(parts.filter((p) => p === section)).toHaveLength(1)
     expect(parts.join("\n\n").split(text)).toHaveLength(2)
 
-    // correct slot: persona leads (index 0), the pre-prompt is immediately after it (index 1), and it
-    // is strictly before the base context and the agent's own persona/prompt.
-    expect(parts.indexOf(baseParts.persona)).toBe(0)
+    // correct slot: it LEADS (index 0) — the shared persona baseline that used to sit ahead of it is
+    // gone (owner, 2026-09-17) — and it is strictly before the officer prompt and the base context.
     const idx = parts.indexOf(section!)
-    expect(idx).toBe(1)
+    expect(idx).toBe(0)
     expect(idx).toBeLessThan(parts.indexOf(baseParts.agentSystem))
     expect(idx).toBeLessThan(parts.indexOf(baseParts.base))
 
@@ -159,16 +156,8 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     expect(section!.startsWith(SystemCompose.MODEL_PREPROMPT_LABEL)).toBe(true)
 
     // every other part keeps its position — the composed prompt is exactly today's order with the one
-    // section spliced in after the persona.
-    expect(parts).toEqual([todayOrder[0], section!, ...todayOrder.slice(1)])
-  })
-
-  it("leads with the pre-prompt when the persona baseline is disabled (still inert-safe)", () => {
-    const section = SystemCompose.modelPrePromptSection("Answer in one paragraph.")!
-    const withSection = SystemCompose.composeSystemParts({ ...baseParts, persona: undefined, modelPrePrompt: section })
-    expect(withSection[0]).toBe(section)
-    // and with no section, a persona-less prompt is byte-identical to today-without-persona
-    expect(SystemCompose.composeSystemParts({ ...baseParts, persona: undefined })).toEqual(todayOrder.slice(1))
+    // section spliced in at the front.
+    expect(parts).toEqual([section!, ...todayOrder])
   })
 
   it("carries prePrompt as an OPTIONAL config field (no migration; old configs decode unchanged)", () => {
@@ -230,15 +219,13 @@ describe("toolDiscoverySection — the model must know its tool list is partial"
 // The same kernel parts the first describe uses, at module scope so the perception block can reuse
 // them without reaching inside another closure.
 const KERNEL_BASE = {
-  persona: "You are Nova.",
+  agentSystem: "You are Nova.",
   expertiseHint: "Explain in plain language.",
   taxonomyHint: "You are a small local model.",
   systemPromptOverride: "Session override text.",
-  agentSystem: "Build agent instructions.",
   base: "Initial context (kernel base).",
 } as const
 const KERNEL_ORDER = [
-  KERNEL_BASE.persona,
   KERNEL_BASE.expertiseHint,
   KERNEL_BASE.taxonomyHint,
   KERNEL_BASE.systemPromptOverride,

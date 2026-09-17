@@ -3,7 +3,7 @@ export * as ConfigIntrospection from "./introspection"
 import { Schema } from "effect"
 
 // The P2 introspection-mode config. Same shape on V1 and V2 configs; migrate.ts copies it
-// through (the persona pattern). The judge periodically asks a (possibly different) model
+// through (the generic migrate-through pattern). The judge periodically asks a (possibly different) model
 // whether the session is stuck; on "yes" an interjection is steered into the next turn.
 export const Info = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({

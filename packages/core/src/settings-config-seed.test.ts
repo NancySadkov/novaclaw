@@ -8,7 +8,7 @@ import { SETTINGS_KEYS, settingsInfoFromStore } from "./settings-config-seed"
 //
 // The defect this file pins: the store snapshot used to be decoded as ONE document, so a single
 // bad row silently discarded ALL of SETTINGS_KEYS — reverting `permissions`, `offline`,
-// `persona`, `mcp` and the telemetry choice to compiled defaults together, with nothing logged.
+// `user_profile`, `mcp` and the telemetry choice to compiled defaults together, with nothing logged.
 // Losing `permissions` that way is a LOOSENING, which is what makes this a safety item.
 
 // The decode options `settings-config-seed.ts` uses. Replicated (not imported) on purpose: the
@@ -97,7 +97,6 @@ const VALID: Record<string, unknown> = {
   },
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
-  persona: {},
   user_profile: { enabled: true, name: "Nancy" },
   introspection: {},
   // All live switches present, so the row exercises the whole block rather than its defaults.

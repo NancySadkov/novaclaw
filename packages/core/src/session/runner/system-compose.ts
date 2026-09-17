@@ -12,19 +12,14 @@ import type { InputCapabilities } from "./to-llm-message"
 // so the composition — and especially the placement of the optional per-model PRE-PROMPT — is a pure
 // unit, testable without executing the live runner.
 //
-// ⚠️ PLACEMENT of the model pre-prompt — an owner ruling, 2026-07-29.
-// The vision wants it as a distinct, clearly-labelled section that reads as "about this model" —
-// sitting AFTER the immutable base and BEFORE the persona, so a session inspecting its own prompt can
-// tell base / model-preprompt / persona apart. But the ACTUAL runner composes parts persona-FIRST and
-// the kernel base context LAST — the reverse of the order the vision assumes. The persona baseline is
-// deliberately composed first (persona.ts: "so the assistant's approach survives model swaps"), and
-// the kernel base context (`system.baseline`) trails at the end. Reordering the existing parts is
-// forbidden (it must stay byte-identical when no pre-prompt is set), so the faithful realisation of
-// the intent inside this order is to place the pre-prompt directly AFTER the persona baseline and
-// ahead of everything else: the correction then colours all the model-/task-specific material below
-// it, while remaining its own labelled block a reader can separate from the persona above it and the
-// base context at the end. It rides the same `.filter(non-empty)` as every other part, so an absent
-// pre-prompt changes the composed prompt not at all (byte-identical to today).
+// ⚠️ PLACEMENT of the model pre-prompt — an owner ruling, 2026-07-29, and re-based 2026-09-17.
+// It is a distinct, clearly-labelled section that reads as "about this model". It now composes FIRST,
+// because the shared persona baseline that used to lead the prompt is gone (owner, 2026-09-17: the
+// working style is seeded into each officer's own prompt, `officer-prompt.ts`). The correction
+// therefore colours everything below it — the officer's identity and job text first among those — and
+// remains its own labelled block a reader can separate from them. It rides the same
+// `.filter(non-empty)` as every other part, so an absent pre-prompt changes the composed prompt not
+// at all.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠️ NOTHING PER-TURN-VOLATILE MAY BE COMPOSED HERE (2026-08-05).

@@ -229,7 +229,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     ])
 
     // The execution surfaces ruling 4 names by hand (`mcp`, `commands`), the prompt-text surfaces its
-    // fourth test names (`persona`, `adhoc_tools`, `introspection`), and the ones only reading the
+    // fourth test names (`adhoc_tools`, `introspection`), and the ones only reading the
     // code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models` (whose
     // per-model `prePrompt` is prepended to the system context).
     expect(of("privileged")).toEqual([
@@ -259,7 +259,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "nudges",
       "offline",
       "permissions",
-      "persona",
       "providers",
       "quality",
       "references",

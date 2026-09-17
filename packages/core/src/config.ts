@@ -28,7 +28,6 @@ import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
 import { ConfigTrash } from "./config/trash"
 import { ConfigMCP } from "./config/mcp"
-import { ConfigPersona } from "./config/persona"
 import { ConfigProvider } from "./config/provider"
 import { ConfigProviderPreset } from "./config/provider-preset"
 import { ConfigProviderConnection } from "./config/provider-connection"
@@ -144,9 +143,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   provider_connection: ConfigProviderConnection.Info.pipe(Schema.optional).annotate({
     description:
       "Provider connection liveness limits. Runtime-editable so a working model can repair an endpoint-specific timeout without rebuilding or restarting NovaClaw",
-  }),
-  persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
-    description: "Persona baseline prepended to every agent's system prompt (B3)",
   }),
   user_profile: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({
