@@ -366,8 +366,22 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest) {
   }
 })
 
+/**
+ * The transport's encoded body text, when the transport is one that produces it (`http-json`).
+ *
+ * `compiled.prepared` is transport-private and erased to `unknown` by the route registry, so this is
+ * a runtime read rather than a type-level one — deliberately: a future transport without an HTTP
+ * body must simply be absent here, not fail the compile of `prepare`.
+ */
+const preparedBodyText = (prepared: unknown): string | undefined => {
+  if (prepared === null || typeof prepared !== "object") return undefined
+  const value = (prepared as { readonly bodyText?: unknown }).bodyText
+  return typeof value === "string" ? value : undefined
+}
+
 const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMRequest) {
   const compiled = yield* compile(request)
+  const bodyText = preparedBodyText(compiled.prepared)
 
   return new PreparedRequest({
     id: compiled.request.id ?? "request",
@@ -375,6 +389,7 @@ const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMReques
     protocol: compiled.route.protocol,
     model: compiled.request.model,
     body: compiled.body,
+    ...(bodyText === undefined ? {} : { bodyText }),
     metadata: { transport: compiled.route.transport.id },
   })
 })

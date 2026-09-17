@@ -2,7 +2,6 @@ export * as PromptCapture from "./prompt-capture"
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { Message, SystemPart } from "@novaclaw/llm"
 
 /**
  * The EXACT provider request, written where a person can read it.
@@ -18,6 +17,12 @@ import type { Message, SystemPart } from "@novaclaw/llm"
  *     never overwrite it). This is the init prompt the officer's Work tab exports: it ends at the
  *     first user message, because that is where the first request ends.
  *
+ * ⚠️ **What `text` is: the encoded wire body, not the harness's request object.** The runner obtains
+ * it from `LLMClient.prepare`, i.e. the protocol adapter has already lowered the packed `LLMRequest`
+ * and the transport has merged any `http.body` overlay, so the bytes here are the bytes that leave.
+ * This module never renders or reformats them; it is a writer and a reader only, which is what keeps
+ * the export byte-identical rather than a dump that merely resembles the request.
+ *
  * ⚠️ **Best-effort, never load-bearing.** A debug artifact that can fail a turn is worse than no
  * artifact, so `capture` swallows every error and is bounded, matching `OldContext.save`'s "the
  * caller names what this function did" discipline.
@@ -31,17 +36,6 @@ export const latestFile = (input: { readonly scratchFolder: string; readonly ses
 
 export const initialFile = (input: { readonly scratchFolder: string; readonly sessionID: string }): string =>
   path.join(input.scratchFolder, DIR, `prompt-${input.sessionID}.initial.txt`)
-
-/**
- * The request EXACTLY as the harness built it, with nothing added: no headers, no counts, no
- * commentary. `system`, `messages` and `tools` are the three fields the provider adapter lowers into
- * the wire body, so a reader sees the real content and the real order.
- */
-export const render = (input: {
-  readonly system: ReadonlyArray<SystemPart>
-  readonly messages: ReadonlyArray<Message>
-  readonly tools: ReadonlyArray<unknown>
-}): string => JSON.stringify({ system: input.system, messages: input.messages, tools: input.tools })
 
 /**
  * Write the latest request, and the first one only if it is not there yet.

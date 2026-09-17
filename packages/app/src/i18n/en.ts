@@ -675,7 +675,7 @@ export const dict = {
   "context.tokens.cacheWrite": "Cache write",
   "context.meta.created": "Created",
   "context.meta.active": "Active",
-  "context.export.transcript": "Export Json",
+  "context.export.json": "Export Json",
   "context.export.prompt": "Export Prompt",
   "context.export.promptEmpty": "No captured prompt yet — send this officer a message first",
   "agentConfig.exportPrompt.hint": "Downloads the first request the harness sent for this officer's chat.",

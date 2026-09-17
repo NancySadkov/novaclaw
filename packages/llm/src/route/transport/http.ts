@@ -19,6 +19,12 @@ export interface JsonRequestParts<Body = unknown> {
 export interface HttpPrepared<Frame> {
   readonly request: HttpClientRequest.HttpClientRequest
   readonly framing: FramingDef<Frame>
+  /**
+   * The exact JSON text that becomes the HTTP request body — after protocol lowering AND after any
+   * `http.body` overlay is merged, which is why it cannot be recomputed from `body` alone. This is
+   * the string handed to `bodyText`, byte for byte what leaves for the provider.
+   */
+  readonly bodyText: string
 }
 
 const applyQuery = (url: string, query: Record<string, string> | undefined) => {
@@ -126,6 +132,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
       Effect.map((parts) => ({
         request: ProviderShared.jsonPost({ url: parts.url, body: parts.bodyText, headers: parts.headers }),
         framing: input.framing,
+        bodyText: parts.bodyText,
       })),
     ),
   frames: (prepared, request, runtime) =>

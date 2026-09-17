@@ -212,18 +212,20 @@ export function SessionContextTab() {
     enabled: params.id !== undefined,
   }))
 
+  // The officer's FIRST request — the prompt it was born with, ending at the first user message.
+  // Same artifact the Work tab's Export Prompt downloads, so the two names mean one thing.
   const exportPrompt = () => {
-    const raw = promptSource.data?.latest ?? promptSource.data?.initial
-    if (!raw) {
+    const initial = promptSource.data?.initial ?? promptSource.data?.latest
+    if (!initial) {
       showToast({ variant: "error", title: language.t("context.export.promptEmpty") })
       return
     }
-    downloadPlainText(sessionExportFilename(officerName(), "prompt"), raw)
+    downloadPlainText(sessionExportFilename(officerName(), "prompt"), initial)
   }
 
-  const exportTranscript = () => {
-    // The raw captured request JSON, with nothing added. Falls back to the transcript records only
-    // before a turn has been captured at all.
+  // The LATEST request, exactly as it left for the provider — the encoded wire body, no wrapper.
+  // Falls back to the transcript records only before a turn has been captured at all.
+  const exportJson = () => {
     const raw = promptSource.data?.latest ?? promptSource.data?.initial
     downloadPlainText(
       sessionExportFilename(officerName(), "request"),
@@ -514,8 +516,8 @@ export function SessionContextTab() {
             <ButtonV2 type="button" variant="gold" icon="download" onClick={exportPrompt}>
               {language.t("context.export.prompt")}
             </ButtonV2>
-            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportTranscript}>
-              {language.t("context.export.transcript")}
+            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportJson}>
+              {language.t("context.export.json")}
             </ButtonV2>
           </div>
         </div>

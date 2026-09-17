@@ -154,12 +154,42 @@ describe("OpenAI-compatible Chat route", () => {
     }),
   )
 
+  it.effect("prepared bodyText is the exact text the transport sends", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(request)
+      expect(prepared.bodyText).toBeDefined()
+      // `body` is the pre-overlay protocol object; `bodyText` is what actually leaves. For a request
+      // with no overlay the two agree, and the encoded text is the one the transport posts.
+      expect(decodeJson(prepared.bodyText!)).toEqual(prepared.body)
+    }),
+  )
+
+  it.effect("bodyText carries an http.body overlay that `body` alone does not", () =>
+    Effect.gen(function* () {
+      const overlaid = LLM.updateRequest(request, {
+        http: { body: { chat_template_kwargs: { enable_thinking: false } } },
+      })
+      const prepared = yield* LLMClient.prepare(overlaid)
+
+      expect(prepared.body).not.toMatchObject({ chat_template_kwargs: { enable_thinking: false } })
+      // The whole reason `bodyText` exists: `JSON.stringify(body)` would drop the overlay, so a
+      // captured export built from `body` would describe a request the provider never received.
+      expect(decodeJson(prepared.bodyText!)).toMatchObject({
+        chat_template_kwargs: { enable_thinking: false },
+        model: "deepseek-chat",
+      })
+    }),
+  )
+
   it.effect("posts to the configured compatible endpoint and parses text usage", () =>
     Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(request)
+      let sentText = ""
       const response = yield* LLMClient.generate(request).pipe(
         Effect.provide(
           dynamicResponse((input) =>
             Effect.gen(function* () {
+              sentText = input.text
               const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
               expect(web.url).toBe("https://api.deepseek.test/v1/chat/completions?api-version=2026-01-01")
               expect(web.headers.get("authorization")).toBe("Bearer test-key")
@@ -188,6 +218,8 @@ describe("OpenAI-compatible Chat route", () => {
       expect(response.text).toBe("Hello!")
       expect(response.usage).toMatchObject({ inputTokens: 5, outputTokens: 2, totalTokens: 7 })
       expect(response.events.at(-1)).toMatchObject({ type: "finish", reason: "stop" })
+      // Byte-identical to what the HTTP layer posted — the claim the export rests on.
+      expect(prepared.bodyText).toBe(sentText)
     }),
   )
 })

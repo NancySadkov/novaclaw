@@ -300,6 +300,17 @@ export class PreparedRequest extends Schema.Class<PreparedRequest>("LLM.Prepared
   protocol: ProtocolID,
   model: ModelSchema,
   body: Schema.Unknown,
+  /**
+   * The exact JSON request text the transport will send, when the route's transport produces one.
+   *
+   * ⚠️ **`body` is not enough to reconstruct this.** `body` is the protocol-lowered object BEFORE
+   * any `http.body` overlay is merged, and it is a JS value rather than the encoded text, so
+   * `JSON.stringify(body)` can differ from the bytes on the wire (merged overlay fields, schema
+   * encode transformations, key order). A reader who needs literal bytes reads this; a reader who
+   * wants the structured shape reads `body`. Optional because a transport that is not an HTTP JSON
+   * body has no such text to offer.
+   */
+  bodyText: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 }) {}
 

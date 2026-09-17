@@ -2794,15 +2794,25 @@ export const layer = Layer.effect(
         ),
       })
       // The exact bytes the provider is about to receive, kept in the agent's scratch so the Work tab
-      // and the context view can export them. Best-effort by construction: `capture` swallows every
+      // and the context view can export them.
+      //
+      // ⚠️ **`prepare`, and NOT the packed `LLMRequest` shape.** The harness's request is not the
+      // wire body: the protocol adapter lowers it (roles, `tool_calls`, `stream` flags, `max_tokens`)
+      // and the transport merges any `http.body` overlay (sampling split, `chat_template_kwargs`)
+      // before encoding. The export is defined as the RAW request, so it is the encoded text
+      // `prepare` hands the transport — the same string this dispatch sends for the request below.
+      //
+      // Best-effort by construction: a failed compile is swallowed and `capture` swallows every write
       // error, so a debug artifact can never fail a turn.
       if (scratchFolder !== undefined) {
-        const capturedText = PromptCapture.render({
-          system: request.system,
-          messages: request.messages,
-          tools: request.tools,
-        })
-        yield* Effect.promise(() => PromptCapture.capture({ scratchFolder, sessionID: session.id, text: capturedText }))
+        const capturedText = yield* llm.prepare(request).pipe(
+          Effect.map((prepared) => prepared.bodyText),
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        )
+        if (capturedText !== undefined)
+          yield* Effect.promise(() =>
+            PromptCapture.capture({ scratchFolder, sessionID: session.id, text: capturedText }),
+          )
       }
       const startSnapshot = ShortChat.enabled(config.shortChat)
         ? undefined

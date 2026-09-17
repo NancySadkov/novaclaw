@@ -4,21 +4,17 @@ import os from "node:os"
 import path from "node:path"
 import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
 
-const message = (role: "user" | "assistant", text: string) => ({ role, content: [{ type: "text", text }] }) as never
-
 describe("PromptCapture", () => {
-  test("render is the request JSON with nothing added", () => {
-    const text = PromptCapture.render({
-      system: [{ type: "text", text: "You are Nova." } as never],
-      messages: [message("user", "hello")],
-      tools: [{ name: "read" }],
-    })
-    expect(text.startsWith('{"system":')).toBe(true)
-    expect(text).not.toContain("=====")
-    const parsed = JSON.parse(text)
-    expect(parsed.system[0].text).toBe("You are Nova.")
-    expect(parsed.messages[0].content[0].text).toBe("hello")
-    expect(parsed.tools[0].name).toBe("read")
+  test("capture writes the text verbatim, adding nothing", async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "prompt-capture-"))
+    const wire = JSON.stringify({ model: "holo3.1", messages: [{ role: "user", content: "hello" }], stream: true })
+    await PromptCapture.capture({ scratchFolder: scratch, sessionID: "ses_wire", text: wire })
+    const read = await PromptCapture.read({ scratchFolder: scratch, sessionID: "ses_wire" })
+    // Byte-identical, and still valid JSON — the export is the provider body, not a dump around it.
+    expect(read.latest).toBe(wire)
+    expect(read.initial).toBe(wire)
+    expect(read.latest).not.toContain("=====")
+    expect(JSON.parse(read.latest!).messages[0].content).toBe("hello")
   })
 
   test("capture replaces latest every turn and keeps the first turn as the init prompt", async () => {
