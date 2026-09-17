@@ -63,7 +63,8 @@ const expectCurrentIdentity = (request: { readonly system?: ReadonlyArray<{ read
   const text = parts.join("\n")
   expect(text.split("Iris")).toHaveLength(2)
   expect(text.split("Compaction identity marker.")).toHaveLength(2)
-  expect(parts.indexOf("Compaction standing job brief.")).toBeGreaterThan(
+  // Identity is the LAST system block (owner, 2026-09-17), so the job brief precedes it.
+  expect(parts.indexOf("Compaction standing job brief.")).toBeLessThan(
     parts.findIndex((part) => part.includes("<agent_identity>")),
   )
 }

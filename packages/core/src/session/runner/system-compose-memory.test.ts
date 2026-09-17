@@ -85,8 +85,15 @@ describe("the workspace section", () => {
     expect(section).toContain(scratch)
     // 🔴 It has to say what goes WHERE, not merely that the folder exists. "You have a scratch dir"
     // leaves a model to guess whether its notes belong there or in the user's repository.
-    expect(section!.toLowerCase()).toContain("notes to yourself")
-    expect(section!.toLowerCase()).toContain("part of the work still belongs in the working folder")
+    //
+    // ⚠️ Reworded with the section (owner, 2026-09-17): the notice is now ONE sentence and no longer
+    // restates the project-scope rule — that rule is its own block, and repeating it here is dead
+    // bytes in every prompt. The claim this test guards is unchanged: the section names the folder and
+    // says what the folder is FOR.
+    const lower = section!.toLowerCase()
+    expect(lower).toContain("private workspace at")
+    expect(lower).toContain("temporary files")
+    expect(lower).toContain("not intended for the user or the user's project")
   })
 
   test("an UNASSIGNED colleague gets nothing — it already works there", () => {

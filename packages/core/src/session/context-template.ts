@@ -133,12 +133,6 @@ export const SLOTS = [
     purpose: "A per-session system prompt override from the config walk.",
   },
   {
-    name: "agentIdentity",
-    channel: "system",
-    volatility: "turn",
-    purpose: "The officer's name, title and personality, wrapped in exactly one identity section.",
-  },
-  {
     name: "agentSystem",
     channel: "system",
     volatility: "turn",
@@ -186,21 +180,13 @@ export const SLOTS = [
       "Immediately before `base`: it is a kernel constraint, not task material, and a well-meaning agent prompt must not be able to bury it under later instructions.",
   },
   {
-    name: "workspace",
-    channel: "system",
-    volatility: "turn",
-    purpose: "Where a colleague with BOTH a project folder and a scratch folder should put scratch.",
-    placement:
-      "After `projectScope` on purpose: that section says keep scratch inside the working folder, which is right until the colleague has a workspace of its own. The specific instruction has to land last or a model is left reconciling two rules.",
-  },
-  {
     name: "base",
     channel: "system",
     volatility: "epoch",
     purpose:
       "The epoch-frozen kernel baseline: environment, standing instructions (AGENTS.md), skills index, tool catalogue, references, ad-hoc tools, live-work ledger.",
     placement:
-      "LAST of the framing material: it is the largest block on most turns and the one a reader scrolls to, so everything that frames how to behave comes before what to work on.",
+      "The framing material a model works FROM: it is the largest block on most turns and the one a reader scrolls to. The three turn-volatile slots that must land closest to the transcript (`goal`, `agentIdentity`, `workspace`) sit after it, so a change to any of them costs only the tokens after it.",
   },
   {
     name: "goal",
@@ -209,7 +195,7 @@ export const SLOTS = [
     purpose:
       "The officer's durable objective, shown only while the session is unattended — so the Interactive ⇄ Unattended switch adds and removes it.",
     placement:
-      "After `base`, i.e. last: the owner's own sketch puts the goal and the durable area at the end, immediately before the first user prompt, and a block at the END invalidates the fewest messages when it changes.",
+      "After `base` and before `durable`: the owner's own sketch puts the goal and the durable area together near the end, and a block at the END invalidates the fewest messages when it changes.",
   },
   {
     name: "durable",
@@ -218,7 +204,23 @@ export const SLOTS = [
     purpose:
       "The durable area: short named items the colleague must not lose to a rewrite, set with `durable_set` and cleared with `durable_clear`.",
     placement:
-      "Immediately after `goal`, which is where the owner's own sketch puts it (`<goal>`, `#DURABLE`, then the first user prompt). It is the one `compaction`-volatile slot in the table: materialised from the `durable` items when the context is REBUILT, never mid-turn, so the prompt is byte-stable for the whole epoch.",
+      "Immediately after `goal`, which is where the owner's own sketch puts it (`<goal>`, `#DURABLE`, …). It is the one `compaction`-volatile slot in the table: materialised from the `durable` items when the context is REBUILT, never mid-turn, so the prompt is byte-stable for the whole epoch.",
+  },
+  {
+    name: "agentIdentity",
+    channel: "system",
+    volatility: "turn",
+    purpose: "The officer's name, title and personality, wrapped in exactly one identity section.",
+    placement:
+      "Immediately before `workspace`, i.e. last but one: who the model IS and where it may scribble are the two facts it must carry into the transcript, and the end of the system prompt is the position with the strongest recency before the first user message (owner, 2026-09-17).",
+  },
+  {
+    name: "workspace",
+    channel: "system",
+    volatility: "turn",
+    purpose: "Where a colleague with BOTH a project folder and a scratch folder should put scratch.",
+    placement:
+      "LAST system block — the final thing before the transcript (owner, 2026-09-17). It names the exception to `projectScope`'s keep-scratch-inside-the-project rule, so it lands after that rule and after every other block: a model reading the two in either order must still end on the specific instruction. Both it and `agentIdentity` ride the end of the epoch-frozen `base`, so changing either costs only the tokens after it.",
   },
   // ── the tail ────────────────────────────────────────────────────────────────────────────────────
   // Appended AFTER the transcript, in this order. Recalled memory is here rather than in the system

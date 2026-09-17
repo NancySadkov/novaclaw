@@ -121,7 +121,10 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     const ordinaryText = ordinary.join("\n")
     expect(ordinaryText.split("Iris")).toHaveLength(2)
     expect(ordinaryText.split("Calm identity marker.")).toHaveLength(2)
-    expect(ordinary.indexOf("Review standing job brief.")).toBeGreaterThan(
+    // 🔴 Owner, 2026-09-17: identity lands at the END of the system prompt, immediately before the
+    // workspace notice. So the job brief now precedes it — this pins that both reach the provider and
+    // that the identity did not drift back up among the framing blocks.
+    expect(ordinary.indexOf("Review standing job brief.")).toBeLessThan(
       ordinary.findIndex((part) => part.includes("<agent_identity>")),
     )
     expect(ordinaryText).toContain("Your superior is Nova")

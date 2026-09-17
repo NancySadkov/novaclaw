@@ -12,8 +12,10 @@ import { SpawnTool } from "@novaclaw/core/tool/spawn"
 
 describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
-  // MUST match the array in llm.ts: persona, expertiseHint, taxonomyHint, override, identity, agent, base.
-  // (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
+  // MUST match `ContextTemplate.SLOTS`: persona, expertiseHint, taxonomyHint, override, agent, base,
+  // then identity LAST (owner, 2026-09-17 — identity sits immediately before the workspace notice, at
+  // the end of the system prompt: see context-template.ts).
+  // (`persona` composed first, `base` after the framing material — see system-compose.ts and persona.ts.)
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
@@ -66,9 +68,9 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     baseParts.expertiseHint,
     baseParts.taxonomyHint,
     baseParts.systemPromptOverride,
-    baseParts.agentIdentity,
     baseParts.agentSystem,
     baseParts.base,
+    baseParts.agentIdentity,
   ].filter((p): p is string => p !== undefined && p.length > 0)
 
   it("keeps authored identity text inside exactly one identity wrapper", () => {

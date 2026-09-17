@@ -44,7 +44,6 @@ describe("ContextTemplate — one list, and the order is the table's", () => {
       "expertiseHint",
       "taxonomyHint",
       "systemPromptOverride",
-      "agentIdentity",
       "agentSystem",
       "organization",
       "toolDiscovery",
@@ -52,12 +51,17 @@ describe("ContextTemplate — one list, and the order is the table's", () => {
       "delegation",
       "memoryStance",
       "projectScope",
-      "workspace",
       "base",
       "goal",
       // Materialised at a rewrite, immediately after the goal — the owner's own sketch puts the durable
-      // area there (`<goal>`, `#DURABLE`, then the first user prompt).
+      // area there (`<goal>`, `#DURABLE`, …).
       "durable",
+      // 🔴 Owner, 2026-09-17: identity and the workspace pointer land LAST, immediately before the
+      // transcript, in this order. They are the two facts the model must carry into the first user
+      // message, and both are `turn`-volatile, so the end of the prompt is both the strongest recency
+      // and the cheapest place to change.
+      "agentIdentity",
+      "workspace",
     ])
     const parts = { persona: "P", goal: "", base: "B" }
     // ⚠️ `""` composes nothing — the non-empty predicate is stated once, in the template. An empty
