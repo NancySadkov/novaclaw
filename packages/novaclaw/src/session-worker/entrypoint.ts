@@ -14,8 +14,9 @@ export interface Context {
   readonly signal: AbortSignal
   readonly capabilities: SessionWorkerCapabilities.Capabilities
   readonly phase: (phase: (typeof SessionWorkerProtocol.Heartbeat.Type)["phase"]) => void
-  /** Register the worker-local handler that stops one command while leaving this drain alive. */
-  readonly registerCommandStop: (handler: (callID: string, reason: string) => Promise<void>) => () => void
+  /** Register the worker-local handler that stops one command while leaving this drain alive. The
+   *  handle is a durable job id (`job_…`) or an in-flight tool-call id. */
+  readonly registerCommandStop: (handler: (commandID: string, reason: string) => Promise<void>) => () => void
 }
 
 export interface Input {
@@ -69,7 +70,7 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
     )
   const client = SessionWorkerClient.make({ lease, send: emit })
   const capabilities = SessionWorkerCapabilities.make({ lease, client })
-  let commandStop: ((callID: string, reason: string) => Promise<void>) | undefined
+  let commandStop: ((commandID: string, reason: string) => Promise<void>) | undefined
 
   const pump = async () => {
     for (;;) {
@@ -86,7 +87,7 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
       if (next.message.type === "stop-command") {
         const handler = commandStop
         if (!handler) throw new Error("session worker command stop handler is not ready")
-        void handler(next.message.callID, next.message.reason).catch((error) =>
+        void handler(next.message.commandID, next.message.reason).catch((error) =>
           rejectProtocol(error instanceof Error ? error : new Error("command stop failed")),
         )
         continue

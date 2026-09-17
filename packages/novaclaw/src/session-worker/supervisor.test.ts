@@ -176,7 +176,7 @@ test("stopping one command leaves the worker alive to settle its drain", async (
     attemptID: lease.attemptID,
     generation: lease.generation,
     type: "stop-command",
-    callID: "call_fixture",
+    commandID: "job_fixture",
     reason: "Enough output",
   })
   expect(await worker.result).toEqual({ type: "settled" })

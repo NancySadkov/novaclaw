@@ -1158,8 +1158,8 @@ export const makeSessionGroups = <
           ),
       )
       .add(
-        HttpApiEndpoint.post("session.bash.stop", "/api/session/:sessionID/command/:callID/stop", {
-          params: { sessionID: Session.ID, callID: Schema.String },
+        HttpApiEndpoint.post("session.bash.stop", "/api/session/:sessionID/command/:commandID/stop", {
+          params: { sessionID: Session.ID, commandID: Schema.String },
           payload: Schema.Struct({ reason: Schema.String }),
           success: HttpApiSchema.NoContent,
           error: SessionNotFoundError,
@@ -1169,7 +1169,8 @@ export const makeSessionGroups = <
             OpenApi.annotations({
               identifier: "v2.session.bash.stop",
               summary: "Stop a running session command",
-              description: "Stop one running command without interrupting the agent that launched it.",
+              description:
+                "Stop one running command without interrupting the agent that launched it. `commandID` is the durable job id the session command list shows, or the tool-call id of a command still in flight in the transcript.",
             }),
           ),
       )

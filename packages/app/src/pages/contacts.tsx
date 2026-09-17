@@ -45,7 +45,7 @@ import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } from "@/utils/session-execution-api"
 import { formatTokensPerSecond } from "@/utils/token-rate"
-import { WorkerListDialog } from "@/components/worker-list-dialog"
+import { WorkerListDialog, type WorkerListItem } from "@/components/worker-list-dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -696,15 +696,21 @@ function ContactRow(props: ContactRowProps) {
           execution: props.executions.get(workerID)?.state,
         }))
   })
+  // The dialog's shape: identity plus the age the row shows. `SessionLike.time.created` is the
+  // worker's start, which is what "running for" measures.
+  const workerItems = createMemo<WorkerListItem[]>(() =>
+    workers().map((worker) => ({ id: worker.id, title: worker.title, startedAt: worker.time.created })),
+  )
   const openWorkers = () => {
-    const rows = workers()
+    const rows = workerItems()
     const root = props.sessions.find((session) => session.id === live().sessionID)
     if (rows.length === 0 || props.serverKey === undefined || props.server === undefined || !root?.location?.directory)
       return
     void dialog.showScoped(() => (
       <WorkerListDialog
         title={language.t("contacts.workers.title", { name: props.view.name })}
-        workers={rows}
+        // The accessor, not a snapshot: a worker that settles while the dialog is open drops out.
+        workers={workerItems()}
         href={(sessionID) => sessionHref(props.serverKey!, sessionID)}
         onStop={(worker, reason) => stopSessionExecution(props.server!, worker.id, root.location!.directory, reason)}
       />

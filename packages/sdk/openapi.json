@@ -15856,7 +15856,7 @@
         ]
       }
     },
-    "/api/session/{sessionID}/command/{callID}/stop": {
+    "/api/session/{sessionID}/command/{commandID}/stop": {
       "post": {
         "tags": ["session observation"],
         "operationId": "v2.session.bash.stop",
@@ -15871,7 +15871,7 @@
             "required": true
           },
           {
-            "name": "callID",
+            "name": "commandID",
             "in": "path",
             "schema": {
               "type": "string"
@@ -15915,7 +15915,7 @@
             }
           }
         },
-        "description": "Stop one running command without interrupting the agent that launched it.",
+        "description": "Stop one running command without interrupting the agent that launched it. `commandID` is the durable job id the session command list shows, or the tool-call id of a command still in flight in the transcript.",
         "summary": "Stop a running session command",
         "requestBody": {
           "content": {
@@ -28956,31 +28956,6 @@
           },
           "defaults": {
             "type": "object"
-          },
-          "project": {
-            "type": "object",
-            "properties": {
-              "root": {
-                "type": "string"
-              },
-              "file": {
-                "type": "string"
-              },
-              "applied": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "refused": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": ["root", "file", "applied", "refused"],
-            "additionalProperties": false
           },
           "resolved": {
             "type": "object"

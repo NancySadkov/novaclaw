@@ -1657,12 +1657,6 @@ export type SessionConfigResolved = {
   defaults: {
     [key: string]: unknown
   }
-  project?: {
-    root: string
-    file: string
-    applied: Array<string>
-    refused: Array<string>
-  }
   resolved: {
     [key: string]: unknown
   }
@@ -15102,10 +15096,10 @@ export type V2SessionBashStopData = {
   }
   path: {
     sessionID: string
-    callID: string
+    commandID: string
   }
   query?: never
-  url: "/api/session/{sessionID}/command/{callID}/stop"
+  url: "/api/session/{sessionID}/command/{commandID}/stop"
 }
 
 export type V2SessionBashStopErrors = {

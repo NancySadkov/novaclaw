@@ -1227,7 +1227,7 @@ const SessionObservationHandler = handlerLayer(
           "session.bash.stop",
           Effect.fn(function* (ctx) {
             const reason = ctx.payload.reason.trim() || "The user stopped this command."
-            const stopped = yield* execution.stopCommand(ctx.params.sessionID, ctx.params.callID, reason)
+            const stopped = yield* execution.stopCommand(ctx.params.sessionID, ctx.params.commandID, reason)
             if (stopped) {
               const timestamp = yield* DateTime.now
               yield* events.publish(SessionEvent.Synthetic, {

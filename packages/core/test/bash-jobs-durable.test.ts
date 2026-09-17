@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Duration, Effect, Layer, Stream } from "effect"
+import { Duration, Effect, Exit, Layer, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -130,28 +130,44 @@ describe("BashJobs durability", () => {
     }),
   )
 
-  itHanging.effect("a tool-call stop interrupts only the matching command and records its reason", () =>
+  itHanging.effect("a command stop resolves either the job id or the tool-call id, and records its reason", () =>
     Effect.gen(function* () {
       const jobs = yield* BashJobs.Service
       const { db } = yield* Database.Service
-      yield* jobs.start({
+      const byJob = yield* jobs.start({
         owner: "ses_command_stop",
-        callID: "call_target",
+        callID: "call_by_job",
         command,
         commandText: "long command",
         maxOutputBytes: 4096,
       })
-      expect(yield* jobs.stopCall("call_other", "ses_command_stop", "wrong one")).toBeUndefined()
-      const stopped = yield* jobs.stopCall("call_target", "ses_command_stop", "No longer needed")
-      expect(stopped).toMatchObject({
+      const byCall = yield* jobs.start({
+        owner: "ses_command_stop",
+        callID: "call_by_call",
+        command,
+        commandText: "another command",
+        maxOutputBytes: 4096,
+      })
+      // An owner can never stop another session's job: the lookup fails instead of stopping it.
+      expect(Exit.isFailure(yield* Effect.exit(jobs.stop(byJob.id, "ses_other_owner", "wrong one")))).toBe(true)
+      // The command list shows job ids; an in-flight transcript card only knows its call id. Both
+      // name the same running job and must both reach it.
+      const stoppedByJob = yield* jobs.stop(byJob.id, "ses_command_stop", "No longer needed")
+      expect(stoppedByJob).toMatchObject({
         running: false,
         interrupted: true,
         interruptionReason: "No longer needed",
       })
-      const row = (yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)).find(
-        (item) => item.owner === "ses_command_stop",
-      )
-      expect(row?.status).toBe("interrupted")
+      const stoppedByCall = yield* jobs.stop("call_by_call", "ses_command_stop", "Provider is down")
+      expect(stoppedByCall).toMatchObject({
+        running: false,
+        interrupted: true,
+        interruptionReason: "Provider is down",
+      })
+      const rows = yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)
+      expect(
+        rows.filter((item) => item.owner === "ses_command_stop").every((item) => item.status === "interrupted"),
+      ).toBe(true)
     }),
   )
 

@@ -37,11 +37,14 @@ export const Interrupt = Schema.Struct({
   type: Schema.Literal("interrupt"),
 }).annotate({ identifier: "SessionWorker.Interrupt" })
 
-/** Host instruction for one running tool process. Unlike Interrupt, this keeps the worker alive. */
+/** Host instruction for one running tool process. Unlike Interrupt, this keeps the worker alive.
+ *  `commandID` is either the durable job id (`job_…`) the session command list shows or the
+ *  tool-call id of a command still in flight in the transcript; the worker resolves both to the
+ *  same live job. */
 export const StopCommand = Schema.Struct({
   ...Identity,
   type: Schema.Literal("stop-command"),
-  callID: Schema.String,
+  commandID: Schema.String,
   reason: Schema.String,
 }).annotate({ identifier: "SessionWorker.StopCommand" })
 

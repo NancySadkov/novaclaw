@@ -652,7 +652,7 @@ export const layer = Layer.effect(
       adopt: coordinator.adopt,
       wake: coordinator.wake,
       interrupt: (sessionID) => interruptBranch(sessionID, new Set()),
-      stopCommand: (sessionID, callID, reason) =>
+      stopCommand: (sessionID, commandID, reason) =>
         Effect.sync(() => {
           const current = liveWorkers.get(sessionID)
           if (!current) return false
@@ -662,7 +662,7 @@ export const layer = Layer.effect(
             attemptID: current.lease.attemptID,
             generation: current.lease.generation,
             type: "stop-command",
-            callID,
+            commandID,
             reason,
           })
           return true

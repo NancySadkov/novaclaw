@@ -10,7 +10,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { sessionHref } from "@/utils/session-route"
-import { stopSessionExecution } from "@/utils/session-execution-api"
+import { stopSessionCommand, stopSessionExecution } from "@/utils/session-execution-api"
 
 function ActivityButton(props: {
   action: string
@@ -67,30 +67,30 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
   const href = (sessionID: string) => sessionHref(server.key, sessionID)
 
   const openWorkers = () => {
-    const rows = workers()
-    if (rows.length === 0) return
+    if (workers().length === 0) return
     void dialog.showScoped(() => (
       <WorkerListDialog
         title={language.t("session.activity.workers.title")}
-        workers={rows}
+        // The accessor, not a snapshot: a worker that settles while the dialog is open drops out.
+        workers={workers()}
         href={href}
-        onStop={(worker, reason) => {
+        onStop={async (worker, reason) => {
           const current = server.current
-          return current
-            ? stopSessionExecution(current.http, worker.id, sdk().directory, reason)
-            : Promise.reject(new Error("No instance is connected"))
+          if (!current) throw new Error("No instance is connected")
+          await stopSessionExecution(current.http, worker.id, sdk().directory, reason)
+          await workerQuery.refetch()
         }}
       />
     ))
   }
 
   const openShells = () => {
-    const rows = shells()
-    if (rows.length === 0) return
+    if (shells().length === 0) return
     void dialog.showScoped(() => (
       <ShellListDialog
         title={language.t("session.activity.shells.title")}
-        shells={rows}
+        // The accessor, not a snapshot: a command that finishes while the dialog is open drops out.
+        shells={shells()}
         href={href}
         owner={(sessionID) =>
           sync().session.get(sessionID)?.title?.trim() ||
@@ -98,6 +98,12 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
             sessionID === props.sessionID ? "session.activity.shells.thisChat" : "session.activity.shells.workerChat",
           )
         }
+        onStop={async (job, reason) => {
+          const current = server.current
+          if (!current) throw new Error("No instance is connected")
+          await stopSessionCommand(current.http, job.sessionID, sdk().directory, job.id, reason)
+          await shellQuery.refetch()
+        }}
       />
     ))
   }

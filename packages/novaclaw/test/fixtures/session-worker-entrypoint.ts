@@ -20,10 +20,10 @@ await SessionWorkerEntrypoint.run({
     }
     if (mode === "command-stop") {
       await new Promise<void>((resolve, reject) => {
-        const unregister = context.registerCommandStop(async (callID, reason) => {
+        const unregister = context.registerCommandStop(async (commandID, reason) => {
           unregister()
-          if (callID !== "call_fixture" || reason !== "Enough output") {
-            reject(new Error(`unexpected command stop: ${callID} / ${reason}`))
+          if (commandID !== "job_fixture" || reason !== "Enough output") {
+            reject(new Error(`unexpected command stop: ${commandID} / ${reason}`))
             return
           }
           resolve()

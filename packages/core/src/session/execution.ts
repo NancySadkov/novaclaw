@@ -17,8 +17,9 @@ export interface Interface {
   readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /** Interrupt active work owned by this process. Idle interruption is a no-op. */
   readonly interrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
-  /** Stop one live command while leaving its owning session drain running. */
-  readonly stopCommand: (sessionID: SessionSchema.ID, callID: string, reason: string) => Effect.Effect<boolean>
+  /** Stop one live command, addressed by the job id the session command list shows (or the
+   *  tool-call id of a command still in flight), while leaving its owning session drain running. */
+  readonly stopCommand: (sessionID: SessionSchema.ID, commandID: string, reason: string) => Effect.Effect<boolean>
 }
 
 /** Routes execution from a Session ID to the runner owned by that Session's Location. */

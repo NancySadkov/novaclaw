@@ -1296,21 +1296,21 @@ class ApiV2SessionBash extends NovaClawApiClient {
   /**
    * Stop a running session command
    *
-   * Stop one running command without interrupting the agent that launched it.
+   * Stop one running command without interrupting the agent that launched it. `commandID` is the durable job id the session command list shows, or the tool-call id of a command still in flight in the transcript.
    */
   public stop<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      callID: string
+      commandID: string
       reason: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const path = { sessionID: parameters?.["sessionID"], callID: parameters?.["callID"] }
+    const path = { sessionID: parameters?.["sessionID"], commandID: parameters?.["commandID"] }
     const body = { reason: parameters?.["reason"] }
     return (options?.client ?? this.client).post<T.V2SessionBashStopResponses, T.V2SessionBashStopErrors, ThrowOnError>(
       {
-        url: "/api/session/{sessionID}/command/{callID}/stop",
+        url: "/api/session/{sessionID}/command/{commandID}/stop",
         ...options,
         path,
         body,

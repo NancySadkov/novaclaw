@@ -106,9 +106,11 @@ export interface Interface {
   /** Block up to timeoutMs for completion, then report (running or done). */
   readonly wait: (id: string, owner: string, timeoutMs: number) => Effect.Effect<Snapshot, JobNotFoundError>
   readonly status: (id: string, owner: string) => Effect.Effect<Snapshot, JobNotFoundError>
-  readonly stop: (id: string, owner: string) => Effect.Effect<Snapshot, JobNotFoundError>
-  /** Stop one live tool call's OS process without interrupting its owning agent. */
-  readonly stopCall: (callID: string, owner: string, reason: string) => Effect.Effect<Snapshot | undefined>
+  /** Stop one live command addressed by EITHER its durable job id or the tool-call id that launched
+   *  it. Both name the same running job — the command list shows job ids, an in-flight transcript
+   *  card only knows its call id — so the worker resolves the identifier it is handed. `reason`,
+   *  when given, is recorded on the job so the running agent learns why its command vanished. */
+  readonly stop: (identifier: string, owner: string, reason?: string) => Effect.Effect<Snapshot, JobNotFoundError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/BashJobs") {}
@@ -306,12 +308,16 @@ export const layer = Layer.effect(
       return snapshot(job)
     })
 
-    const stop: Interface["stop"] = Effect.fn("BashJobs.stop")(function* (id, owner) {
-      const job = jobs.get(id)
+    const stop: Interface["stop"] = Effect.fn("BashJobs.stop")(function* (identifier, owner, reason) {
+      const direct = jobs.get(identifier)
+      const job =
+        direct?.owner === owner
+          ? direct
+          : [...jobs.values()].find((candidate) => candidate.owner === owner && candidate.callID === identifier)
       // Not in memory → nothing is running to stop; report the durable status.
-      if (!job || job.owner !== owner) return rowSnapshot(yield* findRow(id, owner))
+      if (!job) return rowSnapshot(yield* findRow(identifier, owner))
       if (job.doneAt === undefined && job.fiber) {
-        job.interruptionReason = "The command was stopped."
+        job.interruptionReason = reason?.trim() || "The command was stopped."
         yield* Fiber.interrupt(job.fiber)
       }
       // The ensuring above stamps doneAt + settles the deferred.
@@ -319,18 +325,7 @@ export const layer = Layer.effect(
       return snapshot(job)
     })
 
-    const stopCall: Interface["stopCall"] = Effect.fn("BashJobs.stopCall")(function* (callID, owner, reason) {
-      const job = [...jobs.values()].find(
-        (candidate) => candidate.owner === owner && candidate.callID === callID && candidate.doneAt === undefined,
-      )
-      if (!job) return
-      job.interruptionReason = reason.trim() || "The user stopped this command."
-      if (job.fiber) yield* Fiber.interrupt(job.fiber)
-      yield* Deferred.await(job.done)
-      return snapshot(job)
-    })
-
-    return Service.of({ start, wait, status, stop, stopCall })
+    return Service.of({ start, wait, status, stop })
   }),
 )
 

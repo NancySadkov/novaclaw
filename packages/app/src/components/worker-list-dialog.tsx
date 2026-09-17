@@ -2,12 +2,14 @@ import { A } from "@solidjs/router"
 import { createSignal, For, Show } from "solid-js"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { RunningFor } from "@/components/running-for"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@/utils/toast"
 
 export interface WorkerListItem {
   readonly id: string
   readonly title?: string
+  readonly startedAt?: number
 }
 
 /** One worker-list surface shared by All Officers and the chat-local activity shortcut. */
@@ -30,7 +32,10 @@ export function WorkerListDialog(props: {
     try {
       await props.onStop(worker, why)
       showToast({ variant: "success", title: language.t("contacts.workers.stopped") })
-      dialog.close()
+      // The worker leaves the list when its execution settles; the dialog stays open so another
+      // one can be stopped without reopening it.
+      setStopping(undefined)
+      setReason("")
     } catch (error) {
       showToast({
         variant: "error",
@@ -48,6 +53,11 @@ export function WorkerListDialog(props: {
         <DialogTitle>{props.title}</DialogTitle>
       </DialogHeader>
       <DialogBody class="max-h-[70vh] overflow-y-auto p-2">
+        <Show when={props.workers.length === 0}>
+          <p class="px-3 py-6 text-center text-xs text-v2-text-text-faint">
+            {language.t("session.activity.workers.empty")}
+          </p>
+        </Show>
         <For each={props.workers}>
           {(worker, index) => (
             <div class="rounded-md px-3 py-2 hover:bg-v2-background-bg-layer-02">
@@ -60,6 +70,8 @@ export function WorkerListDialog(props: {
                     {worker.title?.trim() || language.t("contacts.workers.untitled", { number: String(index() + 1) })}
                   </span>
                   <span class="block truncate text-[11px] text-v2-text-text-faint">
+                    <RunningFor startedAt={worker.startedAt} />
+                    <Show when={typeof worker.startedAt === "number"}> · </Show>
                     {language.t("contacts.workers.open")}
                   </span>
                 </A>

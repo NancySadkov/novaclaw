@@ -53,15 +53,19 @@ export async function stopSessionExecution(
   })
 }
 
+/**
+ * Stop one running command without interrupting its agent. `commandID` is the durable job id the
+ * session command list shows, or the tool-call id of a command still in flight in the transcript.
+ */
 export async function stopSessionCommand(
   server: ServerConnection.HttpBase,
   sessionID: string,
   directory: string,
-  callID: string,
+  commandID: string,
   reason: string,
 ) {
   await instanceFetch(server, {
-    route: `api/session/${encodeURIComponent(sessionID)}/command/${encodeURIComponent(callID)}/stop`,
+    route: `api/session/${encodeURIComponent(sessionID)}/command/${encodeURIComponent(commandID)}/stop`,
     method: "POST",
     directory,
     directoryVia: "header",

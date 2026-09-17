@@ -8,9 +8,13 @@ import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 await SessionWorkerEntrypoint.run({
   drain: async (context) => {
     const runtime = ManagedRuntime.make(SessionWorkerRunnerLayer.make(context.capabilities, context.location))
-    const unregisterCommandStop = context.registerCommandStop((callID, reason) =>
+    const unregisterCommandStop = context.registerCommandStop((commandID, reason) =>
       runtime.runPromise(
-        BashJobs.Service.use((jobs) => jobs.stopCall(callID, context.lease.sessionID, reason)).pipe(Effect.asVoid),
+        BashJobs.Service.use((jobs) => jobs.stop(commandID, context.lease.sessionID, reason)).pipe(
+          // A command that already finished (or was never there) is a no-op, not a protocol failure.
+          Effect.catchTag("BashJobs.NotFoundError", () => Effect.void),
+          Effect.asVoid,
+        ),
       ),
     )
     try {
