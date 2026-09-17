@@ -91,6 +91,34 @@ describe("recoverToolCallsFromText — bare JSON", () => {
       { name: "read", arguments: '{"filePath":"a"}' },
       { name: "list", arguments: '{"path":"/"}' },
     ]))
+  // Observed live 2026-09-17 (stealth/union-alpha via OpenRouter): the model emitted the SAME call
+  // twice on separate lines, the blob stopped being one JSON value, and the turn ended `finish="stop"`
+  // with the call stranded in text. The repeat must resolve to ONE call; different calls must survive.
+  test("identical call repeated on separate lines collapses to one", () =>
+    expect(
+      recoverToolCallsFromText(
+        '{"name":"read","arguments":{"path":"AGENTS.md","limit":420}}\n\n\n{"name":"read","arguments":{"path":"AGENTS.md","limit":420}}',
+        TOOLS,
+      ),
+    ).toEqual([{ name: "read", arguments: '{"path":"AGENTS.md","limit":420}' }]))
+  test("two different calls back to back are both kept", () =>
+    expect(
+      recoverToolCallsFromText(
+        '{"name":"read","arguments":{"path":"a"}}\n{"name":"read","arguments":{"path":"b"}}',
+        TOOLS,
+      ),
+    ).toEqual([
+      { name: "read", arguments: '{"path":"a"}' },
+      { name: "read", arguments: '{"path":"b"}' },
+    ]))
+  test("a brace inside an argument string does not close the value early", () =>
+    expect(
+      recoverToolCallsFromText('{"name":"bash","arguments":{"command":"echo } done"}}', TOOLS),
+    ).toEqual([{ name: "bash", arguments: '{"command":"echo } done"}' }]))
+  test("prose after the call is ignored, not misread", () =>
+    expect(
+      recoverToolCallsFromText('{"name":"read","arguments":{"path":"a"}}\n\nLet me continue.', TOOLS),
+    ).toEqual([{ name: "read", arguments: '{"path":"a"}' }]))
 })
 
 describe("recoverToolCallsFromText — XML-ish", () => {

@@ -148,18 +148,75 @@ function recoverHermes(text: string, names: ReadonlyArray<string>): RecoveredCal
   return out
 }
 
-// bare JSON object / array carrying `"name"` as the entire message content.
+// bare JSON object / array carrying `"name"` as the entire message content, OR a run of several of
+// them emitted back to back. Observed live 2026-09-17 from `openrouter-ai-api-v1/stealth/union-alpha`:
+// the model dumped the SAME call twice on separate lines, and the single-value parse failed on the
+// concatenation — the turn ended `finish="stop"` while the call sat in text, so the agent narrated
+// and stalled. `dedupeCalls` collapses the exact repeat; different calls (read a, read b) survive.
 function recoverBareJson(text: string, names: ReadonlyArray<string>): RecoveredCall[] {
   const trimmed = text.trim()
   if (!(trimmed.startsWith("{") || trimmed.startsWith("[")) || !trimmed.includes('"name"')) return []
-  const parsed = tolerantJson(trimmed)
-  const items = Array.isArray(parsed) ? parsed : isRecord(parsed) ? [parsed] : []
   const out: RecoveredCall[] = []
-  for (const item of items) {
-    if (!isRecord(item) || typeof item["name"] !== "string") continue
-    const name = resolveToolName(item["name"], names)
-    if (!name) continue
-    out.push({ name, arguments: normalizeArgs(item) })
+  for (const parsed of scanTopLevelJson(trimmed)) {
+    const items = Array.isArray(parsed) ? parsed : isRecord(parsed) ? [parsed] : []
+    for (const item of items) {
+      if (!isRecord(item) || typeof item["name"] !== "string") continue
+      const name = resolveToolName(item["name"], names)
+      if (!name) continue
+      out.push({ name, arguments: normalizeArgs(item) })
+    }
+  }
+  return out
+}
+
+/**
+ * Every top-level JSON value in `text`, in order, parsed tolerantly.
+ *
+ * A model that emits its call twice makes the whole blob invalid JSON, which is why one `JSON.parse`
+ * of the blob cannot see either copy. This walks bracket-balanced slices instead, so a run of calls
+ * is read as a run. Skips whitespace and stray commas between values; stops at the first thing that
+ * is not a value (prose after a call ends the scan). Strings and escapes are respected, so a `}` in
+ * a command string does not close the object early.
+ */
+function scanTopLevelJson(text: string): unknown[] {
+  const out: unknown[] = []
+  let i = 0
+  while (i < text.length) {
+    while (i < text.length && /[\s,]/.test(text[i]!)) i++
+    const open = text[i]
+    if (open !== "{" && open !== "[") break
+    const close = open === "{" ? "}" : "]"
+    let depth = 0
+    let inString = false
+    let escaped = false
+    let end = i
+    for (; end < text.length; end++) {
+      const char = text[end]!
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === "\\") {
+        escaped = true
+        continue
+      }
+      if (char === '"') {
+        inString = !inString
+        continue
+      }
+      if (inString) continue
+      if (char === open) depth++
+      else if (char === close) {
+        depth--
+        if (depth === 0) {
+          end++
+          break
+        }
+      }
+    }
+    const parsed = tolerantJson(text.slice(i, end))
+    if (parsed !== undefined) out.push(parsed)
+    i = end
   }
   return out
 }
