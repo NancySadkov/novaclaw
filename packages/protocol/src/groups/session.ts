@@ -1195,6 +1195,13 @@ export const makeSessionGroups = <
           params: { sessionID: Session.ID },
           success: Schema.Struct({
             data: Schema.Struct({
+              /**
+               * The system prompt this session is running with — the stored context-epoch baseline.
+               * Regenerated whenever a prompt component changes, so it is CURRENT, not a capture of
+               * an older build. This is what an inspector should show. Absent only before the first
+               * turn (or when the session has no prompt at all).
+               */
+              baseline: Schema.String.pipe(Schema.optional),
               initial: Schema.String.pipe(Schema.optional),
               latest: Schema.String.pipe(Schema.optional),
             }),
@@ -1205,9 +1212,9 @@ export const makeSessionGroups = <
           .annotateMerge(
             OpenApi.annotations({
               identifier: "v2.session.promptSource",
-              summary: "Read the captured provider prompt",
+              summary: "Read the session's system prompt and captured requests",
               description:
-                "The request captured at dispatch, for debugging. `initial` is the first request of the session (the init prompt, ending at the first user message); `latest` is the most recent. Both are absent until the session has dispatched a turn.",
+                "`baseline` is the system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. `initial`/`latest` are the raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes. The captures are absent until the session has dispatched a turn.",
             }),
           ),
       )

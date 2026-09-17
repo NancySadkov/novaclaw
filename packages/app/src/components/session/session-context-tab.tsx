@@ -6,7 +6,6 @@ import { SessionPortability } from "@novaclaw/core/session/portability"
 import { createQuery } from "@tanstack/solid-query"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
-import { findLast } from "@novaclaw/core/util/array"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Markdown } from "@novaclaw/session-ui/markdown"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
@@ -124,23 +123,19 @@ export function SessionContextTab() {
     enabled: params.id !== undefined,
   }))
 
-  // The prompt the provider was actually sent, read out of the captured wire body (`role: "system"`).
-  // 🔴 The one `PromptManager` prompt is the epoch baseline, not a `system` session message, so the
-  // old session-message read shows nothing after this change. The captured body IS the wire request.
-  const wirePrompt = createMemo(() => {
-    const body = promptSource.data?.latest ?? promptSource.data?.initial
-    return body === undefined ? undefined : wireSystemPrompt(body)
-  })
-  // Fallback for a protocol/capture with no OpenAI-shaped system message, and for old sessions whose
-  // context updates were recorded as `system` messages.
+  // 🔴 THE PROMPT THIS SESSION RUNS WITH — the stored epoch baseline, which the runner regenerates
+  // whenever a prompt component changes. It is the only source that is CURRENT by construction.
+  //
+  // ⚠️ The fallbacks are deliberate and narrow: a captured request's system message (the exact wire
+  // bytes, for a session whose baseline predates this endpoint), and otherwise nothing. It must NEVER
+  // read a transcript `system` message: those were written by the retired composition and survive in
+  // old sessions, so they display an OLD prompt as if it were the live one.
   const systemPrompt = createMemo(() => {
-    const wire = wirePrompt()
-    if (wire !== undefined) return wire
-    const msg = findLast(messages(), (m) => m.type === "system")
-    const system = msg?.type === "system" ? msg.text : undefined
-    const trimmed = system?.trim()
-    if (!trimmed) return
-    return trimmed
+    const baseline = promptSource.data?.baseline?.trim()
+    if (baseline) return baseline
+    const body = promptSource.data?.latest ?? promptSource.data?.initial
+    const wire = body === undefined ? undefined : wireSystemPrompt(body)
+    return wire
   })
 
   const rosterCtx = createMemo(() => {

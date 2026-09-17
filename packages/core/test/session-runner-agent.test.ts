@@ -13,15 +13,19 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  *
  * The old assertion was a five-part system array (role-neutral baseline, officer identity, the
  * agent's own system, project scope, durable context). `PromptManager` retires that: every officer
- * turn now carries exactly ONE `role: "system"` message, and it is frozen for the life of the
- * context epoch — regenerated only at a new session and after a compaction.
+ * turn now carries exactly ONE `role: "system"` message.
  *
- * The second half is the claim that would silently rot otherwise: a mid-session job-brief edit must
- * NOT change the prompt, because a casual turn may never rebuild it.
+ * Two claims, and they are the two halves of the cadence:
+ *   · a CHANGED component (the job brief) regenerates the prompt on the next turn — it must not wait
+ *     for a compaction, or the session sends stale text and every inspector shows it;
+ *   · an UNCHANGED component leaves it byte-identical, because `prepareTurn` only forces a replace
+ *     when the rendered prompt actually differs, so a casual turn keeps the server's prefix cache.
  */
 describe("SessionRunnerLLM — the one system prompt", () => {
-  test("an officer's identity and job instructions are one system message, frozen for the epoch", async () => {
-    const harness = makeRunnerHarness({ turns: [completeTurn("ordinary", "First"), completeTurn("second", "Second")] })
+  test("a component change regenerates the prompt next turn; no change reuses it byte-for-byte", async () => {
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("ordinary", "First"), completeTurn("second", "Second"), completeTurn("third", "Third")],
+    })
 
     await drive(
       harness,
@@ -47,20 +51,24 @@ describe("SessionRunnerLLM — the one system prompt", () => {
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
         yield* session.resume(HARNESS_SESSION)
 
-        // A mid-session edit to the brief. The epoch prompt must not move for it.
+        // A component changes (the brief). The next turn MUST carry the new text.
         yield* agents.transform((editor) =>
           editor.update(AgentV2.ID.make("reviewer"), (agent) => {
-            agent.system = "A DIFFERENT brief that must not reach this epoch."
+            agent.system = "A DIFFERENT brief that the next turn must carry."
           }),
         )
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
         yield* session.resume(HARNESS_SESSION)
+
+        // Nothing changes. The prompt must be byte-identical to the previous turn's.
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
       }),
-      "claim — the one system prompt carries identity and brief, and a casual turn cannot change it",
+      "claim — a changed component regenerates the prompt; an unchanged turn reuses it",
     )
 
     const systems = harness.requests.map((request) => (request.system ?? []).map((part) => part.text))
-    expect(systems.length).toBeGreaterThanOrEqual(2)
+    expect(systems.length).toBeGreaterThanOrEqual(3)
     for (const system of systems) {
       // ONE monolithic system message, never a part array.
       expect(system).toHaveLength(1)
@@ -73,8 +81,13 @@ describe("SessionRunnerLLM — the one system prompt", () => {
     // The identity block that duplicated the brief is gone.
     expect(first).not.toContain("personality and standing instructions")
 
-    const last = systems.at(-1)![0]!
-    expect(last).toContain("Review standing job brief.")
-    expect(last).not.toContain("A DIFFERENT brief")
+    const second = systems[1]![0]!
+    expect(second, "a changed job brief did not reach the next turn's prompt").toContain(
+      "A DIFFERENT brief that the next turn must carry.",
+    )
+    expect(second).not.toContain("Job Instructions: Review standing job brief.")
+
+    const third = systems[2]![0]!
+    expect(third, "an unchanged turn re-rendered the prompt instead of reusing the bytes").toBe(second)
   })
 })

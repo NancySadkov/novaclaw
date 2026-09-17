@@ -15057,6 +15057,7 @@ export type V2SessionPromptSourceResponses = {
    */
   200: {
     data: {
+      baseline?: string
       initial?: string
       latest?: string
     }
