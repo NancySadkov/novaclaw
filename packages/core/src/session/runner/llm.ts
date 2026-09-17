@@ -53,6 +53,7 @@ import { SessionMessage } from "../message"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { OldContext } from "../old-context"
+import { PromptCapture } from "../prompt-capture"
 import { SessionStore } from "../store"
 import { SessionTodo } from "../todo"
 import { SessionComponentRegistry } from "../component-registry"
@@ -2792,6 +2793,19 @@ export const layer = Layer.effect(
           RequestFootprint.measure({ system: request.system, messages: request.messages, tools: request.tools }),
         ),
       })
+      // The exact bytes the provider is about to receive, kept in the agent's scratch so the Work tab
+      // and the context view can export them. Best-effort by construction: `capture` swallows every
+      // error, so a debug artifact can never fail a turn.
+      if (scratchFolder !== undefined) {
+        const capturedText = PromptCapture.render({
+          sessionID: session.id,
+          at: new Date(),
+          system: request.system,
+          messages: request.messages,
+          tools: request.tools,
+        })
+        yield* Effect.promise(() => PromptCapture.capture({ scratchFolder, sessionID: session.id, text: capturedText }))
+      }
       const startSnapshot = ShortChat.enabled(config.shortChat)
         ? undefined
         : yield* Effect.gen(function* () {

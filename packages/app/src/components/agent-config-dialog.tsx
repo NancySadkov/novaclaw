@@ -13,6 +13,7 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
+import { downloadPlainText, sessionExportFilename } from "@/components/session/session-context-export"
 import { listSessions, startChat } from "@/apps/agent-list"
 import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
@@ -560,6 +561,31 @@ export function AgentConfigScreen(props: {
   const [createdSessionID, setCreatedSessionID] = createSignal<string | undefined>()
   const officerSessionID = () =>
     createdSessionID() ?? (props.agentID === undefined ? undefined : chatFor(sessionRows() ?? [], props.agentID)?.id)
+  // Export the officer's captured INIT prompt: the first request the runner sent for its chat, which
+  // ends at the first user message. Absent until that chat has dispatched a turn.
+  const exportOfficerPrompt = async () => {
+    const sessionID = officerSessionID()
+    const client = sdk()
+    if (sessionID === undefined || client === undefined) {
+      showToast({ variant: "default", title: language.t("context.export.promptEmpty") })
+      return
+    }
+    try {
+      const response = await client.session.promptSource({ sessionID })
+      const initial = response.data?.data?.initial
+      if (initial === undefined) {
+        showToast({ variant: "default", title: language.t("context.export.promptEmpty") })
+        return
+      }
+      downloadPlainText(sessionExportFilename(name(), "prompt"), initial)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
   const ensureOfficerSession = async () => {
     const current = officerSessionID()
     if (current) return current
@@ -1509,6 +1535,17 @@ export function AgentConfigScreen(props: {
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.work")}
               </h3>
+              <div class="mt-2">
+                <button
+                  type="button"
+                  class="rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs text-v2-text-text-base disabled:opacity-40"
+                  disabled={officerSessionID() === undefined || sdk() === undefined}
+                  onClick={() => void exportOfficerPrompt()}
+                >
+                  {language.t("context.export.prompt")}
+                </button>
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.exportPrompt.hint")}</p>
+              </div>
               {/* 🔴 The three standing WORK choices, moved off the composer 2026-08-21 (owner: the
                 Chat/Agent drop-down, Strict and permissions "should be part of the agent too"). They
                 describe the ROLE: a bookkeeper that needs Analyze mode needs it every time you talk to

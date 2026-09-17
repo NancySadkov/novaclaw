@@ -15128,6 +15128,46 @@ export type V2SessionBashStopResponses = {
 
 export type V2SessionBashStopResponse = V2SessionBashStopResponses[keyof V2SessionBashStopResponses]
 
+export type V2SessionPromptSourceData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/prompt-source"
+}
+
+export type V2SessionPromptSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionPromptSourceError = V2SessionPromptSourceErrors[keyof V2SessionPromptSourceErrors]
+
+export type V2SessionPromptSourceResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      initial?: string
+      latest?: string
+    }
+  }
+}
+
+export type V2SessionPromptSourceResponse = V2SessionPromptSourceResponses[keyof V2SessionPromptSourceResponses]
+
 export type V2SessionExecutionRetryData = {
   body?: never
   path: {

@@ -1175,6 +1175,27 @@ export const makeSessionGroups = <
           ),
       )
       .add(
+        HttpApiEndpoint.get("session.promptSource", "/api/session/:sessionID/prompt-source", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({
+            data: Schema.Struct({
+              initial: Schema.String.pipe(Schema.optional),
+              latest: Schema.String.pipe(Schema.optional),
+            }),
+          }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.promptSource",
+              summary: "Read the captured provider prompt",
+              description:
+                "The request captured at dispatch, for debugging. `initial` is the first request of the session (the init prompt, ending at the first user message); `latest` is the most recent. Both are absent until the session has dispatched a turn.",
+            }),
+          ),
+      )
+      .add(
         HttpApiEndpoint.post("session.execution.retry", "/api/session/:sessionID/execution/retry", {
           params: { sessionID: Session.ID },
           success: HttpApiSchema.NoContent,

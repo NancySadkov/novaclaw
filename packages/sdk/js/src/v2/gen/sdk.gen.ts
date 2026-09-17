@@ -2282,6 +2282,29 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Read the captured provider prompt
+   *
+   * The request captured at dispatch, for debugging. `initial` is the first request of the session (the init prompt, ending at the first user message); `latest` is the most recent. Both are absent until the session has dispatched a turn.
+   */
+  public promptSource<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<
+      T.V2SessionPromptSourceResponses,
+      T.V2SessionPromptSourceErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/prompt-source",
+      ...options,
+      path,
+    })
+  }
+
+  /**
    * Get session message
    *
    * Retrieve one projected message owned by the Session.

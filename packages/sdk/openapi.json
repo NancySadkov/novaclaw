@@ -15942,6 +15942,90 @@
         ]
       }
     },
+    "/api/session/{sessionID}/prompt-source": {
+      "get": {
+        "tags": ["session observation"],
+        "operationId": "v2.session.promptSource",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "initial": {
+                          "type": "string"
+                        },
+                        "latest": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The request captured at dispatch, for debugging. `initial` is the first request of the session (the init prompt, ending at the first user message); `latest` is the most recent. Both are absent until the session has dispatched a turn.",
+        "summary": "Read the captured provider prompt",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.promptSource({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/execution/retry": {
       "post": {
         "tags": ["session observation"],

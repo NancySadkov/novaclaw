@@ -39,6 +39,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
+import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -1238,6 +1239,30 @@ const SessionObservationHandler = handlerLayer(
               })
             }
             return HttpApiSchema.NoContent.make()
+          }),
+        )
+        .handle(
+          "session.promptSource",
+          Effect.fn(function* (ctx) {
+            const target = yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
+            // A session with no agent (an unassigned root) has no scratch folder to have captured into.
+            if (!target.agent) return { data: {} }
+            const data = yield* Effect.promise(() =>
+              PromptCapture.read({
+                scratchFolder: Scratch.forAgent(String(target.agent)),
+                sessionID: ctx.params.sessionID,
+              }),
+            )
+            return { data }
           }),
         )
         .handle(

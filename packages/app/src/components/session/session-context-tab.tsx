@@ -1,5 +1,6 @@
 import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
+import { createQuery } from "@tanstack/solid-query"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { findLast } from "@novaclaw/core/util/array"
@@ -198,8 +199,35 @@ export function SessionContextTab() {
     )
   }
 
+  // The exact request the runner captured at dispatch (server-side; the composed prompt is not in the
+  // client). `initial` is the session's first request, `latest` the most recent.
+  const promptSource = createQuery(() => ({
+    queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
+    queryFn: async () => {
+      const id = params.id
+      if (!id) return {}
+      const response = await sdk().client.v2.session.promptSource({ sessionID: id })
+      return response.data?.data ?? {}
+    },
+    enabled: params.id !== undefined,
+  }))
+
+  const exportPrompt = () => {
+    const raw = promptSource.data?.latest ?? promptSource.data?.initial
+    if (!raw) {
+      showToast({ variant: "error", title: language.t("context.export.promptEmpty") })
+      return
+    }
+    downloadPlainText(sessionExportFilename(officerName(), "prompt"), raw)
+  }
+
   const exportTranscript = () => {
-    downloadPlainText(sessionExportFilename(officerName(), "transcript"), serializeSessionTranscript(messages()))
+    const raw = promptSource.data?.latest
+    const body = serializeSessionTranscript(messages())
+    const contents = raw
+      ? `===== RAW PROVIDER PROMPT (latest request) =====\n\n${raw}\n\n===== TRANSCRIPT =====\n\n${body}`
+      : body
+    downloadPlainText(sessionExportFilename(officerName(), "transcript"), contents)
   }
 
   let scroll: HTMLDivElement | undefined
@@ -481,9 +509,14 @@ export function SessionContextTab() {
         </Show>
 
         <div>
-          <ButtonV2 type="button" variant="gold" icon="download" onClick={exportTranscript}>
-            {language.t("context.export.transcript")}
-          </ButtonV2>
+          <div class="flex flex-wrap gap-2">
+            <ButtonV2 type="button" variant="gold" icon="download" onClick={exportPrompt}>
+              {language.t("context.export.prompt")}
+            </ButtonV2>
+            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportTranscript}>
+              {language.t("context.export.transcript")}
+            </ButtonV2>
+          </div>
         </div>
       </div>
     </ScrollView>

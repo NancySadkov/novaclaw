@@ -676,6 +676,9 @@ export const dict = {
   "context.meta.created": "Created",
   "context.meta.active": "Active",
   "context.export.transcript": "Export Transcript",
+  "context.export.prompt": "Export Prompt",
+  "context.export.promptEmpty": "No captured prompt yet — send this officer a message first",
+  "agentConfig.exportPrompt.hint": "Downloads the first request the harness sent for this officer's chat.",
 
   "context.systemPrompt.title": "System Prompt",
   "context.rawMessages.title": "Raw messages",
