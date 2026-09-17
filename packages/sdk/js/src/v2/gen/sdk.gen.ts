@@ -2281,9 +2281,9 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
-   * Read the captured provider prompt
+   * Read the session's system prompt and captured requests
    *
-   * The request captured at dispatch, for debugging. `initial` is the first request of the session (the init prompt, ending at the first user message); `latest` is the most recent. Both are absent until the session has dispatched a turn.
+   * `baseline` is the system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. `initial`/`latest` are the raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes. The captures are absent until the session has dispatched a turn.
    */
   public promptSource<ThrowOnError extends boolean = false>(
     parameters: {

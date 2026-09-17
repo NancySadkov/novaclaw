@@ -60,8 +60,19 @@ export function prepare(
     readonly snapshot: SystemContext.Snapshot
   }) => Effect.Effect<void>,
   expectPresence?: ReadonlyArray<SourcePresence>,
+  /**
+   * Regenerate the baseline NOW, even though no compaction ran.
+   *
+   * 🔴 Owner, 2026-09-17: *"invalidate and regenerate the data when any of the prompt components
+   * change."* The one prompt is the baseline, so a changed input (job instructions, roster, memos,
+   * project, goal) must rebuild it rather than wait for the next compaction — otherwise the session
+   * keeps SENDING stale text and every inspector keeps SHOWING it. It is set only when the rendered
+   * prompt actually differs, so a casual turn (no component change) still reuses the bytes and keeps
+   * the server's prefix cache.
+   */
+  forceReplace = false,
 ): Effect.Effect<Prepared, SystemContext.InitializationBlocked | ContextSnapshotDecodeError> {
-  return prepareOnce(db, events, context, sessionID, commitUpdate, expectPresence).pipe(
+  return prepareOnce(db, events, context, sessionID, commitUpdate, expectPresence, forceReplace).pipe(
     Effect.withSpan("SessionContextEpoch.prepare"),
   )
 }
@@ -76,6 +87,7 @@ const prepareOnce = Effect.fnUntraced(function* (
     readonly snapshot: SystemContext.Snapshot
   }) => Effect.Effect<void>,
   expectPresence?: ReadonlyArray<SourcePresence>,
+  forceReplace = false,
 ) {
   const [value, stored, compaction] = yield* Effect.all(
     [context, find(db, sessionID), SessionHistory.latestCompaction(db, sessionID)],
@@ -95,7 +107,7 @@ const prepareOnce = Effect.fnUntraced(function* (
   // does not describe the sources any more — a notice cannot edit a system prompt, so rebuild.
   const presenceChanged = (expectPresence ?? []).some(({ key, present }) => (snapshot[key] !== undefined) !== present)
   const result =
-    replacementSeq || presenceChanged
+    replacementSeq || presenceChanged || forceReplace
       ? yield* SystemContext.replace(value, snapshot)
       : yield* SystemContext.reconcile(value, snapshot)
   if (result._tag === "Unchanged" || result._tag === "ReplacementBlocked") {
@@ -143,6 +155,22 @@ const find = Effect.fn("SessionContextEpoch.find")(function* (db: DatabaseServic
     .where(eq(SessionContextEpochTable.session_id, sessionID))
     .get()
     .pipe(Effect.orDie)
+})
+
+/**
+ * The prompt this session is currently running with — the stored epoch baseline, or `undefined`
+ * before the first turn.
+ *
+ * This is the ONE thing a prompt inspector should read. It is regenerated whenever a component
+ * changes (`prepare`'s `forceReplace`), so what it returns is what the next request sends, rather
+ * than a captured or synthesised message a previous version happened to leave in the transcript.
+ */
+export const baselineOf = Effect.fn("SessionContextEpoch.baselineOf")(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+) {
+  const row = yield* find(db, sessionID)
+  return row?.baseline
 })
 
 export const reset = Effect.fn("SessionContextEpoch.reset")(function* (

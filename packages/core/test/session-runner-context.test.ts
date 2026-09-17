@@ -13,13 +13,15 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  *
  * 🔴 The seven claims that used to live here pinned the old behaviour: a durable registry baseline
  * established once, with every later change admitted as a chronological `System` message. That
- * mechanism is retired — the prompt is one epoch source whose comparator is always equivalent, so a
- * casual turn reuses it verbatim and only a new session or a completed compaction regenerates it.
- * The harness's `systemBaseline`/`systemUnavailable` controls drove the retired registry source; they
- * no longer reach the prompt, which is what these claims now assert.
+ * mechanism is retired. The prompt is one epoch source, and `prepareTurn` compares the rendered text
+ * with the stored baseline: a changed PROMPT COMPONENT forces a replace, an unchanged one reuses the
+ * bytes. The harness's `systemBaseline`/`systemUnavailable` controls drove the retired registry
+ * source, which is NOT a prompt component any more — so changing them must not move the prompt. That
+ * is what this claim asserts (the component-change case has its own claim in
+ * `session-runner-agent.test.ts`).
  */
 describe("SessionRunnerLLM — the one prompt baseline", () => {
-  test("a world change under the session does NOT rewrite the prompt on a casual turn", async () => {
+  test("a retired ambient source changing does NOT rewrite the prompt on a casual turn", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
 
     await drive(

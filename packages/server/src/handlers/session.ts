@@ -40,6 +40,7 @@ import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
 import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
+import { SessionContextEpoch } from "@novaclaw/core/session/context-epoch"
 import { SessionPortability } from "@novaclaw/core/session/portability"
 
 const DefaultSessionsLimit = 50
@@ -1280,15 +1281,20 @@ const SessionObservationHandler = handlerLayer(
                 ),
               ),
             )
+            // The LIVE prompt: the stored epoch baseline, regenerated whenever a component changes.
+            // An inspector reads this rather than a captured request or a transcript `system` message,
+            // either of which can predate a prompt change and reads as the current prompt.
+            const { db } = yield* Database.Service
+            const baseline = yield* SessionContextEpoch.baselineOf(db, ctx.params.sessionID)
             // A session with no agent (an unassigned root) has no scratch folder to have captured into.
-            if (!target.agent) return { data: {} }
-            const data = yield* Effect.promise(() =>
+            if (!target.agent) return { data: baseline === undefined ? {} : { baseline } }
+            const captured = yield* Effect.promise(() =>
               PromptCapture.read({
                 scratchFolder: Scratch.forAgent(String(target.agent)),
                 sessionID: ctx.params.sessionID,
               }),
             )
-            return { data }
+            return { data: baseline === undefined ? captured : { ...captured, baseline } }
           }),
         )
         .handle(
