@@ -18,7 +18,6 @@ const AGENT = {
   id: "theron",
   name: "Theron",
   title: "Bookkeeper",
-  personality: "Precise and dry.",
   memory: "own" as const,
   mode: "primary" as const,
   hidden: false,

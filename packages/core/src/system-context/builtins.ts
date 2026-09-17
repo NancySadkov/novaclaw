@@ -4,7 +4,6 @@ import { makeLocationNode } from "../effect/app-node"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { Location } from "../location"
 import { SystemContext } from "./index"
-import { InstructionContext } from "../instruction-context"
 import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
@@ -155,9 +154,7 @@ const builtIns = Layer.effectDiscard(
   }),
 )
 
-export const layer = Layer.mergeAll(builtIns, InstructionContext.layer).pipe(
-  Layer.provideMerge(SystemContextRegistry.layer),
-)
+export const layer = builtIns.pipe(Layer.provideMerge(SystemContextRegistry.layer))
 
 export const locationLayer = layer
 
@@ -167,7 +164,6 @@ export const node = makeLocationNode({
   deps: [
     Location.node,
     SystemContextRegistry.node,
-    InstructionContext.node,
     FSUtil.node,
     Global.node,
     SettingsConfigStore.node,

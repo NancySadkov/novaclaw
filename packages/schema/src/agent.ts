@@ -36,7 +36,7 @@ export const Info = Schema.Struct({
    *  and may rename. */
   name: Schema.String.pipe(optional),
   title: Schema.String.pipe(optional),
-  personality: Schema.String.pipe(optional),
+
   /** Reporting line. Absent resolves to Nova; the runtime rejects self/cyclic lines. */
   superior: ID.pipe(optional),
   avatar: Schema.String.pipe(optional),
@@ -47,9 +47,6 @@ export const Info = Schema.Struct({
   /** Caption each shell/spawn tool call with a generated title (default on). Costs a model call per
    *  call, so it is opt-out for agents whose work is shell-heavy. Read by the status sampler. */
   toolLabels: Schema.Boolean.pipe(optional),
-  /** Load the working folder's ambient instructions (AGENTS.md) into this colleague's prompt.
-   *  OPT-IN: absent and `false` both load nothing. See `instruction-context.ts`. */
-  instructions: Schema.Boolean.pipe(optional),
   /** The model class this role expects (`smart` | `usual` | `fast` — never `special`, which the
    *  harness must not route to by itself). Warns when the bound model is beneath it; never refuses.
    *  Absent = no declared floor. */
@@ -98,6 +95,8 @@ export const Info = Schema.Struct({
     wallMinutes: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
+  /** The three roster entity kinds: a full officer `agent`, a pure `chat`, or the owning `human`. */
+  kind: Schema.Literals(["agent", "chat", "human"]).pipe(optional),
   /** Persistent operation defaults for the colleague's canonical root session. */
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(optional),
   goal: Schema.String.pipe(optional),

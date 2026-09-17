@@ -38,9 +38,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
    * harness-authored system prompt.
    */
   readonly shortChat?: boolean
-  /** Load the working folder's AGENTS.md. Opt-in per agent; only the Engineer declares it. */
-  readonly instructions?: boolean
-  readonly personality?: string
   readonly permissions?: ReadonlyArray<{
     readonly action: string
     readonly resource: string
@@ -63,9 +60,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "daedalus",
     name: "Daedalus",
     title: "Engineer",
-    // 🔴 The ONE seeded colleague whose job is code. `AGENTS.md` is exactly the file a project hands
-    // its engineers, so this role opts in; the others leave it off (owner, 2026-09-17 — opt-in).
-    instructions: true,
     brief:
       "You write, read and repair software. Work in small verified steps: read before " +
       "you edit, run what you changed, and say what you actually observed rather than what should be " +
@@ -159,14 +153,12 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             ...(officer.brief === undefined
               ? {}
               : { system: `${OfficerPrompt.DEFAULT_OFFICER_PROMPT}\n\n${officer.brief}` }),
-            ...(officer.personality === undefined ? {} : { personality: officer.personality }),
             description: `${officer.name}, ${officer.title}.`,
             // A chat stance carries no memory: recall is the other half of what makes a companion
             // turn slow, and `shortChat` already denies the tools that would use it.
             memory: officer.shortChat ? "none" : "own",
             mode: "primary",
             ...(officer.shortChat ? { shortChat: true } : {}),
-            ...(officer.instructions === undefined ? {} : { instructions: officer.instructions }),
             ...(officer.permissions === undefined ? {} : { permissions: officer.permissions }),
           }),
         ])

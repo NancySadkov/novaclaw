@@ -415,6 +415,9 @@ export const dict = {
   "prompt.posture.chat.description": "Fast local conversation; no project access or memory.",
   "prompt.posture.agent.title": "Agent",
   "prompt.posture.agent.description": "Recalls context and can work in this folder.",
+  "prompt.posture.human.title": "Human",
+  "prompt.posture.human.description":
+    "The instance's owner, as a first-class entity. No tools and no model-driven turns — the officers answer to this person.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",
@@ -2551,8 +2554,6 @@ export const dict = {
   "agentConfig.name": "Name",
   "agentConfig.jobTitle": "Job title",
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
-  "agentConfig.personality": "Personality and standing instructions",
-  "agentConfig.personalityPlaceholder": "How it should speak, what it should always do, what it must never do.",
   "agentConfig.portrait": "Portrait",
   "agentConfig.portraitHint":
     "Stored on this NovaClaw and shown to the model when it looks at its colleagues. PNG, JPEG, GIF or WebP, up to 5 MB.",
@@ -2652,11 +2653,6 @@ export const dict = {
   "agentConfig.computerUse.on": "On — this colleague can control the desktop, and asks before installing anything new",
   "agentConfig.computerUse.off":
     "Off — the tool is taken out of this colleague's reach entirely, not just refused when it tries",
-  "agentConfig.instructions": "Read this folder's AGENTS.md",
-  "agentConfig.instructions.on":
-    "On — the folder's AGENTS.md (and the instance's own) is added to this colleague's prompt on every turn. A big file costs tokens every turn.",
-  "agentConfig.instructions.off":
-    "Off — this colleague reads no project instructions. Turn it on for a role that works in a repository whose AGENTS.md is written for it.",
   "agentConfig.folder": "What it works on",
   "agentConfig.folderScratch": "Its own workspace",
   "agentConfig.folderOwn": "Back to its own",

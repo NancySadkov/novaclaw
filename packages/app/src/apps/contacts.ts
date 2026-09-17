@@ -22,7 +22,6 @@ export interface AgentLike {
   readonly name?: string | undefined
   readonly title?: string | undefined
   readonly description?: string | undefined
-  readonly personality?: string | undefined
   /** Who this officer reports to. Absent means Nova. */
   readonly superior?: string | undefined
   /** The standing brief. Not shown on a row — it can be pages long — but a CLONE must carry it, or
@@ -59,8 +58,6 @@ export interface AgentLike {
   readonly archiveChats?: boolean | undefined
   /** Caption each shell command with a generated title (default on). Costs a model call per call. */
   readonly toolLabels?: boolean | undefined
-  /** Load the working folder's AGENTS.md (opt-in; default off). */
-  readonly instructions?: boolean | undefined
   /** Whether the harness gives this colleague a final acceptance-check reminder. */
   readonly mode: "primary" | "subagent" | "all"
   readonly hidden: boolean

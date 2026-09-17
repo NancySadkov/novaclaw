@@ -393,7 +393,7 @@ export const GoalDefinition = kernelDefinition({
 export const DurableItemDefinition = kernelDefinition({
   kind: "durable",
   description:
-    "One named item of the session's durable area: a short name and a short value the colleague must not lose to a compaction. The AGENT writes these (`durable_set` / `durable_clear`) and the harness reads them to rebuild the area after a rewrite — unlike `goal`, which the colleague may never author, this one is its own working memory.",
+    "One named item of the session's memo area: a short name and a short value the colleague must not lose to a compaction. The AGENT writes these (`memo_set` / `memo_clear`) and the harness reads them to rebuild the area after a rewrite — unlike `goal`, which the colleague may never author, this one is its own working memory.",
   cardinality: "set",
   lifetime: "entity",
   version: 1,
@@ -425,7 +425,7 @@ export const DurablePromptDefinition = kernelDefinition({
       ? Effect.void
       : Effect.fail(
           new Error(
-            "The durable area is materialised by the kernel after a context rewrite, from the `durable` items. Use `durable_set` and `durable_clear`: writing this would leave the area and the shadow copy it is a view of disagreeing.",
+            "The memo area is materialised by the kernel after a context rewrite, from the `durable` items. Use `memo_set` and `memo_clear`: writing this would leave the area and the shadow copy it is a view of disagreeing.",
           ),
         ),
   validateRemove: ({ system }) =>

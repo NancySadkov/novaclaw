@@ -1,5 +1,13 @@
 export * as SystemCompose from "./system-compose"
 
+// 🗑️ RETIRED as a prompt-formation mechanism (owner, 2026-09-17). The runner no longer composes a
+// per-turn array of sections: `session/runner/prompt-manager.ts` renders the ONE monolithic system
+// message at session start and after compaction, and `runner/llm.ts` sends it as a single system
+// part. Every section below is dead on the production path; what remains is the design record and
+// the unit tests that pin each section's wording and placement. Deleting this module is the
+// follow-up — it is left in place for one slice so the reasoning that produced the new prompt is
+// still readable, not because anything calls it.
+
 import type { PermissionMode } from "../config-resolve"
 import { ContextTemplate } from "../context-template"
 import { XmlText } from "../../util/xml-text"
@@ -295,7 +303,7 @@ export const durableSection = (text: string | undefined): string | undefined => 
   const body = text?.trim()
   if (!body) return undefined
   return [
-    "The durable area: short named items kept for you across a context rewrite, rebuilt from your `durable` items after each compaction. Maintain it with `durable_set` and `durable_clear`.",
+    "The memo area: short named items kept for you across a context rewrite, rebuilt from your `durable` items after each compaction. Maintain it with `memo_set` and `memo_clear`.",
     "",
     "#DURABLE",
     body,

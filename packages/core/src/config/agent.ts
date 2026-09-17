@@ -44,9 +44,6 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   name: Schema.String.pipe(Schema.optional),
   /** The role's job title, shown under its name in the roster ("Talent Scout", not "General Helper"). */
   title: Schema.String.pipe(Schema.optional),
-  /** Who the agent IS, as opposed to what it does — layered into the prompt ahead of the job. Kept a
-   *  separate field from `system` so the user can restyle a colleague without rewriting its remit. */
-  personality: Schema.String.pipe(Schema.optional),
   /** The officer this colleague reports to. Absent = Nova, the immutable root. */
   superior: Schema.String.pipe(Schema.optional),
   /** The roster face: an emoji or a short glyph token. Colour stays in `color`. */
@@ -67,16 +64,6 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * what delays the next turn.
    */
   toolLabels: Schema.Boolean.pipe(Schema.optional),
-  /**
-   * Load the working folder's ambient instructions (`AGENTS.md`, and the instance's own
-   * `config/AGENTS.md`) into this colleague's prompt.
-   *
-   * 🔴 Owner, 2026-09-17: this was UNCONDITIONAL, and in this repo that file is tens of kilobytes —
-   * an officer whose job has nothing to do with the code still read all of it every turn. It is now
-   * per-agent and OPT-IN: absent or `false` loads nothing. The seeded Engineer declares `true`,
-   * because coding is the role the file is written for.
-   */
-  instructions: Schema.Boolean.pipe(Schema.optional),
   /**
    * The model class this role expects (`smart` | `usual` | `fast`; `agent/model-fit.ts`).
    *
@@ -145,6 +132,16 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   }).pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = pure Chat, with no project, memory, tools, or harness prompt. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * WHICH of the three roster entities this is (owner, 2026-09-17): a full officer `agent`, a pure
+   * `chat` conversation, or the instance's owning `human` — the user themselves, as a first-class
+   * entity rather than an absence.
+   *
+   * ⚠️ `shortChat` is the older spelling of the Chat half. `kind` is the new authority, and
+   * `AgentDefaults.fold` derives the posture from it, so `chat` and `human` both run with no tools,
+   * no memory and no harness prompt. Absent = `agent`.
+   */
+  kind: Schema.Literals(["agent", "chat", "human"]).pipe(Schema.optional),
   /** How this officer's durable root session behaves. Absent keeps the autonomous officer default. */
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(Schema.optional),
   /** The officer's durable objective. The live goal component may refine its plan, never replace this brief. */

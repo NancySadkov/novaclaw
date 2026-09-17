@@ -111,9 +111,9 @@ const groundingFor = async (input: {
         editor.update(AgentV2.ID.make(input.agentID), (agent) => {
           agent.name = input.agentID
           // Pure Chat may legitimately have no system prompt at all, but the runner fixture routes
-          // prompt-less requests as utility work. A real configured brief keeps this request
-          // observable and lets the assertions prove it is the ONLY system text.
-          agent.personality = "Configured officer brief."
+          // prompt-less requests as utility work. Job instructions are the one instructions field
+          // now (owner, 2026-09-17), and for a pure Chat they are its whole system prompt.
+          agent.system = "Configured officer brief."
           agent.mode = "primary"
           if (input.directory !== undefined) agent.directory = input.directory
         }),

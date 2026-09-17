@@ -6,7 +6,6 @@ describe("anonymous worker profiles", () => {
   test("snapshots role and model choices without carrying authority or memory", () => {
     const profile = WorkerProfile.capture({
       ...AgentV2.Info.empty(AgentV2.ID.make("prototype")),
-      personality: "Careful and concise",
       system: "Find evidence.",
       model: { providerID: "local", id: "worker-4b" } as never,
       reasoningModel: { providerID: "local", id: "reasoner-32b" } as never,

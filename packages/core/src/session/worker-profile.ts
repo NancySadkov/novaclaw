@@ -16,7 +16,6 @@ export const KEY = "novaclaw.worker-profile"
 export interface Snapshot {
   readonly version: 1
   readonly prototypeID: string
-  readonly personality?: string
   readonly system?: string
   readonly model?: string
   readonly variant?: string
@@ -35,7 +34,6 @@ const modelString = (model: AgentV2.Info["model"]): string | undefined =>
 export const capture = (prototype: AgentV2.Info): Snapshot => ({
   version: 1,
   prototypeID: String(prototype.id),
-  personality: prototype.personality,
   system: prototype.system,
   model: modelString(prototype.model),
   variant: prototype.model?.variant,
@@ -73,7 +71,6 @@ export const read = (session: {
   return {
     version: 1,
     prototypeID,
-    personality: optionalString(value["personality"]),
     system: optionalString(value["system"]),
     model: optionalString(value["model"]),
     variant: optionalString(value["variant"]),

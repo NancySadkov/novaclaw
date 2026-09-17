@@ -1,4 +1,4 @@
-export * as DurableTool from "./durable"
+export * as MemoTool from "./memo"
 
 import { Effect, Layer, Schema } from "effect"
 import { ToolFailure } from "@novaclaw/llm"
@@ -13,12 +13,12 @@ import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 /**
- * `durable_set` / `durable_clear` — the two tools the owner named for the durable area.
+ * `memo_set` / `memo_clear` — the two tools the owner named for the memo area.
  *
- * Owner, 2026-09-16: *"This context area stores named entries set by either harness or the agent itself
- * using `durable_set Name Value` and `durable_clear Name` tools … The area is limited to 10 items (Name
- * can't be longer than 30 chars, Value can't be longer than 512 chars) and updated only after
- * compaction, from the housekeeped shadow copy."*
+ * Owner, 2026-09-17: *"rename `durable_set` and `durable_clear` to `memo_set` and `memo_clear`,
+ * while ensuring it is part of the basic tools list, like `edit` and `spawn`."* The storage kind
+ * stays `durable` (`session/durable.ts`) — the owner named the TOOLS, and a kind is a storage
+ * column, not a word a model reads.
  *
  * ⚠️ **Why dedicated tools when the generic `session` tool can already write a component of any kind.**
  * Three reasons, and the first is load-bearing: the ITEM COUNT is a property of the SET, which no
@@ -74,8 +74,8 @@ const kind = "durable" as const
  */
 const describeArea = (items: readonly Durable.Item[]): string =>
   items.length === 0
-    ? "The durable area is empty."
-    : `The durable area now holds ${items.length} of ${Durable.DURABLE_ITEMS_MAX}: ${items.map((item) => item.name).join(", ")}.`
+    ? "The memo area is empty."
+    : `The memo area now holds ${items.length} of ${Durable.DURABLE_ITEMS_MAX}: ${items.map((item) => item.name).join(", ")}.`
 
 /**
  * The services this tool needs, CAPTURED in the layer instead of yielded inside `execute`.
@@ -121,15 +121,15 @@ const charge = (deps: Deps, context: Tool.Context, operation: string) =>
     })
   })
 
-export const setDurable = (deps: Deps, input: SetInput, context: Tool.Context) =>
+export const setMemo = (deps: Deps, input: SetInput, context: Tool.Context) =>
   Effect.gen(function* () {
     const components = deps.components
     const ctx = context
     const itemName = input.name.trim()
     const itemValue = input.value.trim()
-    if (itemName.length === 0) return yield* failure("A durable item needs a name.")
+    if (itemName.length === 0) return yield* failure("A memo item needs a name.")
     if (itemName.length > Durable.DURABLE_NAME_MAX) return yield* failure(Durable.nameTooLongNotice(itemName))
-    if (itemValue.length === 0) return yield* failure("A durable item needs a value.")
+    if (itemValue.length === 0) return yield* failure("A memo item needs a value.")
     if (itemValue.length > Durable.DURABLE_VALUE_MAX)
       return yield* failure(Durable.overLongValueNotice(itemName, itemValue.length))
     // 🔴 The framing rule, refused before anything is stored: the area renders as `Name: Value` LINES
@@ -137,7 +137,7 @@ export const setDurable = (deps: Deps, input: SetInput, context: Tool.Context) =
     // never wrote, in the block whose whole job is to be believable across a rewrite.
     if (/[\r\n]/u.test(itemName) || /[\r\n]/u.test(itemValue))
       return yield* failure(
-        "A durable item is one line of `Name: value`, so neither half may contain a line break. If the text " +
+        "A memo item is one line of `Name: value`, so neither half may contain a line break. If the text " +
           "needs several lines, write it to a file and set the value to that path.",
       )
 
@@ -160,12 +160,12 @@ export const setDurable = (deps: Deps, input: SetInput, context: Tool.Context) =
     const after = existing === undefined ? [...items, { id, name: itemName, value: itemValue }] : items
     return {
       message:
-        `${existing === undefined ? "Kept" : "Replaced"} \`${itemName}\` in the durable area, which is rebuilt ` +
+        `${existing === undefined ? "Kept" : "Replaced"} \`${itemName}\` in the memo area, which is rebuilt ` +
         `into your system prompt after the next compaction. ${describeArea(after)}`,
     }
   })
 
-export const clearDurable = (deps: Deps, input: ClearInput, context: Tool.Context) =>
+export const clearMemo = (deps: Deps, input: ClearInput, context: Tool.Context) =>
   Effect.gen(function* () {
     const components = deps.components
     const ctx = context
@@ -189,8 +189,8 @@ export const clearDurable = (deps: Deps, input: ClearInput, context: Tool.Contex
     return {
       message:
         previous === undefined
-          ? `There is no durable item named \`${itemName}\`. ${describeArea(items)}`
-          : `Cleared \`${itemName}\` from the durable area. ${describeArea(items)}`,
+          ? `There is no memo item named \`${itemName}\`. ${describeArea(items)}`
+          : `Cleared \`${itemName}\` from the memo area. ${describeArea(items)}`,
     }
   })
 
@@ -206,16 +206,12 @@ export const clearDurable = (deps: Deps, input: ClearInput, context: Tool.Contex
 export const toFailure = (error: unknown): ToolFailure => {
   if (error instanceof ToolFailure) return error
   const denial = PermissionV2.denialMessage(error)
-  if (denial) return failure(`Durable area unchanged. ${denial}`)
+  if (denial) return failure(`Memo area unchanged. ${denial}`)
   if (error instanceof SessionComponentRegistry.InvalidValueError)
-    return failure(`Invalid durable item: ${error.message}`)
+    return failure(`Invalid memo item: ${error.message}`)
   return failure(error instanceof Error ? error.message : String(error))
 }
 
-// 🗑️ The registration used to live here. It moved to `durable-set.ts` and `durable-clear.ts`
-// because the deferred-manifest generator (`script/deferred-builtins.ts`) is ONE TOOL PER FILE: it
-// reads a single `name` and a single `metadata` out of the module it scans, so a file registering
-// two tools cannot be represented — and the first attempt at this change was caught by exactly that
-// generator refusing to run (`Extract schema metadata first: durable.ts`). What stays here is the
-// half both tools share: the two schemas, the item/deps plumbing, the charge, and the refusal
-// mapping. Nothing in this file registers a tool, so the generator skips it.
+// 🗑️ The registration lives in `memo-set.ts` and `memo-clear.ts`. What stays here is the half both
+// tools share: the two schemas, the item/deps plumbing, the charge, and the refusal mapping. Nothing in
+// this file registers a tool.

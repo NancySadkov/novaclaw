@@ -60,7 +60,7 @@ export const keyOf = (name: string): string => {
  * A stable, short digest of a string, for the fold-away case above.
  *
  * ⚠️ Not a security primitive and not used as one: it only has to be STABLE across processes so a
- * `durable_clear` in a later turn addresses the same slot a `durable_set` created. FNV-1a, 32 bits,
+ * `memo_clear` in a later turn addresses the same slot a `memo_set` created. FNV-1a, 32 bits,
  * rendered hex — the cheapest thing that is not `Math.random`.
  */
 export const digestOf = (value: string): string => {
@@ -124,12 +124,12 @@ export const itemsOf = (rows: readonly { readonly id?: unknown; readonly value: 
 
 /** What the colleague is told when a write is refused, so the refusal names the way forward. */
 export const overLongValueNotice = (name: string, length: number): string =>
-  `"${name}" is ${length} characters and the durable area holds at most ${DURABLE_VALUE_MAX}. ` +
-  "Write the text to a file in your scratch folder and set the value to that path instead: a durable " +
+  `"${name}" is ${length} characters and the memo area holds at most ${DURABLE_VALUE_MAX}. ` +
+  "Write the text to a file in your scratch folder and set the value to that path instead: a memo " +
   "item is a pointer you can follow, and the area is quoted into the prompt, so it has to stay short."
 
 export const nameTooLongNotice = (name: string): string =>
-  `A durable item's name is at most ${DURABLE_NAME_MAX} characters; "${name}" is ${name.length}. ` +
+  `A memo item's name is at most ${DURABLE_NAME_MAX} characters; "${name}" is ${name.length}. ` +
   "Shorten it — the name is what the area renders as the label, and a long one pushes the values out " +
   "of the reader's view."
 
@@ -142,5 +142,5 @@ export const nameTooLongNotice = (name: string): string =>
  * to keep. So the write fails and the refusal hands back the menu.
  */
 export const areaFullNotice = (items: readonly Item[]): string =>
-  `The durable area already holds ${items.length} items, which is its limit. Clear one first ` +
-  `(\`durable_clear\`), then set this one. It currently holds: ${items.map((item) => item.name).join(", ")}.`
+  `The memo area already holds ${items.length} items, which is its limit. Clear one first ` +
+  `(\`memo_clear\`), then set this one. It currently holds: ${items.map((item) => item.name).join(", ")}.`

@@ -6,7 +6,6 @@ export type OfficerPersonality = {
   readonly profile: {
     readonly name?: string
     readonly title?: string
-    readonly personality?: string
     readonly job?: string
   }
 }
@@ -27,7 +26,6 @@ export function parseOfficerPersonality(text: string): OfficerPersonality | unde
       profile: {
         ...(optionalText(row["name"]) === undefined ? {} : { name: optionalText(row["name"]) }),
         ...(optionalText(row["title"]) === undefined ? {} : { title: optionalText(row["title"]) }),
-        ...(optionalText(row["personality"]) === undefined ? {} : { personality: optionalText(row["personality"]) }),
         ...(optionalText(row["job"]) === undefined ? {} : { job: optionalText(row["job"]) }),
       },
     }
