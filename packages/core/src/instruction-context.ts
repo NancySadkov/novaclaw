@@ -17,7 +17,13 @@ class File extends Schema.Class<File>("InstructionContext.File")({
 }) {}
 
 const Files = Schema.Array(File)
-const key = SystemContext.Key.make("core/instructions")
+/**
+ * Exported so the runner can name this source when deciding whether the established context baseline
+ * still matches the settings: turning the opt-in off must REBUILD the baseline, not merely append a
+ * "no longer apply" notice under a system prompt that still contains the file (owner, 2026-09-17).
+ */
+export const KEY = SystemContext.Key.make("core/instructions")
+const key = KEY
 
 /**
  * Ambient project instructions (AGENTS.md), as an opt-in source a turn can decline.

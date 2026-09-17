@@ -305,6 +305,18 @@ function context(sources: ReadonlyArray<PackedSource>): Context {
   return { [ContextTypeId]: sources }
 }
 
+/**
+ * The keys a composed context will contribute, in source order.
+ *
+ * Needed by the epoch: the baseline IS this key set rendered, so a runner that deliberately stops (or
+ * starts) supplying a source must be able to notice that the established baseline no longer matches
+ * and ask for a rebuild. Reading a Context's keys from outside the module would mean reaching through
+ * the opaque carrier, which is exactly what the carrier exists to prevent (`system-context.spec`).
+ */
+export function keys(value: Context): ReadonlyArray<Key> {
+  return value[ContextTypeId].map((source) => source.key)
+}
+
 function render(parts: ReadonlyArray<string>) {
   return parts.join("\n\n")
 }

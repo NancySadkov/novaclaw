@@ -30,6 +30,26 @@ export function initialize(
   return initializeOnce(db, context, sessionID).pipe(Effect.withSpan("SessionContextEpoch.initialize"))
 }
 
+/**
+ * A source whose PRESENCE is the runner's deliberate choice, and the presence it chose this turn.
+ *
+ * 🔴 Without this, a runner setting that stops supplying a source could only ever be reconciled — the
+ * baseline was established once and a vanished source became a tail notice ("no longer apply") while
+ * the system prompt kept the bytes. That is what happened to the AGENTS.md opt-in: turning it off still
+ * delivered `Instructions from: …AGENTS.md` in every request, because the notice cannot edit a baseline
+ * (owner report, 2026-09-17). A source listed here forces a REPLACE when its presence disagrees with the
+ * snapshot, so the baseline is rebuilt to match the choice.
+ *
+ * ⚠️ Deliberately scoped to named keys. A source that vanishes because the WORLD changed (a file
+ * deleted, a capability lost, a producer unavailable) must stay on the reconcile path — that is the
+ * established "the prefix is stable; changes arrive as notices" design, and `SystemContext.reconcile`
+ * has its own tests. Only the runner's own supply decision belongs here.
+ */
+export interface SourcePresence {
+  readonly key: SystemContext.Key
+  readonly present: boolean
+}
+
 export function prepare(
   db: DatabaseService,
   events: EventV2.Interface,
@@ -39,8 +59,11 @@ export function prepare(
     readonly data: typeof SessionEvent.ContextUpdated.data.Type
     readonly snapshot: SystemContext.Snapshot
   }) => Effect.Effect<void>,
+  expectPresence?: ReadonlyArray<SourcePresence>,
 ): Effect.Effect<Prepared, SystemContext.InitializationBlocked | ContextSnapshotDecodeError> {
-  return prepareOnce(db, events, context, sessionID, commitUpdate).pipe(Effect.withSpan("SessionContextEpoch.prepare"))
+  return prepareOnce(db, events, context, sessionID, commitUpdate, expectPresence).pipe(
+    Effect.withSpan("SessionContextEpoch.prepare"),
+  )
 }
 
 const prepareOnce = Effect.fnUntraced(function* (
@@ -52,6 +75,7 @@ const prepareOnce = Effect.fnUntraced(function* (
     readonly data: typeof SessionEvent.ContextUpdated.data.Type
     readonly snapshot: SystemContext.Snapshot
   }) => Effect.Effect<void>,
+  expectPresence?: ReadonlyArray<SourcePresence>,
 ) {
   const [value, stored, compaction] = yield* Effect.all(
     [context, find(db, sessionID), SessionHistory.latestCompaction(db, sessionID)],
@@ -67,9 +91,13 @@ const prepareOnce = Effect.fnUntraced(function* (
     Effect.mapError((error) => new ContextSnapshotDecodeError({ sessionID, details: String(error) })),
   )
   const replacementSeq = compaction !== undefined && compaction.seq > stored.baseline_seq ? compaction.seq : undefined
-  const result = replacementSeq
-    ? yield* SystemContext.replace(value, snapshot)
-    : yield* SystemContext.reconcile(value, snapshot)
+  // A runner-chosen source whose presence no longer matches the snapshot means the established baseline
+  // does not describe the sources any more — a notice cannot edit a system prompt, so rebuild.
+  const presenceChanged = (expectPresence ?? []).some(({ key, present }) => (snapshot[key] !== undefined) !== present)
+  const result =
+    replacementSeq || presenceChanged
+      ? yield* SystemContext.replace(value, snapshot)
+      : yield* SystemContext.reconcile(value, snapshot)
   if (result._tag === "Unchanged" || result._tag === "ReplacementBlocked") {
     return { baseline: stored.baseline, baselineSeq: stored.baseline_seq, compaction: compaction ?? null }
   }

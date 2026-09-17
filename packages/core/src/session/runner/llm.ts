@@ -1285,11 +1285,15 @@ export const layer = Layer.effect(
         resolution.memoryOwnerAgent === undefined || resolution.memoryOwnerAgent === agent.id
           ? agent
           : yield* tap(agents.select(resolution.memoryOwnerAgent as typeof session.agent))
-      const initialized = yield* SessionContextEpoch.initialize(
-        db,
-        loadSystemContext(agent, session.id, ShortChat.enabled(config.shortChat)),
+      // Resolve this turn's system context ONCE, so `initialize`/`prepare` share one observation and
+      // the epoch can be told which runner-chosen sources it actually supplied (see `SourcePresence`).
+      const systemContextValue = yield* loadSystemContext(
+        agent,
         session.id,
+        ShortChat.enabled(config.shortChat),
       )
+      const systemContextKeys = SystemContext.keys(systemContextValue)
+      const initialized = yield* SessionContextEpoch.initialize(db, Effect.succeed(systemContextValue), session.id)
       let promoted = 0
       if (options.promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
@@ -1305,12 +1309,16 @@ export const layer = Layer.effect(
           SessionContextEpoch.prepare(
             db,
             events,
-            loadSystemContext(agent, session.id, ShortChat.enabled(config.shortChat)),
+            Effect.succeed(systemContextValue),
             session.id,
             (update) =>
               SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
                 SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
               ),
+            // The AGENTS.md opt-in is a runner supply decision, not a world change: when it flips, the
+            // established baseline no longer matches and is rebuilt rather than left stale behind a
+            // "no longer apply" notice (owner report, 2026-09-17).
+            [{ key: InstructionContext.KEY, present: systemContextKeys.includes(InstructionContext.KEY) }],
           ),
         ))
       // The RESOLVED config overlaid on the row, so every `models.*` read downstream sees what the
