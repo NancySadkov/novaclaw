@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { recoverToolCallsFromText, resolveToolName, scrubName } from "./tool-recovery"
+import { recoverToolCallsFromText, resolveToolName, scrubName, splitInvocationName } from "./tool-recovery"
 
 const TOOLS = ["read", "bash", "write", "list", "apply_patch"]
 
@@ -205,4 +205,43 @@ describe("recoverToolCallsFromText — prose-misreading guards", () => {
   test("empty allowed set never guesses", () =>
     expect(recoverToolCallsFromText('<tool_call>{"name":"read","arguments":{}}</tool_call>', [])).toEqual([]))
   test("empty text", () => expect(recoverToolCallsFromText("", TOOLS)).toEqual([]))
+})
+
+// Observed live 2026-09-17 on openrouter-ai-api-v1/stealth/union-alpha: the model put the WHOLE call
+// into the structured function name — `bash({"command":"…"})` — leaving the arguments channel empty,
+// so the registry answered "Unknown tool: bash({…})" and nothing ran.
+describe("splitInvocationName — the whole call written as the function name", () => {
+  test("extracts the name and the JSON arguments", () =>
+    expect(splitInvocationName('bash({"command":"ls -la"})', "")).toEqual({
+      name: "bash",
+      arguments: '{"command":"ls -la"}',
+    }))
+  test("a literal `{}` in the arguments channel is still treated as empty", () =>
+    expect(splitInvocationName('bash({"command":"pwd"})', "{}")).toEqual({
+      name: "bash",
+      arguments: '{"command":"pwd"}',
+    }))
+  test("a repeated key keeps the FIRST value — last-wins would run the description", () =>
+    expect(splitInvocationName('bash({"command":"ls -la","command":"List files"})', "")).toEqual({
+      name: "bash",
+      arguments: '{"command":"ls -la"}',
+    }))
+  test("an invented sibling key (command_note) survives for the tool schema to judge", () =>
+    expect(splitInvocationName('bash({"command":"pwd","command_note":"Show the tree"})', "")).toEqual({
+      name: "bash",
+      arguments: '{"command":"pwd","command_note":"Show the tree"}',
+    }))
+  test("parentheses inside the command string do not end the call early", () =>
+    expect(splitInvocationName('bash({"command":"echo $(date)"})', "")).toEqual({
+      name: "bash",
+      arguments: '{"command":"echo $(date)"}',
+    }))
+  test("a hallucinated leading name is still split — the registry owns validation", () =>
+    expect(splitInvocationName('frobnicate({"x":1})', "")).toEqual({ name: "frobnicate", arguments: '{"x":1}' }))
+  test("an ordinary tool name is never touched", () =>
+    expect(splitInvocationName("bash", '{"command":"ls"}')).toBeUndefined())
+  test("a correctly separated call is never touched, even with empty arguments", () =>
+    expect(splitInvocationName("bash", "")).toBeUndefined())
+  test("no parentheses at all is never touched", () =>
+    expect(splitInvocationName("bash command", "")).toBeUndefined())
 })

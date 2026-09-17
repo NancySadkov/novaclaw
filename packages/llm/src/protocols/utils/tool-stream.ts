@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { LLMError, LLMEvent, type ProviderMetadata, type ToolCall } from "../../schema"
 import { eventError, isTruncatedToolArgs, parseToolInput, type ToolAccumulator } from "../shared"
+import { splitInvocationName } from "./tool-recovery"
 
 type StreamKey = string | number
 
@@ -63,19 +64,26 @@ const inputDelta = (tool: PendingTool, text: string) =>
     text,
   })
 
-const toolCall = (route: string, tool: PendingTool, inputOverride?: string) =>
-  parseToolInput(route, tool.name, inputOverride ?? tool.input).pipe(
+const toolCall = (route: string, tool: PendingTool, inputOverride?: string) => {
+  const raw = inputOverride ?? tool.input
+  // The model sometimes writes the WHOLE call as the function name (`bash({"command":"…"})`) with an
+  // empty arguments channel; split it back so the registry sees a real name and real arguments.
+  const split = splitInvocationName(tool.name, raw)
+  const name = split?.name ?? tool.name
+  const args = split?.arguments ?? raw
+  return parseToolInput(route, name, args).pipe(
     Effect.map(
       (input): ToolCall =>
         LLMEvent.toolCall({
           id: tool.id,
-          name: tool.name,
+          name,
           input,
           providerExecuted: tool.providerExecuted ? true : undefined,
           providerMetadata: tool.providerMetadata,
         }),
     ),
   )
+}
 
 /** Store the updated tool and produce the optional public delta event. */
 const appendTool = <K extends StreamKey>(

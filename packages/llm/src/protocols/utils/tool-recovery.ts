@@ -221,6 +221,127 @@ function scanTopLevelJson(text: string): unknown[] {
   return out
 }
 
+// =============================================================================
+// Whole-call-in-the-name recovery (A3)
+// =============================================================================
+
+/**
+ * A model that writes the ENTIRE call as the function NAME — `bash({"command":"…"})` — leaving the
+ * arguments channel empty. Observed live 2026-09-17 on `openrouter-ai-api-v1/stealth/union-alpha`:
+ * three turns dispatched a call whose name was the whole `name(args)` string with `{}` arguments, so
+ * the registry could only answer *"Unknown tool: bash({…})"* and nothing ran.
+ *
+ * Split it back into the tool name and the argument JSON. Fires only when the arguments channel is
+ * empty (the call was not ALSO delivered correctly) and the name has the exact `identifier(…)` shape
+ * no real tool name has. The leading identifier is deliberately NOT validated against the offered set
+ * here — the registry owns that, so a hallucinated `frobnicate(…)` still reads as an unknown tool.
+ */
+export function splitInvocationName(
+  name: string,
+  rawArguments: string,
+): { readonly name: string; readonly arguments: string } | undefined {
+  const args = (rawArguments ?? "").trim()
+  if (args !== "" && args !== "{}") return undefined
+  const match = /^\s*([A-Za-z_][\w.-]*)\s*\(([\s\S]*)\)\s*$/.exec(name)
+  if (!match) return undefined
+  const inner = match[2]!.trim()
+  const parsed = inner === "" ? {} : parseFirstWinsObject(inner)
+  return { name: match[1]!, arguments: isRecord(parsed) ? normalizeArgs(parsed) : "{}" }
+}
+
+/** Index just past the closing quote of a JSON string that starts at `start` (which is `"`). */
+function scanStringEnd(text: string, start: number): number | undefined {
+  let escaped = false
+  for (let i = start + 1; i < text.length; i++) {
+    const char = text[i]!
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === "\\") {
+      escaped = true
+      continue
+    }
+    if (char === '"') return i + 1
+  }
+  return undefined
+}
+
+/** Index just past the JSON value at `start`: a string, a balanced object/array, or a scalar. */
+function scanValueEnd(text: string, start: number): number | undefined {
+  const first = text[start]
+  if (first === undefined) return undefined
+  if (first === '"') return scanStringEnd(text, start)
+  if (first === "{" || first === "[") {
+    const close = first === "{" ? "}" : "]"
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let i = start; i < text.length; i++) {
+      const char = text[i]!
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === "\\") {
+        escaped = true
+        continue
+      }
+      if (char === '"') {
+        inString = !inString
+        continue
+      }
+      if (inString) continue
+      if (char === first) depth++
+      else if (char === close) {
+        depth--
+        if (depth === 0) return i + 1
+      }
+    }
+    return undefined
+  }
+  for (let i = start; i < text.length; i++) {
+    const char = text[i]!
+    if (char === "," || char === "}") return i
+  }
+  return undefined
+}
+
+/**
+ * Parse a top-level JSON object keeping the FIRST value for a key repeated at the top level.
+ *
+ * `JSON.parse` keeps the LAST, and this model's habit is to write the real arguments first and then a
+ * human-readable note under a key it already used — `{"command":"cd …","command":"List files"}` — so
+ * last-wins silently EXECUTES THE DESCRIPTION instead of the command. Only the top level needs this;
+ * the corruption is a duplicated key in one flat object. A non-object or unparseable value falls back
+ * to `tolerantJson`, which is where the ordinary repair path already lives.
+ */
+function parseFirstWinsObject(raw: string): unknown {
+  const text = raw.trim()
+  const end = text.length - 1
+  if (!text.startsWith("{") || !text.endsWith("}")) return tolerantJson(text)
+  const out: Record<string, unknown> = {}
+  let i = 1
+  while (i < end) {
+    while (i < end && /[\s,]/.test(text[i]!)) i++
+    if (i >= end || text[i] !== '"') return tolerantJson(text)
+    const keyEnd = scanStringEnd(text, i)
+    if (keyEnd === undefined) return tolerantJson(text)
+    const key = tolerantJson(text.slice(i, keyEnd))
+    if (typeof key !== "string") return tolerantJson(text)
+    i = keyEnd
+    while (i < end && /\s/.test(text[i]!)) i++
+    if (text[i] !== ":") return tolerantJson(text)
+    i++
+    while (i < end && /\s/.test(text[i]!)) i++
+    const valueEnd = scanValueEnd(text, i)
+    if (valueEnd === undefined) return tolerantJson(text)
+    if (!(key in out)) out[key] = tolerantJson(text.slice(i, valueEnd))
+    i = valueEnd
+  }
+  return out
+}
+
 // XML-ish: `<read><filePath>x</filePath></read>`, plus the qwen3_coder shapes the server
 // parser misses when the wrapper is malformed: `<function=write>` openers and
 // `<parameter=path>value</parameter>` children (observed live: a bare

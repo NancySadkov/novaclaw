@@ -162,6 +162,33 @@ describe("openai-chat — structured tool-name canonicalization (A1)", () => {
   })
 })
 
+// Observed live 2026-09-17 on openrouter-ai-api-v1/stealth/union-alpha: the WHOLE call arrives as
+// the structured function name with an empty arguments channel. The decoder must split it before the
+// runner's registry ever sees it, or the turn dies on "Unknown tool: bash({…})".
+describe("openai-chat — whole-call-in-the-name repair (A3 wiring)", () => {
+  test("splits the name and arguments out of the function name", () => {
+    const events = decode(["bash"], [structuredCall('bash({"command":"ls -la"})', ""), toolCalls_])
+    const calls = toolCalls(events)
+    expect(calls.length).toBe(1)
+    expect(calls[0].name).toBe("bash")
+    expect(calls[0].input).toEqual({ command: "ls -la" })
+  })
+
+  test("a repeated key keeps the FIRST value — the command, not its description", () => {
+    const events = decode(
+      ["bash"],
+      [structuredCall('bash({"command":"ls -la","command":"List files"})', "{}"), toolCalls_],
+    )
+    expect(toolCalls(events)[0]?.input).toEqual({ command: "ls -la" })
+  })
+
+  test("a correctly separated call is untouched", () => {
+    const events = decode(["bash"], [structuredCall("bash", '{"command":"ls"}'), toolCalls_])
+    expect(toolCalls(events)[0]?.name).toBe("bash")
+    expect(toolCalls(events)[0]?.input).toEqual({ command: "ls" })
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // A RECOVERED CALL IS AN ORDINARY CALL — the property the permission model rests on.
 //
