@@ -12431,9 +12431,6 @@
                     "type": "string",
                     "minLength": 1
                   },
-                  "systemPromptOverride": {
-                    "type": "string"
-                  },
                   "type": {
                     "type": "string",
                     "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
@@ -13499,7 +13496,7 @@
             }
           }
         },
-        "description": "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further, and systemPromptOverride is the per-session override rather than the composed system prompt.",
+        "description": "Resolve a session's effective configuration by walking its parent chain root-ward (undefined = inherit), and report which ancestor supplied each field. Covers the SessionConfig fields only: the saved permission ruleset does not resolve through this walk, the reported permissionMode is the config-walk result before auto-mode grants and the unattended stance narrow it further.",
         "summary": "Resolve session config",
         "x-codeSamples": [
           {
@@ -14612,91 +14609,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.switchType({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/prompt-override": {
-      "post": {
-        "tags": ["session control"],
-        "operationId": "v2.session.switchPromptOverride",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "204": {
-            "description": "<No Content>"
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.",
-        "summary": "Set the session's system-prompt override layer",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "override": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["override"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.switchPromptOverride({\n  ...\n})"
           }
         ]
       }
@@ -23520,9 +23432,6 @@
             "$ref": "#/components/schemas/EventSessionNextTypeSwitched"
           },
           {
-            "$ref": "#/components/schemas/EventSessionNextPrompt-overrideSwitched"
-          },
-          {
             "$ref": "#/components/schemas/EventSessionNextDeviceSwitched"
           },
           {
@@ -24895,49 +24804,6 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "sessionType"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["session.next.prompt-override.switched"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "timestamp": {
-                        "type": "number"
-                      },
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "messageID": {
-                        "type": "string",
-                        "pattern": "^msg_"
-                      },
-                      "override": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": ["timestamp", "sessionID", "messageID", "override"],
                     "additionalProperties": false
                   }
                 },
@@ -27980,9 +27846,6 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextTypeSwitched"
               },
               {
-                "$ref": "#/components/schemas/SyncEventSessionNextPrompt-overrideSwitched"
-              },
-              {
                 "$ref": "#/components/schemas/SyncEventSessionNextDeviceSwitched"
               },
               {
@@ -29242,9 +29105,6 @@
             "$ref": "#/components/schemas/SessionNextTypeSwitched"
           },
           {
-            "$ref": "#/components/schemas/SessionNextPrompt-overrideSwitched"
-          },
-          {
             "$ref": "#/components/schemas/SessionNextDeviceSwitched"
           },
           {
@@ -29730,9 +29590,6 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextTypeSwitched"
-          },
-          {
-            "$ref": "#/components/schemas/SessionNextPrompt-overrideSwitched"
           },
           {
             "$ref": "#/components/schemas/SessionNextDeviceSwitched"
@@ -30384,9 +30241,6 @@
           "controlBinding": {
             "type": "string",
             "minLength": 1
-          },
-          "systemPromptOverride": {
-            "type": "string"
           },
           "type": {
             "type": "string",
@@ -32906,70 +32760,6 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "sessionType"],
-                "additionalProperties": false
-              }
-            },
-            "required": ["type", "id", "seq", "aggregateID", "data"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["type", "id", "syncEvent"],
-        "additionalProperties": false
-      },
-      "SyncEventSessionNextPrompt-overrideSwitched": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["sync"]
-          },
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "syncEvent": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["session.next.prompt-override.switched.1"]
-              },
-              "id": {
-                "type": "string",
-                "pattern": "^evt_"
-              },
-              "seq": {
-                "type": "number"
-              },
-              "aggregateID": {
-                "type": "string"
-              },
-              "data": {
-                "type": "object",
-                "properties": {
-                  "timestamp": {
-                    "type": "number"
-                  },
-                  "sessionID": {
-                    "type": "string",
-                    "pattern": "^ses"
-                  },
-                  "messageID": {
-                    "type": "string",
-                    "pattern": "^msg_"
-                  },
-                  "override": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["timestamp", "sessionID", "messageID", "override"],
                 "additionalProperties": false
               }
             },
@@ -37137,9 +36927,6 @@
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
           },
-          "prePrompt": {
-            "type": "string"
-          },
           "retry": {
             "$ref": "#/components/schemas/ConfigV2ModelRetry"
           },
@@ -37310,9 +37097,6 @@
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
-          },
-          "prePrompt": {
-            "type": "string"
           },
           "retry": {
             "$ref": "#/components/schemas/ConfigV2ModelRetry"
@@ -38112,9 +37896,6 @@
           },
           "prefixCache": {
             "$ref": "#/components/schemas/ModelPrefixCache"
-          },
-          "prePrompt": {
-            "type": "string"
           },
           "retry": {
             "type": "object",
@@ -39385,71 +39166,6 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "sessionType"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "SessionNextPrompt-overrideSwitched": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.next.prompt-override.switched"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "timestamp": {
-                "type": "number"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "messageID": {
-                "type": "string",
-                "pattern": "^msg_"
-              },
-              "override": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": ["timestamp", "sessionID", "messageID", "override"],
             "additionalProperties": false
           }
         },
@@ -46566,49 +46282,6 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "sessionType"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionNextPrompt-overrideSwitched": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.next.prompt-override.switched"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "timestamp": {
-                "type": "number"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "messageID": {
-                "type": "string",
-                "pattern": "^msg_"
-              },
-              "override": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": ["timestamp", "sessionID", "messageID", "override"],
             "additionalProperties": false
           }
         },

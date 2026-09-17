@@ -1725,7 +1725,7 @@ export const layer = Layer.effect(
        * media-type 400 the capability gate exists to prevent. Its mirror was silent and worse — a
        * text-only selection falling back to a vision model replaced every image in history with
        * *"was NOT sent to you"* and instructed a model that could see the picture to say it had not.
-       * `prePrompt`, `retryAttempts`, `imageLimit` and `ref` split the same way, and `ref` is what
+       * `retryAttempts`, `imageLimit` and `ref` split the same way, and `ref` is what
        * `rememberImageLimit` files a learned cap under — a cap measured on one endpoint, stored
        * against another model's id.
        *
@@ -1738,7 +1738,6 @@ export const layer = Layer.effect(
           ? {
               ref: yield* models.ref(modelSession),
               taxonomy: yield* models.taxonomy(modelSession),
-              prePrompt: yield* models.prePrompt(modelSession),
               retryAttempts: yield* models.retryAttempts(modelSession),
               capabilities: yield* models.capabilities(modelSession),
               imageLimit: yield* models.imageLimit(modelSession),

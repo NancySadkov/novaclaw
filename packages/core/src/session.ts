@@ -157,7 +157,6 @@ type CreateInput = {
   device?: string
   /** Explicit computer display for this session; undefined = inherit, then instance default. */
   controlBinding?: string
-  systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
@@ -401,10 +400,6 @@ export interface Interface {
   readonly switchType: (input: {
     sessionID: SessionSchema.ID
     type: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
-  }) => Effect.Effect<void, NotFoundError>
-  readonly switchPromptOverride: (input: {
-    sessionID: SessionSchema.ID
-    override: string | null
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly setMetadata: (input: {
@@ -1555,17 +1550,6 @@ export const layer = Layer.effect(
           sessionType: input.type,
         })
       }),
-      // B4/T2: the per-session system-prompt override layer (info-sheet editor + the session
-      // tool) — applies on the next turn; `null` clears the layer (back to inherit via the walk).
-      switchPromptOverride: Effect.fn("V2Session.switchPromptOverride")(function* (input) {
-        yield* result.get(input.sessionID)
-        yield* events.publish(SessionEvent.PromptOverrideSwitched, {
-          sessionID: input.sessionID,
-          messageID: SessionMessage.ID.create(),
-          timestamp: yield* DateTime.now,
-          override: input.override,
-        })
-      }),
       // F1c-1 — rename on the core engine. Unchanged titles dedup to no event.
       setTitle: Effect.fn("V2Session.setTitle")((input) =>
         patchRecord(input.sessionID, (info) =>
@@ -1667,7 +1651,7 @@ export const layer = Layer.effect(
       // ⚠️ RULING 8 (2026-07-29): the config a fork carries is the source's CHAIN-RESOLVED
       // config, never its raw row — *"a fork returning less restricted than its source is a
       // defect, not a preference"*. The row alone was measurably not enough: it dropped
-      // `systemPromptOverride`, `type`, `priority`, `responder`, `thinkingBudget`,
+      // `type`, `priority`, `responder`, `thinkingBudget`,
       // `surgicalEdits` and `askBeforeChanges` outright, plus EVERYTHING a child had inherited
       // from its parent rather than declared itself. The asymmetry that hid it: `spawn` gives
       // the child a `parentID` so the walk fills the gaps, and every inheritance test goes
@@ -1774,7 +1758,6 @@ export const layer = Layer.effect(
             // another backend would be scheduled against capacity its source never claimed.
             device: inherited.device,
             controlBinding: inherited.controlBinding,
-            systemPromptOverride: inherited.systemPromptOverride,
             type: inherited.type,
             priority: inherited.priority,
             permissionMode: inherited.permissionMode,

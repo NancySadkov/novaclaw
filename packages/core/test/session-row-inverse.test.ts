@@ -39,7 +39,6 @@ function populatedInfo(): SessionSchema.Info {
     metadata: { probe: true },
     agent: "build" as SessionSchema.Info["agent"],
     controlBinding: ":99",
-    systemPromptOverride: "ROW-INVERSE-OVERRIDE",
     type: "goal-oriented",
     priority: 7,
     responder: "operator",
@@ -144,7 +143,6 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.shortChat).toBeUndefined()
     expect(back.controlBinding).toBeUndefined()
     expect(back.providerRecovery).toBeUndefined()
-    expect(back.systemPromptOverride).toBeUndefined()
   })
 
   test("changes recording boundaries and completeness survive persistence", () => {

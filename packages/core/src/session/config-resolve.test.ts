@@ -56,15 +56,6 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(eff.responder).toBe("operator") // and the grandchild's own field still lands
   })
 
-  test("systemPromptOverride inherits then overrides", () => {
-    expect(resolveConfig(DEFAULTS, [{ systemPromptOverride: "You are Neo." }, {}]).systemPromptOverride).toBe(
-      "You are Neo.",
-    )
-    expect(
-      resolveConfig(DEFAULTS, [{ systemPromptOverride: "A" }, { systemPromptOverride: "B" }]).systemPromptOverride,
-    ).toBe("B")
-  })
-
   test("controlBinding inherits the nearest explicit display and otherwise stays absent", () => {
     expect(resolveConfig(DEFAULTS, []).controlBinding).toBeUndefined()
     expect(resolveConfig(DEFAULTS, [{ controlBinding: ":99" }, {}]).controlBinding).toBe(":99")
@@ -239,21 +230,6 @@ describe("resolveSessionConfig — the effectful parentID walk", () => {
   test("a cyclic parentID chain terminates (guarded, does not hang)", () =>
     expect(runWalk("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } }).permissionMode).toBe("ask"))
 
-  test("a child inherits the parent's systemPromptOverride through the walk", () =>
-    expect(
-      runWalk("child", {
-        root: { id: "root", systemPromptOverride: "You are Neo." },
-        child: { id: "child", parentID: "root" }, // no override of its own -> inherits
-      }).systemPromptOverride,
-    ).toBe("You are Neo."))
-
-  test("a child's own systemPromptOverride wins over the parent's", () =>
-    expect(
-      runWalk("child", {
-        root: { id: "root", systemPromptOverride: "parent prompt" },
-        child: { id: "child", parentID: "root", systemPromptOverride: "child prompt" },
-      }).systemPromptOverride,
-    ).toBe("child prompt"))
 })
 
 describe("rootAttendance — the chain ROOT's thread type (Agent Jail P0b)", () => {

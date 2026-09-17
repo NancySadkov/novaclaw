@@ -97,7 +97,6 @@ const NULLABLE_REQUEST_FIELDS = [
   "PATCH /api/session/{sessionID} device (optional)",
   "POST /api/session/{sessionID}/strict strict",
   "POST /api/session/{sessionID}/feature enabled",
-  "POST /api/session/{sessionID}/prompt-override override",
   // Grown, not shrunk, and legitimately so: the protocol now declares the per-session MODEL
   // override `Schema.NullOr`, for the same reason the three above do — `null` is how a caller says
   // "this officer has no model of its own, it inherits". Before that, clearing an override was
@@ -112,7 +111,9 @@ const NULLABLE_REQUEST_FIELDS = [
  * ledger above names the four that carry semantics a human can check; this number catches the case
  * the ledger cannot — a regression that eats nulls everywhere EXCEPT the four pinned by name.
  */
-const NULLABLE_REQUIRED_FLOOR = 38
+// 37 since 2026-09-17: `POST .../prompt-override override` was one of the 38 and retired with the
+// per-session system-prompt override. Lower with the field it names; never because the count slipped.
+const NULLABLE_REQUIRED_FLOOR = 37
 
 /** The arms of a union with nested unions flattened, matching how the transform reasons about them. */
 function unionOptions(schema: Schema | undefined): Schema[] | undefined {
@@ -335,17 +336,21 @@ const GENERATE_TIMEOUT_MS = 60_000
 // is no rename to catch — nothing arrived to take a removed name's place. 520 -> 515 entries, the
 // rest byte-identical.
 /**
- * 🔴 RE-PINNED 2026-09-17, after reviewing the mapping rather than reading the mismatch. The skills
- * subsystem retired, so the public schema lost exactly the skill names and the `/api/skill` path and
- * nothing else. Measured on `packages/sdk/openapi.json` against the previous commit: **5 schemas and
- * 1 path removed, ZERO additions** — `SkillV2Source`, `SkillV2Info`, `SkillV2DirectorySource`,
- * `SkillV2UrlSource`, `SkillV2EmbeddedSource`, and `/api/skill`. Pure removal, so there is no rename
- * to catch: nothing arrived to take a removed name's place. Review this way again if this line moves.
+ * 🔴 RE-PINNED 2026-09-17 (context-hygiene cleanup), after reviewing the mapping rather than reading
+ * the mismatch. The per-session system-prompt override retired, so the public schema lost exactly
+ * the prompt-override names and the `/api/session/{sessionID}/prompt-override` path, plus the
+ * per-model `prePrompt` property. Measured on `packages/sdk/openapi.json` against the previous
+ * commit: **434 deletions and 1 insertion, ZERO new schema names** — `V2SessionSwitchPromptOverride*`,
+ * `SessionNextPromptOverrideSwitched`, `SyncEventSessionNextPromptOverrideSwitched`,
+ * `EventSessionNextPromptOverrideSwitched` and one path. Pure removal: the one insertion is a
+ * `$ref` list that lost a member. Nothing arrived to take a removed name's place, so there is no
+ * rename to catch. Review this way again if this line moves.
  *
- * Previous pin, 2026-09-16: the `novaclaw.json` retirement removed `GET`/`POST /api/project`, so the
- * public schema lost exactly the project names and nothing else — 479 deletions and zero additions.
+ * Previous pin, 2026-09-17: the skills subsystem retired — 5 schemas and `/api/skill`, zero
+ * additions. Before that, the `novaclaw.json` retirement removed `GET`/`POST /api/project`, 479
+ * deletions and zero additions.
  */
-const SCHEMA_NAME_FINGERPRINT = "542ef4763ffdb7830a4c0831635a21b69e1c7316e80e556e975dfce7f99be1ab"
+const SCHEMA_NAME_FINGERPRINT = "26f071cd921dafb73e9d1be810a14bf950b31575d9659daaade994557c886fae"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
@@ -521,7 +526,6 @@ describe("the SDK's generated artifacts", () => {
     const expected = [
       ["V2SessionSwitchStrictData", "strict: SessionStrictOverride | null"],
       ["V2SessionSwitchFeatureData", "enabled: boolean | null"],
-      ["V2SessionSwitchPromptOverrideData", "override: string | null"],
       ["V2SessionUpdateData", "archived?: number | null"],
     ] as const
 

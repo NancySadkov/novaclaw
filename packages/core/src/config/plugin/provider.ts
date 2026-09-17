@@ -70,7 +70,6 @@ export const Plugin = define({
                 if (config.family !== undefined) model.family = config.family
                 if (config.taxonomy !== undefined) model.taxonomy = config.taxonomy
                 if (config.prefixCache !== undefined) model.prefixCache = config.prefixCache
-                if (config.prePrompt !== undefined) model.prePrompt = config.prePrompt
                 if (config.retry !== undefined) Object.assign(model, { retry: { attempts: config.retry.attempts } })
                 if (config.name !== undefined) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }

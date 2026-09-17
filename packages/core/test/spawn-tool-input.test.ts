@@ -156,7 +156,6 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
         agent: "plan",
         model: "dgx-spark/qwen3.6-35b",
         controlBinding: ":100",
-        systemPromptOverride: "answer in one line",
         type: "auto-prompting",
         permissionMode: "plan",
       })
@@ -165,7 +164,6 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
       expect(child?.agent).toBeUndefined()
       expect(child?.model).toBeUndefined()
       expect(child?.controlBinding).toBeUndefined()
-      expect(child?.systemPromptOverride).toBeUndefined()
       expect(child?.type).toBe("sub-agent")
       expect(child?.permissionMode).toBeUndefined()
     }),
@@ -183,7 +181,6 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
       // inheritance for every later change to the parent.
       expect(child?.model).toBeUndefined()
       expect(child?.permissionMode).toBeUndefined()
-      expect(child?.systemPromptOverride).toBeUndefined()
       expect(child?.controlBinding).toBeUndefined()
       // `type` is the one deliberate exception, and it is the SEAM's default, not the tool's.
       expect(child?.type).toBe("sub-agent")

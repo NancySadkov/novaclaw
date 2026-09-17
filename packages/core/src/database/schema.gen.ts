@@ -650,7 +650,6 @@ export default {
           \`model\` text,
           \`device\` text,
           \`control_binding\` text,
-          \`system_prompt_override\` text,
           \`type\` text,
           \`priority\` integer,
           \`responder\` text,

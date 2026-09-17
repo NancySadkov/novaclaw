@@ -493,18 +493,6 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
-    // B4/T2: the per-session system-prompt override layer — same shape (null clears the column).
-    yield* events.project(SessionEvent.PromptOverrideSwitched, (event) =>
-      db
-        .update(SessionTable)
-        .set({
-          system_prompt_override: event.data.override,
-          time_updated: DateTime.toEpochMillis(event.data.timestamp),
-        })
-        .where(eq(SessionTable.id, event.data.sessionID))
-        .run()
-        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
-    )
     yield* events.project(SessionEvent.DeviceSwitched, (event) =>
       db
         .update(SessionTable)

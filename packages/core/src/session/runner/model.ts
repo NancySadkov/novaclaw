@@ -262,15 +262,11 @@ export interface Interface {
    * failing the turn.
    */
   readonly taxonomy: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Taxonomy | undefined>
-  /** The resolved catalog model's optional user-authored pre-prompt (owner 2026-07-29). Read the
-   *  same best-effort way as `taxonomy`: it only decorates the system prompt, so an unresolvable
-   *  model yields `undefined` rather than failing the turn. */
-  readonly prePrompt: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
   /** Per-model total connection attempts. Undefined selects the runner's safe default. */
   readonly retryAttempts: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /**
    * The resolved catalog model's declared capabilities, for the runner's attachment gate. Read the
-   * same best-effort way as `taxonomy`/`prePrompt`: an unresolvable model yields `undefined` rather
+   * same best-effort way as `taxonomy`: an unresolvable model yields `undefined` rather
    * than failing the turn.
    *
    * ⚠️ `undefined` means NO EVIDENCE, never "text-only" — see `to-llm-message.ts`
@@ -281,7 +277,7 @@ export interface Interface {
   /**
    * How many images the resolved model accepts in ONE request, or `undefined` for unlimited.
    *
-   * Read the same best-effort way as `taxonomy`/`prePrompt`/`capabilities`, and `undefined` is the
+   * Read the same best-effort way as `taxonomy`/`capabilities`, and `undefined` is the
    * pass-everything answer, which is what every endpoint that never had this cap wants. See
    * `budgetImages` for why a guessed default would be wrong.
    */
@@ -379,7 +375,6 @@ export const perTurnFacts = (
 ): {
   readonly ref: ModelV2.Ref
   readonly taxonomy: ModelV2.Taxonomy
-  readonly prePrompt: string | undefined
   readonly retryAttempts: number | undefined
   readonly capabilities: ModelV2.Capabilities | undefined
   readonly imageLimit: number | undefined
@@ -389,7 +384,6 @@ export const perTurnFacts = (
   /** Materialised: an unclassified model reads as `usual`, never `undefined` (`ModelTaxonomy.of`).
    *  A model classified `special` is UNRANKED and reports so — see `taxonomyOf`/`ModelTaxonomy.rankOf`. */
   taxonomy: ModelTaxonomy.of(model),
-  prePrompt: model.prePrompt,
   retryAttempts: model.retry?.attempts,
   capabilities: model.capabilities,
   /** `undefined` = unlimited, the pass-everything answer. */
@@ -398,7 +392,7 @@ export const perTurnFacts = (
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam. `taxonomy`/`prePrompt`/`capabilities` default to always-undefined so
+/** Test or embedding seam. `taxonomy`/`capabilities` default to always-undefined so
  *  existing callers need not supply them — and `undefined` capabilities is the pass-everything
  *  "no evidence" answer, so a seam that omits it never starts refusing attachments. */
 /**
@@ -523,7 +517,6 @@ export const substitutionNotice = (input: {
 export const layerWith = (
   resolve: Interface["resolve"],
   taxonomy: Interface["taxonomy"] = () => Effect.succeed(undefined),
-  prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
@@ -572,7 +565,6 @@ export const layerWith = (
       learnedImageLimit,
       rememberImageLimit,
       taxonomy,
-      prePrompt,
       retryAttempts,
       capabilities,
       imageLimit,
@@ -1281,11 +1273,6 @@ export const locationLayer = Layer.effect(
         const model = yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined))
         return model === undefined ? undefined : ModelTaxonomy.of(model)
       }),
-      // The optional per-model pre-prompt, read the same best-effort way as `taxonomy` — it only
-      // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
-      prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
-        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
-      }),
       retryAttempts: Effect.fn("SessionRunnerModel.retryAttempts")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.retry?.attempts
       }),
@@ -1358,7 +1345,7 @@ export const locationLayer = Layer.effect(
      * WHICH catalog model a session runs on — `select()` plus BOTH fallbacks, and nothing else.
      *
      * 🔴 **Every reader of a per-turn model fact resolves through HERE, and that is the fix for a
-     * whole class of bug rather than one instance of it.** `taxonomy`, `prePrompt`, `retryAttempts`,
+     * whole class of bug rather than one instance of it.** `taxonomy`, `retryAttempts`,
      * `capabilities`, `imageLimit`, `ref` and `device` each used to call `select()` directly, which
      * applies NEITHER fallback — so after a health demotion the runner held two models at once and
      * described the sick one while the request went to the substitute. The visible failure was a
@@ -1583,7 +1570,7 @@ export const locationLayer = Layer.effect(
     })
 
     /**
-     * The model alone, for the best-effort per-turn fact readers (`taxonomy`, `prePrompt`, …). The turn's
+     * The model alone, for the best-effort per-turn fact readers (`taxonomy`, `capabilities`, …). The turn's
      * own resolution wants `turnDecision` — it also carries WHY a substitute was used, which the
      * transcript notice needs and a decoration must never pay for.
      */

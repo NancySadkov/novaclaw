@@ -188,7 +188,6 @@ export const ModelConfigScreen: Component<{
     prefixCacheEnabled: init.prefixCache?.enabled ?? false,
     prefixCacheTtlMinutes: nstr(init.prefixCache?.ttlMinutes),
     tool_call: init.capabilities?.tools ?? d.capabilities?.tools ?? true,
-    prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
     inImage: inMod.includes("image"),
     inAudio: inMod.includes("audio"),
@@ -205,17 +204,12 @@ export const ModelConfigScreen: Component<{
    * nested disclosures. `Scheduler` is new here — it exposes the DEVICE's scheduling policy, which is
    * what the model runs on, not the model's own parameters.
    */
-  type ConfigTab = "identity" | "sampling" | "capabilities" | "corrections" | "scheduler"
+  type ConfigTab = "identity" | "sampling" | "capabilities" | "scheduler"
   const [tab, setTab] = createSignal<ConfigTab>("identity")
   const tabs = createMemo(() => [
     { id: "identity" as const, label: language.t("settings.models.config.tab.identity"), icon: "user" as const },
     { id: "sampling" as const, label: language.t("settings.models.config.tab.sampling"), icon: "sliders" as const },
     { id: "capabilities" as const, label: language.t("settings.models.config.tab.capabilities"), icon: "cpu" as const },
-    {
-      id: "corrections" as const,
-      label: language.t("settings.models.config.tab.corrections"),
-      icon: "prompt" as const,
-    },
     { id: "scheduler" as const, label: language.t("settings.models.config.tab.scheduler"), icon: "share" as const },
   ])
 
@@ -313,16 +307,6 @@ export const ModelConfigScreen: Component<{
         ...(prefixCacheTtlMinutes === undefined ? {} : { ttlMinutes: prefixCacheTtlMinutes }),
       },
     }
-    // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
-    // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
-    // over the wire, and never write "" for a model that never had one.
-    // ⚠️ RETIRED FROM THE PROMPT (owner, 2026-09-17): the one `PromptManager` prompt does not carry a
-    // per-model pre-prompt, so this value is stored but never sent. Kept as a control pending the
-    // owner's decision on whether to keep, fold, or remove the field.
-    const pre = form.prePrompt.trim()
-    if (pre) model.prePrompt = pre
-    else if (saved.prePrompt !== undefined) model.prePrompt = ""
-    else delete model.prePrompt
     const provider = providerCfg()
     const apiPath = form.apiPath.trim()
     // The endpoint is provider-wide today, so preserve the complete resolved API channel (including
@@ -671,25 +655,6 @@ export const ModelConfigScreen: Component<{
                   />
                 </SettingsRowV2>
               </SettingsListV2>
-            </div>
-
-            <div data-settings-tab="corrections">
-              <div class="flex flex-col gap-1.5">
-                <div class="flex items-center text-[12px] font-medium text-v2-text-text-base">
-                  <span>{language.t("settings.models.config.prePrompt.name")}</span>
-                  <SettingsExplainV2 label={language.t("settings.models.config.prePrompt.name")}>
-                    {language.t("settings.models.config.prePrompt.desc")}{" "}
-                    {language.t("settings.models.config.prePrompt.desc.more")}
-                  </SettingsExplainV2>
-                </div>
-                <TextareaV2
-                  rows={3}
-                  value={form.prePrompt}
-                  onInput={(event) => setForm("prePrompt", event.currentTarget.value)}
-                  placeholder={language.t("settings.models.config.prePrompt.placeholder")}
-                  aria-label={language.t("settings.models.config.prePrompt.name")}
-                />
-              </div>
             </div>
 
             <div data-settings-tab="sampling">

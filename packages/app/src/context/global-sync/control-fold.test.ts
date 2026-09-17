@@ -36,9 +36,6 @@ describe("controlPatch", () => {
       controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "quality", enabled: true })),
     ).toEqual({ sessionID: "s", patch: { quality: true } })
     expect(
-      controlPatch(envelope("session.next.prompt-override.switched", { sessionID: "s", override: "be brief" })),
-    ).toEqual({ sessionID: "s", patch: { systemPromptOverride: "be brief" } })
-    expect(
       controlPatch(envelope("session.next.type.switched", { sessionID: "s", sessionType: "auto-prompting" })),
     ).toEqual({ sessionID: "s", patch: { type: "auto-prompting" } })
     // T3 shape: the move patches the record's `location` struct (+ subpath), never a flat
@@ -63,9 +60,6 @@ describe("controlPatch", () => {
       controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "affective", enabled: null }))
         ?.patch,
     ).toEqual({ affective: undefined })
-    expect(
-      controlPatch(envelope("session.next.prompt-override.switched", { sessionID: "s", override: null }))?.patch,
-    ).toEqual({ systemPromptOverride: undefined })
   })
 
   test("🔴 the provider-attempt latch is set AND cleared on the record", () => {

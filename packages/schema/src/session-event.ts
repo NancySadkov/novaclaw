@@ -181,21 +181,9 @@ export const TypeSwitched = Event.define({
 })
 export type TypeSwitched = typeof TypeSwitched.Type
 
-// B4/T2: the per-session system-prompt OVERRIDE layer (the info-sheet editor + the agent's own
-// guardrailed `session` tool). The override composes after the persona baseline and before the
-// agent prompt (runner llm.ts system assembly) and rides the config walk (children/forks inherit).
-// `override: null` clears the layer. Like the switches above, the projector writes the column and
-// the runner reads it fresh each turn.
-export const PromptOverrideSwitched = Event.define({
-  type: "session.next.prompt-override.switched",
-  ...options,
-  schema: {
-    ...Base,
-    messageID: SessionMessage.ID,
-    override: Schema.NullOr(Schema.String),
-  },
-})
-export type PromptOverrideSwitched = typeof PromptOverrideSwitched.Type
+// 🗑️ `session.next.prompt-override.switched` stood here. The per-session system-prompt override was
+// retired 2026-09-17: the one `PromptManager` prompt has no override layer, so the event, its
+// endpoint and the `system_prompt_override` component went with it.
 
 export const DeviceSwitched = Event.define({
   type: "session.next.device.switched",
@@ -782,7 +770,6 @@ export const DurableDefinitions = Event.inventory(
   StrictSwitched,
   FeatureSwitched,
   TypeSwitched,
-  PromptOverrideSwitched,
   DeviceSwitched,
   PrioritySwitched,
   ControlBindingSwitched,
@@ -834,7 +821,6 @@ export const Definitions = Event.inventory(
   StrictSwitched,
   FeatureSwitched,
   TypeSwitched,
-  PromptOverrideSwitched,
   DeviceSwitched,
   PrioritySwitched,
   ControlBindingSwitched,

@@ -25,7 +25,6 @@ import { SessionComponentRegistry } from "@novaclaw/core/session/component-regis
 const EXPOSED: Readonly<Record<string, SessionComponentRegistry.KernelKind>> = {
   device: "device",
   controlBinding: "control_binding",
-  systemPromptOverride: "system_prompt_override",
   priority: "priority",
   permissionMode: "permission_mode",
   // The ten switches of the composer's Tuning panel share ONE singleton component; a component kind

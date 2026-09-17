@@ -430,9 +430,9 @@ function fixSelfReferencingComponents(spec: OpenApiSpec) {
  * `Schema.NullOr(T)` emit the byte-identical `anyOf: [T, {type:"null"}]`; what separates them is the
  * enclosing object's `required` array — a `Schema.NullOr` property IS listed there, a `Schema.optional`
  * one is not. Until 2026-07-31 this function never read `required` at all and therefore stripped both,
- * silently deleting `null` from **46 required-and-nullable positions** in the spec. Three of them are
- * the per-session override endpoints (`POST /api/session/{id}/strict`, `.../feature`,
- * `.../prompt-override`) whose own OpenAPI descriptions read *"null clears the override back to
+ * silently deleting `null` from **46 required-and-nullable positions** in the spec. Two of them are
+ * the per-session override endpoints (`POST /api/session/{id}/strict`, `.../feature`) whose own
+ * OpenAPI descriptions read *"null clears the override back to
  * inherit"* — so the generated SDK typed the body as `{ strict: SessionStrictOverride }` and a typed
  * caller could not express *inherit* at all. That is architecture.md's sparse-override keystone lost in
  * transit, and it was patched over by a hand-maintained re-add list rather than fixed at the source.

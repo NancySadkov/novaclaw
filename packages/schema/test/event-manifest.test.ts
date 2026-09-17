@@ -92,7 +92,10 @@ describe("public event manifest", () => {
       // process-terminal event.
       // 2026-09-14: +1 durable `session.next.prompt.cancelled`. A cancellation must survive replay
       // so every projection removes the same not-yet-promoted input instead of resurrecting a ghost.
-    }).toEqual({ server: 96, all: 96, latest: 96, durable: 52 })
+      // 2026-09-17: −1 `session.next.prompt-override.switched`, retired with the per-session
+      // system-prompt override. It also had a durable projection (the projector wrote the session
+      // column), so `durable` drops with it.
+    }).toEqual({ server: 95, all: 95, latest: 95, durable: 51 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([

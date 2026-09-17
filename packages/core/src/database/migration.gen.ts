@@ -127,5 +127,6 @@ export const migrations = (
     import("./migration/20260908181923_add_session_nudge_delivery"),
     import("./migration/20260914015547_model_prefix_cache"),
     import("./migration/20260917133451_smiling_red_ghost"),
+    import("./migration/20260917192630_wealthy_triton"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
