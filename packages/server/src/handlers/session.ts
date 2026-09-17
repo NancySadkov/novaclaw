@@ -40,6 +40,7 @@ import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
 import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
+import { SessionPortability } from "@novaclaw/core/session/portability"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -48,6 +49,7 @@ const SessionCatalogHandler = handlerLayer(
   HttpApiBuilder.group(SessionCatalogApi, "server.session.catalog", (handlers) =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
       const tags = yield* SessionTags.Service
       const attempts = yield* SessionExecutionAttempt.Service
       const receipts = yield* SessionReceipt.Service
@@ -208,6 +210,49 @@ const SessionCatalogHandler = handlerLayer(
                   location: ctx.payload.location ?? (yield* agentLocation(ctx.payload.agent)),
                 }),
               }
+            }),
+          )
+          .handle(
+            "session.import",
+            Effect.fn(function* (ctx) {
+              // A foreign format, so the reader — not the wire schema — is the validator. A file that
+              // is not a session at all is a caller mistake with a correct action attached ("pick an
+              // exported session"), which is what InvalidRequest is for.
+              const parsed = yield* Effect.try({
+                try: () => SessionPortability.parse(ctx.payload.data),
+                catch: (cause) =>
+                  new InvalidRequestError({ message: cause instanceof Error ? cause.message : String(cause) }),
+              })
+              // 🔴 A POSTURE by default. Imports happen "on demand" and repeatedly, and the
+              // one-live-root DB index exempts `build`/`plan` — naming an officer would collide with
+              // that officer's one chat on the second import.
+              const agent = AgentV2.ID.make(ctx.payload.agent ?? "build")
+              const created = yield* createWithOwner(session, {
+                agent,
+                title: ctx.payload.title ?? parsed.title ?? "Imported session",
+                location:
+                  ctx.payload.directory === undefined
+                    ? yield* agentLocation(String(agent))
+                    : Location.Ref.make({ directory: AbsolutePath.make(ctx.payload.directory) }),
+              })
+              // Record, do not run: publishing `MessageRecorded` is the same primitive `fork` uses, so
+              // no model is called and no drain starts. Each message gets a FRESH id — an exported id
+              // names a message in another instance's database, never this one.
+              const timestamp = yield* DateTime.now
+              let imported = 0
+              for (const message of parsed.messages) {
+                yield* events.publish(
+                  SessionEvent.MessageRecorded,
+                  {
+                    sessionID: created.id,
+                    timestamp,
+                    message: { ...message, id: SessionMessage.ID.create() } as SessionMessage.Message,
+                  },
+                  { location: created.location },
+                )
+                imported += 1
+              }
+              return { data: { sessionID: created.id, imported, skipped: parsed.skipped } }
             }),
           )
           .handle(

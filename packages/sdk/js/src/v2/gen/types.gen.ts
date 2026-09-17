@@ -4335,10 +4335,6 @@ export type ConfigInfo = {
   compaction?: ConfigV2Compaction
   context?: ConfigV2Context
   provider_connection?: ConfigV2ProviderConnection
-  persona?: {
-    enabled?: boolean
-    prompt?: string
-  }
   user_profile?: {
     enabled?: boolean
     name?: string
@@ -13545,6 +13541,46 @@ export type V2SessionCreateResponses = {
 }
 
 export type V2SessionCreateResponse = V2SessionCreateResponses[keyof V2SessionCreateResponses]
+
+export type V2SessionImportData = {
+  body: {
+    data: unknown
+    agent?: string
+    directory?: string
+    title?: string
+  }
+  path?: never
+  query?: never
+  url: "/api/session/import"
+}
+
+export type V2SessionImportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SessionImportError = V2SessionImportErrors[keyof V2SessionImportErrors]
+
+export type V2SessionImportResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      sessionID: string
+      imported: number
+      skipped: number
+    }
+  }
+}
+
+export type V2SessionImportResponse = V2SessionImportResponses[keyof V2SessionImportResponses]
 
 export type V2SessionTagsSetData = {
   body: {

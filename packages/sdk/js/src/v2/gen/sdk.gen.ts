@@ -1567,6 +1567,34 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Import session
+   *
+   * Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.
+   */
+  public import<ThrowOnError extends boolean = false>(
+    parameters: {
+      data: unknown
+      agent?: string
+      directory?: string
+      title?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      data: parameters?.["data"],
+      agent: parameters?.["agent"],
+      directory: parameters?.["directory"],
+      title: parameters?.["title"],
+    }
+    return (options?.client ?? this.client).post<T.V2SessionImportResponses, T.V2SessionImportErrors, ThrowOnError>({
+      url: "/api/session/import",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * List active sessions
    *
    * Retrieve foreground Session drains currently owned by this NovaClaw process. Sessions absent from the result are inactive.

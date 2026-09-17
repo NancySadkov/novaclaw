@@ -12503,6 +12503,99 @@
         ]
       }
     },
+    "/api/session/import": {
+      "post": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.import",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sessionID": {
+                          "type": "string",
+                          "pattern": "^ses"
+                        },
+                        "imported": {
+                          "type": "number"
+                        },
+                        "skipped": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["sessionID", "imported", "skipped"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.",
+        "summary": "Import session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {},
+                  "agent": {
+                    "type": "string"
+                  },
+                  "directory": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": ["data"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.import({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/tags": {
       "put": {
         "tags": ["sessions"],
@@ -37434,18 +37527,6 @@
           },
           "provider_connection": {
             "$ref": "#/components/schemas/ConfigV2ProviderConnection"
-          },
-          "persona": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "prompt": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
           },
           "user_profile": {
             "type": "object",

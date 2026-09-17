@@ -395,6 +395,40 @@ export const makeSessionGroups = <
           ),
       )
       .add(
+        // SESSION IMPORT — read another harness's export (opencode's `{info,messages}` and relatives)
+        // as a new session. `data` is `Schema.Unknown` on purpose: the document is a foreign format,
+        // and validating it at the edge would mean re-typing every harness's schema here. The handler
+        // runs the one tolerant reader (`SessionPortability.parse`) and answers InvalidRequest when it
+        // is not a session at all.
+        HttpApiEndpoint.post("session.import", "/api/session/import", {
+          payload: Schema.Struct({
+            data: Schema.Unknown,
+            // A posture id by default (`build`), because the one-live-root DB index exempts postures:
+            // importing several sessions on demand must not collide with a colleague's one chat.
+            agent: Agent.ID.pipe(Schema.optional),
+            directory: AbsolutePath.pipe(Schema.optional),
+            title: Schema.String.pipe(Schema.optional),
+          }),
+          success: Schema.Struct({
+            data: Schema.Struct({
+              sessionID: Session.ID,
+              imported: Schema.Finite,
+              skipped: Schema.Finite,
+            }),
+          }),
+          error: InvalidRequestError,
+        })
+          .middleware(locationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.import",
+              summary: "Import session",
+              description:
+                "Create a session from an exported transcript (opencode-compatible). No model is called; the messages are recorded as history.",
+            }),
+          ),
+      )
+      .add(
         // Tags component (notes/reports/entities-review-2026-07-06.md T0): replace the chat's full tag set. Full-set PUT keeps
         // it idempotent and matches the `session.tags.updated` event, which also carries the list.
         HttpApiEndpoint.put("session.tags.set", "/api/session/:sessionID/tags", {
