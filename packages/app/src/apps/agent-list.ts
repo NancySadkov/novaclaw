@@ -100,6 +100,9 @@ export const listAgents = async (sdk: {
         // itself was never marked dirty. The `config` spread below does hold it, but the dialog reads
         // the lifted field, and `AgentLike` declares it.
         ...(typeof row["toolLabels"] === "boolean" ? { toolLabels: row["toolLabels"] } : {}),
+        // Same reason as `toolLabels`: the dialog reads the lifted field, and a stored `true` dying here
+        // would show the AGENTS.md switch OFF and never mark it dirty.
+        ...(typeof row["instructions"] === "boolean" ? { instructions: row["instructions"] } : {}),
         // Everything the CONFIG schema declares, verbatim — the clone's source of truth. Derived from
         // the schema rather than listed here, because a hand-kept projection is exactly what dropped
         // `steps` on the way to a clone (see `AgentLike.config`).

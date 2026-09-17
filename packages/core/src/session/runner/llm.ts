@@ -37,6 +37,7 @@ import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
 import { OwnedRuntimeContext } from "../owned-runtime-context"
 import { ToolDiscovery } from "../../tool-discovery"
 import { SkillGuidance } from "../../skill/guidance"
+import { InstructionContext } from "../../instruction-context"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
@@ -441,6 +442,9 @@ export const layer = Layer.effect(
     const effective = yield* SessionEffectiveConfig.Service
     const location = yield* Location.Service
     const systemContext = yield* SystemContextRegistry.Service
+    // Ambient AGENTS.md, per-agent opt-in (`AgentV2.Info.instructions`). A service, not a registry
+    // entry, because the switch lives on the agent and the registry is location-scoped.
+    const instructionContext = yield* InstructionContext.Service
     const toolCatalogueGuidance = yield* ToolCatalogueGuidance.Service
     const skillGuidance = yield* SkillGuidance.Service
     const referenceGuidance = yield* ReferenceGuidance.Service
@@ -1200,6 +1204,7 @@ export const layer = Layer.effect(
         : Effect.all(
             [
               systemContext.load(),
+              instructionContext.load(agent),
               skillGuidance.load(agent),
               referenceGuidance.load(),
               adhocGuidance.load(sessionID),
@@ -5297,6 +5302,7 @@ export const node = makeLocationNode({
     SessionEffectiveConfig.node,
     Location.node,
     SystemContextRegistry.node,
+    InstructionContext.node,
     SkillGuidance.node,
     ReferenceGuidance.node,
     AdhocGuidance.node,

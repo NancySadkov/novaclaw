@@ -3806,6 +3806,7 @@ export type ConfigV2Agent = {
   memory?: "own" | "none"
   archiveChats?: boolean
   toolLabels?: boolean
+  instructions?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
@@ -4660,6 +4661,7 @@ export type AgentV2Info = {
   memory?: AgentMemory
   archiveChats?: boolean
   toolLabels?: boolean
+  instructions?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"
   description?: string
   directory?: string

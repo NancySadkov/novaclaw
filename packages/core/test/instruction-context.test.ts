@@ -9,20 +9,29 @@ import { Global } from "@novaclaw/core/global"
 import { InstructionContext } from "@novaclaw/core/instruction-context"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { SystemContext } from "@novaclaw/core/system-context"
-import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
+/**
+ * The per-agent opt-in, as the runner would pass it. `undefined` = the field is absent, which is the
+ * DEFAULT and must load nothing.
+ */
+const selection = (instructions: boolean | undefined): AgentV2.Selection => ({
+  id: AgentV2.ID.make("test"),
+  info: { instructions } as unknown as AgentV2.Info,
+})
+
 const instructionLayer = (input: {
   config: string
   locationServiceLayer: Layer.Layer<Location.Service>
   filesystemLayer?: Layer.Layer<FSUtil.Service>
 }) =>
-  AppNodeBuilder.build(LayerNode.group([SystemContextRegistry.node, InstructionContext.node]), [
+  AppNodeBuilder.build(LayerNode.group([InstructionContext.node]), [
     [Global.node, Global.layerWith({ config: input.config })],
     [Location.node, input.locationServiceLayer],
     ...(input.filesystemLayer ? [[FSUtil.node, input.filesystemLayer] as const] : []),
@@ -52,8 +61,8 @@ describe("InstructionContext", () => {
             await fs.writeFile(packageFile, "package")
           })
 
-          const load = SystemContextRegistry.Service.pipe(
-            Effect.flatMap((service) => service.load()),
+          const load = InstructionContext.Service.pipe(
+            Effect.flatMap((service) => service.load(selection(true))),
             Effect.provide(
               instructionLayer({
                 config: global,
@@ -117,8 +126,8 @@ describe("InstructionContext", () => {
         Effect.gen(function* () {
           const file = path.join(tmp.path, "AGENTS.md")
           yield* Effect.promise(() => fs.writeFile(file, ""))
-          const context = yield* SystemContextRegistry.Service.pipe(
-            Effect.flatMap((service) => service.load()),
+          const context = yield* InstructionContext.Service.pipe(
+            Effect.flatMap((service) => service.load(selection(true))),
             Effect.provide(
               instructionLayer({
                 config: path.join(tmp.path, "global"),
@@ -146,8 +155,8 @@ describe("InstructionContext", () => {
           ),
         ),
       ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
-      const context = yield* SystemContextRegistry.Service.pipe(
-        Effect.flatMap((service) => service.load()),
+      const context = yield* InstructionContext.Service.pipe(
+        Effect.flatMap((service) => service.load(selection(true))),
         Effect.provide(
           instructionLayer({
             config: "/global",
@@ -186,8 +195,8 @@ describe("InstructionContext", () => {
           ),
         ),
       ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
-      const context = yield* SystemContextRegistry.Service.pipe(
-        Effect.flatMap((service) => service.load()),
+      const context = yield* InstructionContext.Service.pipe(
+        Effect.flatMap((service) => service.load(selection(true))),
         Effect.provide(
           instructionLayer({
             config: "/global",
@@ -230,8 +239,8 @@ describe("InstructionContext", () => {
         ),
       ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
 
-      yield* SystemContextRegistry.Service.pipe(
-        Effect.flatMap((service) => service.load()),
+      yield* InstructionContext.Service.pipe(
+        Effect.flatMap((service) => service.load(selection(true))),
         Effect.provide(
           instructionLayer({
             config: "/global",
@@ -254,14 +263,36 @@ describe("InstructionContext", () => {
     }),
   )
 
+  // 🔴 Owner, 2026-09-17: the auto-embed was unconditional. Absent is the DEFAULT and, with `false`,
+  // must load nothing — this is the assertion that keeps "opt-in" from decaying into "opt-out".
+  it.effect("loads nothing when the agent does not opt in", () =>
+    Effect.gen(function* () {
+      const service = yield* InstructionContext.Service
+      for (const value of [undefined, false]) {
+        const context = yield* service.load(selection(value))
+        expect((yield* SystemContext.initialize(context)).baseline).toBe("")
+      }
+    }).pipe(
+      Effect.provide(
+        instructionLayer({
+          config: "/global",
+          locationServiceLayer: Layer.succeed(
+            Location.Service,
+            Location.Service.of(location({ directory: AbsolutePath.make("/repo") })),
+          ),
+        }),
+      ),
+    ),
+  )
+
   it.effect("honors the project instruction opt-out", () =>
     Effect.gen(function* () {
       const previous = process.env.NOVACLAW_DISABLE_PROJECT_CONFIG
       let scanned = false
       process.env.NOVACLAW_DISABLE_PROJECT_CONFIG = "1"
 
-      yield* SystemContextRegistry.Service.pipe(
-        Effect.flatMap((service) => service.load()),
+      yield* InstructionContext.Service.pipe(
+        Effect.flatMap((service) => service.load(selection(true))),
         Effect.provide(
           instructionLayer({
             config: "/global",
@@ -292,8 +323,8 @@ describe("InstructionContext", () => {
   it.effect("does not discover project instructions outside the canonical project root", () =>
     Effect.gen(function* () {
       let scanned = false
-      yield* SystemContextRegistry.Service.pipe(
-        Effect.flatMap((service) => service.load()),
+      yield* InstructionContext.Service.pipe(
+        Effect.flatMap((service) => service.load(selection(true))),
         Effect.provide(
           instructionLayer({
             config: "/global",

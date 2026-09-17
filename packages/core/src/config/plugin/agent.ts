@@ -103,6 +103,7 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.memory !== undefined) agent.memory = item.memory
   if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
   if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
+  if (item.instructions !== undefined) agent.instructions = item.instructions
   if (item.needsTaxonomy !== undefined) agent.needsTaxonomy = item.needsTaxonomy
   if (item.description !== undefined) agent.description = item.description
   if (item.directory !== undefined) agent.directory = item.directory

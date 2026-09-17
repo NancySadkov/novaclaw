@@ -68,6 +68,16 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   toolLabels: Schema.Boolean.pipe(Schema.optional),
   /**
+   * Load the working folder's ambient instructions (`AGENTS.md`, and the instance's own
+   * `config/AGENTS.md`) into this colleague's prompt.
+   *
+   * 🔴 Owner, 2026-09-17: this was UNCONDITIONAL, and in this repo that file is tens of kilobytes —
+   * an officer whose job has nothing to do with the code still read all of it every turn. It is now
+   * per-agent and OPT-IN: absent or `false` loads nothing. The seeded Engineer declares `true`,
+   * because coding is the role the file is written for.
+   */
+  instructions: Schema.Boolean.pipe(Schema.optional),
+  /**
    * The model class this role expects (`smart` | `usual` | `fast`; `agent/model-fit.ts`).
    *
    * 🔴 A role can outrun its model SILENTLY, and the fallback added on 2026-08-22 is why: when a

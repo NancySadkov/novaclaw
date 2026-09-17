@@ -35853,6 +35853,9 @@
           "toolLabels": {
             "type": "boolean"
           },
+          "instructions": {
+            "type": "boolean"
+          },
           "needsTaxonomy": {
             "type": "string",
             "enum": ["smart", "usual", "fast"]
@@ -38354,6 +38357,9 @@
             "type": "boolean"
           },
           "toolLabels": {
+            "type": "boolean"
+          },
+          "instructions": {
             "type": "boolean"
           },
           "needsTaxonomy": {

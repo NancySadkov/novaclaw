@@ -163,6 +163,12 @@ export function AgentConfigScreen(props: {
    */
   const [toolLabels, setToolLabels] = createSignal<boolean | undefined>()
   /**
+   * Load the working folder's ambient instructions (`AGENTS.md`), drafted as the OPT-IN. `undefined` =
+   * untouched; the default is OFF, so `true` is the only value that turns it on and a stored `false`
+   * is only ever a user's explicit decline. Owner, 2026-09-17.
+   */
+  const [instructions, setInstructions] = createSignal<boolean | undefined>()
+  /**
    * Computer Use, drafted as the OPT-OUT rather than as the permission. `undefined` = untouched;
    * `true` = hand the officer back to the floor's grant (the rule goes away); `false` = store the deny.
    * Absence means ON, so there is exactly one place that says whether an officer can touch the
@@ -307,6 +313,8 @@ export function AgentConfigScreen(props: {
   // Default ON, exactly like `archiveChats`: absent means on, and only an explicit `false` skips the
   // per-tool-call captioning request.
   const toolLabelsValue = () => toolLabels() ?? agent()?.toolLabels ?? true
+  // Default OFF — opt-in: absent means this colleague loads no AGENTS.md.
+  const instructionsValue = () => instructions() ?? agent()?.instructions ?? false
   // "" is the INHERIT choice, and it is a real value rather than a missing one: a colleague with no
   // model of its own follows the instance default, which is a decision the user can return to.
   const modelValue = () => {
@@ -536,6 +544,7 @@ export function AgentConfigScreen(props: {
     quality() !== undefined ||
     affective() !== undefined ||
     toolLabels() !== undefined ||
+    instructions() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
     needsTaxonomy() !== undefined ||
@@ -1002,6 +1011,7 @@ export function AgentConfigScreen(props: {
             ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
             ...(goal() === undefined ? {} : { goal: goalValue() }),
             ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
+            ...(instructions() === undefined ? {} : { instructions: instructions()! }),
             // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
             // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
             ...(computerUse() === undefined || computerRuleset().length === 0
@@ -1861,6 +1871,21 @@ export function AgentConfigScreen(props: {
                     </a>
                   )}
                 </Show>
+                {/* The working folder's AGENTS.md is opt-in (owner, 2026-09-17). It belongs here beside the
+                    folder because it is a fact about that folder, and the row states the default in words
+                    rather than leaving a bare unchecked box the user has to interpret. */}
+                <label class="mt-4 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={instructionsValue()}
+                    onChange={(event) => setInstructions(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("agentConfig.instructions")}</span>
+                </label>
+                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                  {language.t(instructionsValue() ? "agentConfig.instructions.on" : "agentConfig.instructions.off")}
+                </p>
               </section>
             </Show>
 

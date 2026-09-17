@@ -74,6 +74,7 @@ describe("every field the wire schema declares is accounted for", () => {
       steps: 4,
       archiveChats: true,
       toolLabels: true,
+      instructions: true,
       shortChat: true,
       operationMode: "unattended",
       goal: "Keep improving the manuscript.",

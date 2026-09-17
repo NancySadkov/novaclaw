@@ -2667,6 +2667,11 @@ export const dict = {
   "agentConfig.computerUse.on": "On — this colleague can control the desktop, and asks before installing anything new",
   "agentConfig.computerUse.off":
     "Off — the tool is taken out of this colleague's reach entirely, not just refused when it tries",
+  "agentConfig.instructions": "Read this folder's AGENTS.md",
+  "agentConfig.instructions.on":
+    "On — the folder's AGENTS.md (and the instance's own) is added to this colleague's prompt on every turn. A big file costs tokens every turn.",
+  "agentConfig.instructions.off":
+    "Off — this colleague reads no project instructions. Turn it on for a role that works in a repository whose AGENTS.md is written for it.",
   "agentConfig.folder": "What it works on",
   "agentConfig.folderScratch": "Its own workspace",
   "agentConfig.folderOwn": "Back to its own",

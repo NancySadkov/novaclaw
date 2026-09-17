@@ -47,6 +47,9 @@ export const Info = Schema.Struct({
   /** Caption each shell/spawn tool call with a generated title (default on). Costs a model call per
    *  call, so it is opt-out for agents whose work is shell-heavy. Read by the status sampler. */
   toolLabels: Schema.Boolean.pipe(optional),
+  /** Load the working folder's ambient instructions (AGENTS.md) into this colleague's prompt.
+   *  OPT-IN: absent and `false` both load nothing. See `instruction-context.ts`. */
+  instructions: Schema.Boolean.pipe(optional),
   /** The model class this role expects (`smart` | `usual` | `fast` — never `special`, which the
    *  harness must not route to by itself). Warns when the bound model is beneath it; never refuses.
    *  Absent = no declared floor. */
