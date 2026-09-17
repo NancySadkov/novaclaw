@@ -79,6 +79,7 @@ export const shellHandlers = HttpApiBuilder.group(InstanceHttpApi, "shell", (han
           // New binaries just landed — drop every shell/git resolution cache so the
           // running server picks them up without a restart.
           Shell.agentDefault.reset()
+          Shell.agentPlatform.reset()
           Shell.preferred.reset()
           Git.binary.reset()
           return status()

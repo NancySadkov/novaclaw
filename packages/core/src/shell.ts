@@ -309,14 +309,22 @@ export interface AgentPlatform {
  * actually gets, not Node's view of the host.
  *
  * 🔴 Owner, 2026-09-17. The prompt's environment line said `Windows_NT 10.0.26200 / x64` (Node's
- * `os.type/release/arch`) while the agent's shell is PortableGit's MSYS2 bash, where the same `uname`
- * reports `Msys`, `3.6.7-…x86_64`, `x86_64`. A colleague that reads "Windows_NT" and then sees `Msys`
- * from its own shell has been told two different things about the box it is on; the prompt is the one
- * that is supposed to be authoritative. So the values come from the shell.
+ * `os.type/release/arch`), which is the HOST's view and not what the agent's shell reports. The two
+ * disagree on the shipped product: a Windows 7z has no MSYS bash — it embeds w64devkit, whose
+ * `bin/sh.exe` is the resolved agent shell, and that `uname` says `MS/Windows`, `10.0`, `x86_64`
+ * (verified against the prepared tree). Where a PortableGit bundle HAS been provisioned (or a system
+ * git-bash exists) the same shell is MSYS2 bash and `uname` says `Msys`, `3.6.7-…x86_64`, `x86_64`.
+ * Either answer is correct — for the shell in force. A colleague reading one box from its prompt and
+ * another from its own shell has been told two different things, and the prompt is the one that is
+ * supposed to be authoritative.
  *
  * ⚠️ Windows is the case this exists for. A WSL-launcher `bash.exe` on PATH reports `GNU/Linux` and a
  * WSL kernel — wrong box entirely — which is why `agentDefault()` deliberately rejects it. Off Windows,
  * or when no shell answers within the bound, this falls back to Node's `os` rather than inventing one.
+ *
+ * ⚠️ The resolution this reads is `agentDefault()`: bundled PortableGit when provisioned, else the
+ * embedded w64devkit `sh` (the packaged-Windows default), else a system bash. Provisioning a bundle at
+ * runtime changes it, so the `shell.provision` handler resets this cache with the others.
  *
  * ⚠️ Cached per process: the prompt is regenerated only at a session start and after a compaction, and
  * the shell cannot change in any way that matters between them. `reset` exists for tests.
