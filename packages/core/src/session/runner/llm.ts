@@ -1306,6 +1306,7 @@ export const layer = Layer.effect(
             : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
         const workLog =
           scratch === undefined ? undefined : yield* Effect.promise(() => OldContext.latestWorkLog(scratch))
+        const platform = Shell.agentPlatform()
         const text = PromptManager.generate({
           kind,
           name: agent.info?.name,
@@ -1313,9 +1314,11 @@ export const layer = Layer.effect(
           superior: superiorName,
           subordinates,
           jobInstructions,
-          os: OSModule.type(),
-          kernelRelease: OSModule.release(),
-          arch: OSModule.arch(),
+          // What the agent's OWN shell reports from `uname`, so the prompt and the shell cannot
+          // disagree about the box (see `Shell.agentPlatform`).
+          os: platform.os,
+          kernelRelease: platform.kernelRelease,
+          arch: platform.arch,
           shell: Shell.agentDefault(),
           owner: instanceOwner(),
           scratch,

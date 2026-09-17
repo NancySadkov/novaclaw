@@ -32,6 +32,17 @@ describe("shell", () => {
     expect(Shell.login("C:/tools/pwsh.exe")).toBe(false)
   })
 
+  test("agentPlatform reports the environment the agent's own shell reports, and caches it", () => {
+    // The prompt's environment line must agree with what the model sees when IT runs `uname` — see
+    // `Shell.agentPlatform` for the Windows/NT vs MSYS mismatch this exists to prevent.
+    Shell.agentPlatform.reset()
+    const first = Shell.agentPlatform()
+    for (const [field, value] of Object.entries(first))
+      expect(value.length, `${field} must not be empty`).toBeGreaterThan(0)
+    // Cached: reading it must not spawn a shell on a prompt that regenerates per turn.
+    expect(Shell.agentPlatform()).toBe(first)
+  })
+
   test("detects posix shells", () => {
     expect(Shell.posix("/bin/bash")).toBe(true)
     expect(Shell.posix("/bin/fish")).toBe(false)

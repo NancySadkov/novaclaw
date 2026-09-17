@@ -1,7 +1,9 @@
 export * as Shell from "./shell"
 
 import path from "path"
+import { spawnSync } from "node:child_process"
 import { readFileSync, statSync } from "fs"
+import * as osModule from "node:os"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ShellBundle } from "./shell-bundle"
@@ -288,6 +290,68 @@ export function agentDefault(): string {
 }
 agentDefault.reset = () => {
   defaultAgent = undefined
+}
+
+let platformCache: AgentPlatform | undefined
+
+/** What `uname` says inside the AGENT's own shell. */
+export interface AgentPlatform {
+  /** `uname -o` — the operating-system name the shell reports (`Msys`, `GNU/Linux`, …). */
+  readonly os: string
+  /** `uname -r` — the kernel release. */
+  readonly kernelRelease: string
+  /** `uname -m` — the machine hardware name (`x86_64`, `aarch64`, …). */
+  readonly arch: string
+}
+
+/**
+ * The environment as the MODEL will observe it — `uname -o`, `-r` and `-m` run in the shell the agent
+ * actually gets, not Node's view of the host.
+ *
+ * 🔴 Owner, 2026-09-17. The prompt's environment line said `Windows_NT 10.0.26200 / x64` (Node's
+ * `os.type/release/arch`) while the agent's shell is PortableGit's MSYS2 bash, where the same `uname`
+ * reports `Msys`, `3.6.7-…x86_64`, `x86_64`. A colleague that reads "Windows_NT" and then sees `Msys`
+ * from its own shell has been told two different things about the box it is on; the prompt is the one
+ * that is supposed to be authoritative. So the values come from the shell.
+ *
+ * ⚠️ Windows is the case this exists for. A WSL-launcher `bash.exe` on PATH reports `GNU/Linux` and a
+ * WSL kernel — wrong box entirely — which is why `agentDefault()` deliberately rejects it. Off Windows,
+ * or when no shell answers within the bound, this falls back to Node's `os` rather than inventing one.
+ *
+ * ⚠️ Cached per process: the prompt is regenerated only at a session start and after a compaction, and
+ * the shell cannot change in any way that matters between them. `reset` exists for tests.
+ */
+export function agentPlatform(): AgentPlatform {
+  if (platformCache) return platformCache
+  const fallback: AgentPlatform = {
+    os: osModule.type(),
+    kernelRelease: osModule.release(),
+    arch: osModule.arch(),
+  }
+  try {
+    const shell = agentDefault()
+    const result = spawnSync(shell, ["-c", "uname -o; uname -r; uname -m"], {
+      encoding: "utf8",
+      timeout: 3_000,
+      windowsHide: true,
+      env: { ...process.env, ...(ShellBundle.envForBash(shell) ?? {}) },
+    })
+    const lines = (result.stdout ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    if (result.status === 0 && lines.length >= 3) {
+      platformCache = { os: lines[0]!, kernelRelease: lines[1]!, arch: lines[2]! }
+      return platformCache
+    }
+  } catch {
+    // No shell, or it died — the host's own answer is still better than nothing.
+  }
+  platformCache = fallback
+  return platformCache
+}
+agentPlatform.reset = () => {
+  platformCache = undefined
 }
 
 export function preferred() {
