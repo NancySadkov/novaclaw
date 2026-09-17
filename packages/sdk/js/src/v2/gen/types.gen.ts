@@ -15058,13 +15058,51 @@ export type V2SessionPromptSourceResponses = {
   200: {
     data: {
       baseline?: string
+    }
+  }
+}
+
+export type V2SessionPromptSourceResponse = V2SessionPromptSourceResponses[keyof V2SessionPromptSourceResponses]
+
+export type V2SessionPromptCaptureData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/prompt-capture"
+}
+
+export type V2SessionPromptCaptureErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionPromptCaptureError = V2SessionPromptCaptureErrors[keyof V2SessionPromptCaptureErrors]
+
+export type V2SessionPromptCaptureResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
       initial?: string
       latest?: string
     }
   }
 }
 
-export type V2SessionPromptSourceResponse = V2SessionPromptSourceResponses[keyof V2SessionPromptSourceResponses]
+export type V2SessionPromptCaptureResponse = V2SessionPromptCaptureResponses[keyof V2SessionPromptCaptureResponses]
 
 export type V2SessionExecutionRetryData = {
   body?: never

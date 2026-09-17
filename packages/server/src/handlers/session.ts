@@ -40,7 +40,7 @@ import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
 import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
-import { SessionContextEpoch } from "@novaclaw/core/session/context-epoch"
+import { ContextManager } from "@novaclaw/core/session/context-manager"
 import { SessionPortability } from "@novaclaw/core/session/portability"
 
 const DefaultSessionsLimit = 50
@@ -1271,7 +1271,7 @@ const SessionObservationHandler = handlerLayer(
         .handle(
           "session.promptSource",
           Effect.fn(function* (ctx) {
-            const target = yield* session.get(ctx.params.sessionID).pipe(
+            yield* session.get(ctx.params.sessionID).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
                 Effect.fail(
                   new SessionNotFoundError({
@@ -1282,19 +1282,35 @@ const SessionObservationHandler = handlerLayer(
               ),
             )
             // The LIVE prompt: the stored epoch baseline, regenerated whenever a component changes.
-            // An inspector reads this rather than a captured request or a transcript `system` message,
-            // either of which can predate a prompt change and reads as the current prompt.
+            // ⚠️ RUNTIME STATE ONLY — this handler reads no file. The live-prompt indicator must never
+            // show a scratch capture, because a capture is history and can predate a prompt change.
             const { db } = yield* Database.Service
-            const baseline = yield* SessionContextEpoch.baselineOf(db, ctx.params.sessionID)
+            const baseline = yield* ContextManager.baseline(db, ctx.params.sessionID)
+            return { data: baseline === undefined ? {} : { baseline } }
+          }),
+        )
+        .handle(
+          "session.promptCapture",
+          Effect.fn(function* (ctx) {
+            const target = yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
             // A session with no agent (an unassigned root) has no scratch folder to have captured into.
-            if (!target.agent) return { data: baseline === undefined ? {} : { baseline } }
-            const captured = yield* Effect.promise(() =>
+            if (!target.agent) return { data: {} }
+            const data = yield* Effect.promise(() =>
               PromptCapture.read({
                 scratchFolder: Scratch.forAgent(String(target.agent)),
                 sessionID: ctx.params.sessionID,
               }),
             )
-            return { data: baseline === undefined ? captured : { ...captured, baseline } }
+            return { data }
           }),
         )
         .handle(

@@ -1198,12 +1198,11 @@ export const makeSessionGroups = <
               /**
                * The system prompt this session is running with — the stored context-epoch baseline.
                * Regenerated whenever a prompt component changes, so it is CURRENT, not a capture of
-               * an older build. This is what an inspector should show. Absent only before the first
-               * turn (or when the session has no prompt at all).
+               * an older build. Read from runtime state only: this endpoint never touches the
+               * filesystem, because the live-prompt indicator must not show a stale scratch file.
+               * Absent only before the first turn (or when the session has no prompt at all).
                */
               baseline: Schema.String.pipe(Schema.optional),
-              initial: Schema.String.pipe(Schema.optional),
-              latest: Schema.String.pipe(Schema.optional),
             }),
           }),
           error: SessionNotFoundError,
@@ -1212,9 +1211,32 @@ export const makeSessionGroups = <
           .annotateMerge(
             OpenApi.annotations({
               identifier: "v2.session.promptSource",
-              summary: "Read the session's system prompt and captured requests",
+              summary: "Read the session's live system prompt",
               description:
-                "`baseline` is the system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. `initial`/`latest` are the raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes. The captures are absent until the session has dispatched a turn.",
+                "The system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. This is the CURRENT prompt, read from runtime state — never a captured request or a transcript message, both of which can be stale.",
+            }),
+          ),
+      )
+      .add(
+        HttpApiEndpoint.get("session.promptCapture", "/api/session/:sessionID/prompt-capture", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({
+            data: Schema.Struct({
+              /** The session's FIRST provider request body, as captured at dispatch. */
+              initial: Schema.String.pipe(Schema.optional),
+              /** The session's MOST RECENT provider request body, as captured at dispatch. */
+              latest: Schema.String.pipe(Schema.optional),
+            }),
+          }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.promptCapture",
+              summary: "Read a capture of this session's provider request",
+              description:
+                "The raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes (Export Prompt). These are HISTORICAL files on the agent's scratch disk, so they can predate a prompt change; a live-prompt view must read `session.promptSource` instead.",
             }),
           ),
       )

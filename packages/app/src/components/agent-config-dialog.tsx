@@ -581,7 +581,8 @@ export function AgentConfigScreen(props: {
       return
     }
     try {
-      const response = await client.session.promptSource({ sessionID })
+      // The captured request FILE, fetched on this explicit export — never by the live prompt view.
+      const response = await client.session.promptCapture({ sessionID })
       const initial = response.data?.data?.initial
       if (initial === undefined) {
         showToast({ variant: "default", title: language.t("context.export.promptEmpty") })

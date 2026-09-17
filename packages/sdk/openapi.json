@@ -15976,7 +15976,85 @@
                       "properties": {
                         "baseline": {
                           "type": "string"
-                        },
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. This is the CURRENT prompt, read from runtime state — never a captured request or a transcript message, both of which can be stale.",
+        "summary": "Read the session's live system prompt",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.promptSource({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/{sessionID}/prompt-capture": {
+      "get": {
+        "tags": ["session observation"],
+        "operationId": "v2.session.promptCapture",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
                         "initial": {
                           "type": "string"
                         },
@@ -16024,12 +16102,12 @@
             }
           }
         },
-        "description": "`baseline` is the system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. `initial`/`latest` are the raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes. The captures are absent until the session has dispatched a turn.",
-        "summary": "Read the session's system prompt and captured requests",
+        "description": "The raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes (Export Prompt). These are HISTORICAL files on the agent's scratch disk, so they can predate a prompt change; a live-prompt view must read `session.promptSource` instead.",
+        "summary": "Read a capture of this session's provider request",
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.promptSource({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.promptCapture({\n  ...\n})"
           }
         ]
       }

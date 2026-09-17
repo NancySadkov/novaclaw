@@ -7,49 +7,6 @@ export function serializeSessionTranscript(messages: readonly SessionMessage[]):
   return serialize(messages)
 }
 
-/**
- * The `role: "system"` content out of a captured provider request body.
- *
- * 🔴 Owner, 2026-09-17: Context Inspect must show the prompt that was actually SENT, not a
- * re-composition of session state. Since the one `PromptManager` prompt is the epoch baseline and no
- * longer a `system` session message, reading session messages can show nothing at all. The captured
- * body IS the wire request (`PromptCapture`), so this reads the system message out of it.
- *
- * ⚠️ Returns `undefined` rather than throwing for any shape it does not recognise: the body is
- * protocol-native, and a non-OpenAI protocol (or a capture from before this existed) must fall back
- * to the session-message path, never crash the tab.
- */
-export function wireSystemPrompt(bodyText: string): string | undefined {
-  try {
-    const parsed = JSON.parse(bodyText) as { readonly messages?: ReadonlyArray<unknown> }
-    if (!Array.isArray(parsed.messages)) return undefined
-    const system = parsed.messages.find(
-      (message): message is { readonly role: string; readonly content: unknown } =>
-        typeof message === "object" &&
-        message !== null &&
-        (message as { readonly role?: unknown }).role === "system",
-    )
-    if (system === undefined) return undefined
-    const content = system.content
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .map((part) =>
-                typeof part === "object" && part !== null && "text" in part
-                  ? String((part as { readonly text: unknown }).text)
-                  : "",
-              )
-              .join("\n")
-          : ""
-    const trimmed = text.trim()
-    return trimmed.length === 0 ? undefined : trimmed
-  } catch {
-    return undefined
-  }
-}
-
 export function downloadPlainText(filename: string, contents: string): void {
   const url = URL.createObjectURL(new Blob([contents], { type: "text/plain;charset=utf-8" }))
   const anchor = document.createElement("a")

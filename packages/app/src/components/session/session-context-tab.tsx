@@ -24,12 +24,7 @@ import { displayName } from "@/apps/contacts"
 import { agentColor } from "@/utils/agent"
 import { getSessionContext, getSessionTokenTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
-import {
-  downloadPlainText,
-  serializeContextSegment,
-  sessionExportFilename,
-  wireSystemPrompt,
-} from "./session-context-export"
+import { downloadPlainText, serializeContextSegment, sessionExportFilename } from "./session-context-export"
 import { createSessionContextFormatter } from "./session-context-format"
 import { sessionCompactionEvents } from "./session-compaction-events"
 import { showToast } from "@/utils/toast"
@@ -108,10 +103,8 @@ export function SessionContextTab() {
     }
   })
 
-  // The exact request the runner captured at dispatch (server-side; the composed prompt is not in the
-  // client). `latest` is the most recent request — the one the provider was last sent, and the one
-  // Export Prompt downloads so it can be replayed against another OpenAI-compatible endpoint. `initial`
-  // is the session's first request, kept for a session that has captured no newer one.
+  // The LIVE prompt, server-side runtime state: the context-epoch baseline. Read-only, no filesystem.
+  // The captured wire bodies (for Export Prompt) come from `session.promptCapture` on demand.
   const promptSource = createQuery(() => ({
     queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
     queryFn: async () => {
@@ -124,19 +117,18 @@ export function SessionContextTab() {
   }))
 
   // 🔴 THE PROMPT THIS SESSION RUNS WITH — the stored epoch baseline, which the runner regenerates
-  // whenever a prompt component changes. It is the only source that is CURRENT by construction.
+  // whenever a prompt component changes. It is the ONLY source that is current by construction.
   //
-  // ⚠️ The fallbacks are deliberate and narrow: a captured request's system message (the exact wire
-  // bytes, for a session whose baseline predates this endpoint), and otherwise nothing. It must NEVER
-  // read a transcript `system` message: those were written by the retired composition and survive in
-  // old sessions, so they display an OLD prompt as if it were the live one.
-  const systemPrompt = createMemo(() => {
-    const baseline = promptSource.data?.baseline?.trim()
-    if (baseline) return baseline
-    const body = promptSource.data?.latest ?? promptSource.data?.initial
-    const wire = body === undefined ? undefined : wireSystemPrompt(body)
-    return wire
-  })
+  // ⚠️ **Nothing else may be shown here, and that is the fix, not a simplification.** Two tempting
+  // fallbacks are both lies:
+  //   · a captured request (`prompt-*.txt`) is HISTORY — it holds whatever was sent when it was
+  //     written, so a capture from before a prompt change displays an old prompt as the live one, and
+  //     clearing the chat does not touch the file;
+  //   · a transcript `system` message was written by the retired composition and survives in old
+  //     sessions for the same reason.
+  // Before the first turn (or for a prompt-less chat) there is genuinely nothing to show, and the
+  // panel says so instead of inventing an answer.
+  const systemPrompt = createMemo(() => promptSource.data?.baseline?.trim() || undefined)
 
   const rosterCtx = createMemo(() => {
     const connection = server.current
@@ -223,13 +215,30 @@ export function SessionContextTab() {
   // Export the EXACT request the provider was last sent — byte-for-byte the body captured at
   // dispatch, system message included — so it can be replayed with `curl` against any other
   // OpenAI-compatible endpoint. `initial` is the fallback for a session with only a first request.
-  const exportPrompt = () => {
-    const body = promptSource.data?.latest ?? promptSource.data?.initial
-    if (!body) {
+  //
+  // ⚠️ This reads the capture FILE, and deliberately only on an explicit click. The indicator above
+  // reads runtime state and never touches disk; the historical artifact is fetched on demand.
+  const exportPrompt = async () => {
+    const id = params.id
+    if (!id) {
       showToast({ variant: "error", title: language.t("context.export.promptEmpty") })
       return
     }
-    downloadPlainText(sessionExportFilename(officerName(), "prompt"), body)
+    try {
+      const response = await sdk().client.v2.session.promptCapture({ sessionID: id })
+      const body = response.data?.data?.latest ?? response.data?.data?.initial
+      if (!body) {
+        showToast({ variant: "error", title: language.t("context.export.promptEmpty") })
+        return
+      }
+      downloadPlainText(sessionExportFilename(officerName(), "prompt"), body)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   // THE WHOLE SESSION, as a portable document another harness (or this one) can import back.
@@ -558,16 +567,23 @@ export function SessionContextTab() {
           </Show>
         </div>
 
-        <Show when={systemPrompt()}>
-          {(prompt) => (
-            <div class="flex flex-col gap-2">
-              <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
+        <div class="flex flex-col gap-2">
+          <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
+          <Show
+            when={systemPrompt()}
+            fallback={
+              <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 text-12-regular text-text-weak">
+                {language.t("context.systemPrompt.empty")}
+              </div>
+            }
+          >
+            {(prompt) => (
               <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
                 <Markdown text={prompt()} class="text-12-regular" />
               </div>
-            </div>
-          )}
-        </Show>
+            )}
+          </Show>
+        </div>
 
         <div>
           <div class="flex flex-wrap gap-2">

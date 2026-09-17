@@ -676,6 +676,8 @@ export const dict = {
   "agentConfig.exportPrompt.hint": "Downloads the first request the harness sent for this officer's chat.",
 
   "context.systemPrompt.title": "System Prompt",
+  "context.systemPrompt.empty":
+    "No system prompt yet. Send a message in this chat and it appears here — the prompt is regenerated whenever the agent's job instructions, roster, memos or project change.",
   "context.rawMessages.title": "Raw messages",
   "context.compactions.button": "Compaction Events",
   "context.compactions.compactNow": "Compact Now",

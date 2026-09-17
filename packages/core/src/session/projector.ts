@@ -15,7 +15,7 @@ import { SessionRevert } from "./revert"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
-import { SessionContextEpoch } from "./context-epoch"
+import { ContextManager } from "./context-manager"
 import { SessionCompactionTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionSchema } from "./schema"
 import { SessionConfigColumns } from "./config-columns"
@@ -440,7 +440,7 @@ export const layer = Layer.effectDiscard(
           .run()
           .pipe(Effect.orDie)
         yield* SessionLocationRecovery.clear(db, event.data.sessionID)
-        yield* SessionContextEpoch.reset(db, event.data.sessionID)
+        yield* ContextManager.reset(db, event.data.sessionID)
       }),
     )
     yield* events.project(SessionRecordEvent.Deleted, (event) =>
@@ -807,7 +807,7 @@ export const layer = Layer.effectDiscard(
           .where(eq(SessionTable.id, event.data.sessionID))
           .run()
           .pipe(Effect.orDie)
-        yield* SessionContextEpoch.reset(db, event.data.sessionID)
+        yield* ContextManager.reset(db, event.data.sessionID)
       }),
     )
     yield* settleInterruptedCompactions(db)

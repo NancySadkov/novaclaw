@@ -2281,9 +2281,9 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
-   * Read the session's system prompt and captured requests
+   * Read the session's live system prompt
    *
-   * `baseline` is the system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. `initial`/`latest` are the raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes. The captures are absent until the session has dispatched a turn.
+   * The system prompt this session currently runs with (the context-epoch baseline), regenerated whenever a prompt component changes. This is the CURRENT prompt, read from runtime state — never a captured request or a transcript message, both of which can be stale.
    */
   public promptSource<ThrowOnError extends boolean = false>(
     parameters: {
@@ -2298,6 +2298,29 @@ class ApiV2Session extends NovaClawApiClient {
       ThrowOnError
     >({
       url: "/api/session/{sessionID}/prompt-source",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Read a capture of this session's provider request
+   *
+   * The raw provider request bodies captured at dispatch — `initial` the session's first request, `latest` the most recent — for replaying the exact wire bytes (Export Prompt). These are HISTORICAL files on the agent's scratch disk, so they can predate a prompt change; a live-prompt view must read `session.promptSource` instead.
+   */
+  public promptCapture<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<
+      T.V2SessionPromptCaptureResponses,
+      T.V2SessionPromptCaptureErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/prompt-capture",
       ...options,
       path,
     })

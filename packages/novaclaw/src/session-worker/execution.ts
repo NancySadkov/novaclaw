@@ -14,7 +14,7 @@ import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { SessionContextEpoch } from "@novaclaw/core/session/context-epoch"
+import { ContextManager } from "@novaclaw/core/session/context-manager"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { SessionEvent } from "@novaclaw/core/session/event"
@@ -495,7 +495,7 @@ export const layer = Layer.effect(
                       lease,
                       message,
                       contextUpdated: (update) =>
-                        SessionContextEpoch.publishUpdate(
+                        ContextManager.publishUpdate(
                           database.db,
                           events,
                           { sessionID, messageID: update.messageID, timestamp: update.timestamp, text: update.text },

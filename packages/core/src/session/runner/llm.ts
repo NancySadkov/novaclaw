@@ -41,7 +41,7 @@ import { OfficerPrompt } from "../../officer-prompt"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
-import { SessionContextEpoch } from "../context-epoch"
+import { ContextManager } from "../context-manager"
 import { SessionCompaction } from "../compaction"
 import { ContextTemplate } from "../context-template"
 import { Durable } from "../durable"
@@ -1433,9 +1433,9 @@ export const layer = Layer.effect(
       const promptText = yield* tap(
         renderPrompt(session, agent, ShortChat.enabled(config.shortChat), config.type, resolution.workerProfile),
       )
-      const storedBaseline = yield* SessionContextEpoch.baselineOf(db, session.id)
+      const storedBaseline = yield* ContextManager.baseline(db, session.id)
       const context = Effect.succeed(promptContext(promptText))
-      const initialized = yield* SessionContextEpoch.initialize(db, context, session.id)
+      const initialized = yield* ContextManager.initialize(db, context, session.id)
       let promoted = 0
       if (options.promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
@@ -1448,14 +1448,14 @@ export const layer = Layer.effect(
       const system =
         initialized ??
         (yield* tap(
-          SessionContextEpoch.prepare(
+          ContextManager.prepare(
             db,
             events,
             context,
             session.id,
             (update) =>
               SessionExecutionAttempt.contextUpdatedCurrent({ ...update.data, snapshot: update.snapshot }, () =>
-                SessionContextEpoch.publishUpdate(db, events, update.data, update.snapshot),
+                ContextManager.publishUpdate(db, events, update.data, update.snapshot),
               ),
             undefined,
             storedBaseline !== undefined && storedBaseline !== promptText,
