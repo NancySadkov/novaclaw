@@ -587,8 +587,6 @@ export const dict = {
   "home.app.contacts.stat.running": "aktiv",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "Speicher",
-  "home.app.notes.name": "Notizen",
-  "home.app.notes.subtitle": "Alltägliche Notizen, geteilt mit deinen Agenten",
   "home.app.calendar.name": "Kalender",
   "home.app.calendar.subtitle": "Agenten für wiederkehrende Termine einplanen",
   "home.app.recipes.name": "Rezepte",

@@ -572,8 +572,6 @@ export const dict = {
   "home.app.contacts.stat.running": "실행 중",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "메모리",
-  "home.app.notes.name": "노트",
-  "home.app.notes.subtitle": "에이전트와 공유하는 일상 메모",
   "home.app.calendar.name": "캘린더",
   "home.app.calendar.subtitle": "반복되는 날짜에 에이전트 실행 예약",
   "home.app.recipes.name": "레시피",

@@ -635,8 +635,6 @@ export const dict = {
   "home.app.contacts.stat.running": "çalışıyor",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "bellek",
-  "home.app.notes.name": "Notlar",
-  "home.app.notes.subtitle": "Günlük notlar, ajanlarınızla paylaşılır",
   "home.app.calendar.name": "Takvim",
   "home.app.calendar.subtitle": "Ajanları yinelenen bir tarihte çalışacak şekilde planlayın",
   "home.app.recipes.name": "Tarifler",

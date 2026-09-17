@@ -638,8 +638,6 @@ export const dict = {
   "home.app.contacts.stat.running": "kjører",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "minne",
-  "home.app.notes.name": "Notater",
-  "home.app.notes.subtitle": "Hverdagsnotater, delt med agentene dine",
   "home.app.calendar.name": "Kalender",
   "home.app.calendar.subtitle": "Planlegg agenter til å kjøre på en gjentakende dato",
   "home.app.recipes.name": "Oppskrifter",

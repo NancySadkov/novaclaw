@@ -7,7 +7,6 @@
  */
 export const MANIFEST_ROUTE_TARGETS = {
   contacts: "/tasks",
-  notes: "/notes",
   models: "/models",
   files: "/files",
   calendar: "/calendar",

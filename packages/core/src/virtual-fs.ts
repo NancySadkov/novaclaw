@@ -21,7 +21,7 @@ import path from "node:path"
 import { Global } from "./global"
 import { Flag } from "./flag/flag"
 
-const SUBDIRS = ["projects", "notes", "files"] as const
+const SUBDIRS = ["projects", "files"] as const
 
 /** The app-private virtual FS root. Env override exists for tests. */
 export function root(): string {
@@ -50,7 +50,7 @@ export async function ensure(): Promise<string> {
     await fsp.writeFile(
       readme,
       "# NovaClaw workspace\n\nThis is NovaClaw's app-private workspace, used when the host does not " +
-        "expose a browsable filesystem (phones, sandboxes). Your projects, notes, and files live here.\n",
+        "expose a browsable filesystem (phones, sandboxes). Your projects and files live here.\n",
     )
   return base
 }

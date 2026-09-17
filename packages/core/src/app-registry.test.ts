@@ -61,7 +61,7 @@ describe("AppRegistry save/list/remove", () => {
   })
 
   test("save with an existing id updates but keeps createdAt", async () => {
-    const first = await AppRegistry.saveApp({ id: "x", title: "One", open: { type: "route", value: "notes" } }, opts())
+    const first = await AppRegistry.saveApp({ id: "x", title: "One", open: { type: "route", value: "files" } }, opts())
     const second = await AppRegistry.saveApp(
       { id: "x", title: "Two", open: { type: "route", value: "files" } },
       { root, now: () => new Date(1_800_000_000_000) },
@@ -73,7 +73,7 @@ describe("AppRegistry save/list/remove", () => {
   })
 
   test("remove deletes the manifest and reports existence", async () => {
-    await AppRegistry.saveApp({ id: "gone", title: "Gone", open: { type: "route", value: "notes" } }, opts())
+    await AppRegistry.saveApp({ id: "gone", title: "Gone", open: { type: "route", value: "files" } }, opts())
     expect(await AppRegistry.removeApp("gone", opts())).toBe(true)
     expect(await AppRegistry.removeApp("gone", opts())).toBe(false)
     expect(await AppRegistry.listApps(opts())).toHaveLength(0)
@@ -82,7 +82,7 @@ describe("AppRegistry save/list/remove", () => {
   test("list skips torn/corrupt files", async () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(path.join(root, "bad.json"), "{ not json", "utf8")
-    await AppRegistry.saveApp({ id: "ok", title: "Ok", open: { type: "route", value: "notes" } }, opts())
+    await AppRegistry.saveApp({ id: "ok", title: "Ok", open: { type: "route", value: "files" } }, opts())
     const listed = await AppRegistry.listApps(opts())
     expect(listed.map((m) => m.id)).toEqual(["ok"])
   })
@@ -92,7 +92,7 @@ describe("AppRegistry save/list/remove", () => {
     const file = path.join(root, "broken.json")
     await fs.writeFile(file, "{ not json", "utf8")
     await expect(
-      AppRegistry.saveApp({ id: "broken", title: "Replacement", open: { type: "route", value: "notes" } }, opts()),
+      AppRegistry.saveApp({ id: "broken", title: "Replacement", open: { type: "route", value: "files" } }, opts()),
     ).rejects.toThrow("unreadable and was not overwritten")
     expect(await fs.readFile(file, "utf8")).toBe("{ not json")
   })

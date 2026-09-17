@@ -569,8 +569,6 @@ export const dict = {
   "home.app.contacts.stat.running": "قيد التشغيل",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "الذاكرة",
-  "home.app.notes.name": "الملاحظات",
-  "home.app.notes.subtitle": "ملاحظات يومية، مشتركة مع وكلائك",
   "home.app.calendar.name": "التقويم",
   "home.app.calendar.subtitle": "جدولة الوكلاء للعمل في تاريخ متكرر",
   "home.app.recipes.name": "الوصفات",

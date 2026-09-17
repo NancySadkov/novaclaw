@@ -52,18 +52,6 @@ export const dict = {
   // ⚠️ ENGLISH-ONLY on purpose, like the Settings → Project rows: the parity ratchet fails on an
   // EXTRA key in a locale and only COUNTS a missing one, so pasting English into de.ts et al. would
   // make the translation backlog read as done. Translate properly or leave the key out.
-  "notes.title": "Notes",
-  "notes.hint": "Shared with your agents — any chat can read them or add to them.",
-  "notes.new": "New note",
-  "notes.namePlaceholder": "note name…",
-  "notes.placeholder": "Write anything — phone numbers, sites, birthdays…",
-  "notes.loading": "Loading…",
-  "notes.empty": "No notes yet",
-  "notes.readFailed": "Could not read this note. Try again to continue editing.",
-  "notes.loadFailed": "Could not read your notes. This is not an empty folder — the list did not arrive.",
-  "notes.saving": "Saving…",
-  "notes.saved": "Saved",
-  "notes.saveFailed": "Couldn’t save",
   "trash.title": "Trash",
   "trash.hint": "Safe-deleted files — restorable for about {{days}} days, from any folder.",
   "trash.refresh": "Refresh",
@@ -2497,8 +2485,6 @@ export const dict = {
   "home.app.contacts.stat.running": "running",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memory",
-  "home.app.notes.name": "Notes",
-  "home.app.notes.subtitle": "Everyday notes, shared with your agents",
   "home.app.calendar.name": "Calendar",
   "home.app.calendar.subtitle": "Schedule agents to run on a repeating date",
   "home.app.recipes.name": "Recipes",

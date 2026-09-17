@@ -77,7 +77,6 @@ const RESERVED_IDS = new Set([
   // same reason `processes` and `search` do: a name a user's muscle memory still reaches for must
   // not become squattable the moment we stop shipping it.
   "chats",
-  "notes",
   "files",
   "processes",
   "registry",

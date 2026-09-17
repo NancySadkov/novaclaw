@@ -628,8 +628,6 @@ export const dict = {
   "home.app.contacts.stat.running": "กำลังทำงาน",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "หน่วยความจำ",
-  "home.app.notes.name": "บันทึก",
-  "home.app.notes.subtitle": "บันทึกประจำวัน แชร์กับเอเจนต์ของคุณ",
   "home.app.calendar.name": "ปฏิทิน",
   "home.app.calendar.subtitle": "ตั้งเวลาให้เอเจนต์ทำงานตามวันที่ซ้ำ",
   "home.app.recipes.name": "สูตร",

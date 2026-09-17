@@ -110,7 +110,6 @@ export const BUILTIN_APP_LABELS = {
     name: "Contacts",
     subtitle: "The colleagues this NovaClaw employs, and what each one remembers",
   },
-  notes: { name: "Notes", subtitle: "Everyday notes, shared with your agents" },
   calendar: { name: "Calendar", subtitle: "Schedule agents to run on a repeating date" },
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },
   files: { name: "Files", subtitle: "Browse folders and ask AI to work on them" },

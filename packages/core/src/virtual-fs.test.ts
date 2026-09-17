@@ -35,7 +35,7 @@ describe("virtual FS (FS-3)", () => {
     process.env.NOVACLAW_VIRTUAL_FS_ROOT = base
     const root = await VirtualFs.ensure()
     expect(root).toBe(base)
-    for (const sub of ["projects", "notes", "files"])
+    for (const sub of ["projects", "files"])
       expect(await fs.stat(path.join(base, sub)).then((s) => s.isDirectory())).toBe(true)
     expect(await fs.readFile(path.join(base, "README.md"), "utf8")).toContain("NovaClaw")
     // idempotent — a second call must not throw or clobber a user's edited README

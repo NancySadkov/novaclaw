@@ -13,7 +13,6 @@ import { PlatformProvider } from "@/context/platform"
 import { SettingsProvider } from "@/context/settings"
 import { SettingsTrashV2 } from "@/components/settings-v2/trash"
 import { FilesPage } from "@/pages/files"
-import { NotesPage } from "@/pages/notes"
 import { CalendarPage } from "@/pages/calendar"
 import { SkillsPage } from "@/pages/skills"
 import { RecipesPage } from "@/pages/recipes"
@@ -272,14 +271,6 @@ const VIEWERS: readonly Viewer[] = [
     empty: en["files.trashEmpty"],
     loaded: "quarterly-report.txt",
     reveal: openFilesTrash,
-  },
-  {
-    title: "Notes",
-    page: () => <NotesPage />,
-    target: "list",
-    failure: en["notes.loadFailed"],
-    empty: en["notes.empty"],
-    loaded: "shopping-list",
   },
   {
     title: "Calendar",

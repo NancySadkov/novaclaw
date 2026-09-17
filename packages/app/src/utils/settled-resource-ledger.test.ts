@@ -333,7 +333,6 @@ describe("the settled-resource ledger", () => {
     for (const converted of [
       "components/settings-v2/trash.tsx",
       "pages/calendar.tsx",
-      "pages/notes.tsx",
       // The largest single conversion in the tree — thirteen bare reads in one file, every one of
       // them behind an api helper that swallowed its own rejection into a plausible empty value.
       "pages/home-screen/community-network.tsx",

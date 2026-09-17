@@ -578,8 +578,6 @@ export const dict = {
   "home.app.contacts.stat.running": "実行中",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "メモリ",
-  "home.app.notes.name": "ノート",
-  "home.app.notes.subtitle": "日々のメモをエージェントと共有",
   "home.app.calendar.name": "カレンダー",
   "home.app.calendar.subtitle": "繰り返しの日付でエージェントを実行",
   "home.app.recipes.name": "レシピ",

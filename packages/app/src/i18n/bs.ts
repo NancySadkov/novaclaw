@@ -641,8 +641,6 @@ export const dict = {
   "home.app.contacts.stat.running": "u toku",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memorija",
-  "home.app.notes.name": "Bilješke",
-  "home.app.notes.subtitle": "Svakodnevne bilješke, dijeljene s vašim agentima",
   "home.app.calendar.name": "Kalendar",
   "home.app.calendar.subtitle": "Zakažite agente da se pokreću na ponavljajući datum",
   "home.app.recipes.name": "Recepti",

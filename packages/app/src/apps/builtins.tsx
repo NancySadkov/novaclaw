@@ -91,20 +91,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       badge: () => chatsAttention().length || undefined,
     },
     {
-      id: "notes",
-      get title() {
-        return name("notes")
-      },
-      icon: "edit",
-      tile: "/assets/skin/tiles/notes.png",
-      accent: "#8b5cf6",
-      get subtitle() {
-        return sub("notes")
-      },
-      source: "builtin",
-      open: () => navigate("/notes"),
-    },
-    {
       id: "models",
       get title() {
         return name("models")

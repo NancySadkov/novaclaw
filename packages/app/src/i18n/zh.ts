@@ -622,8 +622,6 @@ export const dict = {
   "home.app.contacts.stat.running": "运行中",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "内存",
-  "home.app.notes.name": "笔记",
-  "home.app.notes.subtitle": "日常笔记，与你的智能体共享",
   "home.app.calendar.name": "日历",
   "home.app.calendar.subtitle": "安排智能体按重复日期运行",
   "home.app.recipes.name": "配方",

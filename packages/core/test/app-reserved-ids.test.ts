@@ -74,10 +74,11 @@ describe("the reader found all three declarations", () => {
     expect(tiles, `${LABELS} — BUILTIN_APP_LABELS not found`).toBeDefined()
     expect(core!.length).toBeGreaterThanOrEqual(14)
     expect(app!.length).toBeGreaterThanOrEqual(14)
-    // 13, not 14: Search was retired 2026-08-11 and its id stays reserved without being a tile —
-    // the same asymmetry `processes` has. These bounds only guard against a parser that silently
-    // returns nothing; the real comparisons are below.
-    expect(tiles!.length).toBeGreaterThanOrEqual(13)
+    // A FLOOR, not the roster count: Search was retired 2026-08-11 and its id stays reserved without
+    // being a tile — the same asymmetry `processes` has — and Notes and Skills were retired as tiles
+    // on 2026-09-17. These bounds only guard against a parser that silently returns nothing; the real
+    // comparisons are below.
+    expect(tiles!.length).toBeGreaterThanOrEqual(11)
     // `contacts` is the canary: the live tile, so it must appear in all three lists. It was `tasks`
     // until 2026-08-21 and `chats` before that — and the canary MOVED with the tile rather than the
     // assertion being deleted, because a ledger that loses its live-tile case still passes while the

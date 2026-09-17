@@ -92,7 +92,6 @@ const RESERVED_IDS = new Set([
   "tasks",
   // Retired id of the tile now called `tasks` (2026-08-13) — reserved, like `processes`/`search`.
   "chats",
-  "notes",
   "files",
   "processes",
   "registry",

@@ -17,19 +17,12 @@ import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
-import { join } from "path"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
 const directory = AbsolutePath.make(FSUtil.resolve("/repo/packages/core"))
 const projectDirectory = AbsolutePath.make(FSUtil.resolve("/repo"))
 const instructionFile = FSUtil.resolve("/repo/AGENTS.md")
-/**
- * The shared-notes line, moved here from the retired persona baseline (owner, 2026-09-17). Built with
- * `join` so the expectation is exactly what the kernel renders on this platform, rather than a
- * hardcoded separator that would pass on one OS and fail on another.
- */
-const notesLine = `  Shared notes folder: ${join("/data", "notes")} belongs to the user; any chat session may read it or append to it (free-form facts: phone numbers, sites, birthdays, reminders). Prefer appending over rewriting, and never delete notes.`
 const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(
@@ -111,7 +104,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          notesLine,
           "</env>",
         ].join("\n"),
       )
@@ -135,7 +127,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          notesLine,
           "</env>",
         ].join("\n"),
       )
@@ -215,7 +206,6 @@ describe("SystemContextBuiltIns", () => {
           "<env>",
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
-          notesLine,
           "</env>",
           "",
           `Instructions from: ${instructionFile}\nBe precise.`,
