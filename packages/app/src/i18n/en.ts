@@ -2417,6 +2417,14 @@ export const dict = {
   // sentence names them rather than leaving the user to discover a refusal.
   "agentConfig.governingNote":
     "Nova is the CEO of this instance, so its profile is yours to shape like any other colleague's — but it has no project folder, it cannot be cloned, and it cannot be retired.",
+  // Per-officer harness tuning (per-agent tuning program): the judge model falls back to the
+  // active turn's model when unset, and each tab resets to inherit independently of the others.
+  "agentConfig.intrModelInherit": "Use the active model",
+  "agentConfig.resetTab.action": "Reset this tab to inherited defaults",
+  "agentConfig.resetTab.title": "Reset {{tab}} to inherited defaults?",
+  "agentConfig.resetTab.description":
+    "This officer's {{tab}} tuning will be deleted, and it will follow the shipped defaults again. Its other tabs are untouched.",
+  "agentConfig.resetTab.failed": "Could not reset the tab",
   "agentConfig.thisChat": "How this chat runs",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write
