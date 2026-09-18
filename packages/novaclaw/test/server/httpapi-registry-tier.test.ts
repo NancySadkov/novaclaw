@@ -1,6 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -181,7 +182,7 @@ describe("CONTROL: Developer mode keeps the Registry app's full reach", () => {
         yield* db
           .insert(SessionTable)
           .values({
-            id: "ses_registry_tier_probe",
+            id: SessionSchema.ID.make("ses_registry_tier_probe"),
             slug: "registry-tier-probe",
             directory: test.directory,
             title: "registry-tier-probe",
