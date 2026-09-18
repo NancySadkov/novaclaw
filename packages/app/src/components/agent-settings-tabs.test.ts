@@ -33,6 +33,18 @@ const cssTabs = () => {
   return [...ids].sort()
 }
 
+/**
+ * Sections the component tags with a tab id. A section whose id no rail entry can select is
+ * PERMANENTLY hidden — the same blank-panel defect as a tab with no CSS rule, one step over.
+ */
+const sectionTabs = () => {
+  const ids = new Set<string>()
+  const pattern = /data-settings-tab="([a-z-]+)"/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(dialog)) !== null) ids.add(match[1]!)
+  return [...ids].sort()
+}
+
 describe("every officer tab is visible when selected", () => {
   test("the rail offers tabs, so the check is not vacuous", () => {
     expect(tabIds().length).toBeGreaterThan(5)
@@ -42,5 +54,10 @@ describe("every officer tab is visible when selected", () => {
 
   test("every tab id has exactly the CSS rule that reveals it", () => {
     expect(cssTabs()).toEqual(tabIds())
+  })
+
+  test("every section is reachable — its tab id is one the rail can select", () => {
+    expect(sectionTabs().length).toBeGreaterThan(5)
+    expect(sectionTabs().filter((id) => !tabIds().includes(id))).toEqual([])
   })
 })
