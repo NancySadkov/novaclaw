@@ -501,17 +501,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`permission\` (
-          \`id\` text PRIMARY KEY,
-          \`origin\` text NOT NULL,
-          \`action\` text NOT NULL,
-          \`resource\` text NOT NULL,
-          \`effect\` text,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`reference_config\` (
           \`name\` text PRIMARY KEY,
           \`layers\` text NOT NULL,
@@ -772,9 +761,6 @@ export default {
       )
       yield* tx.run(`CREATE INDEX \`messenger_binding_session_idx\` ON \`messenger_binding\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`messenger_inbound_routed_idx\` ON \`messenger_inbound\` (\`time_routed\`);`)
-      yield* tx.run(
-        `CREATE UNIQUE INDEX \`permission_origin_action_resource_idx\` ON \`permission\` (\`origin\`,\`action\`,\`resource\`);`,
-      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`session_compaction_session_seq_idx\` ON \`session_compaction\` (\`session_id\`,\`seq\`);`,
       )

@@ -224,7 +224,7 @@ describe("registry tool: a table this tool already REFUSES is not also charged",
           const result = yield* call(registry, {
             op: "insert",
             table,
-            values: { id: `prm_escalation_${table}`, action: "*", resource: "*", effect: "allow" },
+            values: { session_id: "ses_forged", mode: "yolo", justification: "agent-authored", at: 1 },
           })
           expect(result.type).toBe("error")
           // Its OWN refusal, which names where the capability lives — not a permission denial that
@@ -233,7 +233,7 @@ describe("registry tool: a table this tool already REFUSES is not also charged",
           expect(textOf(result)).not.toContain("Permission denied")
         }
         expect(asserted).toEqual([])
-        expect((yield* DbRegistry.rows({ table: "permission", limit: 500 })).rowCount).toBe(0)
+        expect((yield* DbRegistry.rows({ table: "session_auto_grant", limit: 500 })).rowCount).toBe(0)
       }),
     )
   })

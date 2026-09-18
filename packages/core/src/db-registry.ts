@@ -105,16 +105,15 @@ const CONFIG_BACKED_TABLES: ReadonlySet<string> = new Set([
  * The permission kernel's OWN state. An agent may browse it and may never write it.
  *
  * 🔴 **This is the hole `CONFIG_BACKED_TABLES` was created to close, one table over.** That set
- * protects the *tiers* `configure` enforces; these two tables hold the **verdicts the evaluator
- * reads**, and they are not config-backed, so nothing above stopped a row write:
- *  - `permission` (`permission/sql.ts`) is the durable saved-grant table `PermissionSaved.list`
- *    selects and `evaluate` folds in with `findLast`. One inserted row —
- *    `{origin: <copied from a live row>, action: "*", resource: "*", effect: "allow"}` — lands
- *    AFTER the agent ruleset and the mode overlay, so from the next turn every action that is not a
- *    hard mode deny resolves `allow`: `configure_privileged`, `provision`, `messenger.send`,
- *    `spawn`, every MCP tool. `insertRow` whitelists column names against `pragma_table_info` and
- *    binds the values, so the write is perfectly well-formed — the guard was simply not there.
- *  - `session_auto_grant` (`session/sql.ts`) is the Auto-mode ceiling `tool/permission.ts` guards.
+ * protects the *tiers* `configure` enforces; `session_auto_grant` (`session/sql.ts`) holds a
+ * **verdict the evaluator reads** and is not config-backed, so nothing above stopped a row write:
+ * one inserted row can widen the Auto-mode ceiling from the next turn.
+ *
+ * 🗑️ **The sibling that stood here until 2026-09-18 was `permission`**, the durable saved-grant
+ * table `evaluate` folded in with `findLast`. It is GONE — the table, its service and the
+ * `permission.saved.*` routes were the last of the consent request/reply/save machinery, and its
+ * `add` had no caller once `ask` was retired as an outcome. A grant is a standing RULE now, written
+ * through the config surface, never a row collected from a prompt.
  *
  * ⚠️ **Why a REFUSAL and not a consent card.** Everywhere else the answer to "this write deserves
  * consent" is to ask. Here asking is circular: the row being written is what decides the answer to
@@ -129,9 +128,9 @@ const CONFIG_BACKED_TABLES: ReadonlySet<string> = new Set([
  * ⚠️ EXACT names. `permission_pending` is deliberately absent: migration
  * `20260901051852_crazy_sheva_callister` DROPS that table, so naming it here would be a guard on
  * nothing — and `db-registry.test.ts` checks each name against the live schema for exactly that
- * reason.
+ * reason. `permission` left the same way, by `20260918045440_drop_permission_table`.
  */
-const PERMISSION_KERNEL_TABLES: ReadonlySet<string> = new Set(["permission", "session_auto_grant"])
+const PERMISSION_KERNEL_TABLES: ReadonlySet<string> = new Set(["session_auto_grant"])
 
 /** Exported for the ledger test that pins this set against the live schema. */
 export const permissionKernelTables = (): ReadonlySet<string> => PERMISSION_KERNEL_TABLES

@@ -333,11 +333,10 @@ export const layer = Layer.effectDiscard(
                     // `{action: "registry_write", resource: "credential"}` rule is matched against,
                     // so a wildcard here would make every rule an all-or-nothing one.
                     resources: [table],
-                    // ⚠️ `save` is INERT today — retiring `ask` removed the only caller of
-                    // `PermissionSaved.add`, so nothing a user can reach from a chat writes the
-                    // saved-grant table (`permission.ts` → GRANT_IN_ADVANCE). It is scoped rather
-                    // than omitted because the day it is live is not the day to remember why
-                    // `configure.ts` argues `save: [key]`, never `save: ["*"]`.
+                    // ⚠️ `save` is a VESTIGE (owner, 2026-09-18): the durable saved-grant table is
+                    // gone, so nothing records an answer and no path reads one. The argument is
+                    // left for now rather than churn every assert site in this slice; it is scoped
+                    // (`save: [key]`, never `["*"]`) so that removing it later is mechanical.
                     save: [table],
                     metadata: { op: input.op, table },
                     sessionID: context.sessionID,

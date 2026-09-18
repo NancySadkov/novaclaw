@@ -430,9 +430,9 @@ describe("a denial may only name a remedy the code can perform", () => {
   /**
    * 🔴 THE OTHER HALF, and the defect itself. Every denial that prescribes a way forward must
    * prescribe THIS one. The copy used to end *"approved once with 'always' in an attended chat"* —
-   * a consent card that no code path shows, backed by a saved-grant table whose only writer
-   * (`PermissionSaved.add`) lost its caller when `ask` was retired. Asserting the absence of that
-   * prescription is the only thing that keeps it from being typed again.
+   * a consent card that no code path shows, backed by a saved-grant table that is now DELETED
+   * (owner, 2026-09-18). Asserting the absence of that prescription is the only thing that keeps it
+   * from being typed again.
    */
   it.effect("prescribes only the grant-in-advance path, never an answer in a chat", () =>
     Effect.sync(() => {

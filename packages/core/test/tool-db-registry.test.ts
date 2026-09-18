@@ -18,12 +18,11 @@ import { testEffect } from "./lib/effect"
  *
  * Two invariants, and each is a hole that was open:
  *
- *  1. **The permission kernel's own tables are not writable by an agent.** `CONFIG_BACKED_TABLES`
- *     protects the tiers `configure` enforces; `permission` and `session_auto_grant` hold the
- *     VERDICTS the evaluator reads, are config-backed by nothing, and were freely insertable. One
- *     row — `{origin: <copied from a live row>, action: "*", resource: "*", effect: "allow"}` —
- *     lands after the agent ruleset and the mode overlay in `evaluate`'s `findLast`, so from the
- *     next turn every action that is not a hard mode deny resolves `allow`.
+ *  1. **The permission kernel's own table is not writable by an agent.** `CONFIG_BACKED_TABLES`
+ *     protects the tiers `configure` enforces; `session_auto_grant` holds a VERDICT the evaluator
+ *     reads, is config-backed by nothing, and was freely insertable. One row widens the Auto-mode
+ *     ceiling from the next turn. (Its sibling `permission`, the saved-grant table, is gone —
+ *     migration `20260918045440_drop_permission_table`.)
  *  2. **A read of a table is redacted.** The write refusal's own message ends *"Browsing it is
  *     fine"*, and `DbRegistry.rows` only ever called `assertTable`, so
  *     `{op:"rows",table:"runtime_setting"}` returned `server.password` and every peer token in
@@ -51,40 +50,20 @@ const message = (input: Parameters<typeof DbRegistryTool.run>[0]) =>
   DbRegistryTool.run(input).pipe(Effect.map((output) => output.message))
 
 describe("registry tool: the permission kernel is not writable by an agent", () => {
-  it.effect("refuses insert/update/delete on `permission` and `session_auto_grant`, and writes nothing", () =>
+  it.effect("refuses insert/update/delete on `session_auto_grant`, and writes nothing", () =>
     Effect.gen(function* () {
-      // A real row, written by the DEVELOPER path — which must keep working (a human revoking a bad
-      // saved grant by hand is a legitimate repair, ruling 5's trust boundary). Without this the
-      // refusals below could not be told apart from "writes to this table are broken".
-      yield* DbRegistry.insertRow({
-        table: "permission",
-        values: { id: "prm_seed", origin: "origin-hash", action: "bash", resource: "*", effect: "ask", ...stamps },
-      })
-      const before = yield* DbRegistry.rows({ table: "permission", limit: 500 })
-      expect(before.rowCount).toBe(1)
-      const seed = before.rows[0]!
+      const before = yield* DbRegistry.rows({ table: "session_auto_grant", limit: 500 })
+      expect(before.rowCount).toBe(0)
 
-      // The escalation itself, as the sweep traced it: copy a live `origin`, then grant `*`/`*`.
-      const escalation = message({
-        op: "insert",
-        table: "permission",
-        values: {
-          id: "prm_escalation",
-          origin: String(seed.values.origin),
-          action: "*",
-          resource: "*",
-          effect: "allow",
-          ...stamps,
-        },
-      })
+      // The escalation itself: one row widens the Auto-mode ceiling for every later turn.
       const refusals = {
-        insert: escalation,
-        update: message({ op: "update", table: "permission", rowid: seed.rowid, values: { effect: "allow" } }),
-        delete: message({ op: "delete", table: "permission", rowid: seed.rowid }),
-        // The second kernel table: the Auto-mode ceiling. `assertWritable` runs before any SQL, so
-        // a rowid that does not exist still proves the refusal rather than a foreign-key error.
-        autoGrantUpdate: message({ op: "update", table: "session_auto_grant", rowid: 1, values: { mode: "all" } }),
-        autoGrantDelete: message({ op: "delete", table: "session_auto_grant", rowid: 1 }),
+        insert: message({
+          op: "insert",
+          table: "session_auto_grant",
+          values: { session_id: "ses_forged", mode: "yolo", justification: "agent-authored", at: 1 },
+        }),
+        update: message({ op: "update", table: "session_auto_grant", rowid: 1, values: { mode: "yolo" } }),
+        delete: message({ op: "delete", table: "session_auto_grant", rowid: 1 }),
       }
       for (const [what, attempt] of Object.entries(refusals)) {
         const error = yield* attempt.pipe(Effect.flip)
@@ -93,10 +72,7 @@ describe("registry tool: the permission kernel is not writable by an agent", () 
       }
 
       // Ruling 2 in its storage form: a refused mutation changed nothing and half-wrote nothing.
-      const after = yield* DbRegistry.rows({ table: "permission", limit: 500 })
-      expect(after.rowCount).toBe(1)
-      expect(after.rows.map((row) => row.values.id)).toEqual(["prm_seed"])
-      expect(after.rows[0]!.values.effect).toBe("ask")
+      expect((yield* DbRegistry.rows({ table: "session_auto_grant", limit: 500 })).rowCount).toBe(0)
 
       // NEGATIVE CONTROL: the gate is per-table, not "agents may no longer write". An ordinary
       // table stays writable through the very same tool call shape that was refused above.
@@ -105,16 +81,18 @@ describe("registry tool: the permission kernel is not writable by an agent", () 
     }),
   )
 
-  it.effect("the kernel set names tables that exist, and does not name the dropped `permission_pending`", () =>
+  it.effect("the kernel set names tables that exist, and does not name the dropped tables", () =>
     Effect.gen(function* () {
       // ⚠️ A LEDGER, not a restatement. A guard naming a table that is not there protects nothing
       // and reads as protection — which is exactly what a `permission_pending` entry would have
-      // been: migration `20260901051852_crazy_sheva_callister` DROPS that table.
+      // been (migration `20260901051852_crazy_sheva_callister` DROPS it), and now `permission` too
+      // (`20260918045440_drop_permission_table`).
       const existing = new Set((yield* DbRegistry.tables()).map((table) => table.name))
       const declared = DbRegistry.permissionKernelTables()
       for (const table of declared) expect(`${table}:${existing.has(table)}`).toBe(`${table}:true`)
-      expect([...declared].sort()).toEqual(["permission", "session_auto_grant"])
+      expect([...declared].sort()).toEqual(["session_auto_grant"])
       expect(existing.has("permission_pending")).toBe(false)
+      expect(existing.has("permission")).toBe(false)
       // And the two sets are disjoint, so neither refusal is silently doing the other's job.
       for (const table of declared) expect(DbRegistry.configBackedTables().has(table)).toBe(false)
     }),

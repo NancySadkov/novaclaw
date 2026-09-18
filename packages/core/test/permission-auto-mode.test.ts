@@ -7,7 +7,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -36,7 +35,6 @@ const it = testEffect(
       EventV2.node,
       SessionStore.node,
       SessionAutoGrant.node,
-      PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
       SettingsConfigStore.node,

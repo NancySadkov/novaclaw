@@ -336,6 +336,13 @@ const GENERATE_TIMEOUT_MS = 60_000
 // is no rename to catch — nothing arrived to take a removed name's place. 520 -> 515 entries, the
 // rest byte-identical.
 /**
+ * 🔴 RE-PINNED 2026-09-18 (consent machinery removal), after reviewing the mapping rather than
+ * reading the mismatch. Measured on `packages/sdk/openapi.json` against the previous commit: the
+ * saved-grant surface and the ask wire are GONE — removed schemas `['PermissionSavedInfo',
+ * 'PermissionV2Source']` and removed paths `['/api/permission/saved', '/api/permission/saved/{id}',
+ * '/api/session/{sessionID}/permission']`, with ZERO additions. Pure removal: nothing arrived to
+ * take a removed name's place, so there is no rename to catch. 515 -> 503 entries.
+ *
  * 🔴 RE-PINNED 2026-09-17 (context-hygiene cleanup), after reviewing the mapping rather than reading
  * the mismatch. The per-session system-prompt override retired, so the public schema lost exactly
  * the prompt-override names and the `/api/session/{sessionID}/prompt-override` path, plus the
@@ -350,7 +357,7 @@ const GENERATE_TIMEOUT_MS = 60_000
  * additions. Before that, the `novaclaw.json` retirement removed `GET`/`POST /api/project`, 479
  * deletions and zero additions.
  */
-const SCHEMA_NAME_FINGERPRINT = "26f071cd921dafb73e9d1be810a14bf950b31575d9659daaade994557c886fae"
+const SCHEMA_NAME_FINGERPRINT = "43c0907b3f6e3c3317668d65bd9536fc8fba330794a7fbb2f280de7c179bf6d6"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

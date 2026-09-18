@@ -1417,51 +1417,6 @@ class ApiV2SessionWorker extends NovaClawApiClient {
   }
 }
 
-class ApiV2SessionPermission extends NovaClawApiClient {
-  /**
-   * Evaluate permission
-   *
-   * Evaluate the effective permission rules for a session action.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      id?: string
-      action: string
-      resources: Array<string>
-      save?: Array<string>
-      metadata?: {
-        [key: string]: unknown
-      }
-      source?: T.PermissionV2Source
-      agent?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    const body = {
-      id: parameters?.["id"],
-      action: parameters?.["action"],
-      resources: parameters?.["resources"],
-      save: parameters?.["save"],
-      metadata: parameters?.["metadata"],
-      source: parameters?.["source"],
-      agent: parameters?.["agent"],
-    }
-    return (options?.client ?? this.client).post<
-      T.V2SessionPermissionCreateResponses,
-      T.V2SessionPermissionCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/permission",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-}
-
 class ApiV2Session extends NovaClawApiClient {
   /**
    * List sessions
@@ -2426,11 +2381,6 @@ class ApiV2Session extends NovaClawApiClient {
   private _worker?: ApiV2SessionWorker
   get worker(): ApiV2SessionWorker {
     return (this._worker ??= new ApiV2SessionWorker({ client: this.client }))
-  }
-
-  private _permission?: ApiV2SessionPermission
-  get permission(): ApiV2SessionPermission {
-    return (this._permission ??= new ApiV2SessionPermission({ client: this.client }))
   }
 }
 
@@ -3751,61 +3701,6 @@ class ApiV2App extends NovaClawApiClient {
   }
 }
 
-class ApiV2PermissionSaved extends NovaClawApiClient {
-  /**
-   * List saved permissions
-   *
-   * Retrieve saved permissions, optionally filtered by project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      origin?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { origin: parameters?.["origin"] }
-    return (options?.client ?? this.client).get<
-      T.V2PermissionSavedListResponses,
-      T.V2PermissionSavedListErrors,
-      ThrowOnError
-    >({
-      url: "/api/permission/saved",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Remove saved permission
-   *
-   * Remove a saved permission by ID.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).delete<
-      T.V2PermissionSavedRemoveResponses,
-      T.V2PermissionSavedRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/permission/saved/{id}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2Permission extends NovaClawApiClient {
-  private _saved?: ApiV2PermissionSaved
-  get saved(): ApiV2PermissionSaved {
-    return (this._saved ??= new ApiV2PermissionSaved({ client: this.client }))
-  }
-}
-
 class ApiV2Fs extends NovaClawApiClient {
   /**
    * Read file
@@ -4655,11 +4550,6 @@ class ApiV2 extends NovaClawApiClient {
   private _app?: ApiV2App
   get app(): ApiV2App {
     return (this._app ??= new ApiV2App({ client: this.client }))
-  }
-
-  private _permission?: ApiV2Permission
-  get permission(): ApiV2Permission {
-    return (this._permission ??= new ApiV2Permission({ client: this.client }))
   }
 
   private _fs?: ApiV2Fs

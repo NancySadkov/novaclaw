@@ -13,7 +13,6 @@ import { LogGroup } from "@novaclaw/protocol/groups/log"
 import { MessageGroup } from "@novaclaw/protocol/groups/message"
 import { MessengerGroup } from "@novaclaw/protocol/groups/messenger"
 import { ModelGroup } from "@novaclaw/protocol/groups/model"
-import { makePermissionGroup } from "@novaclaw/protocol/groups/permission"
 import { ProviderGroup } from "@novaclaw/protocol/groups/provider"
 import { PtyGroup } from "@novaclaw/protocol/groups/pty"
 import { PtyInstanceGroup } from "@novaclaw/protocol/groups/pty-instance"
@@ -57,9 +56,6 @@ export const MessageApi = fragment(
 )
 export const MessengerApi = fragment(MessengerGroup)
 export const ModelApi = fragment(ModelGroup.middleware(LocationMiddleware))
-export const PermissionApi = fragment(
-  makePermissionGroup(LocationMiddleware, SessionLocationMiddleware).middleware(WorkspaceRoutingMiddleware),
-)
 export const ProviderApi = fragment(ProviderGroup.middleware(LocationMiddleware))
 export const PtyApi = fragment(PtyGroup.middleware(LocationMiddleware))
 export const PtyInstanceApi = fragment(PtyInstanceGroup)

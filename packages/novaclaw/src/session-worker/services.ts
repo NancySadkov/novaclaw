@@ -189,8 +189,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   const permission: PermissionV2.Interface = {
     /**
      * ⚠️ `ask` INSPECTS without prompting, which is why it is not bridged to the host the way
-     * `assert` is: the host's answer costs a consent card when the rule says "ask", and a capability
-     * REPORT that prompts once per colleague is not a report.
+     * `assert` is: a capability REPORT that consulted the host per colleague is not a report.
      *
      * The CEO's floor needs no host at all — it is an org-chart fact, not a stored rule — so it is
      * answered here and matches what `permission.ts` answers on the host side. Everyone else still
