@@ -4,7 +4,6 @@ import { canNavigateHistoryAtCursor } from "./history"
 type Input = {
   state: {
     mode: () => "normal" | "shell"
-    popover: () => "at" | "slash" | null
     historyIndex: () => number
   }
   editor: {
@@ -20,15 +19,10 @@ type Input = {
   attachmentCount: () => number
   commentCount: () => number
   setMode: (mode: "normal" | "shell") => void
-  closePopover: () => void
   pickAttachment: () => void
   abort: () => unknown
   blurOnEscape: () => boolean
   addNewline: () => void
-  selectPopoverActive: () => void
-  atKeyDown: (event: KeyboardEvent) => void
-  slashKeyDown: (event: KeyboardEvent) => void
-  scrollSlashActiveIntoView: () => void
   navigateHistory: (direction: "up" | "down") => boolean
   submit: (event: KeyboardEvent) => Promise<void> | void
 }
@@ -37,7 +31,6 @@ type Input = {
 export function createPromptInputKeyboardController(input: Input) {
   return (event: KeyboardEvent) => {
     const mode = input.state.mode()
-    const popover = input.state.popover()
 
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
@@ -51,23 +44,15 @@ export function createPromptInputKeyboardController(input: Input) {
     if (event.key === "!" && mode === "normal" && input.advanced()) {
       if (getCursorPosition(input.editor.element()) === 0) {
         input.setMode("shell")
-        input.closePopover()
         event.preventDefault()
         return
       }
     }
 
     if (event.key === "Escape") {
-      // Stopping live work is the highest-priority Escape action. A transient composer popover or
-      // shell mode must not consume the first press and force the user to discover a second one.
+      // Stopping live work is the highest-priority Escape action.
       if (input.working()) {
         void input.abort()
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-      if (popover) {
-        input.closePopover()
         event.preventDefault()
         event.stopPropagation()
         return
@@ -104,33 +89,8 @@ export function createPromptInputKeyboardController(input: Input) {
     if (event.key === "Enter" && input.composing(event)) return
 
     const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-    if (popover) {
-      if (event.key === "Tab") {
-        input.selectPopoverActive()
-        event.preventDefault()
-        return
-      }
-      const nav = event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter"
-      const ctrlNav = ctrl && (event.key === "n" || event.key === "p")
-      if (nav || ctrlNav) {
-        if (popover === "at") {
-          input.atKeyDown(event)
-          event.preventDefault()
-          return
-        }
-        input.slashKeyDown(event)
-        if (event.key === "ArrowUp" || event.key === "ArrowDown" || ctrlNav) input.scrollSlashActiveIntoView()
-        event.preventDefault()
-        return
-      }
-    }
 
     if (ctrl && event.code === "KeyG") {
-      if (popover) {
-        input.closePopover()
-        event.preventDefault()
-        return
-      }
       if (input.working()) {
         void input.abort()
         event.preventDefault()

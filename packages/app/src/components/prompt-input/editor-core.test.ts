@@ -16,18 +16,15 @@ beforeEach(() => {
   core = createEditorCore({ editor: () => host, empty: () => EMPTY })
 })
 
-const filePill = { type: "file" as const, path: "src/a.ts", content: "@a.ts", start: 0, end: 5 }
-
 describe("editor-core (ui-arch P4a)", () => {
-  test("render → parse round-trips text, pills, and line breaks", () => {
+  test("render → parse round-trips text and line breaks", () => {
     const parts: Prompt = [
       { type: "text", content: "look at ", start: 0, end: 8 },
-      { ...filePill, start: 8, end: 13 },
-      { type: "text", content: "\nplease", start: 13, end: 20 },
+      { type: "text", content: "\nplease", start: 8, end: 15 },
     ]
     core.render(parts)
     const parsed = core.parse()
-    expect(parsed).toEqual(parts)
+    expect(parsed).toEqual([{ type: "text", content: "look at \nplease", start: 0, end: 15 }])
     expect(core.isNormalized()).toBe(true)
   })
 
@@ -65,12 +62,28 @@ describe("editor-core (ui-arch P4a)", () => {
     expect(core.isNormalized()).toBe(false)
   })
 
-  test("createPill stamps type metadata and is non-editable", () => {
-    const pill = core.createPill(filePill)
-    expect(pill.dataset.type).toBe("file")
-    expect(pill.dataset.path).toBe("src/a.ts")
-    expect(pill.textContent).toBe("@a.ts")
-    expect(pill.getAttribute("contenteditable")).toBe("false")
+  test("insertPart inserts text at the cursor", () => {
+    core.render([{ type: "text", content: "see ", start: 0, end: 4 }])
+    setCursorPosition(host, 4)
+    const inserted = core.insertPart(
+      { type: "text", content: "more", start: 0, end: 4 },
+      {
+        fallbackCursor: () => 4,
+      },
+    )
+    expect(inserted).toBe(true)
+    expect(core.parse()).toEqual([{ type: "text", content: "see more", start: 0, end: 8 }])
+  })
+
+  test("insertPart falls back to the prompt cursor when the selection is elsewhere", () => {
+    core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
+    window.getSelection()?.removeAllRanges()
+    const inserted = core.insertPart(
+      { type: "text", content: "!", start: 0, end: 1 },
+      { fallbackCursor: () => 5 },
+    )
+    expect(inserted).toBe(true)
+    expect(core.parse()).toEqual([{ type: "text", content: "hello!", start: 0, end: 6 }])
   })
 
   test("placeCursorAtEnd focuses and lands the caret after all content", () => {
@@ -159,37 +172,10 @@ describe("editor-core (ui-arch P4a)", () => {
     expect(core.caretState(5)).toEqual({ collapsed: false, cursorPosition: 0, textLength: 5 })
   })
 
-  test("insertPart replaces the @-trigger with a pill and a following gap", () => {
-    core.render([{ type: "text", content: "see @a", start: 0, end: 6 }])
-    setCursorPosition(host, 6)
-    const inserted = core.insertPart(filePill, {
-      fallbackCursor: () => 6,
-      text: () => "see @a",
-    })
-    expect(inserted).toBe(true)
-    expect(core.parse()).toEqual([
-      { type: "text", content: "see ", start: 0, end: 4 },
-      { type: "file", path: "src/a.ts", content: "@a.ts", start: 4, end: 9 },
-      { type: "text", content: " ", start: 9, end: 10 },
-    ])
-  })
-
-  test("insertPart falls back to the prompt cursor when the selection is elsewhere", () => {
-    core.render([{ type: "text", content: "hello", start: 0, end: 5 }])
-    window.getSelection()?.removeAllRanges()
-    const inserted = core.insertPart(
-      { type: "text", content: "!", start: 0, end: 1 },
-      { fallbackCursor: () => 5, text: () => "hello" },
-    )
-    expect(inserted).toBe(true)
-    expect(core.parse()).toEqual([{ type: "text", content: "hello!", start: 0, end: 6 }])
-  })
-
   test("insertPart refuses image parts", () => {
     expect(
       core.insertPart({ type: "image", filename: "x.png", mime: "image/png", url: "data:," } as never, {
         fallbackCursor: () => 0,
-        text: () => "",
       }),
     ).toBe(false)
   })

@@ -9,7 +9,7 @@ import { PromptImageAttachments } from "@/components/prompt-input/image-attachme
 type PromptContextItem = ContextItem & { key: string }
 
 export type ComposerAttachmentsTrayState = {
-  dragging: "image" | "@mention" | null
+  dragging: "image" | null
   contextItems: PromptContextItem[]
   isContextItemActive: (item: PromptContextItem) => boolean
   openComment: (item: PromptContextItem) => void
@@ -28,10 +28,7 @@ export function ComposerAttachmentsTray(props: { state: ComposerAttachmentsTrayS
   const dialog = useDialog()
   return (
     <>
-      <PromptDragOverlay
-        type={props.state.dragging}
-        label={language.t(props.state.dragging === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label")}
-      />
+      <PromptDragOverlay type={props.state.dragging} label={language.t("prompt.dropzone.label")} />
       <PromptContextItems
         items={props.state.contextItems}
         active={props.state.isContextItemActive}

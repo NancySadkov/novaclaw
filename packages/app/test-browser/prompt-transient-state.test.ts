@@ -5,9 +5,8 @@ import { createPromptInputTransientState } from "@/components/prompt-input/trans
 test("resets transient prompt input state when the prompt session changes", () => {
   createRoot((dispose) => {
     const [identity, setIdentity] = createSignal("A")
-    const [state, setState] = createPromptInputTransientState(identity, 3)
+    const [state, setState] = createPromptInputTransientState(identity)
     setState({
-      popover: "slash",
       historyIndex: 2,
       savedPrompt: {
         prompt: [{ type: "text", content: "draft-A", start: 0, end: 7 }],
@@ -22,10 +21,8 @@ test("resets transient prompt input state when the prompt session changes", () =
     setIdentity("B")
 
     expect(state).toMatchObject({
-      popover: null,
       historyIndex: -1,
       savedPrompt: null,
-      placeholder: 3,
       draggingType: null,
       mode: "normal",
       applyingHistory: false,

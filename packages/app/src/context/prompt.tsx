@@ -22,17 +22,6 @@ export interface TextPart extends PartBase {
   type: "text"
 }
 
-export interface FileAttachmentPart extends PartBase {
-  type: "file"
-  path: string
-  selection?: FileSelection
-}
-
-export interface AgentPart extends PartBase {
-  type: "agent"
-  name: string
-}
-
 export interface ImageAttachmentPart {
   type: "image"
   id: string
@@ -42,7 +31,7 @@ export interface ImageAttachmentPart {
   dataUrl: string
 }
 
-export type ContentPart = TextPart | FileAttachmentPart | AgentPart | ImageAttachmentPart
+export type ContentPart = TextPart | ImageAttachmentPart
 export type Prompt = ContentPart[]
 
 export type FileContextItem = {
@@ -59,22 +48,10 @@ export type ContextItem = FileContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
-function isSelectionEqual(a?: FileSelection, b?: FileSelection) {
-  if (!a && !b) return true
-  if (!a || !b) return false
-  return (
-    a.startLine === b.startLine && a.startChar === b.startChar && a.endLine === b.endLine && a.endChar === b.endChar
-  )
-}
-
 function isPartEqual(partA: ContentPart, partB: ContentPart) {
   switch (partA.type) {
     case "text":
       return partB.type === "text" && partA.content === partB.content
-    case "file":
-      return partB.type === "file" && partA.path === partB.path && isSelectionEqual(partA.selection, partB.selection)
-    case "agent":
-      return partB.type === "agent" && partA.name === partB.name
     case "image":
       return partB.type === "image" && partA.id === partB.id
   }
@@ -88,19 +65,8 @@ export function isPromptEqual(promptA: Prompt, promptB: Prompt): boolean {
   return true
 }
 
-function cloneSelection(selection?: FileSelection) {
-  if (!selection) return undefined
-  return { ...selection }
-}
-
 function clonePart(part: ContentPart): ContentPart {
-  if (part.type === "text") return { ...part }
-  if (part.type === "image") return { ...part }
-  if (part.type === "agent") return { ...part }
-  return {
-    ...part,
-    selection: cloneSelection(part.selection),
-  }
+  return { ...part }
 }
 
 function clonePrompt(prompt: Prompt): Prompt {

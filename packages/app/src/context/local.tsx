@@ -259,7 +259,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
 
     // The composer's visible agent picker is retired — `current()` (the default primary agent)
-    // is all the app still needs; the prompt's @-mention pills carry per-message subagents.
+    // is all the app still needs.
     const agent = {
       list,
       current() {

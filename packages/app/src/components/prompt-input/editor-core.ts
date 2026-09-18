@@ -3,16 +3,14 @@
 // editor-dom.ts (the node-walk primitives) this is the ONLY place allowed to touch
 // Range/Selection for the composer; the component keeps state policy (what to render, when to
 // focus) and calls in. Everything here is a verbatim lift — behavior changes are not P4's job.
-import type { AgentPart, ContentPart, FileAttachmentPart, Prompt } from "@/context/prompt"
-import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./editor-dom"
+import type { ContentPart, Prompt } from "@/context/prompt"
+import { createTextFragment, getCursorPosition, setCursorPosition } from "./editor-dom"
 
 export type EditorCaretState = { collapsed: boolean; cursorPosition: number; textLength: number }
 
 export type EditorInsertContext = {
   /** The prompt-state cursor to restore when the DOM selection is elsewhere. */
   fallbackCursor: () => number
-  /** The full prompt text (for locating an @-trigger before the cursor). */
-  text: () => string
 }
 
 export function createEditorCore(input: { editor: () => HTMLElement; empty: () => Prompt }) {
@@ -25,18 +23,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
   const setText = (text: string) => {
     clear()
     el().textContent = text
-  }
-
-  const createPill = (part: FileAttachmentPart | AgentPart) => {
-    const pill = document.createElement("span")
-    pill.textContent = part.content
-    pill.setAttribute("data-type", part.type)
-    if (part.type === "file") pill.setAttribute("data-path", part.path)
-    if (part.type === "agent") pill.setAttribute("data-name", part.name)
-    pill.setAttribute("contenteditable", "false")
-    pill.style.userSelect = "text"
-    pill.style.cursor = "default"
-    return pill
   }
 
   const isNormalized = () =>
@@ -53,8 +39,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return false
       const element = node as HTMLElement
-      if (element.dataset.type === "file") return true
-      if (element.dataset.type === "agent") return true
       return element.tagName === "BR"
     })
 
@@ -64,9 +48,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
       if (part.type === "text") {
         el().appendChild(createTextFragment(part.content))
         continue
-      }
-      if (part.type === "file" || part.type === "agent") {
-        el().appendChild(createPill(part))
       }
     }
 
@@ -139,30 +120,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
       position += content.length
     }
 
-    const pushFile = (file: HTMLElement) => {
-      const content = file.textContent ?? ""
-      parts.push({
-        type: "file",
-        path: file.dataset.path!,
-        content,
-        start: position,
-        end: position + content.length,
-      })
-      position += content.length
-    }
-
-    const pushAgent = (agent: HTMLElement) => {
-      const content = agent.textContent ?? ""
-      parts.push({
-        type: "agent",
-        name: agent.dataset.name!,
-        content,
-        start: position,
-        end: position + content.length,
-      })
-      position += content.length
-    }
-
     const visit = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         buffer += node.textContent ?? ""
@@ -171,16 +128,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
       if (node.nodeType !== Node.ELEMENT_NODE) return
 
       const element = node as HTMLElement
-      if (element.dataset.type === "file") {
-        flushText()
-        pushFile(element)
-        return
-      }
-      if (element.dataset.type === "agent") {
-        flushText()
-        pushAgent(element)
-        return
-      }
       if (element.tagName === "BR") {
         buffer += "\n"
         return
@@ -252,28 +199,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
     if (selection.rangeCount === 0) return false
     const range = selection.getRangeAt(0)
     if (!el().contains(range.startContainer)) return false
-
-    if (part.type === "file" || part.type === "agent") {
-      const cursorPosition = getCursorPosition(el())
-      const textBeforeCursor = ctx.text().substring(0, cursorPosition)
-      const atMatch = textBeforeCursor.match(/@(\S*)$/)
-      const pill = createPill(part)
-      const gap = document.createTextNode(" ")
-
-      if (atMatch) {
-        const start = atMatch.index ?? cursorPosition - atMatch[0].length
-        setRangeEdge(el(), range, "start", start)
-        setRangeEdge(el(), range, "end", cursorPosition)
-      }
-
-      range.deleteContents()
-      range.insertNode(gap)
-      range.insertNode(pill)
-      range.setStartAfter(gap)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
 
     if (part.type === "text") {
       const fragment = createTextFragment(part.content)
@@ -366,7 +291,6 @@ export function createEditorCore(input: { editor: () => HTMLElement; empty: () =
   return {
     clear,
     setText,
-    createPill,
     isNormalized,
     render,
     renderWithCursor,

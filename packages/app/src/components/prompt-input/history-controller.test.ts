@@ -21,10 +21,8 @@ test("history restoration updates prompt context and visible comments as one ope
   ])
 
   const [store, setStore] = createStore<PromptInputTransientState>({
-    popover: null,
     historyIndex: -1,
     savedPrompt: null,
-    placeholder: 0,
     draggingType: null,
     mode: "normal",
     applyingHistory: false,

@@ -25,7 +25,6 @@ import type { SessionFeatureName } from "@/utils/fs-api"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildPrompt } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
-import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
 import { errorMessage as layoutErrorMessage } from "@/pages/layout/helpers"
@@ -351,7 +350,6 @@ type PromptSubmitInput = {
   addToHistory: (prompt: Prompt, mode: "normal" | "shell") => void
   resetHistoryNavigation: () => void
   setMode: (mode: "normal" | "shell") => void
-  setPopover: (popover: "at" | "slash" | null) => void
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   onAbort?: () => void
@@ -598,7 +596,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const clearInput = () => {
       submission.clear()
       input.setMode("normal")
-      input.setPopover(null)
     }
 
     const restoreInput = () => {
@@ -607,7 +604,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       restored.target.set(restored.prompt, input.promptLength(restored.prompt))
       if (!submission.current(prompt.capture())) return true
       input.setMode(mode)
-      input.setPopover(null)
       requestAnimationFrame(() => {
         const editor = input.editor()
         if (!editor) return
@@ -621,8 +617,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.onSubmit?.()
 
     if (mode === "shell") {
-      // 🔴 BEFORE `clearInput()`, which runs `target.reset()` and wipes the image parts. Neither
-      // `shell` nor `command` carries an attachment field, so without this the request succeeds, the
+      // 🔴 BEFORE `clearInput()`, which runs `target.reset()` and wipes the image parts. `shell`
+      // carries no attachment field, so without this the request succeeds, the
       // thumbnail vanishes from the tray, and nothing is said — ruling 2, a loss reported as success.
       // Refusing without clearing leaves the text AND the attachment in place, so the user can drop
       // the image or send it as an ordinary message. ()
@@ -647,45 +643,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           restoreInput()
         })
       return
-    }
-
-    if (text.startsWith("/")) {
-      const [cmdName, ...args] = text.split(" ")
-      const commandName = cmdName.slice(1)
-      const customCommand = sync().data.command.find((c) => c.name === commandName)
-      if (customCommand) {
-        // Same refusal as the shell branch above, and for the same reason — see there. ()
-        if (images.length > 0) {
-          showToast({
-            title: language.t("prompt.toast.attachmentsUnsupportedHere.title"),
-            description: language.t("prompt.toast.attachmentsUnsupportedHere.description"),
-          })
-          return
-        }
-        clearInput()
-        client.v2.session
-          .command({
-            sessionID: session.id,
-            command: commandName,
-            arguments: args.join(" "),
-            agent,
-            // Same rule as the prompt path above, and for the same reason: `session.command` persists
-            // whatever model it is given, so sending the composer's RESOLVED model here would pin the
-            // chat to an answer it never gave. Send a pick, or send nothing.
-            ...(currentOverride
-              ? { model: `${currentOverride.providerID}/${currentOverride.modelID}` }
-              : {}),
-            variant,
-          })
-          .catch((err) => {
-            showToast({
-              title: language.t("prompt.toast.commandSendFailed.title"),
-              description: formatServerError(err, language.t, language.t("common.requestFailed")),
-            })
-            restoreInput()
-          })
-        return
-      }
     }
 
     const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())

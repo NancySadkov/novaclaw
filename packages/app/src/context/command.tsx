@@ -78,22 +78,20 @@ export interface CommandOption {
   description?: string
   category?: string
   keybind?: KeybindConfig
-  slash?: string
   suggested?: boolean
   disabled?: boolean
   hidden?: boolean
-  onSelect?: (source?: "palette" | "keybind" | "slash") => void
+  onSelect?: (source?: "palette" | "keybind") => void
   onHighlight?: () => (() => void) | void
 }
 
-type CommandSource = "palette" | "keybind" | "slash"
+type CommandSource = "palette" | "keybind"
 
 export type CommandCatalogItem = {
   title: string
   description?: string
   category?: string
   keybind?: KeybindConfig
-  slash?: string
   hidden?: boolean
 }
 
@@ -298,7 +296,6 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
               description: opt.description,
               category: opt.category,
               keybind: opt.keybind,
-              slash: opt.slash,
             }
           return acc
         }, {} as CommandCatalog),

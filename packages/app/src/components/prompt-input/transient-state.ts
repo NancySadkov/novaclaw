@@ -3,11 +3,9 @@ import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { PromptHistoryEntry } from "./history"
 
 export type PromptInputTransientState = {
-  popover: "at" | "slash" | null
   historyIndex: number
   savedPrompt: PromptHistoryEntry | null
-  placeholder: number
-  draggingType: "image" | "@mention" | null
+  draggingType: "image" | null
   mode: "normal" | "shell"
   applyingHistory: boolean
   variantOpen: boolean
@@ -15,7 +13,6 @@ export type PromptInputTransientState = {
 
 function resetPromptInputTransientState(setStore: SetStoreFunction<PromptInputTransientState>) {
   setStore({
-    popover: null,
     historyIndex: -1,
     savedPrompt: null,
     draggingType: null,
@@ -25,12 +22,10 @@ function resetPromptInputTransientState(setStore: SetStoreFunction<PromptInputTr
   })
 }
 
-export function createPromptInputTransientState(identity: Accessor<unknown>, placeholder: number) {
+export function createPromptInputTransientState(identity: Accessor<unknown>) {
   const [store, setStore] = createStore<PromptInputTransientState>({
-    popover: null,
     historyIndex: -1,
     savedPrompt: null,
-    placeholder,
     draggingType: null,
     mode: "normal",
     applyingHistory: false,

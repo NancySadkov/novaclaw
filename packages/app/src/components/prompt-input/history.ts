@@ -51,15 +51,7 @@ export function canNavigateHistoryAtCursor(direction: "up" | "down", text: strin
 }
 
 export function clonePromptParts(prompt: Prompt): Prompt {
-  return prompt.map((part) => {
-    if (part.type === "text") return { ...part }
-    if (part.type === "image") return { ...part }
-    if (part.type === "agent") return { ...part }
-    return {
-      ...part,
-      selection: part.selection ? { ...part.selection } : undefined,
-    }
-  })
+  return prompt.map((part) => ({ ...part }))
 }
 
 function cloneSelection(selection: SelectedLineRange): SelectedLineRange {
@@ -181,21 +173,6 @@ function isPromptEqual(promptA: PromptHistoryStoredEntry, promptB: PromptHistory
     const partB = entryB.prompt[i]
     if (partA.type !== partB.type) return false
     if (partA.type === "text" && partA.content !== (partB.type === "text" ? partB.content : "")) return false
-    if (partA.type === "file") {
-      if (partA.path !== (partB.type === "file" ? partB.path : "")) return false
-      const a = partA.selection
-      const b = partB.type === "file" ? partB.selection : undefined
-      const sameSelection =
-        (!a && !b) ||
-        (!!a &&
-          !!b &&
-          a.startLine === b.startLine &&
-          a.startChar === b.startChar &&
-          a.endLine === b.endLine &&
-          a.endChar === b.endChar)
-      if (!sameSelection) return false
-    }
-    if (partA.type === "agent" && partA.name !== (partB.type === "agent" ? partB.name : "")) return false
     if (partA.type === "image" && partA.id !== (partB.type === "image" ? partB.id : "")) return false
   }
   if (entryA.comments.length !== entryB.comments.length) return false

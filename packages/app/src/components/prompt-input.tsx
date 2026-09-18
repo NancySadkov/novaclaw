@@ -17,9 +17,8 @@ import { ContentPart, DEFAULT_PROMPT, isPromptEqual, Prompt, usePrompt, ImageAtt
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { useServerSync } from "@/context/server-sync"
 import { useComments } from "@/context/comments"
-import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
+import { DockShellForm } from "@novaclaw/ui/dock-surface"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
@@ -45,7 +44,6 @@ import {
   type ComposerRemoteChatState,
 } from "@/components/composer"
 import { usePlatform } from "@/context/platform"
-import { createSessionTabs } from "@/pages/session/helpers"
 import { getCursorPosition } from "./prompt-input/editor-dom"
 import { createEditorCore } from "./prompt-input/editor-core"
 import { createPromptAttachments } from "./prompt-input/attachments"
@@ -53,11 +51,7 @@ import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
 import { createPersistedPromptInputHistory, type PromptInputHistory, promptLength } from "./prompt-input/history"
 import { createPromptInputHistoryController } from "./prompt-input/history-controller"
 import { createPromptInputKeyboardController } from "./prompt-input/keyboard-controller"
-import { createPromptInputPopoverController } from "./prompt-input/popover-controller"
-import { atOptionKey } from "./prompt-input/popover-options"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
-import { PromptPopover } from "./prompt-input/slash-popover"
-import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placeholder"
 import { composerMounts } from "./prompt-input/mount-registry"
 import { createPromptInputTransientState } from "./prompt-input/transient-state"
 import { showToast } from "@/utils/toast"
@@ -76,10 +70,7 @@ export type PromptInputSubmission = {
 }
 
 export type PromptInputControls = {
-  // The visible agent picker (plan/build) was predecessor residue and is gone — the permission-mode
-  // droplist is the one mode control. `available` stays: it feeds the @-mention subagent list.
   agents: {
-    available: { name: string; hidden?: boolean; mode: string }[]
     /** WHO this chat is talking to. Tune opens this colleague's config (AGENTS.md — the structural
      *  metaphor), so it is the composer's business now, not only the runner's. */
     current: string | undefined
@@ -160,7 +151,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const serverSDK = useServerSDK()
 
   const sync = useSync()
-  const serverSync = useServerSync()
   const files = useFile()
   const prompt = props.state ?? usePrompt()
   const layout = useLayout()
@@ -174,11 +164,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
-  let slashPopoverRef!: HTMLDivElement
 
   const mirror = { input: false }
   const inset = 56
-  const space = `${inset}px`
 
   // P4a editor-core: all contenteditable Range/Selection surgery lives behind this facade.
   const editor = createEditorCore({ editor: () => editorRef, empty: () => DEFAULT_PROMPT })
@@ -202,12 +190,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (count > 1) queueScroll(count - 1)
     })
   }
-
-  const activeFileTab = createSessionTabs({
-    tabs,
-    pathFromTab: files.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? files.tab(tab) : tab),
-  }).activeFileTab
 
   const commentInReview = (path: string) => {
     const sessionID = props.controls.session.id
@@ -258,33 +240,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     void Promise.resolve(files.load(item.path)).finally(() => queueCommentFocus())
   }
 
-  const recent = createMemo(() => {
-    const all = tabs().all()
-    const active = activeFileTab()
-    const order = active ? [active, ...all.filter((x) => x !== active)] : all
-    const seen = new Set<string>()
-    const paths: string[] = []
-
-    for (const tab of order) {
-      const path = files.pathFromTab(tab)
-      if (!path) continue
-      if (seen.has(path)) continue
-      seen.add(path)
-      paths.push(path)
-    }
-
-    return paths
-  })
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
 
-  const [store, setStore] = createPromptInputTransientState(
-    () => prompt.capture(),
-    Math.floor(Math.random() * PROMPT_EXAMPLE_KEYS.length),
-  )
+  const [store, setStore] = createPromptInputTransientState(() => prompt.capture())
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
   const motion = (value: number) => ({
     opacity: value,
@@ -335,30 +297,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return items.filter((item) => !item.comment?.trim())
   })
 
-  const hasUserPrompt = createMemo(() => {
-    const sessionID = props.controls.session.id
-    if (!sessionID) return false
-    const messages = serverSync().nativeMessages.messages(sessionID)
-    if (!messages) return false
-    return messages.some((m) => m.type === "user")
-  })
-
   const history = props.history ?? createPersistedPromptInputHistory()
 
-  const suggest = createMemo(() => !hasUserPrompt())
-
   const placeholder = createMemo(() =>
-    promptPlaceholder({
-      mode: store.mode,
-      commentCount: commentCount(),
-      example: suggest()
-        ? store.mode === "shell"
-          ? "git status"
-          : language.t(PROMPT_EXAMPLE_KEYS[store.placeholder])
-        : "",
-      suggest: suggest(),
-      t: language.t,
-    }),
+    store.mode === "shell"
+      ? language.t("prompt.placeholder.shell", { example: "git status" })
+      : language.t("prompt.placeholder.simple"),
   )
 
   const historyController = createPromptInputHistoryController({
@@ -370,8 +314,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setStore,
     queueScroll,
   })
-  const historyComments = historyController.comments
-
   const getCaretState = () => editor.caretState(promptLength(prompt.current()))
 
   const escBlur = () => platform.platform === "desktop" && platform.os === "macos"
@@ -393,7 +335,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const setMode = (mode: "normal" | "shell") => {
     setStore("mode", mode)
-    setStore("popover", null)
     requestAnimationFrame(() => editorRef?.focus())
   }
 
@@ -428,13 +369,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
   ])
 
-  const closePopover = () => setStore("popover", null)
-
   const resetHistoryNavigation = historyController.reset
-
-  const focusEditorEnd = () => {
-    requestAnimationFrame(() => editor.placeCursorAtEnd())
-  }
 
   const restoreFocus = () => {
     requestAnimationFrame(() => {
@@ -444,21 +379,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
 
-  createEffect(() => {
-    props.controls.session.id
-    if (props.controls.session.id) return
-    if (!suggest()) return
-    const interval = setInterval(() => {
-      setStore("placeholder", (prev) => (prev + 1) % PROMPT_EXAMPLE_KEYS.length)
-    }, 6500)
-    onCleanup(() => clearInterval(interval))
-  })
-
   const [composing, setComposing] = createSignal(false)
   const isImeComposing = (event: KeyboardEvent) => event.isComposing || composing() || event.keyCode === 229
 
   const handleBlur = () => {
-    closePopover()
     setComposing(false)
   }
 
@@ -473,45 +397,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       reconcile(prompt.current().filter((part) => part.type !== "image"))
     })
   }
-
-  const popoverController = createPromptInputPopoverController({
-    agents: () => props.controls.agents.available,
-    recent,
-    searchFiles: files.searchFilesAndDirectories,
-    customCommands: () => sync().data.command,
-    builtinCommands: () => command.options,
-    triggerCommand: (id) => command.trigger(id, "slash"),
-    popover: () => store.popover,
-    slashPopover: () => slashPopoverRef,
-    imageAttachments,
-    addPart: (part) => addPart(part),
-    close: closePopover,
-    editor,
-    prompt,
-    focusEnd: focusEditorEnd,
-  })
-  const {
-    at: {
-      flat: atFlat,
-      error: atError,
-      refetch: retryAt,
-      active: atActive,
-      setActive: setAtActive,
-      onInput: atOnInput,
-      onKeyDown: atOnKeyDown,
-    },
-    slash: {
-      flat: slashFlat,
-      active: slashActive,
-      setActive: setSlashActive,
-      onInput: slashOnInput,
-      onKeyDown: slashOnKeyDown,
-    },
-    selectAt: handleAtSelect,
-    selectSlash: handleSlashSelect,
-    selectActive: selectPopoverActive,
-    scrollSlashActiveIntoView,
-  } = popoverController
 
   const reconcile = (input: Prompt) => {
     if (mirror.input) {
@@ -552,7 +437,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       textContent.length === 0 && rawText.replace(/\n/g, "").length === 0 && !hasNonText && images.length === 0
 
     if (shouldReset) {
-      closePopover()
       resetHistoryNavigation()
       if (prompt.dirty()) {
         mirror.input = true
@@ -560,25 +444,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
       queueScroll()
       return
-    }
-
-    const shellMode = store.mode === "shell"
-
-    if (!shellMode) {
-      const atMatch = rawText.substring(0, cursorPosition).match(/@(\S*)$/)
-      const slashMatch = rawText.match(/^\/(\S*)$/)
-
-      if (atMatch) {
-        atOnInput(atMatch[1])
-        setStore("popover", "at")
-      } else if (slashMatch) {
-        slashOnInput(slashMatch[1])
-        setStore("popover", "slash")
-      } else {
-        closePopover()
-      }
-    } else {
-      closePopover()
     }
 
     resetHistoryNavigation()
@@ -591,16 +456,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const addPart = (part: ContentPart) => {
     const inserted = editor.insertPart(part, {
       fallbackCursor: () => prompt.cursor() ?? promptLength(prompt.current()),
-      text: () =>
-        prompt
-          .current()
-          .map((p) => ("content" in p ? p.content : ""))
-          .join(""),
     })
     if (!inserted) return false
 
     handleInput()
-    closePopover()
     return true
   }
 
@@ -630,7 +489,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         }
 
         setStore("mode", "normal")
-        setStore("popover", null)
         setStore("historyIndex", -1)
         setStore("savedPrompt", null)
         prompt.set(edit.prompt, promptLength(edit.prompt))
@@ -692,7 +550,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         resetHistoryNavigation(true)
       },
       setMode: (mode) => setStore("mode", mode),
-      setPopover: (popover) => setStore("popover", popover),
       newSessionWorktree: () => props.newSessionWorktree,
       onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
       onAbort: props.onAbort,
@@ -714,7 +571,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const handleKeyDown = createPromptInputKeyboardController({
     state: {
       mode: () => store.mode,
-      popover: () => store.popover,
       historyIndex: () => store.historyIndex,
     },
     editor: {
@@ -730,15 +586,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     attachmentCount: () => imageAttachments().length,
     commentCount,
     setMode: (mode) => setStore("mode", mode),
-    closePopover,
     pickAttachment: pick,
     abort,
     blurOnEscape: escBlur,
     addNewline: () => addPart({ type: "text", content: "\n", start: 0, end: 0 }),
-    selectPopoverActive,
-    atKeyDown: atOnKeyDown,
-    slashKeyDown: slashOnKeyDown,
-    scrollSlashActiveIntoView,
     navigateHistory,
     submit,
   })
@@ -777,10 +628,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (editorRef?.isConnected) editor.placeCursorAtEnd()
   })
 
-  const designPlaceholder = () => {
-    if (store.mode === "shell") return placeholder()
-    return "Ask anything, / for commands, @ for context..."
-  }
+  const designPlaceholder = () => placeholder()
 
   const newSession = () => props.variant === "new-session"
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
@@ -840,23 +688,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             {language.t("prompt.draft.unavailable")}
           </div>
         </Show>
-        <PromptPopover
-          popover={store.popover}
-          setSlashPopoverRef={(el) => (slashPopoverRef = el)}
-          atFlat={atFlat()}
-          atError={atError()}
-          onAtRetry={() => void retryAt()}
-          atActive={atActive() ?? undefined}
-          atKey={atOptionKey}
-          setAtActive={setAtActive}
-          onAtSelect={handleAtSelect}
-          slashFlat={slashFlat()}
-          slashActive={slashActive() ?? undefined}
-          setSlashActive={setSlashActive}
-          onSlashSelect={handleSlashSelect}
-          commandKeybindParts={command.keybindParts}
-          t={language.t}
-        />
         <div class="flex flex-col gap-3">
           <DockShellForm
             data-component={newSession() ? "session-new-composer" : "session-composer"}

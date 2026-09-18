@@ -366,8 +366,8 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
     openAddModel(dialog, server.current?.http, directory, navigate)
   }
 
-  // The dialog twin of the popover's empty-state redirect: the composer's /model command opens THIS,
-  // so it has to behave the same way rather than presenting an empty list. Done on mount (the dialog
+  // The model picker opens THIS, so it has to behave the same way rather than presenting an empty
+  // list. Done on mount (the dialog
   // is already showing by the time it renders) — replace it with the add-model flow instead.
   onMount(() => {
     if ((props.model ?? local.model).list().length > 0) return

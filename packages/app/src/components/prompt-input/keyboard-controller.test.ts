@@ -9,7 +9,7 @@ const setup = (advanced = true) => {
   let newline = 0
   let submit = 0
   const handle = createPromptInputKeyboardController({
-    state: { mode: () => mode, popover: () => null, historyIndex: () => -1 },
+    state: { mode: () => mode, historyIndex: () => -1 },
     editor: {
       element: () => element,
       collapseBackspaceAtZeroWidth: () => {},
@@ -25,17 +25,12 @@ const setup = (advanced = true) => {
     setMode: (value) => {
       mode = value
     },
-    closePopover: () => {},
     pickAttachment: () => {},
     abort: () => {},
     blurOnEscape: () => false,
     addNewline: () => {
       newline++
     },
-    selectPopoverActive: () => {},
-    atKeyDown: () => {},
-    slashKeyDown: () => {},
-    scrollSlashActiveIntoView: () => {},
     navigateHistory: () => false,
     submit: () => {
       submit++
@@ -72,13 +67,12 @@ test("Shift+Enter inserts a newline before IME and submit handling", () => {
   value.element.remove()
 })
 
-test("one Escape stops working even when a popover is open", () => {
+test("one Escape stops working", () => {
   const element = document.createElement("div")
   document.body.append(element)
   let stops = 0
-  let closes = 0
   const handle = createPromptInputKeyboardController({
-    state: { mode: () => "normal", popover: () => "slash", historyIndex: () => -1 },
+    state: { mode: () => "normal", historyIndex: () => -1 },
     editor: {
       element: () => element,
       collapseBackspaceAtZeroWidth: () => {},
@@ -92,22 +86,16 @@ test("one Escape stops working even when a popover is open", () => {
     attachmentCount: () => 0,
     commentCount: () => 0,
     setMode: () => {},
-    closePopover: () => closes++,
     pickAttachment: () => {},
     abort: () => stops++,
     blurOnEscape: () => false,
     addNewline: () => {},
-    selectPopoverActive: () => {},
-    atKeyDown: () => {},
-    slashKeyDown: () => {},
-    scrollSlashActiveIntoView: () => {},
     navigateHistory: () => false,
     submit: () => {},
   })
   const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true })
   handle(event)
   expect(stops).toBe(1)
-  expect(closes).toBe(0)
   expect(event.defaultPrevented).toBe(true)
   element.remove()
 })

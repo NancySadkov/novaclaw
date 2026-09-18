@@ -18,8 +18,8 @@ const estimateTokens = (chars: number) => Token.estimateFromChars(chars)
 const toPercent = (tokens: number, input: number) => (tokens / input) * 100
 const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(tokens, input) * 10) / 10
 
-// A native user message keeps the full prompt in `text` (inline @-mentions included; `files`/`agents`
-// carry only their source positions), so `text.length` captures the turn without double-counting.
+// A native user message keeps the full prompt in `text`, so `text.length` captures the turn
+// without double-counting.
 const charsFromUser = (message: Extract<SessionMessage, { type: "user" }>) => message.text.length
 
 const charsFromAssistantContent = (content: AssistantContent): { assistant: number; tool: number } => {

@@ -75,7 +75,7 @@ test("a session-tab switch preserves the bottom pin and prompt caret", async ({ 
   await expect(page.locator('[data-component="native-timeline"]')).toBeVisible()
   await expect(page.getByText(/Message 59: long session history/)).toBeVisible({ timeout: 30_000 })
   await expect.poll(() => loadCount(messageLoads, fixture.sourceID, "end")).toBeGreaterThanOrEqual(2)
-  const prompt = page.getByRole("textbox", { name: "Ask anything, / for commands, @ for context..." })
+  const prompt = page.getByRole("textbox", { name: "Ask anything..." })
   await prompt.fill("hello")
   await setPromptCursor(prompt, 3)
   await scrollTimelineToBottom(page)

@@ -406,10 +406,7 @@ export function createPromptInputController(input: {
   }
 
   return createMemo<PromptInputControls>(() => ({
-    // The visible agent picker (plan/build) is retired — the permission-mode droplist is the one mode
-    // control. `available` still feeds the composer's @-mention subagent list.
     agents: {
-      available: sync().data.agent,
       // WHOSE chat this is. The SESSION's own agent first, and the local pick only as a fallback
       // for a draft that has no session yet.
       //

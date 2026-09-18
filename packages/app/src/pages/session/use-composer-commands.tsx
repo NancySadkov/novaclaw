@@ -35,7 +35,6 @@ export const useComposerCommands = () => {
       title: language.t("command.model.choose"),
       description: language.t("command.model.choose.description"),
       keybind: "mod+'",
-      slash: "model",
       onSelect: chooseModel,
     }),
     modelCommand({

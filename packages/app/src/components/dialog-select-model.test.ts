@@ -37,9 +37,9 @@ describe("model picker routing", () => {
     expect(managers.length).toBe(2)
   })
 
-  test("an empty model list short-circuits to the add-model flow, in BOTH the popover and the dialog", () => {
-    // The popover intercepts opening; the dialog (opened by the composer's /model command) redirects on
-    // mount. Missing either one leaves a dead end on that path only.
+  test("an empty model list short-circuits to the add-model flow", () => {
+    // The dialog redirects on
+    // mount. Missing it leaves a dead end on that path only.
     expect(selectModel).toContain("noModels()")
     expect(selectModel).toMatch(/if \(next && noModels\(\)\) \{[\s\S]{0,120}handleConnectProvider\(\)/)
     expect(selectModel).toMatch(/onMount\(\(\) => \{[\s\S]{0,220}openAddModel\(/)

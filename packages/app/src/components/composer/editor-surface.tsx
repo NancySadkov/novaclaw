@@ -27,8 +27,8 @@ export type ComposerEditorSurfaceState = {
 /**
  * The contenteditable editor + its placeholder overlay — the composer's typing surface,
  * shared by the v2 and legacy shells (ui-arch P4). Only classes/styles differ per shell;
- * the editable-div semantics (a11y attrs, IME handlers, shell-mode autocorrect-off,
- * pill syntax colors) are pinned here once.
+ * the editable-div semantics (a11y attrs, IME handlers, shell-mode autocorrect-off) are
+ * pinned here once.
  */
 export function ComposerEditorSurface(props: { state: ComposerEditorSurfaceState }) {
   return (
@@ -55,8 +55,6 @@ export function ComposerEditorSurface(props: { state: ComposerEditorSurfaceState
         classList={{
           "select-text": true,
           [props.state.editorClass]: true,
-          "[&_[data-type=file]]:text-syntax-property": true,
-          "[&_[data-type=agent]]:text-syntax-type": true,
           "font-mono!": props.state.mode === "shell",
         }}
         style={props.state.editorStyle}

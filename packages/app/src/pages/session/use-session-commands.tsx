@@ -200,7 +200,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   /**
-   * `/undo` — move the revert boundary back one prompt. A reversible POINTER MOVE: nothing is
+   * Undo — move the revert boundary back one prompt. A reversible POINTER MOVE: nothing is
    * deleted, `/redo` puts it back, and the dock's Discard is the only way to make it permanent.
    *
    * The whole sequence (interrupt if busy → optimistic boundary + composer draft → stage → refetch
@@ -221,7 +221,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     owner.run(() => setActiveMessage(previous))
   }
 
-  /** `/redo` — move the boundary forward one prompt, or clear it when nothing is left to restore. */
+  /** Redo — move the boundary forward one prompt, or clear it when nothing is left to restore. */
   const redo = async () => {
     const sessionID = params.id
     if (!sessionID) return
@@ -265,7 +265,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.new",
       title: language.t("command.session.new"),
       keybind: "mod+shift+s",
-      slash: "new",
       onSelect: () => {
         if (params.serverKey) {
           sessionTabs.newDraft({ server: requireServerKey(params.serverKey), directory: sdk().directory })
@@ -278,7 +277,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.undo",
       title: language.t("command.session.undo"),
       description: language.t("command.session.undo.description"),
-      slash: "undo",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: undo,
     }),
@@ -286,7 +284,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.redo",
       title: language.t("command.session.redo"),
       description: language.t("command.session.redo.description"),
-      slash: "redo",
       disabled: !params.id || !info()?.revert?.messageID,
       onSelect: redo,
     }),
@@ -294,7 +291,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.compact",
       title: language.t("command.session.compact"),
       description: language.t("command.session.compact.description"),
-      slash: "compact",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: compact,
     }),
@@ -302,7 +298,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.fork",
       title: language.t("command.session.fork"),
       description: language.t("command.session.fork.description"),
-      slash: "fork",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: fork,
     }),
@@ -316,7 +311,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         title: language.t("command.file.open"),
         description: language.t("palette.search.placeholder"),
         keybind: "mod+k,mod+p",
-        slash: "open",
         onSelect: openFile,
       }),
       tab &&
@@ -345,7 +339,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),
       keybind: "ctrl+`",
-      slash: "terminal",
       onSelect: () => view().terminal.toggle(),
     }),
     viewCommand({
@@ -403,7 +396,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.mcp.toggle"),
       description: language.t("command.mcp.toggle.description"),
       keybind: "mod+;",
-      slash: "mcp",
       onSelect: chooseMcp,
     }),
   ]

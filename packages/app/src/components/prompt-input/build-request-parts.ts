@@ -1,10 +1,10 @@
 import { getFilename } from "@novaclaw/core/util/path"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type { ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { formatCommentNote } from "@/utils/comment-note"
 
-// V1-nuke slice C: the composer builds the NATIVE PromptInput ({text, files, agents}) for
+// V1-nuke slice C: the composer builds the NATIVE PromptInput ({text, files}) for
 // /api/session/:id/prompt — the V1 parts array (and its optimistic mirror, which nothing ever
 // consumed) is gone. Comment notes fold into the text (they were synthetic text parts before;
 // the model-visible content is identical). Images ride as data: URIs; file references as
@@ -16,15 +16,9 @@ type PromptFileAttachment = {
   source?: { text: string; start: number; end: number }
 }
 
-type PromptAgentAttachment = {
-  name: string
-  source?: { text: string; start: number; end: number }
-}
-
 export type NativePrompt = {
   text: string
   files?: PromptFileAttachment[]
-  agents?: PromptAgentAttachment[]
 }
 
 type ContextFile = {
@@ -56,41 +50,8 @@ const absolute = (directory: string, path: string) => {
 const fileQuery = (selection: FileSelection | undefined) =>
   selection ? `?start=${selection.startLine}&end=${selection.endLine}` : ""
 
-const mention = /(^|[\s([{"'])@(\S+)/g
-
-const parseCommentMentions = (comment: string) => {
-  return Array.from(comment.matchAll(mention)).flatMap((match) => {
-    const path = (match[2] ?? "").replace(/[.,!?;:)}\]"']+$/, "")
-    if (!path) return []
-    return [path]
-  })
-}
-
-const isFileAttachment = (part: Prompt[number]): part is FileAttachmentPart => part.type === "file"
-const isAgentAttachment = (part: Prompt[number]): part is AgentPart => part.type === "agent"
-
 export function buildPrompt(input: BuildPromptInput): NativePrompt {
-  const files: PromptFileAttachment[] = input.prompt.filter(isFileAttachment).map((attachment) => {
-    const path = absolute(input.sessionDirectory, attachment.path)
-    return {
-      uri: `file://${encodeFilePath(path)}${fileQuery(attachment.selection)}`,
-      name: getFilename(attachment.path),
-      source: {
-        text: attachment.content,
-        start: attachment.start,
-        end: attachment.end,
-      },
-    }
-  })
-
-  const agents: PromptAgentAttachment[] = input.prompt.filter(isAgentAttachment).map((attachment) => ({
-    name: attachment.name,
-    source: {
-      text: attachment.content,
-      start: attachment.start,
-      end: attachment.end,
-    },
-  }))
+  const files: PromptFileAttachment[] = []
 
   // Context files + comment notes. A commented file always attaches; its note text folds into the
   // prompt (V1 sent the note as a synthetic text part — same model-visible content, flat shape).
@@ -107,12 +68,6 @@ export function buildPrompt(input: BuildPromptInput): NativePrompt {
     }
     if (!comment) continue
     notes.push(formatCommentNote({ path: item.path, selection: item.selection, comment }))
-    for (const mentioned of parseCommentMentions(comment)) {
-      const mentionedUri = `file://${encodeFilePath(absolute(input.sessionDirectory, mentioned))}`
-      if (used.has(mentionedUri)) continue
-      used.add(mentionedUri)
-      files.push({ uri: mentionedUri, name: getFilename(mentioned) })
-    }
   }
 
   for (const attachment of input.images) {
@@ -127,6 +82,5 @@ export function buildPrompt(input: BuildPromptInput): NativePrompt {
   return {
     text,
     ...(files.length > 0 ? { files } : {}),
-    ...(agents.length > 0 ? { agents } : {}),
   }
 }

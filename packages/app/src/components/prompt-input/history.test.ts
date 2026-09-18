@@ -104,23 +104,12 @@ describe("prompt-input history", () => {
   test("helpers clone prompt and count text content length", () => {
     const original: Prompt = [
       { type: "text", content: "one", start: 0, end: 3 },
-      {
-        type: "file",
-        path: "src/a.ts",
-        content: "@src/a.ts",
-        start: 3,
-        end: 12,
-        selection: { startLine: 1, startChar: 1, endLine: 2, endChar: 1 },
-      },
       { type: "image", id: "1", filename: "img.png", mime: "image/png", dataUrl: "data:image/png;base64,abc" },
     ]
     const copy = clonePromptParts(original)
     expect(copy).not.toBe(original)
-    expect(promptLength(copy)).toBe(12)
-    if (copy[1]?.type !== "file") throw new Error("expected file")
-    copy[1].selection!.startLine = 9
-    if (original[1]?.type !== "file") throw new Error("expected file")
-    expect(original[1].selection?.startLine).toBe(1)
+    expect(copy).toEqual(original)
+    expect(promptLength(copy)).toBe(3)
   })
 
   test("canNavigateHistoryAtCursor only allows prompt boundaries", () => {
