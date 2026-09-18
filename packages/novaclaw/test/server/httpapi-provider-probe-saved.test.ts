@@ -70,11 +70,14 @@ describe("probing a SAVED provider", () => {
 
       const response = yield* probe({ modelID: "fixture-model" })
       expect(response.status).toBe(200)
-      const result = (yield* response.json) as { status: string; detail?: string }
+      const result = (yield* response.json) as { status: string; detail?: string; baseURL?: string }
 
       // The whole defect in one assertion: the address is saved, so "no address saved" is a lie.
       expect(result.status).not.toBe("no-url")
       expect(result.status).toBe("unreachable")
+      // The address the probe actually tried is reported back on the wire, normalized: a client
+      // that prompted for it persists THIS, not the line the user typed.
+      expect(result.baseURL).toBe("http://127.0.0.1:1/v1/")
     }),
   )
 

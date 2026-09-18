@@ -42,6 +42,13 @@ export const ProbeResult = Schema.Struct({
   detail: Schema.optional(Schema.String),
   models: Schema.optional(Schema.Array(Schema.String)),
   /**
+   * The base URL the probe actually used, after normalization: at most two candidate addresses are
+   * tried (`core/src/config/endpoint-url.ts`) and this is the one that answered. A client that
+   * prompted the user for an address persists THIS, never the raw line they typed — it is either
+   * the canonical `/v1/` base or a nonstandard endpoint the probe proved is real.
+   */
+  baseURL: Schema.optional(Schema.String),
+  /**
    * What this endpoint can actually DO, when the probe was asked for it.
    *
    * ⚠️ Three answers per rung, never two: `supported`, `unsupported`, and `unknown` WITH the fault

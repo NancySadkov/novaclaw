@@ -98,6 +98,12 @@ describe("Add-models — the local-runtime probe wiring", () => {
     expect(code).not.toMatch(/probe: \(localCandidate\)[\s\S]{0,400}apiKey/)
   })
 
+  test("adopts the URL the probe actually used, not the line the user typed", () => {
+    // The server normalizes (`core/src/config/endpoint-url.ts`) and reports the base that answered;
+    // saving the typed line would store `…/v1/chat/completions` or a schemeless host.
+    expect(dialog).toContain('if (r.baseURL && r.baseURL !== form.baseURL.trim()) setForm("baseURL", r.baseURL)')
+  })
+
   test("every translation key this dialog uses exists in en.ts", () => {
     const keys = [...dialog.matchAll(/t\(\s*"([a-zA-Z0-9_.]+)"/g)].map((match) => match[1]!)
     expect(keys.length).toBeGreaterThan(10)

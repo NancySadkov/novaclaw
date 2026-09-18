@@ -1,5 +1,6 @@
 import { Config } from "@/config/config"
 import { ConfigProviderConnection } from "@novaclaw/core/config/provider-connection"
+import { EndpointURL } from "@novaclaw/core/config/endpoint-url"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderCatalogResult } from "@/provider/catalog-result"
@@ -130,6 +131,66 @@ export const probeEndpoint = (
       })
     }),
   )
+
+/** One normalized candidate address and what probing it produced. */
+export interface DiscoveryAttempt {
+  readonly baseURL: string
+  readonly transport: ProbeTransport
+  readonly discoveryMs: number
+}
+
+export type DiscoveryResult =
+  | { readonly kind: "invalid"; readonly requestedURL: string }
+  | {
+      readonly kind: "probed"
+      readonly attempts: readonly DiscoveryAttempt[]
+      readonly selected: DiscoveryAttempt
+    }
+
+/**
+ * Normalize the line the user typed, then try each candidate in order and keep the first that
+ * answers as a real OpenAI-compatible endpoint.
+ *
+ * Selection is by EVIDENCE, not by whichever request finished first: a model list proves the route
+ * (`modelListCount > 0`), an auth challenge proves it exists and wants credentials, and any other
+ * 2xx proves something is there. A deliberate airgap refusal stops the loop, because retrying the
+ * next candidate would multiply one policy verdict into a log of blocked requests and bury the one
+ * that matters. Extraction from the handler is what makes these rules testable without a socket.
+ */
+export const probeDiscovery = (
+  client: HttpClient.HttpClient,
+  input: {
+    readonly requestedURL: string
+    readonly headers: Record<string, string>
+    /** From `provider_connection.discovery_timeout_ms`; defaulted when a caller has no config. */
+    readonly timeoutMs?: number
+  },
+): Effect.Effect<DiscoveryResult> =>
+  Effect.gen(function* () {
+    const candidates = EndpointURL.candidates(input.requestedURL)
+    if (candidates.length === 0) return { kind: "invalid" as const, requestedURL: input.requestedURL }
+
+    const attempts: DiscoveryAttempt[] = []
+    for (const candidate of candidates) {
+      const started = Date.now()
+      const transport = yield* probeEndpoint(client, `${candidate}models`, input.headers, input.timeoutMs)
+      attempts.push({ baseURL: candidate, transport, discoveryMs: Date.now() - started })
+      // A deliberate refusal is a DECISION, not an outage: retrying the next candidate would
+      // multiply one policy verdict into a log of blocked requests and bury the one that matters.
+      if (transport.kind === "blocked") break
+      // An auth challenge does NOT break: it is weaker evidence than a real model list, so the
+      // fallback still gets its chance to answer openly. The selection below ranks a list first.
+      if (transport.kind === "ok" && EndpointURL.modelListCount(transport.body) > 0) break
+    }
+
+    const selected =
+      attempts.find((a) => a.transport.kind === "ok" && EndpointURL.modelListCount(a.transport.body) > 0) ??
+      attempts.find((a) => a.transport.kind === "auth") ??
+      attempts.find((a) => a.transport.kind === "ok") ??
+      attempts.find((a) => a.transport.kind === "blocked") ??
+      attempts[0]!
+    return { kind: "probed" as const, attempts, selected }
+  })
 
 /**
  * CAPABILITY NEGOTIATION — three more bounded requests that answer *what can this endpoint do*.
@@ -646,11 +707,11 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       )
       // Payload baseURL/apiKey (the New-Model discovery flow, an unsaved endpoint) win over the
       // saved-provider config; falling back to config then catalog keeps the Test-a-saved-model path.
-      const baseURL =
+      const requestedURL =
         ctx.payload.baseURL ??
         (typeof options.baseURL === "string" ? options.baseURL : undefined) ??
         catalog[ctx.params.providerID]?.api
-      if (!baseURL)
+      if (!requestedURL)
         return {
           status: "no-url" as const,
           // User-facing prose. This string is rendered verbatim in Settings, so it names the
@@ -660,7 +721,6 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const apiKey =
         (ctx.payload.apiKey && ctx.payload.apiKey.length > 0 ? ctx.payload.apiKey : undefined) ??
         (typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined)
-      const url = `${baseURL.replace(/\/+$/, "")}/models`
       // Discovery auth style: explicit payload wins (the import flow passes the preset's style);
       // else infer from the saved provider's API channel; default bearer. Anthropic's /models
       // requires x-api-key + anthropic-version instead of a Bearer header.
@@ -678,16 +738,33 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // hardware, and a settings change must not need a restart to take effect (ruling 3).
       const connection = (yield* cfg.get()).provider_connection
       const started = Date.now()
-      const transport = yield* probeEndpoint(
-        http,
-        url,
-        authHeaders,
-        ConfigProviderConnection.discoveryTimeoutMs(connection),
-      )
+
+      // ── The address on screen is not necessarily a base URL: normalize before probing ───────
+      //
+      // A person types what their provider's docs show — a host with no scheme, the full
+      // `/v1/chat/completions` endpoint they copied, or a version-less mount. `probeDiscovery`
+      // derives at most two base URLs (canonical `/v1/` first, the version-less fallback second)
+      // and keeps the first that answers as a real OpenAI-compatible endpoint. The
+      // competing-harness caveats this defends are named in `core/src/config/endpoint-url.ts`.
+      const discovery = yield* probeDiscovery(http, {
+        requestedURL,
+        headers: authHeaders,
+        timeoutMs: ConfigProviderConnection.discoveryTimeoutMs(connection),
+      })
+      if (discovery.kind === "invalid")
+        return {
+          status: "error" as const,
+          latencyMs: Date.now() - started,
+          detail: `"${requestedURL}" is not a web address. Enter the server address, for example http://localhost:8000/v1.`,
+        }
+      // The address to PERSIST is the one the endpoint actually answered on, not the line typed.
+      const baseURL = discovery.selected.baseURL
+      const transport = discovery.selected.transport
       const latencyMs = Date.now() - started
       // Every non-`ok` arm already carries the status the wire schema will show, including the
       // airgap refusal — which is `error` + an airgap-shaped detail, deliberately NOT `unreachable`.
-      if (transport.kind !== "ok") return { status: transport.status, latencyMs, detail: transport.detail }
+      if (transport.kind !== "ok")
+        return { status: transport.status, latencyMs, baseURL, detail: transport.detail }
       const body = transport.body
       const data =
         typeof body === "object" && body !== null && Array.isArray((body as { data?: unknown }).data)
@@ -708,9 +785,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       let completionAttempts: number | undefined
       if (ctx.payload.modelID) {
         const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
-        const attempts = 1
+        const completionTries = 1
         let completion: CompletionProbe | undefined
-        for (let attempt = 1; attempt <= attempts; attempt++) {
+        for (let attempt = 1; attempt <= completionTries; attempt++) {
           completionAttempts = attempt
           completion = yield* probeCompletion(http, {
             baseURL,
@@ -726,6 +803,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           return {
             status: completion.status,
             latencyMs: Date.now() - started,
+            baseURL,
             discoveryLatencyMs: latencyMs,
             completionLatencyMs,
             completionAttempts,
@@ -799,6 +877,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return {
         status: "ok" as const,
         latencyMs: Date.now() - started,
+        baseURL,
         discoveryLatencyMs: latencyMs,
         ...(completionLatencyMs === undefined ? {} : { completionLatencyMs }),
         ...(completionAttempts === undefined ? {} : { completionAttempts }),

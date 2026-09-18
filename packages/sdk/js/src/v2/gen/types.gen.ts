@@ -11869,6 +11869,7 @@ export type ProviderProbeResponses = {
     }
     detail?: string
     models?: Array<string>
+    baseURL?: string
     capabilities?: {
       choice: "native" | "prompted" | "chat-only" | "unknown"
       rationale: string

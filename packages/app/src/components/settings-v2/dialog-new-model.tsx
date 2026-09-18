@@ -367,6 +367,11 @@ export const DialogNewModel: Component<{
     }).catch((e): ProbeResult => ({ status: "error", detail: String(e).slice(0, 200) }))
     setProbing(false)
     setResult(r)
+    // 🔴 Adopt the address the probe actually used, not the line the user typed: the server tries
+    // the canonical `/v1/` base (and, when the path is versionless, the root) and reports which one
+    // answered. Saving the typed line instead would store `…/v1/chat/completions` or a schemeless
+    // host and break the very next turn. See `core/src/config/endpoint-url.ts`.
+    if (r.baseURL && r.baseURL !== form.baseURL.trim()) setForm("baseURL", r.baseURL)
     if (!r.models || r.models.length === 0) {
       setError(statusMessage(r) || t("settings.models.new.noModels"))
       return

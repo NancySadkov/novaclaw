@@ -83,6 +83,11 @@ export interface ProbeResult {
   readonly detail?: string
   readonly models?: readonly string[]
   /**
+   * The base URL the probe actually used after normalization — the URL to PERSIST, never the raw
+   * line the user typed. See `core/src/config/endpoint-url.ts`.
+   */
+  readonly baseURL?: string
+  /**
    * What the endpoint can DO, when the probe was asked to negotiate it.
    *
    * ⚠️ Three answers per rung, never two. A 401 or a dropped socket is `unknown` WITH a fault, not

@@ -16,6 +16,8 @@ import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
+import type { ProbeResult } from "@/utils/fs-api"
+import { EndpointURL } from "@novaclaw/core/config/endpoint-url"
 import { SettingsListV2 } from "./parts/list"
 import { PresetFieldV2 } from "./parts/preset-field"
 import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-value"
@@ -114,11 +116,19 @@ export const ModelConfigScreen: Component<{
    *  empty and nothing is written on save. */
   providerApi?: ProviderApi
   defaults?: Pick<ModelConfig, "capabilities">
+  /**
+   * Probe an address the user is editing, so Save can persist the base URL the endpoint actually
+   * answers on instead of the line they typed (`core/src/config/endpoint-url.ts`). Supplied by the
+   * route page, which owns the connection and the routing directory; a render harness omits it, so
+   * mounting this screen never opens a socket.
+   */
+  probe?: (input: { baseURL: string; apiKey?: string }) => Promise<ProbeResult | undefined>
   /** Leave the screen: back, Cancel, and a successful Save all land here. */
   onDismiss: () => void
 }> = (props) => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const [saving, setSaving] = createSignal(false)
 
   const providerCfg = (): ProviderConfig => serverSync().data.config?.providers?.[props.providerID] ?? {}
   const savedModel = (): ExtendedModelConfig => (providerCfg().models?.[props.modelID] ?? {}) as ExtendedModelConfig
@@ -249,7 +259,7 @@ export const ModelConfigScreen: Component<{
     }
   }
 
-  const save = async () => {
+  const persist = async () => {
     const limit: { context?: number; output?: number; images?: number } = {}
     if (num(form.context) !== undefined) limit.context = num(form.context)
     if (num(form.maxTokens) !== undefined) limit.output = num(form.maxTokens)
@@ -308,7 +318,25 @@ export const ModelConfigScreen: Component<{
       },
     }
     const provider = providerCfg()
-    const apiPath = form.apiPath.trim()
+    let apiPath = form.apiPath.trim()
+    // 🔴 Save is where an edited address gets validated, so it is where it gets normalized: the
+    // probe tries the canonical `/v1/` base first (and the version-less root second) and the one
+    // that answers is what we persist. It runs ONLY when the address changed — an untouched
+    // endpoint must not make Save spend a round trip — and a probe that proves nothing only gets
+    // the conservative fix (scheme + stripped operation, never a forced `/v1`), so a perfect
+    // nonstandard mount survives a network blip. See `core/src/config/endpoint-url.ts`.
+    const storedURL = providerCfg().api?.url ?? props.providerApi?.url ?? ""
+    if (props.probe && apiPath && apiPath !== storedURL) {
+      const probed = await props
+        .probe({ baseURL: apiPath, ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}) })
+        .catch(() => undefined)
+      // Adopt the probe's address only when it PROVED the route: `ok` copied a model list, `auth`
+      // proved the path exists and wants a key. An unreachable, airgap-blocked or malformed probe
+      // proves nothing, so it falls back to the CONSERVATIVE fix that never forces `/v1` — otherwise
+      // a working nonstandard mount (`…/openai`) would be broken by a network blip.
+      const proven = probed && (probed.status === "ok" || probed.status === "auth") ? probed.baseURL : undefined
+      apiPath = proven ?? EndpointURL.stripped(apiPath) ?? apiPath
+    }
     // The endpoint is provider-wide today, so preserve the complete resolved API channel (including
     // its discriminant, package and settings) when a built-in provider had no saved override yet.
     // A fragment containing only `url` does not decode as Provider.Api and would make Save fail.
@@ -404,6 +432,17 @@ export const ModelConfigScreen: Component<{
         title: language.t("settings.models.config.toast.failed"),
         description: error instanceof Error ? error.message : String(error),
       })
+    }
+  }
+
+  /** Save with a busy state: an edited address makes `persist` probe before it writes. */
+  const save = async () => {
+    if (saving()) return
+    setSaving(true)
+    try {
+      await persist()
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -786,7 +825,7 @@ export const ModelConfigScreen: Component<{
         <ButtonV2
           size="normal"
           variant="gold"
-          disabled={!form.modelID.trim() || !form.modelName.trim()}
+          disabled={!form.modelID.trim() || !form.modelName.trim() || saving()}
           onClick={() => void save()}
         >
           {language.t("common.save")}
