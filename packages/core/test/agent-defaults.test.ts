@@ -66,6 +66,9 @@ describe("who declared what", () => {
       introspection: true,
       quality: true,
       affective: true,
+      tools: { bash: false },
+      adhocTools: [],
+      globalTools: false,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
     const changed = Object.keys(folded).filter(
@@ -109,8 +112,10 @@ describe("a colleague's standing choices", () => {
 
   test("only the standing WORK choices are declarable", () => {
     expect([...AgentDefaults.DECLARABLE].sort()).toEqual([
+      "adhocTools",
       "affective",
       "contextBudget",
+      "globalTools",
       "introspection",
       "maxToolTimeoutMs",
       "permissionMode",
@@ -119,6 +124,7 @@ describe("a colleague's standing choices", () => {
       "shortChat",
       "strict",
       "surgicalEdits",
+      "tools",
     ])
     const folded = AgentDefaults.fold(
       EFFECTIVE_CONFIG_DEFAULTS,
@@ -144,6 +150,68 @@ describe("a colleague's standing choices", () => {
     expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ maxToolTimeoutMs: 90_000 })).maxToolTimeoutMs).toBe(
       90_000,
     )
+  })
+
+  test("full Strict detail folds as one standing choice", () => {
+    const folded = AgentDefaults.fold(
+      EFFECTIVE_CONFIG_DEFAULTS,
+      agent({ strict: { enabled: true, attempts: 3, wallMinutes: 20, verification: false, executionTokens: 16384 } }),
+    )
+    expect(folded.strict).toEqual({
+      enabled: true,
+      attempts: 3,
+      wallMinutes: 20,
+      verification: false,
+      executionTokens: 16384,
+    })
+  })
+
+  test("bool-or-struct harness stances split — the stance stays boolean, detail rides its own key", () => {
+    // A struct folded whole into the stance slot would read truthy for `{ enabled: false }`
+    // at every boolean reader (`llm.ts`'s affective gate among them) — the `{enabled:false}`
+    // officer would run enabled. The split keeps the lie unrepresentable.
+    const fromBool = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ introspection: false, affective: true }))
+    expect(fromBool.introspection).toBe(false)
+    expect(fromBool.affective).toBe(true)
+    expect(fromBool.introspectionDetail).toBeUndefined()
+    expect(fromBool.affectiveDetail).toBeUndefined()
+    const fromStruct = AgentDefaults.fold(
+      EFFECTIVE_CONFIG_DEFAULTS,
+      agent({ introspection: { enabled: true, cadence: 5 }, affective: { enabled: true, temperature: 0.4 } }),
+    )
+    expect(fromStruct.introspection).toBe(true)
+    expect(fromStruct.introspectionDetail).toEqual({ cadence: 5 })
+    expect(fromStruct.affective).toBe(true)
+    expect(fromStruct.affectiveDetail).toEqual({ temperature: 0.4 })
+  })
+
+  test("detail without a stance inherits the stance but keeps the detail", () => {
+    const colleague = agent({ introspection: { cadence: 5 } })
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
+    expect(folded.introspection).toBeUndefined()
+    expect(folded.introspectionDetail).toEqual({ cadence: 5 })
+    expect(AgentDefaults.declaredBy(colleague)).toEqual(["introspectionDetail"])
+  })
+
+  test("the tool horizon and recipe delivery fold as officer data", () => {
+    const folded = AgentDefaults.fold(
+      EFFECTIVE_CONFIG_DEFAULTS,
+      agent({
+        tools: { bash: false, read: true },
+        adhocTools: [{ name: "deploy", description: "Ship it", manual: "run ./ship" }],
+        globalTools: false,
+      }),
+    )
+    expect(folded.tools).toEqual({ bash: false, read: true })
+    expect(folded.adhocTools).toEqual([{ name: "deploy", description: "Ship it", manual: "run ./ship" }])
+    expect(folded.globalTools).toBe(false)
+  })
+
+  test("an officer that declares no delivery leaves the base alone", () => {
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ title: "Bookkeeper" }))
+    expect(folded.tools).toBeUndefined()
+    expect(folded.adhocTools).toBeUndefined()
+    expect(folded.globalTools).toBeUndefined()
   })
 })
 

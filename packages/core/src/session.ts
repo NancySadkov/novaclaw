@@ -9,7 +9,7 @@ import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
 import { ProviderV2 } from "./provider"
 // Ruling 8: a fork is seeded from the source's chain-RESOLVED config, never its raw row.
-import { forkSessionConfig, type SessionConfig } from "./session/config-resolve"
+import { forkSessionConfig, type SessionConfig, type StrictOverride } from "./session/config-resolve"
 import { SessionConfigColumns } from "./session/config-columns"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
@@ -164,7 +164,7 @@ type CreateInput = {
   // create path could supply one, so the only writer was `SessionEvent.ResponderSwitched`.
   responder?: SessionSchema.Info["responder"]
   // The per-session Strict-harness override (the composer switch); undefined = inherit.
-  strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number }
+  strict?: StrictOverride
   // Per-session harness-feature overrides (the composer's Tuning control); undefined = inherit.
   introspection?: boolean
   quality?: boolean
@@ -380,7 +380,7 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError>
   readonly switchStrict: (input: {
     sessionID: SessionSchema.ID
-    strict: { enabled?: boolean; attempts?: number; wallMinutes?: number } | null
+    strict: StrictOverride | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchFeature: (input: {
     sessionID: SessionSchema.ID

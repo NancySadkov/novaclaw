@@ -89,10 +89,17 @@ export const Info = Schema.Struct({
   }).pipe(optional),
   /** Standing WORK choices — folded as a layer by `AgentDefaults`, absent = inherit. */
   permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(optional),
+  /** Full per-officer Strict detail (every field optional); the session row still wins per chat. */
   strict: Schema.Struct({
     enabled: Schema.Boolean.pipe(optional),
+    verification: Schema.Boolean.pipe(optional),
+    recovery: Schema.Boolean.pipe(optional),
+    editingAids: Schema.Boolean.pipe(optional),
+    budgetSteering: Schema.Boolean.pipe(optional),
     attempts: Schema.Finite.pipe(optional),
     wallMinutes: Schema.Finite.pipe(optional),
+    executionTokens: Schema.Finite.pipe(optional),
+    reasoningTokens: Schema.Finite.pipe(optional),
   }).pipe(optional),
   shortChat: Schema.Boolean.pipe(optional),
   /** The three roster entity kinds: a full officer `agent`, a pure `chat`, or the owning `human`. */
@@ -100,12 +107,37 @@ export const Info = Schema.Struct({
   /** Persistent operation defaults for the colleague's canonical root session. */
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(optional),
   goal: Schema.String.pipe(optional),
-  /** Standing harness preferences, folded below project and chat overrides. */
+  /** Standing harness preferences, folded below project and chat overrides.
+   *  `introspection` and `affective` carry the historical bare boolean or the full
+   *  detail struct, exactly as the config side authors them. */
   contextBudget: Schema.Boolean.pipe(optional),
   surgicalEdits: Schema.Boolean.pipe(optional),
-  introspection: Schema.Boolean.pipe(optional),
+  introspection: Schema.Union([
+    Schema.Boolean,
+    Schema.Struct({
+      enabled: Schema.Boolean.pipe(optional),
+      cadence: Schema.Finite.pipe(optional),
+      model: Schema.String.pipe(optional),
+      prompt: Schema.String.pipe(optional),
+      interjection: Schema.String.pipe(optional),
+      generateInterjection: Schema.Boolean.pipe(optional),
+    }),
+  ]).pipe(optional),
   quality: Schema.Boolean.pipe(optional),
-  affective: Schema.Boolean.pipe(optional),
+  affective: Schema.Union([
+    Schema.Boolean,
+    Schema.Struct({
+      enabled: Schema.Boolean.pipe(optional),
+      temperature: Schema.Finite.pipe(optional),
+      extended: Schema.Boolean.pipe(optional),
+    }),
+  ]).pipe(optional),
+  /**
+   * This officer's tool horizon, applied AFTER the instance `tool_routing` table.
+   * Narrowing only: `false` denies the tool for this officer's sessions; `true`
+   * restores a routing-withdrawn tool, never a permission-withdrawn one.
+   */
+  tools: Schema.Record(Schema.String, Schema.Boolean).pipe(optional),
   /** Per-turn reasoning-token ceiling. Absent = selected model default; 0 = reasoning disabled. */
   reasoningBudget: NonNegativeInt.pipe(optional),
   /** Maximum wall time for one tool call in milliseconds. Descendant workers inherit it. */

@@ -123,6 +123,7 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.introspection !== undefined) runtime["introspection"] = item.introspection
   if (item.quality !== undefined) runtime["quality"] = item.quality
   if (item.affective !== undefined) runtime["affective"] = item.affective
+  if (item.tools !== undefined) runtime["tools"] = item.tools
   if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget
   if (item.maxToolTimeoutMs !== undefined) agent.maxToolTimeoutMs = item.maxToolTimeoutMs
   if (item.workerPrototype !== undefined) {
@@ -161,6 +162,9 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
 function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
   // `item.nudges` and `item.globalNudges` are intentionally consumed by NudgeService straight from
   // AgentConfigStore. They are harness-delivery components, not fields on the AgentV2 identity row.
+  // `item.adhocTools` and `item.globalTools` are consumed the same way, by the ad-hoc guidance
+  // reader (slice 2): recipe text reaches only the owning officer's prompt, so it is delivery
+  // configuration rather than a roster fact, and the opt-out governs delivery, not identity.
   if (AgentV2.isProtected(agentID)) {
     const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>, "operator")
     // ⚠️ A fragment carrying a refused key is refused WHOLE. A partial override is the shape that

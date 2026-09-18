@@ -3776,8 +3776,14 @@ export type ConfigV2Agent = {
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean
+    verification?: boolean
+    recovery?: boolean
+    editingAids?: boolean
+    budgetSteering?: boolean
     attempts?: number
     wallMinutes?: number
+    executionTokens?: number
+    reasoningTokens?: number
   }
   shortChat?: boolean
   kind?: "agent" | "chat" | "human"
@@ -3785,11 +3791,45 @@ export type ConfigV2Agent = {
   goal?: string
   contextBudget?: boolean
   surgicalEdits?: boolean
-  introspection?: boolean
+  introspection?:
+    | boolean
+    | {
+        enabled?: boolean
+        cadence?: number
+        model?: string
+        prompt?: string
+        interjection?: string
+        generateInterjection?: boolean
+      }
   quality?: boolean
-  affective?: boolean
+  affective?:
+    | boolean
+    | {
+        enabled?: boolean
+        temperature?: number
+        extended?: boolean
+      }
   nudges?: Array<ConfigV2Nudge>
   globalNudges?: boolean
+  tools?: {
+    [key: string]: boolean
+  }
+  adhocTools?: Array<{
+    /**
+     * Tool name (lowercase slug) listed in the system prompt
+     */
+    name: string
+    /**
+     * One-line description shown beside the name (the model decides from this alone)
+     */
+    description: string
+    /**
+     * Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples
+     */
+    manual: string
+    enabled?: boolean
+  }>
+  globalTools?: boolean
   reasoningBudget?: number
   maxToolTimeoutMs?: number
   workerPrototype?: string
@@ -4627,8 +4667,14 @@ export type AgentV2Info = {
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean
+    verification?: boolean
+    recovery?: boolean
+    editingAids?: boolean
+    budgetSteering?: boolean
     attempts?: number
     wallMinutes?: number
+    executionTokens?: number
+    reasoningTokens?: number
   }
   shortChat?: boolean
   kind?: "agent" | "chat" | "human"
@@ -4636,9 +4682,27 @@ export type AgentV2Info = {
   goal?: string
   contextBudget?: boolean
   surgicalEdits?: boolean
-  introspection?: boolean
+  introspection?:
+    | boolean
+    | {
+        enabled?: boolean
+        cadence?: number
+        model?: string
+        prompt?: string
+        interjection?: string
+        generateInterjection?: boolean
+      }
   quality?: boolean
-  affective?: boolean
+  affective?:
+    | boolean
+    | {
+        enabled?: boolean
+        temperature?: number
+        extended?: boolean
+      }
+  tools?: {
+    [key: string]: boolean
+  }
   reasoningBudget?: number
   maxToolTimeoutMs?: number
   workerPrototype?: string
