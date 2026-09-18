@@ -934,8 +934,36 @@ export const layer = Layer.effect(
       // now has no informational lever at all. What closes it is a real Windows/macOS backend,
       // deferred to v0.3.0 with Auth. If you are here because you want a mechanical bound on
       // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
-      const stance = unattendedStanceRules(rootType, mode)
       const configuredRules = yield* configured(input.sessionID, input.agent)
+      const stance = unattendedStanceRules(rootType, mode)
+      // ── A NAMED WORKSPACE IS NOT WHAT CONFINEMENT REFUSES ─────────────────────────────────────
+      //
+      // The stance denies writes outside the session's `Location`, but a colleague owns more than its
+      // Location. An officer assigned to a project keeps its OWN private scratch dir, and the shared
+      // scratch dirs (the tool-output store and the instance temp dir) are Nova's own locations. The
+      // floor ALREADY says so: `plugin/agent.ts` / `config/plugin/agent.ts` push an explicit
+      // `external_directory_write` allow for each, derived from the agent's id. Before this, that
+      // grant held only while a human was watching — unattended, the blanket deny below overrode it,
+      // so the one folder the model is told to keep notes, drafts and probes in was refused out of
+      // hand (owner, 2026-08-22: *"the agent with an assigned folder has both scratch and the project
+      // folders"*). A folder somebody NAMED is not what the stance is for; it exists for the paths
+      // nobody granted.
+      //
+      // ⚠️ A BLANKET allow (`resource: "*"`) deliberately does NOT qualify, and the difference is the
+      // whole safety argument. `yolo` is the one documented way to grant a whole-host external write,
+      // and the standing-allow test pins that a `* → allow` cannot buy its way out of the stance.
+      // Only a rule that says WHERE — any resource but `*` — is a workspace, and the trailing `*` in a
+      // scratch grant (`…/scratch/<agent>/*`) is a directory glob, not a blanket.
+      //
+      // The re-assertion is appended AFTER `stance` below, so `findLast` lets it win there; the
+      // deny-fast arm consults the same set, or it would refuse before the re-assertion is ever seen.
+      // A mode deny still outranks it, by the separate `denied(input, modeRules)` arm — Analyze stays
+      // read-only, scratch included, exactly as before.
+      const namedWorkspaces: Permission.Ruleset = configuredRules.filter(
+        (rule) => rule.action === "external_directory_write" && rule.effect === "allow" && rule.resource !== "*",
+      )
+      const named = (resource: string) =>
+        matchRule("external_directory_write", resource, namedWorkspaces)?.effect === "allow"
       // 🗑️ A present-but-unusable project file used to be refused HERE, before any model-authored
       // action, with a synthetic rule naming the FILE so the shared denial voice could identify what
       // the user had to fix, upgrade for, or unlock. There is no file to be unusable (owner,
@@ -955,8 +983,20 @@ export const layer = Layer.effect(
       // capability; only WRITES distinguish `yolo` from the other modes. It sits at the lowest
       // precedence so an explicit user-authored permission rule can still narrow a particular path.
       const readBaseline: Permission.Ruleset = [{ action: "external_directory_read", resource: "*", effect: "allow" }]
-      const rules = [...readBaseline, ...configuredRules, ...modeRules, ...featureRules, ...stance]
-      if (denied(input, stance))
+      const rules = [
+        ...readBaseline,
+        ...configuredRules,
+        ...modeRules,
+        ...featureRules,
+        ...stance,
+        // AFTER the stance on purpose: a folder the agent's own floor NAMED outlives the unattended
+        // confinement default, while a blanket `* → allow` is filtered out above and does not.
+        ...namedWorkspaces,
+      ]
+      const confined = [...input.resources, ...(input.denyAliases ?? [])].some(
+        (resource) => evaluate(input.action, resource, stance).effect === "deny" && !named(resource),
+      )
+      if (confined)
         return {
           effect: "deny" as const,
           rules,

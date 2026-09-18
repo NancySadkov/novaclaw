@@ -296,6 +296,17 @@ export const attendedRoot = (rootType: RootType): boolean => {
  * per-turn part assembly (2026-09-17); what remains is a real Windows/macOS backend, in v0.3.0.
  * Naming it is ruling 2 applied to our own documentation: the stance denies out-of-folder writes
  * through every seam that can see a path, and no others.
+ *
+ * ⚠️ **THE CARVE-OUT FOR A NAMED WORKSPACE IS NOT HERE, ON PURPOSE** — the evaluator applies it
+ * (`permission.ts` → the `namedWorkspaces` block in `evaluateInput`). A colleague owns more than its
+ * `Location`: an officer assigned to a project keeps its own private scratch dir, and the shared
+ * scratch dirs are Nova's own locations. The agent floor already grants each with a NAMED
+ * `external_directory_write` allow (`plugin/agent.ts`/`config/plugin/agent.ts`), so the evaluator
+ * re-asserts those specific grants AFTER this stance — a folder somebody named is not what
+ * confinement refuses. A BLANKET `* → allow` is filtered out there and still cannot buy its way out.
+ * This function stays two arguments and pure because the carve-out needs the request's resolved
+ * rules, which it does not have; the horizon (`permission.ts` → `horizonLayers`) is unaffected
+ * either way, since this stance names no TOOL action.
  */
 export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
   { action: "external_directory_write", resource: "*", effect: "deny" },

@@ -681,6 +681,22 @@ describe("PermissionV2 — unattended confinement stance", () => {
       save: ["C:/elsewhere/*"],
       ...input,
     })
+  // A colleague's OWN workspace, as `plugin/agent.ts`/`config/plugin/agent.ts` mint it: a NAMED
+  // `external_directory_write` allow (a concrete directory glob, not `*`) derived from the agent id.
+  // The `outside` request above names a DIFFERENT directory, so the two tell a named workspace apart
+  // from confinement's blanket.
+  const workspace = "C:/scratch/daedalus/*"
+  const namedWorkspaceRules: PermissionV2.Ruleset = [
+    ...buildAgentRules,
+    { action: "external_directory_write", resource: workspace, effect: "allow" as const },
+  ]
+  const inWorkspace = (input: Partial<PermissionV2.AssertInput> = {}) =>
+    assertion({
+      action: "external_directory_write",
+      resources: ["C:/scratch/daedalus/verify_77d10.py"],
+      save: [workspace],
+      ...input,
+    })
 
   it.effect("an out-of-folder write is DENIED OUTRIGHT for an unattended session — no pending ask", () =>
     Effect.gen(function* () {
@@ -861,6 +877,9 @@ describe("PermissionV2 — unattended confinement stance", () => {
     Effect.gen(function* () {
       // The grant used to come from the saved-grant table; it is a configured standing rule now and
       // the invariant is unchanged — the stance is checked BEFORE configured rules.
+      // ⚠️ BLANKET only, and that is exactly the shape this pins: the sibling test below proves a
+      // NAMED directory grant (the scratch workspace every officer's floor carries) DOES survive.
+      // A `*` allow is what `yolo` is for; it is not a workspace.
       yield* setup([
         ...buildAgentRules,
         { action: "external_directory_write", resource: "*", effect: "allow" as const },
@@ -870,6 +889,44 @@ describe("PermissionV2 — unattended confinement stance", () => {
       expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
         effect: "deny",
       })
+    }),
+  )
+
+  // The measured live failure: a Daedalus officer assigned to a project was refused its OWN scratch
+  // ("Permission denied: this is an UNATTENDED session, confined to its own working folder") — the
+  // one folder `AGENTS.md` tells it to keep notes, probes and drafts in. The floor had granted it
+  // (`scratchDirsFor`), and an attended run honoured that; the blanket stance overrode it because it
+  // was appended last. A folder the agent's own ruleset NAMED is not confinement's to revoke.
+  it.effect("an UNATTENDED root MAY write a workspace its floor NAMED — scratch survives the stance", () =>
+    Effect.gen(function* () {
+      yield* setup(namedWorkspaceRules)
+      yield* insertSession({ id: "ses_daedalus", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_daedalus")
+      // The inspection and the enforcement path every mutating tool takes must agree.
+      expect(yield* service.ask(inWorkspace({ sessionID }))).toMatchObject({ effect: "allow" })
+      yield* service.assert(inWorkspace({ sessionID }))
+      // NEGATIVE CONTROL: the same unattended root, writing a DIFFERENT directory, is still confined
+      // — the carve-out is the named folder, never a hole in the stance.
+      const error = yield* service.assert(outside({ sessionID })).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBe("unattended-confined")
+    }),
+  )
+
+  // The carve-out must not reopen Analyze. `denied(input, modeRules)` is a separate hard arm, checked
+  // before the re-assertion is ever reached, so plan's `external_directory_write: *` deny still wins
+  // over a named workspace — "read only" keeps meaning read only.
+  it.effect("a NAMED workspace does not reopen Analyze — plan still denies it", () =>
+    Effect.gen(function* () {
+      yield* setup(namedWorkspaceRules)
+      yield* insertSession({ id: "ses_plan_ws", type: "goal-oriented", permissionMode: "plan" })
+      const service = yield* PermissionV2.Service
+      const error = yield* service
+        .assert(inWorkspace({ sessionID: SessionV2.ID.make("ses_plan_ws") }))
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBeUndefined()
     }),
   )
 
