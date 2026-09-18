@@ -257,8 +257,8 @@ export const GRANT_IN_ADVANCE = {
   sentence:
     `Widening this is the operator's decision and it is made IN ADVANCE, as a standing rule in the ` +
     `instance's permission settings (the \`permissions\` config key, or \`agents\` for one ` +
-    `colleague's own ruleset). There is no consent prompt to answer and no way to grant it mid-run: ` +
-    `this instance never interrupts anyone to ask.`,
+    `colleague's own ruleset). Nothing can be granted mid-run: this instance never interrupts anyone ` +
+    `to ask, so there is no prompt to answer and no reply that would help.`,
 } as const
 
 /**
@@ -333,10 +333,10 @@ export function denialMessage(error: unknown): string | undefined {
     // pointless, and say what a human would have to do IN ADVANCE for the next run to have it.
     if (error.reason === "unattended-unanswerable")
       return (
-        `Permission denied: action '${actions}' on '${resources}' needs a human's approval and no standing ` +
-        `rule grants it, but this is an UNATTENDED session — no operator is present to answer a consent ` +
-        `prompt. A prompt here would stall the whole run instead of gating it, so the request is refused ` +
-        `immediately. Waiting, retrying, or trying to get the permission widened mid-run will change nothing. ` +
+        `Permission denied: action '${actions}' on '${resources}' is not granted by any standing rule, and ` +
+        `this is an UNATTENDED session — no operator is present to grant it. Asking would stall the whole ` +
+        `run instead of gating it, so the request is refused immediately. Waiting, retrying, or trying to ` +
+        `get the permission widened mid-run will change nothing. ` +
         `Continue with the tools you ARE allowed to use and finish what you can. ${GRANT_IN_ADVANCE.sentence} ` +
         `So if the task genuinely cannot finish without it, name '${actions}' in your result and stop trying it.`
       )
@@ -360,15 +360,13 @@ export function denialMessage(error: unknown): string | undefined {
       )
     if (error.reason === "unanswerable-chain-unreadable")
       return (
-        `Permission denied: action '${actions}' on '${resources}' needs a human's approval and no standing ` +
-        `rule grants it, and this session's parent chain could not be read — so there is no way to tell ` +
-        `whether anyone is present to answer a consent prompt. An attendance question this instance cannot ` +
-        `answer is not a licence to ` +
-        `act, and a prompt nobody may be there to answer would stall the run rather than gate it, so the ` +
-        `request is refused rather than granted on a guess. What is broken is the session records, not your ` +
-        `request, and no user reply can unblock it. Continue with the tools you ARE allowed to use and ` +
-        `finish what you can; if the task genuinely cannot finish without '${actions}', name it in your ` +
-        `result and stop trying it.`
+        `Permission denied: action '${actions}' on '${resources}' is not granted by any standing rule, and ` +
+        `this session's parent chain could not be read — so there is no way to tell whether an operator is ` +
+        `reachable. An attendance question this instance cannot answer is not a licence to act, and a request ` +
+        `nobody may be there to grant would stall the run rather than gate it, so the request is refused ` +
+        `rather than granted on a guess. What is broken is the session records, not your request, and no user ` +
+        `reply can unblock it. Continue with the tools you ARE allowed to use and finish what you can; if the ` +
+        `task genuinely cannot finish without '${actions}', name it in your result and stop trying it.`
       )
     return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
   }
