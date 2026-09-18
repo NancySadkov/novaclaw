@@ -554,6 +554,34 @@ function Turn(props: {
     const startedAt = props.group.lead?.time.created ?? firstAssistant?.time.created
     return completedRunSeconds(startedAt, closing()?.time.completed)
   }
+  // The Done fold's open state, held ABOVE the turn like tool cards (ToolFoldContext): a new agent
+  // step remounts this subtree, and a native <details> would come back closed, folding away lines
+  // the user explicitly unfolded to inspect. Only a real click on this fold's own summary writes
+  // the latch — the programmatic default never masquerades as one. When the user explicitly opened
+  // an inner tool/reasoning card and never folded it back, the turn stays open so settling the turn
+  // cannot hide what they are reading. An explicit close of Done itself always wins.
+  const toolFoldState = useContext(ToolFoldContext)
+  const turnKey = () => {
+    const leadID = (props.group.lead as { id?: string } | undefined)?.id
+    const firstID = (body()[0] as { id?: string } | undefined)?.id
+    return `w:${leadID ?? firstID ?? "leading"}`
+  }
+  const innerExplicitOpen = () => {
+    const fold = toolFoldState()
+    for (const message of body()) {
+      if (message.type !== "assistant") continue
+      for (const part of message.content) {
+        if (part.type !== "tool" && part.type !== "reasoning") continue
+        if (fold.get(`${part.type === "tool" ? "t" : "r"}:${part.id}`) === true) return true
+      }
+    }
+    return false
+  }
+  const workOpen = () => toolFoldState().get(turnKey()) ?? innerExplicitOpen() ?? false
+  const toggleWork = (event: Event) => {
+    event.preventDefault()
+    toolFoldState().set(turnKey(), !workOpen())
+  }
   return (
     <div data-slot="native-turn">
       <Show when={props.group.lead}>
@@ -570,8 +598,8 @@ function Turn(props: {
       >
         {(closingMessage) => (
           <>
-            <details data-slot="native-turn-work">
-              <summary>
+            <details data-slot="native-turn-work" open={workOpen() || undefined}>
+              <summary onClick={toggleWork}>
                 {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
                 the native triangle, which is what left this fold without one. */}
                 <span data-slot="native-turn-work-summary">
@@ -744,6 +772,7 @@ function ColleagueMessage(props: { message: SessionMessageColleague }) {
   return (
     <BasicToolV2
       data-slot="native-colleague"
+      data-message-id={props.message.id}
       trigger={{ icon: toolIcon("colleague"), ...incomingColleagueRow(props.message, i18n.t) }}
     >
       <Markdown text={props.message.text} cacheKey={`${props.message.id}:colleague`} />
@@ -919,7 +948,7 @@ function AssistantMessage(props: {
         )
       : []
   return (
-    <div data-slot="native-assistant">
+    <div data-slot="native-assistant" data-message-id={props.message.id}>
       <For each={parts()}>
         {(part) => (
           <Switch>
@@ -1660,7 +1689,7 @@ function DiffView(props: { patch: string }) {
 
 function ShellMessage(props: { message: SessionMessageShell }) {
   return (
-    <div data-slot="native-shell">
+    <div data-slot="native-shell" data-message-id={props.message.id}>
       <div data-slot="native-shell-command">$ {props.message.command}</div>
       <Show when={props.message.output.trim()}>
         <pre data-slot="native-shell-output">{props.message.output}</pre>

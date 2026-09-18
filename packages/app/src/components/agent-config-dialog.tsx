@@ -777,7 +777,9 @@ export function AgentConfigScreen(props: {
       // colleague). `undefined` means the user was looking at something else entirely.
       const seated = targets.find((target) => location.pathname.includes(target.id))?.id
       const viewingCleared = seated !== undefined
-      showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
+      // No success toast: the tab keeps its seat and opens the fresh (empty) chat below, which is
+      // the confirmation. A "Chat cleared" notice is a second announcement of what the user is
+      // already looking at (owner, 2026-09-18).
       props.onChanged?.()
       props.onDismiss()
       /**
