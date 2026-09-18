@@ -75,6 +75,7 @@ import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 
 import { EFFECTIVE_CONFIG_DEFAULTS, rootSessionType, stanceOf } from "../config-resolve"
+import { OfficerHarness } from "../officer-harness"
 import { SessionEffectiveConfig } from "../effective-config"
 import { AgentJail } from "../../agent-jail"
 import { MessengerStore } from "../../messenger/store"
@@ -1537,6 +1538,10 @@ export const layer = Layer.effect(
       return {
         session,
         config,
+        // The officer's standing layer this turn resolves against — the `AgentDefaults` fold,
+        // carried so the harness detail (Strict levers, affective/introspection detail, tool
+        // horizon) merges field-wise WITHOUT a second resolution walk per turn.
+        officer: resolution.defaults,
         memoryOwnerAgent: resolution.memoryOwnerAgent,
         memoryOwner,
         workerProfile: resolution.workerProfile,
@@ -1666,6 +1671,7 @@ export const layer = Layer.effect(
       const {
         session,
         config,
+        officer,
         memoryOwnerAgent,
         memoryOwner,
         workerProfile,
@@ -1681,6 +1687,16 @@ export const layer = Layer.effect(
         reasoningScheduledDevice,
         entries,
       } = prepared
+      // The officer's standing detail, folded field-wise OVER the instance blocks the passed-in
+      // harness was derived from. Rebinding the PARAMETER (rather than a second threaded value)
+      // is deliberate: from here on `harness` means this session's harness, and every reader
+      // below — sampling, the judge model, the tool horizon, the Strict merge — sees one
+      // coherent record instead of two layers it must remember to combine.
+      harness = HarnessConfig.withOfficer(harness, {
+        strict: officer.strict,
+        affective: officer.affectiveDetail,
+        introspection: officer.introspectionDetail,
+      })
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
@@ -2239,11 +2255,18 @@ export const layer = Layer.effect(
         }),
         (name) =>
           ShortChat.offered(config.shortChat, name) &&
-          ConfigToolRouting.offered(harness.toolRouting, {
-            mode: config.permissionMode,
-            providerID: modelRef?.providerID ?? model.provider,
-            modelID: modelRef?.id ?? model.id,
-          })(name),
+          // The officer's own horizon, applied AFTER routing and therefore narrowing only:
+          // `false` denies for this officer's sessions, `true` restores a routing-withdrawn
+          // tool — never a permission-withdrawn one, because this predicate only ever sees
+          // registrations that survived the permission filter above.
+          OfficerHarness.applyOfficerHorizon(
+            ConfigToolRouting.offered(harness.toolRouting, {
+              mode: config.permissionMode,
+              providerID: modelRef?.providerID ?? model.provider,
+              modelID: modelRef?.id ?? model.id,
+            }),
+            config.tools,
+          )(name),
         discoveredTools,
       )
       // Compaction starts a new context epoch. Within one epoch every provider-prefix byte is
@@ -4318,8 +4341,10 @@ export const layer = Layer.effect(
       // B10: live control handoff — when a human operator has taken control, Nova does NOT
       // auto-respond. Input still QUEUES durably (nothing lost); it drains the moment control
       // is handed back to nova. Resolve via the config walk so a child inherits the parent's
-      // responder unless it overrides.
-      const handoff = yield* effective.resolve(input.sessionID)
+      // responder unless it overrides. The FULL resolution (not just the config) because the
+      // Strict route below needs the officer's standing detail alongside the chain.
+      const handoffResolution = yield* effective.resolution(input.sessionID)
+      const handoff = handoffResolution.config
       if (handoff.responder === "operator") {
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
@@ -4408,13 +4433,22 @@ export const layer = Layer.effect(
       // long drain is exactly the case where a settings change must land without waiting for the next
       // message.
       const entryHarness = yield* harnessConfig()
-      // P14-minimal (jh-improve8 P3): the Strict-harness route. The effective strict config is the
-      // global `config.strict` overlaid with the session's own override (the composer switch, resolved
-      // through the config walk so children inherit) — it routes the drain through JhEngine.runTask
-      // (jh.md — the harness owns decomposition/verification/recovery). It executes shell/write actions
-      // autonomously, so it requires an autonomous permission mode; below that the toggle must not
-      // silently bypass the permission model — the drain says why and answers normally instead.
-      const strictEffective = { ...(entryHarness.strict ?? {}), ...(handoff.strict ?? {}) }
+      // P14-minimal (jh-improve8 P3): the Strict-harness route. The effective strict config is
+      // the instance block, field-wise overlaid with the OFFICER's standing detail, field-wise
+      // overlaid with the session's own override (the composer switch, resolved through the
+      // config walk so children inherit) — it routes the drain through JhEngine.runTask
+      // (jh.md — the harness owns decomposition/verification/recovery). Field-wise because a
+      // whole-object overlay would let the chat's `{ enabled: true }` switch erase the
+      // officer's `attempts`/`wallMinutes` (`OfficerHarness.chainDeclared` tells "the chain
+      // said something" from "the resolved value is just the officer fold"). It executes
+      // shell/write actions autonomously, so it requires an autonomous permission mode; below
+      // that the toggle must not silently bypass the permission model — the drain says why and
+      // answers normally instead.
+      const strictEffective = OfficerHarness.resolveStrict(
+        entryHarness.strict,
+        handoffResolution.defaults.strict,
+        OfficerHarness.chainDeclared(handoff.strict, handoffResolution.defaults.strict),
+      )
       if (strictEffective.enabled === true) {
         if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
           const outcome = yield* runStrictDrain(
@@ -4422,6 +4456,7 @@ export const layer = Layer.effect(
             entryHarness,
             handoff,
             hasSteer ? "steer" : hasQueue ? "queue" : undefined,
+            strictEffective,
           )
           // "handled": engine work ran — its detached finalizer owns the maintenance (it must run
           // even after a Stop interrupts this fiber). "chat": the routed message is conversational —

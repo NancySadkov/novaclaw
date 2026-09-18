@@ -5,6 +5,8 @@ import { copySessionRecipes, saveSessionRecipe, storeRootIn } from "@novaclaw/co
 import { Config } from "@novaclaw/core/config"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { Global } from "@novaclaw/core/global"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { EFFECTIVE_CONFIG_DEFAULTS } from "@novaclaw/core/session/config-resolve"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { Session } from "@novaclaw/schema/session"
 import { tmpdir } from "./fixture/tmpdir"
@@ -128,6 +130,105 @@ describe("AdhocGuidance session scope", () => {
           text: expect.stringContaining("stocks — Quote lookup"),
         })
       }),
+    ),
+  )
+})
+
+/**
+ * The officer layer, hermetically: the resolution service is stubbed to return one canned
+ * officer, so these cases pin the merge without standing up sessions, agents or a database.
+ * The stub is the honest shape — `forSession` reads officer recipes off the same resolution
+ * every turn uses, and here that resolution is simply authored by hand.
+ */
+const withOfficerRecipes = <A, E, R>(
+  body: (input: { guidance: AdhocGuidance.Interface }) => Effect.Effect<A, E, R>,
+  officer: { readonly adhocTools?: ReadonlyArray<{ name: string; description: string; manual: string; enabled?: boolean }>; readonly globalTools?: boolean },
+  configured?: ReadonlyArray<{ name: string; description: string; manual: string }>,
+) =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (tmp) => {
+      const layer = AppNodeBuilder.build(AdhocGuidance.node, [
+        [Global.node, Global.layerWith({ data: tmp.path })],
+        [
+          Config.node,
+          Layer.succeed(
+            Config.Service,
+            Config.Service.of({
+              entries: () =>
+                Effect.succeed(
+                  configured === undefined
+                    ? []
+                    : [new Config.Document({ type: "document", info: new Config.Info({ adhoc_tools: configured }) })],
+                ),
+            }),
+          ),
+        ],
+        [
+          SessionEffectiveConfig.node,
+          Layer.succeed(
+            SessionEffectiveConfig.Service,
+            SessionEffectiveConfig.Service.of({
+              resolution: () =>
+                Effect.succeed({
+                  config: { ...EFFECTIVE_CONFIG_DEFAULTS, ...officer },
+                  defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, ...officer },
+                  applied: [] as const,
+                  refused: [] as const,
+                  deferred: [] as const,
+                }),
+              // `resolve` (not `resolution`) is what `forSession` reads — the chain-resolved
+              // config, which carries the officer fold for delivery fields. A stub that returns
+              // the bare shipped defaults here resolves to no officer at all.
+              resolve: () => Effect.succeed({ ...EFFECTIVE_CONFIG_DEFAULTS, ...officer }),
+            }),
+          ),
+        ],
+      ])
+      return Effect.gen(function* () {
+        return yield* body({ guidance: yield* AdhocGuidance.Service })
+      }).pipe(Effect.provide(layer))
+    },
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+  )
+
+describe("AdhocGuidance officer scope", () => {
+  it.live("the officer's private recipes list alongside the library", () =>
+    withOfficerRecipes(
+      ({ guidance }) =>
+        Effect.gen(function* () {
+          const baseline = yield* baselineFor(guidance, childID)
+          expect(baseline).toContain("stocks — Configured quotes")
+          expect(baseline).toContain("mine — Officer-only")
+        }),
+      { adhocTools: [recipe("mine", "Officer-only")] },
+      [recipe("stocks", "Configured quotes")],
+    ),
+  )
+
+  it.live("an officer recipe hides the library recipe of the same name", () =>
+    withOfficerRecipes(
+      ({ guidance }) =>
+        Effect.gen(function* () {
+          const baseline = yield* baselineFor(guidance, childID)
+          expect(baseline).not.toContain("Configured quotes")
+          expect(baseline).toContain("No ad-hoc tools are currently configured.")
+        }),
+      { adhocTools: [{ ...recipe("stocks", "Officer-only"), enabled: false }] },
+      [recipe("stocks", "Configured quotes")],
+    ),
+  )
+
+  it.live("globalTools: false drops the library without touching the officer's own", () =>
+    withOfficerRecipes(
+      ({ guidance }) =>
+        Effect.gen(function* () {
+          const baseline = yield* baselineFor(guidance, childID)
+          expect(baseline).toContain("mine — Officer-only")
+          expect(baseline).not.toContain("Configured quotes")
+        }),
+      { globalTools: false, adhocTools: [recipe("mine", "Officer-only")] },
+      [recipe("stocks", "Configured quotes")],
     ),
   )
 })

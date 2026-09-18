@@ -116,6 +116,59 @@ describe("HarnessConfig.derive", () => {
   })
 })
 
+describe("HarnessConfig.withOfficer", () => {
+  const instance = (
+    strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number },
+    affective?: { enabled?: boolean; temperature?: number },
+  ) =>
+    HarnessConfig.derive([
+      document({
+        ...(strict === undefined ? {} : { strict }),
+        ...(affective === undefined ? {} : { affective }),
+        introspection: { enabled: true, cadence: 3, model: "prov/mod" },
+      }),
+    ])
+
+  test("no officer layer is the derivation itself, by reference", () => {
+    // Identity, not equality: a caller that already holds the instance derivation pays nothing
+    // and — more importantly — cannot observe a copy diverging from it later.
+    const derived = instance()
+    expect(HarnessConfig.withOfficer(derived, undefined)).toBe(derived)
+  })
+
+  test("officer Strict detail overlays the instance block field-wise", () => {
+    const derived = HarnessConfig.withOfficer(instance({ enabled: false, attempts: 1, wallMinutes: 45 }), {
+      strict: { enabled: true, attempts: 3 },
+    })
+    expect(derived.strict).toMatchObject({ enabled: true, attempts: 3, wallMinutes: 45 })
+  })
+
+  test("officer affective/introspection detail win; stances stay the instance's", () => {
+    // Stances ride the session chain, not this fold — `enabled` here answers "the instance
+    // block said so", and the chain-resolved stance wins downstream exactly as before.
+    const derived = HarnessConfig.withOfficer(instance(undefined, { enabled: true, temperature: 0.7 }), {
+      affective: { temperature: 0.4 },
+      introspection: { cadence: 5 },
+    })
+    expect(derived.affective).toMatchObject({ enabled: true, temperature: 0.4 })
+    expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
+  })
+
+  test("an officer that declares nothing observable changes nothing observable", () => {
+    const base = instance({ enabled: true, attempts: 2 })
+    const derived = HarnessConfig.withOfficer(base, { strict: {}, affective: {}, introspection: {} })
+    expect(derived.strict).toEqual(base.strict)
+    expect(derived.affective).toEqual(base.affective)
+    expect(derived.introspection).toEqual(base.introspection)
+  })
+
+  test("per-turn members ride along untouched — the fold changes answers, never the shape", () => {
+    const derived = HarnessConfig.withOfficer({ ...instance(), marker: "turn-scoped" }, { strict: { enabled: true } })
+    expect(derived).toMatchObject({ marker: "turn-scoped" })
+    expect(derived.strict).toMatchObject({ enabled: true })
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. The derivation over a LIVE settings store — the half that can be measured.
 // ─────────────────────────────────────────────────────────────────────────────

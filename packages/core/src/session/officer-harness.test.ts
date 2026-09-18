@@ -4,6 +4,33 @@ import { OfficerHarness } from "@novaclaw/core/session/officer-harness"
 // The officer harness-detail merge: shipped < instance < officer < session,
 // `undefined = inherit` at every step. Pure algebra, no DB.
 
+describe("chainDeclared", () => {
+  test("the same reference means the chain said nothing — the value IS the officer fold", () => {
+    const base = { enabled: true, attempts: 3 }
+    expect(OfficerHarness.chainDeclared(base, base)).toBeUndefined()
+    expect(OfficerHarness.chainDeclared(undefined, undefined)).toBeUndefined()
+  })
+
+  test("a different reference means some layer declared it, even when equal by value", () => {
+    // Equal-by-value still counts as declared: merging it field-wise over the officer yields
+    // the same answer either way, so there is nothing to distinguish — and nothing to lose.
+    expect(OfficerHarness.chainDeclared({ enabled: true }, { enabled: true })).toEqual({ enabled: true })
+  })
+})
+
+describe("resolveStrict without an officer is the old spread", () => {
+  test("instance overlaid with the chain, field for field", () => {
+    const instance = { enabled: false, attempts: 1, wallMinutes: 45, verification: true }
+    const chain = { enabled: true, wallMinutes: 20 }
+    expect(OfficerHarness.resolveStrict(instance, undefined, chain)).toEqual({ ...instance, ...chain })
+  })
+
+  test("no chain either is the instance block, unchanged", () => {
+    const instance = { enabled: true, attempts: 2 }
+    expect(OfficerHarness.resolveStrict(instance, undefined, undefined)).toEqual(instance)
+  })
+})
+
 describe("resolveStrict", () => {
   test("each field resolves session, then officer, then instance", () => {
     expect(

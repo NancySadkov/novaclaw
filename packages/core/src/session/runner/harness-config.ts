@@ -34,6 +34,7 @@ import { ConfigHarnessDrives } from "../../config/harness-drives"
 import { ConfigProviderConnection } from "../../config/provider-connection"
 import { Introspection } from "./introspection"
 import { Quality } from "./quality"
+import { OfficerHarness } from "../officer-harness"
 
 /**
  * T9 (teach-don't-gatekeep): the plain-language stance line a Normal-level user gets, composed right
@@ -75,6 +76,59 @@ export interface Derived {
   readonly context: Config.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
   readonly providerStallTimeoutMs: number
+}
+
+/**
+ * The officer's standing detail for one session, as `SessionEffectiveConfig`'s `defaults`
+ * carries it (the `AgentDefaults` fold — no second walk). Every member is detail only:
+ * stances stay on the chain, where the narrowing rules already live.
+ */
+export interface OfficerLayer {
+  readonly strict?: OfficerHarness.StrictDetail
+  readonly affective?: { readonly temperature?: number; readonly extended?: boolean }
+  readonly introspection?: {
+    readonly cadence?: number
+    readonly model?: string
+    readonly prompt?: string
+    readonly interjection?: string
+    readonly generateInterjection?: boolean
+  }
+}
+
+/**
+ * Fold one session's officer layer over an instance derivation, field-wise.
+ *
+ * Generic over `T extends Derived` so the turn's `compaction` (and any later per-turn
+ * member) rides along untouched: this changes WHAT the harness answers, never its shape,
+ * which is what lets a caller apply it to the threaded per-turn record in place.
+ *
+ * ⚠️ Session-free by itself: it merges the two layers it is given and knows nothing about
+ * chains. The session row still wins per chat, applied by the caller through
+ * `OfficerHarness.resolveStrict` / the chain-resolved stances — a whole-object session
+ * value merged here would reintroduce the wipe this module exists to prevent.
+ */
+export const withOfficer = <T extends Derived>(derived: T, officer: OfficerLayer | undefined): T => {
+  if (officer === undefined) return derived
+  // An officer struct that sets nothing observable is absent, not a layer: without this,
+  // `{}` would materialize `{ temperature: undefined }` over an absent instance block and a
+  // surface asking "did anyone set this" could no longer tell unset from set-to-nothing.
+  const defined = <V extends object>(value: V | undefined): Partial<V> | undefined => {
+    if (value === undefined) return undefined
+    const out: Record<string, unknown> = {}
+    for (const [key, entry] of Object.entries(value)) if (entry !== undefined) out[key] = entry
+    return Object.keys(out).length > 0 ? (out as Partial<V>) : undefined
+  }
+  const officerAffective = defined(officer.affective)
+  const instanceIntro = Config.latest(derived.entries, "introspection")
+  return {
+    ...derived,
+    strict: OfficerHarness.resolveStrict(derived.strict, officer.strict, undefined),
+    affective:
+      derived.affective === undefined && officerAffective === undefined
+        ? derived.affective
+        : { ...derived.affective, ...officerAffective },
+    introspection: Introspection.resolve({ ...instanceIntro, ...defined(officer.introspection) }),
+  }
 }
 
 /**

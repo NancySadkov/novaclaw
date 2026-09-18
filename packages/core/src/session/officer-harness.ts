@@ -138,6 +138,20 @@ export const resolveIntrospection = (
 }
 
 /**
+ * The session row's own contribution for one whole-object field — or `undefined` when the
+ * chain declared nothing and the resolved value simply IS the base (the officer fold).
+ *
+ * `resolveConfig` assigns a declaring layer's object BY REFERENCE and spreads the base
+ * otherwise, so reference inequality is exactly "some layer declared it": no deep compare,
+ * no second walk. A whole-object chain value that survived untouched would wipe the
+ * officer's standing detail in a field-wise merge (the composer's `{ enabled: true }`
+ * switch erasing the officer's `attempts`), so the merge takes the session layer only
+ * through here.
+ */
+export const chainDeclared = <T>(resolvedValue: T | undefined, baseValue: T | undefined): T | undefined =>
+  resolvedValue !== baseValue ? resolvedValue : undefined
+
+/**
  * Apply the officer's tool horizon AFTER the instance routing predicate.
  *
  * Narrowing only (the structural metaphor: authority narrows downward, never widens):

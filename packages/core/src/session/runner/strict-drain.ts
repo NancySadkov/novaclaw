@@ -17,6 +17,7 @@ import type { RelativePath } from "../../schema"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
 import { rootSessionType, stanceOf, type EffectiveConfig } from "../config-resolve"
+import { OfficerHarness } from "../officer-harness"
 import { SessionEvent } from "../event"
 import { SessionExecutionAttempt } from "../execution-attempt"
 import { SessionInput } from "../input"
@@ -38,7 +39,7 @@ import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { PromptEstimate } from "./prompt-estimate"
 import { Token } from "../../util/token"
 
-type Harness = Pick<HarnessConfig.Derived, "context" | "quality" | "strict">
+type Harness = Pick<HarnessConfig.Derived, "context" | "quality">
 
 export interface Dependencies {
   readonly events: EventV2.Interface
@@ -174,6 +175,11 @@ export const make = (dependencies: Dependencies) => {
     harness: Harness,
     resolved: EffectiveConfig,
     first: SessionInput.Delivery | undefined,
+    // The drain-entry merge (instance < officer < session, field-wise): computed by the caller,
+    // which holds the officer fold, rather than re-derived here from a config the chain already
+    // flattened. A whole-object overlay here would let the chat's `{ enabled: true }` switch erase
+    // the officer's standing `attempts`/`wallMinutes` — the wipe `OfficerHarness` exists to prevent.
+    strict: OfficerHarness.StrictDetail,
   ) {
     const notice = (text: string, repair?: SessionMessage.SyntheticRepair) =>
       Effect.gen(function* () {
@@ -371,9 +377,10 @@ export const make = (dependencies: Dependencies) => {
           sessionTail.delete(sessionID)
         }
       }
-      // The effective strict config for THIS session: the global `config.strict` overlaid with the
-      // session's own override (the composer switch — enabled/attempts/wallMinutes per chat).
-      const strict = { ...(harness.strict ?? {}), ...(resolved.strict ?? {}) }
+      // The effective strict config arrives precomputed (see the signature): the drain-entry
+      // merge of instance block, officer detail and session override. It is NOT re-derived here
+      // from `harness.strict` + `resolved.strict`, because both are whole objects and spreading
+      // them would erase whichever officer fields the chat did not itself declare.
       // P14.1 resume: a saved plan that never reached "done" is continuable. Status "running" means
       // a HARD death (crash/kill — a clean stop saves its terminal status), so the user is told once
       // and taught the resume word. A bare "resume"/"continue" picks the saved tree back up —
