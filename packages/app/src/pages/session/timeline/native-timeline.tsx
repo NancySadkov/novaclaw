@@ -215,15 +215,33 @@ export function NativeTimeline(props: {
   // A missing saved position means the natural chat edge: the latest message. While the persisted
   // layout is still hydrating, start unpinned so a premature mount cannot paint the bottom and then
   // jump back to the reader's saved place.
+  //
+  // Viewport invariants (owner, 2026-09-18):
+  // 1. At the bottom the view is pinned there (the default for new chats) until the user moves it
+  //    above via wheel, swipe or scrollbar.
+  // 2. At offset N the view stays at offset N until the chat is cleared or the user moves it.
+  // The second one is what a tab switch must not break: a reconcile can empty the rows (Chromium
+  // clamps scrollTop to 0 while the content is absent) and streaming can grow the content box after
+  // the first restore. A single apply-on-mount then leaves the reader at the start of the chat, so
+  // the saved position is re-applied until it holds, and a clamped intermediate never overwrites it.
   const initialPosition = viewport?.ready() ? viewport.read() : undefined
   const [pinned, setPinned] = createSignal(viewport?.ready() === false ? false : !initialPosition)
   let viewportInitialized = false
   let restoreFrame: number | undefined
   let pinController: ReturnType<typeof createBottomPinController> | undefined
+  // A saved offset still waiting to hold. Set on restore; cleared on user intent, on reaching the
+  // bottom pin, or once the content is tall enough to actually hold it.
+  let pendingRestore: { y: number; anchor?: { id: string; offset: number } } | undefined = initialPosition
+    ? { y: initialPosition.y, ...(initialPosition.anchor ? { anchor: initialPosition.anchor } : {}) }
+    : undefined
+  // Tallest content box seen. A reconcile empties the rows in one rendering turn; the clamped
+  // scrollTop it produces must not be saved as the reader's place.
+  let contentHighWater = 0
   const stick = () => {
     pinController?.stick()
   }
   const scrollToBottom = () => {
+    pendingRestore = undefined
     if (pinController) pinController.scrollToBottom()
     else setPinned(true)
   }
@@ -238,6 +256,20 @@ export function NativeTimeline(props: {
 
   const saveViewport = (position = { y: scroller?.scrollTop ?? 0, pinned: pinned() }) => {
     if (!viewportInitialized || !viewport?.ready()) return
+    const root = scroller
+    if (root) contentHighWater = Math.max(contentHighWater, root.scrollHeight)
+    if (position.pinned) {
+      pendingRestore = undefined
+      viewport.write(undefined)
+      return
+    }
+    // While a restore is still pending the scroll events are programmatic echoes (a clamped
+    // intermediate included) — saving them would overwrite the reader's real place with 0.
+    if (pendingRestore) return
+    // A reconcile collapse: the rows are briefly absent and Chromium clamps scrollTop. The content
+    // box gives it away — much shorter than what this mount already showed.
+    if (root && root.scrollHeight < contentHighWater - 200) return
+    pendingRestore = undefined
     viewport.write(
       position.pinned
         ? undefined
@@ -250,19 +282,24 @@ export function NativeTimeline(props: {
 
   const applySavedViewport = (saved: NonNullable<ReturnType<NativeTimelineViewport["read"]>>) => {
     const root = scroller
-    if (!root) return
+    if (!root) return false
+    contentHighWater = Math.max(contentHighWater, root.scrollHeight)
     const row = saved.anchor
       ? [...root.querySelectorAll<HTMLElement>("[data-message-id]")].find(
           (item) => item.dataset.messageId === saved.anchor?.id,
         )
       : undefined
     if (!row || !saved.anchor) {
+      // Without its rows the content cannot hold the offset yet — keep the pending restore for the
+      // messages-length effect below instead of painting the clamped top.
+      if (root.scrollHeight < saved.y + root.clientHeight) return false
       root.scrollTop = saved.y
-      return
+      return Math.abs(root.scrollTop - saved.y) <= 2
     }
     const box = root.getBoundingClientRect()
     const rect = row.getBoundingClientRect()
     root.scrollTop = Math.max(0, root.scrollTop + rect.top - box.top + saved.anchor.offset)
+    return true
   }
 
   const restoreViewport = () => {
@@ -279,18 +316,29 @@ export function NativeTimeline(props: {
       scrollToBottom()
       return
     }
+    // A cleared chat reuses the colleague's canonical id, so a stale offset can outlive the
+    // transcript it measured. An empty transcript has no offset to keep — it starts pinned.
+    if (messages().length === 0) {
+      viewport.write(undefined)
+      scrollToBottom()
+      return
+    }
 
+    pendingRestore = { y: saved.y, ...(saved.anchor ? { anchor: saved.anchor } : {}) }
     setPinned(false)
     applySavedViewport(saved)
     // Markdown and custom message cards can finish their first layout after onMount. Re-apply once
     // after that paint, but only until the first explicit user input changes the saved position.
     restoreFrame = requestAnimationFrame(() => {
       restoreFrame = undefined
-      if (!pinned()) applySavedViewport(saved)
+      if (!pinned() && pendingRestore) {
+        if (applySavedViewport(saved)) pendingRestore = undefined
+      }
     })
   }
 
   const cancelViewportRestore = () => {
+    pendingRestore = undefined
     if (restoreFrame === undefined) return
     cancelAnimationFrame(restoreFrame)
     restoreFrame = undefined
@@ -377,9 +425,30 @@ export function NativeTimeline(props: {
   // A new turn changes the list length — the store array proxy is reference-stable on
   // push, so track `.length`, not the array. Stick synchronously; the ResizeObserver
   // below then re-sticks once the new/streamed content actually lays out.
+  // While unpinned the same growth must NOT move the reader: if a reconcile clamped the view to
+  // the top while the rows were absent, re-apply the reader's saved offset once the rows are back.
   createEffect(() => {
     messages().length
-    stick()
+    if (scroller) contentHighWater = Math.max(contentHighWater, scroller.scrollHeight)
+    if (pinned()) {
+      stick()
+      return
+    }
+    if (pendingRestore && viewport?.ready()) {
+      const saved = viewport.read()
+      if (!saved) {
+        pendingRestore = undefined
+        return
+      }
+      if (applySavedViewport(saved)) pendingRestore = undefined
+      return
+    }
+    if (pendingRestore || !viewport?.ready()) return
+    const saved = viewport.read()
+    const root = scroller
+    if (!saved || !root) return
+    if (root.scrollHeight < saved.y + root.clientHeight) return
+    if (Math.abs(root.scrollTop - saved.y) > 50) applySavedViewport(saved)
   })
 
   onMount(() => {
