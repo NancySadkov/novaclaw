@@ -176,8 +176,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   provider_recovery: "operational",
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
-  // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.
-  affective: "consequential",
   // The provider filter can leave the instance with NO working model — and "at least one working
   // model remains" is the self-healing law's own precondition, i.e. the one outage this tool could
   // create that this tool could not then repair. Not privileged: no execution, no egress, no text.
@@ -200,16 +198,12 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Turning snapshots off removes the user's undo/revert safety net. Same shape as lowering the
   // resource floor: nothing runs, nothing leaves, but a guard the user relies on is gone.
   snapshots: "consequential",
-  // Harness booleans and budgets (jh.md). No prompt text, no command, no endpoint.
-  strict: "consequential",
   // Ordered booleans over ALREADY-REGISTERED tools. The table can change a model's working set or
   // strand its repair tool, but registry permissions remain the final ceiling and cannot be widened.
   tool_routing: "consequential",
   // The automatic continuations applied to a turn that thinks it is finished, plus the crash-resume
   // switch. Five booleans and nothing else: no command, no endpoint, no prompt TEXT — the steer
-  // wording is fixed in source and the key only decides whether it is used, which is what separates
-  // this from `introspection` (privileged because it carries `prompt`/`interjection` text) and puts
-  // it beside `affective`, `strict` and `tool_routing`.
+  // wording is fixed in source and the key only decides whether it is used.
   //
   // ⚠️ Consequential rather than operational because turning one OFF is exactly the kind of change a
   // user must get to see: work stops being resumed after a crash, a confident finish stops being
@@ -225,8 +219,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // ── privileged: one card each, never pre-grantable with a single `configure` rule ────────────
   // HTTP declarations choose a destination for user data; stdio declarations choose executable bytes.
   capability_services: "privileged",
-  // Manuals the model pulls into its context on demand — ruling 4 names this key by itself.
-  adhoc_tools: "privileged",
   // Markdown that BECOMES a system prompt, plus each agent's own permission ruleset and tool list.
   agents: "privileged",
   // Markdown that becomes a prompt (slash commands).
@@ -241,11 +233,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // A peer URL plus its token. Ruling 5: the peer token is ACCOUNT-EQUIVALENT, and `config.ts`
   // documents the entry as granting full API access — sessions, registry, config.
   instances: "privileged",
-  // `prompt` and `interjection` are text steered into a running session; `model` picks the judge.
-  introspection: "privileged",
-  // Free-form text is steered into future sessions. The closed hook vocabulary executes no user
-  // code, but the instruction itself is authorship and therefore shares introspection's tier.
-  nudges: "privileged",
   // Chooses the URL and expected digest of binaries/models Nova downloads and executes.
   local_model_catalog: "privileged",
   // `mcp.servers` spawns a child process — ruling 4 names it as an execution surface.

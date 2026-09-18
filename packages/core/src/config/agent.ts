@@ -187,8 +187,6 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   affective: Schema.Union([Schema.Boolean, AffectiveDetail]).pipe(Schema.optional),
   /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
   nudges: ConfigNudge.List.pipe(Schema.optional),
-  /** Absent/true inherits instance nudges; false opts this officer out without affecting its own nudges. */
-  globalNudges: Schema.Boolean.pipe(Schema.optional),
   /**
    * This officer's tool horizon, applied AFTER the instance `tool_routing` table.
    * Narrowing only (the structural metaphor: authority narrows downward, never
@@ -199,11 +197,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   tools: Schema.Record(Schema.String, Schema.Boolean).pipe(Schema.optional),
   /** Ad-hoc tool recipes owned by this officer. Prompt-scoped like `nudges`: they
-   *  reach only this officer's sessions, never the instance-wide prompt. */
+   *  reach only this officer's sessions — there is no instance-wide prompt anymore. */
   adhocTools: ConfigAdhocTools.Info.pipe(Schema.optional),
-  /** Absent/true inherits the instance recipe library; false opts this officer
-   *  out without affecting its own recipes. Mirrors `globalNudges`. */
-  globalTools: Schema.Boolean.pipe(Schema.optional),
   /** Per-turn reasoning-token ceiling for this officer. Absent = the selected model's budget;
    *  `0` structurally disables reasoning for the officer. */
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),

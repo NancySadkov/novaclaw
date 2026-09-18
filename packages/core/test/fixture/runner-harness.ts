@@ -12,6 +12,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Snapshot } from "@novaclaw/core/snapshot"
@@ -344,11 +345,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     compactionBuffer: 3_000,
     compactionKeepTokens: 1_000,
     /**
-     * Enable the real Strict router at drain entry. Off by default so the 77 normal-drain claims keep
-     * describing that drain; the Strict contract test turns it on explicitly and therefore cannot
-     * accidentally make the whole suite exercise a different engine.
+     * ⚠️ There is deliberately NO `strictEnabled` control here.
+     *
+     * It used to write `strict: { enabled: true }` into the harness's Config document. Per-agent
+     * tuning REMOVED that instance key, so the write became a silent no-op — and a SPREAD property
+     * (`...(controls.strictEnabled ? {...} : {})`) is exactly what defeated the excess-property check
+     * that would have caught it. Strict is now the OFFICER's standing choice, so a test enables it by
+     * seeding the AgentConfigStore layer (`session-runner-strict-contract.test.ts`), which is the same
+     * door the product uses.
      */
-    strictEnabled: false,
     /**
      * The harness DRIVE switches (`config/harness-drives.ts`), read on every `Config.entries()` call.
      *
@@ -709,7 +714,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
                 buffer: controls.compactionBuffer,
                 keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
               }),
-              ...(controls.strictEnabled ? { strict: { enabled: true } } : {}),
               ...(controls.harnessDrives === undefined ? {} : { harness_drives: controls.harnessDrives }),
             }),
           }),
@@ -783,6 +787,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       SessionRunnerLLM.node,
       SessionExecution.node,
       SessionV2.node,
+      // Exposed for the same reason as `WorldMemory.node` and `SessionScheduler.node` above: the
+      // runner already pulls it in transitively, and `LayerNode` memoizes on identity, so listing
+      // it builds ONE store either way. Reachable because Strict is now the OFFICER's standing
+      // choice, so a claim about Strict routing seeds an agent layer rather than an instance key.
+      AgentConfigStore.node,
     ]),
     [
       [LayerNodePlatform.llmClient, clientLayer],

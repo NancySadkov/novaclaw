@@ -17,9 +17,7 @@ const prototype = {
   maxToolTimeoutMs: 90_000,
   tools: { bash: false },
   adhocTools: [{ name: "mine", description: "Officer-only", manual: "run" }],
-  globalTools: false,
   nudges: [{ id: "n1", name: "Slow down", enabled: true, hook: { type: "tool-call", tool: "bash" }, text: "Breathe." }],
-  globalNudges: false,
   needsTaxonomy: "smart",
   toolLabels: false,
   operationMode: "unattended",
@@ -54,7 +52,6 @@ describe("what a settings copy carries", () => {
       introspection: { enabled: true, cadence: 5 },
       affective: { enabled: true, temperature: 0.4 },
       tools: { bash: false },
-      globalTools: false,
       operationMode: "unattended",
       maxWorkers: 10,
     })

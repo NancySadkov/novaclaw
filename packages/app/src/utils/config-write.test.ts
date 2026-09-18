@@ -267,9 +267,12 @@ describe("the silent-write ledger", () => {
     expect(sourceFiles(APP_SRC).length).toBeGreaterThan(100)
     expect(Object.keys(found.console).length).toBeGreaterThan(0)
     expect(Object.keys(found.discarded).length).toBeGreaterThan(0)
-    // The three panels this ledger opened with are converted, and must stay converted.
+    // The three panels this ledger opened with are converted, and must stay converted. `tools.tsx`
+    // left this list with the Settings tab (per-agent tuning): its reporter is now
+    // `components/officer-recipes.tsx`, which is pinned here in its place because it owns the
+    // same "a rejected write keeps the draft" guarantee.
     for (const converted of [
-      "components/settings-v2/tools.tsx",
+      "components/officer-recipes.tsx",
       "components/settings-v2/instances-access.tsx",
       "components/settings-v2/policies.tsx",
     ]) {

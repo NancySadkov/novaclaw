@@ -160,11 +160,11 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
  *  LOUDLY, because a silent drop is how a user concludes the product is broken rather than that the
  *  write was refused. */
 function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
-  // `item.nudges` and `item.globalNudges` are intentionally consumed by NudgeService straight from
-  // AgentConfigStore. They are harness-delivery components, not fields on the AgentV2 identity row.
-  // `item.adhocTools` and `item.globalTools` are consumed the same way, by the ad-hoc guidance
-  // reader (slice 2): recipe text reaches only the owning officer's prompt, so it is delivery
-  // configuration rather than a roster fact, and the opt-out governs delivery, not identity.
+  // `item.nudges` is intentionally consumed by NudgeService straight from
+  // AgentConfigStore. Officer nudges are harness-delivery components, not fields on the
+  // AgentV2 identity row. `item.adhocTools` is consumed the same way, by the ad-hoc
+  // guidance reader: recipe text reaches only the owning officer's prompt, so it is
+  // delivery configuration rather than a roster fact.
   if (AgentV2.isProtected(agentID)) {
     const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>, "operator")
     // ⚠️ A fragment carrying a refused key is refused WHOLE. A partial override is the shape that

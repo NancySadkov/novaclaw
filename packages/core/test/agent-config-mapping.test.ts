@@ -33,12 +33,8 @@ const CONSUMED: Record<string, string> = {
     "from the draft entirely, which bypassed every guarantee of `agent/retire.ts`",
   nudges:
     "read directly from the agent config store by NudgeService; they are harness config, not an AgentV2 record field",
-  globalNudges:
-    "read directly from the agent config store by NudgeService; the opt-out governs delivery, not agent identity",
   adhocTools:
     "read directly from the agent config store by the ad-hoc guidance reader; officer recipes reach only that officer's prompt, not the roster",
-  globalTools:
-    "read directly from the agent config store by the ad-hoc guidance reader; the opt-out governs delivery, not agent identity",
 }
 
 describe("no config field is silently dropped on the way to the agent record", () => {

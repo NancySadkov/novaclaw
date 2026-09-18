@@ -14,6 +14,10 @@ import { dict as en } from "./en"
  * ⚠️ This is a RATCHET, not a style opinion. It pins the descriptions that were shortened so the
  * long form cannot quietly come back, and it checks the two failure modes that make the split wrong
  * rather than merely long: a hint that resolves to a raw key, and detail deleted instead of moved.
+ *
+ * 🗑️ The three `settings.strict.row.*` splits left this list with the Strict Settings tab
+ * (per-agent tuning, 2026-09-18): those keys were rendered by a surface that no longer exists, and
+ * the removal commit pruned them from `en.ts`. This list is for rows that STILL exist.
  */
 
 const t = en as Record<string, string>
@@ -22,9 +26,6 @@ const COMPONENTS_SRC = path.join(import.meta.dir, "..", "components")
 
 /** Every key whose long copy was split into `description` + `hint`. */
 const SPLIT = [
-  "settings.strict.row.reasoningTokens",
-  "settings.strict.row.enabled",
-  "settings.strict.row.executionTokens",
   "settings.storage.instanceHome",
   "settings.computer.display",
   "settings.computer.windows",
@@ -112,7 +113,12 @@ describe("settings row copy stays scannable", () => {
         .matchAll(/language\.t\("([^"{}]+\.more)"\)/g))
         rendered.add(m[1]!)
     const englishMore = Object.keys(t).filter((key) => key.endsWith(".more"))
-    expect(englishMore.length).toBeGreaterThan(20)
+    // ⚠️ A FLOOR, not a count: it fails if the scan stops finding hints. It was `> 20` until the
+    // per-agent tuning removal pruned the six `.more` keys belonging to the deleted Strict and
+    // Affective Settings tabs, leaving exactly 20 — so the old floor became "off by one from a
+    // legitimate population", which is a guard that fails on a true statement. Ten is still far
+    // above "the regex matched nothing".
+    expect(englishMore.length).toBeGreaterThan(10)
     const unreachable = englishMore.filter((key) => !rendered.has(key))
     expect(unreachable).toEqual([])
   })

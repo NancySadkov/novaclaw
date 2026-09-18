@@ -178,30 +178,3 @@ export const applyOfficerHorizon = (
     return routingOffered(name)
   }
 }
-
-/** The recipe fields the merge reads. Deliberately structural, not imported: this module
- *  stays dependency-free, and the config `Recipe` shape is a subset of this. */
-export interface RecipeSummary {
-  readonly name: string
-  readonly description: string
-  readonly manual?: string
-  readonly enabled?: boolean
-}
-
-/**
- * Merge the instance recipe library with the officer's private recipes, by name with
- * the officer winning — the same by-name layering `AdhocGuidance.configured` applies
- * to global-over-project scopes. `globalTools === false` drops the instance layer
- * without touching the officer's own (mirrors `globalNudges`). An officer entry with
- * `enabled: false` HIDES the recipe; the consumer filters it, exactly as the global
- * tab's toggle does today — hiding is not deleting.
- */
-export const resolveRecipes = (
-  global: ReadonlyArray<RecipeSummary>,
-  officer: { readonly adhocTools?: ReadonlyArray<RecipeSummary>; readonly globalTools?: boolean } | undefined,
-): RecipeSummary[] => {
-  const merged = new Map<string, RecipeSummary>()
-  if (officer?.globalTools !== false) for (const recipe of global) merged.set(recipe.name, recipe)
-  for (const recipe of officer?.adhocTools ?? []) merged.set(recipe.name, recipe)
-  return [...merged.values()]
-}

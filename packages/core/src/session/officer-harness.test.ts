@@ -148,34 +148,3 @@ describe("applyOfficerHorizon", () => {
     expect(offered("configure")).toBe(true)
   })
 })
-
-describe("resolveRecipes", () => {
-  const lib = [
-    { name: "deploy", description: "Ship it", manual: "run ./ship" },
-    { name: "logs", description: "Read logs", manual: "tail" },
-  ]
-
-  test("no officer layer is the library alone", () => {
-    expect(OfficerHarness.resolveRecipes(lib, undefined).map((recipe) => recipe.name)).toEqual(["deploy", "logs"])
-  })
-
-  test("the officer wins by name, including hiding one with enabled: false", () => {
-    const resolved = OfficerHarness.resolveRecipes(lib, {
-      adhocTools: [
-        { name: "logs", description: "Read logs", manual: "tail -f", enabled: false },
-        { name: "mine", description: "Officer-only", manual: "run" },
-      ],
-    })
-    expect(resolved.find((recipe) => recipe.name === "logs")).toMatchObject({ manual: "tail -f", enabled: false })
-    expect(resolved.some((recipe) => recipe.name === "mine")).toBe(true)
-    expect(resolved.some((recipe) => recipe.name === "deploy")).toBe(true)
-  })
-
-  test("globalTools: false drops the library without touching the officer's own", () => {
-    const resolved = OfficerHarness.resolveRecipes(lib, {
-      globalTools: false,
-      adhocTools: [{ name: "mine", description: "Officer-only", manual: "run" }],
-    })
-    expect(resolved.map((recipe) => recipe.name)).toEqual(["mine"])
-  })
-})

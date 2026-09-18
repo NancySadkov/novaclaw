@@ -44,16 +44,6 @@ const VALID: Record<string, unknown> = {
   tool_output: {},
   tool_routing: { rules: [{ provider: "qwen", tools: { edit: true, write: false } }] },
   resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },
-  nudges: [
-    {
-      id: "test-nudge",
-      name: "Test nudge",
-      enabled: true,
-      agents: ["writer"],
-      hook: { type: "tool-call", tool: "write" },
-      text: "Check the destination.",
-    },
-  ],
   mcp: {},
   // Added with the capability-service key (2026-08-10). `capabilities`, `transport`, `locality` and
   // `resources` are the four required fields of `ConfigV2.CapabilityService`; the rest are optional.
@@ -102,12 +92,8 @@ const VALID: Record<string, unknown> = {
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   user_profile: { enabled: true, name: "Nancy" },
-  introspection: {},
   // All live switches present, so the row exercises the whole block rather than its defaults.
   harness_drives: { children: true, imageShortcut: true },
-  adhoc_tools: [],
-  affective: {},
-  strict: {},
   offline: true,
   telemetry: { enabled: false },
   memory: { enabled: true },

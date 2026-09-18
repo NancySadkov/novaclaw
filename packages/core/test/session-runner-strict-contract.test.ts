@@ -4,6 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { SessionV2 } from "@novaclaw/core/session"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionStrict } from "@novaclaw/core/session/runner/strict"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -35,11 +36,16 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
     const harness = makeRunnerHarness({
       turns: [completeTurn("route", "CHAT"), completeTurn("answer", "Hello from the normal drain.")],
     })
-    harness.controls.strictEnabled = true
 
     const context = await drive(
       harness,
       Effect.gen(function* () {
+        // Strict is the OFFICER's standing choice now (per-agent tuning), so it is enabled by
+        // seeding the agent store — the same door the product's officer tab writes through. The
+        // instance `strict` key this used to set is gone, and seeding it there would have been a
+        // silent no-op. The harness session runs as `nova`.
+        const agents = yield* AgentConfigStore.Service
+        yield* agents.setLayers("nova", [{ strict: { enabled: true } }])
         const session = yield* SessionV2.Service
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
@@ -113,11 +119,13 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
         completeTurn("summary", "The Strict task completed and verified the proof command."),
       ],
     })
-    harness.controls.strictEnabled = true
 
     const context = await drive(
       harness,
       Effect.gen(function* () {
+        // Officer-seeded Strict (see the CHAT case above for why the instance key is not the door).
+        const agents = yield* AgentConfigStore.Service
+        yield* agents.setLayers("nova", [{ strict: { enabled: true } }])
         const session = yield* SessionV2.Service
         yield* session.prompt({
           sessionID: HARNESS_SESSION,

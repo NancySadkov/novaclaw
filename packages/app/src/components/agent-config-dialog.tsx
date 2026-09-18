@@ -40,7 +40,8 @@ import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
-import { planRecipeSave, type Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
+import { OfficerRecipes } from "@/components/officer-recipes"
+import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
 import { planSettingsCopy } from "@/apps/agent-settings-copy"
 import { AgentRemoteChat } from "@/components/agent-remote-chat"
 import { PERSONALITY_FORMAT, downloadOfficerPersonality, parseOfficerPersonality } from "@/apps/agent-personality"
@@ -229,11 +230,6 @@ export function AgentConfigScreen(props: {
    * need a second save path for the same struct. The editor below is a draft; everything
    * else here writes through immediately and says so where it does.
    */
-  const [toolsEditing, setToolsEditing] = createSignal<string | undefined>()
-  const [toolsDraftName, setToolsDraftName] = createSignal("")
-  const [toolsDraftDescription, setToolsDraftDescription] = createSignal("")
-  const [toolsDraftManual, setToolsDraftManual] = createSignal("")
-  const [toolsDraftError, setToolsDraftError] = createSignal<string | undefined>()
   const [horizonAdd, setHorizonAdd] = createSignal("")
   /** Copy-tuning source officer. `undefined` = none picked. Blocked while scalar drafts are
    *  dirty — a live copy underneath unsaved edits would silently lose to them on Save. */
@@ -416,17 +412,19 @@ export function AgentConfigScreen(props: {
   }
   const intrCadenceValid = () => inRangeInt(parseDraftNumber(intrCadenceValue()), 1, 100_000)
 
-  // ── Tools tab: horizon + private recipes (live writes, like Nudges) ────────────────
+  // ── Tools tab: horizon (live writes, like Nudges) ─────────────────────────────────
+  // Recipes live in `<OfficerRecipes>`, extracted so the failed-write pin survives the
+  // Settings tab's deletion (`components/officer-recipes.tsx` header).
   const officerTools = () => ((agent()?.config?.["tools"] ?? {}) as Record<string, boolean>)
+  /** This officer's private recipes, read from the SAME record the horizon reads — the caller
+   *  owns the source and `<OfficerRecipes>` stays presentational about it. */
   const officerRecipes = () => ((agent()?.config?.["adhocTools"] ?? []) as AdhocRecipe[])
-  const globalToolsValue = () => (agent()?.config?.["globalTools"] as boolean | undefined) ?? true
-  /** Suggestion buttons: built-ins plus this instance's recipe names, minus what is stored. */
+  /** Suggestion buttons: the built-ins, minus what is stored. There is no tool-inventory
+   *  endpoint and no instance recipe library anymore, so a free-text add stays beside the
+   *  suggestions and SAYS it is the fallback (principle 12b). */
   const horizonSuggestions = createMemo(() => {
-    const configured = (sync().data.config as { adhoc_tools?: AdhocRecipe[] } | undefined)?.adhoc_tools ?? []
     const stored = new Set(Object.keys(officerTools()))
-    return [...new Set([...CORE_TOOLS, ...configured.flatMap((tool) => (tool.name ? [tool.name] : []))])]
-      .filter((name) => !stored.has(name))
-      .sort((left, right) => left.localeCompare(right))
+    return [...CORE_TOOLS].filter((name) => !stored.has(name)).sort((left, right) => left.localeCompare(right))
   })
   const writeOfficer = async (patch: Record<string, unknown>) => {
     const target = props.agentID
@@ -458,53 +456,6 @@ export function AgentConfigScreen(props: {
       return
     }
     void writeOfficer({ tools: next })
-  }
-  const persistRecipes = (next: readonly AdhocRecipe[]) => {
-    const target = props.agentID
-    if (target === undefined) return
-    if (next.length === 0 && (agent()?.config?.["adhocTools"] as unknown) !== undefined) {
-      void sync()
-        .removeConfig([["agents", target, "adhocTools"]])
-        .then(() => props.onChanged?.())
-        .catch((error: unknown) =>
-          showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) }),
-        )
-      return
-    }
-    void writeOfficer({ adhocTools: [...next] })
-  }
-  const openRecipeEditor = (recipe?: AdhocRecipe) => {
-    setToolsDraftName(recipe?.name ?? "")
-    setToolsDraftDescription(recipe?.description ?? "")
-    setToolsDraftManual(recipe?.manual ?? "")
-    setToolsDraftError(undefined)
-    setToolsEditing(recipe?.name ?? "")
-  }
-  const saveRecipeDraft = () => {
-    // `planRecipeSave` is the ONLY way through: the collision refusal lives in it, so a rename
-    // onto an existing recipe cannot delete its namesake — the defect its header records.
-    const plan = planRecipeSave({
-      recipes: officerRecipes(),
-      editing: toolsEditing() ?? "",
-      name: toolsDraftName(),
-      description: toolsDraftDescription(),
-      manual: toolsDraftManual(),
-    })
-    if (!plan.ok) {
-      setToolsDraftError(
-        plan.reason === "duplicate"
-          ? "Another recipe already answers to that name."
-          : plan.reason === "name"
-            ? "Lowercase slug, a–z 0–9 - _, up to 64 chars."
-            : plan.reason === "description"
-              ? "One line, up to 300 chars."
-              : "The manual is required, up to 8192 chars.",
-      )
-      return
-    }
-    setToolsDraftError(undefined)
-    persistRecipes(plan.next)
-    setToolsEditing(undefined)
   }
 
   // ── Computer Use ───────────────────────────────────────────────────────────────────────────────
@@ -2538,13 +2489,12 @@ export function AgentConfigScreen(props: {
                 which tools this colleague may use, and the recipes only it is told about. The
                 horizon narrows only — `false` denies a tool for this officer, `true` restores one
                 the routing table withdrew (never one permissions withdrew); absent means the
-                routing table decides alone. Both lists save immediately, like Nudges. */}
+                routing table decides alone. Saves immediately, like Nudges. */}
             <section class="agent-settings-card" data-section="tools" data-settings-tab="tools">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Tools</h3>
               <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force: {Object.keys(officerTools()).length === 0 ? "no overrides" : `${Object.keys(officerTools()).length} tool rule(s)`}
-                {officerRecipes().length > 0 ? ` · ${officerRecipes().length} own recipe(s)` : ""}
-                {globalToolsValue() ? "" : " · shared library off"}. Unset follows the instance.
+                In force: {Object.keys(officerTools()).length === 0 ? "no overrides" : `${Object.keys(officerTools()).length} tool rule(s)`}.
+                Unset follows the instance.
               </p>
               <h4 class="mt-4 text-xs font-medium">Tool horizon</h4>
               <div class="mt-2 flex flex-col gap-1.5">
@@ -2625,145 +2575,7 @@ export function AgentConfigScreen(props: {
                 Denying is the common case; restoring un-denies a tool the routing table withdrew. Typed names
                 are the fallback — prefer a suggestion above when one fits.
               </p>
-              <div class="mt-4 border-t border-v2-border-border-muted pt-3">
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={globalToolsValue()}
-                    onChange={(event) => {
-                      const target = props.agentID
-                      if (target === undefined) return
-                      // Switching back ON deletes the opt-out rather than writing `true`: absent
-                      // and `true` mean the same, and only one of them should ever be stored.
-                      if (event.currentTarget.checked) {
-                        if ((agent()?.config?.["globalTools"] as unknown) !== undefined)
-                          void sync()
-                            .removeConfig([["agents", target, "globalTools"]])
-                            .then(() => props.onChanged?.())
-                            .catch((error: unknown) =>
-                              showToast({
-                                variant: "error",
-                                title: language.t("agentConfig.saveFailed"),
-                                description: String(error),
-                              }),
-                            )
-                      } else void writeOfficer({ globalTools: false })
-                    }}
-                  />
-                  <span>
-                    <span class="block">Use the shared recipe library</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      Off means only this officer's own recipes below reach its prompt.
-                    </span>
-                  </span>
-                </label>
-              </div>
-              <h4 class="mt-4 text-xs font-medium">This officer's own recipes</h4>
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Listed only in this officer's prompt — never instance-wide. Changes save immediately.
-              </p>
-              <div class="mt-2 flex flex-col gap-1.5">
-                <For each={officerRecipes()}>
-                  {(recipe) => (
-                    <div class="flex items-center justify-between gap-2 text-xs">
-                      <span class="min-w-0">
-                        <span class="block truncate font-medium">{recipe.name}</span>
-                        <span class="block truncate text-[11px] text-v2-text-text-faint">{recipe.description}</span>
-                      </span>
-                      <span class="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          class="rounded-md px-2 py-1 text-[11px] text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-                          onClick={() => openRecipeEditor(recipe)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-md px-2 py-1 text-[11px] text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-                          onClick={() => persistRecipes(officerRecipes().filter((entry) => entry.name !== recipe.name))}
-                        >
-                          Delete
-                        </button>
-                        <SwitchToggle
-                          aria-label={`${recipe.name} enabled`}
-                          checked={recipe.enabled !== false}
-                          onChange={(checked) =>
-                            persistRecipes(
-                              officerRecipes().map((entry) =>
-                                entry.name === recipe.name ? { ...entry, enabled: checked } : entry,
-                              ),
-                            )
-                          }
-                        />
-                      </span>
-                    </div>
-                  )}
-                </For>
-                <Show when={toolsEditing() === undefined}>
-                  <div>
-                    <button
-                      type="button"
-                      data-action="agent-recipe-add"
-                      class="rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs"
-                      onClick={() => openRecipeEditor()}
-                    >
-                      Add a recipe
-                    </button>
-                  </div>
-                </Show>
-              </div>
-              <Show when={toolsEditing() !== undefined}>
-                <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3" data-component="officer-recipe-editor">
-                  <TextInputV2
-                    class="w-full"
-                    value={toolsDraftName()}
-                    placeholder="Tool name (lowercase slug)"
-                    spellcheck={false}
-                    autocorrect="off"
-                    autocomplete="off"
-                    autocapitalize="off"
-                    onInput={(event) => setToolsDraftName(event.currentTarget.value)}
-                    aria-label="Recipe name"
-                  />
-                  <TextInputV2
-                    class="mt-2 w-full"
-                    value={toolsDraftDescription()}
-                    placeholder="One-line description"
-                    spellcheck={false}
-                    onInput={(event) => setToolsDraftDescription(event.currentTarget.value)}
-                    aria-label="Recipe description"
-                  />
-                  <textarea
-                    aria-label="Recipe manual"
-                    class="mt-2 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    value={toolsDraftManual()}
-                    onInput={(event) => setToolsDraftManual(event.currentTarget.value)}
-                    placeholder="API shape plus 1–2 curl/shell examples"
-                  />
-                  <Show when={toolsDraftError()}>
-                    <p class="mt-1 text-[11px] text-v2-state-fg-danger">{toolsDraftError()}</p>
-                  </Show>
-                  <div class="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      data-action="agent-recipe-save"
-                      class="rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium"
-                      onClick={saveRecipeDraft}
-                    >
-                      Save recipe
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-                      onClick={() => setToolsEditing(undefined)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </Show>
+              <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
             </section>
 
             <Show when={props.agentID}>

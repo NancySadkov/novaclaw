@@ -3810,7 +3810,6 @@ export type ConfigV2Agent = {
         extended?: boolean
       }
   nudges?: Array<ConfigV2Nudge>
-  globalNudges?: boolean
   tools?: {
     [key: string]: boolean
   }
@@ -3829,7 +3828,6 @@ export type ConfigV2Agent = {
     manual: string
     enabled?: boolean
   }>
-  globalTools?: boolean
   reasoningBudget?: number
   maxToolTimeoutMs?: number
   workerPrototype?: string
@@ -4332,7 +4330,6 @@ export type ConfigInfo = {
   tool_output?: ConfigV2ToolOutput
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
-  nudges?: Array<ConfigV2Nudge>
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction
   context?: ConfigV2Context
@@ -4342,48 +4339,9 @@ export type ConfigInfo = {
     name?: string
     about?: string
   }
-  introspection?: {
-    enabled?: boolean
-    cadence?: number
-    model?: string
-    prompt?: string
-    interjection?: string
-    generateInterjection?: boolean
-  }
   harness_drives?: {
     children?: boolean
     imageShortcut?: boolean
-  }
-  adhoc_tools?: Array<{
-    /**
-     * Tool name (lowercase slug) listed in the system prompt
-     */
-    name: string
-    /**
-     * One-line description shown beside the name (the model decides from this alone)
-     */
-    description: string
-    /**
-     * Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples
-     */
-    manual: string
-    enabled?: boolean
-  }>
-  affective?: {
-    enabled?: boolean
-    temperature?: number
-    extended?: boolean
-  }
-  strict?: {
-    enabled?: boolean
-    verification?: boolean
-    recovery?: boolean
-    editingAids?: boolean
-    budgetSteering?: boolean
-    wallMinutes?: number
-    attempts?: number
-    executionTokens?: number
-    reasoningTokens?: number
   }
   instances?: Array<{
     /**

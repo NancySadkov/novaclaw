@@ -17,31 +17,26 @@ import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsTrashV2 } from "./trash"
 import { SettingsServersV2 } from "./servers"
-import { SettingsIntrospectionV2 } from "./introspection"
-import { SettingsAffectiveV2 } from "./affective"
-import { SettingsStrictV2 } from "./strict"
 import { SettingsComputerV2 } from "./computer"
-import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
 import { SettingsMessengersV2 } from "./messengers"
 import { SettingsWebSearchV2 } from "./web-search"
 import { SettingsTunesV2 } from "./tunes"
-import { SettingsNudgesV2 } from "./nudges"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
+//
+// 🔴 The per-agent tuning tabs are GONE from Settings (per-agent tuning, slice 4): Tools,
+// Nudges, Affective, Introspection and Strict live on the officer, where they fine-tune one
+// colleague each. An instance-wide switch for one colleague's horizon was the defect the
+// folder chip had — a question answered once for a decision that differs per role.
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   tunes: "advanced",
-  nudges: "advanced",
   computer: "advanced",
-  tools: "advanced",
-  strict: "advanced",
   // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
   // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
   "web-search": "advanced",
-  introspection: "developer",
-  affective: "developer",
   quality: "developer",
 }
 
@@ -139,40 +134,10 @@ export const DialogSettings: Component<{
                               {language.t("settings.tunes.title")}
                             </TabsV2.Trigger>
                           </Show>
-                          <Show when={tabVisible("nudges")}>
-                            <TabsV2.Trigger value="nudges">
-                              <Icon name="prompt" size="large" />
-                              {language.t("settings.nudges.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("introspection")}>
-                            <TabsV2.Trigger value="introspection">
-                              <Icon name="eye" size="large" />
-                              {language.t("settings.introspection.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("affective")}>
-                            <TabsV2.Trigger value="affective">
-                              <Icon name="brain" size="large" />
-                              {language.t("settings.affective.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("strict")}>
-                            <TabsV2.Trigger value="strict">
-                              <Icon name="shield" size="large" />
-                              {language.t("settings.strict.title")}
-                            </TabsV2.Trigger>
-                          </Show>
                           <Show when={tabVisible("computer")}>
                             <TabsV2.Trigger value="computer">
                               <Icon name="window-cursor" size="large" />
                               {language.t("settings.computer.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("tools")}>
-                            <TabsV2.Trigger value="tools">
-                              <Icon name="code-lines" size="large" />
-                              {language.t("settings.tools.title")}
                             </TabsV2.Trigger>
                           </Show>
                           <Show when={tabVisible("web-search")}>
@@ -234,26 +199,6 @@ export const DialogSettings: Component<{
                   <SettingsTunesV2 />
                 </TabsV2.Content>
               </Show>
-              <Show when={tabVisible("nudges")}>
-                <TabsV2.Content value="nudges" class="settings-v2-panel">
-                  <SettingsNudgesV2 />
-                </TabsV2.Content>
-              </Show>
-              <Show when={tabVisible("introspection")}>
-                <TabsV2.Content value="introspection" class="settings-v2-panel">
-                  <SettingsIntrospectionV2 />
-                </TabsV2.Content>
-              </Show>
-              <Show when={tabVisible("affective")}>
-                <TabsV2.Content value="affective" class="settings-v2-panel">
-                  <SettingsAffectiveV2 />
-                </TabsV2.Content>
-              </Show>
-              <Show when={tabVisible("strict")}>
-                <TabsV2.Content value="strict" class="settings-v2-panel">
-                  <SettingsStrictV2 />
-                </TabsV2.Content>
-              </Show>
               {/* ⚠️ This panel used to sit INSIDE `TabsV2.List`, between the "computer" and "tools"
                   triggers — so the whole Computer Use tab rendered squeezed into the left tab rail
                   instead of the content area, while every sibling panel lived out here. Kobalte
@@ -262,11 +207,6 @@ export const DialogSettings: Component<{
               <Show when={tabVisible("computer")}>
                 <TabsV2.Content value="computer" class="settings-v2-panel">
                   <SettingsComputerV2 />
-                </TabsV2.Content>
-              </Show>
-              <Show when={tabVisible("tools")}>
-                <TabsV2.Content value="tools" class="settings-v2-panel">
-                  <SettingsToolsV2 />
                 </TabsV2.Content>
               </Show>
               <Show when={tabVisible("web-search")}>
