@@ -139,14 +139,11 @@ export default {
           \`tz_offset_min\` integer DEFAULT 0 NOT NULL,
           \`prompt\` text NOT NULL,
           \`agent\` text,
-          \`model\` text,
-          \`location_json\` text,
           \`enabled\` integer DEFAULT true NOT NULL,
           \`next_fire_at\` integer,
           \`last_fired_at\` integer,
           \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL,
-          \`permission_mode\` text
+          \`time_updated\` integer NOT NULL
         );
       `)
       yield* tx.run(`

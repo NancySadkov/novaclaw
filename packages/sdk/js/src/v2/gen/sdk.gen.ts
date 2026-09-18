@@ -3388,7 +3388,7 @@ class ApiV2CalendarSchedule extends NovaClawApiClient {
   /**
    * Update a calendar schedule
    *
-   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.
+   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters: {

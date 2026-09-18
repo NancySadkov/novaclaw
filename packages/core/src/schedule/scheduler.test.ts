@@ -317,9 +317,6 @@ describe("CalendarScheduler.makeLaunch", () => {
     tzOffsetMin: 0,
     prompt: "Congratulate clients",
     agent: null,
-    model: null,
-    location: null,
-    permissionMode: null,
     enabled: true,
     nextFireAt: 123,
     lastFiredAt: null,
@@ -352,7 +349,7 @@ describe("CalendarScheduler.makeLaunch", () => {
     expect(prompted[0].delivery).toBe("queue")
   })
 
-  test("uses the schedule's own location when set", async () => {
+  test("resolves the responsible agent, and passes no model or permission override", async () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
@@ -360,50 +357,18 @@ describe("CalendarScheduler.makeLaunch", () => {
         fakeSessions(created, prompted),
         "/home/nancy",
       )({
-        schedule: sample({ location: "/srv/clients" }),
+        schedule: sample({ agent: "build" }),
         occurrenceMillis: 1,
         firedAt: 1,
       }),
     )
-    expect(created[0].location.directory).toBe("/srv/clients")
-  })
-
-  test("resolves a per-schedule model string + agent into refs", async () => {
-    const created: any[] = []
-    const prompted: any[] = []
-    await Effect.runPromise(
-      CalendarScheduler.makeLaunch(
-        fakeSessions(created, prompted),
-        "/home/nancy",
-      )({
-        schedule: sample({ model: "dgx-spark/qwen3.6-35b", agent: "build", permissionMode: "bypass" }),
-        occurrenceMillis: 1,
-        firedAt: 1,
-      }),
-    )
-    expect(created[0].model.id).toBe("qwen3.6-35b")
-    expect(created[0].model.providerID).toBe("dgx-spark")
     expect(created[0].agent).toBe("build")
-    expect(created[0].permissionMode).toBe("bypass")
+    // The model and permission posture belong to the colleague, never to the task.
+    expect("model" in created[0]).toBe(false)
+    expect("permissionMode" in created[0]).toBe(false)
   })
 
-  test("uses the schedule's own work folder (location) when set", async () => {
-    const created: any[] = []
-    const prompted: any[] = []
-    await Effect.runPromise(
-      CalendarScheduler.makeLaunch(
-        fakeSessions(created, prompted),
-        "/home/nancy",
-      )({
-        schedule: sample({ location: "/srv/clients" }),
-        occurrenceMillis: 1,
-        firedAt: 1,
-      }),
-    )
-    expect(created[0].location.directory).toBe("/srv/clients")
-  })
-
-  test("an unowned task is NOVA's: agent defaults to nova, model/permission still inherit", async () => {
+  test("an unowned task is NOVA's: the agent defaults to nova", async () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
@@ -425,8 +390,8 @@ describe("CalendarScheduler.makeLaunch", () => {
   })
 
   // The folder a scheduled run happens in — the owner's rule that a colleague's folder is part of its
-  // JOB, not a per-chat question. Three cases because the three answers rank, and only ordering them
-  // proves it: an explicit per-task folder, else the responsible colleague's own, else instance home.
+  // JOB, not a per-chat question. Two answers rank, and ordering them proves it: the responsible
+  // colleague's own folder, else the instance home.
   const folderOf = (table: Record<string, string>) => (agentID: string) => Effect.succeed(table[agentID])
 
   test("an unowned task runs in NOVA's folder, not the instance home", async () => {
@@ -451,18 +416,6 @@ describe("CalendarScheduler.makeLaunch", () => {
       )({ schedule: sample({ agent: "theron" }), occurrenceMillis: 1, firedAt: 1 }),
     )
     expect(created[0].location.directory).toBe("/home/nancy/d/books")
-  })
-
-  test("an explicit per-task folder still outranks the colleague's own", async () => {
-    const created: any[] = []
-    await Effect.runPromise(
-      CalendarScheduler.makeLaunch(
-        fakeSessions(created, []),
-        "/home/nancy",
-        folderOf({ theron: "/home/nancy/d/books" }),
-      )({ schedule: sample({ agent: "theron", location: "/tmp/audit" }), occurrenceMillis: 1, firedAt: 1 }),
-    )
-    expect(created[0].location.directory).toBe("/tmp/audit")
   })
 
   test("an unknown colleague falls back to the instance home rather than failing the launch", async () => {

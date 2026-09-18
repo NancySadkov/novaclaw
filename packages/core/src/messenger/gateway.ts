@@ -974,8 +974,8 @@ const build = (options: Options) =>
         // makes a session's working folder one of the three places NovaClaw may WRITE, so picking it
         // by accident is picking where a stranger's disk gets written by accident.
         //
-        // ⚠️ Same answer `schedule/scheduler.ts` already gives for the other rootless launch
-        // (`schedule.location ?? global.home`), which is the point — two rootless launches on one
+        // ⚠️ Same answer `schedule/scheduler.ts` gives for the other rootless launch (the responsible
+        // colleague's folder, else `global.home`), which is the point — two rootless launches on one
         // instance must not disagree about where "no particular folder" is.
         /**
          * 🔴 **The console belongs to the MESSENGER, and every account is one of its sub-sessions**

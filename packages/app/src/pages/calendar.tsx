@@ -8,7 +8,6 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { roster, type AgentLike } from "@/apps/contacts"
-import { useDirectoryPicker } from "@/components/directory-picker"
 import {
   createSchedule,
   listFires,
@@ -31,23 +30,12 @@ import { calendarDay } from "./calendar-day"
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
 // /api/calendar/schedule endpoints via the raw-fetch calendar-api client. Schedules are
 // instance-global; writes also route through the current server-side directory so the instance can
-// validate unpinned agent/model choices against the right ambient catalog.
+// validate the responsible agent against the right ambient roster.
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const MONTH_OPTIONS = MONTHS.map((label, index) => ({ value: index + 1, label }))
 const RECURRENCE_KINDS: Recurrence["kind"][] = ["once", "daily", "weekly", "monthly", "yearly"]
-
-// Plain-language permission postures for an UNATTENDED scheduled run. Default "bypass" = act on anything
-// inside the work folder (external-directory writes still gate); "ask" stalls (no human to approve).
-const PERMISSION_MODES: { value: string; label: string }[] = [
-  { value: "bypass", label: "Act within its folder (recommended)" },
-  { value: "", label: "Whatever the colleague is allowed" },
-  { value: "surgical", label: "Edit files, no full rewrites" },
-  { value: "plan", label: "Read-only (no file changes)" },
-  { value: "ask", label: "Ask each time (needs you watching)" },
-  { value: "yolo", label: "Unrestricted (incl. outside the folder)" },
-]
 
 const pad = (n: number) => String(n).padStart(2, "0")
 const hm = (t: { hour: number; minute: number }) => `${pad(t.hour)}:${pad(t.minute)}`
@@ -102,11 +90,8 @@ export function CalendarPage() {
   const sdk = useServerSDK()
   const httpBase = createMemo(() => sdk()?.server?.http)
 
-  // The folder browser reuses the app's directory picker (browses the SERVER host's filesystem — where the
-  // scheduled agent actually runs, not the client). Same hook the "new agent" folder chip uses.
   const server = useServer()
   const conn = createMemo(() => server.current)
-  const pickDirectory = useDirectoryPicker()
 
   // WHO is responsible for a scheduled task (owner, 2026-08-21: *"the calendar / schedule should have
   // a model responsible for each task, defaulting to the Nova itself"*).
@@ -236,9 +221,6 @@ export function CalendarPage() {
   const [yearMonth, setYearMonth] = createSignal(1)
   const [yearDay, setYearDay] = createSignal("1")
   const [agent, setAgent] = createSignal("")
-  const [model, setModel] = createSignal("")
-  const [folder, setFolder] = createSignal("")
-  const [permission, setPermission] = createSignal("bypass")
   const [tzOffsetMin, setTzOffsetMin] = createSignal(-new Date().getTimezoneOffset())
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string | undefined>()
@@ -257,9 +239,6 @@ export function CalendarPage() {
     setYearMonth(1)
     setYearDay("1")
     setAgent("")
-    setModel("")
-    setFolder("")
-    setPermission("bypass")
     setTzOffsetMin(-new Date().getTimezoneOffset())
   }
 
@@ -269,9 +248,6 @@ export function CalendarPage() {
     setPrompt(schedule.prompt)
     setKind(schedule.recurrence.kind)
     setAgent(schedule.agent ?? "")
-    setModel(schedule.model ?? "")
-    setFolder(schedule.location ?? "")
-    setPermission(schedule.permissionMode ?? "")
     setTzOffsetMin(schedule.tzOffsetMin)
     switch (schedule.recurrence.kind) {
       case "once":
@@ -340,18 +316,12 @@ export function CalendarPage() {
           ...common,
           title: title().trim(),
           agent: agent().trim() || null,
-          model: model().trim() || null,
-          location: folder().trim() || null,
-          permissionMode: permission() || null,
         })
       } else {
         await createSchedule(base, directory, {
           ...common,
           title: title().trim() || undefined,
           agent: agent().trim() || undefined,
-          model: model().trim() || undefined,
-          location: folder().trim() || undefined,
-          permissionMode: permission() || undefined,
         })
       }
       resetEditor()
@@ -386,19 +356,6 @@ export function CalendarPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }
-
-  function pickFolder() {
-    const c = conn()
-    if (!c) return
-    pickDirectory({
-      server: c,
-      title: "Choose the schedule's work folder",
-      onSelect: (result) => {
-        const directory = Array.isArray(result) ? result[0] : result
-        if (directory) setFolder(directory)
-      },
-    })
   }
 
   const clockDate = createMemo(() =>
@@ -497,13 +454,9 @@ export function CalendarPage() {
                         <div class="mt-0.5 text-xs text-v2-text-text-muted">{describeRecurrence(s.recurrence)}</div>
                         <div class="mt-0.5 truncate text-xs text-v2-text-text-faint">“{s.prompt}”</div>
                         <div class="mt-0.5 truncate text-[11px] text-v2-text-text-faint">
-                          {/* WHO first, because that is now the fact that decides the rest: an unnamed
-                              task is Nova's, and the colleague supplies the model, the posture and —
-                              unless this task overrides it — the folder. */}
+                          {/* WHO first: an unnamed task is Nova's, and the responsible colleague supplies
+                              the model, permission posture and folder the run inherits. */}
                           {responsibleName(s.agent)}
-                          {s.location ? ` · folder: ${s.location}` : ""}
-                          {s.permissionMode ? ` · access: ${s.permissionMode}` : ""}
-                          {s.model ? ` · model: ${s.model}` : ""}
                         </div>
                         <div class="mt-1 text-xs text-v2-text-text-accent">
                           <Show
@@ -697,52 +650,6 @@ export function CalendarPage() {
               label={(option) => `${option.name}${option.folder ? ` · ${option.folder}` : ""}`}
               onSelect={(option) => option && setAgent(option.id)}
             />
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <label for="calendar-model" class="text-sm text-v2-text-text-muted">
-              {language.t("calendar.page.model")}
-            </label>
-            <input
-              id="calendar-model"
-              class={`${FIELD} min-w-[260px] flex-1`}
-              placeholder={language.t("calendar.page.overrideTheModelForThisOne")}
-              value={model()}
-              onInput={(e) => setModel(e.currentTarget.value)}
-            />
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <label for="calendar-folder" class="text-sm text-v2-text-text-muted">
-              {language.t("calendar.page.folder")}
-            </label>
-            <input
-              id="calendar-folder"
-              class={`${FIELD} min-w-[220px] flex-1`}
-              placeholder={language.t("calendar.page.overrideTheFolderForThisOne")}
-              value={folder()}
-              onInput={(e) => setFolder(e.currentTarget.value)}
-            />
-            <button type="button" class={BTN} onClick={pickFolder} disabled={!conn()}>
-              {language.t("calendar.page.browse")}
-            </button>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <label for="calendar-permissions" class="text-sm text-v2-text-text-muted">
-              {language.t("calendar.page.permissions")}
-            </label>
-            <SelectV2
-              id="calendar-permissions"
-              options={PERMISSION_MODES}
-              current={PERMISSION_MODES.find((mode) => mode.value === permission())}
-              value={(mode) => mode.value || "inherit"}
-              label={(mode) => mode.label}
-              onSelect={(mode) => mode && setPermission(mode.value)}
-            />
-            <span class="text-xs text-v2-text-text-faint">
-              {language.t("calendar.page.runsUnattendedAskStallsWithNo")}
-            </span>
           </div>
 
           <Show when={error()}>

@@ -2,12 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
 import { Recurrence } from "@novaclaw/core/schedule/recurrence"
-import { PermissionMode } from "@novaclaw/schema/session-message"
-import {
-  CreateInput as WireCreateInput,
-  Recurrence as WireRecurrence,
-  Schedule as WireSchedule,
-} from "@novaclaw/protocol/groups/calendar"
+import { CreateInput as WireCreateInput, Recurrence as WireRecurrence } from "@novaclaw/protocol/groups/calendar"
 import { CalendarApi } from "../handler-api"
 
 /**
@@ -180,67 +175,5 @@ describe("the calendar wire's runnable domain", () => {
     expect(
       decode(WireCreateInput, { ...base, tzOffsetMin: -720, recurrence: { kind: "daily", time: at(9, 0) } }).ok,
     ).toBe(true)
-  })
-})
-
-/**
- * ─── ONE PERMISSION VOCABULARY, IN BOTH DIRECTIONS ───────────────────────────────────────────────
- *
- * `CreateInput.permissionMode` was narrowed to the kernel's literal set; the `Schedule` every read
- * endpoint returns still declared `Schema.NullOr(Schema.String)`. A decode guarantee has a
- * DIRECTION, and that one existed only on the way in: a generated client could not assign a fetched
- * `Schedule.permissionMode` to `CreateInput.permissionMode`, so round-tripping a schedule through
- * PATCH did not typecheck, and the scheduler was left blind-casting the stored string into the union
- * it switches on.
- */
-const SCHEDULE_ROW = {
-  id: "sch_1",
-  title: "Morning report",
-  recurrence: { kind: "daily", time: at(9, 0) },
-  tzOffsetMin: 60,
-  prompt: "write the morning report",
-  agent: null,
-  model: null,
-  location: null,
-  permissionMode: null as string | null,
-  enabled: true,
-  nextFireAt: null,
-  lastFiredAt: null,
-  timeCreated: 1,
-  timeUpdated: 2,
-}
-
-describe("the calendar wire's permission vocabulary", () => {
-  test("the union is not empty and is the kernel's own", () => {
-    // Guards the shape of the two loops below: over an empty list they would assert nothing.
-    expect([...PermissionMode.literals].sort()).toEqual(["ask", "bypass", "plan", "surgical", "yolo"])
-  })
-
-  test("every mode the kernel accepts is accepted in both directions", () => {
-    const rejected: string[] = []
-    for (const mode of PermissionMode.literals) {
-      if (!decode(WireCreateInput, { ...base, recurrence: { kind: "daily", time: at(9, 0) }, permissionMode: mode }).ok)
-        rejected.push(`inbound ${mode}`)
-      if (!decode(WireSchedule, { ...SCHEDULE_ROW, permissionMode: mode }).ok) rejected.push(`outbound ${mode}`)
-    }
-    expect(rejected).toEqual([])
-    expect(decode(WireSchedule, { ...SCHEDULE_ROW, permissionMode: null }).ok).toBe(true)
-  })
-
-  test("a mode outside the union is refused in both directions", () => {
-    const outside = ["", "admin", "Plan", "bypass ", "readonly"]
-    const accepted: string[] = []
-    for (const mode of outside) {
-      if (decode(WireCreateInput, { ...base, recurrence: { kind: "daily", time: at(9, 0) }, permissionMode: mode }).ok)
-        accepted.push(`inbound ${JSON.stringify(mode)}`)
-      if (decode(WireSchedule, { ...SCHEDULE_ROW, permissionMode: mode }).ok)
-        accepted.push(`outbound ${JSON.stringify(mode)}`)
-    }
-    expect(accepted).toEqual([])
-  })
-
-  test("the served response schema carries the union, not a bare string", () => {
-    expect(decode(servedCreateSuccess!, { ...SCHEDULE_ROW, permissionMode: "plan" }).ok).toBe(true)
-    expect(decode(servedCreateSuccess!, { ...SCHEDULE_ROW, permissionMode: "admin" }).ok).toBe(false)
   })
 })

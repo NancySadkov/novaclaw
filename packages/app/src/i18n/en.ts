@@ -2923,10 +2923,6 @@ export const dict = {
   "calendar.page.runOnceAt": "Run once at",
   "calendar.page.runAt": "Run at",
   "calendar.page.dayOfMonth": "Day of month",
-  "calendar.page.overrideTheModelForThisOne":
-    "Override the model for this one task — blank = whatever the colleague thinks with",
-  "calendar.page.overrideTheFolderForThisOne":
-    "Override the folder for this one task — blank = wherever the responsible colleague works",
   "calendar.page.nextRun": "Next run",
   "calendar.page.noUpcomingRunsScheduled": "No upcoming runs scheduled.",
   "calendar.page.scheduledTasks": "Scheduled tasks",
@@ -2942,11 +2938,6 @@ export const dict = {
   "calendar.page.cancel": "Cancel",
   "calendar.page.repeat": "Repeat",
   "calendar.page.responsible": "Responsible",
-  "calendar.page.model": "Model",
-  "calendar.page.folder": "Folder",
-  "calendar.page.browse": "Browse…",
-  "calendar.page.permissions": "Permissions",
-  "calendar.page.runsUnattendedAskStallsWithNo": "Runs unattended — “Ask” stalls with no one to approve.",
 
   // ── Memory graph page — keyed 2026-09-03; these strings shipped as literals until then. ──
   "memoryGraph.page.searchMemories": "Search memories",

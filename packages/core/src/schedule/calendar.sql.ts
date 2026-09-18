@@ -16,13 +16,10 @@ export const CalendarScheduleTable = sqliteTable(
     tz_offset_min: integer().notNull().default(0),
     prompt: text().notNull(),
     agent: text(),
-    model: text(),
-    location_json: text(),
     enabled: integer({ mode: "boolean" }).notNull().default(true),
     next_fire_at: integer(),
     last_fired_at: integer(),
     ...Timestamps,
-    permission_mode: text(),
   },
   (table) => [index("calendar_schedule_due_idx").on(table.enabled, table.next_fire_at)],
 )

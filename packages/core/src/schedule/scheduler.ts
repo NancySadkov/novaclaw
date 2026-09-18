@@ -22,7 +22,6 @@ import { makeGlobalNode, tags } from "../effect/app-node"
 import { LayerNode } from "../effect/layer-node"
 import { EventV2 } from "../event"
 import { Global } from "../global"
-import { ModelV2 } from "../model"
 import { AbsolutePath } from "../schema"
 import { SessionV2 } from "../session"
 import type { EpochMillis } from "./recurrence"
@@ -107,8 +106,8 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
   })
 
 /**
- * The real launch seam (P3): create a goal-oriented session at the schedule's location (its own directory,
- * else the instance home) and QUEUE its prompt through the canonical spawner. Typed to only the one
+ * The real launch seam (P3): create a goal-oriented session in the responsible colleague's folder (else
+ * the instance home) and QUEUE its prompt through the canonical spawner. Typed to only the one
  * SessionV2 method it uses, so it is
  * unit-testable with a fake. Returns the new session id. `metadata` stamps the schedule + occurrence so a
  * fired run is traceable back to its schedule.
@@ -133,13 +132,6 @@ export const makeLaunch =
   (input) =>
     Effect.gen(function* () {
       const { schedule } = input
-      // Per-schedule overrides; absent = inherit the instance default agent/model. Model string is
-      // "providerID/modelID" (split so the modelID may itself contain "/").
-      let model: ModelV2.Ref | undefined
-      if (schedule.model) {
-        const { providerID, modelID } = ModelV2.parse(schedule.model)
-        model = ModelV2.Ref.make({ id: modelID, providerID })
-      }
       // 🔴 NOVA owns an unowned task (owner, 2026-08-21: *"the calendar / schedule should have a
       // model responsible for each task, defaulting to the Nova itself"*).
       //
@@ -165,17 +157,16 @@ export const makeLaunch =
       const able = canAct === undefined ? true : yield* canAct(requested)
       const reassigned = !able && requested !== AgentV2.NOVA_ID
       const agent = AgentV2.ID.make(reassigned ? AgentV2.NOVA_ID : requested)
-      // 🔴 A task inherits the RESPONSIBLE COLLEAGUE's folder, not the instance home. Under the roster
+      // 🔴 A task runs in the RESPONSIBLE COLLEAGUE's folder, not the instance home. Under the roster
       // the folder is part of the job — you assign the bookkeeper to the books once — so a scheduled
       // run that landed in `~` would put a colleague somewhere it has never worked and give it a
-      // system prompt naming a folder its files are not in. An explicit per-task folder still wins:
-      // that is a user saying "this particular job happens over there".
+      // system prompt naming a folder its files are not in.
       //
       // ⚠️ Read at FIRE time, never stored: a colleague reassigned between "save this schedule" and
       // "it fires at 6am" must fire in its new folder. A snapshot taken at save time is the same stale
       // -config bug `self` and the reassignment notice exist to prevent.
       const own = folderOf === undefined ? undefined : yield* folderOf(agent)
-      const directory = schedule.location ?? own ?? homeDir
+      const directory = own ?? homeDir
       // THE CANONICAL SEAM (v0.2.0 prep, 2026-08-11) — was `create()` + `prompt()`. A Calendar launch
       // is ROOTLESS, so it passes `location` instead of a `parentID`, and the fork-bomb guards are
       // skipped BY CONSTRUCTION (see `SessionSpawner.SpawnInput.parentID`): there is no parent to
@@ -194,12 +185,7 @@ export const makeLaunch =
           : schedule.prompt,
         type: "goal-oriented",
         title: schedule.title || "Scheduled run",
-        ...(model ? { model } : {}),
         agent,
-        // Per-schedule permission posture; absent = inherit the default. A scheduled run is unattended, so
-        // "ask" would stall waiting for an approval nobody's there to give — the UI defaults to "bypass"
-        // (act within its work folder; external-directory writes still gate).
-        ...(schedule.permissionMode ? { permissionMode: schedule.permissionMode } : {}),
         metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
       if (!spawned.started) yield* Log.event("instance.scheduler.launch.unstarted", { "session.id": spawned.id })

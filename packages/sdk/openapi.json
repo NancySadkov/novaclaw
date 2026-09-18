@@ -19562,7 +19562,7 @@
             }
           }
         },
-        "description": "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
+        "description": "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.",
         "summary": "Update a calendar schedule",
         "requestBody": {
           "content": {
@@ -37670,6 +37670,12 @@
               "type": "number"
             }
           },
+          "provider_repetition_floor": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
           "provider_route_profile": {
             "type": "object",
             "additionalProperties": {
@@ -42707,37 +42713,6 @@
               }
             ]
           },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissionMode": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "enabled": {
             "type": "boolean"
           },
@@ -42775,9 +42750,6 @@
           "tzOffsetMin",
           "prompt",
           "agent",
-          "model",
-          "location",
-          "permissionMode",
           "enabled",
           "nextFireAt",
           "lastFiredAt",
@@ -42805,16 +42777,6 @@
           },
           "agent": {
             "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "permissionMode": {
-            "type": "string",
-            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "enabled": {
             "type": "boolean"
@@ -42844,37 +42806,6 @@
             "anyOf": [
               {
                 "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissionMode": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
               },
               {
                 "type": "null"

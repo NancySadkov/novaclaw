@@ -3,10 +3,6 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Database } from "@novaclaw/core/database/database"
 import { Log } from "@novaclaw/schema/log"
 import { AgentV2 } from "@novaclaw/core/agent"
-import { Catalog } from "@novaclaw/core/catalog"
-import { Location } from "@novaclaw/core/location"
-import { LocationServiceMap } from "@novaclaw/core/location-service-map"
-import { AbsolutePath } from "@novaclaw/core/schema"
 import { CalendarStore } from "@novaclaw/core/schedule/store"
 import { Recurrence } from "@novaclaw/core/schedule/recurrence"
 import { ScheduleExecutionSettings } from "@novaclaw/core/schedule/execution-settings"
@@ -20,54 +16,22 @@ import { CalendarApi, handlerLayer } from "../handler-api"
 // schedule created here is immediately visible to CalendarScheduler's tick.
 
 /**
- * Refuse named execution settings that cannot run, while the user can still repair them.
+ * Refuse a responsible agent that cannot run, while the user can still repair it.
  *
- * The write endpoints carry location middleware, so an unpinned schedule is checked against the
- * request's ambient roster and catalog. An explicit schedule folder is authoritative: its location
- * graph replaces the ambient one for this lookup. That pin is not a snapshot of an unpinned
- * schedule's eventual fire location; the scheduler still resolves colleague folder/home at fire
- * time on purpose.
+ * The write endpoints carry location middleware, so the schedule is checked against the request's
+ * ambient roster.
  *
- * A lookup failure does not refuse the write. The roster and catalog are advisory validation here;
- * an instance mid-reload must not turn "I cannot check" into "your schedule is invalid". The fault
- * is logged so an unchecked save is not indistinguishable from a successful check.
+ * A lookup failure does not refuse the write. The roster is advisory validation here; an instance
+ * mid-reload must not turn "I cannot check" into "your schedule is invalid". The fault is logged so
+ * an unchecked save is not indistinguishable from a successful check.
  */
-const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (
-  settings: { readonly agent?: string | null; readonly model?: string | null },
-  pinnedDirectory: string | null | undefined,
-) {
-  if (!settings.agent && !settings.model) return
+const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (settings: {
+  readonly agent?: string | null
+}) {
+  if (!settings.agent) return
 
-  const readKnown = Effect.gen(function* () {
-    const roster = yield* AgentV2.Service.use((agent) => agent.all())
-    const models = yield* Catalog.Service.use((catalog) => catalog.model.all())
-    return {
-      agents: new Set(roster.map((item) => String(item.id))),
-      models: new Set(models.map((model) => `${model.providerID}/${model.id}`)),
-      // 🔴 SWITCHED OFF, not merely unreachable — hence `enabled` and not `available()`. A provider
-      // whose key expired is `all()` but not `available()`, and that is a transient condition the
-      // header above refuses to punish; a model the user turned off is a standing decision, and it is
-      // the one the task cannot run on. See `Known.disabled` for what happens if this line is dropped:
-      // the schedule saves, and fires on a substitute model nobody chose.
-      //
-      // ⚠️ `=== false` and not `!model.enabled`, which is not the same predicate. Absence of the flag
-      // is not evidence that anybody switched anything off — it is a catalog entry that never went
-      // through the one place that sets it (`config/plugin/provider.ts`). Testing for falsiness would
-      // refuse a save over a field nobody wrote; three of this package's own fakes, which build model
-      // records structurally, say so by failing.
-      disabled: new Set(
-        models.filter((model) => model.enabled === false).map((model) => `${model.providerID}/${model.id}`),
-      ),
-    }
-  })
-  const check = pinnedDirectory
-    ? readKnown.pipe(
-        Effect.provide(
-          (yield* LocationServiceMap.Service).get(Location.Ref.make({ directory: AbsolutePath.make(pinnedDirectory) })),
-        ),
-      )
-    : readKnown
-  const known = yield* check.pipe(
+  const known = yield* AgentV2.Service.use((agent) => agent.all()).pipe(
+    Effect.map((roster) => ({ agents: new Set(roster.map((item) => String(item.id))) })),
     Effect.catchCause((cause) =>
       Log.event("instance.calendar.settings.unchecked", { "instance.cause": Log.fault(cause) }).pipe(
         Effect.as(undefined),
@@ -123,9 +87,8 @@ export const CalendarHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
-            // No pin means the request's ambient location. A pin replaces it inside
-            // `refuseUnrunnable`; the stored value itself remains the scheduler's authority.
-            yield* refuseUnrunnable(ctx.payload, ctx.payload.location)
+            // The request's ambient location is the check's authority.
+            yield* refuseUnrunnable(ctx.payload)
             // No narrowing left to do: the wire's recurrence IS the engine's, bounds and all.
             const input: CalendarStore.CreateInput = ctx.payload
             return yield* CalendarStore.create(
@@ -147,23 +110,10 @@ export const CalendarHandler = handlerLayer(
             if (existing === undefined)
               return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
 
-            // Validate only when the resulting execution placement/settings can change. A pause or
-            // title edit must remain possible even if a colleague was retired since the schedule was
-            // written. When validation is needed, omitted fields inherit the existing row: notably,
-            // an existing pinned folder stays authoritative, while `location: null` deliberately
-            // clears the pin and switches the check to the request's ambient location.
-            if (
-              ctx.payload.agent !== undefined ||
-              ctx.payload.model !== undefined ||
-              ctx.payload.location !== undefined
-            ) {
-              yield* refuseUnrunnable(
-                {
-                  agent: ctx.payload.agent === undefined ? existing.agent : ctx.payload.agent,
-                  model: ctx.payload.model === undefined ? existing.model : ctx.payload.model,
-                },
-                ctx.payload.location === undefined ? existing.location : ctx.payload.location,
-              )
+            // Validate only when the responsible agent can change. A pause or title edit must remain
+            // possible even if a colleague was retired since the schedule was written.
+            if (ctx.payload.agent !== undefined) {
+              yield* refuseUnrunnable({ agent: ctx.payload.agent })
             }
             const patch: CalendarStore.UpdateInput = ctx.payload
             // A re-sent recurrence keeps the zone the schedule already had — the wire cannot carry one

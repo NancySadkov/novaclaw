@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "24e1f49d-c4f1-4373-a824-e45c8ae8cce9",
+  "id": "ddeba048-0d8e-428f-bebe-1ecc2cef46c9",
   "prevIds": [
-    "07b336dd-38f4-4f33-9e2e-2bff257f3edf"
+    "24e1f49d-c4f1-4373-a824-e45c8ae8cce9"
   ],
   "ddl": [
     {
@@ -1079,26 +1079,6 @@
       "table": "calendar_schedule"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "model",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "location_json",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -1145,16 +1125,6 @@
       "default": null,
       "generated": null,
       "name": "time_updated",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "permission_mode",
       "entityType": "columns",
       "table": "calendar_schedule"
     },

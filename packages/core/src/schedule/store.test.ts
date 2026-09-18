@@ -72,20 +72,20 @@ describe("CalendarStore", () => {
     expect(reenabled?.nextFireAt).toBe(MAR10_0900)
   })
 
-  test("update patches permissionMode and leaves untouched fields alone", async () => {
+  test("update patches the responsible agent and leaves untouched fields alone", async () => {
     const { before, after } = await withDb((db) =>
       Effect.gen(function* () {
         const before = yield* CalendarStore.create(
           db,
-          { recurrence: daily9, prompt: "keep me", title: "Keep", permissionMode: "bypass" },
+          { recurrence: daily9, prompt: "keep me", title: "Keep", agent: "nova" },
           MAR10_0800,
         )
-        const after = yield* CalendarStore.update(db, before.id, { permissionMode: "plan" }, MAR10_0800)
+        const after = yield* CalendarStore.update(db, before.id, { agent: "theron" }, MAR10_0800)
         return { before, after }
       }),
     )
-    expect(before.permissionMode).toBe("bypass")
-    expect(after?.permissionMode).toBe("plan")
+    expect(before.agent).toBe("nova")
+    expect(after?.agent).toBe("theron")
     // A one-field patch must not clobber the rest.
     expect(after?.prompt).toBe("keep me")
     expect(after?.title).toBe("Keep")

@@ -4432,6 +4432,9 @@ export type ConfigInfo = {
   provider_media_limit?: {
     [key: string]: number
   }
+  provider_repetition_floor?: {
+    [key: string]: boolean
+  }
   provider_route_profile?: {
     [key: string]: {
       promptRatios: Array<number>
@@ -6085,9 +6088,6 @@ export type CalendarSchedule = {
   tzOffsetMin: number
   prompt: string
   agent: string | null
-  model: string | null
-  location: string | null
-  permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo" | null
   enabled: boolean
   nextFireAt: number | null
   lastFiredAt: number | null
@@ -6101,9 +6101,6 @@ export type CalendarCreateInput = {
   tzOffsetMin?: number
   prompt: string
   agent?: string
-  model?: string
-  location?: string
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   enabled?: boolean
 }
 
@@ -6113,9 +6110,6 @@ export type CalendarUpdateInput = {
   tzOffsetMin?: number
   prompt?: string
   agent?: string | null
-  model?: string | null
-  location?: string | null
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo" | null
   enabled?: boolean
 }
 

@@ -1,14 +1,13 @@
 import { Context, Schema } from "effect"
-import { PermissionMode } from "@novaclaw/schema/session-message"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
 // The Calendar / cron-session-creator HTTP surface. Schedules and fire
 // history are INSTANCE-GLOBAL: listing, removal and history never acquire a location. The two write
-// endpoints do acquire the request's location so a named agent/model can be checked where the caller
-// is working when the schedule does not pin its own folder. Backed by CalendarStore
-// (core/schedule/store.ts); the CalendarScheduler poll loop fires due schedules into new goal-oriented
-// sessions. `recurrence` is a structured discriminated union (never a cron string — anti-obscurantist).
+// endpoints do acquire the request's location so a named responsible agent can be checked where the
+// caller is working. Backed by CalendarStore (core/schedule/store.ts); the CalendarScheduler poll loop
+// fires due schedules into new goal-oriented sessions. `recurrence` is a structured discriminated union
+// (never a cron string — anti-obscurantist).
 
 /**
  * ─── THE RUNNABLE DOMAIN ─────────────────────────────────────────────────────────────────────────
@@ -71,18 +70,6 @@ export const Schedule = Schema.Struct({
   tzOffsetMin: TzOffsetMin,
   prompt: Schema.String,
   agent: Schema.NullOr(Schema.String),
-  model: Schema.NullOr(Schema.String),
-  location: Schema.NullOr(Schema.String),
-  /**
-   * 🔴 The SAME closed set the create/update payloads take, and that is the whole point: a decode
-   * guarantee has a DIRECTION, and this one used to exist only inbound. Declared as
-   * `Schema.String` here, the vocabulary the runner switches on was unenforceable on the way out —
-   * a generated client's `Schedule.permissionMode` could not be assigned to
-   * `CreateInput.permissionMode`, so round-tripping a fetched schedule through PATCH did not
-   * typecheck, and any row not written through this contract read back as a mode no client could
-   * map. One symbol on both sides is what makes the two impossible to drift apart.
-   */
-  permissionMode: Schema.NullOr(PermissionMode),
   enabled: Schema.Boolean,
   nextFireAt: Schema.NullOr(Schema.Finite),
   lastFiredAt: Schema.NullOr(Schema.Finite),
@@ -106,10 +93,6 @@ export const CreateInput = Schema.Struct({
   tzOffsetMin: Schema.optional(TzOffsetMin),
   prompt: Schema.String,
   agent: Schema.optional(Schema.String),
-  model: Schema.optional(Schema.String),
-  location: Schema.optional(Schema.String),
-  /** The kernel's own literal set, so this cannot drift from what the runner accepts. */
-  permissionMode: Schema.optional(PermissionMode),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
 
@@ -121,10 +104,6 @@ const UpdateInput = Schema.Struct({
   tzOffsetMin: Schema.optional(TzOffsetMin),
   prompt: Schema.optional(Schema.String),
   agent: Schema.optional(Schema.NullOr(Schema.String)),
-  model: Schema.optional(Schema.NullOr(Schema.String)),
-  location: Schema.optional(Schema.NullOr(Schema.String)),
-  // Same closed vocabulary as create; `null` clears the override.
-  permissionMode: Schema.optional(Schema.NullOr(PermissionMode)),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.UpdateInput" })
 
@@ -177,7 +156,7 @@ export const makeCalendarGroup = <LocationId extends HttpApiMiddleware.AnyId, Lo
             identifier: "v2.calendar.schedule.update",
             summary: "Update a calendar schedule",
             description:
-              "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
+              "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.",
           }),
         ),
     )

@@ -3,8 +3,7 @@ import { instanceFetch } from "@/utils/instance-fetch"
 
 // Raw-fetch client for /api/calendar/schedule. Schedules, removal and fire history are
 // instance-global. Create/update additionally carry the current server-side directory as request
-// routing: it lets the server validate an unpinned task against the ambient roster/catalog without
-// turning that routing directory into the schedule's own pinned `location`.
+// routing: it lets the server validate the responsible agent against the ambient roster.
 //
 // ⚠️ Base URL, auth, and fault decoding all live in `utils/instance-fetch.ts`; nothing HTTP-shaped
 // belongs in this file. It used to say these routes are "NOT in the generated SDK" — measured false
@@ -30,9 +29,6 @@ export interface Schedule {
   readonly tzOffsetMin: number
   readonly prompt: string
   readonly agent: string | null
-  readonly model: string | null
-  readonly location: string | null
-  readonly permissionMode: string | null
   readonly enabled: boolean
   readonly nextFireAt: number | null
   readonly lastFiredAt: number | null
@@ -56,9 +52,6 @@ export interface CreateScheduleInput {
   readonly tzOffsetMin?: number
   readonly prompt: string
   readonly agent?: string
-  readonly model?: string
-  readonly location?: string
-  readonly permissionMode?: string
   readonly enabled?: boolean
 }
 
@@ -83,9 +76,6 @@ export interface UpdateScheduleInput {
   readonly tzOffsetMin?: number
   readonly prompt?: string
   readonly agent?: string | null
-  readonly model?: string | null
-  readonly location?: string | null
-  readonly permissionMode?: string | null
   readonly enabled?: boolean
 }
 
