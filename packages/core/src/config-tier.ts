@@ -165,6 +165,10 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // the image cap: a wrong (or stale) row costs one parameter on one endpoint and is undone by
   // deleting the entry. It grants nothing.
   provider_repetition_floor: "operational",
+  // The session header an endpoint's own 400 named. OPERATIONAL for the same reason: a stale row
+  // costs one header on one endpoint and is undone by deleting the entry, and a missing row simply
+  // re-learns on the next refusal. It grants nothing — the header carries the session's own id.
+  provider_session_affinity: "operational",
   // Bounded measurements that make prompt packing conservative for one exact model/server route.
   // A wrong row can only spend extra context or be deleted to restore defaults; it grants nothing.
   provider_route_profile: "operational",

@@ -1,6 +1,7 @@
 export * as SessionRunnerModel from "./model"
 
 import { makeLocationNode } from "../../effect/app-node"
+import { Endpoint } from "./endpoint"
 import { splitModelSampling } from "./sampling-split"
 import { RepetitionFloor, withRepetitionFloor } from "./repetition-floor"
 import { ModelHealth } from "./model-health"
@@ -304,6 +305,14 @@ export interface Interface {
    * covers this run, and a store that will not write must not fail the turn that just recovered.
    */
   readonly rememberRepetitionFloor: (endpoint: string | undefined) => Effect.Effect<void>
+  /**
+   * Remember that an ENDPOINT requires a per-conversation session header, and which header.
+   *
+   * Endpoint-keyed like `rememberRepetitionFloor`, and learned from the endpoint's own 400 rather
+   * than compiled in. Best-effort: the in-process map already covers the recovery retry, and a store
+   * that will not write must not fail the turn that just recovered.
+   */
+  readonly rememberSessionAffinity: (endpoint: string | undefined, header: string) => Effect.Effect<void>
   /** Catalog identity of the model `resolve` lands on — fallbacks included. Unlike the wire route's
    * `model.id`, this is the stable user-facing id and is therefore the identity model-routing config
    * matches, and the identity `ModelHealth` files a verdict under. */
@@ -546,6 +555,8 @@ export const layerWith = (
   rememberImageLimit: Interface["rememberImageLimit"] = () => Effect.void,
   /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
   rememberRepetitionFloor: Interface["rememberRepetitionFloor"] = () => Effect.void,
+  /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
+  rememberSessionAffinity: Interface["rememberSessionAffinity"] = () => Effect.void,
   /** ⚠️ Added LAST. Test seams without the shared recovery store remain inert. */
   providerFailed: Interface["providerFailed"] = () => Effect.succeed(false),
   providerSucceeded: Interface["providerSucceeded"] = () => Effect.void,
@@ -576,6 +587,7 @@ export const layerWith = (
       learnedImageLimit,
       rememberImageLimit,
       rememberRepetitionFloor,
+      rememberSessionAffinity,
       taxonomy,
       retryAttempts,
       capabilities,
@@ -938,14 +950,14 @@ export const fromCatalogModel = (
 /**
  * The route for a turn, with the conversation's identity attached where the endpoint requires one.
  *
- * 🔴 **This is the one seam that knows both the session id and the endpoint URL, so it is where the
- * OpenCode Go session header is applied** (`ProviderSession`). Every request this route produces
- * inherits it — the ordinary turn, compaction, reasoning phases, short answers and titles — because
- * it rides the route's DEFAULTS rather than one hand-built request. Putting it on a single request
- * at the turn's assembly site left the other inference paths (`compaction.ts`, `short-answer.ts`)
- * failing at the gate with the same 400 the fix exists to clear.
+ * 🔴 **This is the one seam that knows both the session id and the endpoint URL, so it is where a
+ * learned session-affinity header is applied** (`ProviderSession`). Every request this route
+ * produces inherits it — the ordinary turn, compaction, reasoning phases, short answers and titles —
+ * because it rides the route's DEFAULTS rather than one hand-built request. Putting it on a single
+ * request at the turn's assembly site would leave the other inference paths (`compaction.ts`,
+ * `short-answer.ts`) failing at the gate with the same 400 this exists to clear.
  *
- * `session.id` is exactly the value the gate wants: ASCII, ≪256 bytes, stable for the whole
+ * `session.id` is exactly the value such a gate wants: ASCII, ≪256 bytes, stable for the whole
  * conversation. A request assembled with no session (document ingestion, a community reply) falls
  * back to one bounded session-less identity rather than a fresh UUID per request.
  */
@@ -956,6 +968,8 @@ export const resolve = (
   measuredToolChannel?: "native" | "prompted",
   /** The endpoint's learned refusal of the unattended repetition floor (`RepetitionFloor`). */
   disableRepetitionFloor?: boolean,
+  /** The session header this endpoint's own 400 named (`ProviderSession`), or `undefined`. */
+  sessionAffinityHeader?: string,
 ) =>
   withVariant(model, session.model?.variant).pipe(
     Effect.flatMap((model) =>
@@ -963,7 +977,7 @@ export const resolve = (
         model,
         credential,
         measuredToolChannel,
-        ProviderSession.headersFor({ url: model.api.url, sessionID: session.id }),
+        ProviderSession.headersFor({ header: sessionAffinityHeader, sessionID: session.id }),
         disableRepetitionFloor,
       ),
     ),
@@ -1152,11 +1166,28 @@ export const locationLayer = Layer.effect(
      * that will not read means "not disabled", which keeps the floor exactly as before the row.
      */
     const repetitionFloorDisabled = Effect.fnUntraced(function* (url: string | undefined) {
-      const key = RepetitionFloor.endpointKey(url)
+      const key = Endpoint.endpointKey(url)
       if (key === undefined) return false
       const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
       const stored = all["provider_repetition_floor"]
       return typeof stored === "object" && stored !== null && (stored as Record<string, unknown>)[key] === true
+    })
+
+    /**
+     * The session header this ENDPOINT's own 400 named, from this process's memory or the store.
+     *
+     * Read the same best-effort way as `repetitionFloorDisabled`: a store that will not read means
+     * "not known yet", which leaves the endpoint exactly as it was before the row — the request goes
+     * without the header, the endpoint refuses once, and the recovery arm learns it.
+     */
+    const sessionAffinityHeader = Effect.fnUntraced(function* (url: string | undefined) {
+      const key = Endpoint.endpointKey(url)
+      if (key === undefined) return undefined
+      const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
+      const stored = all["provider_session_affinity"]
+      const persisted =
+        typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>)[key] : undefined
+      return ProviderSession.affinityHeaderFor(url, typeof persisted === "string" ? persisted : undefined)
     })
 
     /**
@@ -1291,6 +1322,7 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
           yield* measuredChannel(selected),
           yield* repetitionFloorDisabled(selected.api.url),
+          yield* sessionAffinityHeader(selected.api.url),
         )
         return {
           model: routed,
@@ -1336,6 +1368,7 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
           undefined,
           yield* repetitionFloorDisabled(selected.api.url),
+          yield* sessionAffinityHeader(selected.api.url),
         )
       }),
       // Models item (c): best-effort class lookup for the system-prompt scaffold and recall budget.
@@ -1391,7 +1424,7 @@ export const locationLayer = Layer.effect(
        * a malformed URL has no identity and is not written.
        */
       rememberRepetitionFloor: Effect.fn("SessionRunnerModel.rememberRepetitionFloor")(function* (endpoint) {
-        const key = RepetitionFloor.endpointKey(endpoint)
+        const key = Endpoint.endpointKey(endpoint)
         if (key === undefined) return
         const all: Record<string, unknown> = yield* settings
           .all()
@@ -1399,6 +1432,21 @@ export const locationLayer = Layer.effect(
         const current = all["provider_repetition_floor"]
         const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
         yield* settings.set("provider_repetition_floor", { ...rows, [key]: true }).pipe(Effect.ignore)
+      }),
+      /**
+       * Remember one endpoint's required session header, merging rather than replacing the other
+       * endpoints' rows. Keyed by normalized URL, like `rememberRepetitionFloor`; a malformed URL has
+       * no identity and is not written.
+       */
+      rememberSessionAffinity: Effect.fn("SessionRunnerModel.rememberSessionAffinity")(function* (endpoint, header) {
+        const key = Endpoint.endpointKey(endpoint)
+        if (key === undefined) return
+        const all: Record<string, unknown> = yield* settings
+          .all()
+          .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+        const current = all["provider_session_affinity"]
+        const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+        yield* settings.set("provider_session_affinity", { ...rows, [key]: header }).pipe(Effect.ignore)
       }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
@@ -1730,6 +1778,7 @@ export const locationLayer = Layer.effect(
             connection ? yield* integrations.connection.resolve(connection) : undefined,
             yield* measuredChannel(placement.model),
             yield* repetitionFloorDisabled(placement.model.api.url),
+            yield* sessionAffinityHeader(placement.model.api.url),
           )
           // A pin resolves its own placement, so the catalog entry the route was built from is
           // `placement.model` — which may be a DIFFERENT placement of the same catalog model than

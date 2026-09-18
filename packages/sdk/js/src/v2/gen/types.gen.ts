@@ -4435,6 +4435,9 @@ export type ConfigInfo = {
   provider_repetition_floor?: {
     [key: string]: boolean
   }
+  provider_session_affinity?: {
+    [key: string]: string
+  }
   provider_route_profile?: {
     [key: string]: {
       promptRatios: Array<number>

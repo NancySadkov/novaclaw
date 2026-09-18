@@ -195,6 +195,9 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       // Bounded measurements for one exact provider route. A bad row only reserves extra prompt
       // room or is ignored, and deleting it restores the conservative built-in estimate.
       "provider_route_profile",
+      // The session header an endpoint's own 400 named. Operational for the same reason: a stale row
+      // costs one header on one endpoint, deleting it re-learns, and it grants nothing.
+      "provider_session_affinity",
       "tool_output",
     ])
 

@@ -406,16 +406,18 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
-  // ── OPENCODE GO SESSION AFFINITY ───────────────────────────────────────────────────────────────
+  // ── LEARNED SESSION AFFINITY ──────────────────────────────────────────────────────────────────
   //
-  // The gateway rejects every inference request without a session identity, and the value must stay
-  // stable for the conversation. It rides the route DEFAULTS, applied at `resolve` — the one seam
-  // that knows both the session id and the endpoint — so every request derived from this resolution
-  // (compaction, short answers, titles, the reasoning phase) carries it, not just the turn's own
-  // hand-built request. See `doc/oc-session.md` and `provider-session.ts`.
-  describe("OpenCode Go conversation affinity", () => {
-    const goModel = ModelV2.Info.make({
-      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://opencode.ai/zen/go/v1" }),
+  // A gateway that routes by conversation rejects every inference request without a session identity,
+  // and the value must stay stable for the conversation. The HEADER is learned from the endpoint's
+  // own 400 (`provider-session.ts`), never compiled in, and it rides the route DEFAULTS applied at
+  // `resolve` — the one seam that knows both the session id and the endpoint — so every request
+  // derived from this resolution (compaction, short answers, titles, the reasoning phase) carries it,
+  // not just the turn's own hand-built request.
+  describe("learned session affinity", () => {
+    afterEach(() => ProviderSession.clearAffinity())
+    const gatewayModel = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://gateway.example/v1" }),
       request: { headers: { "x-config": "kept" }, body: {} },
     })
     const sessionWith = (id: string) =>
@@ -430,41 +432,56 @@ describe("SessionRunnerModel", () => {
         location: { directory: AbsolutePath.make("/project") },
       })
 
-    it.effect("the conversation's own id reaches the route defaults, above configured headers", () =>
+    it.effect("a learned header reaches the route defaults with the conversation's own id", () =>
       Effect.gen(function* () {
-        const resolved = yield* SessionRunnerModel.resolve(sessionWith("ses_go_conversation"), goModel)
+        // Nothing learned yet: the endpoint gets exactly its configured headers and no affinity.
+        const before = yield* SessionRunnerModel.resolve(sessionWith("ses_conversation"), gatewayModel)
+        expect(before.route.defaults.headers).not.toHaveProperty("x-acme-session")
+
+        // What the layer reads out of the endpoint-keyed store and this process's own memory, then
+        // hands to `resolve` as the learned header.
+        ProviderSession.rememberAffinity("https://gateway.example/v1", "x-acme-session")
+        const header = ProviderSession.affinityHeaderFor("https://gateway.example/v1", undefined)
+        const resolved = yield* SessionRunnerModel.resolve(
+          sessionWith("ses_conversation"),
+          gatewayModel,
+          undefined,
+          undefined,
+          undefined,
+          header,
+        )
         expect(resolved.route.defaults.headers).toMatchObject({
           "x-config": "kept",
-          "x-opencode-session": "ses_go_conversation",
+          "x-acme-session": "ses_conversation",
         })
         // The member `resolveRequestOptions` merges onto the outbound request.
         expect(resolved.route.defaults.http?.headers).toMatchObject({
-          "x-opencode-session": "ses_go_conversation",
+          "x-acme-session": "ses_conversation",
         })
       }),
     )
 
-    it.effect("leaves a non-Go endpoint with exactly its configured headers", () =>
+    it.effect("leaves an endpoint with no learned header exactly as configured", () =>
       Effect.gen(function* () {
         const local = ModelV2.Info.make({
           ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://127.0.0.1:8000/v1" }),
           request: { headers: { "x-config": "kept" }, body: {} },
         })
         const resolved = yield* SessionRunnerModel.resolve(sessionWith("ses_local"), local)
-        expect(resolved.route.defaults.headers).not.toHaveProperty(ProviderSession.OPENCODE_SESSION_HEADER)
+        expect(resolved.route.defaults.headers).not.toHaveProperty("x-acme-session")
       }),
     )
   })
 
   // ── THE ENDPOINT'S LEARNED repetition_penalty REFUSAL ─────────────────────────────────────────
   //
-  // A strict hosted /chat/completions upstream (measured: OpenCode Go) refuses the whole body over
-  // the unattended floor's `repetition_penalty`. Once the endpoint has said so — in the persisted
-  // store the service reads, or this process's own memory — the parameter must not be sent.
+  // A strict hosted /chat/completions upstream refuses the whole body over the unattended floor's
+  // `repetition_penalty`. Once the endpoint has said so — in the persisted store the service reads,
+  // or this process's own memory — the parameter must not be sent.
   describe("the endpoint's learned repetition_penalty refusal", () => {
     afterEach(() => RepetitionFloor.clearFloorRejections())
     const goModel = ModelV2.Info.make({
-      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://opencode.ai/zen/go/v1" }),
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://gateway.example/v1" }),
       request: { headers: {}, body: {} },
     })
 
@@ -478,7 +495,7 @@ describe("SessionRunnerModel", () => {
         expect(persisted.route.defaults.http?.body).not.toHaveProperty("repetition_penalty")
 
         // This process's own memory, which covers the retry before the store round-trips.
-        RepetitionFloor.rememberFloorRejected("https://opencode.ai/zen/go/v1")
+        RepetitionFloor.rememberFloorRejected("https://gateway.example/v1")
         const remembered = yield* SessionRunnerModel.fromCatalogModel(goModel)
         expect(remembered.route.defaults.http?.body).not.toHaveProperty("repetition_penalty")
       }),
@@ -486,7 +503,7 @@ describe("SessionRunnerModel", () => {
 
     it.effect("leaves a different endpoint's floor untouched", () =>
       Effect.gen(function* () {
-        RepetitionFloor.rememberFloorRejected("https://opencode.ai/zen/go/v1")
+        RepetitionFloor.rememberFloorRejected("https://gateway.example/v1")
         const local = ModelV2.Info.make({
           ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://127.0.0.1:8000/v1" }),
           request: { headers: {}, body: {} },

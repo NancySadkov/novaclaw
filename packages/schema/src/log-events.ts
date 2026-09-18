@@ -2078,14 +2078,34 @@ export const EVENTS = {
    * The endpoint named `repetition_penalty` as an unknown field, and we stopped sending the
    * unattended floor to it.
    *
-   * Measured 2026-09-18 (OpenCode Go): a strict hosted upstream refuses the whole request over the
-   * field (`invalid request body: json: unknown field "repetition_penalty"`). Untreated that is a
-   * dead end on every turn; this event is how a reader sees the endpoint-scoped recovery happen
-   * rather than inferring it from two provider attempts.
+   * Measured 2026-09-18: a strict hosted upstream refuses the whole request over the field
+   * (`invalid request body: json: unknown field "repetition_penalty"`). Untreated that is a dead end
+   * on every turn; this event is how a reader sees the endpoint-scoped recovery happen rather than
+   * inferring it from two provider attempts.
    */
   "session.repetition.disabled": {
     level: "info",
     message: "endpoint rejects repetition_penalty; the unattended floor is now omitted",
+    attributes: {
+      "session.id": "correlate",
+      "provider.endpoint": "text",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
+   * The endpoint refused an inference request because it carried no session identity, and we learned
+   * the header it wants.
+   *
+   * A gateway that routes by conversation gate-keeps every inference request until one arrives; the
+   * header name and the endpoint are facts about that SERVER, so they are learned from its own 400
+   * and remembered per endpoint rather than compiled in. Untreated the first request of every
+   * conversation is a dead end; this event is how a reader sees the endpoint-scoped recovery happen
+   * rather than inferring it from two provider attempts.
+   */
+  "session.affinity.enabled": {
+    level: "info",
+    message: "endpoint requires a session header; the learned header is now sent",
     attributes: {
       "session.id": "correlate",
       "provider.endpoint": "text",

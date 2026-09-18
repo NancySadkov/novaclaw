@@ -92,6 +92,10 @@ export const SETTINGS_KEYS = [
   "provider_capability",
   "provider_media_limit",
   "provider_repetition_floor",
+  // Machine-written: the session header an endpoint's own 400 named. Learned per endpoint for the
+  // same reason as the floor above — a declared key cannot crash-loop the boot, and a still-working
+  // model can delete the row over HTTP to re-learn it.
+  "provider_session_affinity",
   "provider_route_profile",
   // Machine-written reconnect circuit shared by fresh session workers. A successful request clears
   // its row; failures retain their exponential backoff across processes and app restarts.

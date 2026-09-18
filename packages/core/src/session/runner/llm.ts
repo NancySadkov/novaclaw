@@ -86,6 +86,8 @@ import { SpawnTool } from "../../tool/spawn"
 import { WaitTool } from "../../tool/wait"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { Endpoint } from "./endpoint"
+import { ProviderSession } from "./provider-session"
 import { RepetitionFloor } from "./repetition-floor"
 import { SessionMaintenance } from "./maintenance"
 import { Scratch } from "../../scratch"
@@ -1195,6 +1197,9 @@ export const layer = Layer.effect(
       // The endpoint told us it does not know `repetition_penalty`; re-resolve this same turn with
       // the unattended floor omitted. Distinct from the image arm only in what it drops.
       | { readonly _tag: "RetryWithoutRepetitionFloor"; readonly step: number }
+      // The endpoint refused the request for a missing session identity; re-resolve this same turn
+      // with the header its own 400 named. Distinct from the repetition arm only in what it ADDS.
+      | { readonly _tag: "RetryWithSessionAffinity"; readonly step: number }
       | { readonly _tag: "RetryOnReplacedModel"; readonly step: number }
 
     class TurnTransitionError extends Error {
@@ -1208,6 +1213,9 @@ export const layer = Layer.effect(
     /** Re-resolve the turn with the endpoint's rejected repetition floor omitted. */
     const retryWithoutRepetitionFloor = (step: number) =>
       new TurnTransitionError({ _tag: "RetryWithoutRepetitionFloor", step })
+    /** Re-resolve the turn with the session header the endpoint's own 400 named. */
+    const retryWithSessionAffinity = (step: number) =>
+      new TurnTransitionError({ _tag: "RetryWithSessionAffinity", step })
     /** The model this turn asked for is not served; the row now names another one. Re-run so the
      *  user gets an answer instead of a fault they have to act on. */
     const retryOnReplacedModel = (step: number) => new TurnTransitionError({ _tag: "RetryOnReplacedModel", step })
@@ -3434,9 +3442,41 @@ export const layer = Layer.effect(
               yield* models.rememberRepetitionFloor(endpoint).pipe(Effect.ignore)
               yield* Log.event("session.repetition.disabled", {
                 "session.id": session.id,
-                "provider.endpoint": RepetitionFloor.endpointKey(endpoint) ?? "unknown",
+                "provider.endpoint": Endpoint.endpointKey(endpoint) ?? "unknown",
               })
               return yield* Effect.die(retryWithoutRepetitionFloor(currentStep))
+            }
+          }
+          // 🔴 The endpoint refused the request for a missing session identity. That is evidence
+          // about the ENDPOINT, not a malformed request: some hosted gateways route by conversation
+          // and reject anything that carries no session header. Learn the header its own 400 named,
+          // then re-resolve the same turn with it applied — the endpoint-keyed store makes every
+          // later turn (and process) start with it, so this costs one extra request ONCE per endpoint
+          // rather than on every turn.
+          //
+          // ⚠️ Only recover on NEWS. Once this process knows, a second identical refusal is a
+          // different fault (or a gateway disagreeing with its own message); re-running on it would
+          // be an unbounded loop dressed as a recovery, so it falls through and reports the real one.
+          if (
+            failure !== undefined &&
+            !publisher.hasAssistantStarted() &&
+            ProviderSession.rejectsMissingSession(String(failure.message ?? ""))
+          ) {
+            const endpoint = model.route.endpoint.baseURL
+            const key = Endpoint.endpointKey(endpoint)
+            if (key !== undefined && !ProviderSession.isAffinityKnown(endpoint)) {
+              const header =
+                ProviderSession.requiredHeaderFrom(String(failure.message ?? "")) ??
+                ProviderSession.FALLBACK_AFFINITY_HEADER
+              ProviderSession.rememberAffinity(endpoint, header)
+              // Best-effort: the in-process map already covers this run, and a store that will not
+              // write must not fail the turn that just recovered.
+              yield* models.rememberSessionAffinity(endpoint, header).pipe(Effect.ignore)
+              yield* Log.event("session.affinity.enabled", {
+                "session.id": session.id,
+                "provider.endpoint": key,
+              })
+              return yield* Effect.die(retryWithSessionAffinity(currentStep))
             }
           }
           const recoveryPlan =

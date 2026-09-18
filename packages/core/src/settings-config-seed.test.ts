@@ -83,7 +83,10 @@ const VALID: Record<string, unknown> = {
   // cap is known, which lowers byte-identically to an endpoint that never had one.
   provider_media_limit: { "spark-holo/holo3.1": 3 },
   // Endpoints that refuse the unattended repetition floor, keyed by normalized endpoint URL.
-  provider_repetition_floor: { "https://opencode.ai/zen/go/v1": true },
+  provider_repetition_floor: { "https://gateway.example/v1": true },
+  // Endpoints that require a per-conversation session header, keyed by normalized endpoint URL; the
+  // value is the header the endpoint's own 400 named.
+  provider_session_affinity: { "https://gateway.example/v1": "x-session-id" },
   provider_route_profile: {
     '["spark-holo","holo3.1","http://127.0.0.1:8010/v1","openai-chat","openai-chat"]': {
       promptRatios: [1.02, 1.08],

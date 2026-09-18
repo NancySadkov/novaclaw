@@ -659,8 +659,26 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .annotate({
       description:
         'Endpoints that reject "repetition_penalty", keyed by normalized endpoint URL — e.g. ' +
-        '{"https://opencode.ai/zen/go/v1":true}. Learned from the endpoint\'s own 400; absent means ' +
+        '{"https://gateway.example/v1":true}. Learned from the endpoint\'s own 400; absent means ' +
         "the unattended repetition floor is sent.",
+    }),
+
+  /**
+   * Session-affinity headers a gateway requires, keyed by normalized endpoint URL.
+   *
+   * 🔴 Learned from the endpoint's own 400 (`MissingSessionID`) and stored per endpoint, exactly like
+   * `provider_repetition_floor`: which header a hosted gateway accepts is a property of THAT server,
+   * never compiled into the product. The value is the header the 400 named, so a gateway that
+   * publishes one gets exactly it. Deleting the row makes the next turn re-learn it, which is the
+   * self-healing path.
+   */
+  provider_session_affinity: Schema.Record(Schema.String, Schema.String)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Endpoints that require a per-conversation session header, keyed by normalized endpoint URL; " +
+        'e.g. {"https://gateway.example/v1":"x-session-id"}. The value is the header name the ' +
+        "endpoint's own 400 named. Learned; absent means no session header is sent.",
     }),
 
   /**

@@ -37676,6 +37676,12 @@
               "type": "boolean"
             }
           },
+          "provider_session_affinity": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "provider_route_profile": {
             "type": "object",
             "additionalProperties": {

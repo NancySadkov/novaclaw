@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { ModelV2 } from "../../model"
+import { endpointKey } from "./endpoint"
 import {
   clearFloorRejections,
   DEFAULT_REPETITION_PENALTY,
-  endpointKey,
   isFloorRejected,
   rejectsRepetitionPenalty,
   rememberFloorRejected,
@@ -39,8 +39,8 @@ describe("withRepetitionFloor", () => {
 })
 
 /**
- * The measured contract from OpenCode Go: a strict hosted upstream refuses the whole body over the
- * unknown field. These pin the reading and the endpoint-scoped memory the runner recovers through.
+ * The measured contract: a strict hosted upstream refuses the whole body over the unknown field.
+ * These pin the reading and the endpoint-scoped memory the runner recovers through.
  */
 describe("repetition floor rejection", () => {
   afterEach(() => clearFloorRejections())
@@ -58,17 +58,17 @@ describe("repetition floor rejection", () => {
   })
 
   it("normalizes one endpoint's identity and refuses a malformed URL", () => {
-    expect(endpointKey("https://OpenCode.ai/zen/go/v1/")).toBe("https://opencode.ai/zen/go/v1")
-    expect(endpointKey("https://opencode.ai/zen/go/v1?x=1")).toBe("https://opencode.ai/zen/go/v1")
+    expect(endpointKey("https://Gateway.example/v1/")).toBe("https://gateway.example/v1")
+    expect(endpointKey("https://gateway.example/v1?x=1")).toBe("https://gateway.example/v1")
     expect(endpointKey("not a url")).toBeUndefined()
     expect(endpointKey(undefined)).toBeUndefined()
   })
 
   it("remembers a refusal for exactly that endpoint", () => {
-    expect(isFloorRejected("https://opencode.ai/zen/go/v1")).toBe(false)
-    rememberFloorRejected("https://opencode.ai/zen/go/v1/")
+    expect(isFloorRejected("https://gateway.example/v1")).toBe(false)
+    rememberFloorRejected("https://gateway.example/v1/")
     // Trailing slash is the same endpoint; a sibling is not.
-    expect(isFloorRejected("https://opencode.ai/zen/go/v1")).toBe(true)
+    expect(isFloorRejected("https://gateway.example/v1")).toBe(true)
     expect(isFloorRejected("https://api.deepseek.com/v1")).toBe(false)
     // A URL with no identity is never remembered, so the floor keeps applying (the safe direction).
     rememberFloorRejected("not a url")
