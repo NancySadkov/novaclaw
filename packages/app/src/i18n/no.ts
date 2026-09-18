@@ -10,7 +10,6 @@ export const dict = {
   "command.category.terminal": "Terminal",
   "command.category.model": "Modell",
   "command.category.mcp": "MCP",
-  "command.category.permissions": "Tillatelser",
   "command.category.settings": "Innstillinger",
 
   "theme.scheme.system": "System",
@@ -46,8 +45,6 @@ export const dict = {
   "command.model.variant.cycle.description": "Bytt til neste innsatsnivå",
   "command.prompt.mode.shell": "Shell",
   "command.prompt.mode.normal": "Prompt",
-  "command.permissions.autoaccept.enable": "Aksepter tillatelser automatisk",
-  "command.permissions.autoaccept.disable": "Stopp automatisk akseptering av tillatelser",
   "command.session.undo": "Angre",
   "command.session.undo.description": "Angre siste melding",
   "command.session.redo": "Gjør om",
@@ -90,7 +87,6 @@ export const dict = {
   "common.loading": "Laster",
   "common.loading.ellipsis": "...",
   "common.cancel": "Avbryt",
-  "common.submit": "Send inn",
   "common.save": "Lagre",
   "common.saving": "Lagrer...",
   "common.default": "Standard",
@@ -100,13 +96,9 @@ export const dict = {
   "prompt.placeholder.simple": "Spør om hva som helst...",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-  "prompt.mode.shell.exit": "ESC for å avslutte",
 
 
   "prompt.dropzone.label": "Slipp bilder, PDF-er eller tekstfiler her",
-  "prompt.context.active": "aktiv",
-  "prompt.context.includeActiveFile": "Inkluder aktiv fil",
-  "prompt.context.removeActiveFile": "Fjern aktiv fil fra kontekst",
   "prompt.context.removeFile": "Fjern fil fra kontekst",
   "prompt.action.attachFile": "Legg ved fil",
   "prompt.attachment.remove": "Fjern vedlegg",
@@ -130,7 +122,6 @@ export const dict = {
   "mcp.status.connected": "tilkoblet",
   "mcp.status.failed": "mislyktes",
   "mcp.status.needs_auth": "trenger autentisering",
-  "mcp.auth.clickToAuthenticate": "Klikk for å autentisere",
   "mcp.status.disabled": "deaktivert",
 
   "dialog.fork.empty": "Ingen meldinger å forgrene fra",
@@ -183,24 +174,8 @@ export const dict = {
   "context.breakdown.other": "Annet",
 
   "context.systemPrompt.title": "Systemprompt",
-  "context.rawMessages.title": "Rå meldinger",
 
-  "context.stats.session": "Sesjon",
   "context.stats.messages": "Meldinger",
-  "context.stats.provider": "Leverandør",
-  "context.stats.model": "Modell",
-  "context.stats.limit": "Kontekstgrense",
-  "context.stats.totalTokens": "Totalt antall tokens",
-  "context.stats.usage": "Forbruk",
-  "context.stats.inputTokens": "Input-tokens",
-  "context.stats.outputTokens": "Output-tokens",
-  "context.stats.reasoningTokens": "Resonnerings-tokens",
-  "context.stats.cacheTokens": "Cache-tokens (les/skriv)",
-  "context.stats.userMessages": "Brukermeldinger",
-  "context.stats.assistantMessages": "Assistentmeldinger",
-  "context.stats.totalCost": "Total kostnad",
-  "context.stats.sessionCreated": "Sesjon opprettet",
-  "context.stats.lastActivity": "Siste aktivitet",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Forbruk",
@@ -225,10 +200,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.permissions.autoaccept.on.title": "Aksepterer tillatelser automatisk",
-  "toast.permissions.autoaccept.on.description": "Forespørsler om tillatelse vil bli godkjent automatisk",
-  "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
-  "toast.permissions.autoaccept.off.description": "Forespørsler om tillatelse vil kreve godkjenning",
 
   "toast.model.none.title": "Ingen modell valgt",
   "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",
@@ -274,39 +245,24 @@ export const dict = {
   "error.chain.configInvalid": "Konfigurasjonsfilen på {{path}} er ugyldig",
   "error.chain.configInvalidWithMessage": "Konfigurasjonsfilen på {{path}} er ugyldig: {{message}}",
 
-  "notification.permission.title": "Tillatelse påkrevd",
 
   "notification.session.responseReady.title": "Svar klart",
   "notification.session.error.title": "Sesjonsfeil",
   "notification.session.error.fallbackDescription": "Det oppstod en feil",
 
-  "session.tab.session": "Sesjon",
   "session.tab.review": "Gjennomgang",
   "session.tab.context": "Kontekst",
   "session.panel.reviewAndFiles": "Gjennomgang og filer",
-  "session.review.filesChanged": "{{count}} filer endret",
   "session.review.change.one": "Endring",
   "session.review.change.other": "Endringer",
   "session.review.loadingChanges": "Laster endringer...",
-  "session.review.empty": "Ingen endringer i denne sesjonen ennå",
-  "session.review.noVcs": "Ingen Git-versjonskontrollsystem oppdaget, endringer vises ikke",
-  "session.review.noSnapshot":
-    "Snapshot-sporing er deaktivert i konfigurasjonen, så sesjonsendringer er ikke tilgjengelige",
   "session.review.noChanges": "Ingen endringer",
 
   "session.files.selectToOpen": "Velg en fil å åpne",
   "session.files.all": "Alle filer",
   "session.files.empty": "Ingen filer",
-  "session.files.binaryContent": "Binær fil (innhold kan ikke vises)",
 
-  "session.messages.renderEarlier": "Vis tidligere meldinger",
-  "session.messages.loadingEarlier": "Laster inn tidligere meldinger...",
-  "session.messages.loadEarlier": "Last inn tidligere meldinger",
-  "session.messages.loading": "Laster meldinger...",
-  "session.messages.jumpToLatest": "Hopp til nyeste",
 
-  "session.context.addToContext": "Legg til {{selection}} i kontekst",
-  "session.todo.title": "Oppgaver",
   "session.todo.collapse": "Skjul",
   "session.todo.expand": "Utvid",
   "session.revertDock.summary.one": "{{count}} tilbakestilt melding",
@@ -318,30 +274,11 @@ export const dict = {
   "session.new.title": "Bygg hva som helst",
   "session.new.worktree.main": "Hovedgren",
   "session.new.worktree.mainWithBranch": "Hovedgren ({{branch}})",
-  "session.new.lastModified": "Sist endret",
 
-  "session.header.search.placeholder": "Søk i {{project}}",
   "session.header.searchFiles": "Søk etter filer",
-  "session.header.openIn": "Åpne i",
-  "session.header.open.action": "Åpne {{app}}",
-  "session.header.open.ariaLabel": "Åpne i {{app}}",
-  "session.header.open.menu": "Åpne alternativer",
-  "session.header.open.copyPath": "Kopier bane",
 
 
-  "session.share.popover.title": "Publiser på nett",
-  "session.share.popover.description.shared":
-    "Denne sesjonen er offentlig på nettet. Den er tilgjengelig for alle med lenken.",
-  "session.share.popover.description.unshared":
-    "Del sesjonen offentlig på nettet. Den vil være tilgjengelig for alle med lenken.",
-  "session.share.action.share": "Del",
-  "session.share.action.publish": "Publiser",
-  "session.share.action.publishing": "Publiserer...",
-  "session.share.action.unpublish": "Avpubliser",
-  "session.share.action.unpublishing": "Avpubliserer...",
-  "session.share.action.view": "Vis",
   "session.share.copy.copied": "Kopiert",
-  "session.share.copy.copyLink": "Kopier lenke",
 
   "prompt.loading": "Laster prompt...",
   "terminal.loading": "Laster terminal...",
@@ -353,7 +290,6 @@ export const dict = {
     "Terminalforbindelsen ble avbrutt. Dette kan skje når serveren starter på nytt.",
 
   "common.closeTab": "Lukk fane",
-  "common.dismiss": "Avvis",
   "common.requestFailed": "Forespørsel mislyktes",
   "common.moreOptions": "Flere alternativer",
   "common.learnMore": "Lær mer",
@@ -482,10 +418,6 @@ export const dict = {
   "settings.permissions.tool.websearch.title": "Websøk",
   "settings.permissions.tool.websearch.description": "Søk på nettet",
 
-  "session.delete.failed.title": "Kunne ikke slette sesjon",
-  "session.delete.title": "Slett sesjon",
-  "session.delete.confirm": 'Slette sesjonen "{{name}}"?',
-  "session.delete.button": "Slett sesjon",
 
   "workspace.new": "Nytt arbeidsområde",
   "workspace.type.local": "lokal",
@@ -504,10 +436,6 @@ export const dict = {
   "dialog.server.add.usernamePlaceholder": "brukernavn",
   "dialog.server.add.passwordPlaceholder": "passord",
   "server.row.noUsername": "inget brukernavn",
-  "session.review.noVcs.createGit.title": "Opprett et Git-depot",
-  "session.review.noVcs.createGit.description": "Spor, gjennomgå og angre endringer i dette prosjektet",
-  "session.review.noVcs.createGit.actionLoading": "Oppretter Git-depot...",
-  "session.review.noVcs.createGit.action": "Opprett Git-depot",
   "session.todo.progress": "{{done}} av {{total}} oppgaver fullført",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Filutforsker",

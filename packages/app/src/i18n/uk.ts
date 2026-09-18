@@ -11,7 +11,6 @@ export const dict = {
   "command.category.terminal": "Термінал",
   "command.category.model": "Модель",
   "command.category.mcp": "MCP",
-  "command.category.permissions": "Дозволи",
   "command.category.settings": "Налаштування",
 
   "theme.scheme.system": "Системна",
@@ -47,8 +46,6 @@ export const dict = {
   "command.model.variant.cycle.description": "Перемкнути на наступний рівень зусилля",
   "command.prompt.mode.shell": "Команда",
   "command.prompt.mode.normal": "Запит",
-  "command.permissions.autoaccept.enable": "Автоматично приймати дозволи",
-  "command.permissions.autoaccept.disable": "Зупинити автоматичне прийняття дозволів",
   "command.session.undo": "Скасувати",
   "command.session.undo.description": "Скасувати останнє повідомлення",
   "command.session.redo": "Повторити",
@@ -91,7 +88,6 @@ export const dict = {
   "common.loading": "Завантаження",
   "common.loading.ellipsis": "...",
   "common.cancel": "Скасувати",
-  "common.submit": "Надіслати",
   "common.save": "Зберегти",
   "common.saving": "Збереження...",
   "common.default": "За замовчуванням",
@@ -101,15 +97,11 @@ export const dict = {
   "prompt.placeholder.simple": "Запитайте що завгодно...",
   "prompt.mode.shell": "Команда",
   "prompt.mode.normal": "Запит",
-  "prompt.mode.shell.exit": "esc для виходу",
   "session.child.promptDisabled": "Сесії підагентів не можна надсилати запити.",
   "session.child.backToParent": "Назад до основної сесії.",
 
 
   "prompt.dropzone.label": "Перетягніть сюди зображення, PDF або текстові файли",
-  "prompt.context.active": "активний",
-  "prompt.context.includeActiveFile": "Включити активний файл",
-  "prompt.context.removeActiveFile": "Видалити активний файл з контексту",
   "prompt.context.removeFile": "Видалити файл з контексту",
   "prompt.action.attachFile": "Додати файли",
   "prompt.attachment.remove": "Видалити вкладення",
@@ -134,7 +126,6 @@ export const dict = {
   "mcp.status.failed": "помилка",
   "mcp.status.needs_auth": "потрібна авторизація",
   "mcp.status.disabled": "вимкнено",
-  "mcp.auth.clickToAuthenticate": "Натисніть для автентифікації",
 
   "dialog.fork.empty": "Немає повідомлень для відгалуження",
 
@@ -195,24 +186,8 @@ export const dict = {
   "context.breakdown.other": "Інше",
 
   "context.systemPrompt.title": "Системний запит",
-  "context.rawMessages.title": "Сировинні повідомлення",
 
-  "context.stats.session": "Сесія",
   "context.stats.messages": "Повідомлення",
-  "context.stats.provider": "Провайдер",
-  "context.stats.model": "Модель",
-  "context.stats.limit": "Ліміт контексту",
-  "context.stats.totalTokens": "Всього токенів",
-  "context.stats.usage": "Використання",
-  "context.stats.inputTokens": "Вхідні токени",
-  "context.stats.outputTokens": "Вихідні токени",
-  "context.stats.reasoningTokens": "Токени мислення",
-  "context.stats.cacheTokens": "Токени кешу (читання/запис)",
-  "context.stats.userMessages": "Повідомлення користувача",
-  "context.stats.assistantMessages": "Повідомлення асистента",
-  "context.stats.totalCost": "Загальна вартість",
-  "context.stats.sessionCreated": "Сесію створено",
-  "context.stats.lastActivity": "Остання активність",
 
   "context.usage.tokens": "Токени",
   "context.usage.usage": "Використання",
@@ -238,10 +213,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.permissions.autoaccept.on.title": "Автоматичне прийняття дозволів",
-  "toast.permissions.autoaccept.on.description": "Запити дозволів будуть автоматично схвалюватися",
-  "toast.permissions.autoaccept.off.title": "Автоматичне прийняття дозволів зупинено",
-  "toast.permissions.autoaccept.off.description": "Запити дозволів вимагатимуть схвалення",
 
   "toast.model.none.title": "Модель не вибрано",
   "toast.model.none.description": "Підключіть провайдера, щоб підсумувати цю сесію",
@@ -295,27 +266,17 @@ export const dict = {
   "error.chain.configInvalid": "Файл конфігурації {{path}} недійсний",
   "error.chain.configInvalidWithMessage": "Файл конфігурації {{path}} недійсний: {{message}}",
 
-  "notification.permission.title": "Потрібен дозвіл",
 
   "notification.session.responseReady.title": "Відповідь готова",
   "notification.session.error.title": "Помилка сесії",
   "notification.session.error.fallbackDescription": "Сталася помилка",
 
-  "session.tab.session": "Сесія",
   "session.tab.review": "Огляд",
   "session.tab.context": "Контекст",
   "session.panel.reviewAndFiles": "Огляд і файли",
-  "session.review.filesChanged": "Змінено файлів: {{count}}",
   "session.review.change.one": "Зміна",
   "session.review.change.other": "Зміни",
   "session.review.loadingChanges": "Завантаження змін...",
-  "session.review.empty": "У цій сесії ще немає змін",
-  "session.review.noVcs": "Систему контролю версій Git не виявлено, зміни не відображаються",
-  "session.review.noVcs.createGit.title": "Створити Git-репозиторій",
-  "session.review.noVcs.createGit.description": "Відстежуйте, переглядайте та скасовуйте зміни в цьому проєкті",
-  "session.review.noVcs.createGit.actionLoading": "Створення Git-репозиторію...",
-  "session.review.noVcs.createGit.action": "Створити Git-репозиторій",
-  "session.review.noSnapshot": "Відстеження знімків вимкнено в конфігурації, тому зміни сесії недоступні",
   "session.review.noChanges": "Немає змін",
   "session.review.noUncommittedChanges": "Ще немає незафіксованих змін",
   "session.review.noBranchChanges": "Ще немає змін у гілці",
@@ -323,16 +284,8 @@ export const dict = {
   "session.files.selectToOpen": "Виберіть файл для відкриття",
   "session.files.all": "Усі файли",
   "session.files.empty": "Немає файлів",
-  "session.files.binaryContent": "Бінарний файл (вміст не може бути відображено)",
 
-  "session.messages.renderEarlier": "Відобразити раніші повідомлення",
-  "session.messages.loadingEarlier": "Завантаження раніших повідомлень...",
-  "session.messages.loadEarlier": "Завантажити раніші повідомлення",
-  "session.messages.loading": "Завантаження повідомлень...",
-  "session.messages.jumpToLatest": "Перейти до останніх",
 
-  "session.context.addToContext": "Додати {{selection}} до контексту",
-  "session.todo.title": "Завдання",
   "session.todo.collapse": "Згорнути",
   "session.todo.expand": "Розгорнути",
   "session.todo.progress": "Виконано {{done}} з {{total}} завдань",
@@ -345,15 +298,8 @@ export const dict = {
   "session.new.title": "Створити що завгодно",
   "session.new.worktree.main": "Основна гілка",
   "session.new.worktree.mainWithBranch": "Основна гілка ({{branch}})",
-  "session.new.lastModified": "Востаннє змінено",
 
-  "session.header.search.placeholder": "Пошук {{project}}",
   "session.header.searchFiles": "Пошук файлів",
-  "session.header.openIn": "Відкрити в",
-  "session.header.open.action": "Відкрити {{app}}",
-  "session.header.open.ariaLabel": "Відкрити в {{app}}",
-  "session.header.open.menu": "Параметри відкриття",
-  "session.header.open.copyPath": "Копіювати шлях",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Провідник файлів",
   "session.header.open.fileManager": "Файловий менеджер",
@@ -372,19 +318,7 @@ export const dict = {
   "session.header.open.app.sublimeText": "Sublime Text",
 
 
-  "session.share.popover.title": "Опублікувати в інтернеті",
-  "session.share.popover.description.shared":
-    "Ця сесія є публічною в інтернеті. Вона доступна будь-кому за посиланням.",
-  "session.share.popover.description.unshared":
-    "Опублікуйте сесію публічно в інтернеті. Вона буде доступна будь-кому за посиланням.",
-  "session.share.action.share": "Поділитися",
-  "session.share.action.publish": "Опублікувати",
-  "session.share.action.publishing": "Публікація...",
-  "session.share.action.unpublish": "Скасувати публікацію",
-  "session.share.action.unpublishing": "Скасування публікації...",
-  "session.share.action.view": "Переглянути",
   "session.share.copy.copied": "Скопійовано",
-  "session.share.copy.copyLink": "Копіювати посилання",
 
   "prompt.loading": "Завантаження запиту...",
   "terminal.loading": "Завантаження термінала...",
@@ -397,7 +331,6 @@ export const dict = {
     "З'єднання з терміналом було перервано. Це може статися під час перезапуску сервера.",
 
   "common.closeTab": "Закрити вкладку",
-  "common.dismiss": "Відхилити",
   "common.moreCountSuffix": " (ще {{count}})",
   "common.requestFailed": "Запит не виконано",
   "common.moreOptions": "Більше опцій",
@@ -570,10 +503,6 @@ export const dict = {
   "settings.permissions.tool.websearch.title": "Web Search",
   "settings.permissions.tool.websearch.description": "Пошук в інтернеті",
 
-  "session.delete.failed.title": "Не вдалося видалити сесію",
-  "session.delete.title": "Видалити сесію",
-  "session.delete.confirm": 'Видалити сесію "{{name}}"?',
-  "session.delete.button": "Видалити сесію",
 
   "workspace.new": "Нова робоча область",
   "workspace.type.local": "локальна",

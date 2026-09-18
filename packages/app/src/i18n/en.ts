@@ -67,10 +67,7 @@ export const dict = {
   "trash.expiringNow": "expiring now",
 
   // Processes — the friendly "what your agents are doing" activity view (uix.md §6.4 / SP1).
-  "nav.tasks.untitled": "Untitled chat",
   "nav.tasks.all": "All Officers",
-  "nav.tasks.close": "Close this task",
-  "processes.status.working": "Working…",
 
   // Session presence — who else is looking at this chat, who is driving, and what to do when two
   // surfaces reach for it at once. Every line here has to read as an explanation, not a fault:
@@ -156,7 +153,6 @@ export const dict = {
   "command.category.terminal": "Terminal",
   "command.category.model": "Model",
   "command.category.mcp": "MCP",
-  "command.category.permissions": "Permissions",
   "command.category.settings": "Settings",
 
   "theme.scheme.system": "System",
@@ -194,8 +190,6 @@ export const dict = {
   "command.model.variant.cycle.description": "Switch to the next effort level",
   "command.prompt.mode.shell": "Shell",
   "command.prompt.mode.normal": "Chat",
-  "command.permissions.autoaccept.enable": "Auto-accept permissions",
-  "command.permissions.autoaccept.disable": "Stop auto-accepting permissions",
   "command.session.undo": "Undo",
   "command.session.undo.description": "Undo the last message",
   "command.session.redo": "Redo",
@@ -244,7 +238,6 @@ export const dict = {
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.clear": "Clear",
-  "common.submit": "Submit",
   "common.save": "Save",
   "common.saving": "Saving...",
   "common.default": "Default",
@@ -260,16 +253,12 @@ export const dict = {
   "prompt.placeholder.simple": "Ask anything...",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Chat",
-  "prompt.mode.shell.exit": "esc to exit",
   "session.child.promptDisabled":
     "This is a helper the main chat started. You can't message it directly — go back to the main chat to continue.",
   "session.child.backToParent": "Back to the main chat.",
 
 
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
-  "prompt.context.active": "active",
-  "prompt.context.includeActiveFile": "Include active file",
-  "prompt.context.removeActiveFile": "Remove active file from context",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
   "prompt.action.attachFile.scope": "Kept with this draft until you send it",
@@ -309,37 +298,13 @@ export const dict = {
   "prompt.permissionMode.surgical": "Surgical",
   "prompt.permissionMode.bypass": "Modify",
   "prompt.permissionMode.yolo": "Admin",
-  "prompt.permissionMode.plan.hint": "Read only — but it can still write a report into a temp folder.",
-  "prompt.permissionMode.ask.hint": "Asks before every change. Superseded by Analyze and Modify.",
-  "prompt.permissionMode.surgical.hint": "Now a Tuning switch — “Edits instead of overwriting”.",
-  "prompt.permissionMode.bypass.hint": "Write access to this project's folder.",
-  "prompt.permissionMode.yolo.hint": "Write access to the ENTIRE computer, not just this project.",
 
-  "prompt.strict.tooltip":
-    "Strict mode: the harness plans, verifies every step, and recovers — built for small local models",
-  "prompt.strict.off": "Strict",
-  "prompt.strict.on": "Strict: on",
-  "prompt.strict.popover.title": "Run this chat in Strict mode",
-  "prompt.strict.popover.description":
-    "The harness breaks your task into small steps, verifies each one by compiling or running it, and recovers from mistakes. Best for weak or local models on real coding tasks.",
-  "prompt.strict.popover.attempts": "Agents racing (1–8)",
-  "prompt.strict.popover.wallMinutes": "Time budget (minutes)",
-  "prompt.strict.popover.bypassNote":
-    "Strict mode works autonomously, so this chat's permission mode switches to Bypass (changes stay inside the project).",
-  "prompt.strict.popover.enable": "Enable Strict",
 
-  "prompt.features.tooltip": "Tune this chat — how it works, how careful it is, and when it asks",
-  "prompt.features.label": "Tune",
   "prompt.features.popover.title": "Tune this chat",
   "prompt.features.popover.description":
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
   "prompt.features.source.inherit": "Using Settings default: {{state}}",
   "prompt.features.source.parent": "Inherited from the chat that started this one: {{state}}",
-  "prompt.project.title": "This folder's project",
-  "prompt.project.applied": "It sets: {{list}}",
-  "prompt.project.refused":
-    "It asked for, and did not get: {{list}}. A project file can turn a safety control on, never off.",
-  "prompt.project.none": "It sets none of these.",
 
   "prompt.features.source.override": "This chat overrides Settings",
   "prompt.features.useDefault": "Use Settings default",
@@ -388,7 +353,6 @@ export const dict = {
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",
 
   "prompt.mode.title": "Mode",
-  "prompt.mode.description": "How this chat runs — with you, or working alone.",
   "prompt.mode.interactive.title": "Interactive",
   "prompt.mode.interactive.description": "You drive: the agent answers and waits for you.",
   "prompt.mode.auto-prompting.title": "Auto-prompting",
@@ -438,10 +402,6 @@ export const dict = {
   // now, so this asks the one that is actually left.
   "prompt.agent.tooltip": "Which colleague this is for — they bring their own project and memory",
   "prompt.agent.tooltip.working": "This colleague is working — you can hand it to someone else once it is idle",
-  "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
-  "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
-  "prompt.folder.pick.title": "Move this chat to a folder",
-  "prompt.folder.moveFailed": "Moving the chat failed",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
@@ -473,7 +433,6 @@ export const dict = {
   "mcp.status.needs_auth": "needs auth",
   "mcp.status.needs_client_registration": "needs a client ID",
   "mcp.status.disabled": "disabled",
-  "mcp.auth.clickToAuthenticate": "Click to authenticate",
 
   "dialog.fork.empty": "No messages to fork from",
 
@@ -642,7 +601,6 @@ export const dict = {
   "context.systemPrompt.title": "System Prompt",
   "context.systemPrompt.empty":
     "No system prompt yet. Send a message in this chat and it appears here — the prompt is regenerated whenever the agent's job instructions, roster, memos or project change.",
-  "context.rawMessages.title": "Raw messages",
   "context.compactions.button": "Compaction Events",
   "context.compactions.compactNow": "Compact Now",
   "context.compactions.compacting": "Compacting…",
@@ -658,22 +616,7 @@ export const dict = {
   "context.compactions.status.failed": "Failed",
   "context.compactions.status.running": "Running",
 
-  "context.stats.session": "Session",
   "context.stats.messages": "Messages",
-  "context.stats.provider": "Provider",
-  "context.stats.model": "Model",
-  "context.stats.limit": "Context Limit",
-  "context.stats.totalTokens": "Total Tokens",
-  "context.stats.usage": "Usage",
-  "context.stats.inputTokens": "Input Tokens",
-  "context.stats.outputTokens": "Output Tokens",
-  "context.stats.reasoningTokens": "Reasoning Tokens",
-  "context.stats.cacheTokens": "Cache Tokens (read/write)",
-  "context.stats.userMessages": "User Messages",
-  "context.stats.assistantMessages": "Assistant Messages",
-  "context.stats.totalCost": "Total Cost",
-  "context.stats.sessionCreated": "Session Created",
-  "context.stats.lastActivity": "Last Activity",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",
@@ -700,10 +643,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.permissions.autoaccept.on.title": "Auto-accepting permissions",
-  "toast.permissions.autoaccept.on.description": "Permission requests will be automatically approved",
-  "toast.permissions.autoaccept.off.title": "Stopped auto-accepting permissions",
-  "toast.permissions.autoaccept.off.description": "Permission requests will require approval",
 
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect an AI service to summarize this chat",
@@ -771,7 +710,6 @@ export const dict = {
   "error.chain.configInvalid": "Config file at {{path}} is invalid",
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
-  "notification.permission.title": "Permission required",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.recovery.title": "Chat paused safely",
@@ -843,10 +781,7 @@ export const dict = {
   "help.tour.step.done.title": "You’re all set",
   "help.tour.step.done.body":
     "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
-  "session.info.folder": "Folder",
-  "session.info.tags": "Tags",
   "common.remove": "Remove",
-  "session.info.tags.placeholder": "Add a tag and press Enter",
   // ⚠️ The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
   // label said "Enter opens its chat", which described typing that never happened. It is a button.
   "home.newAgent.placeholder": "Ask anything...",
@@ -855,45 +790,12 @@ export const dict = {
     "{{control}} could not be changed on the server, so it has been put back. The chat is still running with the previous setting.",
   "home.newAgent.noColleagues":
     "This instance is not answering with its roster, so there is nobody to start a chat with. Nova is built in and can never be missing — check the server this window is connected to.",
-  "session.info.agent": "Agent",
-  "session.info.model": "Model",
-  "session.info.status": "Status",
-  "session.info.status.ready": "Ready",
-  "session.info.changes": "Workspace changes",
-  "session.info.changes.value": "{{files}} files · +{{additions}} −{{deletions}}",
-  "session.info.cost": "Cost",
-  "session.info.created": "Created",
-  "session.info.updated": "Last activity",
-  "session.info.tokens.thisChat": "Tokens",
-  "session.info.tokens.value": "{{total}} ({{input}} read · {{output}} written)",
-  "session.info.tokens.withThreads": "With threads",
-  "session.info.tokens.rollup": "{{total}} across {{threads}} sub-agent threads",
-  "session.info.tokens.hint":
-    "Tokens are the pieces of text the AI reads and writes — a rough measure of how much work this chat has done.",
-  "session.info.adhoc.title": "Session tools",
-  "session.info.adhoc.promote": "Promote",
-  "session.info.adhoc.promoted": "Promoted",
-  "session.info.adhoc.discard": "Discard",
-  "session.info.adhoc.manual": "Manual",
-  "session.info.adhoc.hint":
-    "Tools this chat's agent defined for itself. Promote copies one into this instance's configuration for every chat; Discard throws it away.",
-  "session.tab.session": "Chat",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.panel.reviewAndFiles": "Review and files",
-  "session.review.filesChanged": "{{count}} Files Changed",
   "session.review.change.one": "Change",
   "session.review.change.other": "Changes",
   "session.review.loadingChanges": "Loading changes...",
-  "session.review.empty": "No changes in this chat yet",
-  "session.review.noVcs":
-    "This folder isn't tracked by Git yet, so there's nothing to review. Create a Git repository below to track changes.",
-  "session.review.noVcs.createGit.title": "Create a Git repository",
-  "session.review.noVcs.createGit.description": "Track, review, and undo changes in this project",
-  "session.review.noVcs.createGit.actionLoading": "Creating Git repository...",
-  "session.review.noVcs.createGit.action": "Create Git repository",
-  "session.review.noSnapshot":
-    "Snapshot tracking is turned off, so per-session changes aren't available. Turn it on in settings to see them.",
   "session.review.noChanges": "No changes",
   "session.review.noLiveChanges": "No live workspace changes yet",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
@@ -903,9 +805,6 @@ export const dict = {
   "session.review.source.incomplete": "Recording incomplete",
   "session.review.loadFailed": "Could not load these changes right now.",
   "session.review.retry": "Try again",
-  "session.device.unpin": "Remove Device pin",
-  "session.device.unpinning": "Removing Device pin…",
-  "session.device.unpinned": "Device pin removed",
   "session.device.unpinFailed": "Could not remove the Device pin",
   // Shown INSTEAD of the transcript when a message cannot be rendered — one calm line, never a stack
   // trace. The rest of the app keeps working; the fault is contained to this pane.
@@ -914,16 +813,8 @@ export const dict = {
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",
   "session.files.empty": "No files",
-  "session.files.binaryContent": "Binary file (content cannot be displayed)",
 
-  "session.messages.renderEarlier": "Render earlier messages",
-  "session.messages.loadingEarlier": "Loading earlier messages...",
-  "session.messages.loadEarlier": "Load earlier messages",
-  "session.messages.loading": "Loading messages...",
-  "session.messages.jumpToLatest": "Jump to latest",
 
-  "session.context.addToContext": "Add {{selection}} to context",
-  "session.todo.title": "Todos",
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
   "session.todo.progress": "{{done}} of {{total}} todos completed",
@@ -975,15 +866,8 @@ export const dict = {
   "session.new.workspace.triggerLocal": "Local",
   "session.new.workspace.local": "Local repository",
   "session.new.workspace.existing": "Workspace…",
-  "session.new.lastModified": "Last modified",
 
-  "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
-  "session.header.openIn": "Open in",
-  "session.header.open.action": "Open {{app}}",
-  "session.header.open.ariaLabel": "Open in {{app}}",
-  "session.header.open.menu": "Open options",
-  "session.header.open.copyPath": "Copy path",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "File Explorer",
   "session.header.open.fileManager": "File Manager",
@@ -1001,19 +885,7 @@ export const dict = {
   "session.header.open.app.powershell": "PowerShell",
   "session.header.open.app.sublimeText": "Sublime Text",
 
-  "session.share.popover.title": "Publish on web",
-  "session.share.popover.description.shared":
-    "This session is public on the web. It is accessible to anyone with the link.",
-  "session.share.popover.description.unshared":
-    "Share session publicly on the web. It will be accessible to anyone with the link.",
-  "session.share.action.share": "Share",
-  "session.share.action.publish": "Publish",
-  "session.share.action.publishing": "Publishing...",
-  "session.share.action.unpublish": "Unpublish",
-  "session.share.action.unpublishing": "Unpublishing...",
-  "session.share.action.view": "View",
   "session.share.copy.copied": "Copied",
-  "session.share.copy.copyLink": "Copy link",
 
   "prompt.loading": "Loading prompt...",
   "expertise.gate.hint":
@@ -1067,7 +939,6 @@ export const dict = {
   "terminal.connectionLost.copied": "Copied",
 
   "common.closeTab": "Close tab",
-  "common.dismiss": "Dismiss",
   "common.moreCountSuffix": " (+{{count}} more)",
   "common.requestFailed": "Request failed",
   "common.moreOptions": "More options",
@@ -1279,7 +1150,6 @@ export const dict = {
   "settings.storage.logs.retention": "How much is kept",
   "settings.storage.logs.retention.description":
     "Keeps about {{days}} days of activity when space allows, and never more than {{size}} in total. Older entries are compressed, and the oldest are removed first.",
-  "settings.storage.logs.retention.value": "{{days}} days · up to {{size}}",
   "settings.storage.logs.retention.days": "Keep about {{days}} days",
   "settings.storage.logs.level": "How much detail to write",
   "settings.storage.logs.level.description": "Info is the calm everyday record.",
@@ -1293,8 +1163,6 @@ export const dict = {
   "settings.storage.logs.subsystems.description":
     "Developer controls for making one part of the instance more or less chatty without changing the rest. These changes take effect immediately.",
   "settings.storage.logs.saveFailed": "Could not change activity-log settings",
-  "settings.storage.trash.title": "Trash",
-  "settings.storage.trash.description": "Choose how long deleted files remain recoverable.",
   "settings.storage.trash.retention": "How long Trash keeps files",
   "settings.storage.trash.retention.description":
     "Deleted files stay recoverable for about {{days}} days, then cleanup removes them on a later Trash change.",
@@ -1763,8 +1631,6 @@ export const dict = {
   "settings.models.probe.tools.unknown": "tools inconclusive",
   "settings.models.config.open": "Configure",
   "settings.models.config.title": "Configure {{model}}",
-  "settings.models.config.description":
-    "Set how this model runs. Leave a field blank to use the model's or provider's own default.",
   "settings.models.config.missing": "No model to configure.",
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.identity": "Provider",
@@ -1817,8 +1683,6 @@ export const dict = {
   "settings.models.config.tab.sampling": "Sampling",
   "settings.models.config.tab.capabilities": "Capabilities",
   "settings.models.config.tab.scheduler": "Scheduler",
-  "settings.models.config.section.sampling": "Sampling",
-  "settings.models.config.section.capabilities": "Capabilities",
   "settings.models.config.temperature.name": "Temperature",
   "settings.models.config.temperature.desc":
     "Higher is more creative and varied; lower is more focused and repeatable. Around 0.7 for chat, 0 for code.",
@@ -2090,41 +1954,15 @@ export const dict = {
     "Anything worth knowing: your role, expertise, the projects you work on, how you like answers.",
   "settings.profile.about.placeholder":
     "e.g. systems programmer building a local-LLM agent OS; prefers concise, direct answers",
-  "settings.memory.list.title": "Remembered ({{count}})",
-  "settings.memory.list.titleEmpty": "Remembered",
-  "settings.memory.list.sourceHidden":
-    "{{count}} source passages from ingested documents are not listed here — open Graph to browse them.",
-  "settings.memory.list.empty": "Nothing remembered yet. NovaClaw learns as you chat — no setup needed.",
   // 🔴 The unavailable state must never borrow the empty-state copy: "nothing remembered yet" and
   // "no setup needed" are both FALSE when the store cannot open, and the two states look identical
   // to the user otherwise. Measured 2026-08-12 by fault injection.
-  "settings.memory.unavailable.title": "Memory is not working",
-  "settings.memory.unavailable.body":
-    "NovaClaw cannot open its memory store, so nothing is being remembered and saved memories cannot be read. This is not an empty memory — it is a fault.",
-  "settings.memory.unavailable.retry": "Retry",
-  "settings.memory.unavailable.retrying": "Retrying…",
-  "settings.memory.scope.global": "Always",
-  "settings.memory.scope.chat": "This chat",
-  "settings.memory.scope.otherChat": "Another chat",
-  "settings.memory.forget.action": "Forget this",
   // The confirm that replaced the expertise gate on forgetting (owner, 2026-08-20: the Memory
   // app "has no way to remove memories" — the control existed and their level hid it). The
   // memory's own text is the dialog body, so the question names what is about to go.
-  "memory.forget.confirm.title": "Forget this?",
   // Batch removal from the Memory app itself (owner, 2026-08-20). The two scopes are asked as
   // different questions because they are: one clears what this chat learned, the other clears
   // everything Nova knows.
-  "memory.forgetAll.confirm.title": "Forget everything Nova has learned?",
-  "memory.forgetChat.confirm.title": "Forget what this chat taught Nova?",
-  "memory.forgetAll.confirm.action": "Forget them",
-  "memory.clearScope.shared": "Shared with everyone",
-  "memory.protection.retry": "Retry protection status",
-  "memory.protection.saving": "Saving protection…",
-  "memory.protection.loading": "Checking protection…",
-  "memory.clearScope.action": "Clear memory: {{owner}}",
-  "memory.clearScope.title": "Clear memory for {{owner}}?",
-  "memory.clearScope.description": "Remove every memory in {{owner}}. Other memory is kept. This cannot be undone.",
-  "settings.memory.toast.failed": "Something went wrong with memory",
   "settings.about.author": "by Nancy Sadkov",
   "settings.about.credits.title": "Built with open-source software",
   "settings.about.credits.description":
@@ -2370,12 +2208,6 @@ export const dict = {
   "session.gone.body":
     "It may have been removed from another window or cleaned up automatically. Its tab has been closed.",
   "session.gone.action": "Back to Home",
-  "session.delete.failed.title": "Couldn't delete chat",
-  "session.delete.title": "Delete chat",
-  "session.delete.confirm": 'Delete chat "{{name}}"?',
-  "session.delete.description":
-    "The whole conversation and its history are removed permanently. Files in your project folder are not touched.",
-  "session.delete.button": "Delete chat",
 
   "workspace.new": "New workspace",
   "workspace.type.local": "local",
@@ -2426,7 +2258,6 @@ export const dict = {
   "agentConfig.clearMemory": "Clear memory",
   "agentConfig.clearing": "Clearing…",
   "agentConfig.memoryClearing": "Clearing memory…",
-  "agentConfig.clearedTitle": "Chat cleared — the next one starts fresh",
   "agentConfig.clearNothing": "There is no chat to clear yet",
   "agentConfig.clearFailed": "Could not clear this chat",
   // Confirm-gated like Retire, and for the same reason: the conversation is archived rather than
@@ -2604,7 +2435,6 @@ export const dict = {
   "contacts.retry": "Try again",
   "contacts.governing": "CEO",
   "contacts.noTitle": "No job title yet",
-  "contacts.startFailed": "Could not start a chat with this colleague",
   "contacts.spend": "Tokens this colleague and its helpers have produced",
   "contacts.rate": "{{tokens}}/min",
   // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
@@ -2904,29 +2734,4 @@ export const dict = {
   "calendar.page.responsible": "Responsible",
 
   // ── Memory graph page — keyed 2026-09-03; these strings shipped as literals until then. ──
-  "memoryGraph.page.searchMemories": "Search memories",
-  "memoryGraph.page.showEverythingAgain": "Show everything again",
-  "memoryGraph.page.resetView": "Reset view",
-  "memoryGraph.page.connectedTo": "Connected to",
-  "memoryGraph.page.itsOwn": "Its own",
-  "memoryGraph.page.oneChat": "One chat",
-  "memoryGraph.page.memoryIsUnavailableRightNow": "Memory is unavailable right now.",
-  "memoryGraph.page.recordedBy": "Recorded by",
-  "memoryGraph.page.noRecallHasEverReturnedThis": "No recall has ever returned this one.",
-  "memoryGraph.page.noLinks": "No links.",
-  "memoryGraph.page.back": "Back",
-  "memoryGraph.page.memory": "Memory",
-  "memoryGraph.page.shared": "Shared",
-  "memoryGraph.page.loadingTheMemoryGraph": "Loading the memory graph…",
-  "memoryGraph.page.retry": "Retry",
-  "memoryGraph.page.nothingRememberedYetTheGraphFills": "Nothing remembered yet — the graph fills as you chat.",
-  "memoryGraph.page.group": "Group",
-  "memoryGraph.page.noIdentityNothingCanCorrectThis": "No identity — nothing can correct this later, only forget it.",
-  "memoryGraph.page.identity": "Identity:",
-  "memoryGraph.page.timeline": "Timeline",
-  "memoryGraph.page.askingTheLedger": "Asking the ledger…",
-  "memoryGraph.page.thisInstanceCouldNotAnswerIt":
-    "This instance could not answer — it may not be recording which memories get recalled.",
-  "memoryGraph.page.replacedByANewerAnswerRecord": "Replaced by a newer answer — record a new claim to change it back.",
-  "memoryGraph.page.links": "Links",
 }

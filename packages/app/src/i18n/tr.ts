@@ -11,7 +11,6 @@ export const dict = {
   "command.category.terminal": "Terminal",
   "command.category.model": "Model",
   "command.category.mcp": "MCP",
-  "command.category.permissions": "İzinler",
   "command.category.settings": "Ayarlar",
 
   "theme.scheme.system": "Sistem",
@@ -47,8 +46,6 @@ export const dict = {
   "command.model.variant.cycle.description": "Sonraki efor seviyesine geç",
   "command.prompt.mode.shell": "Kabuk",
   "command.prompt.mode.normal": "Komut",
-  "command.permissions.autoaccept.enable": "Düzenlemeleri otomatik kabul et",
-  "command.permissions.autoaccept.disable": "Otomatik kabulü durdur",
   "command.session.undo": "Geri al",
   "command.session.undo.description": "Son mesajı geri al",
   "command.session.redo": "Yinele",
@@ -91,7 +88,6 @@ export const dict = {
   "common.loading": "Yükleniyor",
   "common.loading.ellipsis": "...",
   "common.cancel": "İptal",
-  "common.submit": "Gönder",
   "common.save": "Kaydet",
   "common.saving": "Kaydediliyor...",
   "common.default": "Varsayılan",
@@ -101,13 +97,9 @@ export const dict = {
   "prompt.placeholder.simple": "Bir şeyler sorun...",
   "prompt.mode.shell": "Kabuk",
   "prompt.mode.normal": "Komut",
-  "prompt.mode.shell.exit": "çıkmak için esc",
 
 
   "prompt.dropzone.label": "Resimleri, PDF'leri veya metin dosyalarını buraya bırakın",
-  "prompt.context.active": "aktif",
-  "prompt.context.includeActiveFile": "Aktif dosyayı dahil et",
-  "prompt.context.removeActiveFile": "Aktif dosyayı bağlamdan çıkar",
   "prompt.context.removeFile": "Dosyayı bağlamdan çıkar",
   "prompt.action.attachFile": "Dosya ekle",
   "prompt.attachment.remove": "Eki kaldır",
@@ -131,7 +123,6 @@ export const dict = {
   "mcp.status.connected": "bağlı",
   "mcp.status.failed": "başarısız",
   "mcp.status.needs_auth": "kimlik doğrulama gerekli",
-  "mcp.auth.clickToAuthenticate": "Kimlik doğrulamak için tıklayın",
   "mcp.status.disabled": "devre dışı",
 
   "dialog.fork.empty": "Dallandırılacak mesaj yok",
@@ -184,24 +175,8 @@ export const dict = {
   "context.breakdown.other": "Diğer",
 
   "context.systemPrompt.title": "Sistem Komutu",
-  "context.rawMessages.title": "Ham mesajlar",
 
-  "context.stats.session": "Oturum",
   "context.stats.messages": "Mesajlar",
-  "context.stats.provider": "Sağlayıcı",
-  "context.stats.model": "Model",
-  "context.stats.limit": "Bağlam Limiti",
-  "context.stats.totalTokens": "Toplam Token",
-  "context.stats.usage": "Kullanım",
-  "context.stats.inputTokens": "Girdi Tokenleri",
-  "context.stats.outputTokens": "Çıktı Tokenleri",
-  "context.stats.reasoningTokens": "Akıl Yürütme Tokenleri",
-  "context.stats.cacheTokens": "Önbellek Tokenleri (okuma/yazma)",
-  "context.stats.userMessages": "Kullanıcı Mesajları",
-  "context.stats.assistantMessages": "Asistan Mesajları",
-  "context.stats.totalCost": "Toplam Maliyet",
-  "context.stats.sessionCreated": "Oturum Oluşturulma",
-  "context.stats.lastActivity": "Son Etkinlik",
 
   "context.usage.tokens": "Tokenler",
   "context.usage.usage": "Kullanım",
@@ -226,10 +201,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.permissions.autoaccept.on.title": "Düzenlemeler otomatik kabul ediliyor",
-  "toast.permissions.autoaccept.on.description": "Düzenleme ve yazma izinleri otomatik olarak onaylanacak",
-  "toast.permissions.autoaccept.off.title": "Otomatik kabul durduruldu",
-  "toast.permissions.autoaccept.off.description": "Düzenleme ve yazma izinleri onay gerektirecek",
 
   "toast.model.none.title": "Model seçilmedi",
   "toast.model.none.description": "Bu oturumu özetlemek için bir sağlayıcı bağlayın",
@@ -277,39 +248,24 @@ export const dict = {
   "error.chain.configInvalid": "{{path}} adresindeki yapılandırma dosyası geçersiz",
   "error.chain.configInvalidWithMessage": "{{path}} adresindeki yapılandırma dosyası geçersiz: {{message}}",
 
-  "notification.permission.title": "İzin gerekli",
 
   "notification.session.responseReady.title": "Yanıt hazır",
   "notification.session.error.title": "Oturum hatası",
   "notification.session.error.fallbackDescription": "Bir hata oluştu",
 
-  "session.tab.session": "Oturum",
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
   "session.panel.reviewAndFiles": "İnceleme ve dosyalar",
-  "session.review.filesChanged": "{{count}} Dosya Değişti",
   "session.review.change.one": "Değişiklik",
   "session.review.change.other": "Değişiklik",
   "session.review.loadingChanges": "Değişiklikler yükleniyor...",
-  "session.review.empty": "Bu oturumda henüz değişiklik yok",
-  "session.review.noVcs": "Git VCS algılanamadı, oturum değişiklikleri tespit edilemeyecek",
-  "session.review.noSnapshot":
-    "Yapılandırmada anlık görüntü takibi devre dışı bırakıldı, bu nedenle oturum değişiklikleri kullanılamıyor",
   "session.review.noChanges": "Değişiklik yok",
 
   "session.files.selectToOpen": "Açmak için bir dosya seçin",
   "session.files.all": "Tüm dosyalar",
   "session.files.empty": "Dosya yok",
-  "session.files.binaryContent": "İkili dosya (içerik görüntülenemiyor)",
 
-  "session.messages.renderEarlier": "Önceki mesajları göster",
-  "session.messages.loadingEarlier": "Önceki mesajlar yükleniyor...",
-  "session.messages.loadEarlier": "Önceki mesajları yükle",
-  "session.messages.loading": "Mesajlar yükleniyor...",
-  "session.messages.jumpToLatest": "En sona atla",
 
-  "session.context.addToContext": "{{selection}} bağlama ekle",
-  "session.todo.title": "Görevler",
   "session.todo.collapse": "Daralt",
   "session.todo.expand": "Genişlet",
   "session.revertDock.summary.one": "{{count}} geri alınan mesaj",
@@ -321,29 +277,11 @@ export const dict = {
   "session.new.title": "İstediğini yap",
   "session.new.worktree.main": "Ana dal",
   "session.new.worktree.mainWithBranch": "Ana dal ({{branch}})",
-  "session.new.lastModified": "Son değişiklik",
 
-  "session.header.search.placeholder": "{{project}} ara",
   "session.header.searchFiles": "Dosya ara",
-  "session.header.openIn": "Aç",
-  "session.header.open.action": "{{app}} ile aç",
-  "session.header.open.ariaLabel": "{{app}} ile aç",
-  "session.header.open.menu": "Açma seçenekleri",
-  "session.header.open.copyPath": "Yolu kopyala",
 
 
-  "session.share.popover.title": "Web'de yayınla",
-  "session.share.popover.description.shared": "Bu oturum web'de herkese açıktır. Bağlantıya sahip herkes erişebilir.",
-  "session.share.popover.description.unshared":
-    "Oturumu web'de herkese açık olarak paylaşın. Bağlantıya sahip herkes erişebilecek.",
-  "session.share.action.share": "Paylaş",
-  "session.share.action.publish": "Yayınla",
-  "session.share.action.publishing": "Yayınlanıyor...",
-  "session.share.action.unpublish": "Yayından kaldır",
-  "session.share.action.unpublishing": "Yayından kaldırılıyor...",
-  "session.share.action.view": "Görüntüle",
   "session.share.copy.copied": "Kopyalandı",
-  "session.share.copy.copyLink": "Bağlantı kopyala",
 
   "prompt.loading": "Komut yükleniyor...",
   "terminal.loading": "Terminal yükleniyor...",
@@ -355,7 +293,6 @@ export const dict = {
     "Terminal bağlantısı kesildi. Bu durum sunucu yeniden başladığında oluşabilir.",
 
   "common.closeTab": "Sekmeyi kapat",
-  "common.dismiss": "Kapat",
   "common.requestFailed": "İstek başarısız",
   "common.moreOptions": "Daha fazla seçenek",
   "common.learnMore": "Daha fazla bilgi",
@@ -483,10 +420,6 @@ export const dict = {
   "settings.permissions.tool.websearch.title": "Web Ara",
   "settings.permissions.tool.websearch.description": "Web'de ara",
 
-  "session.delete.failed.title": "Oturum silinemedi",
-  "session.delete.title": "Oturumu sil",
-  "session.delete.confirm": '"{{name}}" oturumu silinsin mi?',
-  "session.delete.button": "Oturumu sil",
 
   "workspace.new": "Yeni çalışma alanı",
   "workspace.type.local": "yerel",
@@ -505,10 +438,6 @@ export const dict = {
   "dialog.server.add.usernamePlaceholder": "kullanıcı adı",
   "dialog.server.add.passwordPlaceholder": "parola",
   "server.row.noUsername": "kullanıcı adı yok",
-  "session.review.noVcs.createGit.title": "Git deposu oluştur",
-  "session.review.noVcs.createGit.description": "Bu projedeki değişiklikleri takip et, incele ve geri al",
-  "session.review.noVcs.createGit.actionLoading": "Git deposu oluşturuluyor...",
-  "session.review.noVcs.createGit.action": "Git deposu oluştur",
   "session.todo.progress": "{{total}} görevin {{done}} tanesi tamamlandı",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Dosya Gezgini",

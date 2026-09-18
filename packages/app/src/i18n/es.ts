@@ -11,7 +11,6 @@ export const dict = {
   "command.category.terminal": "Terminal",
   "command.category.model": "Modelo",
   "command.category.mcp": "MCP",
-  "command.category.permissions": "Permisos",
   "command.category.settings": "Ajustes",
 
   "theme.scheme.system": "Sistema",
@@ -47,8 +46,6 @@ export const dict = {
   "command.model.variant.cycle.description": "Cambiar al siguiente nivel de esfuerzo",
   "command.prompt.mode.shell": "Shell",
   "command.prompt.mode.normal": "Prompt",
-  "command.permissions.autoaccept.enable": "Aceptar permisos automáticamente",
-  "command.permissions.autoaccept.disable": "Dejar de aceptar permisos automáticamente",
   "command.session.undo": "Deshacer",
   "command.session.undo.description": "Deshacer el último mensaje",
   "command.session.redo": "Rehacer",
@@ -91,7 +88,6 @@ export const dict = {
   "common.loading": "Cargando",
   "common.loading.ellipsis": "...",
   "common.cancel": "Cancelar",
-  "common.submit": "Enviar",
   "common.save": "Guardar",
   "common.saving": "Guardando...",
   "common.default": "Predeterminado",
@@ -101,13 +97,9 @@ export const dict = {
   "prompt.placeholder.simple": "Pregunta cualquier cosa...",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-  "prompt.mode.shell.exit": "esc para salir",
 
 
   "prompt.dropzone.label": "Suelta imágenes, PDFs o archivos de texto aquí",
-  "prompt.context.active": "activo",
-  "prompt.context.includeActiveFile": "Incluir archivo activo",
-  "prompt.context.removeActiveFile": "Eliminar archivo activo del contexto",
   "prompt.context.removeFile": "Eliminar archivo del contexto",
   "prompt.action.attachFile": "Adjuntar archivo",
   "prompt.attachment.remove": "Eliminar adjunto",
@@ -131,7 +123,6 @@ export const dict = {
   "mcp.status.connected": "conectado",
   "mcp.status.failed": "fallido",
   "mcp.status.needs_auth": "necesita auth",
-  "mcp.auth.clickToAuthenticate": "Haz clic para autenticar",
   "mcp.status.disabled": "deshabilitado",
 
   "dialog.fork.empty": "No hay mensajes desde donde bifurcar",
@@ -186,24 +177,8 @@ export const dict = {
   "context.breakdown.other": "Otro",
 
   "context.systemPrompt.title": "Prompt del Sistema",
-  "context.rawMessages.title": "Mensajes en bruto",
 
-  "context.stats.session": "Sesión",
   "context.stats.messages": "Mensajes",
-  "context.stats.provider": "Proveedor",
-  "context.stats.model": "Modelo",
-  "context.stats.limit": "Límite de Contexto",
-  "context.stats.totalTokens": "Tokens Totales",
-  "context.stats.usage": "Uso",
-  "context.stats.inputTokens": "Tokens de Entrada",
-  "context.stats.outputTokens": "Tokens de Salida",
-  "context.stats.reasoningTokens": "Tokens de Razonamiento",
-  "context.stats.cacheTokens": "Tokens de Caché (lectura/escritura)",
-  "context.stats.userMessages": "Mensajes de Usuario",
-  "context.stats.assistantMessages": "Mensajes de Asistente",
-  "context.stats.totalCost": "Costo Total",
-  "context.stats.sessionCreated": "Sesión Creada",
-  "context.stats.lastActivity": "Última Actividad",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Uso",
@@ -228,10 +203,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-  "toast.permissions.autoaccept.on.title": "Aceptando permisos automáticamente",
-  "toast.permissions.autoaccept.on.description": "Las solicitudes de permisos se aprobarán automáticamente",
-  "toast.permissions.autoaccept.off.title": "Se dejó de aceptar permisos automáticamente",
-  "toast.permissions.autoaccept.off.description": "Las solicitudes de permisos requerirán aprobación",
 
   "toast.model.none.title": "Ningún modelo seleccionado",
   "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
@@ -278,39 +249,24 @@ export const dict = {
   "error.chain.configInvalid": "El archivo de configuración en {{path}} es inválido",
   "error.chain.configInvalidWithMessage": "El archivo de configuración en {{path}} es inválido: {{message}}",
 
-  "notification.permission.title": "Permiso requerido",
 
   "notification.session.responseReady.title": "Respuesta lista",
   "notification.session.error.title": "Error de sesión",
   "notification.session.error.fallbackDescription": "Ocurrió un error",
 
-  "session.tab.session": "Sesión",
   "session.tab.review": "Revisión",
   "session.tab.context": "Contexto",
   "session.panel.reviewAndFiles": "Revisión y archivos",
-  "session.review.filesChanged": "{{count}} Archivos Cambiados",
   "session.review.change.one": "Cambio",
   "session.review.change.other": "Cambios",
   "session.review.loadingChanges": "Cargando cambios...",
-  "session.review.empty": "No hay cambios en esta sesión aún",
-  "session.review.noVcs": "No se detectó Sistema de Control de Versiones Git, los cambios no se muestran",
-  "session.review.noSnapshot":
-    "El seguimiento de instantáneas está deshabilitado en la configuración, por lo que los cambios de sesión no están disponibles",
   "session.review.noChanges": "Sin cambios",
 
   "session.files.selectToOpen": "Selecciona un archivo para abrir",
   "session.files.all": "Todos los archivos",
   "session.files.empty": "Sin archivos",
-  "session.files.binaryContent": "Archivo binario (el contenido no puede ser mostrado)",
 
-  "session.messages.renderEarlier": "Renderizar mensajes anteriores",
-  "session.messages.loadingEarlier": "Cargando mensajes anteriores...",
-  "session.messages.loadEarlier": "Cargar mensajes anteriores",
-  "session.messages.loading": "Cargando mensajes...",
-  "session.messages.jumpToLatest": "Ir al último",
 
-  "session.context.addToContext": "Añadir {{selection}} al contexto",
-  "session.todo.title": "Tareas",
   "session.todo.collapse": "Contraer",
   "session.todo.expand": "Expandir",
   "session.revertDock.summary.one": "{{count}} mensaje revertido",
@@ -322,30 +278,11 @@ export const dict = {
   "session.new.title": "Construye lo que quieras",
   "session.new.worktree.main": "Rama principal",
   "session.new.worktree.mainWithBranch": "Rama principal ({{branch}})",
-  "session.new.lastModified": "Última modificación",
 
-  "session.header.search.placeholder": "Buscar {{project}}",
   "session.header.searchFiles": "Buscar archivos",
-  "session.header.openIn": "Abrir en",
-  "session.header.open.action": "Abrir {{app}}",
-  "session.header.open.ariaLabel": "Abrir en {{app}}",
-  "session.header.open.menu": "Opciones de apertura",
-  "session.header.open.copyPath": "Copiar ruta",
 
 
-  "session.share.popover.title": "Publicar en web",
-  "session.share.popover.description.shared":
-    "Esta sesión es pública en la web. Es accesible para cualquiera con el enlace.",
-  "session.share.popover.description.unshared":
-    "Compartir sesión públicamente en la web. Será accesible para cualquiera con el enlace.",
-  "session.share.action.share": "Compartir",
-  "session.share.action.publish": "Publicar",
-  "session.share.action.publishing": "Publicando...",
-  "session.share.action.unpublish": "Despublicar",
-  "session.share.action.unpublishing": "Despublicando...",
-  "session.share.action.view": "Ver",
   "session.share.copy.copied": "Copiado",
-  "session.share.copy.copyLink": "Copiar enlace",
 
   "prompt.loading": "Cargando prompt...",
   "terminal.loading": "Cargando terminal...",
@@ -357,7 +294,6 @@ export const dict = {
     "La conexión del terminal se interrumpió. Esto puede ocurrir cuando el servidor se reinicia.",
 
   "common.closeTab": "Cerrar pestaña",
-  "common.dismiss": "Descartar",
   "common.requestFailed": "Solicitud fallida",
   "common.moreOptions": "Más opciones",
   "common.learnMore": "Saber más",
@@ -488,10 +424,6 @@ export const dict = {
   "settings.permissions.tool.websearch.title": "Búsqueda Web",
   "settings.permissions.tool.websearch.description": "Buscar en la web",
 
-  "session.delete.failed.title": "Fallo al eliminar sesión",
-  "session.delete.title": "Eliminar sesión",
-  "session.delete.confirm": '¿Eliminar sesión "{{name}}"?',
-  "session.delete.button": "Eliminar sesión",
 
   "workspace.new": "Nuevo espacio de trabajo",
   "workspace.type.local": "local",
@@ -510,10 +442,6 @@ export const dict = {
   "dialog.server.add.usernamePlaceholder": "usuario",
   "dialog.server.add.passwordPlaceholder": "contraseña",
   "server.row.noUsername": "sin usuario",
-  "session.review.noVcs.createGit.title": "Crear repositorio Git",
-  "session.review.noVcs.createGit.description": "Rastrea, revisa y deshaz cambios en este proyecto",
-  "session.review.noVcs.createGit.actionLoading": "Creando repositorio Git...",
-  "session.review.noVcs.createGit.action": "Crear repositorio Git",
   "session.todo.progress": "{{done}} de {{total}} tareas completadas",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Explorador de archivos",
