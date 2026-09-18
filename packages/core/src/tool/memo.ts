@@ -3,10 +3,8 @@ export * as MemoTool from "./memo"
 import { Effect, Layer, Schema } from "effect"
 import { ToolFailure } from "@novaclaw/llm"
 import { makeLocationNode } from "../effect/app-node"
-import { PermissionV2 } from "../permission"
 import { Durable } from "../session/durable"
 import { SessionComponentRegistry } from "../session/component-registry"
-import { SessionComponentTier } from "../session/component-tier"
 import { SessionSchema } from "../session/schema"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -28,13 +26,12 @@ import { Tools } from "./tools"
  * changed, because the write does not reach the prompt until the next rewrite and a tool that answers
  * only "ok" leaves the colleague unable to tell whether its note landed.
  *
- * 🔴 **The permission charge is NOT optional here, and this is the half a dedicated writer gets wrong.**
- * `SessionComponentTier.tierOf("durable")` is `consequential`, which is priced at the `session`
- * permission action — but a tier is only a price if somebody charges it. The generic tool charges it in
- * its own body, so a second door that writes the same kind silently made the tier inert: the reader of
- * `component-tier.ts` would see a price with no checkout. {@link charge} is that checkout, copied from
- * `tool/session.ts`'s write path rather than re-derived, including the `source` triple a refusal is
- * attributed to.
+ * 🔴 **No permission charge (owner, 2026-09-18).** A dedicated writer used to re-implement the
+ * generic tool's `session`-tier charge, exactly so a second door could not make the tier inert. With
+ * the write tiers gone, the agent owns this area outright: the memo is its own working memory, and
+ * `durable` has no authority gate in `component-registry.ts` beyond the codec. The failure that
+ * prompted the removal was `memo_set` itself, refused with *"needs a human's approval… no operator is
+ * present to answer a consent prompt"*.
  *
  * ⚠️ **The write is immediate and the VISIBILITY is deferred, deliberately.** The item is in the shadow
  * the moment this returns (so `session list kind=durable` shows it, and the next compaction renders
@@ -88,7 +85,6 @@ const describeArea = (items: readonly Durable.Item[]): string =>
  */
 export interface Deps {
   readonly components: SessionComponentRegistry.Interface
-  readonly permission: PermissionV2.Interface
 }
 
 const readItems = (deps: Deps, context: { readonly sessionID: SessionSchema.ID }) =>
@@ -97,28 +93,6 @@ const readItems = (deps: Deps, context: { readonly sessionID: SessionSchema.ID }
       .list({ sessionID: context.sessionID, kind })
       .pipe(Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []))
     return Durable.itemsOf(rows)
-  })
-
-/**
- * Charge the kind's price, exactly as the generic component tool does.
- *
- * ⚠️ `operational` kinds are free and that case is kept explicitly rather than assumed: the tier table
- * is the single place a kind's price is decided, so this reads it instead of restating "durable costs
- * a session approval" — a restatement would be a second answer that drifts the day the tier moves.
- */
-const charge = (deps: Deps, context: Tool.Context, operation: string) =>
-  Effect.gen(function* () {
-    const tier = SessionComponentTier.tierOf(kind)
-    if (tier === "operational") return
-    yield* deps.permission.assert({
-      action: SessionComponentTier.TIER_ACTION[tier],
-      resources: [kind],
-      save: [kind],
-      metadata: { tier, operation },
-      sessionID: context.sessionID,
-      agent: context.agent,
-      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-    })
   })
 
 export const setMemo = (deps: Deps, input: SetInput, context: Tool.Context) =>
@@ -147,12 +121,11 @@ export const setMemo = (deps: Deps, input: SetInput, context: Tool.Context) =>
     if (existing === undefined && items.length >= Durable.DURABLE_ITEMS_MAX)
       return yield* failure(Durable.areaFullNotice(items))
 
-    // Validate BEFORE the charge, so a hard codec refusal cannot be mistaken for something a permission
-    // grant would have allowed (the order `tool/session.ts` established for the same reason).
+    // Validate before the write, so a hard codec refusal names the fault (the id↔name agreement and
+    // the no-newline framing rule) instead of surfacing as some later storage error.
     const value = yield* components
       .validate({ sessionID: ctx.sessionID, kind, id, value: { name: itemName, value: itemValue } })
       .pipe(Effect.mapError((error) => failure(error.message)))
-    yield* charge(deps, context, "set")
     yield* components
       .put({ sessionID: ctx.sessionID, kind, id, value })
       .pipe(Effect.mapError((error) => failure(error.message)))
@@ -179,7 +152,6 @@ export const clearMemo = (deps: Deps, input: ClearInput, context: Tool.Context) 
       yield* components
         .validateRemoval({ sessionID: ctx.sessionID, kind, id })
         .pipe(Effect.mapError((error) => failure(error.message)))
-      yield* charge(deps, context, "remove")
       yield* components
         .remove({ sessionID: ctx.sessionID, kind, id })
         .pipe(Effect.mapError((error) => failure(error.message)))
@@ -197,21 +169,18 @@ export const clearMemo = (deps: Deps, input: ClearInput, context: Tool.Context) 
 /**
  * Every failure this tool can raise, as the one `ToolFailure` the tool contract allows.
  *
- * ⚠️ Copied in shape from `tool/session.ts`, which is the other writer of a session component and the
- * reason this exists: `permission.assert` fails with `PermissionV2.DeniedError`, and a refusal the
- * model cannot read is a refusal it will retry five times. `PermissionV2.denialMessage` is the single
- * place a denial becomes a sentence, so this delegates rather than re-wording it — and says WHAT is
- * unchanged, because "denied" alone leaves the colleague unsure whether its note was half-written.
+ * ⚠️ Copied in shape from `tool/session.ts`, which is the other writer of a session component: a
+ * refusal the model cannot read is a refusal it will retry five times. There is no permission denial
+ * to translate any more (the write tiers are gone), so this maps the registry's own refusals — the
+ * codec limits and the id↔name agreement — and otherwise passes the registry's sentence through.
  */
 export const toFailure = (error: unknown): ToolFailure => {
   if (error instanceof ToolFailure) return error
-  const denial = PermissionV2.denialMessage(error)
-  if (denial) return failure(`Memo area unchanged. ${denial}`)
   if (error instanceof SessionComponentRegistry.InvalidValueError)
     return failure(`Invalid memo item: ${error.message}`)
   return failure(error instanceof Error ? error.message : String(error))
 }
 
 // 🗑️ The registration lives in `memo-set.ts` and `memo-clear.ts`. What stays here is the half both
-// tools share: the two schemas, the item/deps plumbing, the charge, and the refusal mapping. Nothing in
-// this file registers a tool.
+// tools share: the two schemas, the item/deps plumbing, and the refusal mapping. Nothing in this file
+// registers a tool.

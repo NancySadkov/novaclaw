@@ -2,60 +2,34 @@ export * as SessionComponentTier from "./component-tier"
 
 import type { SessionComponentRegistry } from "./component-registry"
 
-export const TIERS = ["operational", "consequential", "privileged"] as const
+/**
+ * The session-component tiers, now READ-ONLY.
+ *
+ * 🔴 **The WRITE tiers are gone (owner, 2026-09-18).** They priced an agent's write of its own
+ * components at the `session` / `session_privileged` permission actions, which on a default install
+ * resolved to `ask` and then to an immediate refusal. The measured failure was `memo_set` — a
+ * colleague's own working memory — answered with *"needs a human's approval… no operator is present
+ * to answer a consent prompt"*. Asking was retired as an outcome (`permission.ts`), so a tier was no
+ * longer a price: it was a closed door wearing a price tag.
+ *
+ * The owner's ruling: *"The only things the agent can't change is its personality, goal and project
+ * — these are editable only by superior officers."* Those limits are NOT tiers. They are carried by
+ * the hard authority gates in `component-registry.ts` (`agent`, `goal`, `session_type`, `responder`,
+ * `durable_prompt`, plan verdicts, `working_folder`), which run with a `system` claim and cannot be
+ * widened by any permission rule. Everything else a colleague may change itself.
+ *
+ * ⚠️ **What stays is the CROSS-SESSION read gate, and it is a different question.** Reading one's
+ * own state is always free. Reading ANOTHER session's prompt-bearing text (`goal`, `durable`,
+ * `durable_prompt`, `plan`) can carry a different user's standing instructions or intent, so it is
+ * priced `privileged` — which is a genuine deny-by-default, not a consent card. The tier vocabulary
+ * is therefore `operational | privileged`, and the action is only a name.
+ */
+export const TIERS = ["operational", "privileged"] as const
 export type Tier = (typeof TIERS)[number]
 
 export const TIER_ACTION = {
-  consequential: "session",
   privileged: "session_privileged",
 } as const
-
-/** Closed kernel classification; runtime tool kinds fail closed as privileged. */
-export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier> = {
-  title: "operational",
-  tuning: "operational",
-  permission_mode: "consequential",
-  working_folder: "consequential",
-  missing_working_folder: "operational",
-  device: "operational",
-  priority: "operational",
-  // Which model answers changes the CHARACTER of every later turn, so it is not a routine knob. A
-  // repair the self-healing law promises ("ask any still-working model to fix it") has to be able to
-  // reach the model entry.
-  model: "consequential",
-  // Identity is host-owned authority, not another mutable session preference. `agent` is exposed to
-  // the model for reading, while the component registry hard-refuses ordinary writes and removals;
-  // privileged is the fail-closed classification if a new caller ever reaches the tier first.
-  agent: "privileged",
-  // Read-only to an agent (`validateWrite` refuses a non-system write), so the write tier is what a
-  // SYSTEM write costs. Kept at the same tier as `permission_mode` because it decides the same
-  // thing: whether this chain counts as attended.
-  session_type: "consequential",
-  // Handing the conversation to a human is a stand-down, not an escalation — and the reverse is
-  // refused outright by `validateWrite` rather than priced.
-  responder: "operational",
-  // It decides whether the deterministic step-tree engine drives the turn, and its bounds. Turning
-  // it OFF removes per-step verification from an autonomous run, which is a supervision change.
-  strict: "consequential",
-  goal: "privileged",
-  // The colleague's own working memory, priced where it can be priced honestly: the value is
-  // model-authored text that reaches the SYSTEM PROMPT, so it is not a routine knob (consequential —
-  // a session permission rule can forbid it). Deliberately NOT privileged: the owner's invariant has
-  // the agent maintaining this area itself (`memo_set`), and a tier that made every note need a
-  // human's approval would be answered by turning the tier off, which is how a real gate gets lost.
-  durable: "consequential",
-  // Host-written only (`validateWrite` refuses anything without kernel authority), so the tier is what
-  // a SYSTEM write costs; privileged is the fail-closed classification, as `goal` and `plan` record.
-  durable_prompt: "privileged",
-  plan: "privileged",
-  // It may grant one real-desktop application, so the whole kind takes the higher tier. Values are
-  // not classified from model-authored strings after the fact.
-  control_binding: "privileged",
-  observation: "operational",
-}
-const KIND_TIERS: Readonly<Record<string, Tier>> = KERNEL_KIND_TIERS
-
-export const tierOf = (kind: string): Tier => KIND_TIERS[kind] ?? "privileged"
 
 /**
  * Reading one's own state is always operational: the session already possesses it. Cross-session

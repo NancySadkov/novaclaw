@@ -61,10 +61,10 @@ const withRegistry = <A, E, R>(
   )
 
 describe("the five fields that were not components", () => {
-  test("all five are compiled kinds with a tier", () => {
+  test("all five are compiled kinds with a cross-read tier", () => {
     for (const kind of ["model", "agent", "session_type", "responder", "strict"] as const) {
       expect(SessionComponentRegistry.KERNEL_KIND_NAMES, `${kind} is not a compiled kind`).toContain(kind)
-      expect(SessionComponentTier.KERNEL_KIND_TIERS[kind], `${kind} has no write tier`).toBeDefined()
+      // No write tier any more (owner, 2026-09-18): authority is a hard gate, not a price.
       expect(SessionComponentTier.CROSS_READ_KIND_TIERS[kind], `${kind} has no cross-read tier`).toBeDefined()
     }
   })

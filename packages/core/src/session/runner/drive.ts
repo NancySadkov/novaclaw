@@ -150,6 +150,11 @@ export const unattendedMode = (input: {
 const progressKey = (context: GoalContext | undefined): string =>
   JSON.stringify((context?.steps ?? []).map((step) => [step.status, step.verdict?.check ?? null]))
 
+export interface DriveAttendance {
+  /** The officer's standing `operationMode`, as `AgentV2.Info` carries it; absent = the chat decides. */
+  readonly operationMode: "interactive" | "unattended" | undefined
+}
+
 /**
  * One drive decision at drain-end (queue empty). `continue` keeps an autonomous worker alive;
  * `idle` means an ordinary interactive turn has drained without terminating the session;
@@ -162,15 +167,38 @@ export const decide = (
   state: DriveState,
   _nowMs: number,
   context?: GoalContext,
+  attendance?: DriveAttendance,
 ): DriveDecision => {
-  const type = driveType(session)
+  const declared = driveType(session)
+  /**
+   * 🔴 **THE ROLE'S MODE DECIDES THE GOAL DRIVE, NOT THE STAMPED `type` COLUMN ALONE** (owner,
+   * 2026-09-16).
+   *
+   * This is the drain half of `unattendedMode`'s one-question rule, and it was the half that did not
+   * exist: the system prompt already derived the goal block from `operationMode` per turn, while the
+   * drive read only the `type` column stamped at session CREATION. So a colleague switched to
+   * Unattended kept behaving as Interactive until the UI's second `switchType` request landed — and a
+   * colleague switched back to Interactive kept self-driving (and sleeping, "Waiting for the
+   * environment to change…") while the prompt had already dropped its goal. Two sources for one
+   * question is the defect; `unattendedMode` is the one answer both halves now read.
+   *
+   * ⚠️ The fallback is deliberate: when the role declares nothing, the chat's own `type` is the only
+   * statement there is. That keeps scheduler/messenger roots (no officer) and a plain
+   * `type: goal-oriented` root driving exactly as before.
+   */
+  const goalDrive = unattendedMode({ operationMode: attendance?.operationMode, sessionType: session?.type })
+  // ⚠️ The `type` column can say goal-oriented while the role explicitly says Interactive, and the
+  // role wins: `unattendedMode` answers false there, and a false must SUPPRESS the stamped goal —
+  // not fall back to it, which would make the switch to Interactive inert on exactly the sessions
+  // that were driving. Only a chat with no role statement keeps its own classification.
+  const effective: DriveType | undefined = goalDrive ? "goal-oriented" : declared === "goal-oriented" ? undefined : declared
   // A terminal result ends auto-prompting runs. It cannot end a goal-oriented officer: that type is
   // alive until Stop, even if a stale result survived a type switch or an older build.
-  if (session !== undefined && session.result !== undefined && session.type !== "goal-oriented")
+  if (session !== undefined && session.result !== undefined && effective !== "goal-oriented")
     return { kind: "terminated" }
   if (session?.type === "sub-agent") return { kind: "continue", message: SUB_AGENT_CONTINUE }
-  if (type === undefined) return { kind: "idle" }
-  if (type === "goal-oriented") {
+  if (effective === undefined) return { kind: "idle" }
+  if (effective === "goal-oriented") {
     if (context?.acceptedExit === true)
       return {
         kind: "sleep",
@@ -193,5 +221,5 @@ export const decide = (
           "concrete action if progress is possible; if the goal is reached, checkpoint the work unit with `exit`.",
       }
   }
-  return { kind: "continue", message: type === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
+  return { kind: "continue", message: effective === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
 }

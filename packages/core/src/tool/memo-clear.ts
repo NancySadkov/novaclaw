@@ -2,7 +2,6 @@ export * as MemoClearTool from "./memo-clear"
 
 import { Effect, Layer } from "effect"
 import { makeLocationNode } from "../effect/app-node"
-import { PermissionV2 } from "../permission"
 import { SessionComponentRegistry } from "../session/component-registry"
 import { MemoTool } from "./memo"
 import { ToolRegistry } from "./registry"
@@ -36,8 +35,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const components = yield* SessionComponentRegistry.Service
-    const permission = yield* PermissionV2.Service
-    const deps: MemoTool.Deps = { components, permission }
+    const deps: MemoTool.Deps = { components }
 
     yield* tools
       .register({
@@ -55,5 +53,6 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/memo-clear",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, SessionComponentRegistry.node],
+  // No `PermissionV2.node`: the clear is the agent's own memory, and no tier charges it (`memo.ts`).
+  deps: [ToolRegistry.node, SessionComponentRegistry.node],
 })

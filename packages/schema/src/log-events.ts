@@ -2244,6 +2244,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  // A goal-oriented sleep ended because the ROLE or the chat's type stopped being unattended — the
+  // switch-to-Interactive half of the owner's "immediate mode switch" rule. Distinct from a wake for
+  // input (no event of its own) so a run can tell a self-drive that was switched off from one that
+  // simply ran out its timer.
+  "session.drive.modechanged": {
+    level: "info",
+    message: "self-drive ended because the session is no longer unattended",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   // The harness steered a turn back to the rest of a set it had enumerated itself. INFO: a model
   // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
   // The set-completion check RAN — with the numbers behind its verdict. Distinct from `.continue`,
