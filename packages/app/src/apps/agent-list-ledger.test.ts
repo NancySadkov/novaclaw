@@ -87,6 +87,7 @@ describe("every field the wire schema declares is accounted for", () => {
       maxToolTimeoutMs: 600_000,
       permissionMode: "build",
       strict: { enabled: true },
+      tools: { bash: false },
       permissions: [],
       request: {},
     }

@@ -331,11 +331,20 @@ export interface PermissionRule {
 }
 
 /** The per-session Strict-harness override (the composer's Strict switch — jh.md). Overrides the
- *  global `config.strict` for this session's turns; `undefined` = inherit (parent, then global). */
+ *  global `config.strict` for this session's turns; `undefined` = inherit (parent, then global).
+ *  Carries the FULL harness detail so an officer's standing detail and a chat's override speak
+ *  the same language; the field-wise officer < session merge is `session/officer-harness.ts`
+ *  (the chain fold itself replaces whole objects per layer). */
 export interface StrictOverride {
   readonly enabled?: boolean
+  readonly verification?: boolean
+  readonly recovery?: boolean
+  readonly editingAids?: boolean
+  readonly budgetSteering?: boolean
   readonly attempts?: number
   readonly wallMinutes?: number
+  readonly executionTokens?: number
+  readonly reasoningTokens?: number
 }
 
 /** A session's on-record config OVERRIDES. Every field optional — `undefined` = inherit. */
@@ -447,6 +456,25 @@ export interface EffectiveConfig {
   readonly introspection?: boolean
   readonly quality?: boolean
   readonly affective?: boolean
+  /**
+   * Officer-authored harness DETAIL, folded from `AgentDefaults` (never a session-row
+   * field). Split from the stance on purpose: the stance stays the boolean every reader
+   * already understands, while the detail rides its own key — a struct folded into the
+   * stance slot would be truthy even when `{ enabled: false }`, silently switching the
+   * feature on. `undefined` = the officer authored no detail; the runner falls back to
+   * the instance block, then shipped defaults. (The `enabled` half lives in the stance.)
+   */
+  readonly introspectionDetail?: {
+    readonly cadence?: number
+    readonly model?: string
+    readonly prompt?: string
+    readonly interjection?: string
+    readonly generateInterjection?: boolean
+  }
+  readonly affectiveDetail?: {
+    readonly temperature?: number
+    readonly extended?: boolean
+  }
   /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
   readonly thinkingBudget?: boolean
   /** Tri-state: deny full-file overwrites (edit in place instead). Absent = inherit, then OFF. */
@@ -464,6 +492,21 @@ export interface EffectiveConfig {
   readonly reasoningBudget?: number
   /** Officer-level wall-time ceiling for every tool call; absent = the shipped ten-minute limit. */
   readonly maxToolTimeoutMs?: number
+  /**
+   * Officer tool DELIVERY, folded from `AgentDefaults` (never a session-row field, so the
+   * chain cannot override it per chat — it is how the officer works, not how one chat runs).
+   * `tools` narrows the routing horizon (`false` denies; `true` restores a routing-withdrawn
+   * tool only); `adhocTools` are the officer's private recipes; `globalTools === false` opts
+   * out of the instance recipe library. Absent throughout = instance decides alone.
+   */
+  readonly tools?: Record<string, boolean>
+  readonly adhocTools?: ReadonlyArray<{
+    readonly name: string
+    readonly description: string
+    readonly manual?: string
+    readonly enabled?: boolean
+  }>
+  readonly globalTools?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
 }

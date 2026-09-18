@@ -21,11 +21,25 @@ export interface Snapshot {
   readonly variant?: string
   readonly reasoningModel?: string
   readonly permissionMode?: "plan" | "ask" | "bypass" | "yolo"
-  readonly strict?: { readonly enabled?: boolean; readonly attempts?: number; readonly wallMinutes?: number }
+  /** The prototype's full Strict detail — new lever/budget fields ride along because
+   *  the shape is shared with the officer schema, not re-listed. */
+  readonly strict?: {
+    readonly enabled?: boolean
+    readonly verification?: boolean
+    readonly recovery?: boolean
+    readonly editingAids?: boolean
+    readonly budgetSteering?: boolean
+    readonly attempts?: number
+    readonly wallMinutes?: number
+    readonly executionTokens?: number
+    readonly reasoningTokens?: number
+  }
   readonly shortChat?: boolean
   readonly reasoningBudget?: number
   readonly maxToolTimeoutMs?: number
   readonly needsTaxonomy?: Requirement
+  /** The prototype's tool horizon (`false` denies). Narrowing only, like everywhere else. */
+  readonly tools?: Record<string, boolean>
 }
 
 const modelString = (model: AgentV2.Info["model"]): string | undefined =>
@@ -44,6 +58,7 @@ export const capture = (prototype: AgentV2.Info): Snapshot => ({
   reasoningBudget: prototype.reasoningBudget,
   maxToolTimeoutMs: prototype.maxToolTimeoutMs,
   needsTaxonomy: prototype.needsTaxonomy,
+  tools: (prototype as unknown as Record<string, unknown>)["tools"] as Snapshot["tools"],
 })
 
 const optionalString = (value: unknown): string | undefined =>
@@ -68,6 +83,7 @@ export const read = (session: {
   const prototypeID = optionalString(value["prototypeID"])
   if (prototypeID === undefined) return undefined
   const permissionMode = value["permissionMode"]
+  const tools = value["tools"]
   return {
     version: 1,
     prototypeID,
@@ -87,6 +103,16 @@ export const read = (session: {
     reasoningBudget: optionalNumber(value["reasoningBudget"]),
     maxToolTimeoutMs: optionalNumber(value["maxToolTimeoutMs"]),
     needsTaxonomy: optionalTaxonomy(value["needsTaxonomy"]),
+    // Narrowing only: a hand-edited blob may deny tools, never grant them — grants are
+    // decided by the permission floor and the routing table at read time, not stored here.
+    tools:
+      typeof tools === "object" && tools !== null
+        ? Object.fromEntries(
+            Object.entries(tools as Record<string, unknown>).filter(
+              (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+            ),
+          )
+        : undefined,
   }
 }
 
@@ -100,4 +126,5 @@ export const config = (profile: Snapshot): Record<string, unknown> => ({
   ...(profile.shortChat === undefined ? {} : { shortChat: profile.shortChat }),
   ...(profile.reasoningBudget === undefined ? {} : { reasoningBudget: profile.reasoningBudget }),
   ...(profile.maxToolTimeoutMs === undefined ? {} : { maxToolTimeoutMs: profile.maxToolTimeoutMs }),
+  ...(profile.tools === undefined ? {} : { tools: profile.tools }),
 })

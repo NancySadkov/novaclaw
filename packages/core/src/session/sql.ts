@@ -73,9 +73,20 @@ export const SessionTable = sqliteTable(
     priority: integer(),
     responder: text().$type<"nova" | "operator">(),
     permission_mode: text().$type<"plan" | "ask" | "surgical" | "bypass" | "yolo">(),
-    // The per-session Strict-harness override (the composer switch): enabled + racing attempts +
-    // wallMinutes. NULL = inherit (parent chain, then the global `config.strict`).
-    strict: text({ mode: "json" }).$type<{ enabled?: boolean; attempts?: number; wallMinutes?: number }>(),
+    // The per-session Strict-harness override (the composer switch): the full harness
+    // detail — enabled, lever groups, budgets. NULL = inherit (parent chain, then the
+    // global `config.strict`). JSON, so widening the TS shape adds no migration.
+    strict: text({ mode: "json" }).$type<{
+      enabled?: boolean
+      verification?: boolean
+      recovery?: boolean
+      editingAids?: boolean
+      budgetSteering?: boolean
+      attempts?: number
+      wallMinutes?: number
+      executionTokens?: number
+      reasoningTokens?: number
+    }>(),
     // Per-session harness-feature overrides (the composer's Tuning control). NULL = inherit
     // (parent chain, then the matching global config block's `enabled`).
     introspection: integer({ mode: "boolean" }),

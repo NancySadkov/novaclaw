@@ -29,7 +29,10 @@ import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolv
 
 /** The fields a colleague may declare. Deliberately small: these are standing WORK choices, not the
  *  whole session config. `reasoningBudget` belongs here because it describes how this officer thinks,
- *  while the older boolean `thinkingBudget` remains a per-chat switch over the controller. */
+ *  while the older boolean `thinkingBudget` remains a per-chat switch over the controller. `tools`,
+ *  `adhocTools` and `globalTools` belong here because the tool horizon is how this officer works —
+ *  the same family as `permissionMode` — and officer recipes are prompt-scoped delivery, folded as
+ *  data the guidance reader (slice 2) consumes. */
 export const DECLARABLE = [
   "permissionMode",
   "strict",
@@ -41,6 +44,9 @@ export const DECLARABLE = [
   "introspection",
   "quality",
   "affective",
+  "tools",
+  "adhocTools",
+  "globalTools",
 ] as const
 export type Declarable = (typeof DECLARABLE)[number]
 
@@ -83,6 +89,18 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
       // narrowing rules that matter run later, over the chain (`resolveConfig`) and the ceilings.
     ;(next as unknown as Record<string, unknown>)[field] = value
   }
+  // Bool-or-struct stances SPLIT (see `EffectiveConfig.introspectionDetail`): the generic loop
+  // above copied the raw value into the stance slot, which would read truthy for
+  // `{ enabled: false }` at every boolean reader. The stance keeps the boolean (or nothing,
+  // which is inherit); the detail rides its own key.
+  for (const key of ["introspection", "affective"] as const) {
+    const raw = (agent as unknown as Record<string, unknown>)[key]
+    if (typeof raw !== "object" || raw === null) continue
+    const { enabled, ...rest } = raw as Record<string, unknown>
+    const mutable = next as unknown as Record<string, unknown>
+    mutable[key] = typeof enabled === "boolean" ? enabled : undefined
+    if (Object.keys(rest).length > 0) mutable[`${key}Detail`] = rest
+  }
   // The `kind` posture derives the older `shortChat` switch (owner, 2026-09-17): a `chat` and the
   // owning `human` both run with no tools, no memory and no harness prompt, and `shortChat` is what
   // every existing reader gates on. `kind: "agent"` explicitly clears a chat posture inherited from
@@ -98,15 +116,36 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
  *
  * ⚠️ Includes `model`, which is NOT in `DECLARABLE` because it needs its own shape conversion in
  * `fold`. Two lists that must agree and cannot share a loop is a fork waiting to happen, so
- * `agent-defaults.test.ts` asserts this answer matches what `fold` actually changed.
+ * `agent-defaults.test.ts` asserts this answer matches what `fold` actually changed. The same
+ * holds for the `introspectionDetail`/`affectiveDetail` keys `fold` derives when an officer
+ * authors a struct: reported exactly when `fold` sets them (a struct with detail beyond
+ * `enabled`), so the agreement is mechanical rather than hoped for.
  */
 export const declaredBy = (agent: ConfigAgent.Info | undefined): readonly string[] => {
   if (agent === undefined) return []
   const record = agent as unknown as Record<string, unknown>
-  const declared: string[] = DECLARABLE.filter((field) => record[field] !== undefined)
+  // Bool-or-struct stances report EXACTLY what `fold` sets: the stance key only when a
+  // boolean stance survives (a bare boolean, or a struct carrying boolean `enabled` —
+  // a struct with detail but no stance inherits, so there is nothing to attribute), and
+  // the detail key exactly when `fold` derives one. Anything looser fails the agreement
+  // test against `fold` in one of the four struct shapes.
+  const declared: string[] = DECLARABLE.filter((field) => {
+    if (field !== "introspection" && field !== "affective") return record[field] !== undefined
+    const raw = record[field]
+    if (typeof raw === "boolean") return true
+    return (
+      typeof raw === "object" && raw !== null && typeof (raw as Record<string, unknown>)["enabled"] === "boolean"
+    )
+  })
   if (typeof record["model"] === "string" && record["model"].trim() !== "") declared.push("model")
   if (typeof record["reasoningModel"] === "string" && record["reasoningModel"].trim() !== "")
     declared.push("reasoningModel")
+  for (const key of ["introspection", "affective"] as const) {
+    const raw = record[key]
+    if (typeof raw !== "object" || raw === null) continue
+    const { enabled: _stance, ...rest } = raw as Record<string, unknown>
+    if (Object.keys(rest).length > 0) declared.push(`${key}Detail`)
+  }
   return declared
 }
 

@@ -6,6 +6,41 @@ import { ConfigProvider } from "./provider"
 import { NonNegativeInt, PositiveInt } from "../schema"
 import { ModelV2 } from "../model"
 import { ConfigNudge } from "./nudge"
+import { ConfigAdhocTools } from "./adhoc-tools"
+
+/** Per-officer Strict detail. Sparse: every field optional, absent = inherit the
+ *  shipped default (same `undefined = inherit` as the session chain). The session
+ *  row still wins per chat; the field-wise merge lives in
+ *  `session/officer-harness.ts` because the chain fold replaces whole objects. */
+export const StrictDetail = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.optional),
+  verification: Schema.Boolean.pipe(Schema.optional),
+  recovery: Schema.Boolean.pipe(Schema.optional),
+  editingAids: Schema.Boolean.pipe(Schema.optional),
+  budgetSteering: Schema.Boolean.pipe(Schema.optional),
+  attempts: Schema.Finite.pipe(Schema.optional),
+  wallMinutes: Schema.Finite.pipe(Schema.optional),
+  executionTokens: Schema.Finite.pipe(Schema.optional),
+  reasoningTokens: Schema.Finite.pipe(Schema.optional),
+})
+
+/** Per-officer affective detail. Bool-or-struct: stored booleans from before the
+ *  per-agent move keep decoding; new writes carry the struct. */
+export const AffectiveDetail = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.optional),
+  temperature: Schema.Finite.pipe(Schema.optional),
+  extended: Schema.Boolean.pipe(Schema.optional),
+})
+
+/** Per-officer introspection detail. Same bool-or-struct compatibility. */
+export const IntrospectionDetail = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.optional),
+  cadence: Schema.Finite.pipe(Schema.optional),
+  model: Schema.String.pipe(Schema.optional),
+  prompt: Schema.String.pipe(Schema.optional),
+  interjection: Schema.String.pipe(Schema.optional),
+  generateInterjection: Schema.Boolean.pipe(Schema.optional),
+})
 
 export const Color = Schema.Union([
   Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/)),
@@ -117,19 +152,15 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    */
   permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(Schema.optional),
   /**
-   * Strict, as the same OVERRIDE the session row carries — `{ enabled, attempts, wallMinutes }`,
-   * every field optional.
+   * Strict, as the same OVERRIDE the session row carries — now the FULL harness
+   * detail (every field optional, absent = inherit).
    *
    * ⚠️ NOT a bare boolean, and the typecheck is what said so: the resolved config's `strict` is an
    * object, so a colleague declaring `true` would have folded a boolean into a field every reader
    * treats as a record. A colleague's standing choice has to speak the same language as the layer it
    * sits in, or the layering is a type error waiting for a caller.
    */
-  strict: Schema.Struct({
-    enabled: Schema.Boolean.pipe(Schema.optional),
-    attempts: Schema.Finite.pipe(Schema.optional),
-    wallMinutes: Schema.Finite.pipe(Schema.optional),
-  }).pipe(Schema.optional),
+  strict: StrictDetail.pipe(Schema.optional),
   /** The Chat/Agent posture: `true` = pure Chat, with no project, memory, tools, or harness prompt. */
   shortChat: Schema.Boolean.pipe(Schema.optional),
   /**
@@ -146,16 +177,33 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(Schema.optional),
   /** The officer's durable objective. The live goal component may refine its plan, never replace this brief. */
   goal: Schema.String.pipe(Schema.optional),
-  /** Standing harness preferences. Each is sparse: absent inherits the instance setting. */
+  /** Standing harness preferences. Each is sparse: absent inherits the instance setting.
+   *  `introspection` and `affective` accept the historical bare boolean or the full
+   *  detail struct — old rows keep decoding, new writes carry the struct. */
   contextBudget: Schema.Boolean.pipe(Schema.optional),
   surgicalEdits: Schema.Boolean.pipe(Schema.optional),
-  introspection: Schema.Boolean.pipe(Schema.optional),
+  introspection: Schema.Union([Schema.Boolean, IntrospectionDetail]).pipe(Schema.optional),
   quality: Schema.Boolean.pipe(Schema.optional),
-  affective: Schema.Boolean.pipe(Schema.optional),
+  affective: Schema.Union([Schema.Boolean, AffectiveDetail]).pipe(Schema.optional),
   /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
   nudges: ConfigNudge.List.pipe(Schema.optional),
   /** Absent/true inherits instance nudges; false opts this officer out without affecting its own nudges. */
   globalNudges: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * This officer's tool horizon, applied AFTER the instance `tool_routing` table.
+   * Narrowing only (the structural metaphor: authority narrows downward, never
+   * widens): `false` denies the tool for this officer's sessions; `true`
+   * restores a tool the routing table withdrew, never one the permission
+   * ruleset withdrew — the caller applies the permission floor separately, so
+   * this predicate cannot widen it. Absent = the routing table decides alone.
+   */
+  tools: Schema.Record(Schema.String, Schema.Boolean).pipe(Schema.optional),
+  /** Ad-hoc tool recipes owned by this officer. Prompt-scoped like `nudges`: they
+   *  reach only this officer's sessions, never the instance-wide prompt. */
+  adhocTools: ConfigAdhocTools.Info.pipe(Schema.optional),
+  /** Absent/true inherits the instance recipe library; false opts this officer
+   *  out without affecting its own recipes. Mirrors `globalNudges`. */
+  globalTools: Schema.Boolean.pipe(Schema.optional),
   /** Per-turn reasoning-token ceiling for this officer. Absent = the selected model's budget;
    *  `0` structurally disables reasoning for the officer. */
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),
