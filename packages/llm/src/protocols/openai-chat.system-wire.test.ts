@@ -17,7 +17,7 @@ const route = OpenAIChat.route
   .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
   .model({ id: "qwen3.6-35b" })
 
-const PROMPT = "You're officer agent of a NovaClaw instance — multi-agent AI harness."
+const PROMPT = "You're officer agent of a NovaClaw instance — multi-agent AI workgroup."
 
 const prepared = () =>
   Effect.runSync(
