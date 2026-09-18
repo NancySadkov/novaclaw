@@ -1,5 +1,8 @@
+export * as RepetitionFloor from "./repetition-floor"
+
 import { produce } from "immer"
 import type { ModelV2 } from "../../model"
+import { ProviderCapability } from "../../provider-capability"
 
 // Unattended-safety floor for local / openai-compatible models. Without a repetition penalty most
 // small models LOOP, which is fatal for unattended runs — so default `repetition_penalty` to a
@@ -20,3 +23,49 @@ export const withRepetitionFloor = (model: ModelV2.Info): ModelV2.Info =>
     : produce(model, (draft) => {
         draft.request.body.repetition_penalty = DEFAULT_REPETITION_PENALTY
       })
+
+/**
+ * The endpoint identity a learned rejection is filed under.
+ *
+ * ⚠️ A trailing slash, host case or query string is not a different endpoint; the same server under
+ * two spellings must share one refusal. A malformed URL has no identity, so it is never remembered
+ * and the floor keeps applying — the safe direction.
+ */
+export const endpointKey = (url: string | undefined): string | undefined => {
+  if (url === undefined) return undefined
+  try {
+    const parsed = new URL(url)
+    return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Does this 4xx body say the endpoint does not know `repetition_penalty`?
+ *
+ * Reuses `ProviderCapability.rejectsParameter`, the probe's own reader, so there is ONE definition
+ * of "the endpoint named the parameter as unsupported" in the tree rather than a second that could
+ * differ. Measured shape (OpenCode Go, 2026-09-18):
+ * `invalid request body: json: unknown field "repetition_penalty"`.
+ */
+export const rejectsRepetitionPenalty = (message: string): boolean =>
+  ProviderCapability.rejectsParameter(message, "repetition_penalty")
+
+/** Endpoints THIS process has already been told reject the floor. */
+const rejectedEndpoints = new Set<string>()
+
+/** True when this process must omit `repetition_penalty` for the endpoint. */
+export const isFloorRejected = (url: string | undefined): boolean => {
+  const key = endpointKey(url)
+  return key !== undefined && rejectedEndpoints.has(key)
+}
+
+/** Remember a rejection for this process, so the very next request omits the parameter. */
+export const rememberFloorRejected = (url: string | undefined): void => {
+  const key = endpointKey(url)
+  if (key !== undefined) rejectedEndpoints.add(key)
+}
+
+/** Test seam: module state must not leak between cases. */
+export const clearFloorRejections = (): void => rejectedEndpoints.clear()

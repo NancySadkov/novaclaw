@@ -161,6 +161,10 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // in one request and is undone by deleting the entry, where a wrong tool channel costs an agent
   // that silently cannot act.
   provider_media_limit: "operational",
+  // The endpoints that reject the unattended repetition floor. OPERATIONAL for the same reason as
+  // the image cap: a wrong (or stale) row costs one parameter on one endpoint and is undone by
+  // deleting the entry. It grants nothing.
+  provider_repetition_floor: "operational",
   // Bounded measurements that make prompt packing conservative for one exact model/server route.
   // A wrong row can only spend extra context or be deleted to restore defaults; it grants nothing.
   provider_route_profile: "operational",

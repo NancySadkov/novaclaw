@@ -2075,6 +2075,25 @@ export const EVENTS = {
     file: "packages/core/src/session/runner/llm.ts",
   },
   /**
+   * The endpoint named `repetition_penalty` as an unknown field, and we stopped sending the
+   * unattended floor to it.
+   *
+   * Measured 2026-09-18 (OpenCode Go): a strict hosted upstream refuses the whole request over the
+   * field (`invalid request body: json: unknown field "repetition_penalty"`). Untreated that is a
+   * dead end on every turn; this event is how a reader sees the endpoint-scoped recovery happen
+   * rather than inferring it from two provider attempts.
+   */
+  "session.repetition.disabled": {
+    level: "info",
+    message: "endpoint rejects repetition_penalty; the unattended floor is now omitted",
+    attributes: {
+      "session.id": "correlate",
+      "provider.endpoint": "text",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
    * The per-turn request footprint — what the outgoing request costs, and which part of it grew.
    *
    * `debug`, deliberately: it fires on EVERY turn, so at `info` it would drown the log it is meant

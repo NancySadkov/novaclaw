@@ -2,9 +2,10 @@ export * as SessionRunnerModel from "./model"
 
 import { makeLocationNode } from "../../effect/app-node"
 import { splitModelSampling } from "./sampling-split"
-import { withRepetitionFloor } from "./repetition-floor"
+import { RepetitionFloor, withRepetitionFloor } from "./repetition-floor"
 import { ModelHealth } from "./model-health"
 import { ProviderRecovery } from "./provider-recovery"
+import { ProviderSession } from "./provider-session"
 import { type Model } from "@novaclaw/llm"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@novaclaw/llm/protocols/openai-compatible-chat"
@@ -295,6 +296,14 @@ export interface Interface {
   readonly learnedImageLimit: (model: ModelV2.Ref) => Effect.Effect<number | undefined>
   /** Remember a cap learned this run. Best-effort: a failed write must never fail a recovered turn. */
   readonly rememberImageLimit: (model: ModelV2.Ref, limit: number) => Effect.Effect<void>
+  /**
+   * Remember that an ENDPOINT rejects the unattended `repetition_penalty` floor.
+   *
+   * Endpoint-keyed, not model-keyed, and never written into a model's config: the refusal is a
+   * property of the server. Best-effort like `rememberImageLimit` — the in-process set already
+   * covers this run, and a store that will not write must not fail the turn that just recovered.
+   */
+  readonly rememberRepetitionFloor: (endpoint: string | undefined) => Effect.Effect<void>
   /** Catalog identity of the model `resolve` lands on — fallbacks included. Unlike the wire route's
    * `model.id`, this is the stable user-facing id and is therefore the identity model-routing config
    * matches, and the identity `ModelHealth` files a verdict under. */
@@ -535,6 +544,8 @@ export const layerWith = (
   /** ⚠️ Added LAST for the reason above. A seam with no store simply remembers nothing. */
   learnedImageLimit: Interface["learnedImageLimit"] = () => Effect.succeed(undefined),
   rememberImageLimit: Interface["rememberImageLimit"] = () => Effect.void,
+  /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
+  rememberRepetitionFloor: Interface["rememberRepetitionFloor"] = () => Effect.void,
   /** ⚠️ Added LAST. Test seams without the shared recovery store remain inert. */
   providerFailed: Interface["providerFailed"] = () => Effect.succeed(false),
   providerSucceeded: Interface["providerSucceeded"] = () => Effect.void,
@@ -564,6 +575,7 @@ export const layerWith = (
       resolveDefault,
       learnedImageLimit,
       rememberImageLimit,
+      rememberRepetitionFloor,
       taxonomy,
       retryAttempts,
       capabilities,
@@ -711,7 +723,12 @@ const requiresReasoningContent = (url: string | undefined): boolean => {
   }
 }
 
-const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
+/**
+ * @param extraHeaders Conversation-scoped deployment headers (see `ProviderSession`) the resolved
+ *   route must carry. They win over the model's own configured headers for the same key, because
+ *   they are the value the endpoint requires; `undefined` leaves the configured set untouched.
+ */
+const withDefaults = (model: ModelV2.Info, route: AnyRoute, extraHeaders?: Record<string, string>) => {
   const body = model.request.body
   // `thinkingBudget` is a harness-side knob carried in `request.body` (see the config seeder), not
   // a sampling param — pull it out before the split so it never reaches the wire.
@@ -735,10 +752,11 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   // stay in http.body. See sampling-split.ts.
   const split = splitModelSampling(httpBody)
   const context = ProbeWindow.get(model.providerID, model.id) ?? model.limit.context
+  const headers = extraHeaders === undefined ? model.request.headers : { ...model.request.headers, ...extraHeaders }
   return route.with({
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
-    headers: model.request.headers,
+    headers,
     ...(Object.keys(split.generation).length > 0 ? { generation: split.generation } : {}),
     http: { body: split.http },
     // B15/T3 — a live probe's server-reported window (vLLM max_model_len) is the HONORED
@@ -834,6 +852,17 @@ export const fromCatalogModel = (
    * default, which is the behaviour before any of this existed.
    */
   measuredToolChannel?: "native" | "prompted",
+  /**
+   * Conversation-scoped deployment headers the endpoint requires (see `ProviderSession`). Threaded
+   * in from `resolve`, the one place that knows both the session id and the endpoint URL.
+   */
+  extraHeaders?: Record<string, string>,
+  /**
+   * True when this ENDPOINT has already told us it does not know `repetition_penalty` (see
+   * `RepetitionFloor`). The unattended floor is then omitted, because a strict hosted endpoint
+   * rejects the whole request over the unknown field rather than ignoring it.
+   */
+  disableRepetitionFloor?: boolean,
 ): Effect.Effect<Model, UnsupportedApiError> => {
   const resolved =
     credential?.type !== "key" || credential.metadata === undefined
@@ -870,14 +899,14 @@ export const fromCatalogModel = (
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(
-      withDefaults(resolved, OpenAIResponses.route)
+      withDefaults(resolved, OpenAIResponses.route, extraHeaders)
         .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
         .model(modelInput(resolved.api.id)),
     )
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/anthropic") {
     return Effect.succeed(
-      withDefaults(resolved, AnthropicMessages.route)
+      withDefaults(resolved, AnthropicMessages.route, extraHeaders)
         .with({ auth: key === undefined ? Auth.none : Auth.header("x-api-key", key) })
         .model(modelInput(resolved.api.id)),
     )
@@ -885,9 +914,14 @@ export const fromCatalogModel = (
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai-compatible" && resolved.api.url) {
     // Unattended-safety floor: local/compatible models loop without a repetition penalty, so
     // default it to 1.05 here (openai-compatible only — OpenAI/Anthropic reject the key). See
-    // repetition-floor.ts. Overridable by the model's own config.
+    // repetition-floor.ts. Overridable by the model's own config, and omitted entirely for an
+    // endpoint that has told us it does not know the parameter (learned, endpoint-keyed).
+    const floored =
+      disableRepetitionFloor === true || RepetitionFloor.isFloorRejected(resolved.api.url)
+        ? resolved
+        : withRepetitionFloor(resolved)
     return Effect.succeed(
-      withDefaults(withRepetitionFloor(resolved), OpenAICompatibleChat.route)
+      withDefaults(floored, OpenAICompatibleChat.route, extraHeaders)
         .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
         .model(modelInput(resolved.api.id)),
     )
@@ -901,14 +935,38 @@ export const fromCatalogModel = (
   )
 }
 
+/**
+ * The route for a turn, with the conversation's identity attached where the endpoint requires one.
+ *
+ * 🔴 **This is the one seam that knows both the session id and the endpoint URL, so it is where the
+ * OpenCode Go session header is applied** (`ProviderSession`). Every request this route produces
+ * inherits it — the ordinary turn, compaction, reasoning phases, short answers and titles — because
+ * it rides the route's DEFAULTS rather than one hand-built request. Putting it on a single request
+ * at the turn's assembly site left the other inference paths (`compaction.ts`, `short-answer.ts`)
+ * failing at the gate with the same 400 the fix exists to clear.
+ *
+ * `session.id` is exactly the value the gate wants: ASCII, ≪256 bytes, stable for the whole
+ * conversation. A request assembled with no session (document ingestion, a community reply) falls
+ * back to one bounded session-less identity rather than a fresh UUID per request.
+ */
 export const resolve = (
   session: SessionSchema.Info,
   model: ModelV2.Info,
   credential?: Credential.Value,
   measuredToolChannel?: "native" | "prompted",
+  /** The endpoint's learned refusal of the unattended repetition floor (`RepetitionFloor`). */
+  disableRepetitionFloor?: boolean,
 ) =>
   withVariant(model, session.model?.variant).pipe(
-    Effect.flatMap((model) => fromCatalogModel(model, credential, measuredToolChannel)),
+    Effect.flatMap((model) =>
+      fromCatalogModel(
+        model,
+        credential,
+        measuredToolChannel,
+        ProviderSession.headersFor({ url: model.api.url, sessionID: session.id }),
+        disableRepetitionFloor,
+      ),
+    ),
   )
 
 export const supported = (model: ModelV2.Info) =>
@@ -1087,6 +1145,21 @@ export const locationLayer = Layer.effect(
     })
 
     /**
+     * Whether this ENDPOINT has told us it rejects the unattended repetition floor.
+     *
+     * Read from the settings store so a fresh worker — the next turn — starts already knowing; the
+     * runner's in-process set covers the retry within one turn. Best-effort by construction: a store
+     * that will not read means "not disabled", which keeps the floor exactly as before the row.
+     */
+    const repetitionFloorDisabled = Effect.fnUntraced(function* (url: string | undefined) {
+      const key = RepetitionFloor.endpointKey(url)
+      if (key === undefined) return false
+      const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
+      const stored = all["provider_repetition_floor"]
+      return typeof stored === "object" && stored !== null && (stored as Record<string, unknown>)[key] === true
+    })
+
+    /**
      * What the capability probe measured for this model, if anything, and if it still applies.
      *
      * ⚠️ Only `native` and `prompted` are ACTED on. A stored `chat-only` says the endpoint has no
@@ -1217,6 +1290,7 @@ export const locationLayer = Layer.effect(
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
           yield* measuredChannel(selected),
+          yield* repetitionFloorDisabled(selected.api.url),
         )
         return {
           model: routed,
@@ -1260,6 +1334,8 @@ export const locationLayer = Layer.effect(
           sessionless,
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
+          undefined,
+          yield* repetitionFloorDisabled(selected.api.url),
         )
       }),
       // Models item (c): best-effort class lookup for the system-prompt scaffold and recall budget.
@@ -1308,6 +1384,21 @@ export const locationLayer = Layer.effect(
         yield* settings
           .set("provider_media_limit", { ...rows, [`${model.providerID}/${model.id}`]: limit })
           .pipe(Effect.ignore)
+      }),
+      /**
+       * Remember one endpoint's refusal of the repetition floor, merging rather than replacing the
+       * other endpoints' rows. Keyed by normalized URL so two spellings of one server share a row;
+       * a malformed URL has no identity and is not written.
+       */
+      rememberRepetitionFloor: Effect.fn("SessionRunnerModel.rememberRepetitionFloor")(function* (endpoint) {
+        const key = RepetitionFloor.endpointKey(endpoint)
+        if (key === undefined) return
+        const all: Record<string, unknown> = yield* settings
+          .all()
+          .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+        const current = all["provider_repetition_floor"]
+        const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+        yield* settings.set("provider_repetition_floor", { ...rows, [key]: true }).pipe(Effect.ignore)
       }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
@@ -1638,6 +1729,7 @@ export const locationLayer = Layer.effect(
             placement.model,
             connection ? yield* integrations.connection.resolve(connection) : undefined,
             yield* measuredChannel(placement.model),
+            yield* repetitionFloorDisabled(placement.model.api.url),
           )
           // A pin resolves its own placement, so the catalog entry the route was built from is
           // `placement.model` — which may be a DIFFERENT placement of the same catalog model than

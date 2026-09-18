@@ -15,7 +15,20 @@ import {
   type ProviderErrorEvent,
   isModelMissing,
 } from "@novaclaw/llm"
-import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Schema, Semaphore, Stream } from "effect"
+import {
+  Cause,
+  Clock,
+  DateTime,
+  Duration,
+  Effect,
+  Exit,
+  FiberSet,
+  Layer,
+  Option,
+  Schema,
+  Semaphore,
+  Stream,
+} from "effect"
 import path from "path"
 import * as OSModule from "node:os"
 import { AgentV2 } from "../../agent"
@@ -73,6 +86,7 @@ import { SpawnTool } from "../../tool/spawn"
 import { WaitTool } from "../../tool/wait"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { RepetitionFloor } from "./repetition-floor"
 import { SessionMaintenance } from "./maintenance"
 import { Scratch } from "../../scratch"
 import { PromptManager } from "./prompt-manager"
@@ -1178,6 +1192,9 @@ export const layer = Layer.effect(
       // The endpoint named its image cap; re-lower this same turn under it. Distinct from the
       // overflow arm because the recovery differs: compaction summarises TEXT and removes no image.
       | { readonly _tag: "RetryUnderImageBudget"; readonly step: number }
+      // The endpoint told us it does not know `repetition_penalty`; re-resolve this same turn with
+      // the unattended floor omitted. Distinct from the image arm only in what it drops.
+      | { readonly _tag: "RetryWithoutRepetitionFloor"; readonly step: number }
       | { readonly _tag: "RetryOnReplacedModel"; readonly step: number }
 
     class TurnTransitionError extends Error {
@@ -1188,6 +1205,9 @@ export const layer = Layer.effect(
 
     const continueAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "ContinueAfterCompaction", step })
     const retryUnderImageBudget = (step: number) => new TurnTransitionError({ _tag: "RetryUnderImageBudget", step })
+    /** Re-resolve the turn with the endpoint's rejected repetition floor omitted. */
+    const retryWithoutRepetitionFloor = (step: number) =>
+      new TurnTransitionError({ _tag: "RetryWithoutRepetitionFloor", step })
     /** The model this turn asked for is not served; the row now names another one. Re-run so the
      *  user gets an answer instead of a fault they have to act on. */
     const retryOnReplacedModel = (step: number) => new TurnTransitionError({ _tag: "RetryOnReplacedModel", step })
@@ -1282,9 +1302,7 @@ export const layer = Layer.effect(
         const jobInstructions =
           prototype?.system ??
           agent.info?.system ??
-          (kind !== "agent" || shortChat || agent.info === undefined
-            ? undefined
-            : OfficerPrompt.DEFAULT_OFFICER_PROMPT)
+          (kind !== "agent" || shortChat || agent.info === undefined ? undefined : OfficerPrompt.DEFAULT_OFFICER_PROMPT)
         const goalEntry = yield* components.get({ sessionID: session.id, kind: "goal" }).pipe(
           Effect.map((entry) => entry?.value),
           Effect.orElseSucceed(() => undefined),
@@ -1293,9 +1311,9 @@ export const layer = Layer.effect(
           operationMode: agent.info?.operationMode,
           sessionType,
         })
-        const memoRows = yield* components.list({ sessionID: session.id, kind: "durable" }).pipe(
-          Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []),
-        )
+        const memoRows = yield* components
+          .list({ sessionID: session.id, kind: "durable" })
+          .pipe(Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []))
         const memos = [...Durable.itemsOf(memoRows)].sort((left, right) =>
           left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
         )
@@ -3394,6 +3412,33 @@ export const layer = Layer.effect(
             if (mediaLimitFailureEvent) yield* publish(mediaLimitFailureEvent)
           }
           const recoveryFailure = overflowProviderError(overflowFailure ?? failure)
+          // 🔴 The endpoint named `repetition_penalty` as an unknown field. That is evidence about
+          // the ENDPOINT, not a malformed request: a strict upstream refuses the whole body over the
+          // unattended floor. Learn it, then re-resolve the same turn with the floor omitted — the
+          // endpoint-keyed store makes every later turn start without it, so this costs one extra
+          // request ONCE per endpoint rather than on every turn.
+          //
+          // ⚠️ Only recover on NEWS. Once this process knows, a second identical refusal is a
+          // different fault (or an upstream disagreeing with the first); re-running on it would be an
+          // unbounded loop dressed as a recovery, so it falls through and reports the real failure.
+          if (
+            recoveryFailure !== undefined &&
+            RepetitionFloor.rejectsRepetitionPenalty(recoveryFailure.message) &&
+            !publisher.hasAssistantStarted()
+          ) {
+            const endpoint = model.route.endpoint.baseURL
+            if (!RepetitionFloor.isFloorRejected(endpoint)) {
+              RepetitionFloor.rememberFloorRejected(endpoint)
+              // Best-effort: the in-process set already covers this run, and a store that will not
+              // write must not fail the turn that just recovered.
+              yield* models.rememberRepetitionFloor(endpoint).pipe(Effect.ignore)
+              yield* Log.event("session.repetition.disabled", {
+                "session.id": session.id,
+                "provider.endpoint": RepetitionFloor.endpointKey(endpoint) ?? "unknown",
+              })
+              return yield* Effect.die(retryWithoutRepetitionFloor(currentStep))
+            }
+          }
           const recoveryPlan =
             recoveryFailure === undefined
               ? undefined

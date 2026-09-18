@@ -91,6 +91,7 @@ export const SETTINGS_KEYS = [
   // verdict over HTTP — and what stops an undeclared key crash-looping the instance at boot.
   "provider_capability",
   "provider_media_limit",
+  "provider_repetition_floor",
   "provider_route_profile",
   // Machine-written reconnect circuit shared by fresh session workers. A successful request clears
   // its row; failures retain their exponential backoff across processes and app restarts.

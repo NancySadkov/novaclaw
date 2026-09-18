@@ -82,6 +82,8 @@ const VALID: Record<string, unknown> = {
   // The learned per-request image cap, keyed "providerID/modelID". A plain number: absent means no
   // cap is known, which lowers byte-identically to an endpoint that never had one.
   provider_media_limit: { "spark-holo/holo3.1": 3 },
+  // Endpoints that refuse the unattended repetition floor, keyed by normalized endpoint URL.
+  provider_repetition_floor: { "https://opencode.ai/zen/go/v1": true },
   provider_route_profile: {
     '["spark-holo","holo3.1","http://127.0.0.1:8010/v1","openai-chat","openai-chat"]': {
       promptRatios: [1.02, 1.08],

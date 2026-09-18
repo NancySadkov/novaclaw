@@ -188,6 +188,10 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       // Durable reconnect deadlines; a malformed row decodes as empty and deleting it restores the
       // built-in 2-second exponential recovery cadence.
       "provider_recovery",
+      // Endpoints that reject the unattended repetition floor. Operational for the same reason as
+      // the image cap above: a stale row costs one parameter on one endpoint and is undone by
+      // deleting the entry; a missing row simply sends the floor as before.
+      "provider_repetition_floor",
       // Bounded measurements for one exact provider route. A bad row only reserves extra prompt
       // room or is ignored, and deleting it restores the conservative built-in estimate.
       "provider_route_profile",
@@ -483,8 +487,7 @@ describe("the tool reaches EVERY store the router writes to", () => {
           },
         })
         expect(result.type).toBe("text")
-        for (const key of ["providers", "agents", "commands", "references"])
-          expect(textOf(result)).toContain(key)
+        for (const key of ["providers", "agents", "commands", "references"]) expect(textOf(result)).toContain(key)
         expect(textOf(result)).not.toContain("DISCARDED")
 
         // Read one of them back through its own store, so "it committed" is not the tool's opinion.

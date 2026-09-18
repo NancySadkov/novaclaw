@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { LLM } from "@novaclaw/llm"
@@ -14,6 +14,8 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { DeviceRegistry } from "@novaclaw/core/session/device-registry"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
+import { RepetitionFloor } from "@novaclaw/core/session/runner/repetition-floor"
 import {
   healthyAlternative,
   rankByCapability,
@@ -403,6 +405,97 @@ describe("SessionRunnerModel", () => {
       })
     }),
   )
+
+  // ── OPENCODE GO SESSION AFFINITY ───────────────────────────────────────────────────────────────
+  //
+  // The gateway rejects every inference request without a session identity, and the value must stay
+  // stable for the conversation. It rides the route DEFAULTS, applied at `resolve` — the one seam
+  // that knows both the session id and the endpoint — so every request derived from this resolution
+  // (compaction, short answers, titles, the reasoning phase) carries it, not just the turn's own
+  // hand-built request. See `doc/oc-session.md` and `provider-session.ts`.
+  describe("OpenCode Go conversation affinity", () => {
+    const goModel = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://opencode.ai/zen/go/v1" }),
+      request: { headers: { "x-config": "kept" }, body: {} },
+    })
+    const sessionWith = (id: string) =>
+      SessionV2.Info.make({
+        id: SessionV2.ID.make(id),
+        slug: "test",
+        version: "test",
+        title: "test",
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
+        location: { directory: AbsolutePath.make("/project") },
+      })
+
+    it.effect("the conversation's own id reaches the route defaults, above configured headers", () =>
+      Effect.gen(function* () {
+        const resolved = yield* SessionRunnerModel.resolve(sessionWith("ses_go_conversation"), goModel)
+        expect(resolved.route.defaults.headers).toMatchObject({
+          "x-config": "kept",
+          "x-opencode-session": "ses_go_conversation",
+        })
+        // The member `resolveRequestOptions` merges onto the outbound request.
+        expect(resolved.route.defaults.http?.headers).toMatchObject({
+          "x-opencode-session": "ses_go_conversation",
+        })
+      }),
+    )
+
+    it.effect("leaves a non-Go endpoint with exactly its configured headers", () =>
+      Effect.gen(function* () {
+        const local = ModelV2.Info.make({
+          ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://127.0.0.1:8000/v1" }),
+          request: { headers: { "x-config": "kept" }, body: {} },
+        })
+        const resolved = yield* SessionRunnerModel.resolve(sessionWith("ses_local"), local)
+        expect(resolved.route.defaults.headers).not.toHaveProperty(ProviderSession.OPENCODE_SESSION_HEADER)
+      }),
+    )
+  })
+
+  // ── THE ENDPOINT'S LEARNED repetition_penalty REFUSAL ─────────────────────────────────────────
+  //
+  // A strict hosted /chat/completions upstream (measured: OpenCode Go) refuses the whole body over
+  // the unattended floor's `repetition_penalty`. Once the endpoint has said so — in the persisted
+  // store the service reads, or this process's own memory — the parameter must not be sent.
+  describe("the endpoint's learned repetition_penalty refusal", () => {
+    afterEach(() => RepetitionFloor.clearFloorRejections())
+    const goModel = ModelV2.Info.make({
+      ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://opencode.ai/zen/go/v1" }),
+      request: { headers: {}, body: {} },
+    })
+
+    it.effect("sends the floor by default, and omits it once the endpoint has refused it", () =>
+      Effect.gen(function* () {
+        const before = yield* SessionRunnerModel.fromCatalogModel(goModel)
+        expect(before.route.defaults.http?.body).toMatchObject({ repetition_penalty: 1.05 })
+
+        // The persisted flag the service resolves and passes in.
+        const persisted = yield* SessionRunnerModel.fromCatalogModel(goModel, undefined, undefined, undefined, true)
+        expect(persisted.route.defaults.http?.body).not.toHaveProperty("repetition_penalty")
+
+        // This process's own memory, which covers the retry before the store round-trips.
+        RepetitionFloor.rememberFloorRejected("https://opencode.ai/zen/go/v1")
+        const remembered = yield* SessionRunnerModel.fromCatalogModel(goModel)
+        expect(remembered.route.defaults.http?.body).not.toHaveProperty("repetition_penalty")
+      }),
+    )
+
+    it.effect("leaves a different endpoint's floor untouched", () =>
+      Effect.gen(function* () {
+        RepetitionFloor.rememberFloorRejected("https://opencode.ai/zen/go/v1")
+        const local = ModelV2.Info.make({
+          ...model({ type: "aisdk", package: "@ai-sdk/openai-compatible", url: "http://127.0.0.1:8000/v1" }),
+          request: { headers: {}, body: {} },
+        })
+        const resolved = yield* SessionRunnerModel.fromCatalogModel(local)
+        expect(resolved.route.defaults.http?.body).toMatchObject({ repetition_penalty: 1.05 })
+      }),
+    )
+  })
 
   // THE FALLBACK DECISIONS — the branches that had no test at any level, and shipped two bugs in one
   // day because of it. Pure now (`usableFallback` / `healthyAlternative`), so the rule is checkable

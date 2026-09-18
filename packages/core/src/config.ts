@@ -537,12 +537,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
    * this key is how the person at the computer switches one OFF, and it is an override rather than
    * a doorway (principle 12a). Writing `enabled: true` is therefore the same as writing nothing.
    *
-    * ⚠️ **It may never carry anything but a switch, and that is a type-level property.** A policy is
-    * chosen by ID and its behaviour lives in code that was installed; if this struct could carry a
-    * command, a pattern or a script, a config write would become a way to author a new pre-action
-    * guard. A config surface may NAME a policy and may never define one.
-    *
-    * Keyed by the same id grammar a provider registers under, so the two can always name each other.
+   * ⚠️ **It may never carry anything but a switch, and that is a type-level property.** A policy is
+   * chosen by ID and its behaviour lives in code that was installed; if this struct could carry a
+   * command, a pattern or a script, a config write would become a way to author a new pre-action
+   * guard. A config surface may NAME a policy and may never define one.
+   *
+   * Keyed by the same id grammar a provider registers under, so the two can always name each other.
    */
   tool_policy: Schema.Record(
     Schema.String,
@@ -642,6 +642,25 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         'How many images each model accepts in one request, keyed "providerID/modelID" — e.g. ' +
         '{"spark-holo/holo3.1":3}. Learned from the endpoint\'s own refusal; absent means no cap ' +
         "is known and every image is sent.",
+    }),
+
+  /**
+   * The endpoints that told us they do not know the `repetition_penalty` parameter, keyed by
+   * normalized endpoint URL — learned from the endpoint's own 400 (`unknown field
+   * "repetition_penalty"`) and kept so every later process omits the unattended floor from the
+   * start rather than re-learning it on its first turn.
+   *
+   * ⚠️ NOT a model setting and never written into a model's config. It is a measured property of the
+   * ENDPOINT, one row per server, and deleting the row undoes it (the self-healing law wants a
+   * still-working model able to repair a stale verdict).
+   */
+  provider_repetition_floor: Schema.Record(Schema.String, Schema.Boolean)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        'Endpoints that reject "repetition_penalty", keyed by normalized endpoint URL — e.g. ' +
+        '{"https://opencode.ai/zen/go/v1":true}. Learned from the endpoint\'s own 400; absent means ' +
+        "the unattended repetition floor is sent.",
     }),
 
   /**
