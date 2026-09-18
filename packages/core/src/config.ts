@@ -20,10 +20,7 @@ import { ConfigCapabilityService } from "./config/capability-service"
 import { ConfigDevice } from "./config/device"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
-import { ConfigAdhocTools } from "./config/adhoc-tools"
-import { ConfigAffective } from "./config/affective"
 import { ConfigHarnessDrives } from "./config/harness-drives"
-import { ConfigIntrospection } from "./config/introspection"
 import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
 import { ConfigTrash } from "./config/trash"
@@ -33,12 +30,10 @@ import { ConfigProviderPreset } from "./config/provider-preset"
 import { ConfigProviderConnection } from "./config/provider-connection"
 import { ConfigReference } from "./config/reference"
 import { ConfigServer } from "./config/server"
-import { ConfigStrict } from "./config/strict"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigToolRouting } from "./config/tool-routing"
 import { ConfigComputer } from "./config/computer"
 import { ConfigWatcher } from "./config/watcher"
-import { ConfigNudge } from "./config/nudge"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
 import { Log } from "@novaclaw/schema/log"
@@ -126,10 +121,14 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       "per field. ⚠️ Ruling 4: CONSEQUENTIAL, never operational — an agent that can lower its own " +
       "floor has exempted itself from the guard.",
   }),
-  nudges: ConfigNudge.List.pipe(Schema.optional).annotate({
-    description:
-      "Targeted user-authored harness instructions. Defaults ship in code; a stored array replaces them and is evaluated live at event boundaries.",
-  }),
+  // 🔴 REMOVED (per-agent tuning, slice 4): the instance-wide `nudges`, `introspection`,
+  // `adhoc_tools`, `affective` and `strict` blocks. Standing harness choices belong to the
+  // ROLE, not the instance (`config/agent.ts`): an officer carries its own nudges, recipes,
+  // Strict detail, affective sampling and judge detail, resolved through `AgentDefaults` and
+  // merged field-wise by `session/officer-harness.ts`. Stored rows for these keys are skipped
+  // by the per-key settings decode (no migration, no boot failure — principle 1: pre-release,
+  // drop them). The shipped code defaults remain the base layer (`Nudge.defaults()`,
+  // `Introspection.resolve(undefined)`, sampling/model defaults at the readers).
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
   }),
@@ -159,23 +158,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "User profile the model can read (name + background). Delivered on demand through the `profile` tool when enabled (B4)",
     }),
-  introspection: ConfigIntrospection.Info.pipe(Schema.optional).annotate({
-    description: "Introspection mode — a judge model periodically checks whether the session is stuck (P2)",
-  }),
   harness_drives: ConfigHarnessDrives.Info.pipe(Schema.optional).annotate({
     description:
       "The automatic continuations applied to a turn that thinks it is finished (re-grounding, set completion, " +
       "fan-out supervision). All default ON; switching one off exists so the model can be measured unaided",
-  }),
-  adhoc_tools: ConfigAdhocTools.Info.pipe(Schema.optional).annotate({
-    description: "Ad-hoc tool recipes: name + description listed in the system prompt, manual pulled on demand (P4)",
-  }),
-  affective: ConfigAffective.Info.pipe(Schema.optional).annotate({
-    description: "Affective mode — emotion-modulated sampling + loop-breaking nudges (P3)",
-  }),
-  strict: ConfigStrict.Info.pipe(Schema.optional).annotate({
-    description:
-      "Strict mode — the Juvenile Harness posture for weak/local models: harness-owned decomposition, per-step verification, recovery (jh.md; E6)",
   }),
   instances: Schema.Array(
     Schema.Struct({
@@ -911,3 +897,4 @@ export const node = makeLocationNode({
   layer,
   deps: [FSUtil.node, Global.node, Location.node, Policy.node, SettingsConfigStore.node],
 })
+

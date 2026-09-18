@@ -333,25 +333,23 @@ describe("AgentConfigDialog renders", () => {
 
     const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
     // 🔴 Re-pinned 2026-09-15 (twice): the Interactive/Unattended PAIR became ONE switch, and then
-    // that switch and the durable Goal moved to the WORK tab. Re-pinned again 2026-09-16 (owner): Mood
+    // that switch and the durable Goal moved to the WORK tab. Re-pinned 2026-09-16 (owner): Mood
     // sampling moved to the END of this list, and Superior and Maximum tool wait moved OUT of it.
-    // The translator echoes keys, so Mind is asserted to hold what it still owns — how this officer
-    // THINKS (its models) and how its thinking is bounded.
-    expect(mind?.textContent).toContain("Mood sampling")
+    // Re-pinned 2026-09-18 (per-agent tuning): Mood sampling moved OUT to its own Affective tab —
+    // Mind is now only how this officer THINKS (its models) and how its thinking is bounded.
+    // The translator echoes keys, so Mind is asserted to hold what it still owns.
+    expect(mind?.textContent).not.toContain("Mood sampling")
     expect(mind?.textContent).not.toContain("agentConfig.unattended")
     expect(mind?.textContent).not.toContain("Goal")
     // The two that left: the reporting line is identity, and a per-step timeout is how the officer
     // works. Neither is a fact about its model.
     expect(mind?.textContent).not.toContain("agentConfig.superior")
     expect(mind?.textContent).not.toContain("agentConfig.maxToolTimeout")
-    // 🔴 "At the end of the list" is a DOM-ORDER claim, not a membership one: Mood sampling is the
-    // LAST labelled control in the Mind card. A membership assertion would pass with it back at the
-    // top, which is the state the owner asked to leave.
-    const mindLabels = [...(mind?.querySelectorAll("label") ?? [])]
-    expect(mindLabels.at(-1)?.textContent).toContain("Mood sampling")
 
     const work = document.querySelector('[data-section="work"][data-settings-tab="work"]')
-    // 🔴 The operating choices — posture, permissions, Strict, and now Maximum tool wait — live here.
+    // 🔴 The operating choices — posture, permissions, tool wait, mode, goal and the work rules —
+    // live here. Strict and the stuck detector moved OUT to their own tabs (per-agent tuning,
+    // 2026-09-18): they fine-tune the harness, not the work.
     expect(work?.textContent).toContain("agentConfig.unattended")
     expect(work?.textContent).toContain("agentConfig.unattended.off")
     // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
@@ -362,8 +360,17 @@ describe("AgentConfigDialog renders", () => {
     expect(work?.textContent).toContain("agentConfig.maxToolTimeout")
     expect(work?.textContent).toContain("Context guard")
     expect(work?.textContent).toContain("Edits instead of overwriting")
-    expect(work?.textContent).toContain("Stuck detector")
+    expect(work?.textContent).not.toContain("Stuck detector")
     expect(work?.textContent).toContain("Quality gates")
+
+    // 🔴 The harness tabs exist beside Work, each owning its detail: Strict (levers + budgets),
+    // Affective (mood sampling + temperature) and Introspection (judge + cadence + texts).
+    for (const tab of ["strict", "affective", "introspection"]) {
+      expect(document.querySelector(`[data-section="${tab}"][data-settings-tab="${tab}"]`)).not.toBeNull()
+    }
+    expect(document.querySelector('[data-section="strict"]')?.textContent).toContain("agentConfig.strict")
+    expect(document.querySelector('[data-section="affective"]')?.textContent).toContain("Mood sampling")
+    expect(document.querySelector('[data-section="introspection"]')?.textContent).toContain("Stuck detector")
 
     expect(document.querySelector('[data-section="nudges"][data-settings-tab="nudges"]')).not.toBeNull()
     const io = document.querySelector('[data-section="input-output"][data-settings-tab="io"]')
@@ -390,13 +397,7 @@ describe("AgentConfigDialog renders", () => {
     const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
     goal.value = "Publish the reviewed manuscript."
     goal.dispatchEvent(new Event("input", { bubbles: true }))
-    for (const title of [
-      "Context guard",
-      "Edits instead of overwriting",
-      "Stuck detector",
-      "Quality gates",
-      "Mood sampling",
-    ]) {
+    for (const title of ["Context guard", "Edits instead of overwriting", "Quality gates"]) {
       const label = [...document.querySelectorAll("label")].find((row) => row.textContent?.includes(title))
       label?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
     }
@@ -411,12 +412,255 @@ describe("AgentConfigDialog renders", () => {
           goal: "Publish the reviewed manuscript.",
           contextBudget: false,
           surgicalEdits: true,
-          introspection: true,
           quality: true,
-          affective: true,
         },
       },
     })
+  })
+
+  test("the Strict tab saves attempts without wiping the stored levers", async () => {
+    // 🔴 The merge this tab exists for: editing ONE subfield must not drop the rest of the
+    // struct. A `{ attempts }`-only write depends on the store patch-merging structs, which this
+    // dialog refuses to assume — so it sends the merged struct and this test reads it back whole.
+    const writes: unknown[] = []
+    mount({
+      agents: [{ ...AGENT, config: { strict: { enabled: true, attempts: 3, verification: false } } }],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+
+    // The tab strip is literal labels, not i18n keys — find it the way a person does.
+    const strictTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
+      (button) => button.textContent?.trim() === "Strict",
+    )
+    expect(strictTab, "the Strict tab should be offered").toBeDefined()
+    strictTab!.click()
+    await settle()
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("strict")
+
+    // The stored values show: the lever reads OFF, the race reads 3.
+    const strict = document.querySelector('[data-section="strict"]')!
+    expect(strict.textContent).toContain("In force: on")
+    const attempts = strict.querySelector<HTMLInputElement>('input[aria-label="Parallel attempts"]')!
+    expect(attempts.value).toBe("3")
+    attempts.value = "5"
+    attempts.dispatchEvent(new Event("input", { bubbles: true }))
+    await settle()
+
+    saveButton()!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: { theron: { strict: { enabled: true, attempts: 5, verification: false } } },
+    })
+  })
+
+  test("the Affective tab upgrades a bare-boolean row to a struct without losing the stance", async () => {
+    // Old rows store `affective: true`. Touching temperature must keep the opt-in AND carry it
+    // as a struct — a bare `true` has nowhere to put a temperature.
+    const writes: unknown[] = []
+    mount({
+      agents: [{ ...AGENT, config: { affective: true } }],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+
+    const affectiveTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
+      (button) => button.textContent?.trim() === "Affective",
+    )
+    expect(affectiveTab, "the Affective tab should be offered").toBeDefined()
+    affectiveTab!.click()
+    await settle()
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("affective")
+
+    const affective = document.querySelector('[data-section="affective"]')!
+    expect(affective.textContent).toContain("In force: on")
+    const temperature = affective.querySelector<HTMLInputElement>('input[aria-label="Calm-baseline temperature"]')!
+    temperature.value = "0.4"
+    temperature.dispatchEvent(new Event("input", { bubbles: true }))
+    await settle()
+
+    saveButton()!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: { theron: { affective: { enabled: true, temperature: 0.4 } } },
+    })
+  })
+
+  test("the Introspection tab shows the stored judge detail and resets to inherit", async () => {
+    const removed: string[][][] = []
+    mount({
+      agents: [{ ...AGENT, config: { introspection: { enabled: true, cadence: 5 } } }],
+      write: () => {},
+      remove: (paths) => removed.push(paths),
+    })
+    await settle()
+
+    const introspectionTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
+      (button) => button.textContent?.trim() === "Introspection",
+    )
+    expect(introspectionTab, "the Introspection tab should be offered").toBeDefined()
+    introspectionTab!.click()
+    await settle()
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("introspection")
+
+    const introspection = document.querySelector('[data-section="introspection"]')!
+    expect(introspection.textContent).toContain("In force: on")
+    expect(introspection.querySelector<HTMLInputElement>('input[aria-label="Introspection cadence"]')?.value).toBe("5")
+
+    // Reset confirms (destructive) and then deletes exactly the tab's key — nothing else.
+    document.querySelector<HTMLButtonElement>('[data-action="agent-reset-introspection"]')!.click()
+    await settle()
+    expect(dialogText()).toContain("agentConfig.resetTab.title")
+    const confirmReset = [...document.querySelectorAll("button")].filter((button) =>
+      button.textContent?.includes("agentConfig.resetTab.action"),
+    )
+    confirmReset.at(-1)!.click()
+    await settle()
+    expect(removed.at(-1)).toEqual([["agents", "theron", "introspection"]])
+  })
+
+  test("the Tools tab denies a tool live and adds a private recipe", async () => {
+    // 🔴 Horizon and recipes save LIVE (like Nudges), not through Save: they are
+    // replace-semantics lists, and a second save path for the same struct is how one of them
+    // silently wins. Each action below asserts its own write the moment it lands.
+    const writes: unknown[] = []
+    const removed: string[][][] = []
+    mount({
+      agents: [{ ...AGENT, config: { tools: { bash: false } } }],
+      write: (patch) => writes.push(patch),
+      remove: (paths) => removed.push(paths),
+    })
+    await settle()
+
+    const toolsTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
+      (button) => button.textContent?.trim() === "Tools",
+    )
+    expect(toolsTab, "the Tools tab should be offered").toBeDefined()
+    toolsTab!.click()
+    await settle()
+
+    const tools = document.querySelector('[data-section="tools"]')!
+    expect(tools.textContent).toContain("1 tool rule(s)")
+    // Forgetting the only rule deletes the key rather than storing `{}` — an officer that
+    // never tuned its horizon and one that tuned it back must read the same.
+    const forget = tools.querySelector<HTMLButtonElement>('[data-action="agent-tool-forget"]')!
+    forget.click()
+    await settle()
+    expect(removed.at(-1)).toEqual([["agents", "theron", "tools"]])
+
+    // A suggestion denies with one click and writes the merged map, not just the delta.
+    const denyRead = [...tools.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === "Deny read for this officer",
+    )
+    expect(denyRead, "a read suggestion should be offered").toBeDefined()
+    denyRead!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({ agents: { theron: { tools: { read: false } } } })
+
+    // A private recipe is added through the collision-guarded planner and written whole.
+    const add = tools.querySelector<HTMLButtonElement>('[data-action="agent-recipe-add"]')!
+    add.click()
+    await settle()
+    const editor = tools.querySelector('[data-component="officer-recipe-editor"]')!
+    const name = editor.querySelector<HTMLInputElement>('input[aria-label="Recipe name"]')!
+    name.value = "deploy"
+    name.dispatchEvent(new Event("input", { bubbles: true }))
+    const description = editor.querySelector<HTMLInputElement>('input[aria-label="Recipe description"]')!
+    description.value = "Ship it"
+    description.dispatchEvent(new Event("input", { bubbles: true }))
+    const manual = editor.querySelector<HTMLTextAreaElement>('textarea[aria-label="Recipe manual"]')!
+    manual.value = "run ./ship"
+    manual.dispatchEvent(new Event("input", { bubbles: true }))
+    await settle()
+    editor.querySelector<HTMLButtonElement>('[data-action="agent-recipe-save"]')!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: { theron: { adhocTools: [{ name: "deploy", description: "Ship it", manual: "run ./ship" }] } },
+    })
+  })
+
+  test("copy tuning adopts the prototype's model and strict, never its job", async () => {
+    // 🔴 The inverse of a clone: tuning crosses, identity and work do not. The fragment must
+    // carry `model` and `strict` while `system` and `name` stay on the prototype's side.
+    const writes: unknown[] = []
+    mount({
+      agents: [
+        AGENT,
+        {
+          ...AGENT,
+          id: "iris",
+          name: "Iris",
+          title: "Scout",
+          config: {
+            model: "spark/qwen",
+            strict: { enabled: true, attempts: 3 },
+            system: "Find people. Never hire without a trial.",
+            name: "Iris",
+          },
+        },
+      ],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+
+    const prototype = document.querySelector<HTMLElement>('[aria-label="Prototype officer"]')
+    expect(prototype, "the prototype picker should be offered").toBeDefined()
+    await choose(prototype as HTMLElement, "iris")
+    document.querySelector<HTMLButtonElement>('[data-action="agent-copy-tuning"]')!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: { theron: { model: "spark/qwen", strict: { enabled: true, attempts: 3 } } },
+    })
+    const fragment = (writes.at(-1) as { agents: { theron: Record<string, unknown> } }).agents.theron
+    expect("system" in fragment).toBe(false)
+    expect("name" in fragment).toBe(false)
+  })
+
+  test("copy tuning confirms before replacing the officer's own nudges", async () => {
+    const writes: unknown[] = []
+    mount({
+      agents: [
+        AGENT,
+        {
+          ...AGENT,
+          id: "iris",
+          name: "Iris",
+          title: "Scout",
+          config: {
+            model: "spark/qwen",
+            nudges: [
+              {
+                id: "n1",
+                name: "Slow down",
+                enabled: true,
+                hook: { type: "tool-call", tool: "bash" },
+                text: "Breathe.",
+              },
+            ],
+          },
+        },
+      ],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+
+    const prototype = document.querySelector<HTMLElement>('[aria-label="Prototype officer"]')!
+    await choose(prototype as HTMLElement, "iris")
+    document.querySelector<HTMLButtonElement>('[data-action="agent-copy-tuning"]')!.click()
+    await settle()
+    // Nothing written yet: replacing a private list destroys, so the copy waits for a yes.
+    expect(writes.length).toBe(0)
+    const confirmCopy = [...document.querySelectorAll("button")].filter((button) =>
+      button.textContent?.includes("Copy tuning"),
+    )
+    confirmCopy.at(-1)!.click()
+    await settle()
+    expect(writes.at(-1)).toMatchObject({
+      agents: { theron: { model: "spark/qwen" } },
+    })
+    expect(
+      ((writes.at(-1) as { agents: { theron: { nudges: unknown[] } } }).agents.theron.nudges ?? []).length,
+    ).toBe(1)
   })
 
   test("portrait selection is a readable button with its filename separate", async () => {

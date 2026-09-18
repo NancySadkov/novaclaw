@@ -290,14 +290,24 @@ describe("the store-root ledger", () => {
   test("the sweep reached the tree", () => {
     expect(sources.length).toBeGreaterThan(500)
     expect(sources.map((file) => file.name)).toContain(DEFINER)
-    expect(callers.length).toBeGreaterThanOrEqual(5)
+    // Four, not five: `tool-manual.ts` left this population entirely — it no longer calls the
+    // store at all, resolving through `AdhocGuidance.forSession` instead (pinned below), so the
+    // sweep correctly stopped seeing it. Lowering this floor is coupled to that delegation.
+    expect(callers.length).toBeGreaterThanOrEqual(4)
   })
 
   test("the two files that must agree both resolve through the service", () => {
     // Not "some files do" — these two specifically, because they are the pair the first test
     // exercises: one renders the prompt list, the other answers for a name from it.
     expect(onService).toContain("packages/core/src/adhoc-tools/guidance.ts")
-    expect(onService).toContain("packages/core/src/tool/tool-manual.ts")
+    // `tool-manual.ts` is no longer a store caller at all: it resolves through the SAME
+    // `forSession` the prompt list renders from, so the pair agrees by construction rather than
+    // by resolving the same root twice. Pin the delegation so a future direct store read here
+    // fails loudly instead of silently re-forking the pair.
+    const manual = sources.find((file) => file.name === "packages/core/src/tool/tool-manual.ts")
+    expect(manual, "tool-manual.ts vanished from the sweep — re-point this ratchet").toBeDefined()
+    expect(manual!.text).toContain("guidance.forSession(")
+    expect(VERBS.test(manual!.text)).toBe(false)
   })
 
   test("every remaining module-level caller is ledgered, and the ledger can only shrink", () => {

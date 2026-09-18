@@ -7,7 +7,6 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
-import { SettingsStrictV2 } from "@/components/settings-v2/strict"
 import { SettingsTunesV2 } from "@/components/settings-v2/tunes"
 import { SettingsNumberFieldV2 } from "@/components/settings-v2/parts/number-field"
 import { dict as en } from "@/i18n/en"
@@ -17,12 +16,11 @@ import { languageStub } from "./language-stub"
  * **A settings number box must let you TYPE the value it is asking for.**
  *
  * 🔴 The class under test is *a control that writes on every keystroke, coercing the in-progress
- * value*, and it produced two different-looking bugs in two files. On Tunes, the reminder budget's
- * handler clamped to its own `min` before persisting: typing `512` sent `Math.max(64, 5)` → the
- * instance config was written with **64**, the echoed store rewrote the box to `64`, and the next
- * character appended to give `641`. No keystroke sequence reached 512. On Strict, "Attempts" checked
- * `parsed > 1` beside a `min="1"` on the same element, so typing the `1` its own copy documents
- * stored `0` and blanked the field.
+ * value*, and it produced a bug in Tunes: the reminder budget's handler clamped to its own `min`
+ * before persisting (typing `512` sent `Math.max(64, 5)`). The Strict tab's attempts row had the
+ * twin (`parsed > 1` beside a `min="1"`); that tab is gone — officer Strict attempts is a Save-time
+ * draft, which cannot coerce mid-typing by construction — and the shared control's remaining
+ * live-write surface is Tunes, covered below.
  *
  * ⚠️ **The evidence for the first half is a request COUNT, not the final value.** A clamp that writes
  * the wrong number on the way and the right one at the end leaves identical stored state, so an
@@ -136,29 +134,6 @@ const refusals = () => [...document.querySelectorAll('[data-slot="settings-v2-nu
 
 const CADENCE = en["settings.tunes.todo.cadence.title"]
 const BUDGET = en["settings.tunes.todo.budget.title"]
-const ATTEMPTS = en["settings.strict.row.attempts.title"]
-
-test("every Strict group can be re-enabled against a merging config store", async () => {
-  const groups = ["verification", "recovery", "editingAids", "budgetSteering"] as const
-  const { config } = mount(() => <SettingsStrictV2 />, {
-    strict: Object.fromEntries(groups.map((key) => [key, false])),
-  })
-  await settle()
-  for (const group of groups) {
-    const title = en[`settings.strict.row.${group}.title`]
-    const input = [...document.querySelectorAll<HTMLInputElement>('input[role="switch"]')].find((node) =>
-      node
-        .getAttribute("aria-labelledby")
-        ?.split(" ")
-        .some((id) => document.getElementById(id)?.textContent === title),
-    )!
-    expect(input.checked).toBe(false)
-    input.click()
-    await settle()
-    expect((config().strict as Record<string, unknown>)[group]).toBe(true)
-    expect(input.checked).toBe(true)
-  }
-})
 
 describe("Tunes — a value below the field's minimum can be typed", () => {
   test("typing 512 into a min-64 box writes nothing until it is committed, then writes 512 once", async () => {
@@ -233,49 +208,6 @@ describe("Tunes — a value below the field's minimum can be typed", () => {
     await settle()
     expect(counts.patch).toBe(1)
     expect((config().context as { todo_reminder?: { max_tokens?: number } }).todo_reminder?.max_tokens).toBe(512)
-  })
-})
-
-describe("Strict — Attempts stores the value its own copy documents", () => {
-  test("committing the documented 1 stores 1, and the field keeps showing 1", async () => {
-    const { counts, config } = mount(() => <SettingsStrictV2 />, { strict: {} })
-    await settle()
-
-    commit(box(ATTEMPTS), "1")
-    await settle()
-
-    expect(counts.patch).toBe(1)
-    expect((config().strict as { attempts?: number }).attempts).toBe(1)
-    expect(box(ATTEMPTS).value).toBe("1")
-    expect(refusals()).toHaveLength(0)
-  })
-
-  test("the control: 3 still stores 3, and emptying the box clears the key", async () => {
-    const { counts, config } = mount(() => <SettingsStrictV2 />, { strict: { attempts: 3 } })
-    await settle()
-    expect(box(ATTEMPTS).value).toBe("3")
-
-    commit(box(ATTEMPTS), "4")
-    await settle()
-    expect((config().strict as { attempts?: number }).attempts).toBe(4)
-
-    commit(box(ATTEMPTS), "")
-    await settle()
-    expect(counts.patch).toBe(1)
-    expect(counts.remove).toBe(1)
-    expect("attempts" in (config().strict as object)).toBe(false)
-  })
-
-  test("an out-of-range attempt count is refused visibly rather than clamped to 8", async () => {
-    const { config } = mount(() => <SettingsStrictV2 />, { strict: {} })
-    await settle()
-
-    commit(box(ATTEMPTS), "20")
-    await settle()
-
-    expect((config().strict as { attempts?: number } | undefined)?.attempts).toBeUndefined()
-    expect(refusals()).toHaveLength(1)
-    expect(refusals()[0]!.textContent).toBe("Enter a whole number between 1 and 8")
   })
 })
 

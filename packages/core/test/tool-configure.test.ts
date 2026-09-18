@@ -202,7 +202,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     ])
 
     expect(of("consequential")).toEqual([
-      "affective",
       "disabled_providers",
       "expertise",
       // The harness drives (fan-out join, unfinished-set cue, image
@@ -221,19 +220,18 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "provider_presets",
       "resource_pressure",
       "snapshots",
-      "strict",
       "tool_routing",
       "trash",
       "virtualFs",
       "watcher",
     ])
 
-    // The execution surfaces ruling 4 names by hand (`mcp`, `commands`), the prompt-text surfaces its
-    // fourth test names (`adhoc_tools`, `introspection`), and the ones only reading the
-    // code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models`.
-    // (`instructions` stood here until 2026-09-17; it left the schema with the AGENTS.md auto-embed.)
+    // The execution surfaces ruling 4 names by hand (`mcp`, `commands`), and the ones only reading
+    // the code reveals: `username` (the `profile` tool's fallback name) and `providers`/`models`.
+    // (`instructions` stood here until 2026-09-17; it left the schema with the AGENTS.md auto-embed.
+    // `adhoc_tools`, `introspection` and `nudges` stood here until 2026-09-18 — per-agent tuning
+    // moved them onto the officer, so there is no instance-scoped prompt-text key left to price.)
     expect(of("privileged")).toEqual([
-      "adhoc_tools",
       "agents",
       "capability_services",
       "commands",
@@ -248,14 +246,12 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "experimental",
       "formatter",
       "instances",
-      "introspection",
       "local_model_catalog",
       "mcp",
       "memory",
       "models",
       // Nudge text reaches selected agents' prompts and its closed hooks decide when, so changing it
       // is prompt authorship even though no hook can execute user code.
-      "nudges",
       "offline",
       "permissions",
       "providers",
@@ -1265,3 +1261,4 @@ describe("configure remove — the agent's half of the deletion verb", () => {
     ),
   )
 })
+

@@ -12,6 +12,7 @@ import {
   type EffectiveConfig,
 } from "./config-resolve"
 import { AgentConfigStore } from "../agent-config-store"
+import { AgentV2 } from "../agent"
 import { AgentDefaults } from "./agent-defaults"
 import type { ConfigAgent } from "../config/agent"
 import type { SessionSchema } from "./schema"
@@ -187,10 +188,18 @@ export const layer = Layer.effect(
       // ONE walk, two answers: which colleague is in force, and the chain to resolve against. Asking
       // separately cost a second walk on every resolution and pushed `core` past the gate's kill.
       const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
-      const agentID = agentOf(chain)
-      const memoryOwnerAgent = ownerAgentOf(chain)
+      // 🔴 **A session that declares NO agent still has one.** `agents.select(undefined)` answers the
+      // DEFAULT colleague — nova — and the prompt renders that officer's identity. Folding nothing
+      // here made the two disagree: the session spoke as nova while nova's standing choices (its
+      // model, posture, Strict, sampling detail) were not in force. That was invisible while an
+      // instance-wide block supplied strict/affective/introspection for every session; per-agent
+      // tuning removed that layer, so "no declared officer" would now mean "no tuning at all".
+      // One question, one answer: whoever is answering is whose tuning applies.
+      const declaredAgentID = agentOf(chain)
+      const agentID = declaredAgentID ?? AgentV2.DEFAULT_COLLEAGUE_ID
+      const memoryOwnerAgent = ownerAgentOf(chain) ?? agentID
       const workerProfile = session === undefined ? undefined : WorkerProfile.read(session)
-      const ownerColleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
+      const ownerColleague = yield* declaredFor(agentID)
       // A prototype is a sparse execution recipe laid OVER the spawning officer, never a second
       // owner. Keeping the officer underneath matters for every standing choice the snapshot does
       // not mention today (and for new components added later): absent means inherit, exactly as it
@@ -223,10 +232,9 @@ export const layer = Layer.effect(
         // ⚠️ The CHAIN's agent here too, not the row's. This is what the Tune dialog reads to say
         // "these settings came from Theron" — and for a sub-agent the row is null, so reporting from
         // it said no colleague was involved while the colleague's own model, floor and posture were
-        // in force.
-        ...(agentID === undefined
-          ? {}
-          : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague as ConfigAgent.Info | undefined) } }),
+        // in force. `agentID` is never absent now: a session that declares no agent resolves to the
+        // DEFAULT colleague, which is the officer whose identity the prompt already renders.
+        agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague as ConfigAgent.Info | undefined) },
         ...(memoryOwnerAgent === undefined ? {} : { memoryOwnerAgent }),
         ...(workerProfile === undefined ? {} : { workerProfile }),
       } satisfies Resolution

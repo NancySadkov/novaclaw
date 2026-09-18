@@ -40,25 +40,6 @@ const click = (label: string) => {
   button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 }
 
-const chooseScope = async (key: string) => {
-  const select = document.querySelector<HTMLElement>('[data-component="select-v2"]')
-  if (!select) throw new Error("no scope selector")
-  select.dispatchEvent(
-    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-  )
-  await Promise.resolve()
-  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
-  await settle()
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.dataset.key === key)
-  if (!option) throw new Error(`no scope option ${key}`)
-  option.dispatchEvent(
-    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-  )
-  await Promise.resolve()
-  option.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
-  await settle()
-}
-
 const typeInto = (selector: string, value: string) => {
   const field = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null
   if (!field) throw new Error(`no field matching ${selector}`)
@@ -66,7 +47,7 @@ const typeInto = (selector: string, value: string) => {
   field.dispatchEvent(new Event("input", { bubbles: true }))
 }
 
-const mount = () => {
+const mount = (fixedAgentID = "writer") => {
   const [store, setStore] = createStore<{ config: Record<string, unknown> }>({ config: {} })
   const sync = () => ({
     data: store,
@@ -91,7 +72,7 @@ const mount = () => {
               <ServerContext.Provider value={server as never}>
                 <ServerSyncContext.Provider value={sync as never}>
                   <DialogProvider>
-                    <SettingsNudgesV2 />
+                    <SettingsNudgesV2 fixedAgentID={fixedAgentID} />
                   </DialogProvider>
                 </ServerSyncContext.Provider>
               </ServerContext.Provider>
@@ -105,16 +86,15 @@ const mount = () => {
   return () => store.config
 }
 
-describe("Settings Nudges", () => {
-  test("shows shipped defaults and saves a personal nudge for one officer", async () => {
+describe("Officer Nudges", () => {
+  test("one officer's list, no global scope, and a saved personal nudge", async () => {
     const config = mount()
     await settle()
 
-    expect(document.body.textContent).toContain("Protect work when resources run low")
-    expect(document.body.textContent).toContain("Check JavaScript time conversions")
-    await chooseScope("writer")
-    expect(document.body.textContent).toContain(t("settings.nudges.global.enabled"))
+    // No scope picker: this surface has its officer, and there is no global list anymore.
+    expect(document.querySelector('[data-component="select-v2"]')).toBeNull()
     expect(document.body.textContent).not.toContain("Protect work when resources run low")
+    expect(document.body.textContent).not.toContain("Check JavaScript time conversions")
     click(t("settings.nudges.add"))
     await settle()
     typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Review writes")

@@ -35604,9 +35604,6 @@
               "$ref": "#/components/schemas/ConfigV2Nudge"
             }
           },
-          "globalNudges": {
-            "type": "boolean"
-          },
           "tools": {
             "type": "object",
             "additionalProperties": {
@@ -35637,9 +35634,6 @@
               "required": ["name", "description", "manual"],
               "additionalProperties": false
             }
-          },
-          "globalTools": {
-            "type": "boolean"
           },
           "reasoningBudget": {
             "type": "integer",
@@ -37132,12 +37126,6 @@
           "resource_pressure": {
             "$ref": "#/components/schemas/ResourcePressure"
           },
-          "nudges": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ConfigV2Nudge"
-            }
-          },
           "mcp": {
             "$ref": "#/components/schemas/ConfigV2MCP"
           },
@@ -37165,30 +37153,6 @@
             },
             "additionalProperties": false
           },
-          "introspection": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "cadence": {
-                "type": "number"
-              },
-              "model": {
-                "type": "string"
-              },
-              "prompt": {
-                "type": "string"
-              },
-              "interjection": {
-                "type": "string"
-              },
-              "generateInterjection": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          },
           "harness_drives": {
             "type": "object",
             "properties": {
@@ -37197,79 +37161,6 @@
               },
               "imageShortcut": {
                 "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          },
-          "adhoc_tools": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Tool name (lowercase slug) listed in the system prompt"
-                },
-                "description": {
-                  "type": "string",
-                  "description": "One-line description shown beside the name (the model decides from this alone)"
-                },
-                "manual": {
-                  "type": "string",
-                  "description": "Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples"
-                },
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "required": ["name", "description", "manual"],
-              "additionalProperties": false
-            }
-          },
-          "affective": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "temperature": {
-                "type": "number"
-              },
-              "extended": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          },
-          "strict": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "verification": {
-                "type": "boolean"
-              },
-              "recovery": {
-                "type": "boolean"
-              },
-              "editingAids": {
-                "type": "boolean"
-              },
-              "budgetSteering": {
-                "type": "boolean"
-              },
-              "wallMinutes": {
-                "type": "number"
-              },
-              "attempts": {
-                "type": "number"
-              },
-              "executionTokens": {
-                "type": "number"
-              },
-              "reasoningTokens": {
-                "type": "number"
               }
             },
             "additionalProperties": false

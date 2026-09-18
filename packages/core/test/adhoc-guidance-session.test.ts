@@ -2,9 +2,10 @@ import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AdhocGuidance } from "@novaclaw/core/adhoc-tools/guidance"
 import { copySessionRecipes, saveSessionRecipe, storeRootIn } from "@novaclaw/core/adhoc-tools"
-import { Config } from "@novaclaw/core/config"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { Global } from "@novaclaw/core/global"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { EFFECTIVE_CONFIG_DEFAULTS } from "@novaclaw/core/session/config-resolve"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { Session } from "@novaclaw/schema/session"
 import { tmpdir } from "./fixture/tmpdir"
@@ -28,27 +29,12 @@ const recipe = (name: string, description: string) => ({
  */
 const withGuidance = <A, E, R>(
   body: (input: { root: string; guidance: AdhocGuidance.Interface }) => Effect.Effect<A, E, R>,
-  configured?: ReadonlyArray<{ name: string; description: string; manual: string }>,
 ) =>
   Effect.acquireUseRelease(
     Effect.promise(() => tmpdir()),
     (tmp) => {
       const layer = AppNodeBuilder.build(AdhocGuidance.node, [
         [Global.node, Global.layerWith({ data: tmp.path })],
-        [
-          Config.node,
-          Layer.succeed(
-            Config.Service,
-            Config.Service.of({
-              entries: () =>
-                Effect.succeed(
-                  configured === undefined
-                    ? []
-                    : [new Config.Document({ type: "document", info: new Config.Info({ adhoc_tools: configured }) })],
-                ),
-            }),
-          ),
-        ],
       ])
       return Effect.gen(function* () {
         return yield* body({ root: storeRootIn(tmp.path), guidance: yield* AdhocGuidance.Service })
@@ -92,21 +78,22 @@ describe("AdhocGuidance session scope", () => {
     ),
   )
 
-  // tool_manual resolves `mergeRecipes(configured, session)`; the prompt has to list the same set,
-  // or the model reads one vocabulary and the tool answers another.
-  it.live("config and session scopes merge with session winning by name, as tool_manual resolves them", () =>
-    withGuidance(
+  // The ONE recipe set: the prompt lists it and `tool_manual` resolves from it, so the two
+  // cannot disagree. The instance library is gone (per-agent tuning owns recipes), so the
+  // scopes left are the officer's own and the session's `define_tool` — session wins.
+  it.live("officer and session scopes merge with session winning by name", () =>
+    withOfficerRecipes(
       ({ root, guidance }) =>
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             saveSessionRecipe(childID, recipe("weather", "Session-defined forecast"), { root }),
           )
           const baseline = yield* baselineFor(guidance, childID)
-          expect(baseline).toContain("stocks — Configured quotes")
+          expect(baseline).toContain("stocks — Officer quotes")
           expect(baseline).toContain("weather — Session-defined forecast")
-          expect(baseline).not.toContain("Configured forecast")
+          expect(baseline).not.toContain("Officer forecast")
         }),
-      [recipe("weather", "Configured forecast"), recipe("stocks", "Configured quotes")],
+      { adhocTools: [recipe("weather", "Officer forecast"), recipe("stocks", "Officer quotes")] },
     ),
   )
 
@@ -128,6 +115,75 @@ describe("AdhocGuidance session scope", () => {
           text: expect.stringContaining("stocks — Quote lookup"),
         })
       }),
+    ),
+  )
+})
+
+/**
+ * The officer layer, hermetically: the resolution service is stubbed to return one canned
+ * officer, so these cases pin the merge without standing up sessions, agents or a database.
+ * The stub is the honest shape — `forSession` reads officer recipes off the same resolution
+ * every turn uses, and here that resolution is simply authored by hand.
+ */
+const withOfficerRecipes = <A, E, R>(
+  body: (input: { root: string; guidance: AdhocGuidance.Interface }) => Effect.Effect<A, E, R>,
+  officer: { readonly adhocTools?: ReadonlyArray<{ name: string; description: string; manual: string; enabled?: boolean }> },
+) =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (tmp) => {
+      const layer = AppNodeBuilder.build(AdhocGuidance.node, [
+        [Global.node, Global.layerWith({ data: tmp.path })],
+        [
+          SessionEffectiveConfig.node,
+          Layer.succeed(
+            SessionEffectiveConfig.Service,
+            SessionEffectiveConfig.Service.of({
+              resolution: () =>
+                Effect.succeed({
+                  config: { ...EFFECTIVE_CONFIG_DEFAULTS, ...officer },
+                  defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, ...officer },
+                  applied: [] as const,
+                  refused: [] as const,
+                  deferred: [] as const,
+                }),
+              // `resolve` (not `resolution`) is what `forSession` reads — the chain-resolved
+              // config, which carries the officer fold for delivery fields. A stub that returns
+              // the bare shipped defaults here resolves to no officer at all.
+              resolve: () => Effect.succeed({ ...EFFECTIVE_CONFIG_DEFAULTS, ...officer }),
+            }),
+          ),
+        ],
+      ])
+      return Effect.gen(function* () {
+        return yield* body({ root: storeRootIn(tmp.path), guidance: yield* AdhocGuidance.Service })
+      }).pipe(Effect.provide(layer))
+    },
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+  )
+
+describe("AdhocGuidance officer scope", () => {
+  it.live("the officer's private recipes are the list the prompt shows", () =>
+    withOfficerRecipes(
+      ({ guidance }) =>
+        Effect.gen(function* () {
+          const baseline = yield* baselineFor(guidance, childID)
+          expect(baseline).toContain("mine — Officer-only")
+          expect(baseline).toContain("stocks — Officer-only")
+        }),
+      { adhocTools: [recipe("mine", "Officer-only"), recipe("stocks", "Officer-only")] },
+    ),
+  )
+
+  it.live("a disabled officer recipe is dropped, and there is no other layer to fall back to", () =>
+    withOfficerRecipes(
+      ({ guidance }) =>
+        Effect.gen(function* () {
+          const baseline = yield* baselineFor(guidance, childID)
+          expect(baseline).not.toContain("Officer-only")
+          expect(baseline).toContain("No ad-hoc tools are currently configured.")
+        }),
+      { adhocTools: [{ ...recipe("stocks", "Officer-only"), enabled: false }] },
     ),
   )
 })

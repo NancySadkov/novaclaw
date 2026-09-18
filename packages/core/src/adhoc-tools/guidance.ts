@@ -4,8 +4,8 @@ import { makeLocationNode } from "../effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Session } from "@novaclaw/schema/session"
 import { listSessionRecipes, mergeRecipes, storeRootIn, type Recipe } from "../adhoc-tools"
-import { Config } from "../config"
 import { Global } from "../global"
+import { SessionEffectiveConfig } from "../session/effective-config"
 import { SystemContext } from "../system-context/index"
 import { Log } from "@novaclaw/schema/log"
 
@@ -35,8 +35,17 @@ export interface Interface {
    * invisible in (see the `load` body).
    */
   readonly load: (sessionID: Session.ID) => Effect.Effect<SystemContext.SystemContext>
-  /** Config-defined recipes (global ▷ project), merged by name — the non-session layers. */
+  /** Config-defined recipes (global ▷ project), merged by name — the non-session layers.
+   *  EMPTY since the instance library was removed (per-agent tuning owns recipes): kept as
+   *  the seam so `forSession` reads "no library" through the same verb rather than a literal. */
   readonly configured: () => Effect.Effect<Recipe[]>
+  /**
+   * Every recipe ONE session may use: the owning officer's private recipes overlaid with
+   * the session's own `define_tool` recipes. Later layers win by name; `enabled: false`
+   * in a later layer hides an earlier one. This is the ONE recipe set — the prompt lists
+   * it and `tool_manual` resolves from it, so the two cannot disagree about what exists.
+   */
+  readonly forSession: (sessionID: Session.ID) => Effect.Effect<Recipe[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/AdhocGuidance") {}
@@ -44,25 +53,52 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const config = yield* Config.Service
     // Through the SERVICE, not the module-level `Global.Path`, so the session store's root is an
     // injectable seam (the same reason `AdhocTools.Options.root` exists). Identical in production —
     // `Global.make()` reads `Global.Path` — and `layerWith` has no production caller.
     const global = yield* Global.Service
     const sessionStoreRoot = storeRootIn(global.data)
+    // THE config entry point, not a second agent lookup: the officer layer rides the same
+    // resolution every turn already uses, so the prompt and `tool_manual` agree with the
+    // runner about whose recipes these are by construction rather than by a parallel walk.
+    const effective = yield* SessionEffectiveConfig.Service
 
-    // Config entries are ordered global -> project; merge per-recipe by name so a project
-    // config can override or disable (enabled: false) a single global recipe.
+    // No instance recipe library: the `adhoc_tools` key is gone (per-agent tuning owns
+    // recipes), so the non-session layers are always empty. Kept as the verb — rather than a
+    // literal `[]` at the merge — so the seam still names where a library would enter.
     const configured = Effect.fn("AdhocGuidance.configured")(function* () {
-      const entries = yield* config.entries()
-      const layers = entries.flatMap((entry) =>
-        entry.type === "document" && entry.info.adhoc_tools ? [entry.info.adhoc_tools] : [],
+      return mergeRecipes()
+    })
+
+    const readSession = (sessionID: Session.ID) =>
+      Effect.tryPromise(() => listSessionRecipes(sessionID, { root: sessionStoreRoot })).pipe(
+        // listSessionRecipes already answers [] for every read/parse fault by design, so the only
+        // reachable failure here is a malformed session id — a caller bug, not a fault of the
+        // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
+        Effect.catch((cause) =>
+          Log.event("tool.adhoc.read.failed", { "session.id": sessionID, "tool.cause": Log.fault(cause) }).pipe(
+            Effect.as([] as Recipe[]),
+          ),
+        ),
       )
-      return mergeRecipes(...layers)
+
+    const forSession = Effect.fn("AdhocGuidance.forSession")(function* (sessionID: Session.ID) {
+      // The owning officer's private recipes, overlaid under the session layer: same by-name,
+      // later-wins merge as every other scope, so a session `define_tool` still wins over the
+      // officer, and `enabled: false` in a later layer hides an earlier one by name.
+      const resolved = yield* effective.resolve(sessionID)
+      const officer: Recipe[] = (resolved.adhocTools ?? []).map((recipe) => ({
+        name: recipe.name,
+        description: recipe.description,
+        manual: recipe.manual ?? "",
+        ...(recipe.enabled === undefined ? {} : { enabled: recipe.enabled }),
+      }))
+      return mergeRecipes(yield* configured(), officer, yield* readSession(sessionID))
     })
 
     return Service.of({
       configured,
+      forSession,
       load: Effect.fn("AdhocGuidance.load")(function* (sessionID: Session.ID) {
         // Session-scope INCLUDED, replacing the earlier "the baseline is initialized before any
         // define_tool call, so the session layer is always empty there" reasoning. That premise
@@ -74,19 +110,9 @@ export const layer = Layer.effect(
         // reconcile pass now also emits the "tools have changed" update, which is additive to
         // define_tool's own output rather than a substitute for it.
         //
-        // Merge order matches tool_manual's (config ▷ session, session wins) via the same resolver,
-        // so the prompt lists exactly the set that tool resolves.
-        const session = yield* Effect.tryPromise(() => listSessionRecipes(sessionID, { root: sessionStoreRoot })).pipe(
-          // listSessionRecipes already answers [] for every read/parse fault by design, so the only
-          // reachable failure here is a malformed session id — a caller bug, not a fault of the
-          // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
-          Effect.catch((cause) =>
-            Log.event("tool.adhoc.read.failed", { "session.id": sessionID, "tool.cause": Log.fault(cause) }).pipe(
-              Effect.as([] as Recipe[]),
-            ),
-          ),
-        )
-        const available = mergeRecipes(yield* configured(), session).map((recipe) => ({
+        // Merge order matches tool_manual's (library ▷ officer ▷ session, session wins)
+        // via the same resolver, so the prompt lists exactly the set that tool resolves.
+        const available = (yield* forSession(sessionID)).map((recipe) => ({
           name: recipe.name,
           description: recipe.description,
         }))
@@ -106,4 +132,8 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Config.node, Global.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer,
+  deps: [Global.node, SessionEffectiveConfig.node],
+})

@@ -39,6 +39,10 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { tabHref, useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
+import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
+import { OfficerRecipes } from "@/components/officer-recipes"
+import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
+import { planSettingsCopy } from "@/apps/agent-settings-copy"
 import { AgentRemoteChat } from "@/components/agent-remote-chat"
 import { PERSONALITY_FORMAT, downloadOfficerPersonality, parseOfficerPersonality } from "@/apps/agent-personality"
 import { switchType } from "@/utils/fs-api"
@@ -56,6 +60,46 @@ import {
 // owning user. Human is a first-class entity, not an absence.
 const POSTURE_CHOICES: ("agent" | "chat" | "human")[] = ["agent", "chat", "human"]
 const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
+
+/**
+ * Merge touched struct-subfield drafts over the stored struct, for the per-officer
+ * Strict/Affective/Introspection tabs.
+ *
+ * `undefined` draft = untouched (the stored value, if any, rides along untouched);
+ * `""` = back to inherit (the key leaves the struct, even when stored); anything else
+ * replaces. A non-finite number is refused rather than written — the Save button already
+ * guards every numeric draft, so reaching one here is a caller bug, not user input.
+ */
+const mergeDraft = (stored: Record<string, unknown>, touched: Record<string, unknown>): Record<string, unknown> => {
+  const next = { ...stored }
+  for (const [key, value] of Object.entries(touched)) {
+    if (value === undefined) continue
+    if (value === "") delete next[key]
+    else if (typeof value === "number" && !Number.isFinite(value)) continue
+    else next[key] = value
+  }
+  return next
+}
+/** A drafted number for `mergeDraft`: untouched, back-to-inherit, or the parsed value. */
+const numTouched = (raw: string | undefined): number | "" | undefined => {
+  if (raw === undefined) return undefined
+  if (raw.trim() === "") return ""
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : Number.NaN
+}
+/** Drafted text for `mergeDraft`: untouched, back-to-inherit on empty, or the trimmed text. */
+const textTouched = (raw: string | undefined): string | undefined => {
+  if (raw === undefined) return undefined
+  return raw.trim() === "" ? "" : raw.trim()
+}
+
+/**
+ * Tool names the horizon editor SUGGESTS. Mirrors the Nudges tab's list: the built-ins plus
+ * whatever ad-hoc recipes this instance carries. There is no tool-inventory endpoint, so a
+ * free-text add stays beside the suggestions and SAYS it is the fallback (principle 12b) —
+ * the day a catalog endpoint exists, this list becomes discovery.
+ */
+const CORE_TOOLS = ["read", "grep", "glob", "write", "edit", "apply_patch", "bash", "task", "webfetch"] as const
 
 // ONE addressable officer-settings screen, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -159,6 +203,38 @@ export function AgentConfigScreen(props: {
   const [quality, setQuality] = createSignal<boolean | undefined>()
   const [affective, setAffective] = createSignal<boolean | undefined>()
   /**
+   * Strict/Affective/Introspection DETAIL drafts, one signal per subfield.
+   *
+   * `undefined` = untouched (the stored struct, if any, is sent back merged); `""` on a
+   * text/number draft = back to inherit for that subfield (the key leaves the struct on
+   * save). Booleans have no "" state — an untouched lever inherits, a touched one is explicit.
+   */
+  const [strictVerification, setStrictVerification] = createSignal<boolean | undefined>()
+  const [strictRecovery, setStrictRecovery] = createSignal<boolean | undefined>()
+  const [strictEditingAids, setStrictEditingAids] = createSignal<boolean | undefined>()
+  const [strictBudgetSteering, setStrictBudgetSteering] = createSignal<boolean | undefined>()
+  const [strictAttempts, setStrictAttempts] = createSignal<string | undefined>()
+  const [strictWallMinutes, setStrictWallMinutes] = createSignal<string | undefined>()
+  const [strictExecutionTokens, setStrictExecutionTokens] = createSignal<string | undefined>()
+  const [strictReasoningTokens, setStrictReasoningTokens] = createSignal<string | undefined>()
+  const [affTemperature, setAffTemperature] = createSignal<string | undefined>()
+  const [affExtended, setAffExtended] = createSignal<boolean | undefined>()
+  const [intrCadence, setIntrCadence] = createSignal<string | undefined>()
+  const [intrModel, setIntrModel] = createSignal<string | undefined>()
+  const [intrPrompt, setIntrPrompt] = createSignal<string | undefined>()
+  const [intrInterjection, setIntrInterjection] = createSignal<string | undefined>()
+  const [intrGenerate, setIntrGenerate] = createSignal<boolean | undefined>()
+  /**
+   * Tools-tab drafts. Recipes and the horizon save LIVE (like Nudges), not through the Save
+   * button: they are replace-semantics lists, and merging them with the scalar drafts would
+   * need a second save path for the same struct. The editor below is a draft; everything
+   * else here writes through immediately and says so where it does.
+   */
+  const [horizonAdd, setHorizonAdd] = createSignal("")
+  /** Copy-tuning source officer. `undefined` = none picked. Blocked while scalar drafts are
+   *  dirty — a live copy underneath unsaved edits would silently lose to them on Save. */
+  const [copySource, setCopySource] = createSignal<string | undefined>()
+  /**
    * Tool-call captions, drafted as the OPT-OUT. `undefined` = untouched; ON is the default, so a
    * stored `false` is the only way this colleague stops paying a model call per shell command for a
    * caption that never reaches the model.
@@ -173,12 +249,28 @@ export function AgentConfigScreen(props: {
   const [computerUse, setComputerUse] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
-  type SettingsTab = "profile" | "mind" | "work" | "nudges" | "memory" | "workers" | "io" | "chat"
+  type SettingsTab =
+    | "profile"
+    | "mind"
+    | "work"
+    | "strict"
+    | "affective"
+    | "introspection"
+    | "tools"
+    | "nudges"
+    | "memory"
+    | "workers"
+    | "io"
+    | "chat"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
   const settingsTabs = createMemo(() => [
     { id: "profile" as const, label: "Profile", icon: "user" as const },
     { id: "mind" as const, label: "Mind", icon: "brain" as const },
     { id: "work" as const, label: "Work", icon: "task" as const },
+    { id: "strict" as const, label: "Strict", icon: "shield" as const },
+    { id: "affective" as const, label: "Affective", icon: "status" as const },
+    { id: "introspection" as const, label: "Introspection", icon: "eye" as const },
+    { id: "tools" as const, label: "Tools", icon: "code" as const },
     { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
     { id: "memory" as const, label: "Memory", icon: "archive" as const },
     { id: "workers" as const, label: "Workers", icon: "branch" as const },
@@ -225,8 +317,6 @@ export function AgentConfigScreen(props: {
   }
   const permissionModeValue = () =>
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
-  const strictValue = () =>
-    strict() ?? (agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false
   // ⚠️ DEFAULT INTERACTIVE (owner ruling 2026-09-15). This read `=== "interactive" ? "interactive" :
   // "unattended"`, i.e. anything not explicitly interactive — including "never set" — displayed as
   // Unattended. So a colleague nobody had configured showed a switch in the ON position for a mode
@@ -249,10 +339,124 @@ export function AgentConfigScreen(props: {
     draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
   const contextBudgetValue = () => standingValue(contextBudget(), "contextBudget", instanceEnabled("context", true))
   const surgicalEditsValue = () => standingValue(surgicalEdits(), "surgicalEdits", false)
-  const introspectionValue = () =>
-    standingValue(introspection(), "introspection", instanceEnabled("introspection", false))
   const qualityValue = () => standingValue(quality(), "quality", instanceEnabled("quality", false))
-  const affectiveValue = () => standingValue(affective(), "affective", instanceEnabled("affective", false))
+  // Stored harness detail, normalized: the schema carries bool-or-struct for these two (old
+  // rows are bare booleans, new writes are structs) and a struct for Strict. Absent = inherit.
+  type LooseStruct = Record<string, string | number | boolean | undefined>
+  const strictStored = () => ((agent()?.config?.["strict"] ?? {}) as LooseStruct)
+  const affStored = (): LooseStruct => {
+    const raw = agent()?.config?.["affective"]
+    return typeof raw === "boolean" ? { enabled: raw } : ((raw ?? {}) as LooseStruct)
+  }
+  const intrStored = (): LooseStruct => {
+    const raw = agent()?.config?.["introspection"]
+    return typeof raw === "boolean" ? { enabled: raw } : ((raw ?? {}) as LooseStruct)
+  }
+  const structNumber = (value: string | number | boolean | undefined): string =>
+    typeof value === "number" ? String(value) : ""
+  const structText = (value: string | number | boolean | undefined): string =>
+    typeof value === "string" ? value : ""
+  // The ENABLED stance for each tab: draft, then the stored struct's (or bare boolean's)
+  // `enabled`, then the shipped default. Lever groups below default ON — they are engine
+  // defaults the switches override, exactly as the global Strict tab reads them.
+  const strictValue = () => strict() ?? (strictStored().enabled as boolean | undefined) ?? false
+  const introspectionValue = () =>
+    introspection() ?? (intrStored().enabled as boolean | undefined) ?? instanceEnabled("introspection", false)
+  const affectiveValue = () =>
+    affective() ?? (affStored().enabled as boolean | undefined) ?? instanceEnabled("affective", false)
+  const strictLever = (draft: boolean | undefined, key: string) =>
+    draft ?? (strictStored()[key] as boolean | undefined) ?? true
+  const strictVerificationValue = () => strictLever(strictVerification(), "verification")
+  const strictRecoveryValue = () => strictLever(strictRecovery(), "recovery")
+  const strictEditingAidsValue = () => strictLever(strictEditingAids(), "editingAids")
+  const strictBudgetSteeringValue = () => strictLever(strictBudgetSteering(), "budgetSteering")
+  const strictAttemptsValue = () => strictAttempts() ?? structNumber(strictStored().attempts)
+  const strictWallMinutesValue = () => strictWallMinutes() ?? structNumber(strictStored().wallMinutes)
+  const strictExecutionTokensValue = () => strictExecutionTokens() ?? structNumber(strictStored().executionTokens)
+  const strictReasoningTokensValue = () => strictReasoningTokens() ?? structNumber(strictStored().reasoningTokens)
+  const affTemperatureValue = () => affTemperature() ?? structNumber(affStored().temperature)
+  const affExtendedValue = () => affExtended() ?? (affStored().extended as boolean | undefined) ?? false
+  const intrCadenceValue = () => intrCadence() ?? structNumber(intrStored().cadence)
+  const intrModelValue = () => {
+    const draft = intrModel()
+    if (draft !== undefined) return draft
+    const stored = intrStored().model
+    return typeof stored === "string" ? stored : ""
+  }
+  const intrPromptValue = () => intrPrompt() ?? structText(intrStored().prompt)
+  const intrInterjectionValue = () => intrInterjection() ?? structText(intrStored().interjection)
+  const intrGenerateValue = () => intrGenerate() ?? (intrStored().generateInterjection as boolean | undefined) ?? false
+  /** A drafted number, or `""` for back-to-inherit: empty is valid, unparseable is not. */
+  const parseDraftNumber = (raw: string | undefined): number | "" | undefined => {
+    if (raw === undefined) return undefined
+    if (raw.trim() === "") return ""
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : Number.NaN
+  }
+  const inRangeInt = (value: number | "" | undefined, min: number, max: number) =>
+    value === undefined || value === "" || (Number.isSafeInteger(value) && value >= min && value <= max)
+  const strictAttemptsValid = () => inRangeInt(parseDraftNumber(strictAttemptsValue()), 1, 8)
+  const strictWallMinutesValid = () => {
+    const parsed = parseDraftNumber(strictWallMinutesValue())
+    return parsed === undefined || parsed === "" || (Number.isFinite(parsed) && parsed >= 1 && parsed <= 480)
+  }
+  const strictTokenValid = (raw: string) => {
+    const parsed = parseDraftNumber(raw)
+    return parsed === undefined || parsed === "" || (Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 131_072)
+  }
+  const strictExecutionTokensValid = () => strictTokenValid(strictExecutionTokensValue())
+  const strictReasoningTokensValid = () => strictTokenValid(strictReasoningTokensValue())
+  const affTemperatureValid = () => {
+    const parsed = parseDraftNumber(affTemperatureValue())
+    return parsed === undefined || parsed === "" || (Number.isFinite(parsed) && parsed >= 0)
+  }
+  const intrCadenceValid = () => inRangeInt(parseDraftNumber(intrCadenceValue()), 1, 100_000)
+
+  // ── Tools tab: horizon (live writes, like Nudges) ─────────────────────────────────
+  // Recipes live in `<OfficerRecipes>`, extracted so the failed-write pin survives the
+  // Settings tab's deletion (`components/officer-recipes.tsx` header).
+  const officerTools = () => ((agent()?.config?.["tools"] ?? {}) as Record<string, boolean>)
+  /** This officer's private recipes, read from the SAME record the horizon reads — the caller
+   *  owns the source and `<OfficerRecipes>` stays presentational about it. */
+  const officerRecipes = () => ((agent()?.config?.["adhocTools"] ?? []) as AdhocRecipe[])
+  /** Suggestion buttons: the built-ins, minus what is stored. There is no tool-inventory
+   *  endpoint and no instance recipe library anymore, so a free-text add stays beside the
+   *  suggestions and SAYS it is the fallback (principle 12b). */
+  const horizonSuggestions = createMemo(() => {
+    const stored = new Set(Object.keys(officerTools()))
+    return [...CORE_TOOLS].filter((name) => !stored.has(name)).sort((left, right) => left.localeCompare(right))
+  })
+  const writeOfficer = async (patch: Record<string, unknown>) => {
+    const target = props.agentID
+    if (target === undefined) return
+    try {
+      await sync().updateConfig({ agents: { [target]: patch } } as never)
+      props.onChanged?.()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) })
+    }
+  }
+  /** Deny (`false`) or restore (`true`) one tool for this officer. Removing the row returns
+   *  the tool to the routing table's decision — absent means inherit, as everywhere else. */
+  const setHorizonTool = (name: string, enabled: boolean | undefined) => {
+    const target = props.agentID
+    if (target === undefined) return
+    const next = { ...officerTools() }
+    if (enabled === undefined) delete next[name]
+    else next[name] = enabled
+    // An emptied map is deleted rather than stored as `{}`: an officer that never tuned its
+    // horizon and one that tuned it back to nothing must read the same, or "reset" is a lie.
+    if (Object.keys(next).length === 0 && (agent()?.config?.["tools"] as unknown) !== undefined) {
+      void sync()
+        .removeConfig([["agents", target, "tools"]])
+        .then(() => props.onChanged?.())
+        .catch((error: unknown) =>
+          showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) }),
+        )
+      return
+    }
+    void writeOfficer({ tools: next })
+  }
 
   // ── Computer Use ───────────────────────────────────────────────────────────────────────────────
   // The switch reads a PERMISSION RULE, not a field of its own, on purpose. A `computerUse: boolean`
@@ -444,6 +648,15 @@ export function AgentConfigScreen(props: {
         label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
       })),
   ])
+  // The judge model: inherit (the active turn's model), a runnable catalog model, or the
+  // stored value when it is neither (labelled, never silently dropped — the same rule as
+  // the officer's own model picker above).
+  const intrModelOptions = createMemo(() =>
+    withBlockedCurrent(
+      [{ key: "active", value: "", label: language.t("agentConfig.intrModelInherit") }, ...runnableModels().map(modelChoice)],
+      intrModelValue(),
+    ),
+  )
   const integerValue = (draft: string | undefined, key: string, fallback: number) => {
     if (draft !== undefined) return draft
     const stored = agent()?.config?.[key]
@@ -545,6 +758,21 @@ export function AgentConfigScreen(props: {
     introspection() !== undefined ||
     quality() !== undefined ||
     affective() !== undefined ||
+    strictVerification() !== undefined ||
+    strictRecovery() !== undefined ||
+    strictEditingAids() !== undefined ||
+    strictBudgetSteering() !== undefined ||
+    strictAttempts() !== undefined ||
+    strictWallMinutes() !== undefined ||
+    strictExecutionTokens() !== undefined ||
+    strictReasoningTokens() !== undefined ||
+    affTemperature() !== undefined ||
+    affExtended() !== undefined ||
+    intrCadence() !== undefined ||
+    intrModel() !== undefined ||
+    intrPrompt() !== undefined ||
+    intrInterjection() !== undefined ||
+    intrGenerate() !== undefined ||
     toolLabels() !== undefined ||
     computerUse() !== undefined ||
     archive() !== undefined ||
@@ -562,7 +790,7 @@ export function AgentConfigScreen(props: {
     avatarFile() !== undefined ||
     avatarRemoved()
 
-  const [busy, setBusy] = createSignal<"clone" | "clear" | "clear-memory" | "retire" | "pause" | undefined>()
+  const [busy, setBusy] = createSignal<"clone" | "clear" | "clear-memory" | "retire" | "pause" | "copy" | undefined>()
 
   // The shared roster is also used by render/offline states that deliberately have no SDK yet.
   // Treat that as "not connected", not as a component crash during construction.
@@ -640,6 +868,56 @@ export function AgentConfigScreen(props: {
     if (parsed.profile.title !== undefined) setTitle(parsed.profile.title)
     if (parsed.profile.job !== undefined) setJob(parsed.profile.job)
     showToast({ variant: "success", title: "Profile loaded — review it, then Save" })
+  }
+
+  /** Officers this colleague may adopt tuning from: every colleague but itself. Nova is a
+   *  legitimate prototype — only tuning crosses, never the charter, so a second CEO is not created. */
+  const copyCandidates = createMemo(() =>
+    (agents() ?? []).filter((candidate) => candidate.id !== props.agentID && isColleague(candidate)),
+  )
+  /**
+   * Adopt another officer's tuning onto THIS officer. Identity and work never cross (the
+   * planner enforces it); private lists replace only behind a confirm, because replacing is
+   * destroying. Writes live, like Clone — and like Clone it refuses to run over unsaved
+   * scalar drafts, which a live write underneath would silently lose to on Save.
+   */
+  const copyTuning = async () => {
+    const target = props.agentID
+    const prototypeID = copySource()
+    if (target === undefined || prototypeID === undefined) return
+    const source = (agents() ?? []).find((row) => row.id === prototypeID)
+    if (source === undefined) return
+    const plan = planSettingsCopy({
+      prototypeID,
+      targetID: target,
+      source: ((source.config ?? {}) as Record<string, unknown>),
+    })
+    if (Object.keys(plan.fragment).length === 0) {
+      showToast({ variant: "default", title: `${source.name?.trim() || prototypeID} has no tuning to copy` })
+      return
+    }
+    if (plan.replacesLists.length > 0) {
+      const names = plan.replacesLists.join(", ")
+      if (
+        !(await confirm({
+          title: `Copy ${names} too?`,
+          description: `This replaces ${name()}'s own ${names} with ${source.name?.trim() || prototypeID}'s. Everything else copies silently.`,
+          confirmLabel: "Copy tuning",
+          destructive: true,
+        }))
+      )
+        return
+    }
+    setBusy("copy")
+    try {
+      await sync().updateConfig({ agents: { [target]: plan.fragment } } as never)
+      showToast({ variant: "success", title: `Tuned like ${source.name?.trim() || prototypeID}` })
+      props.onChanged?.()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
   }
 
   /** Hire a copy: same brief, new identity (`apps/agent-clone.ts`). */
@@ -924,8 +1202,71 @@ export function AgentConfigScreen(props: {
     }
   }
 
-  const save = async () => {
-    const id = props.agentID
+  /**
+   * Reset one tuning tab to inherit: delete its keys from the officer's stored config, so the
+   * officer follows the shipped defaults again. Drafts for those keys are dropped with them —
+   * keeping an edit for a struct just deleted would re-create it on the next save.
+   *
+   * ⚠️ Confirmed, because it destroys tuning. And it refuses the delete verb when nothing is
+   * stored: `POST /api/config/remove` answers 400 for a path that names nothing, and a correct
+   * state must never report as a failure.
+   */
+  const resetTab = async (tab: string, keys: string[], clear: () => void) => {
+    const target = props.agentID
+    if (target === undefined) return
+    const stored = (agent()?.config ?? {}) as Record<string, unknown>
+    const set = keys.filter((key) => stored[key] !== undefined)
+    if (set.length === 0) {
+      clear()
+      return
+    }
+    if (
+      !(await confirm({
+        title: language.t("agentConfig.resetTab.title", { tab }),
+        description: language.t("agentConfig.resetTab.description", { tab }),
+        confirmLabel: language.t("agentConfig.resetTab.action"),
+        destructive: true,
+      }))
+    )
+      return
+    try {
+      await sync().removeConfig(set.map((key) => ["agents", target, key]))
+      clear()
+      props.onChanged?.()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.resetTab.failed"), description: String(error) })
+    }
+  }
+
+  const resetStrict = () =>
+    void resetTab("Strict", ["strict"], () => {
+      setStrict(undefined)
+      setStrictVerification(undefined)
+      setStrictRecovery(undefined)
+      setStrictEditingAids(undefined)
+      setStrictBudgetSteering(undefined)
+      setStrictAttempts(undefined)
+      setStrictWallMinutes(undefined)
+      setStrictExecutionTokens(undefined)
+      setStrictReasoningTokens(undefined)
+    })
+  const resetAffective = () =>
+    void resetTab("Affective", ["affective"], () => {
+      setAffective(undefined)
+      setAffTemperature(undefined)
+      setAffExtended(undefined)
+    })
+  const resetIntrospection = () =>
+    void resetTab("Introspection", ["introspection"], () => {
+      setIntrospection(undefined)
+      setIntrCadence(undefined)
+      setIntrModel(undefined)
+      setIntrPrompt(undefined)
+      setIntrInterjection(undefined)
+      setIntrGenerate(undefined)
+    })
+
+  const save = async () => {    const id = props.agentID
     if (id === undefined) return
     setSaving(true)
     try {
@@ -951,9 +1292,7 @@ export function AgentConfigScreen(props: {
         runtimeHeartbeatMinutes?: number
         contextBudget?: boolean
         surgicalEdits?: boolean
-        introspection?: boolean
         quality?: boolean
-        affective?: boolean
       } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
@@ -973,10 +1312,62 @@ export function AgentConfigScreen(props: {
           : { runtimeHeartbeatMinutes: parsedRuntimeHeartbeatMinutes() }),
         ...(contextBudget() === undefined ? {} : { contextBudget: contextBudget()! }),
         ...(surgicalEdits() === undefined ? {} : { surgicalEdits: surgicalEdits()! }),
-        ...(introspection() === undefined ? {} : { introspection: introspection()! }),
         ...(quality() === undefined ? {} : { quality: quality()! }),
-        ...(affective() === undefined ? {} : { affective: affective()! }),
       }
+      // The three harness-detail structs, merged over what is STORED rather than sent as the
+      // touched fragment alone: a `{ enabled }`-only write would wipe the levers, budgets and
+      // prompts the officer already carries (the store patch-merges per agent, not per struct —
+      // and this dialog refuses to depend on which). Untouched tabs send nothing at all.
+      const strictTouched =
+        strict() !== undefined ||
+        strictVerification() !== undefined ||
+        strictRecovery() !== undefined ||
+        strictEditingAids() !== undefined ||
+        strictBudgetSteering() !== undefined ||
+        strictAttempts() !== undefined ||
+        strictWallMinutes() !== undefined ||
+        strictExecutionTokens() !== undefined ||
+        strictReasoningTokens() !== undefined
+      const strictPatch = strictTouched
+        ? mergeDraft(strictStored() as Record<string, unknown>, {
+            enabled: strict(),
+            verification: strictVerification(),
+            recovery: strictRecovery(),
+            editingAids: strictEditingAids(),
+            budgetSteering: strictBudgetSteering(),
+            attempts: numTouched(strictAttempts()),
+            wallMinutes: numTouched(strictWallMinutes()),
+            executionTokens: numTouched(strictExecutionTokens()),
+            reasoningTokens: numTouched(strictReasoningTokens()),
+          })
+        : undefined
+      const affectiveTouched = affective() !== undefined || affTemperature() !== undefined || affExtended() !== undefined
+      const affectivePatch = affectiveTouched
+        ? mergeDraft(affStored() as Record<string, unknown>, {
+            enabled: affective(),
+            temperature: numTouched(affTemperature()),
+            extended: affExtended(),
+          })
+        : undefined
+      const introspectionTouched =
+        introspection() !== undefined ||
+        intrCadence() !== undefined ||
+        intrModel() !== undefined ||
+        intrPrompt() !== undefined ||
+        intrInterjection() !== undefined ||
+        intrGenerate() !== undefined
+      const introspectionPatch = introspectionTouched
+        ? mergeDraft(intrStored() as Record<string, unknown>, {
+            enabled: introspection(),
+            cadence: numTouched(intrCadence()),
+            // `""` is the inherit choice and `mergeDraft` deletes it — the judge then runs on
+            // the active turn's model, which is what "use the active model" promises.
+            model: intrModel(),
+            prompt: textTouched(intrPrompt()),
+            interjection: textTouched(intrInterjection()),
+            generateInterjection: intrGenerate(),
+          })
+        : undefined
       // 🔴 ONE payload for every colleague, including the governing agent (owner ruling 2026-09-15).
       // Nova used to get a TWO-KEY fragment because the server refused anything outside
       // `AgentV2.PROTECTED_TUNABLE` for it; that refusal is now about WHO is writing, and this is the
@@ -1006,7 +1397,9 @@ export function AgentConfigScreen(props: {
                   : { directory: directory()!.trim() }),
             ...(posture() === undefined ? {} : { kind: posture()! }),
             ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
-            ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
+            ...(strictPatch === undefined ? {} : { strict: strictPatch }),
+            ...(affectivePatch === undefined ? {} : { affective: affectivePatch }),
+            ...(introspectionPatch === undefined ? {} : { introspection: introspectionPatch }),
             ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
             ...(goal() === undefined ? {} : { goal: goalValue() }),
             ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
@@ -1094,6 +1487,21 @@ export function AgentConfigScreen(props: {
       setIntrospection(undefined)
       setQuality(undefined)
       setAffective(undefined)
+      setStrictVerification(undefined)
+      setStrictRecovery(undefined)
+      setStrictEditingAids(undefined)
+      setStrictBudgetSteering(undefined)
+      setStrictAttempts(undefined)
+      setStrictWallMinutes(undefined)
+      setStrictExecutionTokens(undefined)
+      setStrictReasoningTokens(undefined)
+      setAffTemperature(undefined)
+      setAffExtended(undefined)
+      setIntrCadence(undefined)
+      setIntrModel(undefined)
+      setIntrPrompt(undefined)
+      setIntrInterjection(undefined)
+      setIntrGenerate(undefined)
       setComputerUse(undefined)
       setToolLabels(undefined)
       setArchive(undefined)
@@ -1509,24 +1917,6 @@ export function AgentConfigScreen(props: {
               <Show when={belowFloor()}>
                 <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTaxonomyBelow")}</p>
               </Show>
-              {/* 🔴 MOOD SAMPLING SITS LAST (owner, 2026-09-16). It is the one control here that
-                  changes the WEIGHTS' behaviour rather than choosing which weights run, so it reads as
-                  an aside after the model decisions above it — and at the top it pushed the model
-                  picker, which is what this tab is for, below the fold. */}
-              <label class="mt-4 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={affectiveValue()}
-                  onChange={(event) => setAffective(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Mood sampling</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
-                  </span>
-                </span>
-              </label>
             </section>
 
             <section class="agent-settings-card" data-section="work" data-settings-tab="work">
@@ -1591,16 +1981,6 @@ export function AgentConfigScreen(props: {
                     onSelect={(mode) => mode && setPermissionMode(mode)}
                   />
                 </div>
-
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={strictValue()}
-                    onChange={(event) => setStrict(event.currentTarget.checked)}
-                  />
-                  <span>{language.t("agentConfig.strict")}</span>
-                </label>
 
                 {/* 🔴 MAXIMUM TOOL WAIT BELONGS HERE (owner, 2026-09-16), immediately under Strict,
                     because the two answer the same question from its two ends: Strict says a step that
@@ -1729,20 +2109,6 @@ export function AgentConfigScreen(props: {
                   <input
                     type="checkbox"
                     class="mt-0.5"
-                    checked={introspectionValue()}
-                    onChange={(event) => setIntrospection(event.currentTarget.checked)}
-                  />
-                  <span>
-                    <span class="block">Stuck detector</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      A judge model periodically checks whether the agent is stuck and nudges it to change approach.
-                    </span>
-                  </span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
                     checked={qualityValue()}
                     onChange={(event) => setQuality(event.currentTarget.checked)}
                   />
@@ -1771,7 +2137,445 @@ export function AgentConfigScreen(props: {
                     {language.t(computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off")}
                   </p>
                 </Show>
+
+                {/* 🔴 Adopt another officer's TUNING (per-agent tuning): model, harness detail, tool
+                    horizon, recipes, worker policy — everything EXCEPT identity and work. The target
+                    keeps its name, job instructions, goal, folder, face and cabinet. Private lists
+                    replace only behind a confirm. Blocked while scalar drafts are dirty: a live copy
+                    underneath unsaved edits would silently lose to them on Save. */}
+                <div class="mt-2 border-t border-v2-border-border-muted pt-3">
+                  <span class="block text-xs font-medium">Copy tuning from another officer</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Model, Strict, mood, judge, tools and worker policy — never the name, job, goal,
+                    folder or memory. Writes immediately.
+                  </span>
+                  <div class="mt-2 flex items-center gap-2">
+                    <SelectV2
+                      aria-label="Prototype officer"
+                      class="min-w-0 flex-1"
+                      options={[
+                        { key: "none", value: "", label: "Choose an officer…" },
+                        ...copyCandidates().map((candidate) => ({
+                          key: candidate.id,
+                          value: candidate.id,
+                          label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+                        })),
+                      ]}
+                      current={
+                        [
+                          { key: "none", value: "", label: "Choose an officer…" },
+                          ...copyCandidates().map((candidate) => ({
+                            key: candidate.id,
+                            value: candidate.id,
+                            label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+                          })),
+                        ].find((option) => (option.value || undefined) === copySource()) ?? {
+                          key: "none",
+                          value: "",
+                          label: "Choose an officer…",
+                        }
+                      }
+                      value={(option) => option.key}
+                      label={(option) => option.label}
+                      onSelect={(option) => setCopySource(option && option.value !== "" ? option.value : undefined)}
+                    />
+                    <button
+                      type="button"
+                      data-action="agent-copy-tuning"
+                      class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
+                      disabled={copySource() === undefined || dirty() || busy() !== undefined}
+                      onClick={() => void copyTuning()}
+                    >
+                      {busy() === "copy" ? "Copying…" : "Copy"}
+                    </button>
+                  </div>
+                  <Show when={dirty() && copySource() !== undefined}>
+                    <p class="mt-1 text-[11px] text-v2-state-fg-warning">
+                      Save or cancel your edits first — a copy written now would lose to them.
+                    </p>
+                  </Show>
+                </div>
               </div>
+            </section>
+
+            {/* 🔴 The officer's Strict harness detail lives HERE, not in Work (owner direction: these
+                settings fine-tune individual agents). The Work tab keeps posture, permission mode and
+                the work rules; this tab owns how strictly the harness drives: decomposition,
+                verification, recovery, budgets. Absent = the shipped defaults (off; levers on;
+                1 attempt; 45 minutes; standard budgets) — the line below always says what runs. */}
+            <section class="agent-settings-card" data-section="strict" data-settings-tab="strict">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Strict harness</h3>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                In force: {strictValue() ? "on" : "off"}
+                {strictValue()
+                  ? ` · race ${strictAttemptsValue() || "1"} · ${strictWallMinutesValue() || "45"} min`
+                  : ""}
+                . Unset follows the shipped defaults.
+              </p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={strictValue()}
+                  onChange={(event) => setStrict(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">{language.t("agentConfig.strict")}</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    The harness owns decomposition and verifies each step — for small models that lose the
+                    horizon, not the knowledge.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 flex flex-col gap-2 border-t border-v2-border-border-muted pt-3">
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictVerificationValue()}
+                    onChange={(event) => setStrictVerification(event.currentTarget.checked)}
+                  />
+                  <span>Verification gates</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictRecoveryValue()}
+                    onChange={(event) => setStrictRecovery(event.currentTarget.checked)}
+                  />
+                  <span>Recovery and keep-best</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictEditingAidsValue()}
+                    onChange={(event) => setStrictEditingAids(event.currentTarget.checked)}
+                  />
+                  <span>Editing aids</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictBudgetSteeringValue()}
+                    onChange={(event) => setStrictBudgetSteering(event.currentTarget.checked)}
+                  />
+                  <span>Time-budget steering</span>
+                </label>
+                <p class="text-[11px] text-v2-text-text-faint">Each lever defaults on until switched off.</p>
+              </div>
+              <div class="mt-3 grid gap-3 border-t border-v2-border-border-muted pt-3 sm:grid-cols-2">
+                <label class="block text-xs text-v2-text-text-muted">
+                  Parallel attempts (race)
+                  <input
+                    aria-label="Parallel attempts"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="1"
+                    max="8"
+                    step="1"
+                    value={strictAttemptsValue()}
+                    placeholder="1"
+                    onInput={(event) => setStrictAttempts(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">1–8. Empty = 1 (off).</span>
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Time budget (minutes)
+                  <input
+                    aria-label="Strict time budget in minutes"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="1"
+                    max="480"
+                    step="1"
+                    value={strictWallMinutesValue()}
+                    placeholder="45"
+                    onInput={(event) => setStrictWallMinutes(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 45.</span>
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Execution budget (tokens)
+                  <input
+                    aria-label="Strict execution budget in tokens"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="0"
+                    step="1024"
+                    value={strictExecutionTokensValue()}
+                    placeholder="24576"
+                    onInput={(event) => setStrictExecutionTokens(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 24576.</span>
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Reasoning budget (tokens)
+                  <input
+                    aria-label="Strict reasoning budget in tokens"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="0"
+                    step="1024"
+                    value={strictReasoningTokensValue()}
+                    placeholder="0"
+                    onInput={(event) => setStrictReasoningTokens(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty or 0 = off.</span>
+                </label>
+              </div>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-strict"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetStrict()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="affective" data-settings-tab="affective">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Affective</h3>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                In force: {affectiveValue() ? "on" : "off"}. Unset follows the shipped defaults.
+              </p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affectiveValue()}
+                  onChange={(event) => setAffective(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Mood sampling</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-3 text-xs">
+                <span>Calm-baseline temperature</span>
+                <PresetFieldV2
+                  field="temperature"
+                  value={affTemperatureValue}
+                  onValue={(next) => setAffTemperature(next)}
+                  ariaLabel="Calm-baseline temperature"
+                />
+              </div>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                {affTemperatureValue().trim() === "" ? "Empty = 0.7." : `Set to ${affTemperatureValue()}.`}
+              </p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affExtendedValue()}
+                  onChange={(event) => setAffExtended(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Extended parameters</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Also modulate extended sampling parameters, for engines that accept them.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-affective"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetAffective()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="introspection" data-settings-tab="introspection">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Introspection</h3>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                In force: {introspectionValue() ? "on" : "off"}. Unset follows the shipped defaults.
+              </p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={introspectionValue()}
+                  onChange={(event) => setIntrospection(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Stuck detector</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    A judge model periodically checks whether the agent is stuck and nudges it to change approach.
+                  </span>
+                </span>
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Judge every N continuation steps
+                <input
+                  aria-label="Introspection cadence"
+                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={intrCadenceValue()}
+                  placeholder="3"
+                  onInput={(event) => setIntrCadence(event.currentTarget.value)}
+                />
+                <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 3.</span>
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">Judge model</label>
+              <SelectV2
+                aria-label="Judge model"
+                class="mt-1 w-full"
+                options={intrModelOptions()}
+                current={intrModelOptions().find((option) => option.value === intrModelValue()) ?? intrModelOptions()[0]}
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setIntrModel(option.value)}
+              />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">Empty choice runs the judge on the active model.</p>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={intrGenerateValue()}
+                  onChange={(event) => setIntrGenerate(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Judge writes the interjection</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Otherwise the fixed text below is steered in.
+                  </span>
+                </span>
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                The question the judge is asked
+                <textarea
+                  aria-label="Introspection prompt"
+                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={intrPromptValue()}
+                  onInput={(event) => setIntrPrompt(event.currentTarget.value)}
+                  placeholder="Judge ONLY whether the agent is stuck…"
+                />
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Interjection on “stuck”
+                <textarea
+                  aria-label="Introspection interjection"
+                  class="mt-1 min-h-16 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={intrInterjectionValue()}
+                  onInput={(event) => setIntrInterjection(event.currentTarget.value)}
+                  placeholder="Stop repeating the same approach…"
+                />
+              </label>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-introspection"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetIntrospection()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            {/* 🔴 The officer's tool horizon and private recipes live HERE (per-agent tuning):
+                which tools this colleague may use, and the recipes only it is told about. The
+                horizon narrows only — `false` denies a tool for this officer, `true` restores one
+                the routing table withdrew (never one permissions withdrew); absent means the
+                routing table decides alone. Saves immediately, like Nudges. */}
+            <section class="agent-settings-card" data-section="tools" data-settings-tab="tools">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Tools</h3>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                In force: {Object.keys(officerTools()).length === 0 ? "no overrides" : `${Object.keys(officerTools()).length} tool rule(s)`}.
+                Unset follows the instance.
+              </p>
+              <h4 class="mt-4 text-xs font-medium">Tool horizon</h4>
+              <div class="mt-2 flex flex-col gap-1.5">
+                <For each={Object.entries(officerTools())}>
+                  {([tool, enabled]) => (
+                    <div class="flex items-center justify-between gap-2 text-xs">
+                      <span class="min-w-0 truncate font-mono">{tool}</span>
+                      <span class="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          data-action={enabled ? "agent-tool-restore" : "agent-tool-deny"}
+                          class={`rounded-md px-2 py-1 text-[11px] ${enabled ? "bg-v2-background-bg-layer-03" : "text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"}`}
+                          aria-label={enabled ? `Deny ${tool} for this officer` : `Restore ${tool} for this officer`}
+                          onClick={() => setHorizonTool(tool, !enabled)}
+                        >
+                          {enabled ? "Restored" : "Denied"}
+                        </button>
+                        <button
+                          type="button"
+                          data-action="agent-tool-forget"
+                          class="rounded-md px-2 py-1 text-[11px] text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"
+                          aria-label={`Return ${tool} to the routing table's decision`}
+                          onClick={() => setHorizonTool(tool, undefined)}
+                        >
+                          Forget
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                </For>
+                <Show when={Object.keys(officerTools()).length === 0}>
+                  <p class="text-[11px] text-v2-text-text-faint">No overrides — the routing table decides alone.</p>
+                </Show>
+              </div>
+              <Show when={horizonSuggestions().length > 0}>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <For each={horizonSuggestions()}>
+                    {(tool) => (
+                      <button
+                        type="button"
+                        class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-[11px] hover:bg-v2-background-bg-layer-02"
+                        aria-label={`Deny ${tool} for this officer`}
+                        onClick={() => setHorizonTool(tool, false)}
+                      >
+                        − {tool}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <div class="mt-2 flex items-center gap-2">
+                <TextInputV2
+                  class="min-w-0 flex-1"
+                  value={horizonAdd()}
+                  placeholder="Another tool name…"
+                  spellcheck={false}
+                  autocorrect="off"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  onInput={(event) => setHorizonAdd(event.currentTarget.value)}
+                  aria-label="Deny another tool by name"
+                />
+                <button
+                  type="button"
+                  data-action="agent-tool-add"
+                  class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs disabled:opacity-40"
+                  disabled={horizonAdd().trim() === ""}
+                  onClick={() => {
+                    const name = horizonAdd().trim()
+                    if (name) setHorizonTool(name, false)
+                    setHorizonAdd("")
+                  }}
+                >
+                  Deny
+                </button>
+              </div>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                Denying is the common case; restoring un-denies a tool the routing table withdrew. Typed names
+                are the fallback — prefer a suggestion above when one fits.
+              </p>
+              <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
             </section>
 
             <Show when={props.agentID}>
@@ -2075,6 +2879,12 @@ export function AgentConfigScreen(props: {
             !dirty() ||
             !reasoningBudgetValid() ||
             !maxToolTimeoutValid() ||
+            !strictAttemptsValid() ||
+            !strictWallMinutesValid() ||
+            !strictExecutionTokensValid() ||
+            !strictReasoningTokensValid() ||
+            !affTemperatureValid() ||
+            !intrCadenceValid() ||
             Number.isNaN(parsedMaxWorkers()) ||
             Number.isNaN(parsedSpawnDepth()) ||
             Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||

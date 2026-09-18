@@ -9,10 +9,8 @@ export * as ToolManualTool from "./tool-manual"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
-import { listSessionRecipes, mergeRecipes, storeRootIn } from "../adhoc-tools"
 import { AdhocGuidance } from "../adhoc-tools/guidance"
 import { makeLocationNode } from "../effect/app-node"
-import { Global } from "../global"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -39,14 +37,6 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const guidance = yield* AdhocGuidance.Service
-    // Through the SERVICE, exactly as `adhoc-tools/guidance.ts` does, and composed with
-    // `storeRootIn` so the directory name is spelled once. These two read the SAME store and must
-    // agree by construction: guidance renders the prompt's recipe list, this tool answers for a
-    // name taken from that list. Leaving this one on the module-level `Global.Path.data` made the
-    // agreement hold only because `Global.layerWith` has no production caller — i.e. it was true by
-    // accident, and a graph that overrode Global (a test, or any future per-instance data root)
-    // would have had the prompt list a recipe whose manual this tool then reported missing.
-    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
 
     yield* tools
       .register({
@@ -58,11 +48,10 @@ export const layer = Layer.effectDiscard(
           toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
           execute: (input, context) =>
             Effect.gen(function* () {
-              const configured = yield* guidance.configured()
-              const session = yield* Effect.tryPromise(() =>
-                listSessionRecipes(context.sessionID, { root: sessionStoreRoot }),
-              )
-              const recipes = mergeRecipes(configured, session)
+              // The ONE recipe set: the prompt lists it (`AdhocGuidance.load`) and this tool
+              // resolves from it, so a recipe the model can read about is one it can pull —
+              // and an officer's private recipes resolve here exactly as they list there.
+              const recipes = yield* guidance.forSession(context.sessionID)
               const recipe = recipes.find((item) => item.name === input.name.trim())
               if (!recipe) {
                 const names = recipes.map((item) => item.name).join(", ") || "(none)"
@@ -72,7 +61,7 @@ export const layer = Layer.effectDiscard(
               }
               return { name: recipe.name, description: recipe.description, manual: recipe.manual }
             }).pipe(
-              Effect.mapError((error) =>
+              Effect.mapError((error: unknown) =>
                 error instanceof ToolFailure
                   ? error
                   : new ToolFailure({
@@ -89,5 +78,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/tool-manual",
   layer,
-  deps: [ToolRegistry.node, AdhocGuidance.node, Global.node],
+  deps: [ToolRegistry.node, AdhocGuidance.node],
 })

@@ -4,6 +4,33 @@ import { OfficerHarness } from "@novaclaw/core/session/officer-harness"
 // The officer harness-detail merge: shipped < instance < officer < session,
 // `undefined = inherit` at every step. Pure algebra, no DB.
 
+describe("chainDeclared", () => {
+  test("the same reference means the chain said nothing — the value IS the officer fold", () => {
+    const base = { enabled: true, attempts: 3 }
+    expect(OfficerHarness.chainDeclared(base, base)).toBeUndefined()
+    expect(OfficerHarness.chainDeclared(undefined, undefined)).toBeUndefined()
+  })
+
+  test("a different reference means some layer declared it, even when equal by value", () => {
+    // Equal-by-value still counts as declared: merging it field-wise over the officer yields
+    // the same answer either way, so there is nothing to distinguish — and nothing to lose.
+    expect(OfficerHarness.chainDeclared({ enabled: true }, { enabled: true })).toEqual({ enabled: true })
+  })
+})
+
+describe("resolveStrict without an officer is the old spread", () => {
+  test("instance overlaid with the chain, field for field", () => {
+    const instance = { enabled: false, attempts: 1, wallMinutes: 45, verification: true }
+    const chain = { enabled: true, wallMinutes: 20 }
+    expect(OfficerHarness.resolveStrict(instance, undefined, chain)).toEqual({ ...instance, ...chain })
+  })
+
+  test("no chain either is the instance block, unchanged", () => {
+    const instance = { enabled: true, attempts: 2 }
+    expect(OfficerHarness.resolveStrict(instance, undefined, undefined)).toEqual(instance)
+  })
+})
+
 describe("resolveStrict", () => {
   test("each field resolves session, then officer, then instance", () => {
     expect(
@@ -119,36 +146,5 @@ describe("applyOfficerHorizon", () => {
   test("configure is never denied — an officer cannot strand its own repair tool", () => {
     const offered = OfficerHarness.applyOfficerHorizon(routing, { configure: false })
     expect(offered("configure")).toBe(true)
-  })
-})
-
-describe("resolveRecipes", () => {
-  const lib = [
-    { name: "deploy", description: "Ship it", manual: "run ./ship" },
-    { name: "logs", description: "Read logs", manual: "tail" },
-  ]
-
-  test("no officer layer is the library alone", () => {
-    expect(OfficerHarness.resolveRecipes(lib, undefined).map((recipe) => recipe.name)).toEqual(["deploy", "logs"])
-  })
-
-  test("the officer wins by name, including hiding one with enabled: false", () => {
-    const resolved = OfficerHarness.resolveRecipes(lib, {
-      adhocTools: [
-        { name: "logs", description: "Read logs", manual: "tail -f", enabled: false },
-        { name: "mine", description: "Officer-only", manual: "run" },
-      ],
-    })
-    expect(resolved.find((recipe) => recipe.name === "logs")).toMatchObject({ manual: "tail -f", enabled: false })
-    expect(resolved.some((recipe) => recipe.name === "mine")).toBe(true)
-    expect(resolved.some((recipe) => recipe.name === "deploy")).toBe(true)
-  })
-
-  test("globalTools: false drops the library without touching the officer's own", () => {
-    const resolved = OfficerHarness.resolveRecipes(lib, {
-      globalTools: false,
-      adhocTools: [{ name: "mine", description: "Officer-only", manual: "run" }],
-    })
-    expect(resolved.map((recipe) => recipe.name)).toEqual(["mine"])
   })
 })

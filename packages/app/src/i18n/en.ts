@@ -124,8 +124,6 @@ export const dict = {
   "settings.expertise.discover.action": "Unlock…",
 
   // Confirm dialogs on destructive/whole-config actions (uix.md §3.4 / P1).
-  "settings.tools.confirm.title": "Delete this tool?",
-  "settings.tools.confirm.description": "This permanently removes the “{{name}}” tool recipe. This can’t be undone.",
   "settings.general.row.configIO.title": "Configuration file",
   "settings.general.row.configIO.description":
     "Export this instance's full configuration as a file, or import one. Model API keys ride along — treat exports as secrets.",
@@ -1056,9 +1054,6 @@ export const dict = {
   "settings.nudges.field.spammable": "Spammable",
   "settings.nudges.spammable.description":
     "Deliver this nudge every time it fires. While it is off, the same nudge reaches a session at most once every 30 minutes and once per context — again after a compaction, when the reminder would otherwise be summarised away.",
-  "settings.nudges.scope.global": "Global nudges",
-  "settings.nudges.global.enabled": "Receive global nudges",
-  "settings.nudges.global.description": "Personal nudges still run when this is off.",
   "settings.nudges.error.name": "Give this nudge a name.",
   "settings.nudges.error.text": "Write the instruction the agent should receive.",
   "settings.nudges.error.pattern": "This regular expression isn't valid.",
@@ -1969,93 +1964,13 @@ export const dict = {
     "NovaClaw stands on these projects, used under their respective licenses. Thank you to their authors.",
   "settings.about.more":
     "…and many other open-source packages, each under its own license — see the NOTICE file for the full list.",
-  "settings.introspection.title": "Introspection",
-  "settings.introspection.description":
-    "A judge model periodically checks whether a running session is stuck and, when it is, injects a course-correcting note.",
-  "settings.introspection.toast.failed": "Saving introspection settings failed",
-  "settings.introspection.row.enabled.title": "Enable introspection",
-  "settings.introspection.row.enabled.description": "Ask the judge model during long turns whether the agent is stuck.",
-  "settings.introspection.row.cadence.title": "Cadence",
-  "settings.introspection.row.cadence.description": "Judge every N continuation steps within a turn.",
-  "settings.introspection.row.model.title": "Judge model",
-  "settings.introspection.row.model.description":
-    "Model that judges, as provider/model. Empty = same as the session's model.",
-  "settings.introspection.row.model.placeholder": "same as active model",
-  "settings.introspection.row.model.custom": "Type a model id…",
-  "settings.introspection.row.generate.title": "Generate the interjection",
-  "settings.introspection.row.generate.description":
-    "Let the judge model write the interjection from context instead of using the fixed text below.",
-  "settings.introspection.row.prompt.title": "Introspection prompt",
-  "settings.introspection.row.prompt.description":
-    "The question the judge is asked about the recent context. Empty = the default stuck/looping check.",
-  "settings.introspection.row.interjection.title": "Interjection",
-  "settings.introspection.row.interjection.description":
-    "Text injected into the session when the judge answers YES. Empty = the default redirect.",
-  "settings.affective.title": "Affective",
   // ⚠️ The visible line keeps "around the model's baseline": a user reading only the short form must
   // not think this replaces their sampling settings. The inputs to the mood and the unattended-only
   // redirect are the mechanism, and move behind the disclosure.
-  "settings.affective.description":
-    "Emotion-modulated sampling: a per-session mood nudges temperature around the model's baseline.",
-  "settings.affective.description.more":
-    "The mood is derived from tool errors, repeated actions and time-on-task, and it moves temperature and related sampling parameters. Unattended agent runs additionally get a redirect nudge when frustration or urgency runs high — attended chats never do.",
-  "settings.affective.toast.failed": "Saving affective settings failed",
-  "settings.affective.row.enabled.title": "Enable affective mode",
-  "settings.affective.row.enabled.description":
-    "Modulate sampling by session mood; unattended agent runs also get a nudge on frustration/urgency.",
-  "settings.affective.row.temperature.title": "Baseline temperature",
-  "settings.affective.row.temperature.description":
-    "Calm-state temperature used when the model config sets none. Empty = 0.7.",
-  "settings.affective.row.extended.title": "Extended parameters",
-  "settings.affective.row.extended.description":
-    "Also modulate top_k — for local engines (vLLM, llama.cpp) that accept it.",
-  "settings.strict.title": "Strict mode",
   // The line says what Strict IS; how it works and what it buys are one gesture away.
-  "settings.strict.description":
-    "The training-wheels harness for small local models, applied to Strict-harness sessions.",
-  "settings.strict.description.more":
-    "Instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model.",
-  "settings.strict.toast.failed": "Saving Strict-mode settings failed",
-  "settings.strict.row.enabled.title": "Enable Strict mode",
-  "settings.strict.row.enabled.description": "Run tasks under the Strict harness: plan, act, verify each step.",
-  "settings.strict.row.enabled.description.more":
-    "A verified checkpoint follows every action. Because it builds and runs things on its own, a chat also needs its permission mode set to Bypass (or Yolo) — below that, the chat explains and answers normally.",
-  "settings.strict.row.verification.title": "Verification gates",
-  "settings.strict.row.verification.description":
-    "Track what each build produced and re-run the kept tests after every edit — a change that silently breaks something verified is caught immediately.",
-  "settings.strict.row.recovery.title": "Recovery & keep-best",
-  "settings.strict.row.recovery.description":
-    "Snapshot the best result so far and restore it if later edits make things worse (including at the very end); undo runs of build-breaking edits automatically.",
-  "settings.strict.row.editingAids.title": "Editing aids",
-  "settings.strict.row.editingAids.description":
-    "Show files with line numbers, reject edits that would not compile, and require line-number edits when the model keeps mis-quoting a file.",
-  "settings.strict.row.budgetSteering.title": "Time-budget steering",
-  "settings.strict.row.budgetSteering.description":
-    "At 50% and 75% of the time budget, calmly steer the model to simplify and land an end-to-end result.",
-  "settings.strict.row.attempts.title": "Parallel attempts (race)",
   // 377 characters under one control. The line is what the setting does and how to turn it off; the
   // trade and the size limit are on demand — and the limit is kept WORD FOR WORD, because "~5000
   // files / 256 MB" is a fact a user plans around and a paraphrase would promise more than the code.
-  "settings.strict.row.attempts.description":
-    "Race several isolated attempts and keep the first that verifiably succeeds. Empty or 1 = off.",
-  "settings.strict.row.attempts.description.more":
-    "Each attempt runs on its own copy of your project, so a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt).",
-  "settings.strict.budget.off": "Off",
-  "settings.strict.budget.tight": "Tight",
-  "settings.strict.budget.standard": "Standard",
-  "settings.strict.budget.roomy": "Roomy",
-  "settings.strict.budget.custom": "Custom…",
-  "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
-  "settings.strict.row.wallMinutes.description":
-    "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
-  "settings.strict.row.executionTokens.title": "Execution budget (tokens)",
-  "settings.strict.row.executionTokens.description": "Room each working step gets to write its answer.",
-  "settings.strict.row.executionTokens.description.more":
-    "File edits, commands, and the like. A step that runs out mid-file is wasted work, so leave headroom: one non-trivial source file already runs to 13–15k tokens. Empty = 24576.",
-  "settings.strict.row.reasoningTokens.title": "Reasoning budget (tokens)",
-  "settings.strict.row.reasoningTokens.description": "Room for the model to think a step through before it acts.",
-  "settings.strict.row.reasoningTokens.description.more":
-    "Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
   "settings.webSearch.title": "Web Search",
   "settings.webSearch.description":
     "Web search just works out of the box — NovaClaw searches free engines in-process, no setup. Point it at your own SearXNG for richer results, or turn a built-in engine off if it starts misbehaving.",
@@ -2115,25 +2030,6 @@ export const dict = {
   "settings.computer.permission.deny": "Never allow",
   "settings.computer.unset": "No display is set, so computer use is off. The agent will say so if it tries.",
   "settings.computer.save.failed": "Could not save the computer-use settings",
-  "settings.tools.title": "Tools",
-  "settings.tools.description":
-    "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
-  "settings.tools.empty": "No ad-hoc tools defined yet.",
-  "settings.tools.add": "Add tool",
-  "settings.tools.edit": "Edit",
-  "settings.tools.delete": "Delete",
-  "settings.tools.save": "Save",
-  "settings.tools.cancel": "Cancel",
-  "settings.tools.toast.failed": "Saving tools failed",
-  "settings.tools.field.name": "name (lowercase slug, e.g. searxng)",
-  "settings.tools.field.description": "One-line description (what it does; the model decides from this alone)",
-  "settings.tools.field.manual": "Manual: the API shape + 1-2 curl/shell examples the model follows",
-  "settings.tools.error.name": "Name must be a lowercase slug (a-z, 0-9, -, _), max 64 chars.",
-  "settings.tools.error.description": "Description is required, max 300 chars.",
-  "settings.tools.error.manual": "Manual is required, max 8192 chars.",
-  "settings.tools.error.duplicate": "A tool with this name already exists.",
-  "settings.tools.error.saveFailed":
-    "Saving failed — nothing was written. The editor is still open and everything you typed is still here.",
 
   "settings.permissions.tool.read.title": "Read",
   "settings.permissions.tool.read.description": "Read a file",
@@ -2417,6 +2313,14 @@ export const dict = {
   // sentence names them rather than leaving the user to discover a refusal.
   "agentConfig.governingNote":
     "Nova is the CEO of this instance, so its profile is yours to shape like any other colleague's — but it has no project folder, it cannot be cloned, and it cannot be retired.",
+  // Per-officer harness tuning (per-agent tuning program): the judge model falls back to the
+  // active turn's model when unset, and each tab resets to inherit independently of the others.
+  "agentConfig.intrModelInherit": "Use the active model",
+  "agentConfig.resetTab.action": "Reset this tab to inherited defaults",
+  "agentConfig.resetTab.title": "Reset {{tab}} to inherited defaults?",
+  "agentConfig.resetTab.description":
+    "This officer's {{tab}} tuning will be deleted, and it will follow the shipped defaults again. Its other tabs are untouched.",
+  "agentConfig.resetTab.failed": "Could not reset the tab",
   "agentConfig.thisChat": "How this chat runs",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write

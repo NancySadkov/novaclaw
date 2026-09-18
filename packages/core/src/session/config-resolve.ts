@@ -496,8 +496,8 @@ export interface EffectiveConfig {
    * Officer tool DELIVERY, folded from `AgentDefaults` (never a session-row field, so the
    * chain cannot override it per chat — it is how the officer works, not how one chat runs).
    * `tools` narrows the routing horizon (`false` denies; `true` restores a routing-withdrawn
-   * tool only); `adhocTools` are the officer's private recipes; `globalTools === false` opts
-   * out of the instance recipe library. Absent throughout = instance decides alone.
+   * tool only); `adhocTools` are the officer's private recipes — the only recipes there are.
+   * Absent throughout = the routing table and an empty recipe list decide alone.
    */
   readonly tools?: Record<string, boolean>
   readonly adhocTools?: ReadonlyArray<{
@@ -506,7 +506,6 @@ export interface EffectiveConfig {
     readonly manual?: string
     readonly enabled?: boolean
   }>
-  readonly globalTools?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
 }
@@ -847,10 +846,18 @@ export const SESSION_CONFIG_FIELDS = {
   introspection: {
     column: "introspection",
     merge: "override",
-    fallback: { kind: "instance", block: "introspection" },
+    // Stance, not instance: the instance block is gone (per-agent tuning owns the judge),
+    // so absent means the shipped default (off) and the officer's stance decides otherwise.
+    fallback: { kind: "stance", value: false },
   },
   quality: { column: "quality", merge: "override", fallback: { kind: "instance", block: "quality" } },
-  affective: { column: "affective", merge: "override", fallback: { kind: "instance", block: "affective" } },
+  affective: {
+    column: "affective",
+    merge: "override",
+    // Stance, not instance: the instance block is gone (per-agent tuning owns sampling),
+    // so absent means the shipped default (off) and the officer's stance decides otherwise.
+    fallback: { kind: "stance", value: false },
+  },
   thinkingBudget: { column: "thinking_budget", merge: "override", fallback: { kind: "stance", value: true } },
   surgicalEdits: { column: "surgical_edits", merge: "override", fallback: { kind: "stance", value: false } },
   askBeforeChanges: { column: "ask_before_changes", merge: "override", fallback: { kind: "stance", value: false } },
@@ -866,7 +873,15 @@ export const SESSION_CONFIG_FIELDS = {
   // the fallback, which would make "no stance" mean "off" the day the setting defaults off.
   memory: { column: "memory", merge: "override", fallback: { kind: "stance", value: true } },
   shortChat: { column: "short_chat", merge: "override", fallback: { kind: "stance", value: false } },
-  strict: { column: "strict", merge: "override", fallback: { kind: "instance", block: "strict" } },
+  strict: {
+    column: "strict",
+    merge: "override",
+    // No instance block to fall back to: the instance Strict config is gone (per-agent tuning
+    // owns the harness), so an absent override means the shipped posture (off) and the
+    // officer's standing detail decides otherwise. The DETAIL still merges field-wise —
+    // `OfficerHarness.resolveStrict` — because the chain fold replaces whole objects.
+    fallback: { kind: "stance", value: false },
+  },
 } as const satisfies Readonly<Record<keyof SessionConfig, SessionConfigField>>
 
 /**

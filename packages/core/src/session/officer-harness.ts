@@ -138,6 +138,20 @@ export const resolveIntrospection = (
 }
 
 /**
+ * The session row's own contribution for one whole-object field — or `undefined` when the
+ * chain declared nothing and the resolved value simply IS the base (the officer fold).
+ *
+ * `resolveConfig` assigns a declaring layer's object BY REFERENCE and spreads the base
+ * otherwise, so reference inequality is exactly "some layer declared it": no deep compare,
+ * no second walk. A whole-object chain value that survived untouched would wipe the
+ * officer's standing detail in a field-wise merge (the composer's `{ enabled: true }`
+ * switch erasing the officer's `attempts`), so the merge takes the session layer only
+ * through here.
+ */
+export const chainDeclared = <T>(resolvedValue: T | undefined, baseValue: T | undefined): T | undefined =>
+  resolvedValue !== baseValue ? resolvedValue : undefined
+
+/**
  * Apply the officer's tool horizon AFTER the instance routing predicate.
  *
  * Narrowing only (the structural metaphor: authority narrows downward, never widens):
@@ -163,31 +177,4 @@ export const applyOfficerHorizon = (
     if (officer === true) return true
     return routingOffered(name)
   }
-}
-
-/** The recipe fields the merge reads. Deliberately structural, not imported: this module
- *  stays dependency-free, and the config `Recipe` shape is a subset of this. */
-export interface RecipeSummary {
-  readonly name: string
-  readonly description: string
-  readonly manual?: string
-  readonly enabled?: boolean
-}
-
-/**
- * Merge the instance recipe library with the officer's private recipes, by name with
- * the officer winning — the same by-name layering `AdhocGuidance.configured` applies
- * to global-over-project scopes. `globalTools === false` drops the instance layer
- * without touching the officer's own (mirrors `globalNudges`). An officer entry with
- * `enabled: false` HIDES the recipe; the consumer filters it, exactly as the global
- * tab's toggle does today — hiding is not deleting.
- */
-export const resolveRecipes = (
-  global: ReadonlyArray<RecipeSummary>,
-  officer: { readonly adhocTools?: ReadonlyArray<RecipeSummary>; readonly globalTools?: boolean } | undefined,
-): RecipeSummary[] => {
-  const merged = new Map<string, RecipeSummary>()
-  if (officer?.globalTools !== false) for (const recipe of global) merged.set(recipe.name, recipe)
-  for (const recipe of officer?.adhocTools ?? []) merged.set(recipe.name, recipe)
-  return [...merged.values()]
 }

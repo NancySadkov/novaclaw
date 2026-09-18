@@ -3,14 +3,12 @@ import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
-import { NudgeDefinition as Nudge } from "@novaclaw/core/nudge-definition"
 import type { ConfigNudge } from "@novaclaw/core/config/nudge"
 import { For, Show, createMemo, createSignal, type Component } from "solid-js"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
-import { roster } from "@/apps/contacts"
 import { useConfirm } from "@/components/dialog-confirm"
 import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
@@ -85,33 +83,28 @@ const blank = (): ConfigNudge.Info => ({
   text: "",
 })
 
-export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) => {
+export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => {
   const language = useLanguage()
   const sync = useServerSync()
   const global = useGlobal()
   const server = useServer()
   const confirm = useConfirm()
-  const [scope, setScope] = createSignal(props.fixedAgentID ?? "global")
+  // The Settings dialog's global scope is gone (per-agent tuning owns instructions): this
+  // component only ever renders one officer's private list now. `fixedAgentID` is required —
+  // an officer tab with no officer is a surface with no subject.
+  const scope = () => props.fixedAgentID
   const connection = () => server.current ?? global.servers.list()[0]
-  const colleagues = createMemo(() => {
-    const current = connection()
-    return current ? roster(global.ensureServerCtx(current).agents.list() ?? []) : []
-  })
   const agentRows = createMemo(() => {
     const current = connection()
     return current ? (global.ensureServerCtx(current).agents.list() ?? []) : []
   })
   const selectedAgent = () => agentRows().find((agent) => agent.id === scope())
   const selectedAgentConfig = () => sync().data.config?.agents?.[scope()] ?? selectedAgent()?.config
-  const nudges = () =>
-    scope() === "global"
-      ? [...Nudge.resolved(sync().data.config?.nudges)]
-      : [...((selectedAgentConfig()?.nudges as ConfigNudge.Info[] | undefined) ?? [])]
+  const nudges = () => [...((selectedAgentConfig()?.nudges as ConfigNudge.Info[] | undefined) ?? [])]
   const toolChoices = createMemo(() => {
-    const configured = sync().data.config?.adhoc_tools ?? []
-    return [...new Set([...CORE_TOOLS, ...configured.flatMap((tool) => (tool.name ? [tool.name] : []))])].sort(
-      (left, right) => left.localeCompare(right),
-    )
+    // No instance recipe library anymore (per-agent tuning owns recipes): the choices are the
+    // built-ins plus whatever this instance happens to have declared explicitly.
+    return [...new Set([...CORE_TOOLS])].sort((left, right) => left.localeCompare(right))
   })
   const mcpChoices = createMemo(() => {
     const configured = sync().data.config?.mcp ?? {}
@@ -142,10 +135,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) =>
 
   const persist = (next: readonly ConfigNudge.Info[]) =>
     reportedWrite(
-      () =>
-        scope() === "global"
-          ? sync().updateConfig({ nudges: [...next] } as never)
-          : sync().updateConfig({ agents: { [scope()]: { nudges: [...next] } } } as never),
+      () => sync().updateConfig({ agents: { [scope()]: { nudges: [...next] } } } as never),
       (description) => showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
     )
 
@@ -186,70 +176,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID?: string }> = (props) =>
         <p class="settings-v2-tab-description">{language.t("settings.nudges.description")}</p>
       </div>
       <div class="settings-v2-tab-body">
-        <Show when={props.fixedAgentID === undefined}>
-          <div class="settings-v2-section">
-            <SelectV2
-              appearance="inline"
-              options={[
-                { value: "global", label: language.t("settings.nudges.scope.global") },
-                ...colleagues().map((agent) => ({ value: agent.id, label: agent.name })),
-              ]}
-              current={[
-                { value: "global", label: language.t("settings.nudges.scope.global") },
-                ...colleagues().map((agent) => ({ value: agent.id, label: agent.name })),
-              ].find((option) => option.value === scope())}
-              value={(option) => option.value}
-              label={(option) => option.label}
-              onSelect={(option) => {
-                if (!option) return
-                setEditingID(undefined)
-                setScope(option.value)
-              }}
-            />
-            <Show when={scope() !== "global"}>
-              <SettingsRowV2
-                title={language.t("settings.nudges.global.enabled")}
-                description={language.t("settings.nudges.global.description")}
-              >
-                <Switch
-                  checked={selectedAgentConfig()?.globalNudges !== false}
-                  onChange={(enabled) =>
-                    void reportedWrite(
-                      () => sync().updateConfig({ agents: { [scope()]: { globalNudges: enabled } } } as never),
-                      (description) =>
-                        showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
-                    )
-                  }
-                  hideLabel
-                >
-                  {language.t("settings.nudges.global.enabled")}
-                </Switch>
-              </SettingsRowV2>
-            </Show>
-          </div>
-        </Show>
-        <Show when={props.fixedAgentID !== undefined}>
-          <div class="settings-v2-section">
-            <SettingsRowV2
-              title={language.t("settings.nudges.global.enabled")}
-              description={language.t("settings.nudges.global.description")}
-            >
-              <Switch
-                checked={selectedAgentConfig()?.globalNudges !== false}
-                onChange={(enabled) =>
-                  void reportedWrite(
-                    () => sync().updateConfig({ agents: { [scope()]: { globalNudges: enabled } } } as never),
-                    (description) =>
-                      showToast({ variant: "error", title: language.t("settings.nudges.toast.failed"), description }),
-                  )
-                }
-                hideLabel
-              >
-                {language.t("settings.nudges.global.enabled")}
-              </Switch>
-            </SettingsRowV2>
-          </div>
-        </Show>
         <div class="settings-v2-section">
           <SettingsListV2>
             <For each={nudges()}>

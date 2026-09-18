@@ -76,9 +76,6 @@ describe("HarnessConfig.derive", () => {
         document({
           expertise: "normal",
           quality: { enabled: true, cadence: 7 },
-          strict: { enabled: true, attempts: 3 },
-          affective: { enabled: true, temperature: 0.42 },
-          introspection: { enabled: true, cadence: 5, model: "prov/mod" },
           context: new ConfigContext.Info({
             todo_reminder: new ConfigContext.TodoReminder({ enabled: true, cadence: 9, max_tokens: 320 }),
           }),
@@ -93,9 +90,12 @@ describe("HarnessConfig.derive", () => {
     expect(derived.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
     expect(derived.quality).toMatchObject({ enabled: true, cadence: 7 })
     expect(derived.shell).toBe("/bin/supplied")
-    expect(derived.strict).toMatchObject({ enabled: true, attempts: 3 })
-    expect(derived.affective).toMatchObject({ enabled: true, temperature: 0.42 })
-    expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
+    // The instance-stored strict/affective/introspection blocks are GONE (per-agent tuning
+    // owns them): the derivation starts at the shipped unset base and the officer fold is the
+    // only overlay, whatever the entries say.
+    expect(derived.strict).toBeUndefined()
+    expect(derived.affective).toBeUndefined()
+    expect(derived.introspection).toMatchObject({ enabled: false, cadence: 3 })
     expect(derived.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
     expect(derived.providerStallTimeoutMs).toBe(420_000)
@@ -108,11 +108,58 @@ describe("HarnessConfig.derive", () => {
 
   test("it holds no state — two derivations from different entries never share an answer", () => {
     // The regression this guards is a memo added "for cost": it would re-freeze exactly what B7
-    // unfroze, invisibly, since the type and every call site stay identical.
-    const on = HarnessConfig.derive([document({ strict: { enabled: true } })])
-    const off = HarnessConfig.derive([document({ strict: { enabled: false } })])
-    const onAgain = HarnessConfig.derive([document({ strict: { enabled: true } })])
-    expect([on.strict?.enabled, off.strict?.enabled, onAgain.strict?.enabled]).toEqual([true, false, true])
+    // unfroze, invisibly, since the type and every call site stay identical. Measured through
+    // `quality`, which still reads an instance key; the strict/affective blocks no longer do.
+    const on = HarnessConfig.derive([document({ quality: { enabled: true } })])
+    const off = HarnessConfig.derive([document({ quality: { enabled: false } })])
+    const onAgain = HarnessConfig.derive([document({ quality: { enabled: true } })])
+    expect([on.quality.enabled, off.quality.enabled, onAgain.quality.enabled]).toEqual([true, false, true])
+  })
+})
+
+describe("HarnessConfig.withOfficer", () => {
+  /** No instance layer left: the officer folds over the shipped base, which is empty here. */
+  const instance = () => HarnessConfig.derive([])
+
+  test("no officer layer is the derivation itself, by reference", () => {
+    // Identity, not equality: a caller that already holds the instance derivation pays nothing
+    // and — more importantly — cannot observe a copy diverging from it later.
+    const derived = instance()
+    expect(HarnessConfig.withOfficer(derived, undefined)).toBe(derived)
+  })
+
+  test("officer Strict detail overlays the shipped base field-wise", () => {
+    const derived = HarnessConfig.withOfficer(instance(), { strict: { enabled: true, attempts: 3, wallMinutes: 45 } })
+    expect(derived.strict).toMatchObject({ enabled: true, attempts: 3, wallMinutes: 45 })
+  })
+
+  test("officer affective/introspection detail is the whole answer now", () => {
+    // With no instance block, the officer's detail IS the value: temperature and cadence come
+    // straight from it, and `enabled` on each reflects what the officer declared.
+    const derived = HarnessConfig.withOfficer(instance(), {
+      affective: { temperature: 0.4 },
+      introspection: { cadence: 5, model: "prov/mod" },
+    })
+    expect(derived.affective).toMatchObject({ temperature: 0.4 })
+    expect(derived.introspection).toMatchObject({ cadence: 5, model: { providerID: "prov", id: "mod" } })
+  })
+
+  test("an officer that declares nothing observable changes nothing observable", () => {
+    const base = instance()
+    const derived = HarnessConfig.withOfficer(base, { strict: {}, affective: {}, introspection: {} })
+    // ⚠️ Values, not identity: `resolveStrict` always returns its full field set (all `undefined`),
+    // because the strict-drain reader takes `strict.attempts` off it. The claim this test makes is
+    // the one in its name — nothing OBSERVABLE moved — so it compares what a reader would see.
+    expect(derived.strict?.enabled).toBe(base.strict?.enabled)
+    expect(derived.strict?.verification).toBe(base.strict?.verification)
+    expect(derived.affective).toEqual(base.affective)
+    expect(derived.introspection).toEqual(base.introspection)
+  })
+
+  test("per-turn members ride along untouched — the fold changes answers, never the shape", () => {
+    const derived = HarnessConfig.withOfficer({ ...instance(), marker: "turn-scoped" }, { strict: { enabled: true } })
+    expect(derived).toMatchObject({ marker: "turn-scoped" })
+    expect(derived.strict).toMatchObject({ enabled: true })
   })
 })
 
@@ -132,16 +179,10 @@ const withLocation = <A, E, R>(body: (location: Location.Ref) => Effect.Effect<A
     (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
   ).pipe(Effect.flatMap((dir) => body(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }))))
 
-/** Every settings key the harness derivation consumes. */
-const HARNESS_KEYS = [
-  "expertise",
-  "quality",
-  "strict",
-  "affective",
-  "introspection",
-  "context",
-  "tool_routing",
-] as const
+/** Every settings key the harness derivation still consumes. Strengthened to a PIN by the
+ *  per-agent tuning removal: the cut keys are listed as gone, so re-adding one fails here. */
+const HARNESS_KEYS = ["expertise", "quality", "context", "tool_routing"] as const
+const REMOVED_HARNESS_KEYS = ["strict", "affective", "introspection"] as const
 
 describe("the harness derivation follows the settings store", () => {
   it.live("a Settings edit reaches every harness key on the NEXT derivation — no layer rebuild", () =>
@@ -158,22 +199,24 @@ describe("the harness derivation follows the settings store", () => {
               return HarnessConfig.derive(yield* config.entries())
             })
 
+            // The instance-stored tuning keys are GONE from `Config.Info` (per-agent tuning owns
+            // them), so a stored row is skipped by the per-key decode and cannot reach the
+            // derivation. Written here ON PURPOSE: if one were silently re-declared, the
+            // assertions below would flip and say so.
+            for (const key of REMOVED_HARNESS_KEYS) yield* store.set(key, { enabled: true, cadence: 5 })
             for (const key of HARNESS_KEYS) yield* store.remove(key)
             const before = yield* derive()
             expect(before.expertiseHint).toBeUndefined()
             expect(before.quality.enabled).toBe(false)
             expect(before.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
-            expect(before.strict?.enabled).toBeUndefined()
-            expect(before.affective?.enabled).toBeUndefined()
+            expect(before.strict).toBeUndefined()
+            expect(before.affective).toBeUndefined()
             expect(before.introspection.enabled).toBe(false)
             expect(before.context).toBeUndefined()
             expect(before.toolRouting).toBeUndefined()
 
             yield* store.set("expertise", "normal")
             yield* store.set("quality", { enabled: true, cadence: 7 })
-            yield* store.set("strict", { enabled: true })
-            yield* store.set("affective", { enabled: true, temperature: 0.42 })
-            yield* store.set("introspection", { enabled: true, cadence: 5 })
             yield* store.set("context", { todo_reminder: { enabled: true, cadence: 9, max_tokens: 320 } })
             yield* store.set("tool_routing", { rules: [{ provider: "qwen", tools: { write: false } }] })
 
@@ -181,19 +224,21 @@ describe("the harness derivation follows the settings store", () => {
             expect(after.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
             expect(after.quality).toMatchObject({ enabled: true, cadence: 7 })
             expect(after.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
-            expect(after.strict?.enabled).toBe(true)
-            expect(after.affective?.temperature).toBe(0.42)
-            expect(after.introspection).toMatchObject({ enabled: true, cadence: 5 })
+            // Still unset, despite the stored rows above: there is no instance layer for these.
+            expect(after.strict).toBeUndefined()
+            expect(after.affective).toBeUndefined()
+            expect(after.introspection).toMatchObject({ enabled: false })
             expect(after.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
             expect(after.toolRouting?.rules[0]?.tools).toEqual({ write: false })
 
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
             for (const key of HARNESS_KEYS) yield* store.remove(key)
+            for (const key of REMOVED_HARNESS_KEYS) yield* store.remove(key)
             const restored = yield* derive()
             expect(restored.expertiseHint).toBeUndefined()
             expect(restored.quality.enabled).toBe(false)
             expect(restored.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
-            expect(restored.strict?.enabled).toBeUndefined()
+            expect(restored.strict).toBeUndefined()
             expect(restored.introspection.enabled).toBe(false)
             expect(restored.context).toBeUndefined()
             expect(restored.toolRouting).toBeUndefined()

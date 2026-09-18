@@ -29,10 +29,10 @@ import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolv
 
 /** The fields a colleague may declare. Deliberately small: these are standing WORK choices, not the
  *  whole session config. `reasoningBudget` belongs here because it describes how this officer thinks,
- *  while the older boolean `thinkingBudget` remains a per-chat switch over the controller. `tools`,
- *  `adhocTools` and `globalTools` belong here because the tool horizon is how this officer works —
- *  the same family as `permissionMode` — and officer recipes are prompt-scoped delivery, folded as
- *  data the guidance reader (slice 2) consumes. */
+ *  while the older boolean `thinkingBudget` remains a per-chat switch over the controller. `tools`
+ *  and `adhocTools` belong here because the tool horizon is how this officer works — the same
+ *  family as `permissionMode` — and officer recipes are prompt-scoped delivery, folded as data
+ *  the guidance reader consumes. */
 export const DECLARABLE = [
   "permissionMode",
   "strict",
@@ -46,7 +46,6 @@ export const DECLARABLE = [
   "affective",
   "tools",
   "adhocTools",
-  "globalTools",
 ] as const
 export type Declarable = (typeof DECLARABLE)[number]
 

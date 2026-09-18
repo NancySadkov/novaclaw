@@ -4,7 +4,6 @@ import { makeLocationNode } from "../../effect/app-node"
 import { LazyBuiltin } from "../lazy-builtin"
 import { AgentConfigStore } from "../../agent-config-store"
 import { PermissionV2 } from "../../permission"
-import { SettingsConfigStore } from "../../settings-config-store"
 import { ToolRegistry } from ".././registry"
 
 export const node = makeLocationNode({
@@ -12,7 +11,7 @@ name: "tool/nudge",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "nudge",
-  "description": "List, view, add, edit, or delete configurable Nudges. Global nudges apply to every officer that has not opted out; personal nudges belong only to one officer. Nova may manage global or any officer's personal nudges. Other officers may manage only their own personal nudges and may opt themselves in or out of global nudges. A nudge can use a new-day, time, tool, file, compaction, resource, or script hook; its optional script appends bounded dynamic stdout at delivery time.",
+  "description": "List, view, add, edit, or delete an officer's personal Nudges — the targeted instructions that fire inside its own sessions. Nova may manage any officer's nudges. Other officers may manage only their own. A nudge can use a new-day, time, tool, file, compaction, resource, or script hook; its optional script appends bounded dynamic stdout at delivery time.",
   "inputSchema": {
     "anyOf": [
       {
@@ -22,20 +21,6 @@ definition: new ToolDefinition({
             "type": "string",
             "enum": [
               "list"
-            ]
-          },
-          "scope": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "global",
-                  "personal"
-                ]
-              },
-              {
-                "type": "null"
-              }
             ]
           },
           "target": {
@@ -66,13 +51,6 @@ definition: new ToolDefinition({
           "id": {
             "type": "string"
           },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "global",
-              "personal"
-            ]
-          },
           "target": {
             "anyOf": [
               {
@@ -86,8 +64,7 @@ definition: new ToolDefinition({
         },
         "required": [
           "op",
-          "id",
-          "scope"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -99,13 +76,6 @@ definition: new ToolDefinition({
             "enum": [
               "add",
               "edit"
-            ]
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "global",
-              "personal"
             ]
           },
           "target": {
@@ -124,7 +94,6 @@ definition: new ToolDefinition({
         },
         "required": [
           "op",
-          "scope",
           "nudge"
         ],
         "additionalProperties": false
@@ -141,13 +110,6 @@ definition: new ToolDefinition({
           "id": {
             "type": "string"
           },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "global",
-              "personal"
-            ]
-          },
           "target": {
             "anyOf": [
               {
@@ -161,37 +123,7 @@ definition: new ToolDefinition({
         },
         "required": [
           "op",
-          "id",
-          "scope"
-        ],
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "properties": {
-          "op": {
-            "type": "string",
-            "enum": [
-              "set_global"
-            ]
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "op",
-          "enabled"
+          "id"
         ],
         "additionalProperties": false
       }
@@ -476,5 +408,5 @@ sideEffect: "idempotent-write",
 load: () => import("../nudge"),
 
 }),
-deps: [ToolRegistry.node, PermissionV2.node, SettingsConfigStore.node, AgentConfigStore.node],
+deps: [ToolRegistry.node, PermissionV2.node, AgentConfigStore.node],
 })

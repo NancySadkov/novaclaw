@@ -1,7 +1,7 @@
 export * as NudgeService from "./nudge-service"
 
 import { and, desc, eq, ne } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
 import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
@@ -9,7 +9,6 @@ import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { HostExec } from "./host-exec"
 import { JhProcessRunner } from "./jh/process-runner"
-import { SettingsConfigStore } from "./settings-config-store"
 import { ConfigNudge } from "./config/nudge"
 import { Nudge } from "./nudge"
 import { SessionOrigin } from "./session/origin"
@@ -18,8 +17,9 @@ import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
 
 export interface Interface {
-  /** Read settings through to SQLite, select applicable definitions, and atomically claim each new
-   * occurrence for this session. A claimed match is safe to lower through SessionInput.steer once. */
+  /** Select applicable definitions (shipped defaults plus the owning officer's own list),
+   *  and atomically claim each new occurrence for this session. A claimed match is safe to
+   *  lower through SessionInput.steer once. */
   readonly claim: (input: {
     readonly sessionID: string
     readonly agentID?: string
@@ -30,13 +30,10 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/NudgeService") {}
 
-const decode = Schema.decodeUnknownOption(ConfigNudge.List)
-
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const settings = yield* SettingsConfigStore.Service
     const agents = yield* AgentConfigStore.Service
     const runner = JhProcessRunner.plannedRunner({
       maxOutputBytes: 16_384,
@@ -70,18 +67,15 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         let suppressed = 0
-        const stored = (yield* settings.all()).nudges
-        const decoded = stored === undefined ? undefined : decode(stored)
-        // Malformed settings are ignored rather than taking down the turn. The config HTTP boundary
-        // rejects new malformed values; this arm exists for damaged/older stores and keeps defaults
-        // from silently overriding a user's unreadable array.
-        const global = stored === undefined ? Nudge.defaults() : decoded?._tag === "Some" ? decoded.value : []
+        // Officer nudges plus the shipped code defaults. The instance-wide stored list is gone
+        // (per-agent tuning owns instructions): every officer inherits the SHAPE of the shipped
+        // defaults — the same registry, where a stored array used to replace the set — and its
+        // own list is its whole configuration. A stored `nudges` row from before the removal
+        // decodes to nothing here because there is no key to read it through.
         const agent =
           input.agentID === undefined ? undefined : AgentConfigStore.fold((yield* agents.agents())[input.agentID] ?? [])
         const definitions: Nudge.ScopedDefinition[] = [
-          ...(agent?.globalNudges === false
-            ? []
-            : global.map((nudge) => ({ nudge, deliveryID: `global:${nudge.id}` }))),
+          ...Nudge.defaults().map((nudge) => ({ nudge, deliveryID: `default:${nudge.id}` })),
           ...(input.agentID === undefined
             ? []
             : (agent?.nudges ?? []).map((nudge) => ({
@@ -192,11 +186,10 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer),
-  Layer.provide(SettingsConfigStore.defaultLayer),
   Layer.provide(AgentConfigStore.defaultLayer),
 )
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, SettingsConfigStore.node, AgentConfigStore.node],
+  deps: [Database.node, AgentConfigStore.node],
 })

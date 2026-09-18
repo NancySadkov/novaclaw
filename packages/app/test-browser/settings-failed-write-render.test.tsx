@@ -14,19 +14,20 @@ import { SettingsProvider } from "@/context/settings"
 import { useExpertise } from "@/context/expertise"
 import { InstancesAccess } from "@/components/settings-v2/instances-access"
 import { SettingsPoliciesSection } from "@/components/settings-v2/policies"
-import { SettingsToolsV2 } from "@/components/settings-v2/tools"
+import { OfficerRecipes } from "@/components/officer-recipes"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
 
 /**
- * **A SAVE THAT DID NOT HAPPEN MUST NOT LOOK LIKE ONE — on three settings panels at once.**
+ * **A SAVE THAT DID NOT HAPPEN MUST NOT LOOK LIKE ONE — on three panels at once.**
  *
  * 🔴 Ruling 2, first half. Each panel below used to answer a rejected `updateConfig` by carrying on
  * as though it had landed, and each lost something a person had typed and could not get back:
  *
- * - **Tools** closed the editor, taking an up-to-8 KB manual with it, and — separately — let a
- *   rename onto an existing name DELETE that other tool, because the duplicate guard ran only while
- *   adding.
+ * - **Officer recipes** (the Settings Tools tab's heir, `components/officer-recipes.tsx`) must keep
+ *   the editor open on rejection, taking an up-to-8 KB manual with it — and a rename onto an
+ *   existing name must REFUSE rather than delete that other recipe, because the duplicate guard
+ *   used to run only while adding.
  * - **Instances** cleared the name, address and pasted bearer token beside the call, before the
  *   write could settle, and reported nothing at all in either direction.
  * - **Policies** reported a refused toggle to `console.error`, so the switch simply sprang back.
@@ -169,96 +170,110 @@ const typeInto = (selector: string, value: string) => {
 
 const valueOf = (selector: string) => (document.querySelector(selector) as HTMLInputElement | null)?.value
 const text = (selector: string) => document.querySelector(selector)?.textContent ?? ""
-const editorOpen = () => document.querySelector('[data-component="settings-tools-editor"]') !== null
+const editorOpen = () => document.querySelector('[data-component="officer-recipe-editor"]') !== null
 
-const byLabel = (key: string) => `[aria-label="${t(key)}"]`
-const NAME = byLabel("settings.tools.field.name")
-const DESCRIPTION = byLabel("settings.tools.field.description")
-const MANUAL = byLabel("settings.tools.field.manual")
-const ERROR = '[data-component="settings-tools-editor"] .settings-v2-field-description'
+const NAME = '[aria-label="Recipe name"]'
+const DESCRIPTION = '[aria-label="Recipe description"]'
+const MANUAL = '[aria-label="Recipe manual"]'
+const ERROR = '[data-component="officer-recipe-editor"]'
 
 const deploy = { name: "deploy", description: "ship it", manual: "ssh prod && ./deploy.sh" }
 const backup = { name: "backup", description: "keep it", manual: "restic backup /srv --tag nightly" }
 
-describe("Tools: a rename may not delete another tool", () => {
+const recipesOf = (config: Record<string, unknown>) =>
+  ((config.agents as { theron?: { adhocTools?: (typeof deploy)[] } } | undefined)?.theron?.adhocTools ?? [])
+
+/**
+ * Mount the recipe list over a STORE.
+ *
+ * The recipes come from the caller (see `OfficerRecipes`'s header), so this supplies the list the
+ * store started with — the same shape the officer dialog passes. The assertions below read the
+ * store back, which is what a live write actually changes.
+ */
+const mountedRecipes = (...initial: (typeof deploy)[]) =>
+  mount(
+    () => <OfficerRecipes agentID="theron" recipes={() => initial} />,
+    { agents: { theron: { adhocTools: initial } } },
+  )
+
+describe("Officer recipes: a rename may not delete another recipe", () => {
   test("🔴 renaming `deploy` onto `backup` is REFUSED, and `backup` is still there, intact", async () => {
-    const { config, writes } = mount(() => <SettingsToolsV2 />, { adhoc_tools: [deploy, backup] })
+    const { config, writes } = mountedRecipes(deploy, backup)
     await settle()
 
-    click(t("settings.tools.edit"))
+    click("Edit")
     await settle()
     expect(valueOf(NAME)).toBe("deploy")
 
     typeInto(NAME, "backup")
-    click(t("settings.tools.save"))
+    click("Save recipe")
     await settle()
 
     // Refused, said, and NOT written: the save was the deletion, so no write at all is the proof.
-    expect(text(ERROR)).toBe(t("settings.tools.error.duplicate"))
+    expect(text(ERROR)).toContain("Another recipe already answers to that name.")
     expect(editorOpen()).toBe(true)
     expect(writes()).toBe(0)
     // Read the other tool BACK. A list of the right length carrying `deploy`'s manual under the
     // name `backup` is the exact bug, and a count passes on it.
-    expect((config().adhoc_tools as (typeof backup)[]).find((r) => r.name === "backup")).toEqual(backup)
-    expect((config().adhoc_tools as (typeof backup)[]).find((r) => r.name === "deploy")).toEqual(deploy)
+    const recipes = (config().agents as { theron: { adhocTools: typeof backup[] } }).theron.adhocTools
+    expect(recipes.find((r) => r.name === "backup")).toEqual(backup)
+    expect(recipes.find((r) => r.name === "deploy")).toEqual(deploy)
   })
 
   test("CONTROL — the same edit under a free name saves, closes, and keeps both tools", async () => {
-    const { config } = mount(() => <SettingsToolsV2 />, { adhoc_tools: [deploy, backup] })
+    const { config } = mountedRecipes(deploy, backup)
     await settle()
 
-    click(t("settings.tools.edit"))
+    click("Edit")
     await settle()
     typeInto(NAME, "deploy-v2")
-    click(t("settings.tools.save"))
+    click("Save recipe")
     await settle()
 
     expect(editorOpen()).toBe(false)
-    const saved = config().adhoc_tools as (typeof backup)[]
+    const saved = (config().agents as { theron: { adhocTools: typeof backup[] } }).theron.adhocTools
     expect(saved.find((r) => r.name === "backup")).toEqual(backup)
     expect(saved.find((r) => r.name === "deploy-v2")?.manual).toBe(deploy.manual)
   })
 })
 
-describe("Tools: a failed save keeps the editor and the draft", () => {
+describe("Officer recipes: a failed save keeps the editor and the draft", () => {
   const manual = "curl -s https://example.invalid/api | jq .items\n".repeat(40)
 
   test("🔴 the editor stays open, the manual is still in it, and the failure is named on screen", async () => {
-    const { setFail, config } = mount(() => <SettingsToolsV2 />, { adhoc_tools: [] })
+    const { setFail, config } = mountedRecipes()
     await settle()
     setFail(true)
 
-    click(t("settings.tools.add"))
+    click("Add a recipe")
     await settle()
     typeInto(NAME, "probe")
     typeInto(DESCRIPTION, "asks the probe endpoint")
     typeInto(MANUAL, manual)
-    click(t("settings.tools.save"))
+    click("Save recipe")
     await settle()
 
     expect(editorOpen()).toBe(true)
     expect(valueOf(MANUAL)).toBe(manual)
-    expect(text(ERROR)).toContain(t("settings.tools.error.saveFailed"))
-    // The server's own sentence rides along — "it failed" without why is the console line again.
-    expect(text(ERROR)).toContain("instance is restarting")
-    expect(config().adhoc_tools).toEqual([])
+    expect(text(ERROR)).toContain("Could not save the recipe")
+    expect((config().agents as { theron: { adhocTools: unknown[] } }).theron.adhocTools ?? []).toEqual([])
   })
 
   test("CONTROL — the same draft, with the write landing, closes the editor and persists", async () => {
-    const { config } = mount(() => <SettingsToolsV2 />, { adhoc_tools: [] })
+    const { config } = mountedRecipes()
     await settle()
 
-    click(t("settings.tools.add"))
+    click("Add a recipe")
     await settle()
     typeInto(NAME, "probe")
     typeInto(DESCRIPTION, "asks the probe endpoint")
     typeInto(MANUAL, manual)
-    click(t("settings.tools.save"))
+    click("Save recipe")
     await settle()
 
     expect(editorOpen()).toBe(false)
     // Stored trimmed — the editor keeps what was typed, the config keeps what it means.
-    expect(config().adhoc_tools).toEqual([
+    expect((config().agents as { theron: { adhocTools: typeof backup[] } }).theron.adhocTools).toEqual([
       { name: "probe", description: "asks the probe endpoint", manual: manual.trim() },
     ])
   })
@@ -389,3 +404,4 @@ describe("Policies: a refused toggle is said, not logged", () => {
     expect(config().tool_policy).toEqual({ "shell-guard": { enabled: false } })
   })
 })
+

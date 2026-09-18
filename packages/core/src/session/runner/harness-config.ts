@@ -34,6 +34,7 @@ import { ConfigHarnessDrives } from "../../config/harness-drives"
 import { ConfigProviderConnection } from "../../config/provider-connection"
 import { Introspection } from "./introspection"
 import { Quality } from "./quality"
+import { OfficerHarness } from "../officer-harness"
 
 /**
  * T9 (teach-don't-gatekeep): the plain-language stance line a Normal-level user gets, composed right
@@ -67,14 +68,77 @@ export interface Derived {
   readonly quality: Quality.Config
   /** The supplied shell used for spawning quality checks. */
   readonly shell: string
-  readonly strict: Config.Info["strict"]
-  readonly affective: Config.Info["affective"]
+  // No `Config.Info[...]` indexing: the instance-wide strict/affective blocks are gone
+  // (per-agent tuning owns them), so these are structural — the shipped-unset base the
+  // officer fold (`withOfficer`) overlays. `strict` carries the full harness detail.
+  readonly strict: OfficerHarness.StrictDetail | undefined
+  readonly affective:
+    | { readonly enabled?: boolean; readonly temperature?: number; readonly extended?: boolean }
+    | undefined
   readonly introspection: Introspection.Resolved
   /** The live automatic continuations applied to a finished-looking turn. */
   readonly drives: ConfigHarnessDrives.Resolved
   readonly context: Config.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
   readonly providerStallTimeoutMs: number
+}
+
+/**
+ * The officer's standing detail for one session, as `SessionEffectiveConfig`'s `defaults`
+ * carries it (the `AgentDefaults` fold — no second walk). Every member is detail only:
+ * stances stay on the chain, where the narrowing rules already live.
+ */
+export interface OfficerLayer {
+  readonly strict?: OfficerHarness.StrictDetail
+  readonly affective?: { readonly temperature?: number; readonly extended?: boolean }
+  readonly introspection?: {
+    readonly cadence?: number
+    readonly model?: string
+    readonly prompt?: string
+    readonly interjection?: string
+    readonly generateInterjection?: boolean
+  }
+}
+
+/**
+ * Fold one session's officer layer over an instance derivation, field-wise.
+ *
+ * Generic over `T extends Derived` so the turn's `compaction` (and any later per-turn
+ * member) rides along untouched: this changes WHAT the harness answers, never its shape,
+ * which is what lets a caller apply it to the threaded per-turn record in place.
+ *
+ * ⚠️ Session-free by itself: it merges the two layers it is given and knows nothing about
+ * chains. The session row still wins per chat, applied by the caller through
+ * `OfficerHarness.resolveStrict` / the chain-resolved stances — a whole-object session
+ * value merged here would reintroduce the wipe this module exists to prevent.
+ *
+ * The "instance" half is the shipped defaults: the instance-wide strict/affective/
+ * introspection blocks are gone (slice 4 — standing harness choices belong to the role),
+ * so the officer folds over `derive`'s unset base directly.
+ */
+export const withOfficer = <T extends Derived>(derived: T, officer: OfficerLayer | undefined): T => {
+  if (officer === undefined) return derived
+  // An officer struct that sets nothing observable is absent, not a layer: without this,
+  // `{}` would materialize `{ temperature: undefined }` over an absent instance block and a
+  // surface asking "did anyone set this" could no longer tell unset from set-to-nothing.
+  const defined = <V extends object>(value: V | undefined): Partial<V> | undefined => {
+    if (value === undefined) return undefined
+    const out: Record<string, unknown> = {}
+    for (const [key, entry] of Object.entries(value)) if (entry !== undefined) out[key] = entry
+    return Object.keys(out).length > 0 ? (out as Partial<V>) : undefined
+  }
+  const officerAffective = defined(officer.affective)
+  // No instance block to read back: the instance keys are gone (slice 4), so the officer
+  // folds over the shipped defaults directly. `Introspection.resolve(undefined)` is that base.
+  return {
+    ...derived,
+    strict: OfficerHarness.resolveStrict(undefined, officer.strict, undefined),
+    affective:
+      officerAffective === undefined
+        ? derived.affective
+        : { ...derived.affective, ...officerAffective },
+    introspection: Introspection.resolve(defined(officer.introspection)),
+  }
 }
 
 /**
@@ -90,9 +154,13 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     expertiseHint: Config.latest(entries, "expertise") === "normal" ? EXPERTISE_HINT : undefined,
     quality: Quality.resolve(Config.latest(entries, "quality")),
     shell: options.shell ?? DEFAULT_AGENT_SHELL,
-    strict: Config.latest(entries, "strict"),
-    affective: Config.latest(entries, "affective"),
-    introspection: Introspection.resolve(Config.latest(entries, "introspection")),
+    // No instance layer: Strict, affective sampling and the judge are per-officer tuning
+    // (slices 1–4), so the derivation starts from the shipped defaults and the officer fold
+    // (`withOfficer`, applied per session) is the only override. The session row still wins
+    // per chat, applied by the caller.
+    strict: undefined,
+    affective: undefined,
+    introspection: Introspection.resolve(undefined),
     drives: ConfigHarnessDrives.resolve(Config.latest(entries, "harness_drives")),
     context: Config.latest(entries, "context"),
     toolRouting: Config.latest(entries, "tool_routing"),

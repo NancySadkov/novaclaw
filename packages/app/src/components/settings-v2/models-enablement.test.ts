@@ -102,7 +102,10 @@ describe("Model Configure — the default model finally has a writer", () => {
 describe("A switched-off model is not a resolution anywhere", () => {
   const local = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "local.tsx"), "utf8")
   const ctxTab = fs.readFileSync(path.join(import.meta.dir, "..", "session", "session-context-tab.tsx"), "utf8")
-  const introspection = fs.readFileSync(path.join(import.meta.dir, "introspection.tsx"), "utf8")
+  // ⚠️ Re-pointed 2026-09-18 (per-agent tuning): the judge picker moved from the deleted
+  // Settings → Introspection tab onto the officer's own Introspection tab. The CLASS is the same
+  // — a picker that offers a switched-off model is a lie — so the assertion follows the control.
+  const officerDialog = fs.readFileSync(path.join(import.meta.dir, "..", "agent-config-dialog.tsx"), "utf8")
 
   test("the composer's resolution chain rejects a switched-off model", () => {
     // `validModel` gates the session pin, the officer's model, the instance default and recents.
@@ -114,7 +117,9 @@ describe("A switched-off model is not a resolution anywhere", () => {
   })
 
   test("the judge model picker does not offer a switched-off model", () => {
-    expect(introspection).toContain("models.enabled({ providerID, modelID: model.id })")
+    // The picker's options come from `runnableModels()`, which is exactly this predicate.
+    expect(officerDialog).toContain("models.list().filter((item) => models.enabled({ providerID: item.provider.id, modelID: item.id }))")
+    expect(officerDialog).toContain("const intrModelOptions = createMemo(")
   })
 })
 

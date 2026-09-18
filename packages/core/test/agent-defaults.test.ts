@@ -68,7 +68,6 @@ describe("who declared what", () => {
       affective: true,
       tools: { bash: false },
       adhocTools: [],
-      globalTools: false,
     })
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
     const changed = Object.keys(folded).filter(
@@ -115,7 +114,6 @@ describe("a colleague's standing choices", () => {
       "adhocTools",
       "affective",
       "contextBudget",
-      "globalTools",
       "introspection",
       "maxToolTimeoutMs",
       "permissionMode",
@@ -199,19 +197,16 @@ describe("a colleague's standing choices", () => {
       agent({
         tools: { bash: false, read: true },
         adhocTools: [{ name: "deploy", description: "Ship it", manual: "run ./ship" }],
-        globalTools: false,
       }),
     )
     expect(folded.tools).toEqual({ bash: false, read: true })
     expect(folded.adhocTools).toEqual([{ name: "deploy", description: "Ship it", manual: "run ./ship" }])
-    expect(folded.globalTools).toBe(false)
   })
 
   test("an officer that declares no delivery leaves the base alone", () => {
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ title: "Bookkeeper" }))
     expect(folded.tools).toBeUndefined()
     expect(folded.adhocTools).toBeUndefined()
-    expect(folded.globalTools).toBeUndefined()
   })
 })
 

@@ -100,46 +100,52 @@ describe("NudgeService", () => {
     }),
   )
 
-  it.effect("a stored list replaces defaults and an edit applies without rebuilding the layer", () =>
+  it.effect("an officer's own list adds to the shipped defaults and applies without rebuilding the layer", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
-      const settings = yield* SettingsConfigStore.Service
+      const agents = yield* AgentConfigStore.Service
       const event = { type: "tool" as const, id: "call-1", name: "bash", input: {} }
-      yield* settings.set("nudges", [])
-      expect(yield* service.claim({ sessionID: "ses_b", agentID: "nova", directory: process.cwd(), event })).toEqual([])
+      // The instance-wide stored list is GONE (per-agent tuning owns instructions): the shipped
+      // defaults always ship, and an officer's list is additive. This used to assert a stored
+      // array REPLACED them, which is the behavior that no longer exists.
+      yield* agents.setLayers("writer", [{ nudges: [] }])
+      expect(yield* service.claim({ sessionID: "ses_b", agentID: "writer", directory: process.cwd(), event })).toEqual(
+        [],
+      )
 
-      yield* settings.set("nudges", [
+      yield* agents.setLayers("writer", [
         {
-          id: "bash-check",
-          name: "Bash check",
-          enabled: true,
-          hook: { type: "tool-call", tool: "bash" },
-          text: "Check the command.",
+          nudges: [
+            {
+              id: "bash-check",
+              name: "Bash check",
+              enabled: true,
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Check the command.",
+            },
+          ],
         },
       ])
       expect(
-        (yield* service.claim({ sessionID: "ses_b", agentID: "nova", directory: process.cwd(), event })).map(
+        (yield* service.claim({ sessionID: "ses_b", agentID: "writer", directory: process.cwd(), event })).map(
           (item) => item.id,
         ),
       ).toEqual(["bash-check"])
     }),
   )
 
-  it.effect("keeps personal nudges private and lets an officer opt out of globals", () =>
+  it.effect("keeps one officer's nudges private to it", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
-      const settings = yield* SettingsConfigStore.Service
       const agents = yield* AgentConfigStore.Service
       const event = { type: "tool" as const, id: "call-scope", name: "bash", input: {} }
-      yield* settings.set("nudges", [
-        { id: "same", name: "Global", hook: { type: "tool-call", tool: "bash" }, text: "global" },
-      ])
       yield* agents.setLayers("writer", [
         {
-          globalNudges: false,
           nudges: [{ id: "same", name: "Personal", hook: { type: "tool-call", tool: "bash" }, text: "personal" }],
         },
       ])
+      // The officer that owns it hears it — from the officer itself and from its workers, which
+      // resolve their officer through the chain.
       expect(
         (yield* service.claim({ sessionID: "ses_writer", agentID: "writer", directory: process.cwd(), event })).map(
           (item) => item.text,
@@ -153,31 +159,34 @@ describe("NudgeService", () => {
           event,
         })).map((item) => item.text),
       ).toEqual(["personal"])
+      // A DIFFERENT officer never does. That is the whole reason nudges moved to the role.
       expect(
-        (yield* service.claim({ sessionID: "ses_nova", agentID: "nova", directory: process.cwd(), event })).map(
-          (item) => item.text,
-        ),
-      ).toEqual(["global"])
+        yield* service.claim({ sessionID: "ses_nova", agentID: "nova", directory: process.cwd(), event }),
+      ).toEqual([])
     }),
   )
 
   it.effect("runs bounded scripts as hooks and as dynamic nudge content", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
-      const settings = yield* SettingsConfigStore.Service
+      const agents = yield* AgentConfigStore.Service
       const runtime = JSON.stringify(process.execPath)
-      yield* settings.set("nudges", [
+      yield* agents.setLayers("writer", [
         {
-          id: "scripted",
-          name: "Scripted",
-          hook: { type: "script", command: `${runtime} -e \"console.log('hook-value')\"` },
-          text: "static",
-          script: `${runtime} -e \"console.log('dynamic-value')\"`,
+          nudges: [
+            {
+              id: "scripted",
+              name: "Scripted",
+              hook: { type: "script", command: `${runtime} -e \"console.log('hook-value')\"` },
+              text: "static",
+              script: `${runtime} -e \"console.log('dynamic-value')\"`,
+            },
+          ],
         },
       ])
       const claimed = yield* service.claim({
         sessionID: "ses_script",
-        agentID: "nova",
+        agentID: "writer",
         directory: process.cwd(),
         event: { type: "clock", at: new Date(2026, 8, 10, 12, 0) },
       })
@@ -188,7 +197,7 @@ describe("NudgeService", () => {
       expect(
         yield* service.claim({
           sessionID: "ses_script",
-          agentID: "nova",
+          agentID: "writer",
           directory: process.cwd(),
           event: { type: "clock", at: new Date(2026, 8, 10, 12, 1) },
         }),
@@ -266,14 +275,19 @@ describe("NudgeService", () => {
   it.effect("a spammable nudge repeats, which is how a heartbeat stays alive", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
-      const settings = yield* SettingsConfigStore.Service
-      yield* settings.set("nudges", [
+      const agents = yield* AgentConfigStore.Service
+      // Officer-owned, like every nudge now: the instance-wide stored list is gone (per-agent tuning).
+      yield* agents.setLayers("nova", [
         {
-          id: "beat",
-          name: "Heartbeat",
-          hook: { type: "tool-call", tool: "bash" },
-          text: "Report the heartbeat count.",
-          spammable: true,
+          nudges: [
+            {
+              id: "beat",
+              name: "Heartbeat",
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Report the heartbeat count.",
+              spammable: true,
+            },
+          ],
         },
       ])
       const claim = (id: string) =>
