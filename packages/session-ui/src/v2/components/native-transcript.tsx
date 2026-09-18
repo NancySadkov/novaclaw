@@ -12,6 +12,7 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js"
+import { createStore } from "solid-js/store"
 import type {
   LlmToolContent,
   SessionMessage,
@@ -85,6 +86,28 @@ import {
 type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode; settled: boolean }
 const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed", settled: true })
 const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes)
+
+/**
+ * A user's per-card expansion, held ABOVE the turn so a re-render cannot lose it.
+ *
+ * 🔴 **The defect (owner, 2026-09-18): "when user unfolds a previous shell command to inspect it, it
+ * almost immediately gets auto folded when the agent calls another command".** Expansion lived in
+ * `BasicToolV2`'s own signal and in `ReasoningPart`'s `override`, both owned BELOW `Turn`. The next
+ * agent step appends an assistant message, which grows the active group's body — and `stableGroups`
+ * can only reuse a group whose body is unchanged, so `<For>` (reference-keyed) disposes the whole
+ * `Turn` and rebuilds it. Every open card remounted to its default, closed. The fold's DOM state was
+ * never the problem; owning it under a boundary the transcript tears down every step was.
+ *
+ * The store lives in `NativeTranscript`, which does NOT remount when a step lands, so what the user
+ * opened stays open through body growth, the settle fold, and a streamed-delta reconcile alike.
+ * Keys are namespaced (`t:` a tool call, `r:` a reasoning part) because both id spaces are part ids.
+ */
+interface ToolFoldState {
+  readonly get: (key: string) => boolean | undefined
+  readonly set: (key: string, open: boolean) => void
+}
+const NO_TOOL_FOLD: ToolFoldState = { get: () => undefined, set: () => {} }
+const ToolFoldContext = createContext<Accessor<ToolFoldState>>(() => NO_TOOL_FOLD)
 
 /**
  * The session-fault headline, TRANSLATED.
@@ -217,6 +240,13 @@ export function NativeTranscript(props: {
   }[]
 }) {
   const i18n = useI18n()
+  // Expansion the user created, keyed above the Turn (see ToolFoldContext). A record store, so a
+  // key written for one card does not re-render any other.
+  const [toolFoldState, setToolFoldState] = createStore<Record<string, boolean>>({})
+  const toolFold = () => ({
+    get: (key: string) => toolFoldState[key],
+    set: (key: string, open: boolean) => setToolFoldState(key, open),
+  })
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
@@ -329,6 +359,7 @@ export function NativeTranscript(props: {
     return { toolID, timing, tokens: liveTokens(), runStartedAt: runStartedAt() }
   })
   return (
+    <ToolFoldContext.Provider value={toolFold}>
     <ReasoningFoldContext.Provider
       value={() => ({
         reasoning: props.reasoningFold ?? "collapsed",
@@ -429,6 +460,7 @@ export function NativeTranscript(props: {
         </ToolContext.Provider>
       </TranscriptDirectoryContext.Provider>
     </ReasoningFoldContext.Provider>
+    </ToolFoldContext.Provider>
   )
 }
 
@@ -1307,16 +1339,21 @@ function FaultCard(props: {
 function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?: number; cacheKey?: string }) {
   const i18n = useI18n()
   const foldMode = useContext(ReasoningFoldContext)
-  const [override, setOverride] = createSignal<boolean | undefined>(undefined)
+  // The latch lives above the turn for the same reason tool cards do (ToolFoldContext): a user's
+  // "show me the thinking" must not be undone by the next step's remount. Only a real click writes
+  // it — the programmatic open/close from the fold mode never masquerades as an override.
+  const toolFold = useContext(ToolFoldContext)
+  const key = () => `r:${props.part.id}`
   const completed = () => !!props.part.time?.completed
-  const open = () => override() ?? reasoningOpenDefault(foldMode().reasoning, completed(), foldMode().settled)
+  const open = () =>
+    toolFold().get(key()) ?? reasoningOpenDefault(foldMode().reasoning, completed(), foldMode().settled)
   const tokenLabel = () => reasoningTokenLabel(props.tokens, props.part.text)
   return (
     <details data-slot="native-reasoning" open={open()} data-streaming={completed() ? undefined : ""}>
       <summary
         onClick={(event) => {
           event.preventDefault()
-          setOverride(!open())
+          toolFold().set(key(), !open())
         }}
       >
         <Show
@@ -1398,6 +1435,12 @@ function ToolPart(props: {
   const meta = () => toolMeta(props.part, i18n, messages())
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
+  // 🔴 The user's own toggle outranks the level default and lives ABOVE the turn, so the next agent
+  // step (which remounts this whole subtree) cannot fold it back up. See ToolFoldContext.
+  const toolFold = useContext(ToolFoldContext)
+  const cardDefault = () => (props.part.name === "todowrite" ? false : toolOpenDefault(foldMode().tool))
+  const cardOpen = createMemo(() => toolFold().get(`t:${props.part.id}`) ?? cardDefault())
+  const setCardOpen = (value: boolean) => toolFold().set(`t:${props.part.id}`, value)
   const faultText = useFaultText()
   const actions = useContext(TranscriptActionsContext)
   const [now, setNow] = createSignal(Date.now())
@@ -1430,7 +1473,13 @@ function ToolPart(props: {
   return (
     <Switch>
       <Match when={props.part.name === "todowrite"}>
-        <TodoTool part={props.part} prelude={prelude()} active={toolContext().active?.toolID === props.part.id} />
+        <TodoTool
+          part={props.part}
+          prelude={prelude()}
+          active={toolContext().active?.toolID === props.part.id}
+          open={cardOpen()}
+          onOpenChange={setCardOpen}
+        />
       </Match>
 
       <Match when={props.part.name !== "bash" && props.part.state.status === "error" && props.part.state}>
@@ -1452,7 +1501,8 @@ function ToolPart(props: {
         <BasicToolV2
           data-slot="native-tool"
           status={props.part.state.status}
-          defaultOpen={toolOpenDefault(foldMode().tool)}
+          open={cardOpen()}
+          onOpenChange={setCardOpen}
           expandWhilePending={props.part.name === "bash" || toolContext().active?.toolID === props.part.id}
           trigger={{
             icon: toolIcon(props.part.name),
@@ -1506,8 +1556,20 @@ function CommandStop(props: { onStop: (reason: string) => void | Promise<void> }
   )
 }
 
-/** `todowrite` → an inline checklist (the one tool whose payload reads best expanded). */
-function TodoTool(props: { part: SessionMessageAssistantTool; prelude?: JSX.Element; active?: boolean }) {
+/**
+ * `todowrite` → an inline checklist, FOLDED by default.
+ *
+ * 🔴 The list is already shown above the composer (`SessionTodoDock`), so expanding the same list
+ * again in the transcript duplicates it down the page (owner, 2026-09-18). The count on the trigger
+ * still says what the plan is at a glance, and one click opens it for a reader scrolled into history.
+ */
+function TodoTool(props: {
+  part: SessionMessageAssistantTool
+  prelude?: JSX.Element
+  active?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
   const i18n = useI18n()
   const todos = () => {
     const raw = toolInput(props.part.state).todos ?? structuredTodos(props.part.state)
@@ -1518,7 +1580,8 @@ function TodoTool(props: { part: SessionMessageAssistantTool; prelude?: JSX.Elem
     <BasicToolV2
       data-slot="native-tool"
       status={props.part.state.status}
-      defaultOpen
+      open={props.open}
+      onOpenChange={props.onOpenChange}
       expandWhilePending={props.active}
       trigger={{
         icon: toolIcon(props.part.name),

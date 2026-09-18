@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import type { SessionMessage } from "@novaclaw/sdk/v2"
 import { MarkedContext } from "@novaclaw/ui/context/marked"
+import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 
 // Bun does not apply Vite's `?worker&url` transform. Resolve the same canonical module before the
@@ -325,5 +326,97 @@ describe("native transcript remount", () => {
     expect(host.querySelector('[data-slot="native-tool-path"]')?.textContent).toBe(
       "C:\\Nova\\scratch\\drafts\\browser-printing-wedge.md",
     )
+  })
+
+  test("🔴 an unfolded command survives the next agent step", async () => {
+    // The bug (owner, 2026-09-18): a command the user opened to inspect folded itself back the moment
+    // the agent took another step. The step appends an assistant message, which grows the active
+    // turn's body; `stableGroups` can only reuse an UNCHANGED body, so `<For>` (reference-keyed)
+    // remounts the whole `Turn`. Expansion lived inside that subtree, so the remount closed it. It
+    // now lives above the turn (ToolFoldContext) and survives.
+    const step = (id: string, toolID: string, created: number, command: string) =>
+      ({
+        id,
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created, completed: created + 3 },
+        content: [
+          {
+            id: toolID,
+            type: "tool",
+            name: "bash",
+            time: { created: created + 1, ran: created + 2, completed: created + 3 },
+            state: {
+              status: "completed",
+              input: { command },
+              structured: {},
+              content: [],
+              outputPaths: [],
+              result: "ok",
+            },
+          },
+        ],
+      }) as unknown as SessionMessage
+    const [messages, setMessages] = createSignal<SessionMessage[]>([
+      { id: "msg_user_step", type: "user", text: "Run the tests", time: { created: 1 } } as unknown as SessionMessage,
+      step("msg_step_1", "call_step_1", 2, "bun test"),
+    ])
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    dispose = render(
+      () => (
+        <MarkedContext.Provider
+          value={{ parser: { parse: async (text: string) => text }, resolveFile: () => undefined } as never}
+        >
+          <NativeTranscript messages={messages()} status={{ type: "idle" } as never} />
+        </MarkedContext.Provider>
+      ),
+      host,
+    )
+    ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(host.querySelectorAll('[data-slot="basic-tool-v2-content"]')).toHaveLength(1)
+
+    // Step 2 lands in the same work unit. Without the store this is a fresh `Turn`, so the card the
+    // user opened came back closed and `basic-tool-v2-content` went to zero.
+    setMessages([...messages(), step("msg_step_2", "call_step_2", 6, "bun run typecheck")])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(host.querySelectorAll('[data-slot="basic-tool-v2-content"]')).toHaveLength(1)
+  })
+
+  test("todowrite is folded by default — the composer dock already carries the list", async () => {
+    const todoMessages = [
+      { id: "msg_user_todo", type: "user", text: "Plan it", time: { created: 1 } },
+      {
+        id: "msg_assistant_todo",
+        type: "assistant",
+        agent: "hecate",
+        model: { providerID: "spark", id: "current" },
+        time: { created: 2, completed: 5 },
+        content: [
+          {
+            id: "call_todo",
+            type: "tool",
+            name: "todowrite",
+            time: { created: 3, ran: 4, completed: 5 },
+            state: {
+              status: "completed",
+              input: { todos: [{ content: "First", status: "completed" }, { content: "Second", status: "pending" }] },
+              structured: {},
+              content: [],
+              outputPaths: [],
+              result: "ok",
+            },
+          },
+        ],
+      },
+    ] as unknown as SessionMessage[]
+    const host = mount(undefined, { messages: todoMessages, status: { type: "idle" } })
+    // Folded: the trigger (with its done/total count) shows, the list itself does not.
+    expect(host.querySelector('[data-slot="native-todos"]')).toBeNull()
+    ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(host.querySelectorAll('[data-slot="native-todo"]')).toHaveLength(2)
   })
 })
