@@ -28,7 +28,6 @@ import {
 import { ConfigPluginGlob } from "./config/plugin/glob"
 import { FSUtil } from "./fs-util"
 import { SessionAutoGrant } from "./session/auto-grant"
-import { PermissionSaved } from "./permission/saved"
 import { ShortChat } from "./session/runner/short-chat"
 
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
@@ -152,6 +151,11 @@ export const AssertInput = Schema.Struct({
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
+/**
+ * The verdict of an INSPECTION — `ask` only in the sense that it resolves the same question
+ * `assert` does, with no failure. It does NOT ask anyone: asking was retired as an outcome, so a
+ * verdict of `ask` is converted to `deny` inside this service and no message is ever sent.
+ */
 export const AskResult = Schema.Struct({
   id: ID,
   effect: Permission.Effect,
@@ -228,11 +232,10 @@ export type Error = DeniedError
  * 🔴 **Why this constant exists.** Two of the messages below used to end by telling the model that a
  * capability could be had by *"approving it once with 'always' in an attended chat"* — and that path
  * does not exist. `ask` was retired as an outcome (owner, 2026-08-20: *"Ask considered harmful"*), so
- * no consent card is ever shown and no reply is ever collected; `PermissionSaved.add`, the only
- * writer of the durable saved-grant table, has had **no production caller** since. The `permission`
- * table is read by `savedRules()` below and written by nothing an operator can reach from a chat.
- * So the copy prescribed a remedy the code had removed, and a model that followed it would spend its
- * result telling the user to answer a prompt they will never see.
+ * no consent card is ever shown and no reply is ever collected; the durable saved-grant table and the
+ * `permission.saved.*` routes went with it (owner, 2026-09-18). So the copy prescribed a remedy the
+ * code had removed, and a model that followed it would spend its result telling the user to answer a
+ * prompt they will never see.
  *
  * 🔴 **Why the fix is the COPY and not a restored ask.** AGENTS.md principle 13 is structural: *the
  * chat IS the channel*, a model that needs a decision ends its turn and says so, and *"do not add a
@@ -733,6 +736,8 @@ export function evaluateNarrowed(
 }
 
 export interface Interface {
+  /** Resolve the verdict without failing — the capability-report (`tool/self.ts`) reader. See
+   *  {@link AskResult}: this inspects, it does not prompt. */
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
 }
@@ -742,7 +747,6 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 export const layer = Layer.effect(
   Service,
   EffectRuntime.gen(function* () {
-    const location = yield* Location.Service
     // ⚠️ Through `Global.Service`, NEVER `Global.Path.config` — that is the difference between
     // guarding the door and guarding a directory next to it. `Global.make()` applies
     // `NOVACLAW_CONFIG_DIR` and `Global.Path` does not, and the loader this guard shadows
@@ -768,26 +772,14 @@ export const layer = Layer.effect(
      */
 
     const autoGrants = yield* SessionAutoGrant.Service
-    const saved = yield* PermissionSaved.Service
-
     /**
-     * The durable saved-grant table, folded in after the agent ruleset and the mode overlay.
-     *
-     * ⚠️ **Nothing a user can reach from a CHAT writes it, and every comment here that assumes
-     * otherwise is wrong.** `PermissionSaved.add` lost its only caller when `ask` was retired as an
-     * outcome (owner, 2026-08-20), and the HTTP surface exposes `permission.saved.list` and
-     * `permission.saved.remove` and no add. What can still write a row is the Developer-mode
-     * Registry app editing the `permission` table by hand — a human on their own machine, which is
-     * ruling 5's trust boundary working as designed — and an AGENT may not, which round 1 made a
-     * refusal in `db-registry.ts` (`PERMISSION_KERNEL_TABLES`). So the read stays: revoking or
-     * inspecting a grant is a real repair. What must NOT come back is denial copy telling a model to
-     * get a row written by answering something — see {@link GRANT_IN_ADVANCE}.
+     * 🗑️ **The durable saved-grant table is GONE (owner, 2026-09-18).** `permission.saved.list` /
+     * `.remove` (and the `permission` table behind them) were the last of the consent request/reply/
+     * save machinery: `add` had no caller since `ask` was retired, so the table could only ever
+     * return an empty list or rows an operator hand-edited in the Developer-mode Registry. A grant
+     * is now a standing RULE in `permissions`/`agents` — the one surface the deny text names — and
+     * nothing is collected from a chat. {@link GRANT_IN_ADVANCE}.
      */
-    const savedRules = EffectRuntime.fnUntraced(function* () {
-      return (yield* saved.list({ origin: location.origin })).map(
-        (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: item.effect ?? "allow" }),
-      )
-    })
 
     const configured = EffectRuntime.fn("PermissionV2.configured")(function* (
       sessionID: SessionV2.ID,
@@ -974,47 +966,35 @@ export const layer = Layer.effect(
         }
       if (denied(input, configuredRules) || denied(input, modeRules) || denied(input, featureRules))
         return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }
-      const saved = yield* savedRules()
       // ATTACHED-SOURCE PROTECTION. A file the user handed to the conversation is their own source of
       // truth, not the agent's working material, and nothing below this line would otherwise tell the
       // two apart. Ported from PR #9 by @DassaultFalconKing; the placement decisions are ours.
       //
-      // ⚠️ It sits AFTER the mode overlay and after saved rules deliberately, and that is the whole
-      // design. `EFFECTIVE_CONFIG_DEFAULTS.permissionMode` is **bypass**, whose overlay allows
+      // ⚠️ It sits AFTER the mode overlay deliberately, and that is the whole design.
+      // `EFFECTIVE_CONFIG_DEFAULTS.permissionMode` is **bypass**, whose overlay allows
       // edit/write/trash on `*`; `evaluate` resolves by findLast. Placed anywhere earlier this rule
       // would be shadowed on a DEFAULT install and the protection would not exist at all. The upstream
       // PR reached the same placement without saying so — recorded here so nobody "tidies" it.
+      //
+      // 🗑️ A saved answer used to release the protection when it NAMED the file. There are no saved
+      // answers any more (owner, 2026-09-18), so writing an attached file is refused in every mode
+      // but `yolo` — which remains the one deliberate way out.
       const attachment = protectedAttachment(input.action, input.targets ?? [], input.attachmentPaths ?? [])
-      // A saved answer releases the protection only when it NAMES the file. Every one of these
-      // asserts offers `save: ["*"]`, so honouring a wildcard saved rule would mean the first
-      // ordinary "always allow edits" silently switched attachment protection off forever — the
-      // protection would survive exactly until the most common reply. Answering "always" to THIS
-      // file's own ask still ends it for that file, which is the user actually deciding. Mirrors
-      // `governedSpecifically` above.
-      const releasedByName =
-        attachment !== undefined &&
-        saved.some(
-          (rule) =>
-            rule.resource !== "*" &&
-            Wildcard.match(input.action, rule.action) &&
-            Wildcard.match(attachment.resource, rule.resource),
-        )
-      const protecting = attachment !== undefined && !releasedByName && mode !== "yolo"
+      const protecting = attachment !== undefined && mode !== "yolo"
       // Deny-fast rather than park, exactly as the unattended stance above does. An ask nobody can
-      // answer is not protection — durable consent survives a restart now, but it cannot conjure an
-      // operator for an unattended chain. `yolo` stays the one deliberate way out, matching
-      // `unattendedStanceRules`.
+      // answer is not protection: a parked card cannot conjure an operator for an unattended chain.
+      // `yolo` stays the one deliberate way out, matching `unattendedStanceRules`.
       if (protecting && !attendedRoot(rootType))
         return {
           effect: "deny" as const,
-          rules: [...rules, ...saved],
+          rules,
           reason: "attachment-protected" as DenialReason | undefined,
           attachment,
         }
       const attachmentRules: Permission.Ruleset = protecting
         ? [{ action: input.action, resource: attachment.resource, effect: "ask" }]
         : []
-      const all = [...rules, ...saved, ...attachmentRules]
+      const all = [...rules, ...attachmentRules]
       // ⚠️ `evaluateNarrowed`, not `evaluate`, and the constraint list is now always EMPTY: it is the
       // seam a folder's `novaclaw.json` used to constrain (owner, 2026-09-16). Keeping the call rather
       // than reverting to `evaluate` is deliberate — the narrowing RULE is general and correct, and a
@@ -1041,7 +1021,7 @@ export const layer = Layer.effect(
       //
       // This is the LAST arm on purpose: everything that could legitimately answer for the action
       // has already spoken — the read baseline, the agent's configured rules, the mode
-      // overlay, the Tuning switches, the stance, and saved answers. Only after
+      // overlay, the Tuning switches and the stance. Only after
       // all of that resolves to `ask` do we know that NOBODY ruled on this action, which is exactly
       // the state B4c created by design: the compiled floor is an allowlist now
       // (`AMBIENT_SAFE_BASELINE`), so `spawn`, `skill`, `kb`, `websearch`, `revert`, `provision`,
@@ -1074,11 +1054,10 @@ export const layer = Layer.effect(
       // an agent or instance permission rule ({@link GRANT_IN_ADVANCE}). The self-healing law is
       // untouched — that is a runtime-editable store.
       // ⚠️ This sentence named a second path — *one "always" answer in an attended chat* — until
-      // 2026-09-02, and the denial text it points at named it too. There is no such path: retiring
-      // `ask` removed the only caller of `PermissionSaved.add`, so nothing a user can reach from a
-      // chat writes the saved-grant table. A remedy the code cannot perform is ruling 2 broken by
-      // the very text written to satisfy it, which is exactly what this arm's own comment warns of
-      // two paragraphs down.
+      // 2026-09-02, and the denial text it points at named it too. There is no such path: the
+      // saved-grant table is gone (owner, 2026-09-18), so no answer exists to write a row. A remedy
+      // the code cannot perform is ruling 2 broken by the very text written to satisfy it, which is
+      // exactly what this arm's own comment warns of two paragraphs down.
       //
       // The synthetic rules appended to `rules` ARE the verdict this arm reached, in the vocabulary
       // `denialMessage` reads — one per requested resource, because the call is refused for all of
@@ -1152,7 +1131,6 @@ export const node = makeLocationNode({
     Global.node,
     AgentV2.node,
     SessionStore.node,
-    PermissionSaved.node,
     SessionAutoGrant.node,
     SessionEffectiveConfig.node,
   ],

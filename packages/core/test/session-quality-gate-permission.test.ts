@@ -10,7 +10,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -48,7 +47,6 @@ const it = testEffect(
       Database.node,
       EventV2.node,
       SessionStore.node,
-      PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
     ]),
@@ -109,21 +107,19 @@ describe("the quality gate's command is spent as `bash`", () => {
     }),
   )
 
-  it.effect("`ask` REFUSES — and a standing grant is the same one `bash` and quality_provision spend", () =>
+  it.effect("`ask` REFUSES — the mode overlay is a refusal, not a quietable gate", () =>
     Effect.gen(function* () {
       // ⚠️ This used to expect `ask`, and stopped being true on 2026-08-20 (`bf39088eb`, owner ruling
       // *Ask considered harmful*): the assert path converts an `ask` verdict into a refusal with
       // reason `ask-removed`, because a question nobody answers blocks a run forever while a denial
       // is something the model can act on. The mode's RULE is still `ask` — `permission-baseline`
       // pins that — but no surface asks any more, so a ledger over the SERVICE must say deny.
+      //
+      // 🗑️ A standing grant used to quiet this, because saved answers sat ABOVE the mode overlay.
+      // The saved-grant table is gone (owner, 2026-09-18), so an agent allow no longer outranks the
+      // mode: the mode is the user's posture and the overlay wins for the mutation cluster. `bypass`
+      // (the negative control above) is how the same command is allowed.
       expect(yield* verdict(yield* session("ses_ask", "ask"))).toMatchObject({ effect: "deny" })
-      // One vocabulary, and this is the half that survived the ruling intact: consent is PRE-granted.
-      // An "always allow" for this command string covers it whichever surface runs it
-      // (`tool/bash.ts`, `quality-provision.ts`'s verify loop, and the harness). That is why
-      // `resources`/`save` are the command STRING and not a label.
-      const saved = yield* PermissionSaved.Service
-      yield* saved.add({ origin: "global", action: "bash", resources: [COMMAND] })
-      expect(yield* verdict(SessionV2.ID.make("ses_ask"))).toMatchObject({ effect: "allow" })
     }),
   )
 })

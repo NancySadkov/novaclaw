@@ -302,16 +302,17 @@ describe("PublicApi OpenAPI v2 errors", () => {
   })
 
   /**
-   * **The V1 `/permission` routes stay deleted**; the legacy surface is shrink-only.
+   * **The V1 `/permission` routes and the consent wire stay deleted**; the legacy surface is
+   * shrink-only.
    *
    * ⚠️ **Why this lives here and not only in the legacy-path ledger.**
    * `packages/sdk/js/test/legacy-path-ledger.test.ts` is the repo's shrink-only ratchet, and it does
    * cover this — but it reads the **committed** `packages/sdk/openapi.json`, so it only sees a
-   * re-added group after a regen. This assertion reads the **live** API, so re-adding
-   * `PermissionApi` to `api.ts` is red in the same edit that adds it, with no generated artifact in
-   * between. Two different doors; ruling 1 wants the one that shuts immediately.
+   * re-added group after a regen. This assertion reads the **live** API, so re-adding the permission
+   * group to `api.ts` is red in the same edit that adds it, with no generated artifact in between.
+   * Two different doors; ruling 1 wants the one that shuts immediately.
    */
-  test("the V1 and pending-request permission routes stay deleted", () => {
+  test("the V1 and consent permission routes stay deleted", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     const isLegacyPermissionPath = (path: string) => path === "/permission" || path.startsWith("/permission/")
 
@@ -319,19 +320,22 @@ describe("PublicApi OpenAPI v2 errors", () => {
       Object.keys(spec.paths).filter(isLegacyPermissionPath),
       [
         "The V1 permission routes are back. They served the V1 engine's asks ONLY and the V1 engine",
-        "is gone. Declare permission work",
-        "under /api/* in packages/protocol/src/groups/permission.ts — that is the ONE contract.",
+        "is gone, and the /api/* ask and saved-grant wire went with the consent machinery",
+        "(owner, 2026-09-18). A grant is a standing rule in `permissions`/`agents` now.",
       ].join("\n  "),
     ).toEqual([])
 
     // Negative control: the predicate above is not vacuously true — it DOES name those two paths
-    // when they exist, and it never mistakes the /api/* replacement for one of them.
+    // when they exist, and it never mistakes an /api/* route for one of them.
     expect(
       ["/permission", "/permission/{requestID}/reply", "/api/permission/request"].filter(isLegacyPermissionPath),
     ).toEqual(["/permission", "/permission/{requestID}/reply"])
 
-    // Evaluation remains served while the unreachable pending-list and reply surfaces stay absent.
-    expect(spec.paths["/api/session/{sessionID}/permission"]?.post).toBeDefined()
+    // The ask and saved-grant surfaces are GONE — nothing evaluates or collects a permission answer
+    // over the wire. The unreachable pending-list and reply surfaces stay absent too.
+    expect(spec.paths["/api/session/{sessionID}/permission"]).toBeUndefined()
+    expect(spec.paths["/api/permission/saved"]).toBeUndefined()
+    expect(spec.paths["/api/permission/saved/{id}"]).toBeUndefined()
     expect(spec.paths["/api/permission/request"]?.get).toBeUndefined()
     expect(spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post).toBeUndefined()
   })

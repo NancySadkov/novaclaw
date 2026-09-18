@@ -3,7 +3,6 @@ import { MessageHandler } from "./handlers/message"
 import { ModelHandler } from "./handlers/model"
 import { ProviderHandler } from "./handlers/provider"
 import { SessionHandler } from "./handlers/session"
-import { PermissionHandler } from "./handlers/permission"
 import { FileSystemHandler } from "./handlers/fs"
 import { DirectoryBrowseHandler } from "./handlers/directory-browse"
 import { CommandHandler } from "./handlers/command"
@@ -41,7 +40,6 @@ type HandlerLayers =
   | typeof CalendarHandler
   | typeof RecipeHandler
   | typeof AppHandler
-  | typeof PermissionHandler
   | typeof FileSystemHandler
   | typeof DirectoryBrowseHandler
   | typeof CommandHandler
@@ -73,7 +71,6 @@ export const handlers: Layer.Layer<
   CalendarHandler,
   RecipeHandler,
   AppHandler,
-  PermissionHandler,
   FileSystemHandler,
   DirectoryBrowseHandler,
   CommandHandler,

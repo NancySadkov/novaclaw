@@ -1,6 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffectShared } from "../lib/effect"
@@ -83,19 +84,16 @@ describe("the /registry routes act at the agent tier by default", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const before = yield* readRows(test.directory, "permission")
+        const before = yield* readRows(test.directory, "session_auto_grant")
         expect(before.status).toBe(200)
 
         // Every column is a real one, so `insertRow`'s "no known columns" arm cannot be what
         // refuses this — the row is perfectly well-formed and the guard is the only thing in its way.
-        const res = yield* insert(test.directory, "permission", {
-          id: "perm_registry_tier_probe",
-          origin: "probe",
-          action: "*",
-          resource: "*",
-          effect: "allow",
-          time_created: 1,
-          time_updated: 1,
+        const res = yield* insert(test.directory, "session_auto_grant", {
+          session_id: "ses_registry_tier_probe",
+          mode: "yolo",
+          justification: "agent-authored",
+          at: 1,
         })
 
         expect(res.status).toBe(400)
@@ -105,9 +103,9 @@ describe("the /registry routes act at the agent tier by default", () => {
         // meaning "your payload was malformed", which is the opposite of what is being proven.
         expect(String(body.message)).toContain("permission kernel")
 
-        const after = yield* readRows(test.directory, "permission")
+        const after = yield* readRows(test.directory, "session_auto_grant")
         expect(after.page.rowCount).toBe(before.page.rowCount)
-        expect(after.page.rows.map((row) => row.values.id)).not.toContain("perm_registry_tier_probe")
+        expect(after.page.rows.map((row) => row.values.session_id)).not.toContain("ses_registry_tier_probe")
       }),
     { git: true, config: { formatter: false } },
   )
@@ -172,25 +170,40 @@ describe("CONTROL: Developer mode keeps the Registry app's full reach", () => {
   )
 
   it.instance(
-    "a human may still repair their own saved grants by hand",
+    "a human may still write a protected (kernel) table by hand",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         yield* enterDeveloperMode(test.directory)
+        // `session_auto_grant` has a foreign key to `session`, so give it a parent row before the
+        // registry insert. (A real session, not a stub config row — see the note below.)
+        const { db } = yield* Database.Service
+        yield* db
+          .insert(SessionTable)
+          .values({
+            id: "ses_registry_tier_probe",
+            slug: "registry-tier-probe",
+            directory: test.directory,
+            title: "registry-tier-probe",
+            version: "test",
+          })
+          .run()
+          .pipe(Effect.orDie)
 
-        const res = yield* insert(test.directory, "permission", {
-          id: "perm_registry_tier_probe",
-          origin: "probe",
-          action: "*",
-          resource: "*",
-          effect: "allow",
-          time_created: 1,
-          time_updated: 1,
+        // The AGENT tier refuses this table outright (the test above); the Developer-mode Registry
+        // app is the human-on-their-own-machine exception (ruling 5). This used to probe `permission`,
+        // the saved-grant table, which is deleted (owner, 2026-09-18). Kernel, not config-backed, so
+        // the row never reaches the memoized config store.
+        const res = yield* insert(test.directory, "session_auto_grant", {
+          session_id: "ses_registry_tier_probe",
+          mode: "yolo",
+          justification: "developer-mode-probe",
+          at: 1,
         })
-        expect(res.status).toBe(200)
+        expect(res.status, res.body).toBe(200)
 
-        const page = (yield* readRows(test.directory, "permission")).page
-        expect(page.rows.map((row) => row.values.id)).toContain("perm_registry_tier_probe")
+        const page = (yield* readRows(test.directory, "session_auto_grant")).page
+        expect(page.rows.map((row) => row.values.session_id)).toContain("ses_registry_tier_probe")
       }),
     { git: true, config: { formatter: false } },
   )

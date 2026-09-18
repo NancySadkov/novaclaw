@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ddeba048-0d8e-428f-bebe-1ecc2cef46c9",
+  "id": "8814e625-5d2b-42f3-a24a-8aa102fbcbf8",
   "prevIds": [
-    "24e1f49d-c4f1-4373-a824-e45c8ae8cce9"
+    "ddeba048-0d8e-428f-bebe-1ecc2cef46c9"
   ],
   "ddl": [
     {
@@ -196,10 +196,6 @@
     },
     {
       "name": "messenger_initiation",
-      "entityType": "tables"
-    },
-    {
-      "name": "permission",
       "entityType": "tables"
     },
     {
@@ -3194,76 +3190,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "origin",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "action",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "resource",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "effect",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_created",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_updated",
-      "entityType": "columns",
-      "table": "permission"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "name",
       "entityType": "columns",
       "table": "reference_config"
@@ -5402,15 +5328,6 @@
     },
     {
       "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "permission_pk",
-      "table": "permission",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "name"
       ],
       "nameExplicit": false,
@@ -5877,28 +5794,6 @@
       "name": "messenger_inbound_routed_idx",
       "entityType": "indexes",
       "table": "messenger_inbound"
-    },
-    {
-      "columns": [
-        {
-          "value": "origin",
-          "isExpression": false
-        },
-        {
-          "value": "action",
-          "isExpression": false
-        },
-        {
-          "value": "resource",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "origin": "manual",
-      "name": "permission_origin_action_resource_idx",
-      "entityType": "indexes",
-      "table": "permission"
     },
     {
       "columns": [

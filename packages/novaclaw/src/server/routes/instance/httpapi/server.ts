@@ -81,7 +81,6 @@ import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { EventV2 } from "@novaclaw/core/event"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Npm } from "@novaclaw/core/npm"
-import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { Ticket } from "@novaclaw/core/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
@@ -323,7 +322,6 @@ const app = LayerNode.group([
   LocalModelRuntime.managerNode,
   ModelsDev.node,
   Agent.node,
-  PermissionSaved.node,
   SessionProjector.node,
   // 🔴 The reassignment DELIVERY, registered where the sessions and the event bus are.
   //

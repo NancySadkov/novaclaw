@@ -5,7 +5,6 @@ import { MessageGroup } from "./groups/message"
 import { ModelGroup } from "./groups/model"
 import { ProviderGroup } from "./groups/provider"
 import { makeSessionGroups } from "./groups/session"
-import { makePermissionGroup } from "./groups/permission"
 import { DirectoryBrowseGroup, FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
 import { QualityGroup } from "./groups/quality"
@@ -70,7 +69,6 @@ const makeApiFromGroup = <
     .add(makeCalendarGroup(locationMiddleware))
     .add(RecipeGroup)
     .add(AppGroup)
-    .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(DirectoryBrowseGroup)
     .add(CommandGroup.middleware(locationMiddleware))
@@ -146,12 +144,6 @@ type ApiFromGroup<
       | ReturnType<typeof makeCalendarGroup<LocationId, LocationService>>
       | typeof RecipeGroup
       | typeof AppGroup
-      | HttpApiGroup.AddMiddleware<
-          ReturnType<
-            typeof makePermissionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>
-          >,
-          WorkspaceRoutingId
-        >
       | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
       | typeof DirectoryBrowseGroup
       | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>

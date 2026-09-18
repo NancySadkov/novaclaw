@@ -9,8 +9,6 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { PermissionTable } from "@novaclaw/core/permission/sql"
-import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -40,7 +38,6 @@ const it = testEffect(
       FSUtil.node,
       SessionStore.node,
       SessionEffectiveConfig.node,
-      PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
     ]),
@@ -306,24 +303,17 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("a saved answer releases the protection only when it NAMES the file", () =>
+  it.effect("🔴 no saved answer releases attachment protection — the table is gone", () =>
     Effect.gen(function* () {
-      // The rule this pins: every one of these asserts offers `save: ["*"]`, so if a wildcard saved
-      // answer could release the protection, the first ordinary "always allow edits" would switch it
-      // off forever and the whole feature would be theatre.
+      // Until 2026-09-18 a NAMED saved answer released the protection. The saved-grant table went
+      // with the rest of the consent machinery, so a wildcard `allow` (what every one of these
+      // asserts used to offer as `save: ["*"]`) can never switch the protection off. `yolo` is the
+      // one deliberate way out, and the sibling test below proves it.
       yield* setup([{ action: "*", resource: "*", effect: "allow" }])
-      const saved = yield* PermissionSaved.Service
       const sessionID = SessionV2.ID.make("ses_attached_saved")
       yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
-
-      // The rule an ordinary "always allow edits" leaves behind — these asserts all offer `save: ["*"]`.
-      yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["*"] })
       expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "deny" })
-
-      // Answering "always" to THIS file's own ask names it, and that does end the asking.
-      yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["task.md"] })
-      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "allow" })
     }),
   )
 
@@ -451,63 +441,10 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("uses saved bash approvals while preserving configured deny precedence", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const saved = yield* PermissionSaved.Service
-      yield* saved.add({ origin: Project.ID.global, action: "bash", resources: ["pwd"] })
-
-      const service = yield* PermissionV2.Service
-      expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toEqual({
-        id: PermissionV2.ID.create("per_test"),
-        effect: "allow",
-      })
-      yield* setRules([{ action: "bash", resource: "*", effect: "deny" }])
-      expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toEqual({
-        id: PermissionV2.ID.create("per_test"),
-        effect: "deny",
-      })
-    }),
-  )
-
-  // A deleted session must take its pending asks with it: the V2 session-scoped reply route can
-  // never settle them once the session row is gone, so without the sweep they orphan forever.
-
-  // A SETTLED DRAIN takes its pending asks with it too (owner-hit 2026-07-22): once the drain
-  // publishes idle/exited (Stop, exit, error) the tool awaiting the answer is gone, and a stale
-  // ask wedged the chat — the ask dock replaces the composer, leaving no Stop and no way to
-  // re-prompt.
-
-  // ⚠️ Rewritten 2026-08-20. This used to reach the saved store through the ask/reply lifecycle —
-  // fork an assert, wait for `Asked`, reply "always" — and that lifecycle no longer exists. The
-  // STORE is very much alive, and more central than before: pre-granted rules are how consent works
-  // now that nothing is negotiated per path. So it is exercised directly.
-  it.effect("stores and removes saved resources for a project", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const service = yield* PermissionV2.Service
-      const saved = yield* PermissionSaved.Service
-
-      yield* saved.add({ origin: Project.ID.global, action: "read", resources: ["src/*"] })
-
-      const { db } = yield* Database.Service
-      expect(
-        yield* db.select().from(PermissionTable).where(eq(PermissionTable.origin, Project.ID.global)).all(),
-      ).toMatchObject([{ action: "read", resource: "src/*" }])
-
-      const id = (yield* saved.list())[0]!.id
-      expect(yield* saved.list()).toEqual([
-        { id, origin: Project.ID.global, action: "read", resource: "src/*", effect: "allow" },
-      ])
-
-      // ⭐ The point of a saved rule: a matching assert passes WITHOUT anyone being asked. That is the
-      // owner's model — consent granted in advance, never negotiated mid-task.
-      yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
-
-      yield* saved.remove(id)
-      expect(yield* saved.list()).toEqual([])
-    }),
-  )
+  // 🗑️ Deleted 2026-09-18: "uses saved bash approvals..." and "stores and removes saved resources
+  // for a project". Both exercised the durable saved-grant table and its `permission.saved.*` routes,
+  // which are gone with the rest of the consent machinery; a grant is a standing rule now, proven by
+  // the agent/instance-ruleset tests above.
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -661,7 +598,7 @@ describe("PermissionV2 — the surgical / ask switches", () => {
     }),
   )
 
-  it.effect("Analyze denies execution, and a saved allow-always cannot soften it", () =>
+  it.effect("Analyze denies execution, and a standing allow-always cannot soften it", () =>
     Effect.gen(function* () {
       // The companion assertions in src/permission-modes.test.ts prove MODE_RULES.plan CONTAINS the
       // bash/js denies. They cannot prove the evaluator still CONSULTS them: deleting
@@ -920,13 +857,15 @@ describe("PermissionV2 — unattended confinement stance", () => {
     }),
   )
 
-  it.effect("a saved allow-always cannot buy its way out (the stance is a HARD deny)", () =>
+  it.effect("a standing allow cannot buy its way out (the stance is a HARD deny)", () =>
     Effect.gen(function* () {
-      yield* setup(buildAgentRules)
+      // The grant used to come from the saved-grant table; it is a configured standing rule now and
+      // the invariant is unchanged — the stance is checked BEFORE configured rules.
+      yield* setup([
+        ...buildAgentRules,
+        { action: "external_directory_write", resource: "*", effect: "allow" as const },
+      ])
       yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
-      const saved = yield* PermissionSaved.Service
-      // A grant the operator saved earlier, from an attended session at the same origin.
-      yield* saved.add({ origin: Project.ID.global, action: "external_directory_write", resources: ["C:/elsewhere/*"] })
       const service = yield* PermissionV2.Service
       expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
         effect: "deny",
@@ -1180,26 +1119,7 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
     }),
   )
 
-  it.effect("a saved allow-always DOES unblock it — the Developer-mode repair path, not a chat answer", () =>
-    Effect.gen(function* () {
-      // The denial tells the model a grant written into the agent/instance rules in advance is what
-      // would change things — never an answer given in the chat, since `PermissionSaved.add` has no
-      // production caller. That has to be TRUE, or the refusal is a dead end wearing advice. This
-      // arm sits AFTER saved answers
-      // deliberately — unlike the confinement stance, which is a hard arm a saved grant cannot buy
-      // out of, because this one converts a fall-through rather than a classified boundary.
-      yield* setup(b4cBaseline)
-      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
-      const saved = yield* PermissionSaved.Service
-      yield* saved.add({ origin: Project.ID.global, action: FALL_THROUGH, resources: ["*"] })
-      const service = yield* PermissionV2.Service
-      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
-        effect: "allow",
-      })
-    }),
-  )
-
-  it.effect("an agent-level allow DOES unblock it — the second path the denial text names", () =>
+  it.effect("an agent-level allow DOES unblock it — the path the denial text names", () =>
     Effect.gen(function* () {
       yield* setup([...b4cBaseline, { action: FALL_THROUGH, resource: "*", effect: "allow" }])
       yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
