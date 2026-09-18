@@ -1503,14 +1503,27 @@ const compiledDefinitions = Effect.gen(function* () {
     kernelDefinition({
       kind: "working_folder",
       description:
-        "The absolute working folder for this session. Moving re-derives project identity and the next turn's permission scope. It cannot be removed.",
+        "The absolute working folder for this session. Moving re-derives project identity and the next turn's permission scope. It cannot be removed. READ-ONLY to an agent: the project a colleague works in is chosen by the user or a superior officer.",
       cardinality: "singleton",
       lifetime: "entity",
       version: 1,
       codec: AbsolutePath,
       removable: false,
+      // 🔴 Project choice is authority, not a session preference (owner, 2026-09-18: *"the only things
+      // the agent can't change is its personality, goal and project"*). The host reaches the move
+      // through `session.repointFolder`, which claims `system`; the model-facing `session` tool has no
+      // such field, so an agent moving its own folder is refused outright rather than priced.
+      validateWrite: ({ system }) =>
+        system
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A session's working folder (its project) is chosen by the user or a superior officer, not by the agent working inside it.",
+              ),
+            ),
       projection: {
-        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.directory)),
+        get: (sessionID) =>
+          current(sessionID).pipe(Effect.map((row) => (row === undefined ? undefined : AbsolutePath.make(row.directory)))),
         validate: (sessionID, value) => resolveWorkingFolder(sessionID, value).pipe(Effect.asVoid),
         put: (sessionID, value) =>
           Effect.gen(function* () {

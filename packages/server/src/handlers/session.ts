@@ -764,7 +764,14 @@ const SessionControlHandler = handlerLayer(
               ),
             )
             yield* components
-              .put({ sessionID: ctx.params.sessionID, kind: "working_folder", value: ctx.payload.directory })
+              .put({
+                sessionID: ctx.params.sessionID,
+                kind: "working_folder",
+                value: ctx.payload.directory,
+                // The host is the superior officer here: moving a session's project is the user's
+                // decision, and `working_folder` is system-writable only (see the definition).
+                system: true,
+              })
               .pipe(
                 // Everything else the registry can refuse is a bad REQUEST and says why in its own
                 // words: a path that does not resolve, or a destination in a different project (the

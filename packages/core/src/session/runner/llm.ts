@@ -5208,9 +5208,11 @@ export const layer = Layer.effect(
           // goal-oriented session whose queue ran dry keeps working — the harness injects the next
           // prompt as a provenance-prefixed steer. Accepted exit terminates an auto-prompting run;
           // for a goal-oriented officer it closes the visible work unit and starts an interruptible
-          // ten-minute sleep instead. Keyed on the session's OWN declared type (never the inherited walk) so
-          // spawned children and forks don't silently self-drive; Stop interrupts this very
-          // fiber, so it remains the unconditional kill switch. See runner/drive.ts.
+          // ten-minute sleep instead. The role's standing `operationMode` and the chat's OWN `type`
+          // are folded into ONE answer by `SessionDrive.decide` (`unattendedMode`), never the
+          // inherited walk, so spawned children and forks do not silently self-drive; Stop
+          // interrupts this very fiber, so it remains the unconditional kill switch.
+          // See runner/drive.ts.
           const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
           const goalEntry = yield* components.get({ sessionID: input.sessionID, kind: "goal" }).pipe(
             Effect.catch((error: unknown) =>
@@ -5230,16 +5232,25 @@ export const layer = Layer.effect(
           )
           const officer = latest?.agent === undefined ? undefined : yield* agents.get(AgentV2.ID.make(latest.agent))
           const officerGoal = officer?.goal
-          const decision = SessionDrive.decide(latest, driveState, DateTime.toEpochMillis(yield* DateTime.now), {
-            acceptedExit: acceptedGoalExit,
-            // ⚠️ Through the SAME helper the system prompt uses (`assignedGoal`), so the goal a session
-            // is steered by and the goal it is shown cannot be two different things.
-            goal: SessionDrive.assignedGoal({ officerGoal, component: goalEntry?.value }),
-            steps: planEntries.map((entry) => {
-              const value = entry.value as SessionComponentRegistry.PlanStep
-              return { text: value.text, status: value.status, verdict: value.verdict }
-            }),
-          })
+          const decision = SessionDrive.decide(
+            latest,
+            driveState,
+            DateTime.toEpochMillis(yield* DateTime.now),
+            {
+              acceptedExit: acceptedGoalExit,
+              // ⚠️ Through the SAME helper the system prompt uses (`assignedGoal`), so the goal a session
+              // is steered by and the goal it is shown cannot be two different things.
+              goal: SessionDrive.assignedGoal({ officerGoal, component: goalEntry?.value }),
+              steps: planEntries.map((entry) => {
+                const value = entry.value as SessionComponentRegistry.PlanStep
+                return { text: value.text, status: value.status, verdict: value.verdict }
+              }),
+            },
+            // 🔴 The role's own mode, so the drive and the goal block answer the same question from the
+            // same source. Without this the drive kept reading the `type` column stamped at creation
+            // and a mode switch waited for the UI's second `switchType` request (owner, 2026-09-16).
+            { operationMode: officer?.operationMode },
+          )
           if (decision.kind === "sleep") {
             const heartbeatMinutes = officer?.runtimeHeartbeatMinutes ?? OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES
             const ownedRuntime = yield* OwnedRuntimeContext.observe({
@@ -5274,11 +5285,31 @@ export const layer = Layer.effect(
             // ten-minute recheck, tightened to the configured live-work heartbeat while work exists.
             let remaining = sleepMilliseconds
             let wokeForInput = false
-            while (remaining > 0 && !wokeForInput) {
+            let wokeForMode = false
+            while (remaining > 0 && !wokeForInput && !wokeForMode) {
               const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
               const pendingQueue = pendingSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
               if (pendingSteer || pendingQueue) {
                 wokeForInput = true
+                break
+              }
+              // A mode switch is not an event this wait can subscribe to: `switchType` publishes
+              // `TypeSwitched` to no subscriber here, and a role's `operationMode` is a config reload
+              // that reaches the next `prepareTurn` rather than this fiber. So PROBE the one answer
+              // both surfaces read: a colleague switched back to Interactive stops self-driving NOW,
+              // instead of looping "Waiting for the environment to change…" until the next prompt.
+              // (Switching TO Unattended needs no probe: we only sleep as goal-oriented, and the next
+              // `runTurn` rebuilds the prompt with the goal block.)
+              const awake = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+              const awakeOfficer =
+                awake?.agent === undefined ? undefined : yield* agents.get(AgentV2.ID.make(awake.agent))
+              if (
+                !SessionDrive.unattendedMode({
+                  operationMode: awakeOfficer?.operationMode,
+                  sessionType: awake?.type,
+                })
+              ) {
+                wokeForMode = true
                 break
               }
               const slice = Math.min(5_000, remaining)
@@ -5295,6 +5326,12 @@ export const layer = Layer.effect(
             driveState.rounds = 0
             driveState.stagnantRounds = 0
             acceptedGoalExit = false
+            // The role/type is no longer unattended: end the drain instead of steering one more stale
+            // goal continuation. `shouldRun` stays false, so this `break` exits the drain loop.
+            if (wokeForMode) {
+              yield* Log.event("session.drive.modechanged", { "session.id": input.sessionID })
+              break
+            }
             if (wokeForInput) {
               const pendingSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
               shouldRun = pendingSteer || (yield* SessionInput.hasPending(db, input.sessionID, "queue"))

@@ -107,6 +107,26 @@ describe("SessionDrive.decide", () => {
     expect(SessionDrive.unattendedMode({ operationMode: undefined, sessionType: undefined })).toBe(false)
   })
 
+  test("🔴 the drive reads the ROLE's mode, so a switch lands without the second switchType request", () => {
+    // Owner, 2026-09-16. The prompt half already used `unattendedMode`; the drain read only the
+    // stamped `type`, so an Interactive chat switched to Unattended kept idling (and one switched
+    // back kept self-driving/sleeping) until a user prompt. Both directions, one source.
+    const state = SessionDrive.initialState(t0)
+    expect(SessionDrive.decide({ type: "interactive" }, state, t0, undefined, { operationMode: "unattended" }).kind).toBe(
+      "continue",
+    )
+    expect(
+      SessionDrive.decide({ type: "goal-oriented" }, state, t0, undefined, { operationMode: "interactive" }).kind,
+    ).toBe("idle")
+    // A role that declares nothing leaves the chat's own classification in charge.
+    expect(
+      SessionDrive.decide({ type: "goal-oriented" }, state, t0, undefined, { operationMode: undefined }).kind,
+    ).toBe("continue")
+    expect(
+      SessionDrive.decide({ type: "interactive" }, state, t0, undefined, { operationMode: undefined }).kind,
+    ).toBe("idle")
+  })
+
   test("accepted plan evidence asks the agent to exit instead of completing on its behalf", () => {
     const base = { goal: "Ship C8", steps: [{ text: "test", status: "completed", verdict: null }] }
     expect(SessionDrive.decide({ type: "goal-oriented" }, SessionDrive.initialState(t0), t0, base).kind).toBe(

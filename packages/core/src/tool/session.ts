@@ -153,7 +153,7 @@ export const layer = Layer.effectDiscard(
                         : selected
                             .map(
                               (definition) =>
-                                `${definition.kind} [${definition.cardinality}, ${definition.lifetime}, write:${SessionComponentTier.tierOf(definition.kind)}, cross-read:${SessionComponentTier.readTierOf(definition.kind, true)}] — ${definition.description}\n` +
+                                `${definition.kind} [${definition.cardinality}, ${definition.lifetime}, cross-read:${SessionComponentTier.readTierOf(definition.kind, true)}] — ${definition.description}\n` +
                                 (definition.removable ? "" : "remove: unavailable (this component is required)\n") +
                                 JSON.stringify(definition.schema),
                             )
@@ -238,24 +238,13 @@ export const layer = Layer.effectDiscard(
                     message: `Nothing changed: ${input.kind}${input.id ? `/${input.id}` : ""} already has that value.`,
                   }
 
-                const tier = SessionComponentTier.tierOf(input.kind)
-                if (tier !== "operational") {
-                  const action = SessionComponentTier.TIER_ACTION[tier]
-                  yield* permission.assert({
-                    action,
-                    resources: [input.kind],
-                    save: [input.kind],
-                    metadata: { tier, operation: input.op },
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source: {
-                      type: "tool",
-                      messageID: context.assistantMessageID,
-                      callID: context.toolCallID,
-                    },
-                  })
-                }
-
+                // 🔴 NO WRITE CHARGE (owner, 2026-09-18). A component write used to be priced by
+                // `SessionComponentTier.tierOf`, which resolved to `ask` and then to an immediate
+                // refusal — the consent machinery answered a colleague trying to keep its own memo.
+                // The only limits on what an agent may change are the HARD authority gates in
+                // `component-registry.ts` (personality/`agent`, `goal`, project/`working_folder`,
+                // `session_type`, `responder`, kernel-owned `durable_prompt` and plan verdicts); those
+                // run on the write itself, not as a permission ask. Everything else is the agent's.
                 if (input.op === "remove") {
                   const removed = yield* components.remove({
                     sessionID: context.sessionID,

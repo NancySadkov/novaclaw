@@ -3,7 +3,6 @@ export * as MemoSetTool from "./memo-set"
 import { Effect, Layer } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Durable } from "../session/durable"
-import { PermissionV2 } from "../permission"
 import { SessionComponentRegistry } from "../session/component-registry"
 import { MemoTool } from "./memo"
 import { ToolRegistry } from "./registry"
@@ -18,8 +17,8 @@ import { Tools } from "./tools"
  * `spawn`) rather than deferred: it is named in the system prompt, so a model that has to run
  * `tool_search` to reach a tool the prompt just told it to use is doing the prompt's work.
  *
- * The logic lives in `memo.ts` (the two schemas, the item plumbing, the permission charge, the refusal
- * mapping). This file is the registration, its prose, and its node.
+ * The logic lives in `memo.ts` (the two schemas, the item plumbing, the refusal mapping). This file is
+ * the registration, its prose, and its node.
  */
 
 export const name = "memo_set"
@@ -40,8 +39,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const components = yield* SessionComponentRegistry.Service
-    const permission = yield* PermissionV2.Service
-    const deps: MemoTool.Deps = { components, permission }
+    const deps: MemoTool.Deps = { components }
 
     yield* tools
       .register({
@@ -59,7 +57,7 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/memo-set",
   layer,
-  // `PermissionV2.node` is here because the charge is what makes the kind's `consequential` tier real —
-  // a tier with no checkout is a price nobody pays. See `memo.ts`'s header.
-  deps: [ToolRegistry.node, PermissionV2.node, SessionComponentRegistry.node],
+  // No `PermissionV2.node`: nothing is charged. The limits on this write are the codec's, and the
+  // authority question does not arise — the memo area is the colleague's own memory (`memo.ts`).
+  deps: [ToolRegistry.node, SessionComponentRegistry.node],
 })

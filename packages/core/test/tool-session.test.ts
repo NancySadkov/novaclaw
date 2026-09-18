@@ -98,12 +98,10 @@ const call = (registry: ToolRegistry.Interface, sessionID: SessionSchema.ID, inp
 const textOf = (result: { value: unknown }) => String(result.value)
 
 describe("session tool", () => {
-  test("classifies every closed kernel kind and fails tool-owned kinds closed", () => {
-    expect(Object.keys(SessionComponentTier.KERNEL_KIND_TIERS).sort()).toEqual(
-      [...SessionComponentRegistry.KERNEL_KIND_NAMES].sort(),
-    )
-    expect(SessionComponentTier.tierOf("goal")).toBe("privileged")
-    expect(SessionComponentTier.tierOf("tool/fixture/marker")).toBe("privileged")
+  test("tiers every closed kernel kind for CROSS-READ, and fails tool-owned kinds closed", () => {
+    // 🔴 There is no WRITE tier any more (owner, 2026-09-18): only personality/goal/project are
+    // authority-gated, and those are hard `validateWrite` rules, not prices. What remains is the
+    // cross-session READ tier, which is a different question (`component-tier.ts`).
     expect(Object.keys(SessionComponentTier.CROSS_READ_KIND_TIERS).sort()).toEqual(
       [...SessionComponentRegistry.KERNEL_KIND_NAMES].sort(),
     )
@@ -112,10 +110,7 @@ describe("session tool", () => {
     expect(SessionComponentTier.readTierOf("goal", true)).toBe("privileged")
     expect(SessionComponentTier.readTierOf("tool/fixture/marker", true)).toBe("privileged")
     expect(SessionComponentTier.readTierOf("plan", false)).toBe("operational")
-    expect(SessionComponentTier.TIER_ACTION).toEqual({
-      consequential: "session",
-      privileged: "session_privileged",
-    })
+    expect(SessionComponentTier.TIER_ACTION).toEqual({ privileged: "session_privileged" })
   })
 
   test("reads any session broadly, tiers foreign prompt text, and rejects every targeted write", () => {
@@ -329,11 +324,10 @@ describe("session tool", () => {
 
           const schema = yield* call(registry, sessionID, { op: "schema", kind: "agent" })
           expect(textOf(schema)).toContain("READ-ONLY to an agent")
-          expect(textOf(schema)).toContain("write:privileged")
 
-          // `recording` is the broadest possible policy: it approves every assertion. Both calls
-          // still fail before permission evaluation, so ask/allow/saved/yolo-style policy choices
-          // cannot turn this component gate into an organization-chart escalation.
+          // The refusal is a HARD authority gate, not a permission price: it fails before any
+          // permission evaluation, so no rule, saved grant or mode can turn it into an escalation.
+          // (`recording` approves every assertion, and these still fail.)
           const becomeNova = yield* call(registry, sessionID, { op: "set", kind: "agent", value: "nova" })
           const impersonate = yield* call(registry, sessionID, {
             op: "set",
@@ -383,9 +377,7 @@ describe("session tool", () => {
           )
 
           const schema = yield* call(registry, sessionID, { op: "schema", kind: "tool/fixture/marker" })
-          expect(textOf(schema)).toContain(
-            "tool/fixture/marker [singleton, entity, write:privileged, cross-read:privileged]",
-          )
+          expect(textOf(schema)).toContain("tool/fixture/marker [singleton, entity, cross-read:privileged]")
 
           const set = yield* call(registry, sessionID, {
             op: "set",
@@ -393,9 +385,8 @@ describe("session tool", () => {
             value: { label: "ready" },
           })
           expect(textOf(set)).toContain('{"label":"ready"}')
-          expect(asserted).toEqual([
-            { action: "session_privileged", resources: ["tool/fixture/marker"], save: ["tool/fixture/marker"] },
-          ])
+          // A tool-owned kind writes with NO permission charge: the write tier is gone.
+          expect(asserted).toEqual([])
 
           const read = yield* call(registry, sessionID, { op: "read", kind: "tool/fixture/marker" })
           expect(textOf(read)).toContain('"label":"ready"')
@@ -442,16 +433,15 @@ describe("session tool", () => {
     )
   })
 
-  test("writes and clears the privileged control binding through its canonical sparse column", () => {
+  test("writes and clears the control binding through its canonical sparse column", () => {
     const asserted: Asserted[] = []
     return Effect.runPromise(
       withTool(asserted, ({ registry, db, sessionID }) =>
         Effect.gen(function* () {
           const set = yield* call(registry, sessionID, { op: "set", kind: "control_binding", value: ":99" })
           expect(set.type).toBe("text")
-          expect(asserted).toEqual([
-            { action: "session_privileged", resources: ["control_binding"], save: ["control_binding"] },
-          ])
+          // No write charge: the agent owns this knob, and only `validateWrite` gates can refuse.
+          expect(asserted).toEqual([])
           expect(
             yield* db
               .select({ controlBinding: SessionTable.control_binding })
@@ -464,10 +454,10 @@ describe("session tool", () => {
           const invalid = yield* call(registry, sessionID, { op: "set", kind: "control_binding", value: "" })
           expect(invalid.type).toBe("error")
           expect(textOf(invalid)).toContain("control_binding")
-          expect(asserted).toHaveLength(1)
+          expect(asserted).toHaveLength(0)
 
           yield* call(registry, sessionID, { op: "remove", kind: "control_binding" })
-          expect(asserted).toHaveLength(2)
+          expect(asserted).toHaveLength(0)
           expect(
             yield* db
               .select({ controlBinding: SessionTable.control_binding })
@@ -489,7 +479,7 @@ describe("session tool", () => {
     )
   })
 
-  test("moves the working folder through Moved and refuses to erase required location state", () => {
+  test("refuses an agent's move of the working folder; the host moves it through Moved", () => {
     const asserted: Asserted[] = []
     return Effect.runPromise(
       withTool(asserted, ({ registry, db, sessionID }) =>
@@ -500,13 +490,15 @@ describe("session tool", () => {
           expect(textOf(removed)).toContain("cannot be removed")
           expect(asserted).toEqual([])
 
+          // 🔴 The project is the superior officer's decision (owner, 2026-09-18). The agent's write is
+          // refused by the hard authority gate, and no permission charge is involved.
           const outside = yield* call(registry, sessionID, {
             op: "set",
             kind: "working_folder",
             value: os.tmpdir(),
           })
           expect(outside.type).toBe("error")
-          expect(textOf(outside)).toContain("must stay in project")
+          expect(textOf(outside)).toContain("chosen by the user or a superior officer")
           expect(asserted).toEqual([])
 
           yield* db
@@ -520,13 +512,14 @@ describe("session tool", () => {
             .run()
             .pipe(Effect.orDie)
 
-          const moved = yield* call(registry, sessionID, {
-            op: "set",
+          // The host path claims kernel authority, exactly as `session.repointFolder` does.
+          const components = yield* SessionComponentRegistry.Service
+          yield* components.put({
+            sessionID,
             kind: "working_folder",
             value: destination,
+            system: true,
           })
-          expect(moved.type).toBe("text")
-          expect(asserted).toEqual([{ action: "session", resources: ["working_folder"], save: ["working_folder"] }])
           const row = yield* db
             .select({ directory: SessionTable.directory, subpath: SessionTable.path })
             .from(SessionTable)
