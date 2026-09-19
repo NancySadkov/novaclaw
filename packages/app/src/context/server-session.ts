@@ -44,13 +44,16 @@ export function createServerSession(
   const liveRates = new Map<string, LiveRate.LiveRateState>()
   const [liveVersion, setLiveVersion] = createSignal(0)
   let livePending = false
-  const noteLive = (sessionID: string, chars: number, source: "generation" | "compaction") => {
+  const noteLive = (sessionID: string, chars: number, source: "generation" | "compaction", at: number | undefined) => {
     let state = liveRates.get(sessionID)
     if (!state) {
       state = LiveRate.createState()
       liveRates.set(sessionID, state)
     }
-    LiveRate.note(state, chars, Date.now(), source)
+    // `at` is the delta's generation time; `Date.now()` is only the fallback when the wire carried
+    // none. Passing the two separately is what keeps a delayed backlog from reading as a spike —
+    // see `live-rate.ts`.
+    LiveRate.note(state, chars, Date.now(), source, at)
     if (!livePending) {
       livePending = true
       setTimeout(() => {
@@ -305,7 +308,7 @@ export function createServerSession(
         // Repeats are dropped by the timeline itself, so this needs no guard of its own.
         reportBootPhase("first-chat-token")
       }
-      noteLive(generated.sessionID, generated.chars, generated.source)
+      noteLive(generated.sessionID, generated.chars, generated.source, generated.at)
       return
     }
     // P2 (ui-arch-hardening): fold V2 CONTROL events into the cached record so open views stay
