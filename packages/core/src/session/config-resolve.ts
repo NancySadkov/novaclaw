@@ -20,6 +20,7 @@
 // reducer that cannot express last-wins — never by a comment like the one that stood here.
 
 import { Effect } from "effect"
+import { WorkerProfile } from "./worker-profile"
 
 export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 
@@ -562,6 +563,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
 export interface SessionLike {
   readonly id: string
   readonly parentID?: string
+  readonly metadata?: Record<string, unknown>
   readonly model?: ModelRef
   readonly agent?: string
   /** Device affinity (see `SessionConfig.device`); `undefined` = inherit. */
@@ -618,6 +620,11 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => {
     // key, so this index cannot miss. Without that guard it silently could, forever.
     config[key] = session[key as keyof SessionLike]
   }
+  // A prototype is a restriction at THIS child, never a replacement for the root's defaults.
+  // Putting it in the chain also preserves the restriction for workers spawned by this worker.
+  const mode = WorkerProfile.read(session)?.permissionMode
+  if (mode !== undefined)
+    config.permissionMode = session.permissionMode === undefined ? mode : moreRestrictive(mode, session.permissionMode)
   return config as SessionConfig
 }
 

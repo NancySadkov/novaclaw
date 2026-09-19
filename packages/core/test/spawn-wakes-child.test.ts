@@ -31,6 +31,7 @@ import { SpawnAdmission } from "@novaclaw/core/session/spawn-admission"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { WorkerProfile } from "@novaclaw/core/session/worker-profile"
+import { WorkerControl } from "@novaclaw/core/session/worker-control"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { testEffect } from "./lib/effect"
 import { settleTool, toolIdentity } from "./lib/tool"
@@ -371,6 +372,68 @@ describe("SessionSpawner quotas use durable session facts", () => {
         model: "local/worker-4b",
         reasoningModel: "local/reasoner-32b",
       })
+    }),
+  )
+
+  it.live("host kill archives the final worker tree and releases its quota", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const locations = yield* LocationServiceMap.Service
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const store = yield* SessionStore.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, parentID: parent.id })
+      yield* AgentV2.Service.use((agents) =>
+        agents.transform((editor) =>
+          editor.update(rootAgent, (agent) => {
+            agent.maxWorkers = 1
+          }),
+        ),
+      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+      const before = yield* spawnChildEffect(parent.id, location).pipe(Effect.result)
+      expect(before._tag).toBe("Failure")
+      let lateChild: SessionV2.ID | undefined
+      const archived = yield* WorkerControl.kill({
+        parentID: parent.id,
+        childID: child.id,
+        db,
+        events,
+        store,
+        interrupt: (id) =>
+          Effect.gen(function* () {
+            // Simulate the last spawn admitted before the parent's interrupt has settled.
+            lateChild = (yield* session.create({ location, parentID: child.id }).pipe(Effect.orDie)).id
+            yield* session.interrupt(id)
+          }),
+      })
+      expect(archived).toBe(2)
+      expect((yield* session.get(child.id)).time.archived).toBeDefined()
+      expect((yield* session.get(lateChild!)).time.archived).toBeDefined()
+      expect((yield* session.get(child.id)).result).toBeUndefined()
+      expect((yield* spawnChild(parent.id, location)).started).toBe(true)
+    }),
+  )
+
+  it.live("an archived ancestor cannot hide an unarchived descendant from quota", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const locations = yield* LocationServiceMap.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, parentID: parent.id })
+      yield* session.create({ location, parentID: child.id })
+      yield* session.setArchived({ sessionID: child.id, time: Date.now() })
+      yield* AgentV2.Service.use((agents) =>
+        agents.transform((editor) =>
+          editor.update(rootAgent, (agent) => {
+            agent.maxWorkers = 1
+          }),
+        ),
+      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+      const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      expect(error).toMatchObject({ reason: "children", depth: 1, limit: 1 })
     }),
   )
 

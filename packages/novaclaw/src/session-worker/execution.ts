@@ -29,6 +29,7 @@ import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInterruptNotice } from "@novaclaw/core/session/interrupt-notice"
 import { SessionPresence } from "@novaclaw/core/session/presence"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { WorkerControl } from "@novaclaw/core/session/worker-control"
 import os from "node:os"
 import { SessionWorkerCommand } from "./command"
 import { SessionWorkerAdmission } from "./admission"
@@ -433,34 +434,13 @@ export const layer = Layer.effect(
                               return true
                             }),
                           kill: ({ parentID, childID }) =>
-                            Effect.gen(function* () {
-                              const child = yield* store.get(childID)
-                              if (child?.parentID !== parentID) return undefined
-                              const branch: SessionSchema.ID[] = []
-                              const collect = (id: SessionSchema.ID): Effect.Effect<void> =>
-                                Effect.gen(function* () {
-                                  branch.push(id)
-                                  const children = yield* store.children(id)
-                                  yield* Effect.forEach(children, collect, { discard: true, concurrency: "unbounded" })
-                                })
-                              yield* collect(childID)
-                              // The same recursive interrupt used by Stop closes the late-spawn race.
-                              yield* interruptBranch(childID, new Set())
-                              const archived = DateTime.makeUnsafe(Date.now())
-                              yield* Effect.forEach(
-                                branch,
-                                (id) =>
-                                  SessionPatch.patchSessionRecord({ db: database.db, events }, id, (info) =>
-                                    info.time.archived === undefined
-                                      ? SessionSchema.Info.make({
-                                          ...info,
-                                          time: { ...info.time, archived },
-                                        })
-                                      : undefined,
-                                  ),
-                                { discard: true },
-                              )
-                              return branch.length
+                            WorkerControl.kill({
+                              parentID,
+                              childID,
+                              db: database.db,
+                              events,
+                              store,
+                              interrupt: (id) => interruptBranch(id, new Set()),
                             }),
                         },
                         lease,

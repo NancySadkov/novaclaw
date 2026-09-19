@@ -13,10 +13,9 @@ export * as PromptManager from "./prompt-manager"
  * runner and handed over. That keeps the one function that decides what every model reads testable
  * without a database, an Effect graph or a live session.
  *
- * ⚠️ **Regeneration cadence is NOT enforced here.** This module is a pure renderer: call it exactly
- * at a new session and after a compaction, and reuse the result between those points. The runner
- * gets that for free because the prompt is one epoch source with an always-equivalent comparator —
- * see `SessionContextEpoch` — so a casual turn cannot churn it.
+ * Regeneration cadence is enforced by the runner through ContextManager. Runtime observations
+ * stay in the epoch snapshot; deliberate job/goal/settings edits can regenerate the prompt without
+ * refreshing those observations. This pure renderer only decides the resulting text.
  */
 
 /** Which of the three colleague kinds this prompt is for. */

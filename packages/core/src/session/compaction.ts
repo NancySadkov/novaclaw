@@ -872,16 +872,10 @@ export const make = (dependencies: Dependencies) => {
     /**
      * 🔴 **THE TRIGGER CEILING IS NEVER ZERO ON A WORKING WINDOW.**
      *
-     * `promptCeilingTokens` is `window - reserve`, and the reserve has FLOORS (8,192 and the 20,000
-     * buffer) that swallow a small window whole: at a 4,096-token route the ceiling lands at 0, and
-     * `estimatedWithMargin > 0` is then true on EVERY turn — a compactor that fires forever, folds
-     * nothing it can explain, and looks to the user exactly like a chat stuck in a compaction loop.
-     * Clause 4 of the invariant promises 4K and up, so the small end is the one that has to work.
-     *
-     * ⭐ The fallback is the configured `threshold` percentage, without the reserve floors: a prompt
-     * over the user's threshold is worth folding, and below it there is room. It is a FLOOR around
-     * the reserve, not a replacement — a ceiling that is already more conservative is untouched, so
-     * a high percentage can never approve a prompt the packer must refuse.
+     * PromptEstimate.capacity caps heuristic reserves for small windows at the shared packing seam.
+     * An explicit output contract at least as large as the entire window can still leave zero room;
+     * triggerAt avoids repeatedly folding an empty conversation in that invalid configuration.
+     * For a usable window the earlier of the shared capacity and the configured percentage wins.
      */
     const triggerThreshold = triggerAt({
       context,

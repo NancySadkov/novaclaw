@@ -187,7 +187,18 @@ export const layer = Layer.effect(
       // and the chain is what says whose fold it is. The walk is depth-capped, so this is bounded.
       // ONE walk, two answers: which colleague is in force, and the chain to resolve against. Asking
       // separately cost a second walk on every resolution and pushed `core` past the gate's kill.
-      const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
+      const toolDenials: Record<string, false> = {}
+      const chain = yield* sessionConfigChain(sessionID, (id) =>
+        sessions.get(id as SessionSchema.ID).pipe(
+          Effect.tap((row) =>
+            Effect.sync(() => {
+              if (row === undefined) return
+              for (const [tool, enabled] of Object.entries(WorkerProfile.read(row)?.tools ?? {}))
+                if (!enabled) toolDenials[tool] = false
+            }),
+          ),
+        ),
+      )
       // 🔴 **A session that declares NO agent still has one.** `agents.select(undefined)` answers the
       // DEFAULT colleague — nova — and the prompt renders that officer's identity. Folding nothing
       // here made the two disagree: the session spoke as nova while nova's standing choices (its
@@ -208,7 +219,12 @@ export const layer = Layer.effect(
         workerProfile === undefined
           ? ownerColleague
           : { ...(ownerColleague ?? {}), ...WorkerProfile.config(workerProfile) }
-      const defaults = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague as ConfigAgent.Info | undefined)
+      const preferences = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague as ConfigAgent.Info | undefined)
+      // Prototype tool choices can add denials, never erase an officer's or ancestor's denials.
+      const defaults =
+        Object.keys(toolDenials).length === 0
+          ? preferences
+          : { ...preferences, tools: { ...preferences.tools, ...toolDenials } }
       // 🗑️ A folder layer used to sit between the colleague's choices and the session chain: the
       // `novaclaw.json` tune, folded under the chain, with a FAULT (a file we could not read) forcing
       // `safeMode` + `askBeforeChanges` afterwards so an unreadable file could never be permission to

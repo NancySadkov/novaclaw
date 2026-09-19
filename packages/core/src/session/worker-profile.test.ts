@@ -9,6 +9,7 @@ describe("anonymous worker profiles", () => {
       system: "Find evidence.",
       model: { providerID: "local", id: "worker-4b" } as never,
       reasoningModel: { providerID: "local", id: "reasoner-32b" } as never,
+      permissionMode: "yolo",
       memory: "own",
       superior: AgentV2.ID.make("nova"),
       permissions: [{ action: "bash", effect: "allow", resource: "*" }],
@@ -23,6 +24,8 @@ describe("anonymous worker profiles", () => {
     expect(profile).not.toHaveProperty("permissions")
     expect(profile).not.toHaveProperty("superior")
     expect(WorkerProfile.config(profile)).not.toHaveProperty("id")
+    expect(WorkerProfile.config(profile)).not.toHaveProperty("permissionMode")
+    expect(WorkerProfile.config(profile)).not.toHaveProperty("tools")
   })
 
   test("only reads a versioned snapshot from a child session", () => {

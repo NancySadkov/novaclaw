@@ -36,6 +36,9 @@ import { SessionContextEpoch } from "./context-epoch"
  */
 export const baseline = SessionContextEpoch.baselineOf
 
+/** The admitted source value for the current epoch, including frozen runtime observations. */
+export const sourceValue = SessionContextEpoch.sourceValue
+
 /** Render-and-store the baseline for a session that has none yet (the first turn). */
 export const initialize = SessionContextEpoch.initialize
 

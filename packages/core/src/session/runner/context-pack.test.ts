@@ -28,6 +28,16 @@ const assistantCall = (id: string, name = "read", input: unknown = { path: "a" }
 const toolResult = (id: string, name = "read", result: unknown = "ok") => Message.tool({ id, name, result })
 const system = (text: string) => Message.system(text)
 const reasoning = (text: string) => ({ type: "reasoning" as const, text })
+
+test("hard packing cannot replace the last conversation message with a harness note", () => {
+  for (const last of [user("task ".repeat(5_000)), assistantText("work ".repeat(5_000))]) {
+    const note = steer("Continue the task.")
+    const result = pack([last, note], 512, { hard: true })
+    expect(result.messages).toContainEqual(last)
+    expect(result.fits).toBe(false)
+  }
+})
+
 /** The NORMAL thinking-model assistant shape: chain-of-thought followed by the call it narrates. */
 const assistantThinkCall = (id: string, thought = "let me read it") =>
   Message.assistant([reasoning(thought), { type: "tool-call", id, name: "read", input: { path: "a" } }])
@@ -593,6 +603,8 @@ describe("packRequest typed system shares", () => {
   test("applies an anchored correction once at the overall history boundary", () => {
     const request = LLM.request({
       model: fakeModel,
+      // Pin this test's boundary with an explicit output contract, not a small-window heuristic.
+      generation: { maxTokens: 8192 },
       messages: [assistantText("a".repeat(5_000)), assistantText("b".repeat(5_000)), user("c".repeat(5_000))],
     })
     const ordinary = packRequest({ request, contextSize: 12_000 })
@@ -738,7 +750,7 @@ describe("image history is not evicted for space it never used", () => {
   })
 
   test("packRequest applies the same image divisor used by direct message estimates", () => {
-    const request = LLM.request({ model: fakeModel, messages: sixImages() })
+    const request = LLM.request({ model: fakeModel, generation: { maxTokens: 8192 }, messages: sixImages() })
     const ordinary = packRequest({ request, contextSize: 10_000 })
     const dense = packRequest({ request, contextSize: 10_000, imagePatchPixels: 16 })
     expect(dense.dropped).toBeGreaterThan(ordinary.dropped)

@@ -107,19 +107,11 @@ export const prepare = (input: PrepareInput) => {
       openai: { ...openai, promptCacheKey: input.promptCacheKey },
     },
   })
+  // Forward the packing contract intact. A hand-maintained list silently lost `hard`, leaving
+  // the runner's last-resort recovery identical to its first attempt.
   const packed = ContextPack.packRequest({
+    ...input,
     request: cacheable,
-    contextSize: input.contextSize,
-    prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
-    imagePatchPixels: input.imagePatchPixels,
-    profile: input.profile,
-    memoryRecall: input.memoryRecall,
-    promptCorrectionTokens: input.promptCorrectionTokens,
-    promptMarginTokens: input.promptMarginTokens,
-    ...(input.droppedContextFile === undefined ? {} : { droppedContextFile: input.droppedContextFile }),
-    ...(input.minimumResponseReserveTokens === undefined
-      ? {}
-      : { minimumResponseReserveTokens: input.minimumResponseReserveTokens }),
   })
   const request = packed.changed
     ? LLM.request({ ...LLM.requestInput(cacheable), system: packed.system, messages: packed.messages })
@@ -218,16 +210,18 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
       },
     })
     const rawReasoningSource = source(reasonRequest, { anchorable: false, phase: "reasoning" }).pipe(
-      Stream.flatMap((event) => {
+      // Stop while source events are still visible. Filtering private output before this
+      // boundary would drain the entire provider stream without ever evaluating the cutoff.
+      Stream.takeUntil((event) => {
         if (LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event)) {
           if (event.usage !== undefined) reasoningUsage = event.usage
-          return Stream.empty
+          return false
         }
-        if (!LLMEvent.is.reasoningDelta(event) && !LLMEvent.is.textDelta(event)) return Stream.empty
+        if (!LLMEvent.is.reasoningDelta(event) && !LLMEvent.is.textDelta(event)) return false
         const room = maxChars - reasoning.length
         if (room <= 0) {
           done = true
-          return Stream.empty
+          return true
         }
         const text = event.text.slice(0, room)
         reasoning += text
@@ -237,20 +231,24 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
         // This phase is private controller state, not assistant output. Publishing it would both
         // expose scratch work and make an answer failure look non-retryable because durable output
         // had already begun.
-        return Stream.empty
+        return done
       }),
-      Stream.takeUntil((event) => done && LLMEvent.is.reasoningDelta(event)),
+      Stream.drain,
       // A prototype may point at a model/provider that cannot accept continuation prefills. The
       // officer still answers on its ordinary model; the failed private phase is never a dead end.
       Stream.catchCause(() => Stream.empty),
     )
-    const reasoningSource =
+    // This phase has no public events. Running its drain as an effect closes the provider scope
+    // before the lease finalizer runs; nested stream finalizers can otherwise run in reverse order.
+    const runReasoning = Stream.runDrain(rawReasoningSource)
+    const reasoningSource = Stream.fromEffectDrain(
       input.reasoningPhase === undefined
-        ? rawReasoningSource
-        : Stream.unwrap(input.reasoningPhase.enter.pipe(Effect.as(rawReasoningSource))).pipe(
-            // Defer the read until the provider stream has actually produced its terminal usage.
-            Stream.ensuring(Effect.suspend(() => input.reasoningPhase!.leave(reasoningUsage?.totalTokens))),
-          )
+        ? runReasoning
+        : input.reasoningPhase.enter.pipe(
+            Effect.andThen(runReasoning),
+            Effect.ensuring(Effect.suspend(() => input.reasoningPhase!.leave(reasoningUsage?.totalTokens))),
+          ),
+    )
     const answerSource = Stream.unwrap(
       Effect.sync(() => {
         const tail = reasoning.trim()
@@ -266,29 +264,29 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
         )
         const answer = input.prepareAnswer?.(unpackedAnswer) ?? unpackedAnswer
         return source(answer, { anchorable: false, phase: "answer" }).pipe(
-            Stream.map((event) => {
-              if (!LLMEvent.is.stepFinish(event) && !LLMEvent.is.finish(event)) return event
-              const usage = ReasoningBudget.aggregateUsage(
-                [
-                  ...(reasoningUsage === undefined ? [] : [reasoningUsage]),
-                  ...(event.usage === undefined ? [] : [event.usage]),
-                ],
-                0,
-              )
-              return LLMEvent.is.stepFinish(event)
-                ? LLMEvent.stepFinish({
-                    index: event.index,
-                    reason: event.reason,
-                    usage,
-                    providerMetadata: event.providerMetadata,
-                  })
-                : LLMEvent.finish({
-                    reason: event.reason,
-                    usage,
-                    providerMetadata: event.providerMetadata,
-                  })
-            }),
-          )
+          Stream.map((event) => {
+            if (!LLMEvent.is.stepFinish(event) && !LLMEvent.is.finish(event)) return event
+            const usage = ReasoningBudget.aggregateUsage(
+              [
+                ...(reasoningUsage === undefined ? [] : [reasoningUsage]),
+                ...(event.usage === undefined ? [] : [event.usage]),
+              ],
+              0,
+            )
+            return LLMEvent.is.stepFinish(event)
+              ? LLMEvent.stepFinish({
+                  index: event.index,
+                  reason: event.reason,
+                  usage,
+                  providerMetadata: event.providerMetadata,
+                })
+              : LLMEvent.finish({
+                  reason: event.reason,
+                  usage,
+                  providerMetadata: event.providerMetadata,
+                })
+          }),
+        )
       }),
     )
     return Stream.concat(reasoningSource, answerSource)

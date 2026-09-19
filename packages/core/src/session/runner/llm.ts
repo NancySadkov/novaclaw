@@ -175,6 +175,16 @@ import { Shell } from "../../shell"
 
 /** The one prompt source in the context epoch. One key, because there is one system message. */
 const PROMPT_CONTEXT_KEY = SystemContext.Key.make("core/prompt")
+const PROMPT_CONTEXT_VALUE = Schema.Struct({
+  text: Schema.String,
+  grounding: Schema.Struct({
+    directory: Schema.optional(Schema.String),
+    scratch: Schema.optional(Schema.String),
+    projectFiles: Schema.optional(Schema.Array(Schema.String)),
+    workLog: Schema.optional(Schema.String),
+  }),
+})
+const PROMPT_CONTEXT_CODEC = Schema.toCodecJson(PROMPT_CONTEXT_VALUE)
 
 /** The instance owner's username, from the OS. */
 const instanceOwner = (): string => {
@@ -1245,12 +1255,9 @@ export const layer = Layer.effect(
     /**
      * THE PROMPT, as the ONE epoch source.
      *
-     * 🔴 Owner, 2026-09-17: one monolithic `role: "system"` message, regenerated only at a new session
-     * and after a compaction. That cadence is the EPOCH's, not a new mechanism: `initialize` renders
-     * the baseline once, a casual turn reconciles to `Unchanged` (the comparator below is always
-     * equivalent), and a compaction whose sequence advanced forces `replace` — regenerating the
-     * prompt. So this function is the single source of authority for what every model reads, and
-     * `PromptManager.generate` is the single thing that decides its text.
+     * One monolithic system message. ContextManager retains runtime observations across turns and
+     * worker restarts; a compaction or explicit move refreshes them. Deliberate component edits can
+     * still replace the prompt immediately. PromptManager alone decides its text.
      *
      * ⚠️ The prompt is ONE source rather than a `combine([])`: an empty render throws
      * (`SystemContext.requireText`), so the "no system prompt at all" case — a pure Chat with empty
@@ -1330,19 +1337,31 @@ export const layer = Layer.effect(
         // fact the transcript already carries until the compaction. `Durable.textOf` reads the
         // materialised `durable_prompt` structurally, the same way `SessionDrive.assignedGoal` reads a
         // goal.
-        const durablePrompt = yield* components
-          .get({ sessionID: session.id, kind: "durable_prompt" })
-          .pipe(
-            Effect.map((entry) => entry?.value),
-            Effect.orElseSucceed(() => undefined),
-          )
+        const durablePrompt = yield* components.get({ sessionID: session.id, kind: "durable_prompt" }).pipe(
+          Effect.map((entry) => entry?.value),
+          Effect.orElseSucceed(() => undefined),
+        )
         const directory = session.location?.directory
-        const listing =
-          directory === undefined || directory.trim().length === 0
-            ? undefined
-            : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
-        const workLog =
-          scratch === undefined ? undefined : yield* Effect.promise(() => OldContext.latestWorkLog(scratch))
+        const admitted = yield* ContextManager.sourceValue(db, session.id, PROMPT_CONTEXT_KEY, PROMPT_CONTEXT_CODEC)
+        // Files and work logs are observations, not settings. Keep their admitted values even when
+        // a job/goal edit regenerates the prompt; refresh only at a new epoch or an explicit move.
+        const grounding =
+          admitted !== undefined && admitted.grounding.directory === directory && admitted.grounding.scratch === scratch
+            ? admitted.grounding
+            : yield* Effect.gen(function* () {
+                const listing =
+                  directory === undefined || directory.trim().length === 0
+                    ? undefined
+                    : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
+                const workLog =
+                  scratch === undefined ? undefined : yield* Effect.promise(() => OldContext.latestWorkLog(scratch))
+                return {
+                  directory,
+                  scratch,
+                  projectFiles: listing?.entries.map((entry) => (entry.directory ? `${entry.name}/` : entry.name)),
+                  workLog,
+                }
+              })
         const platform = Shell.agentPlatform()
         const text = PromptManager.generate({
           kind,
@@ -1366,10 +1385,10 @@ export const layer = Layer.effect(
           unattended,
           memoText: Durable.textOf(durablePrompt),
           project: directory,
-          projectFiles: listing?.entries.map((entry) => (entry.directory ? `${entry.name}/` : entry.name)),
-          workLog,
+          projectFiles: grounding.projectFiles,
+          workLog: grounding.workLog,
         })
-        return text
+        return { text, grounding }
       })
 
     /**
@@ -1384,12 +1403,12 @@ export const layer = Layer.effect(
      * baseline and passes `forceReplace` when it differs, so a changed component regenerates the
      * baseline instead of leaving stale text in the prompt and in every inspector.
      */
-    const promptContext = (text: string): SystemContext.SystemContext => {
-      if (text.length === 0) return SystemContext.empty
+    const promptContext = (prompt: typeof PROMPT_CONTEXT_VALUE.Type): SystemContext.SystemContext => {
+      if (prompt.text.length === 0) return SystemContext.empty
       return SystemContext.make({
         key: PROMPT_CONTEXT_KEY,
-        codec: Schema.toCodecJson(Schema.Struct({ text: Schema.String })),
-        load: Effect.succeed({ text }),
+        codec: PROMPT_CONTEXT_CODEC,
+        load: Effect.succeed(prompt),
         baseline: (value) => value.text,
         update: (value) => value.text,
         equivalent: (left, right) => left.text === right.text,
@@ -1467,11 +1486,11 @@ export const layer = Layer.effect(
       // REPLACE the baseline when a component changed. A casual turn renders the same bytes and pays
       // nothing; a changed job brief / roster / memo / project reaches the provider on the NEXT turn
       // rather than waiting for a compaction (owner, 2026-09-17).
-      const promptText = yield* tap(
+      const prompt = yield* tap(
         renderPrompt(session, agent, ShortChat.enabled(config.shortChat), config.type, resolution.workerProfile),
       )
       const storedBaseline = yield* ContextManager.baseline(db, session.id)
-      const context = Effect.succeed(promptContext(promptText))
+      const context = Effect.succeed(promptContext(prompt))
       const initialized = yield* ContextManager.initialize(db, context, session.id)
       let promoted = 0
       if (options.promotion) {
@@ -1495,7 +1514,7 @@ export const layer = Layer.effect(
                 ContextManager.publishUpdate(db, events, update.data, update.snapshot),
               ),
             undefined,
-            storedBaseline !== undefined && storedBaseline !== promptText,
+            storedBaseline !== undefined && storedBaseline !== prompt.text,
           ),
         ))
       // The RESOLVED config overlaid on the row, so every `models.*` read downstream sees what the

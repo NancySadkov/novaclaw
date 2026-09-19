@@ -21,6 +21,32 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  * `session-runner-agent.test.ts`).
  */
 describe("SessionRunnerLLM — the one prompt baseline", () => {
+  test("normal dispatch retains a short conversation from 4K through 256K", async () => {
+    for (let context = 4096; context <= 262144; context *= 2) {
+      const harness = makeRunnerHarness({
+        turns: [completeTurn("first", "I remember cobalt."), completeTurn("second", "cobalt")],
+      })
+      harness.controls.currentModel = harness.makeModel(`window-${context}`, { context, output: 512 })
+      await drive(
+        harness,
+        Effect.gen(function* () {
+          const session = yield* SessionV2.Service
+          for (const text of ["Remember the launch code is cobalt.", "What launch code did I give you?"]) {
+            yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
+            yield* session.resume(HARNESS_SESSION)
+          }
+        }),
+        `normal runner at ${context} tokens`,
+      )
+      expect(harness.requests, `${context}-token window`).toHaveLength(2)
+      expect(JSON.stringify(harness.requests[1]!.messages), `${context}-token window`).toContain(
+        "Remember the launch code is cobalt.",
+      )
+      expect(JSON.stringify(harness.requests[1]!.messages)).toContain("I remember cobalt.")
+      expect(JSON.stringify(harness.requests[1]!.messages)).toContain("What launch code did I give you?")
+    }
+  })
+
   test("a retired ambient source changing does NOT rewrite the prompt on a casual turn", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
 

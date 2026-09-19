@@ -217,7 +217,12 @@ export const layer = Layer.effect(
               )
 
             const rows = yield* db
-              .select({ id: SessionTable.id, parentID: SessionTable.parent_id, result: SessionTable.result })
+              .select({
+                id: SessionTable.id,
+                parentID: SessionTable.parent_id,
+                result: SessionTable.result,
+                archived: SessionTable.time_archived,
+              })
               .from(SessionTable)
               .all()
               .pipe(Effect.orDie)
@@ -236,7 +241,9 @@ export const layer = Layer.effect(
               if (visited.has(current)) continue
               visited.add(current)
               for (const row of children.get(current) ?? []) {
-                if (row.result === null) activeWorkers++
+                // Kill archives without inventing a successful result. History is not live quota;
+                // still walk through it so an unarchived descendant cannot evade the tree cap.
+                if (row.result === null && row.archived === null) activeWorkers++
                 pending.push(row.id)
               }
             }

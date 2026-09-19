@@ -109,18 +109,18 @@ describe("the tombstone is reserved before the measurement and emitted only when
     //
     // ⚠️ The fixture is deliberately MANY SMALL messages over a WIDE window range. Measured, twice:
     // with two 12,000-token messages the drop count is 2 at every window in range, so a 28-token
-    // notice cannot move it; and below a ~9,000-token window `budget()` returns 0 because the
-    // response reserve and the margin floor are already larger than the window, so nothing about the
-    // notice can matter there either. The test would have passed while proving nothing in both cases.
+    // notice cannot move it. An explicit response allowance pins this fixture's boundary independently
+    // of heuristic reserve floors, which scale down on small models.
     const many = Array.from({ length: 40 }, (_, index) =>
       index % 2 === 0
         ? Message.user(`turn ${index} ${"x ".repeat(60)}`)
         : Message.assistant(`reply ${index} ${"y ".repeat(40)}`),
     )
+    const bounded = LLM.request({ ...LLM.requestInput(request(many)), generation: { maxTokens: 8_192 } })
     let strict = 0
     for (let contextSize = 8_000; contextSize <= 30_000; contextSize += 100) {
-      const without = packRequest({ request: request(many), contextSize })
-      const withNotice = packRequest({ request: request(many), contextSize, droppedContextFile: droppedFile })
+      const without = packRequest({ request: bounded, contextSize })
+      const withNotice = packRequest({ request: bounded, contextSize, droppedContextFile: droppedFile })
       expect(withNotice.dropped).toBeGreaterThanOrEqual(without.dropped)
       if (withNotice.dropped > without.dropped) strict++
     }

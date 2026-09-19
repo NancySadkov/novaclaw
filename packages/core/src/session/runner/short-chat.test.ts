@@ -24,7 +24,7 @@ describe("ShortChat policy", () => {
     // The prompt is one `PromptManager` render per epoch; a Chat with no job instructions renders to
     // nothing, which is the "no system prompt at all" case.
     expect(runner).toContain("PromptManager.generate")
-    expect(runner).toContain("if (text.length === 0) return SystemContext.empty")
+    expect(runner).toContain("if (prompt.text.length === 0) return SystemContext.empty")
     expect(runner).not.toContain("ShortChat.GUIDANCE")
     expect(runner).toContain("ShortChat.offered(config.shortChat, name)")
     expect(runner).toContain("const startSnapshot = ShortChat.enabled(config.shortChat)")

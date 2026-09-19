@@ -173,6 +173,28 @@ export const baselineOf = Effect.fn("SessionContextEpoch.baselineOf")(function* 
   return row?.baseline
 })
 
+/** Read a source's admitted value only while its epoch is current. Runtime observations stored in
+ * that value survive turns and worker restarts, but a compaction/reset permits a fresh observation. */
+export const sourceValue = <A>(
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+  key: SystemContext.Key,
+  codec: Schema.Codec<A, Schema.Json, never, never>,
+): Effect.Effect<A | undefined, ContextSnapshotDecodeError> =>
+  Effect.gen(function* () {
+    const row = yield* find(db, sessionID)
+    if (row === undefined) return undefined
+    const snapshot = yield* Schema.decodeUnknownEffect(SystemContext.Snapshot)(row.snapshot).pipe(
+      Effect.mapError((error) => new ContextSnapshotDecodeError({ sessionID, details: String(error) })),
+    )
+    const compaction = yield* SessionHistory.latestCompaction(db, sessionID)
+    if (compaction !== undefined && compaction.seq > row.baseline_seq) return undefined
+    const source = snapshot[key]
+    if (source === undefined) return undefined
+    // A changed source schema regenerates at its next preparation, as SystemContext.replace does.
+    return yield* Schema.decodeUnknownEffect(codec)(source.value).pipe(Effect.orElseSucceed(() => undefined))
+  })
+
 export const reset = Effect.fn("SessionContextEpoch.reset")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,

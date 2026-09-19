@@ -126,6 +126,20 @@ describe("PromptEstimate", () => {
     expect(PromptEstimate.withMargin(result)).toBe(result.estimatedTokens + result.marginTokens)
   })
 
+  test("heuristic floors leave prompt space at every supported window while explicit output still wins", () => {
+    for (let contextTokens = 4096; contextTokens <= 262144; contextTokens *= 2) {
+      const capacity = PromptEstimate.capacity({
+        contextTokens,
+        outputTokens: 512,
+        minimumResponseReserveTokens: 20_000,
+      })
+      expect(capacity.promptCeilingTokens).toBeGreaterThanOrEqual(contextTokens * 0.75)
+      expect(capacity.responseReserveTokens).toBeGreaterThanOrEqual(512)
+      expect(capacity.promptCeilingTokens + capacity.responseReserveTokens).toBe(contextTokens)
+    }
+    expect(PromptEstimate.capacity({ contextTokens: 4096, outputTokens: 3000 }).responseReserveTokens).toBe(3000)
+  })
+
   test("a declared response at least as large as the context leaves a zero prompt ceiling", () => {
     expect(PromptEstimate.capacity({ contextTokens: 32_000, outputTokens: 32_000 }).promptCeilingTokens).toBe(0)
     expect(PromptEstimate.capacity({ contextTokens: 32_000, outputTokens: 64_000 })).toMatchObject({
@@ -307,10 +321,7 @@ describe("PromptEstimate", () => {
 
   test("invalidates an anchor when effective chat-template options change", () => {
     const cases = [
-      [
-        { chat_template_kwargs: { enable_thinking: false } },
-        { chat_template_kwargs: { enable_thinking: true } },
-      ],
+      [{ chat_template_kwargs: { enable_thinking: false } }, { chat_template_kwargs: { enable_thinking: true } }],
       [{ continue_final_message: false }, { continue_final_message: true }],
       [{ add_generation_prompt: true }, { add_generation_prompt: false }],
     ] as const
@@ -334,10 +345,12 @@ describe("PromptEstimate", () => {
         http: { body: after },
       })
 
-      expect(PromptEstimate.resolve({ request: current, messages: [assistant(anchor)], scope: scope() })).toMatchObject({
-        confidence: "whole",
-        fallback: "shape-changed",
-      })
+      expect(PromptEstimate.resolve({ request: current, messages: [assistant(anchor)], scope: scope() })).toMatchObject(
+        {
+          confidence: "whole",
+          fallback: "shape-changed",
+        },
+      )
     }
   })
 

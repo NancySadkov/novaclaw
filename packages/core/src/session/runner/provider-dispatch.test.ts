@@ -44,6 +44,100 @@ const immediateTransient = () =>
   })
 
 describe("ProviderDispatch", () => {
+  test("the compaction buffer preserves a small conversation across every supported context size", () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const request = LLM.request({
+      model,
+      generation: { maxTokens: 512 },
+      messages: [
+        Message.user("Remember the launch code is cobalt."),
+        Message.assistant("I will remember cobalt."),
+        Message.user("What launch code did I give you?"),
+      ],
+    })
+    for (let contextSize = 4096; contextSize <= 262144; contextSize *= 2) {
+      const prepared = ProviderDispatch.prepare({
+        request,
+        promptCacheKey: "small",
+        contextSize,
+        minimumResponseReserveTokens: 20_000,
+      })
+      expect(prepared.request.messages, `${contextSize}-token context`).toEqual(request.messages)
+      expect(prepared.packed.fits).toBe(true)
+      expect(PromptEstimate.whole(prepared.request) + 512).toBeLessThan(contextSize)
+    }
+  })
+
+  test("last-resort hard packing reaches the production dispatcher", () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const input = {
+      request: LLM.request({
+        model,
+        generation: { maxTokens: 512 },
+        messages: [Message.user("T".repeat(80_000)), Message.assistant("a".repeat(2_000))],
+      }),
+      promptCacheKey: "hard",
+      contextSize: 16_384,
+      promptMarginTokens: 0,
+    }
+    expect(ProviderDispatch.prepare(input).packed.fits).toBe(false)
+    const hard = ProviderDispatch.prepare({ ...input, hard: true })
+    expect(hard.packed.fits).toBe(true)
+    expect(hard.request.messages).toEqual([Message.assistant("a".repeat(2_000))])
+  })
+
+  for (const boundary of ["budget", "answer"] as const) {
+    test(`separate reasoning cancels its source and releases its lease at the ${boundary} boundary`, async () => {
+      const model = Model.make({ id: "answer", provider: "fake", route: OpenAIChat.route })
+      const reasoner = Model.make({ id: "reasoner", provider: "fake", route: OpenAIChat.route })
+      const phases: string[] = []
+      let chunks = 0
+      const llm = {
+        stream: (request: LLMRequest) =>
+          request.model.id === reasoner.id
+            ? Stream.fromEffectRepeat(
+                Effect.sync(() => {
+                  chunks++
+                  return boundary === "answer"
+                    ? LLMEvent.textDelta({ id: "r", text: "conclusion" })
+                    : LLMEvent.reasoningDelta({ id: "r", text: "abcdefghij" })
+                }),
+              ).pipe(
+                Stream.ensuring(
+                  Effect.sync(() => {
+                    phases.push("cancelled")
+                  }),
+                ),
+              )
+            : Stream.unwrap(
+                Effect.sync(() => {
+                  phases.push("answer")
+                  return Stream.make(LLMEvent.textDelta({ id: "a", text: "Done" }))
+                }),
+              ),
+      } as never
+      const output = await Effect.runPromise(
+        ProviderDispatch.stream({
+          llm,
+          request: LLM.request({ model, messages: [Message.user("solve")] }),
+          enabled: true,
+          budget: 4,
+          reasoningModel: reasoner,
+          reasoningPhase: {
+            enter: Effect.void,
+            leave: () =>
+              Effect.sync(() => {
+                phases.push("released")
+              }),
+          },
+        }).pipe(Stream.runCollect, Effect.timeout(2_000)),
+      )
+      expect(chunks).toBe(boundary === "budget" ? 2 : 1)
+      expect(phases).toEqual(["cancelled", "released", "answer"])
+      expect(Array.from(output)).toEqual([LLMEvent.textDelta({ id: "a", text: "Done" })])
+    })
+  }
+
   test("zero-budget officers disable reasoning without dropping existing provider options", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = ProviderDispatch.withoutReasoning(
@@ -178,12 +272,13 @@ describe("ProviderDispatch", () => {
    */
   test("the packer reserves the compactor's response budget, not only its own 10%", () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
-    const request = LLM.request({ model, messages: [Message.user("old".repeat(20_000)), Message.user("new task")] })
-    const base = ProviderDispatch.prepare({ request, promptCacheKey: "s", contextSize: 32_000 })
+    // A window large enough to honor the full buffer. Small windows deliberately scale it down.
+    const request = LLM.request({ model, messages: [Message.user("old".repeat(145_000)), Message.user("new task")] })
+    const base = ProviderDispatch.prepare({ request, promptCacheKey: "s", contextSize: 128_000 })
     const reserved = ProviderDispatch.prepare({
       request,
       promptCacheKey: "s",
-      contextSize: 32_000,
+      contextSize: 128_000,
       minimumResponseReserveTokens: 20_000,
     })
     expect(base.packed.dropped).toBe(0)
@@ -191,7 +286,8 @@ describe("ProviderDispatch", () => {
     expect(reserved.packed.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
-  test("does not mistake exact-route prefix retention for semantic capacity", () => {    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+  test("does not mistake exact-route prefix retention for semantic capacity", () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = LLM.request({
       model,
       messages: [Message.user("old".repeat(20_000)), Message.user("new task")],

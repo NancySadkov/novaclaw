@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { eq } from "drizzle-orm"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
@@ -8,6 +10,12 @@ import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { Durable } from "@novaclaw/core/session/durable"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { EventV2 } from "@novaclaw/core/event"
+import { Scratch } from "@novaclaw/core/scratch"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { tmpdir } from "./fixture/tmpdir"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
@@ -24,6 +32,81 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  *     when the rendered prompt actually differs, so a casual turn keeps the server's prefix cache.
  */
 describe("SessionRunnerLLM — the one system prompt", () => {
+  test("file and work-log changes stay frozen through turns and settings edits, then refresh at compaction", async () => {
+    await using project = await tmpdir()
+    await fs.writeFile(path.join(project.path, "initial.txt"), "first")
+    const agentID = AgentV2.ID.make("prefix_reviewer")
+    const scratch = Scratch.forAgent(String(agentID))
+    const logs = [1, 2].map((n) => path.join(scratch, "tmp", `oldlog-9999-${Date.now()}-${n}.json`))
+    await fs.mkdir(path.dirname(logs[0]!), { recursive: true })
+    await fs.writeFile(logs[0]!, "{}")
+    const harness = makeRunnerHarness({
+      directory: AbsolutePath.make(project.path),
+      turns: [1, 2, 3, 4].map((n) => completeTurn(`turn-${n}`, `Answer ${n}`)),
+    })
+    try {
+      await drive(
+        harness,
+        Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          const agents = yield* AgentV2.Service
+          const session = yield* SessionV2.Service
+          const events = yield* EventV2.Service
+          yield* agents.transform((editor) =>
+            editor.update(agentID, (agent) => {
+              agent.system = "Initial job brief."
+              agent.mode = "primary"
+              agent.shortChat = false
+            }),
+          )
+          yield* db
+            .update(SessionTable)
+            .set({ agent: String(agentID) })
+            .where(eq(SessionTable.id, HARNESS_SESSION))
+            .run()
+            .pipe(Effect.orDie)
+          const turn = (text: string) =>
+            session
+              .prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
+              .pipe(Effect.andThen(session.resume(HARNESS_SESSION)))
+          yield* turn("First")
+          yield* Effect.promise(() => fs.writeFile(path.join(project.path, "new-file.txt"), "new"))
+          yield* Effect.promise(() => fs.writeFile(logs[1]!, "{}"))
+          yield* turn("Second")
+          yield* agents.transform((editor) =>
+            editor.update(agentID, (agent) => {
+              agent.system = "Updated job brief."
+            }),
+          )
+          yield* turn("Third")
+          yield* events.publish(SessionEvent.Compaction.Ended, {
+            sessionID: HARNESS_SESSION,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            reason: "auto",
+            text: "The first three exchanges are summarized.",
+            recent: "",
+            ...(yield* harness.currentPrefix),
+          })
+          yield* turn("Fourth")
+        }),
+        "prompt observations belong to the context epoch",
+      )
+      const systems = harness.requests.map((request) => (request.system ?? []).map((part) => part.text).join("\n"))
+      expect(systems).toHaveLength(4)
+      expect(systems[0]).toContain("initial.txt")
+      expect(systems[0]).toContain(path.basename(logs[0]!))
+      expect(systems[1]).toBe(systems[0])
+      expect(systems[2]).toContain("Updated job brief.")
+      expect(systems[2]).not.toContain("new-file.txt")
+      expect(systems[2]).toContain(path.basename(logs[0]!))
+      expect(systems[3]).toContain("new-file.txt")
+      expect(systems[3]).toContain(path.basename(logs[1]!))
+    } finally {
+      for (const log of logs) await fs.rm(log, { force: true })
+    }
+  })
+
   test("a component change regenerates the prompt next turn; no change reuses it byte-for-byte", async () => {
     const harness = makeRunnerHarness({
       turns: [completeTurn("ordinary", "First"), completeTurn("second", "Second"), completeTurn("third", "Third")],

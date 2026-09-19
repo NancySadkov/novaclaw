@@ -71,7 +71,7 @@ describe("the memory ceiling", () => {
     // folder's tune, preceded by a fault that strengthened the defaults) is gone with the
     // `novaclaw.json` mechanism. What survives is the colleague's fold under the same name, and the
     // nesting is still the property being asserted: `clampToCeilings(resolveConfig(defaults, chain))`.
-    expect(source).toMatch(/const defaults = AgentDefaults\.fold\(/)
+    expect(source).toMatch(/AgentDefaults\.fold\(EFFECTIVE_CONFIG_DEFAULTS/)
     expect(source).toMatch(/clampToCeilings\(\s*resolveConfig\(\s*defaults/)
   })
 

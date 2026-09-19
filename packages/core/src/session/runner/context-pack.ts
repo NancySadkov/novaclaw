@@ -1061,12 +1061,18 @@ export const pack = (
     }
   }
 
-  // Newest-first, whole messages; newest always kept.
+  // A trailing harness note is not a conversation. Hard packing may discard old task anchors,
+  // but must retain the latest user/assistant entry; otherwise a fitting reminder silently replaces
+  // an oversized first request. The dispatch gate must see that overrun and recover/refuse it.
+  const conversationEnd = working.findLastIndex((message) => message.role === "assistant" || isRealUserMessage(message))
+  const keepThrough = options.hard === true && conversationEnd >= 0 ? conversationEnd : working.length - 1
+  const newestConversation = working[keepThrough]
+  // Newest-first, whole messages; keep the final conversation entry and its trailing notes.
   let used = 0
   let start = working.length
   for (let i = working.length - 1; i >= 0; i--) {
     const next = used + estimates[i]!
-    if (next > budgetTokens && start < working.length) break
+    if (next > budgetTokens && start < working.length && i < keepThrough) break
     used = next
     start = i
   }
@@ -1115,9 +1121,9 @@ export const pack = (
   kept = demoteSystemMessages(survivors)
   let keptTokens = estimateMessages(kept, imagePatchPixels)
   if (options.hard === true) {
-    // Drop oldest-first until the MEASURED kept set fits, never below the newest message. Bounded by
-    // `kept.length` and finite: each iteration removes one message, so this cannot loop.
-    while (kept.length > 1 && keptTokens > budgetTokens) {
+    // Drop oldest-first, stopping at the final conversation entry rather than a harness note.
+    // Bounded by `kept.length`: each iteration removes one message, so this cannot loop.
+    while (kept.length > 1 && keptTokens > budgetTokens && survivors[0] !== newestConversation) {
       kept = demoteSystemMessages(dropOrphanTools(kept.slice(1)))
       survivors = dropOrphanTools(survivors.slice(1))
       keptTokens = estimateMessages(kept, imagePatchPixels)

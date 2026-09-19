@@ -1,6 +1,7 @@
 export * as WorkerProfile from "./worker-profile"
 
 import type { AgentV2 } from "../agent"
+import type { ConfigAgent } from "../config/agent"
 import type { Requirement } from "../model-taxonomy"
 
 /**
@@ -116,15 +117,19 @@ export const read = (session: {
   }
 }
 
-/** Shape consumed by AgentDefaults; deliberately omits identity and authority fields. */
-export const config = (profile: Snapshot): Record<string, unknown> => ({
+/** Execution preferences only. Permission mode and tool denials narrow through the parent chain;
+ * they must never replace the officer's defaults. The closed return type keeps that split explicit. */
+export const config = (
+  profile: Snapshot,
+): Pick<
+  ConfigAgent.Info,
+  "model" | "variant" | "reasoningModel" | "strict" | "shortChat" | "reasoningBudget" | "maxToolTimeoutMs"
+> => ({
   ...(profile.model === undefined ? {} : { model: profile.model }),
   ...(profile.variant === undefined ? {} : { variant: profile.variant }),
   ...(profile.reasoningModel === undefined ? {} : { reasoningModel: profile.reasoningModel }),
-  ...(profile.permissionMode === undefined ? {} : { permissionMode: profile.permissionMode }),
   ...(profile.strict === undefined ? {} : { strict: profile.strict }),
   ...(profile.shortChat === undefined ? {} : { shortChat: profile.shortChat }),
   ...(profile.reasoningBudget === undefined ? {} : { reasoningBudget: profile.reasoningBudget }),
   ...(profile.maxToolTimeoutMs === undefined ? {} : { maxToolTimeoutMs: profile.maxToolTimeoutMs }),
-  ...(profile.tools === undefined ? {} : { tools: profile.tools }),
 })

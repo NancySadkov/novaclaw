@@ -82,8 +82,10 @@ const tokenCount = (value: number | undefined): number => {
 /**
  * One prompt-capacity algebra shared by semantic compaction and deterministic packing.
  *
- * The response reserve is intentionally independent of estimation uncertainty. A caller may raise
- * the minimum (the compaction setting does); it cannot erase the base 10% or 8,192-token reserve.
+ * The response reserve is independent of estimation uncertainty. Heuristic floors (including the
+ * compaction buffer) may spend at most a quarter of the window. The remaining three quarters must
+ * accommodate the system/tools, conversation and estimation margin even on a 4K model.
+ * An explicit output allowance is a provider contract and is never reduced by this heuristic cap.
  * A route's prefix-cache retention is deliberately not a capacity boundary: it describes what is
  * cheap to replay, not what the model can understand. Treating it as capacity made a 262k model
  * forget history around 110k and repeatedly rebuild the very prefix the hint was meant to save.
@@ -96,10 +98,15 @@ export const capacity = (input: {
 }): Capacity => {
   const contextTokens = tokenCount(input.contextTokens)
   const responseReserveTokens = Math.max(
-    Math.ceil((contextTokens * (100 - AUTO_COMPACT_PERCENT)) / 100),
-    MIN_RESPONSE_RESERVE,
     tokenCount(input.outputTokens),
-    tokenCount(input.minimumResponseReserveTokens),
+    Math.min(
+      Math.floor(contextTokens / 4),
+      Math.max(
+        Math.ceil((contextTokens * (100 - AUTO_COMPACT_PERCENT)) / 100),
+        MIN_RESPONSE_RESERVE,
+        tokenCount(input.minimumResponseReserveTokens),
+      ),
+    ),
   )
   const prefixCacheRetentionTokens = positiveInt(input.prefixCacheRetentionTokens)
     ? input.prefixCacheRetentionTokens
@@ -230,7 +237,9 @@ export const shapeKey = (
   const system = SystemPart.content(request.system)
   return Hash.sha256(
     JSON.stringify({
-      system: system.some(OldContext.isTombstone) ? system.filter((part) => !OldContext.isTombstone(part)) : request.system,
+      system: system.some(OldContext.isTombstone)
+        ? system.filter((part) => !OldContext.isTombstone(part))
+        : request.system,
       tools: request.tools,
       templateOptions: templateOptions(request),
       imagePatchPixels: resolvedImagePatchPixels,
@@ -271,11 +280,7 @@ const calibrationFactor = (value: number | undefined): number =>
 const inflate = (tokens: number, factor: number): number =>
   Math.min(Number.MAX_SAFE_INTEGER, Math.ceil(tokens * factor))
 
-const full = (
-  heuristicTokens: number,
-  fallback: Fallback,
-  factor: number = 1,
-): Result => {
+const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1): Result => {
   const estimatedTokens = inflate(heuristicTokens, factor)
   return {
     heuristicTokens,
