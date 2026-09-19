@@ -19,12 +19,6 @@ export * as PromptManager from "./prompt-manager"
  * see `SessionContextEpoch` — so a casual turn cannot churn it.
  */
 
-/** One memo item, as the prompt renders it. Mirrors `Durable.Item` structurally. */
-export interface Memo {
-  readonly name: string
-  readonly value: string
-}
-
 /** Which of the three colleague kinds this prompt is for. */
 export type Kind = "agent" | "chat" | "human"
 
@@ -56,8 +50,16 @@ export interface Input {
   readonly goal?: string | undefined
   /** Whether the session is in unattended mode. */
   readonly unattended: boolean
-  /** The session's memo items, in the order the area renders them. */
-  readonly memos: readonly Memo[]
+  /**
+   * The session's memo area as last MATERIALISED — the text of the `durable_prompt` singleton the
+   * kernel writes after a context rewrite (`Name: value` lines). `undefined` when none exists yet.
+   *
+   * ⚠️ TEXT, not the live `durable` items, and the difference is the whole point: a `memo_set` writes
+   * the shadow immediately, but the block the model reads changes only at the rewrite. Reading the
+   * items here would make every write an edit to the system prompt mid-epoch — a prefix-cache reset
+   * for a fact the transcript still carries until the compaction.
+   */
+  readonly memoText?: string | undefined
   /** Absolute path to the agent's project folder. */
   readonly project?: string | undefined
   /** Names (no path) of the entries in the project folder. */
@@ -95,9 +97,10 @@ export const renderProjectFiles = (files: readonly string[]): string => {
 }
 
 /** The memo block, or `undefined` when there is nothing to render. */
-export const renderMemos = (memos: readonly Memo[]): string | undefined => {
-  if (memos.length === 0) return undefined
-  return ["# memo_set memos", ...memos.map((memo) => `${memo.name}: ${memo.value}`)].join("\n")
+export const renderMemos = (memoText: string | undefined): string | undefined => {
+  const body = memoText?.trim()
+  if (body === undefined || body.length === 0) return undefined
+  return ["# memo_set memos", body].join("\n")
 }
 
 /** `Your subordinates are A, B, C.` — or `You have no subordinates.` */
@@ -158,7 +161,7 @@ export const generate = (input: Input): string => {
     )
   if (input.unattended && (input.goal?.trim() ?? "").length > 0)
     blocks.push(`Your durable goal, set for you by whoever assigned this work:\n\n${input.goal!.trim()}`)
-  const memos = renderMemos(input.memos)
+  const memos = renderMemos(input.memoText)
   if (memos !== undefined) blocks.push(memos)
   if (input.project !== undefined && input.project.trim().length > 0) {
     const listing = (input.projectFiles ?? []).length === 0 ? "" : renderProjectFiles(input.projectFiles!)

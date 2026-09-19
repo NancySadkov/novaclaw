@@ -122,16 +122,19 @@ export const itemsOf = (rows: readonly { readonly id?: unknown; readonly value: 
     return [{ id: String(row.id ?? keyOf(value.name)), name: value.name, value: value.value }]
   })
 
+/** A short preview for an echoed field, so a refusal cannot itself become a large prompt block. */
+const preview = (text: string): string => (text.length > 40 ? `${text.slice(0, 40)}…` : text)
+
 /** What the colleague is told when a write is refused, so the refusal names the way forward. */
 export const overLongValueNotice = (name: string, length: number): string =>
-  `"${name}" is ${length} characters and the memo area holds at most ${DURABLE_VALUE_MAX}. ` +
-  "Write the text to a file in your scratch folder and set the value to that path instead: a memo " +
-  "item is a pointer you can follow, and the area is quoted into the prompt, so it has to stay short."
+  `"${preview(name)}" has ${length} characters, but a memo value is at most ${DURABLE_VALUE_MAX}. Context space ` +
+  "is extremely valuable and the area is quoted verbatim into the system prompt, so keep values short. If the " +
+  "text needs more room, write it to a file in your scratch folder and set the value to that path instead: a " +
+  "memo item is a pointer you can follow, not the place to store prose."
 
 export const nameTooLongNotice = (name: string): string =>
-  `A memo item's name is at most ${DURABLE_NAME_MAX} characters; "${name}" is ${name.length}. ` +
-  "Shorten it — the name is what the area renders as the label, and a long one pushes the values out " +
-  "of the reader's view."
+  `A memo name is at most ${DURABLE_NAME_MAX} characters and "${preview(name)}" has ${name.length}. Context ` +
+  "space is extremely valuable, and the name is the label the area renders on every turn, so shorten it."
 
 /**
  * The refusal when the area is already full.
@@ -139,8 +142,9 @@ export const nameTooLongNotice = (name: string): string =>
  * ⚠️ It lists what is IN the area rather than evicting the "oldest" itself. The owner's invariant says
  * the colleague keeps the *ten most important* items: importance is the agent's judgement, and a
  * harness that silently drops an item to make room is a harness that deletes a fact the agent chose
- * to keep. So the write fails and the refusal hands back the menu.
+ * to keep. So the write fails, names `memo_clear`, and hands back the menu.
  */
 export const areaFullNotice = (items: readonly Item[]): string =>
-  `The memo area already holds ${items.length} items, which is its limit. Clear one first ` +
-  `(\`memo_clear\`), then set this one. It currently holds: ${items.map((item) => item.name).join(", ")}.`
+  `The memo area is full (${items.length} of ${DURABLE_ITEMS_MAX} items). Context space is extremely valuable, so ` +
+  "nothing is evicted for you: call `memo_clear NAME` to remove one of the existing memos first, then set this " +
+  `one. It currently holds: ${items.map((item) => item.name).join(", ")}.`

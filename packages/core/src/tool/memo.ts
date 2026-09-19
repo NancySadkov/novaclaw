@@ -133,8 +133,8 @@ export const setMemo = (deps: Deps, input: SetInput, context: Tool.Context) =>
     const after = existing === undefined ? [...items, { id, name: itemName, value: itemValue }] : items
     return {
       message:
-        `${existing === undefined ? "Kept" : "Replaced"} \`${itemName}\` in the memo area, which is rebuilt ` +
-        `into your system prompt after the next compaction. ${describeArea(after)}`,
+        `${existing === undefined ? "Kept" : "Replaced"} \`${itemName}\` in the memo area — your memo ` +
+        `will appear in system prompt after the compaction. ${describeArea(after)}`,
     }
   })
 
@@ -162,7 +162,7 @@ export const clearMemo = (deps: Deps, input: ClearInput, context: Tool.Context) 
       message:
         previous === undefined
           ? `There is no memo item named \`${itemName}\`. ${describeArea(items)}`
-          : `Cleared \`${itemName}\` from the memo area. ${describeArea(items)}`,
+          : `Cleared \`${itemName}\` from the memo area — it will leave system prompt after the compaction. ${describeArea(items)}`,
     }
   })
 

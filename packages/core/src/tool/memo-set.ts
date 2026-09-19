@@ -25,12 +25,14 @@ export const name = "memo_set"
 
 export const metadata = {
   description:
-    "Keep a short named item in this session's memo area: a place for the handful of facts that must " +
-    "survive a context rewrite (a path that matters, a decision already made, what the user is waiting " +
-    `for). The area holds at most ${Durable.DURABLE_ITEMS_MAX} items and is rebuilt into your system ` +
-    "prompt after each compaction, so a write here reaches the prompt from the next rewrite onwards — read " +
-    'it back sooner with the `session` tool (`kind: "durable"`). Reusing a name replaces that item. ' +
-    "Nothing is evicted for you: clear what you no longer need with `memo_clear`.",
+    "Keep one short named item in this session's memo area: the handful of facts that must survive a " +
+    "context rewrite (a path that matters, a decision already made, what the user is waiting for). " +
+    "Context space is extremely valuable, so the area is capped at " +
+    `${Durable.DURABLE_ITEMS_MAX} items, a name at ${Durable.DURABLE_NAME_MAX} characters and a value at ` +
+    `${Durable.DURABLE_VALUE_MAX}. Reusing a name replaces that item; nothing is evicted for you, so once ` +
+    "the area is full call `memo_clear` before `memo_set`. The area is rebuilt into your system prompt " +
+    "after each compaction, so a write here reaches the prompt from the next rewrite onwards — read it " +
+    'back sooner with the `session` tool (`kind: "durable"`).',
   input: MemoTool.SetInput,
   output: MemoTool.Output,
 } as const

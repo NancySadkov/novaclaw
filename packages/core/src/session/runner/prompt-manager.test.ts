@@ -16,7 +16,7 @@ const base: PromptManager.Input = {
   scratch: "C:/data/scratch/iris",
   goal: undefined,
   unattended: false,
-  memos: [],
+  memoText: undefined,
   project: undefined,
   projectFiles: undefined,
   workLog: undefined,
@@ -57,10 +57,7 @@ describe("PromptManager — the one system prompt", () => {
       ...base,
       unattended: true,
       goal: "Ship the reviewed manuscript.",
-      memos: [
-        { name: "Path", value: "C:/books" },
-        { name: "Decision", value: "Keep chapter 4" },
-      ],
+      memoText: "Path: C:/books\nDecision: Keep chapter 4",
     })
     expect(unattended).toContain("Your durable goal, set for you by whoever assigned this work:")
     expect(unattended).toContain("Ship the reviewed manuscript.")

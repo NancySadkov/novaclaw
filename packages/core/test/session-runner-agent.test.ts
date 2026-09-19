@@ -5,6 +5,8 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
+import { Durable } from "@novaclaw/core/session/durable"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
@@ -89,5 +91,73 @@ describe("SessionRunnerLLM — the one system prompt", () => {
 
     const third = systems[2]![0]!
     expect(third, "an unchanged turn re-rendered the prompt instead of reusing the bytes").toBe(second)
+  })
+
+  test("a memo write waits for the rewrite: the shadow changes no prompt, the materialised area appears", async () => {
+    // 🔴 The regression this pins (owner, 2026-09-19): `renderPrompt` read the live `durable` items, so
+    // every `memo_set`/`memo_clear` changed the system prompt on the next turn and threw away the
+    // provider's prefix cache. The block the model reads is the kernel's `durable_prompt` copy, written
+    // only at a context rewrite; until then the memo is still in the transcript the agent can see.
+    const harness = makeRunnerHarness({
+      turns: [completeTurn("first", "First"), completeTurn("second", "Second"), completeTurn("third", "Third")],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const components = yield* SessionComponentRegistry.Service
+        const { db } = yield* Database.Service
+        const agents = yield* AgentV2.Service
+        yield* agents.transform((editor) =>
+          editor.update(AgentV2.ID.make("reviewer"), (agent) => {
+            agent.name = "Iris"
+            agent.title = "Reviewer"
+            agent.system = "Memo standing job brief."
+            agent.mode = "primary"
+            agent.shortChat = false
+          }),
+        )
+        yield* db
+          .update(SessionTable)
+          .set({ agent: "reviewer" })
+          .where(eq(SessionTable.id, HARNESS_SESSION))
+          .run()
+          .pipe(Effect.orDie)
+        const session = yield* SessionV2.Service
+
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        // The agent writes the SHADOW. No rewrite has happened, so the prompt must not move.
+        yield* components.put({
+          sessionID: HARNESS_SESSION,
+          kind: "durable",
+          id: "path",
+          value: { name: "Path", value: "C:/books" },
+        })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        // The rewrite materialises the area from the shadow. Now the prompt carries it.
+        yield* components.put({
+          sessionID: HARNESS_SESSION,
+          kind: "durable_prompt",
+          value: { text: Durable.render([{ id: "path", name: "Path", value: "C:/books" }]) },
+          system: true,
+        })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — a memo write waits for the rewrite",
+    )
+
+    const systems = harness.requests.map((request) => (request.system ?? []).map((part) => part.text).join("\n"))
+    const first = systems[0]!
+    const second = systems[1]!
+    const third = systems[2]!
+    expect(first).not.toContain("# memo_set memos")
+    expect(second, "a memo write reached the prompt before the rewrite").toBe(first)
+    expect(third, "the materialised memo area did not reach the post-rewrite prompt").toContain("# memo_set memos")
+    expect(third).toContain("Path: C:/books")
   })
 })

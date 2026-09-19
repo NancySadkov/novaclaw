@@ -24,6 +24,7 @@ import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ExitTool } from "@novaclaw/core/tool/exit"
 import { ToolPolicy } from "@novaclaw/core/tool-policy"
@@ -792,6 +793,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // it builds ONE store either way. Reachable because Strict is now the OFFICER's standing
       // choice, so a claim about Strict routing seeds an agent layer rather than an instance key.
       AgentConfigStore.node,
+      // Exposed so a claim about the memo area can write the `durable` shadow and the kernel's
+      // materialised `durable_prompt` directly and watch the prompt move only at the rewrite. The
+      // runner already depends on it, so this adds no second store.
+      SessionComponentRegistry.node,
     ]),
     [
       [LayerNodePlatform.llmClient, clientLayer],

@@ -1322,12 +1322,20 @@ export const layer = Layer.effect(
           operationMode: agent.info?.operationMode,
           sessionType,
         })
-        const memoRows = yield* components
-          .list({ sessionID: session.id, kind: "durable" })
-          .pipe(Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []))
-        const memos = [...Durable.itemsOf(memoRows)].sort((left, right) =>
-          left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
-        )
+        // 🔴 THE MEMO AREA COMES FROM THE MATERIALISED `durable_prompt`, NOT THE LIVE `durable` SHADOW.
+        // `memo_set` / `memo_clear` write the `durable` items immediately, but the block the model
+        // reads is the kernel's copy written at a context rewrite (the `if (compacted)` block below).
+        // Rendering the live items here is the regression this comment guards: it made every memo write
+        // an edit to the system prompt on the next turn, which resets the provider's prefix cache for a
+        // fact the transcript already carries until the compaction. `Durable.textOf` reads the
+        // materialised `durable_prompt` structurally, the same way `SessionDrive.assignedGoal` reads a
+        // goal.
+        const durablePrompt = yield* components
+          .get({ sessionID: session.id, kind: "durable_prompt" })
+          .pipe(
+            Effect.map((entry) => entry?.value),
+            Effect.orElseSucceed(() => undefined),
+          )
         const directory = session.location?.directory
         const listing =
           directory === undefined || directory.trim().length === 0
@@ -1356,7 +1364,7 @@ export const layer = Layer.effect(
             component: goalEntry,
           }),
           unattended,
-          memos: memos.map((memo) => ({ name: memo.name, value: memo.value })),
+          memoText: Durable.textOf(durablePrompt),
           project: directory,
           projectFiles: listing?.entries.map((entry) => (entry.directory ? `${entry.name}/` : entry.name)),
           workLog,
