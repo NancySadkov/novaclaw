@@ -1260,7 +1260,9 @@ export const dict = {
   "settings.health.recheck": "Check again",
   "settings.health.testProvider": "Test the connection to my model provider",
   "settings.health.notifications.title": "Recent notifications",
-  "settings.health.notifications.description": "Pop-ups fade away, but their recent messages remain here for 30 days.",
+  "settings.health.notifications.description": "The last five, newest first. Older ones stay for 30 days.",
+  "settings.health.notifications.all": "All notifications",
+  "settings.health.notifications.allDescription": "Everything Nova has kept, newest first.",
   "settings.health.notifications.notice": "Notification",
   "settings.health.notifications.error": "{{session}} needs attention",
   "settings.health.notifications.complete": "{{session}} finished a reply",
@@ -1360,10 +1362,6 @@ export const dict = {
   "settings.general.row.mobileTitlebarBottom.title": "Bottom navigation",
   "settings.general.row.mobileTitlebarBottom.description":
     "Place the title bar and session tabs at the bottom of the screen on mobile",
-  "settings.general.row.defaultPermissionMode.title": "Default permission mode",
-  "settings.general.row.defaultPermissionMode.description": "How much a new chat can do on its own before asking you.",
-  "settings.general.row.defaultPermissionMode.description.more":
-    "“Plan” and “Ask” check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.",
   "settings.general.row.shellBundle.title": "Shell environment",
   "settings.general.row.shellBundle.description":
     "The bash + git substrate agents run on. Provisioning downloads the pinned PortableGit bundle (~59 MB) so every machine gets the same environment — do it before going airgapped",

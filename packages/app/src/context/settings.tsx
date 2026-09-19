@@ -38,7 +38,6 @@ export interface Settings {
     // state nothing read and nothing could write. Chrome visibility is the LAYOUT's job — if a
     // panel should be hideable, give it an affordance, not a settings key.
     showReasoningSummaries: boolean
-    defaultPermissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     mobileTitlebarPosition: "top" | "bottom"
     expertiseLevel: ExpertiseLevel
   }
@@ -123,9 +122,6 @@ const defaultSettings: Settings = {
   general: {
     autoSave: true,
     showReasoningSummaries: true,
-    // Write access to the PROJECT FOLDER by default (owner 2026-07-25). Outside the folder is still
-    // guarded regardless of mode, so this is "trusted here", not "trusted everywhere".
-    defaultPermissionMode: "bypass",
     mobileTitlebarPosition: "top",
     expertiseLevel: "normal",
   },
@@ -197,15 +193,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setShowReasoningSummaries(value: boolean) {
           setStore("general", "showReasoningSummaries", value)
-        },
-        // 1K: the DEFAULT permission mode a new session starts on — the "yolo
-        // setting" surface (yolo itself is the server-side mode overlay).
-        defaultPermissionMode: withFallback(
-          () => store.general?.defaultPermissionMode,
-          defaultSettings.general.defaultPermissionMode,
-        ),
-        setDefaultPermissionMode(value: Settings["general"]["defaultPermissionMode"]) {
-          setStore("general", "defaultPermissionMode", value)
         },
         mobileTitlebarPosition: withFallback(
           () => store.general?.mobileTitlebarPosition,

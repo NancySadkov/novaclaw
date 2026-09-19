@@ -163,25 +163,6 @@ export const SettingsGeneralV2: Component<{
       : language.t("settings.general.row.offline.inactive")
   })
 
-  // 1K: the default-permission-mode options reuse the composer droplist's labels.
-  //
-  // Every mode is offered at EVERY expertise level, and that is a standing decision, not an omission.
-  // Permission modes escalate in danger, but only ONE of them leaves the project folder. External
-  // writes are guarded independently of the mode (agent baseline asks; an unattended chain is
-  // hard-denied — config-resolve.ts §UNATTENDED CONFINEMENT), so plan/ask/surgical/bypass all stay
-  // INSIDE the folder and are safe to offer at any level. Gating `bypass` to Developer hid the one
-  // mode most users actually want ("work in my project without asking me every time") and left Normal
-  // with two options, which read as a broken picker. `yolo` is ungated for the same reason (owner
-  // 2026-07-25 named all three postures as the set a normal user picks from): hiding the escape hatch
-  // does not make it safer, it makes the honest one unreachable. What carries the weight is the LABEL
-  // — "Admin" reads with the hint "Write access to the ENTIRE computer, not just this project". The
-  // real containment work is tracked for v0.2.0 (jail bash in every non-YOLO mode, Windows included).
-  const permissionModeOptions = createMemo(() =>
-    (["plan", "ask", "surgical", "bypass", "yolo"] as const).map((mode) => ({
-      id: mode,
-      label: language.t(`prompt.permissionMode.${mode}`),
-    })),
-  )
   const languageOptions = createMemo(() =>
     language.locales.map((locale) => ({
       value: locale,
@@ -283,32 +264,6 @@ export const SettingsGeneralV2: Component<{
               </ButtonV2>
             </div>
           </Show>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.defaultPermissionMode.title")}
-          description={
-            <>
-              {language.t("settings.general.row.defaultPermissionMode.description")}
-              <SettingsExplainV2 label={language.t("settings.general.row.defaultPermissionMode.title")}>
-                {language.t("settings.general.row.defaultPermissionMode.description.more")}
-              </SettingsExplainV2>
-            </>
-          }
-        >
-          <SelectV2
-            appearance="inline"
-            data-action="settings-default-permission-mode"
-            options={permissionModeOptions()}
-            current={permissionModeOptions().find((mode) => mode.id === settings.general.defaultPermissionMode())}
-            placement="bottom-end"
-            gutter={6}
-            value={(option) => option.id}
-            label={(option) => option.label}
-            onSelect={(option) => {
-              if (option) settings.general.setDefaultPermissionMode(option.id)
-            }}
-          />
         </SettingsRowV2>
 
         <SettingsRowV2

@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useConfirm } from "@/components/dialog-confirm"
@@ -11,6 +12,8 @@ import { shellStatus } from "@/utils/fs-api"
 import { ConfinementRows, type ShellStatusWithJail } from "./confinement"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { NotificationRowsV2, RECENT_NOTIFICATIONS_LIMIT } from "./notifications-list"
+import { DialogNotifications } from "./dialog-notifications"
 import { scopedDirectory } from "@/utils/routing-directory"
 import { useNotification } from "@/context/notification"
 import { usePlatform } from "@/context/platform"
@@ -127,9 +130,9 @@ export const NovaHealthBoard: Component = () => {
   )
 
   const confirm = useConfirm()
+  const dialog = useDialog()
   const [erasing, setErasing] = createSignal(false)
   const [exporting, setExporting] = createSignal(false)
-  const recentNotifications = createMemo(() => notifications.history.recent().slice(0, 20))
 
   const exportLogs = async () => {
     const conn = connection()
@@ -299,51 +302,28 @@ export const NovaHealthBoard: Component = () => {
           <h3 class="settings-v2-section-title">{language.t("settings.health.notifications.title")}</h3>
           <p class="settings-v2-tab-description">{language.t("settings.health.notifications.description")}</p>
         </div>
-        <Show when={platform.exportDebugLogs}>
+        <div class="flex shrink-0 items-center gap-4">
           <button
             type="button"
-            class="settings-v2-tab-description shrink-0 underline disabled:opacity-60"
-            disabled={exporting()}
-            onClick={() => void exportLogs()}
+            data-action="settings-notifications-all"
+            class="settings-v2-tab-description underline"
+            onClick={() => dialog.push(() => <DialogNotifications />)}
           >
-            {exporting() ? language.t("settings.health.logs.exporting") : language.t("settings.health.logs.export")}
+            {language.t("settings.health.notifications.all")}
           </button>
-        </Show>
-      </div>
-      <SettingsListV2>
-        <For each={recentNotifications()}>
-          {(notification) => (
-            <SettingsRowV2
-              title={
-                notification.type === "toast"
-                  ? notification.title || notification.description || language.t("settings.health.notifications.notice")
-                  : notification.type === "error"
-                    ? language.t("settings.health.notifications.error", { session: notification.session ?? "NovaClaw" })
-                    : language.t("settings.health.notifications.complete", {
-                        session: notification.session ?? "NovaClaw",
-                      })
-              }
-              description={
-                notification.type === "toast" && notification.title
-                  ? notification.description
-                  : new Date(notification.time).toLocaleString()
-              }
+          <Show when={platform.exportDebugLogs}>
+            <button
+              type="button"
+              class="settings-v2-tab-description shrink-0 underline disabled:opacity-60"
+              disabled={exporting()}
+              onClick={() => void exportLogs()}
             >
-              <span class="select-text text-[11px] text-v2-text-text-muted">
-                {new Date(notification.time).toLocaleString()}
-              </span>
-            </SettingsRowV2>
-          )}
-        </For>
-        <Show when={recentNotifications().length === 0}>
-          <SettingsRowV2
-            title={language.t("settings.health.notifications.empty")}
-            description={language.t("settings.health.notifications.emptyDescription")}
-          >
-            <span />
-          </SettingsRowV2>
-        </Show>
-      </SettingsListV2>
+              {exporting() ? language.t("settings.health.logs.exporting") : language.t("settings.health.logs.export")}
+            </button>
+          </Show>
+        </div>
+      </div>
+      <NotificationRowsV2 entries={notifications.history.recent()} limit={RECENT_NOTIFICATIONS_LIMIT} />
     </section>
   )
 }

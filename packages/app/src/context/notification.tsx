@@ -250,6 +250,7 @@ export const {
         markViewed: (directory: string) => selected()?.project.markViewed(directory),
       },
       history: {
+        all: () => selected()?.history.all() ?? NO_NOTIFICATIONS,
         recent: () => selected()?.history.recent() ?? NO_NOTIFICATIONS,
       },
     }
@@ -637,6 +638,10 @@ function createServerNotificationState(input: {
     },
     appendToast,
     history: {
+      /** Every retained notification, newest first. `recent` is the bounded preview. */
+      all() {
+        return store.list.slice().reverse()
+      },
       recent() {
         return store.list.slice(-50).reverse()
       },

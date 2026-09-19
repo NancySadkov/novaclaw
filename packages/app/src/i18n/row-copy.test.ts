@@ -30,7 +30,6 @@ const SPLIT = [
   "settings.computer.display",
   "settings.computer.windows",
   "settings.general.row.health",
-  "settings.general.row.defaultPermissionMode",
   "settings.recovery.row.resetUi",
   "settings.recovery.row.snapshots",
   "settings.confinement.probe",
