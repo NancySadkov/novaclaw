@@ -125,7 +125,7 @@ export function Titlebar() {
       data-slot="titlebar-v2"
       classList={{
         "shrink-0 relative flex flex-row": true,
-        "h-9 bg-v2-background-bg-deep overflow-visible": true,
+        "bg-v2-background-bg-deep overflow-visible": true,
         "order-last": bottom(),
       }}
       style={{
@@ -317,15 +317,7 @@ export function Titlebar() {
         const [tabsAreOverflowing, setTabsAreOverflowing] = createSignal(false)
 
         return (
-          <div
-            class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pr-3"
-            classList={{
-              "pt-2": !bottom(),
-              "pb-2": bottom(),
-              "md:pl-2": mac(),
-              "md:pl-4": !mac(),
-            }}
-          >
+          <div class="titlebar-content">
             <BrandBadge onOpenHome={goHome} />
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
             <TitlebarTabStrip
@@ -354,19 +346,10 @@ export function Titlebar() {
                 aria-label={language.t("nav.tasks.all")}
               />
             </TooltipV2>
-            <TitlebarV2Right />
           </div>
         )
       })()}
     </header>
-  )
-}
-
-function TitlebarV2Right() {
-  return (
-    <div class="relative z-20 flex shrink-0 items-center justify-end gap-0 overflow-visible">
-      <div id="novaclaw-titlebar-right" class="flex shrink-0 items-center justify-end gap-0" />
-    </div>
   )
 }
 

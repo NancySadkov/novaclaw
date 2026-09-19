@@ -27,7 +27,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { useNavigate, useSearchParams } from "@solidjs/router"
-import { NewSessionView, SessionHeader } from "@/components/session"
+import { NewSessionView } from "@/components/session"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useComments } from "@/context/comments"
 import { useServerSync } from "@/context/server-sync"
@@ -614,7 +614,7 @@ export default function Page() {
   const handleKeyDown = createSessionKeyboardController({
     composer: () => inputRef,
     childSession: isChildSession,
-    dialogActive: () => !!dialog.active,
+    dialogActive: () => !!dialog.active || view().reviewPanel.opened(),
     working: () => (params.id ? busy(params.id) : false),
     abort: () => executionAction("stop"),
     terminalOpen: () => view().terminal.opened(),
@@ -1059,7 +1059,6 @@ export default function Page() {
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
       {sessionSync() ?? ""}
-      <SessionHeader />
       <Show when={executionAttention()}>
         {(attempt) => (
           <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>

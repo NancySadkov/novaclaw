@@ -1,11 +1,12 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
-import { fetchAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
-import { useServer } from "@/context/server"
+import { agentInitials, fetchAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
+import { type ServerConnection, useServer } from "@/context/server"
 
 export function AgentPortrait(props: {
   id: string
   name: string
   avatar?: string | undefined
+  connection?: ServerConnection.Any | undefined
   background?: string | undefined
   class?: string | undefined
 }) {
@@ -15,7 +16,7 @@ export function AgentPortrait(props: {
 
   createEffect(() => {
     const route = props.avatar
-    const current = server.current
+    const current = props.connection ?? server.current
     setLoaded(undefined)
     if (!isAgentPortraitURL(route) || current === undefined) return
 
@@ -45,8 +46,8 @@ export function AgentPortrait(props: {
     return failed() !== value && image?.route === value ? image.source : undefined
   }
   const fallback = () => {
-    if (isAgentPortraitURL(props.avatar)) return props.name.charAt(0) || "?"
-    return props.avatar || props.name.charAt(0) || "?"
+    if (isAgentPortraitURL(props.avatar)) return agentInitials(props.name)
+    return props.avatar || agentInitials(props.name)
   }
 
   return (
@@ -63,7 +64,10 @@ export function AgentPortrait(props: {
             loading="lazy"
             decoding="async"
             class="size-full object-cover"
-            onError={() => setFailed(src())}
+            onError={() => {
+              const image = loaded()
+              if (image?.source === src()) setFailed(image.route)
+            }}
           />
         )}
       </Show>

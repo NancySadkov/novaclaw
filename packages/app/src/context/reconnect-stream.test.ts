@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { NovaclawClient, SessionMessage } from "@novaclaw/sdk/v2/client"
 import { reconnectingPromptAttempt } from "@/components/prompt-input/connection-state"
 import { createNativeMessageStore } from "./global-sync/message-v2-store"
-import { runReconnectingStream, type ReconnectStreamState } from "./reconnect-stream"
+import { createSdkForServer } from "@/utils/server"
+import { runReconnectingStream, waitForStreamRetry, type ReconnectStreamState } from "./reconnect-stream"
 
 async function* oneEvent<T>(event: T, after?: () => void): AsyncGenerator<T> {
   yield event
@@ -11,7 +12,70 @@ async function* oneEvent<T>(event: T, after?: () => void): AsyncGenerator<T> {
 
 async function* noEvents<T>(): AsyncGenerator<T> {}
 
+test("page suspension cancels a backed-off retry so its replacement can start immediately", async () => {
+  const controller = new AbortController()
+  const pending = waitForStreamRetry(30_000, controller.signal)
+  controller.abort()
+  await pending
+  await waitForStreamRetry(30_000, controller.signal)
+}, 100)
+
 describe("runReconnectingStream", () => {
+  test("an attempt aborted during recovery retries while its owner is still active", async () => {
+    let active = true
+    let opens = 0
+    let controller!: AbortController
+    const states: Array<[ReconnectStreamState, number]> = []
+    const accepted: string[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => oneEvent(`attempt-${++opens}`),
+      recover: async () => {
+        if (opens === 1) controller.abort()
+      },
+      accept: (event) => {
+        accepted.push(event)
+        active = false
+      },
+      wait: async () => {},
+      delay: () => 0,
+      state: (status, attempt) => states.push([status, attempt]),
+      attemptStarted: (value) => (controller = value),
+    })
+
+    expect(opens).toBe(2)
+    expect(accepted).toEqual(["attempt-2"])
+    expect(states).toEqual([
+      ["reconnecting", 1],
+      ["connected", 0],
+    ])
+  })
+
+  test("stopping an active stream discards events already buffered by the transport", async () => {
+    let active = true
+    const accepted: string[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () =>
+        (async function* () {
+          yield "current"
+          yield "stale"
+        })(),
+      recover: async () => {},
+      accept: (event) => {
+        accepted.push(event)
+        active = false
+      },
+      wait: async () => {},
+      delay: () => 0,
+      state: () => {},
+    })
+
+    expect(accepted).toEqual(["current"])
+  })
+
   test("keeps retrying, publishes every one-based attempt, and resets only after recovery", async () => {
     let active = true
     let opens = 0
@@ -224,5 +288,110 @@ describe("runReconnectingStream", () => {
     expect(opens).toBe(2)
     expect(presentation).toEqual([undefined, 1, undefined])
     expect(visibleTranscripts).toEqual([["msg_1"], ["msg_1", "msg_2"]])
+  })
+
+  test("a stalled transcript read is cancelled with its attempt and cannot overwrite the recovery", async () => {
+    const before = [{ id: "msg_1", type: "user", text: "before", time: { created: 1 } }] as SessionMessage[]
+    const after = [...before, { id: "msg_2", type: "user", text: "after", time: { created: 2 } }] as SessionMessage[]
+    let calls = 0
+    let controller!: AbortController
+    let stale!: (value: unknown) => void
+    let requestSignal: AbortSignal | undefined
+    const client = {
+      v2: {
+        session: {
+          messages: (_input: unknown, options: { signal: AbortSignal }) => {
+            calls++
+            if (calls === 2) {
+              requestSignal = options.signal
+              queueMicrotask(() => controller.abort())
+              // Model a desktop bridge that ignores its fetch signal.
+              return new Promise((resolve) => (stale = resolve))
+            }
+            return Promise.resolve({ data: { data: calls === 1 ? before : after } })
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const messages = createNativeMessageStore(client)
+    await messages.load("s")
+    let active = true
+    let opens = 0
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => oneEvent(++opens),
+      recover: (signal) => messages.reconcileAll(signal),
+      accept: () => {
+        active = false
+      },
+      wait: async () => {},
+      delay: () => 0,
+      state: () => {},
+      attemptStarted: (value) => (controller = value),
+    })
+
+    expect(opens).toBe(2)
+    expect(requestSignal?.aborted).toBe(true)
+    expect(messages.messages("s")?.map((row) => row.id)).toEqual(["msg_1", "msg_2"])
+    stale({ data: { data: before } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(messages.messages("s")?.map((row) => row.id)).toEqual(["msg_1", "msg_2"])
+  })
+
+  test("an actual SDK stream failure returns retry ownership and runs recovery before new events", async () => {
+    const encoder = new TextEncoder()
+    let socket!: ReadableStreamDefaultController<Uint8Array>
+    let connections = 0
+    const sdk = createSdkForServer({
+      server: { url: "http://instance.test" },
+      fetch: (async () => {
+        connections++
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              socket = controller
+              controller.enqueue(encoder.encode('data: {"payload":{"type":"sync"}}\n\n'))
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      }) as unknown as typeof fetch,
+    })
+    let active = true
+    let recoveries = 0
+    const states: Array<[ReconnectStreamState, number]> = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async (signal) =>
+        (
+          await sdk.global.event({
+            signal,
+            sseMaxRetryAttempts: 1,
+          })
+        ).stream,
+      recover: async () => {
+        recoveries++
+      },
+      accept: () => {
+        if (connections === 1) socket.error(new Error("socket lost"))
+        else {
+          active = false
+          socket.close()
+        }
+      },
+      wait: async () => {},
+      delay: () => 0,
+      state: (status, attempt) => states.push([status, attempt]),
+    })
+
+    expect(connections).toBe(2)
+    expect(recoveries).toBe(2)
+    expect(states).toEqual([
+      ["connected", 0],
+      ["reconnecting", 1],
+      ["connected", 0],
+    ])
   })
 })

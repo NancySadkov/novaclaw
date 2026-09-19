@@ -220,7 +220,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
   // A live transport is not yet a recovered client. Keep the connection unavailable until every
   // resident transcript has been authoritatively re-read; a failed read makes the stream loop
   // reconnect and retry instead of exposing a stale prompt.
-  const unregisterMessageRecovery = serverSDK.reconnectRecovery.register(() => nativeMessages.reconcileAll())
+  const unregisterMessageRecovery = serverSDK.reconnectRecovery.register((signal) =>
+    nativeMessages.reconcileAll(signal),
+  )
   const agentStatusListeners = new Set<() => void>()
 
   const children = createChildStoreManager({

@@ -11,9 +11,9 @@ describe("narrow-window navigation remains reachable", () => {
     expect(strip).toContain('data-slot="titlebar-tabs" class="relative min-w-0 flex-1 overflow-hidden"')
   })
 
-  test("a shrunken tab retains enough width for a short name", () => {
-    expect(strip.match(/min-w-14/g)?.length).toBe(2)
-    expect(strip).not.toContain("min-w-7")
+  test("tab slots yield width to the responsive portrait strip", () => {
+    expect(strip.match(/relative flex min-w-0 flex-1/g)?.length).toBe(2)
+    expect(strip).not.toContain("min-w-14")
   })
 
   test("every sortable tab disables the post-click displacement animation", () => {

@@ -27,3 +27,13 @@ export const fetchAgentPortrait = (
     return blob
   })
 }
+
+/** Two name initials keep an officer identifiable in the compact portrait strip. */
+export const agentInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/u)
+    .slice(0, 2)
+    .map((word) => Array.from(word)[0] ?? "")
+    .join("")
+    .toLocaleUpperCase() || "?"

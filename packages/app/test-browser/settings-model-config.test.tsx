@@ -15,10 +15,12 @@ import { Schema } from "effect"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
 
 let dispose: (() => void) | undefined
+const originalMatchMedia = window.matchMedia
 afterEach(() => {
   dispose?.()
   document.body.innerHTML = ""
   toasterV2.clear()
+  window.matchMedia = originalMatchMedia
 })
 const settle = async () => {
   for (let i = 0; i < 12; i++) await new Promise((resolve) => setTimeout(resolve, 0))
@@ -144,6 +146,34 @@ function mount(failRemoval = false, inheritedLimits = false) {
   )
   return Object.assign(() => config.providers.local.models.test, { config: () => config })
 }
+test("model settings phone tabs navigate horizontally and retain drafted fields across panels", async () => {
+  window.matchMedia = (query: string) => {
+    const result = originalMatchMedia.call(window, query)
+    if (query === "(min-width: 768px)") Object.defineProperty(result, "matches", { value: false })
+    return result
+  }
+  mount()
+  click(button("Configure test"))
+  await settle()
+  const navigation = document.querySelector<HTMLElement>('nav[role="tablist"]')!
+  const tabs = [...navigation.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+  const panel = document.querySelector<HTMLElement>('[role="tabpanel"]')!
+  expect(navigation.getAttribute("aria-orientation")).toBe("horizontal")
+  expect(tabs.filter((tab) => tab.tabIndex === 0).length).toBe(1)
+  fill("Temperature", "0.3")
+  tabs[0]!.focus()
+  tabs[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+  expect(panel.dataset.activeTab).toBe("sampling")
+  expect(document.activeElement).toBe(tabs[1])
+  expect(panel.getAttribute("aria-labelledby")).toBe(tabs[1]!.id)
+  expect(field("Temperature").value).toBe("0.3")
+  tabs[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }))
+  expect(panel.dataset.activeTab).toBe("scheduler")
+  tabs.at(-1)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }))
+  expect(panel.dataset.activeTab).toBe("identity")
+  expect(field("Temperature").value).toBe("0.3")
+})
+
 test("model edits survive the wire schema, merge store and reopening; defaults delete overrides", async () => {
   const saved = mount()
   click(button("Configure test"))

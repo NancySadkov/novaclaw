@@ -22,7 +22,8 @@ describe("reconnect recovery is a connection barrier", () => {
   test("the production stream delegates connection state and transcript recovery to the tested loop", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "server-sdk.tsx"), "utf8")
     expect(source).toContain("await runReconnectingStream({")
-    expect(source).toContain("recover: () => reconnectRecovery.run()")
+    expect(source).toContain("recover: (signal) => reconnectRecovery.run(signal)")
+    expect(source).toContain("sseMaxRetryAttempts: 1")
     expect(source).toContain("setReconnectAttemptNumber(displayAttempt)")
     expect(source).toContain("setStreamStatus(status)")
   })
@@ -89,7 +90,9 @@ describe("reconnect recovery is a connection barrier", () => {
 
   test("the native transcript is registered on the barrier rather than refreshed after connected", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "server-sync.tsx"), "utf8")
-    expect(source).toContain("serverSDK.reconnectRecovery.register(() => nativeMessages.reconcileAll())")
+    expect(source).toMatch(
+      /serverSDK\.reconnectRecovery\.register\(\(signal\) =>\s*nativeMessages\.reconcileAll\(signal\)/,
+    )
     expect(source).not.toContain(
       'if ((event.type as string) === "server.connected") void nativeMessages.reconcileAll()',
     )

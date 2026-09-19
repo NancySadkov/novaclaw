@@ -397,7 +397,11 @@ export function NativeTimeline(props: {
   // Own the load (message-timeline's load effect never runs while it is unmounted).
   createEffect(() => {
     const sid = props.sessionID
-    if (sid) void serverSync().nativeMessages.load(sid)
+    // A failed refresh keeps the resident transcript; stream recovery owns the retry.
+    if (sid)
+      void serverSync()
+        .nativeMessages.load(sid)
+        .catch(() => {})
   })
 
   // Self-heal missed live events: the SSE event stream can drop a turn's events when it
@@ -505,7 +509,11 @@ export function NativeTimeline(props: {
           horizontal scrollbar across the whole chat. NovaClaw runs on phones, so the chat must
           narrow its content to the viewport instead; the transcript's own rules make that content
           wrap (`native-transcript.css`), and this clips any residue that still would not. */}
-      <div ref={(el) => (scroller = el)} class="h-full overflow-y-auto overflow-x-hidden" data-component="native-timeline">
+      <div
+        ref={(el) => (scroller = el)}
+        class="h-full overflow-y-auto overflow-x-hidden"
+        data-component="native-timeline"
+      >
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}

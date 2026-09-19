@@ -1,4 +1,5 @@
 import type { NovaclawClient, SessionMessage } from "@novaclaw/sdk/v2/client"
+import { withRequestDeadline } from "@/utils/request-deadline"
 
 /**
  * Fetch a session's history as native V2 `SessionMessage[]` via
@@ -26,11 +27,16 @@ import type { NovaclawClient, SessionMessage } from "@novaclaw/sdk/v2/client"
 export async function fetchNativeMessages(
   client: NovaclawClient,
   sessionID: string,
-  options?: { limit?: number; order?: "asc" | "desc"; cursor?: string },
+  options?: { limit?: number; order?: "asc" | "desc"; cursor?: string; signal?: AbortSignal },
 ): Promise<SessionMessage[] | undefined> {
-  const response = await client.v2.session.messages(
-    { sessionID, limit: options?.limit, order: options?.order, cursor: options?.cursor },
-    { throwOnError: true },
-  )
+  const response = await withRequestDeadline({
+    label: "Loading this conversation",
+    signal: options?.signal,
+    run: (signal) =>
+      client.v2.session.messages(
+        { sessionID, limit: options?.limit, order: options?.order, cursor: options?.cursor },
+        { throwOnError: true, signal },
+      ),
+  })
   return response.data?.data
 }

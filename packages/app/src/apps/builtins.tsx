@@ -95,10 +95,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       get title() {
         return name("models")
       },
-      // The owner-supplied `models.svg` is a transparent golden GLYPH, not a finished framed tile, so
-      // `tileNeedsFrame` makes the shared renderer draw the same gold hairline + aubergine inset +
-      // purple ring the other tiles carry — exactly the Skills precedent. `icon` stays the fallback
-      // for surfaces that render a glyph rather than the art. The accent is the cool teal Trash freed.
+      // Frame the owner-supplied transparent glyph like the other app instruments. The launcher
+      // tones built-in glyphs cool; metallic gold belongs to Nova. `icon` is the non-art fallback.
       icon: "cpu",
       tile: "/assets/skin/tiles/models.svg",
       tileNeedsFrame: true,
@@ -117,7 +115,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("calendar")
       },
       icon: "calendar",
-      tile: "/assets/skin/tiles/calendar.png",
+      tile: "/assets/skin/glyphs/calendar.png",
+      tileNeedsFrame: true,
       accent: "#6366f1",
       get subtitle() {
         return sub("calendar")
@@ -131,8 +130,9 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("recipes")
       },
       icon: "checklist",
-      tile: "/assets/skin/tiles/recipes.png",
-      accent: "#f97316",
+      tile: "/assets/skin/glyphs/recipes.png",
+      tileNeedsFrame: true,
+      accent: "#9b8acb",
       get subtitle() {
         return sub("recipes")
       },
@@ -145,7 +145,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("files")
       },
       icon: "folder",
-      tile: "/assets/skin/tiles/files.png",
+      tile: "/assets/skin/glyphs/files.png",
+      tileNeedsFrame: true,
       accent: "#3b82f6",
       get subtitle() {
         return sub("files")
@@ -168,7 +169,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("terminal")
       },
       icon: "terminal",
-      tile: "/assets/skin/tiles/terminal.png",
+      tile: "/assets/skin/glyphs/terminal.png",
+      tileNeedsFrame: true,
       accent: "#64748b",
       get subtitle() {
         return sub("terminal")
@@ -185,7 +187,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("registry")
       },
       icon: "cpu",
-      tile: "/assets/skin/tiles/registry.png",
+      tile: "/assets/skin/glyphs/registry.png",
+      tileNeedsFrame: true,
       accent: "#0ea5e9",
       get subtitle() {
         return sub("registry")
@@ -202,7 +205,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("debug")
       },
       icon: "console",
-      tile: "/assets/skin/tiles/debug.png",
+      tile: "/assets/skin/glyphs/debug.png",
+      tileNeedsFrame: true,
       accent: "#a78bfa",
       get subtitle() {
         return sub("debug")
@@ -225,7 +229,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
       // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
       icon: "community",
-      tile: "/assets/skin/tiles/community.png",
+      tile: "/assets/skin/glyphs/community.png",
+      tileNeedsFrame: true,
       // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
       accent: "#5865f2",
       get subtitle() {
@@ -241,7 +246,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("help")
       },
       icon: "help",
-      tile: "/assets/skin/tiles/help.png",
+      tile: "/assets/skin/glyphs/help.png",
+      tileNeedsFrame: true,
       // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
       accent: "#6366f1",
       get subtitle() {
@@ -256,7 +262,8 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("settings")
       },
       icon: "settings-gear",
-      tile: "/assets/skin/tiles/settings.png",
+      tile: "/assets/skin/glyphs/settings.png",
+      tileNeedsFrame: true,
       accent: "#8d8fa6",
       get subtitle() {
         return sub("settings")

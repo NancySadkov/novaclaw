@@ -61,6 +61,7 @@ const MODELS = [
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined
+const originalMatchMedia = window.matchMedia
 
 afterEach(() => {
   dispose?.()
@@ -73,6 +74,7 @@ afterEach(() => {
   // and passes or fails for the wrong reason. Caught by dumping the DOM: run alone the save button
   // was correctly `disabled=true`, run in sequence it was the prior test's enabled one.
   document.body.innerHTML = ""
+  window.matchMedia = originalMatchMedia
 })
 
 /**
@@ -259,6 +261,42 @@ const labelCount = (key: string) =>
   (dialogText().match(new RegExp(`${key.replace(/\./g, "\\.")}\\b`, "g")) ?? []).length
 
 describe("AgentConfigDialog renders", () => {
+  test("settings tabs use horizontal phone keys, then vertical desktop keys without losing selection", async () => {
+    let desktop = false
+    let media: MediaQueryList | undefined
+    window.matchMedia = (query: string) => {
+      const result = originalMatchMedia.call(window, query)
+      if (query === "(min-width: 768px)") {
+        Object.defineProperty(result, "matches", { configurable: true, get: () => desktop })
+        media = result
+      }
+      return result
+    }
+    mount({ agents: [AGENT] })
+    await settle()
+
+    const navigation = document.querySelector<HTMLElement>('nav[role="tablist"]')!
+    const buttons = [...navigation.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const panel = document.querySelector<HTMLElement>('[role="tabpanel"]')!
+    expect(navigation.getAttribute("aria-orientation")).toBe("horizontal")
+    expect(buttons.filter((button) => button.tabIndex === 0).length).toBe(1)
+    buttons[0]!.focus()
+    buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    expect(panel.dataset.activeTab).toBe("mind")
+    expect(document.activeElement).toBe(buttons[1])
+    expect(panel.getAttribute("aria-labelledby")).toBe(buttons[1]!.id)
+    expect(buttons[1]!.getAttribute("aria-selected")).toBe("true")
+
+    desktop = true
+    media!.dispatchEvent(Object.assign(new Event("change"), { matches: true }))
+    expect(navigation.getAttribute("aria-orientation")).toBe("vertical")
+    expect(panel.dataset.activeTab).toBe("mind")
+    buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }))
+    expect(panel.dataset.activeTab).toBe("work")
+    buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }))
+    expect(panel.dataset.activeTab).toBe("profile")
+  })
+
   test("VR-001 · the governing colleague is edited like any other, minus the three fixed things", async () => {
     const writes: unknown[] = []
     mount({
@@ -327,7 +365,7 @@ describe("AgentConfigDialog renders", () => {
     const navigation = document.querySelector('nav[aria-label="Officer settings"]')
     expect(navigation?.classList.contains("overflow-x-auto")).toBe(true)
     expect(navigation?.classList.contains("md:flex-col")).toBe(true)
-    expect([...navigation!.querySelectorAll("button")].every((button) => button.classList.contains("min-h-10"))).toBe(
+    expect([...navigation!.querySelectorAll("button")].every((button) => button.classList.contains("min-h-11"))).toBe(
       true,
     )
 
@@ -658,9 +696,7 @@ describe("AgentConfigDialog renders", () => {
     expect(writes.at(-1)).toMatchObject({
       agents: { theron: { model: "spark/qwen" } },
     })
-    expect(
-      ((writes.at(-1) as { agents: { theron: { nudges: unknown[] } } }).agents.theron.nudges ?? []).length,
-    ).toBe(1)
+    expect(((writes.at(-1) as { agents: { theron: { nudges: unknown[] } } }).agents.theron.nudges ?? []).length).toBe(1)
   })
 
   test("portrait selection is a readable button with its filename separate", async () => {

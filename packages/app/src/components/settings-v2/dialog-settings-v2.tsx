@@ -1,4 +1,5 @@
 import { Component, Show, createSignal } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
 import { Dialog as KobalteDialog } from "@kobalte/core/dialog"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
@@ -46,6 +47,7 @@ export const DialogSettings: Component<{
 }> = (props) => {
   const language = useLanguage()
   const server = useServer()
+  const desktop = createMediaQuery("(min-width: 768px)")
   const { atLeast } = useExpertise()
   const tabVisible = (tab: string) => {
     const level = TAB_LEVELS[tab]
@@ -88,7 +90,13 @@ export const DialogSettings: Component<{
       <Show when={server.key} keyed>
         <ServerSDKProvider>
           <ServerSyncProvider>
-            <TabsV2 orientation="vertical" variant="settings" value={tab()} onChange={setTab} class="settings-v2">
+            <TabsV2
+              orientation={desktop() ? "vertical" : "horizontal"}
+              variant="settings"
+              value={tab()}
+              onChange={setTab}
+              class="settings-v2"
+            >
               {/* ⚠️ FLAT, deliberately (owner, 2026-09-16). This list used to be four nested
                   `flex-col` wrappers around two section groups. That renders identically on desktop,
                   but it cannot become a horizontal strip on a phone without unwrapping every level —
@@ -97,80 +105,80 @@ export const DialogSettings: Component<{
                   scroll sideways. */}
               <TabsV2.List>
                 <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
-                          <TabsV2.Trigger value="general">
-                            <Icon name="sliders" size="large" />
-                            {language.t("settings.tab.general")}
-                          </TabsV2.Trigger>
-                          {/* 🔴 The Memory tab is RETIRED (owner, 2026-08-20: *"we still have Memory
+                <TabsV2.Trigger value="general">
+                  <Icon name="sliders" size="large" />
+                  {language.t("settings.tab.general")}
+                </TabsV2.Trigger>
+                {/* 🔴 The Memory tab is RETIRED (owner, 2026-08-20: *"we still have Memory
                         tab in the settings, instead of everything migrated to the app"*). Everything it
                         held — consent, the embedding and judge rows, export/import, document ingest,
                         the memory atlas — now lives in the officer's Memory screen, rendered
                         from the same component. Settings keeps what is instance CONFIGURATION; what
                         Nova knows about you is a thing you go and look at, not a preference. */}
-                          {/* Models is its OWN app now (owner, 2026-09-16) — a home tile at
+                {/* Models is its OWN app now (owner, 2026-09-16) — a home tile at
                               `/models`, not a Settings tab. Configuration is a place you go, and the
                               list outgrew a panel inside a dialog. */}
-                          <TabsV2.Trigger value="appearance">
-                            <Icon name="palette" size="large" />
-                            {language.t("settings.tab.appearance")}
-                          </TabsV2.Trigger>
-                          <TabsV2.Trigger value="shortcuts">
-                            <Icon name="keyboard" size="large" />
-                            {language.t("settings.tab.shortcuts")}
-                          </TabsV2.Trigger>
-                          <TabsV2.Trigger value="servers">
-                            <Icon name="share" size="large" />
-                            {language.t("settings.tab.instances")}
-                          </TabsV2.Trigger>
-                          {/* Messengers — a headline lay feature (messenger-plan §6.1): connect Telegram
+                <TabsV2.Trigger value="appearance">
+                  <Icon name="palette" size="large" />
+                  {language.t("settings.tab.appearance")}
+                </TabsV2.Trigger>
+                <TabsV2.Trigger value="shortcuts">
+                  <Icon name="keyboard" size="large" />
+                  {language.t("settings.tab.shortcuts")}
+                </TabsV2.Trigger>
+                <TabsV2.Trigger value="servers">
+                  <Icon name="share" size="large" />
+                  {language.t("settings.tab.instances")}
+                </TabsV2.Trigger>
+                {/* Messengers — a headline lay feature (messenger-plan §6.1): connect Telegram
                         & friends so the agent covers chats while you're away. Normal level. */}
-                          <TabsV2.Trigger value="messengers">
-                            <Icon name="speech-bubble" size="large" />
-                            {language.t("settings.messengers.title")}
-                          </TabsV2.Trigger>
-                          <Show when={tabVisible("tunes")}>
-                            <TabsV2.Trigger value="tunes">
-                              <Icon name="sliders" size="large" />
-                              {language.t("settings.tunes.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("computer")}>
-                            <TabsV2.Trigger value="computer">
-                              <Icon name="window-cursor" size="large" />
-                              {language.t("settings.computer.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("web-search")}>
-                            <TabsV2.Trigger value="web-search">
-                              <Icon name="magnifying-glass" size="large" />
-                              {language.t("settings.webSearch.title")}
-                            </TabsV2.Trigger>
-                          </Show>
-                          <Show when={tabVisible("quality")}>
-                            <TabsV2.Trigger value="quality">
-                              <Icon name="checklist" size="large" />
-                              {language.t("settings.quality.title")}
-                            </TabsV2.Trigger>
-                          </Show>
+                <TabsV2.Trigger value="messengers">
+                  <Icon name="speech-bubble" size="large" />
+                  {language.t("settings.messengers.title")}
+                </TabsV2.Trigger>
+                <Show when={tabVisible("tunes")}>
+                  <TabsV2.Trigger value="tunes">
+                    <Icon name="sliders" size="large" />
+                    {language.t("settings.tunes.title")}
+                  </TabsV2.Trigger>
+                </Show>
+                <Show when={tabVisible("computer")}>
+                  <TabsV2.Trigger value="computer">
+                    <Icon name="window-cursor" size="large" />
+                    {language.t("settings.computer.title")}
+                  </TabsV2.Trigger>
+                </Show>
+                <Show when={tabVisible("web-search")}>
+                  <TabsV2.Trigger value="web-search">
+                    <Icon name="magnifying-glass" size="large" />
+                    {language.t("settings.webSearch.title")}
+                  </TabsV2.Trigger>
+                </Show>
+                <Show when={tabVisible("quality")}>
+                  <TabsV2.Trigger value="quality">
+                    <Icon name="checklist" size="large" />
+                    {language.t("settings.quality.title")}
+                  </TabsV2.Trigger>
+                </Show>
                 <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
-                          <TabsV2.Trigger value="usage">
-                            <Icon name="bullet-list" size="large" />
-                            {language.t("settings.usage.title")}
-                          </TabsV2.Trigger>
-                          <TabsV2.Trigger value="storage">
-                            <Icon name="folder" size="large" />
-                            {language.t("settings.tab.storage")}
-                          </TabsV2.Trigger>
-                          {/* Trash was a home app; merging it here puts restore and retention on one
+                <TabsV2.Trigger value="usage">
+                  <Icon name="bullet-list" size="large" />
+                  {language.t("settings.usage.title")}
+                </TabsV2.Trigger>
+                <TabsV2.Trigger value="storage">
+                  <Icon name="folder" size="large" />
+                  {language.t("settings.tab.storage")}
+                </TabsV2.Trigger>
+                {/* Trash was a home app; merging it here puts restore and retention on one
                               screen instead of linking between two (owner, 2026-09-16). */}
-                          <TabsV2.Trigger value="trash">
-                            <Icon name="trash" size="large" />
-                            {language.t("trash.title")}
-                          </TabsV2.Trigger>
-                          <TabsV2.Trigger value="recovery">
-                            <Icon name="reset" size="large" />
-                            {language.t("settings.tab.recovery")}
-                          </TabsV2.Trigger>
+                <TabsV2.Trigger value="trash">
+                  <Icon name="trash" size="large" />
+                  {language.t("trash.title")}
+                </TabsV2.Trigger>
+                <TabsV2.Trigger value="recovery">
+                  <Icon name="reset" size="large" />
+                  {language.t("settings.tab.recovery")}
+                </TabsV2.Trigger>
                 <TabsV2.Trigger value="about">
                   <Icon name="info" size="large" />
                   {language.t("settings.tab.about")}

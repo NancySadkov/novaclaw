@@ -1,4 +1,4 @@
-export const OPEN_TAB_LIMIT = 4
+export const OPEN_TAB_LIMIT = 6
 
 function rank(keys: readonly string[]) {
   return new Map(keys.map((key, index) => [key, index] as const))

@@ -1,5 +1,7 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
+import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
@@ -263,6 +265,7 @@ export function AgentConfigScreen(props: {
     | "io"
     | "chat"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
+  const desktopSettings = createMediaQuery("(min-width: 768px)")
   const settingsTabs = createMemo(() => [
     { id: "profile" as const, label: "Profile", icon: "user" as const },
     { id: "mind" as const, label: "Mind", icon: "brain" as const },
@@ -343,7 +346,7 @@ export function AgentConfigScreen(props: {
   // Stored harness detail, normalized: the schema carries bool-or-struct for these two (old
   // rows are bare booleans, new writes are structs) and a struct for Strict. Absent = inherit.
   type LooseStruct = Record<string, string | number | boolean | undefined>
-  const strictStored = () => ((agent()?.config?.["strict"] ?? {}) as LooseStruct)
+  const strictStored = () => (agent()?.config?.["strict"] ?? {}) as LooseStruct
   const affStored = (): LooseStruct => {
     const raw = agent()?.config?.["affective"]
     return typeof raw === "boolean" ? { enabled: raw } : ((raw ?? {}) as LooseStruct)
@@ -354,8 +357,7 @@ export function AgentConfigScreen(props: {
   }
   const structNumber = (value: string | number | boolean | undefined): string =>
     typeof value === "number" ? String(value) : ""
-  const structText = (value: string | number | boolean | undefined): string =>
-    typeof value === "string" ? value : ""
+  const structText = (value: string | number | boolean | undefined): string => (typeof value === "string" ? value : "")
   // The ENABLED stance for each tab: draft, then the stored struct's (or bare boolean's)
   // `enabled`, then the shipped default. Lever groups below default ON — they are engine
   // defaults the switches override, exactly as the global Strict tab reads them.
@@ -415,10 +417,10 @@ export function AgentConfigScreen(props: {
   // ── Tools tab: horizon (live writes, like Nudges) ─────────────────────────────────
   // Recipes live in `<OfficerRecipes>`, extracted so the failed-write pin survives the
   // Settings tab's deletion (`components/officer-recipes.tsx` header).
-  const officerTools = () => ((agent()?.config?.["tools"] ?? {}) as Record<string, boolean>)
+  const officerTools = () => (agent()?.config?.["tools"] ?? {}) as Record<string, boolean>
   /** This officer's private recipes, read from the SAME record the horizon reads — the caller
    *  owns the source and `<OfficerRecipes>` stays presentational about it. */
-  const officerRecipes = () => ((agent()?.config?.["adhocTools"] ?? []) as AdhocRecipe[])
+  const officerRecipes = () => (agent()?.config?.["adhocTools"] ?? []) as AdhocRecipe[]
   /** Suggestion buttons: the built-ins, minus what is stored. There is no tool-inventory
    *  endpoint and no instance recipe library anymore, so a free-text add stays beside the
    *  suggestions and SAYS it is the fallback (principle 12b). */
@@ -653,7 +655,10 @@ export function AgentConfigScreen(props: {
   // the officer's own model picker above).
   const intrModelOptions = createMemo(() =>
     withBlockedCurrent(
-      [{ key: "active", value: "", label: language.t("agentConfig.intrModelInherit") }, ...runnableModels().map(modelChoice)],
+      [
+        { key: "active", value: "", label: language.t("agentConfig.intrModelInherit") },
+        ...runnableModels().map(modelChoice),
+      ],
       intrModelValue(),
     ),
   )
@@ -890,7 +895,7 @@ export function AgentConfigScreen(props: {
     const plan = planSettingsCopy({
       prototypeID,
       targetID: target,
-      source: ((source.config ?? {}) as Record<string, unknown>),
+      source: (source.config ?? {}) as Record<string, unknown>,
     })
     if (Object.keys(plan.fragment).length === 0) {
       showToast({ variant: "default", title: `${source.name?.trim() || prototypeID} has no tuning to copy` })
@@ -1266,7 +1271,8 @@ export function AgentConfigScreen(props: {
       setIntrGenerate(undefined)
     })
 
-  const save = async () => {    const id = props.agentID
+  const save = async () => {
+    const id = props.agentID
     if (id === undefined) return
     setSaving(true)
     try {
@@ -1341,7 +1347,8 @@ export function AgentConfigScreen(props: {
             reasoningTokens: numTouched(strictReasoningTokens()),
           })
         : undefined
-      const affectiveTouched = affective() !== undefined || affTemperature() !== undefined || affExtended() !== undefined
+      const affectiveTouched =
+        affective() !== undefined || affTemperature() !== undefined || affExtended() !== undefined
       const affectivePatch = affectiveTouched
         ? mergeDraft(affStored() as Record<string, unknown>, {
             enabled: affective(),
@@ -1528,7 +1535,10 @@ export function AgentConfigScreen(props: {
   }
 
   return (
-    <div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
+    <div
+      data-component="agent-settings"
+      class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+    >
       <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
         {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
               the roster, or the chat you were tuning — so the gesture out of it is "return", and
@@ -1574,30 +1584,36 @@ export function AgentConfigScreen(props: {
         </button>
       </div>
 
-      <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
-        <nav
-          class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-2 md:w-52 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
+      <KobalteTabs
+        value={activeTab()}
+        onChange={(value) => setActiveTab(value as SettingsTab)}
+        orientation={desktopSettings() ? "vertical" : "horizontal"}
+        class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row"
+      >
+        <KobalteTabs.List
+          as="nav"
+          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-0.5 md:w-52 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
           aria-label="Officer settings"
         >
           <For each={settingsTabs()}>
             {(tab) => (
-              <button
+              <KobalteTabs.Trigger
                 type="button"
-                class={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors ${
+                value={tab.id}
+                class={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-left text-sm transition-colors md:min-h-10 ${
                   activeTab() === tab.id
                     ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
                     : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
                 }`}
-                aria-current={activeTab() === tab.id ? "page" : undefined}
-                onClick={() => setActiveTab(tab.id)}
               >
                 <Icon name={tab.icon} class="hidden size-4 shrink-0 sm:block" />
                 <span>{tab.label}</span>
-              </button>
+              </KobalteTabs.Trigger>
             )}
           </For>
-        </nav>
-        <div
+        </KobalteTabs.List>
+        <KobalteTabs.Content
+          value={activeTab()}
           class="agent-settings-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 md:px-8 md:py-7"
           data-active-tab={activeTab()}
         >
@@ -1673,8 +1689,8 @@ export function AgentConfigScreen(props: {
                 </button>
               </div>
               <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Portable JSON contains the name, job title, and job instructions only. Models, folders,
-                authority, memories, and chat history stay with this instance.
+                Portable JSON contains the name, job title, and job instructions only. Models, folders, authority,
+                memories, and chat history stay with this instance.
               </p>
               {/* Why this is a profile field and not something you type into the chat. */}
               <div class="mt-3 text-xs text-v2-text-text-muted">
@@ -2146,8 +2162,8 @@ export function AgentConfigScreen(props: {
                 <div class="mt-2 border-t border-v2-border-border-muted pt-3">
                   <span class="block text-xs font-medium">Copy tuning from another officer</span>
                   <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Model, Strict, mood, judge, tools and worker policy — never the name, job, goal,
-                    folder or memory. Writes immediately.
+                    Model, Strict, mood, judge, tools and worker policy — never the name, job, goal, folder or memory.
+                    Writes immediately.
                   </span>
                   <div class="mt-2 flex items-center gap-2">
                     <SelectV2
@@ -2222,8 +2238,8 @@ export function AgentConfigScreen(props: {
                 <span>
                   <span class="block">{language.t("agentConfig.strict")}</span>
                   <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    The harness owns decomposition and verifies each step — for small models that lose the
-                    horizon, not the knowledge.
+                    The harness owns decomposition and verifies each step — for small models that lose the horizon, not
+                    the knowledge.
                   </span>
                 </span>
               </label>
@@ -2433,7 +2449,9 @@ export function AgentConfigScreen(props: {
                 aria-label="Judge model"
                 class="mt-1 w-full"
                 options={intrModelOptions()}
-                current={intrModelOptions().find((option) => option.value === intrModelValue()) ?? intrModelOptions()[0]}
+                current={
+                  intrModelOptions().find((option) => option.value === intrModelValue()) ?? intrModelOptions()[0]
+                }
                 value={(option) => option.key}
                 label={(option) => option.label}
                 onSelect={(option) => option && setIntrModel(option.value)}
@@ -2493,8 +2511,11 @@ export function AgentConfigScreen(props: {
             <section class="agent-settings-card" data-section="tools" data-settings-tab="tools">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Tools</h3>
               <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force: {Object.keys(officerTools()).length === 0 ? "no overrides" : `${Object.keys(officerTools()).length} tool rule(s)`}.
-                Unset follows the instance.
+                In force:{" "}
+                {Object.keys(officerTools()).length === 0
+                  ? "no overrides"
+                  : `${Object.keys(officerTools()).length} tool rule(s)`}
+                . Unset follows the instance.
               </p>
               <h4 class="mt-4 text-xs font-medium">Tool horizon</h4>
               <div class="mt-2 flex flex-col gap-1.5">
@@ -2572,8 +2593,8 @@ export function AgentConfigScreen(props: {
                 </button>
               </div>
               <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                Denying is the common case; restoring un-denies a tool the routing table withdrew. Typed names
-                are the fallback — prefer a suggestion above when one fits.
+                Denying is the common case; restoring un-denies a tool the routing table withdrew. Typed names are the
+                fallback — prefer a suggestion above when one fits.
               </p>
               <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
             </section>
@@ -2796,8 +2817,8 @@ export function AgentConfigScreen(props: {
               )}
             </Show>
           </div>
-        </div>
-      </div>
+        </KobalteTabs.Content>
+      </KobalteTabs>
 
       {/* Lifecycle, kept apart from the profile fields: these do something the moment they are
             pressed, while everything above waits for Save. */}

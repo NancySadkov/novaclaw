@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show, type Ref } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { AgentPortrait } from "@/components/agent-portrait"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -42,6 +42,12 @@ export function TabNavItem(props: {
     const conn = global.servers.list().find((item) => ServerConnection.key(item) === props.server)
     if (conn) return global.ensureServerCtx(conn)
   })
+  const colleague = createMemo(() =>
+    serverCtx()
+      ?.agents.list()
+      .find((agent) => agent.id === props.session()?.agent),
+  )
+  const connection = createMemo(() => global.servers.list().find((item) => ServerConnection.key(item) === props.server))
   const project = createMemo(() => {
     const session = props.session()
     if (!session) return
@@ -194,7 +200,7 @@ export function TabNavItem(props: {
       data-slot="titlebar-tab-item"
       data-title-overflow={titleOverflowing()}
       data-editing={editing()}
-      class="group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [container-type:inline-size] [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] has-[>a:focus-visible]:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[dragging='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[pressed='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[editing='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="group relative flex h-full w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap bg-[var(--tab-bg)] [container-type:inline-size] [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] has-[>a:focus-visible]:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[dragging='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[pressed='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[editing='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       classList={{ invisible: props.hidden }}
       data-active={props.active}
       data-dragging={props.dragging}
@@ -207,6 +213,9 @@ export function TabNavItem(props: {
               data-slot="tab-link"
               data-titlebar-tab-link
               href={props.href}
+              aria-label={label().text}
+              aria-current={props.active ? "page" : undefined}
+              title={label().tooltip ? `${label().text} · ${label().tooltip}` : label().text}
               draggable={false}
               onDragStart={(event) => {
                 event.preventDefault()
@@ -220,13 +229,22 @@ export function TabNavItem(props: {
               }}
               class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base group-data-[editing='true']:text-v2-text-text-base [-webkit-user-drag:none]"
             >
-              <span data-slot="project-avatar-slot">
-                <SessionTabAvatar
-                  project={project()}
-                  directory={session()?.location?.directory ?? ""}
-                  sessionId={session().id}
-                  activeServer={props.activeServer}
+              <span data-slot="agent-tab-portrait">
+                <AgentPortrait
+                  id={session().agent ?? session().id}
+                  name={label().text}
+                  avatar={colleague()?.avatar}
+                  connection={connection()}
+                  class="text-[10px] font-semibold"
                 />
+                <span data-slot="agent-tab-status">
+                  <SessionTabAvatar
+                    project={project()}
+                    directory={session()?.location?.directory ?? ""}
+                    sessionId={session().id}
+                    activeServer={props.activeServer}
+                  />
+                </span>
               </span>
               <span
                 ref={(el) => {
@@ -293,13 +311,16 @@ export function DraftTabItem(props: {
       data-active={props.active}
       data-dragging={props.dragging}
       data-pressed={props.pressed}
-      class="group relative flex h-7 w-full min-w-0 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] bg-[var(--tab-bg)] px-1.5 [container-type:inline-size] whitespace-nowrap [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] has-[>a:focus-visible]:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[dragging='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[pressed='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[editing='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="group relative flex h-full w-full min-w-0 flex-row items-center gap-1.5 overflow-hidden bg-[var(--tab-bg)] [container-type:inline-size] whitespace-nowrap [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] has-[>a:focus-visible]:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[dragging='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[pressed='true']:[--tab-bg:var(--v2-background-bg-layer-02)] data-[editing='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       classList={{ invisible: props.hidden }}
     >
       <a
         data-slot="tab-link"
         data-titlebar-tab-link
         href={props.href}
+        aria-label={props.title}
+        aria-current={props.active ? "page" : undefined}
+        title={props.title}
         draggable={false}
         onDragStart={(event) => {
           event.preventDefault()

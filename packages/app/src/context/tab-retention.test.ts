@@ -3,30 +3,33 @@ import { appendRecentTab, OPEN_TAB_LIMIT, retainRecentTabs } from "./tab-retenti
 
 const key = (value: string) => value
 
-describe("automatic task-tab retention", () => {
-  test("keeps only the four most recently opened tabs without reordering them", () => {
-    expect(retainRecentTabs(["a", "b", "c", "d", "e"], ["c", "a", "d", "b", "e"], key)).toEqual(["a", "b", "c", "d"])
-    expect(OPEN_TAB_LIMIT).toBe(4)
+describe("automatic officer-tab retention", () => {
+  test("keeps six recent officers without moving their visual positions", () => {
+    expect(OPEN_TAB_LIMIT).toBe(6)
+    expect(retainRecentTabs(["a", "b", "c", "d", "e", "f", "g"], ["c", "a", "d", "b", "g", "f", "e"], key)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "f",
+      "g",
+    ])
   })
-
-  test("opening a fifth tab evicts the least recently used existing tab", () => {
-    expect(appendRecentTab(["a", "b", "c", "d"], "e", ["c", "a", "d", "b"], key)).toEqual({
-      tabs: ["a", "c", "d", "e"],
+  test("a seventh officer displaces only the least recently visited tab", () => {
+    expect(appendRecentTab(["a", "b", "c", "d", "e", "f"], "g", ["c", "a", "f", "e", "d", "b"], key)).toEqual({
+      tabs: ["a", "c", "d", "e", "f", "g"],
       evicted: ["b"],
     })
   })
-
-  test("an unvisited old tab yields before a tab with recorded use", () => {
-    expect(appendRecentTab(["a", "b", "c", "d"], "e", ["c", "a", "d"], key)).toEqual({
-      tabs: ["a", "c", "d", "e"],
+  test("an unvisited old tab yields before one with recorded use", () => {
+    expect(appendRecentTab(["a", "b", "c", "d", "e", "f"], "g", ["c", "a", "d", "e", "f"], key)).toEqual({
+      tabs: ["a", "c", "d", "e", "f", "g"],
       evicted: ["b"],
     })
   })
-
-  test("one open repairs an oversized legacy store all the way to four", () => {
-    expect(appendRecentTab(["a", "b", "c", "d", "e", "f"], "g", ["f", "d", "b", "a", "c", "e"], key)).toEqual({
-      tabs: ["b", "d", "f", "g"],
-      evicted: ["a", "c", "e"],
-    })
+  test("one open repairs an oversized persisted store", () => {
+    expect(
+      appendRecentTab(["a", "b", "c", "d", "e", "f", "g", "h"], "i", ["h", "f", "d", "b", "a", "c", "e", "g"], key),
+    ).toEqual({ tabs: ["a", "b", "d", "f", "h", "i"], evicted: ["c", "e", "g"] })
   })
 })

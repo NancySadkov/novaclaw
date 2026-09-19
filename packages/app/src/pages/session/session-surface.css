@@ -1,0 +1,39 @@
+/* The character sheet is an instrument panel: one portrait, ruled statistics and a true-scale
+   capacity meter. Keep this surface flat so the conversation remains the main room. */
+[data-component="session-side-panel"][data-modal="true"] {
+  border: 1px solid var(--v2-border-border-strong);
+  outline: none;
+}
+
+[data-component="session-character-sheet"] [data-slot="context-portrait-row"] > span {
+  border-radius: 12px 12px 4px 4px;
+  box-shadow: 0 0 0 3px var(--v2-background-bg-layer-02);
+}
+
+[data-component="session-character-sheet"] summary {
+  list-style-position: inside;
+}
+
+[data-component="session-character-sheet"] summary::marker {
+  color: var(--v2-text-text-faint);
+  font-size: 10px;
+}
+
+@media (max-width: 767px) {
+  [data-component="session-side-panel"][data-modal="true"] {
+    border-radius: 8px;
+  }
+
+  [data-component="session-side-panel"] [data-component="tabs-v2"] [data-slot="tabs-v2-list"] {
+    height: 44px;
+  }
+
+  [data-component="session-side-panel"] [data-slot="review-modal-close"] {
+    width: 36px;
+    height: 36px;
+  }
+
+  [data-component="session-character-sheet"] [data-component="button-v2"] {
+    min-height: 36px;
+  }
+}

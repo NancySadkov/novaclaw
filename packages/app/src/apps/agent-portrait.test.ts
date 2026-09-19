@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { fetchAgentPortrait, isAgentPortraitURL } from "./agent-portrait"
+import { agentInitials, fetchAgentPortrait, isAgentPortraitURL } from "./agent-portrait"
 import { instanceUrl } from "@/utils/instance-fetch"
 
 describe("instance-owned agent portraits", () => {
+  test("compact identities keep two initials and never split a Unicode character", () => {
+    expect(agentInitials("  Iris   Vale ")).toBe("IV")
+    expect(agentInitials("Nova")).toBe("N")
+    expect(agentInitials("𐐀ster Vale")).toBe("𐐀V")
+    expect(agentInitials(" ")).toBe("?")
+  })
   test("only a server avatar route is image media", () => {
     expect(isAgentPortraitURL("/api/agent/nova/avatar?v=abc")).toBe(true)
     expect(isAgentPortraitURL("🦊")).toBe(false)

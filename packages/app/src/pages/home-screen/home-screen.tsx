@@ -79,9 +79,9 @@ const SortableTile: Component<{
     <div
       use:sortable
       data-home-app-id={props.app.id}
-      class="touch-auto"
+      class="home-app-slot touch-auto"
+      data-hero={props.app.hero ? "true" : undefined}
       classList={{
-        "col-span-2 md:col-span-3 row-span-2": !!props.app.hero,
         "opacity-30": sortable.isActiveDraggable,
       }}
     >
@@ -102,8 +102,8 @@ const isRemovable = (app: HomeApp) => app.source === "agent"
 // The NovaClaw home screen — an iOS-style launcher: app tiles laid across swipeable pages. Pages use
 // native CSS scroll-snap (touch-friendly, no gesture library); page dots + arrow keys navigate on
 // desktop. Apps are the built-ins merged with the extensible registry (plugin / agent apps), so the
-// grid grows as the OS does. Visual hierarchy: one gold HERO tile (Chats) anchors the eye on the cool
-// purple field; a greeting header + capability hint frame the grid without competing with it.
+// grid grows as the OS does. One gold Nova tile anchors the cool purple field; app instruments
+// use existing local glyphs in a compact shared frame.
 export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
   const manifestApps = useManifestApps()
@@ -268,18 +268,13 @@ export const HomeScreen: Component = () => {
   }
 
   return (
-    <div class="flex flex-col items-center w-full h-full min-h-0" tabindex={0} onKeyDown={onKey}>
+    <div data-component="home-launcher" tabindex={0} onKeyDown={onKey}>
       {/* No logo, no greeting (owner 2026-07-26). They cost ~7rem above the fold to say nothing the user
           does not know — on a phone that pushed the tiles themselves off screen. The brand still lives in
           the titlebar; the home screen is for launching things. */}
-      <div class="pt-4" />
       <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
         <DragDropSensors />
-        <div
-          ref={scroller}
-          onScroll={onScroll}
-          class="flex-1 min-h-0 w-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
+        <div ref={scroller} onScroll={onScroll} class="home-pages no-scrollbar">
           <SortableProvider ids={apps().map((app) => app.id)}>
             {/* ⚠️ `<Index>` on the PAGES, `<For>` on the tiles (review H2). `pages()` is a fresh
                 array of fresh arrays on every recomputation, so `<For>`'s reference keying disposed
@@ -289,12 +284,10 @@ export const HomeScreen: Component = () => {
                 move them instead of remounting them. */}
             <Index each={pages()}>
               {(pageApps) => (
-                <div class="snap-center shrink-0 w-full h-full flex items-start justify-center overflow-y-auto pt-6">
-                  {/* Explicit minmax(0,5rem) tracks (not auto) so a col-span-2 hero stretches to 2 tracks
-                      + gap, while tracks can still COMPRESS below 5rem on phone widths — fixed tracks
-                      would overflow a 360px viewport and clip the left column unreachably (centered flex
-                      overflow has no start-edge scroll). Tiles are w-full inside their track. */}
-                  <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
+                <div class="home-page">
+                  {/* Shrinkable tracks keep the two-column hero and every app inside narrow phones.
+                      The page scrolls vertically when a short window cannot fit the whole grid. */}
+                  <div class="home-grid">
                     <For each={pageApps()}>
                       {(app) => (
                         <SortableTile
@@ -312,17 +305,13 @@ export const HomeScreen: Component = () => {
         </div>
       </DragDropProvider>
       <Show when={pages().length > 1}>
-        <div class="flex items-center gap-2 py-4">
+        <div class="home-page-dots">
           <For each={pages()}>
             {(_, i) => (
               <button
                 type="button"
                 aria-label={`Page ${i() + 1}`}
-                class="size-2 rounded-full transition-all"
-                classList={{
-                  "bg-v2-text-text-base scale-110": i() === page(),
-                  "bg-v2-border-border-strong": i() !== page(),
-                }}
+                aria-current={i() === page() ? "page" : undefined}
                 onClick={() => goto(i())}
               />
             )}
@@ -331,7 +320,7 @@ export const HomeScreen: Component = () => {
       </Show>
       {/* The primary action, pinned to the BOTTOM — the same screen position as a chat's composer,
           so the click-to-create transition into the new chat doesn't jump (owner call 2026-07-14). */}
-      <div class="w-full max-w-[42rem] shrink-0 px-6 pb-4">
+      <div class="home-command">
         <NewAgentBar />
       </div>
     </div>

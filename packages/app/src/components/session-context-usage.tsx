@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo } from "solid-js"
+import { Match, Show, Switch, batch, createMemo } from "solid-js"
 import { TooltipV2, type TooltipV2Props } from "@novaclaw/ui/v2/tooltip-v2"
 import { ProgressCircleV2 } from "@novaclaw/ui/v2/progress-circle-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -27,10 +27,14 @@ function openSessionContext(args: {
   layout: ReturnType<typeof useLayout>
   tabs: ReturnType<ReturnType<typeof useLayout>["tabs"]>
 }) {
-  if (!args.view.reviewPanel.opened()) args.view.reviewPanel.open()
-  if (args.layout.fileTree.opened() && args.layout.fileTree.tab() !== "all") args.layout.fileTree.setTab("all")
-  void args.tabs.open("context")
-  args.tabs.setActive("context")
+  // Mount the panel with its intended selection. Exposing the old selection while its tab
+  // collection mounts lets Kobalte write its first tab (Review) back over the requested Context.
+  batch(() => {
+    void args.tabs.open("context")
+    args.tabs.setActive("context")
+    if (args.layout.fileTree.opened() && args.layout.fileTree.tab() !== "all") args.layout.fileTree.setTab("all")
+    if (!args.view.reviewPanel.opened()) args.view.reviewPanel.open()
+  })
 }
 
 export function SessionContextUsage(props: SessionContextUsageProps) {

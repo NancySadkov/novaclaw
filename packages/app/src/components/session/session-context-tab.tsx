@@ -33,14 +33,19 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
   user: "var(--syntax-success)",
   assistant: "var(--syntax-property)",
-  tool: "var(--syntax-warning)",
+  tool: "var(--syntax-keyword)",
   other: "var(--syntax-comment)",
 }
 
 function Detail(props: { label: string; value: JSX.Element }) {
   return (
-    <div class="min-w-0 rounded-lg bg-v2-background-bg-layer-01 px-3 py-2.5">
-      <div class="text-[10px] font-medium uppercase tracking-[0.1em] text-v2-text-text-faint">{props.label}</div>
+    <div data-slot="context-stat" class="min-w-0">
+      <div
+        class="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-v2-text-text-faint"
+        title={props.label}
+      >
+        {props.label}
+      </div>
       <div class="mt-1 truncate text-[13px] font-semibold tabular-nums text-v2-text-text-base">{props.value}</div>
     </div>
   )
@@ -285,7 +290,9 @@ export function SessionContextTab() {
       showToast({
         variant: "success",
         title: language.t("context.import.done", { count: result.imported }),
-        ...(result.skipped === 0 ? {} : { description: language.t("context.import.skipped", { count: result.skipped }) }),
+        ...(result.skipped === 0
+          ? {}
+          : { description: language.t("context.import.skipped", { count: result.skipped }) }),
       })
       // A posture session lands in the request's directory, which is what the route needs to resolve.
       navigate(`/${base64Encode(sdk().directory)}/session/${result.sessionID}`)
@@ -350,29 +357,25 @@ export function SessionContextTab() {
 
   return (
     <ScrollView
-      class="@container h-full"
+      class="@container h-full min-w-0"
       viewportRef={(el) => {
         scroll = el
         restoreScroll()
       }}
       onScroll={handleScroll}
     >
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-8">
-        <section
-          data-slot="context-identity"
-          class="relative overflow-hidden rounded-2xl border border-v2-border-border-base bg-v2-background-bg-layer-02 p-5 shadow-[var(--v2-elevation-raised)]"
-        >
+      <div data-component="session-character-sheet" class="min-w-0 px-4 pt-3 pb-6 flex flex-col gap-5 @[38rem]:px-6">
+        <section data-slot="context-identity" class="relative min-w-0">
           <div
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-v2-border-border-focus to-transparent opacity-80"
-          />
-          <div class="flex items-center gap-4">
+            data-slot="context-portrait-row"
+            class="flex items-center gap-3 pb-4 border-b border-v2-border-border-base"
+          >
             <AgentPortrait
               id={officerID() ?? "session"}
               name={officerName()}
               avatar={officer()?.avatar}
               background={agentColor(officerID() ?? officerName(), officer()?.color)}
-              class="size-14 border border-v2-border-border-strong text-xl font-semibold shadow-[var(--v2-elevation-raised)]"
+              class="size-16 border border-v2-border-border-strong text-xl font-semibold"
             />
             <div class="min-w-0 flex-1">
               <h2 class="truncate text-xl font-semibold tracking-[-0.02em] text-v2-text-text-base">{officerName()}</h2>
@@ -383,15 +386,15 @@ export function SessionContextTab() {
             </div>
           </div>
 
-          <div class="mt-5 grid grid-cols-1 gap-3 @[30rem]:grid-cols-2">
-            <div class="rounded-xl border border-v2-border-border-base bg-v2-background-bg-base/40 p-4">
+          <div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
+            <div class="min-w-0">
               <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-v2-text-text-faint">
                 {language.t("context.stats.messages")}
               </div>
-              <div class="mt-1 text-2xl font-semibold tabular-nums text-v2-text-text-base">
+              <div class="mt-1 text-xl font-semibold tabular-nums text-v2-text-text-base">
                 {counts().all.toLocaleString(language.intl())}
               </div>
-              <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="mt-3 grid grid-cols-2 gap-3">
                 <Detail
                   label={language.t("context.messages.you")}
                   value={counts().user.toLocaleString(language.intl())}
@@ -400,29 +403,25 @@ export function SessionContextTab() {
               </div>
             </div>
 
-            <div class="rounded-xl border border-v2-border-border-base bg-v2-background-bg-base/40 p-4">
+            <div class="min-w-0 border-l border-v2-border-border-base pl-4">
               <div class="text-[11px] font-medium uppercase tracking-[0.12em] text-v2-text-text-faint">
                 {language.t("context.tokens.title")}
               </div>
-              <div class="mt-1 text-2xl font-semibold tabular-nums text-v2-text-text-base">
+              <div class="mt-1 text-xl font-semibold tabular-nums text-v2-text-text-base">
                 {formatter().number(getSessionTokenTotal(tokens()))}
               </div>
-              <div class="mt-3 grid grid-cols-2 gap-2 @[38rem]:grid-cols-3">
+              <div class="mt-3 grid grid-cols-2 gap-3">
                 <Detail label={language.t("context.tokens.input")} value={formatter().number(tokens()?.input)} />
                 <Detail label={language.t("context.tokens.output")} value={formatter().number(tokens()?.output)} />
-                <Detail
-                  label={language.t("context.tokens.reasoning")}
-                  value={formatter().number(tokens()?.reasoning)}
-                />
-                <Detail
-                  label={language.t("context.tokens.cacheRead")}
-                  value={formatter().number(tokens()?.cache.read)}
-                />
-                <Detail
-                  label={language.t("context.tokens.cacheWrite")}
-                  value={formatter().number(tokens()?.cache.write)}
-                />
               </div>
+            </div>
+            <div class="col-span-2 grid grid-cols-3 gap-3 border-t border-v2-border-border-base pt-3">
+              <Detail label={language.t("context.tokens.reasoning")} value={formatter().number(tokens()?.reasoning)} />
+              <Detail label={language.t("context.tokens.cacheRead")} value={formatter().number(tokens()?.cache.read)} />
+              <Detail
+                label={language.t("context.tokens.cacheWrite")}
+                value={formatter().number(tokens()?.cache.write)}
+              />
             </div>
           </div>
 
@@ -437,12 +436,9 @@ export function SessionContextTab() {
         </section>
 
         <Show when={breakdown().length > 0}>
-          <section
-            data-slot="context-breakdown"
-            class="rounded-2xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-4"
-          >
-            <div class="flex items-end justify-between gap-4">
-              <div>
+          <section data-slot="context-breakdown" class="min-w-0 border-y border-v2-border-border-base py-4">
+            <div class="flex flex-wrap items-end justify-between gap-2">
+              <div class="min-w-0 flex-1 basis-40">
                 <h3 class="text-[13px] font-semibold text-v2-text-text-base">
                   {language.t("context.breakdown.title")}
                 </h3>
@@ -461,55 +457,61 @@ export function SessionContextTab() {
               </div>
             </div>
 
-            <div class="mt-4 w-full overflow-x-auto rounded-xl border border-v2-border-border-base bg-v2-background-bg-base/60">
-              <div
-                class="flex h-16 w-full overflow-hidden rounded-[11px]"
-                style={{ "min-width": `max(100%, ${breakdown().length * 84}px)` }}
-              >
-                <For each={breakdown()}>
-                  {(segment) => (
-                    <button
-                      type="button"
-                      data-context-segment={segment.key}
-                      class="group relative min-w-[5.25rem] cursor-pointer border-r border-v2-border-border-base px-2 text-left outline-none transition-[filter] hover:brightness-125 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-v2-border-border-focus"
-                      style={{
-                        "flex-basis": "0px",
-                        "flex-grow": String(segmentCapacityWeight(segment.tokens)),
-                        background: `linear-gradient(180deg, color-mix(in oklab, ${BREAKDOWN_COLOR[segment.key]} 34%, var(--v2-background-bg-layer-02)), color-mix(in oklab, ${BREAKDOWN_COLOR[segment.key]} 15%, var(--v2-background-bg-base)))`,
-                      }}
-                      title={language.t("context.breakdown.export", { label: breakdownLabel(segment.key) })}
-                      aria-label={language.t("context.breakdown.export", { label: breakdownLabel(segment.key) })}
-                      onClick={() => exportSegment(segment.key, segment.tokens)}
-                    >
-                      <span
-                        aria-hidden="true"
-                        class="absolute inset-x-0 top-0 h-1"
-                        style={{ "background-color": BREAKDOWN_COLOR[segment.key] }}
-                      />
-                      <span class="block truncate text-[11px] font-semibold text-v2-text-text-base">
-                        {breakdownLabel(segment.key)}
-                      </span>
-                      <span class="mt-0.5 block text-[11px] tabular-nums text-v2-text-text-muted">
-                        {segment.percent.toLocaleString(language.intl())}% · {formatter().number(segment.tokens)}
-                      </span>
-                      <Icon
-                        name="download"
-                        class="absolute bottom-2 right-2 size-3 text-v2-icon-icon-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                      />
-                    </button>
-                  )}
-                </For>
-                <Show when={contextRemaining() > 0}>
-                  <div
-                    class="flex min-w-0 items-center justify-center bg-v2-background-bg-layer-01 px-2 text-[10px] font-medium uppercase tracking-[0.08em] text-v2-text-text-faint"
-                    style={{ "flex-basis": "0px", "flex-grow": String(contextRemaining()) }}
+            {/* The meter has no minimum segment widths: labels live below it so a tiny segment
+                cannot inflate its share of the capacity or force horizontal scrolling on phones. */}
+            <div
+              class="mt-3 flex h-2 w-full overflow-hidden rounded-sm bg-v2-background-bg-layer-03"
+              aria-hidden="true"
+            >
+              <For each={breakdown()}>
+                {(segment) => (
+                  <span
+                    style={{
+                      "flex-basis": "0px",
+                      "flex-grow": String(segmentCapacityWeight(segment.tokens)),
+                      background: BREAKDOWN_COLOR[segment.key],
+                    }}
+                  />
+                )}
+              </For>
+              <Show when={contextRemaining() > 0}>
+                <span style={{ "flex-basis": "0px", "flex-grow": String(contextRemaining()) }} />
+              </Show>
+            </div>
+            <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 @[38rem]:grid-cols-3">
+              <For each={breakdown()}>
+                {(segment) => (
+                  <button
+                    type="button"
+                    data-context-segment={segment.key}
+                    class="group relative min-w-0 cursor-pointer rounded-sm py-2 pl-3 pr-4 text-left outline-none hover:bg-v2-background-bg-layer-02 focus-visible:ring-2 focus-visible:ring-v2-border-border-focus"
+                    title={language.t("context.breakdown.export", { label: breakdownLabel(segment.key) })}
+                    aria-label={language.t("context.breakdown.export", { label: breakdownLabel(segment.key) })}
+                    onClick={() => exportSegment(segment.key, segment.tokens)}
                   >
-                    <Show when={(contextAvailablePercent() ?? 0) >= 8}>
-                      {language.t("context.breakdown.available")} {formatter().percent(contextAvailablePercent())}
-                    </Show>
-                  </div>
-                </Show>
-              </div>
+                    <span
+                      aria-hidden="true"
+                      class="absolute left-0 top-3 size-1.5 rounded-full"
+                      style={{ "background-color": BREAKDOWN_COLOR[segment.key] }}
+                    />
+                    <span class="block truncate text-[11px] font-semibold text-v2-text-text-base">
+                      {breakdownLabel(segment.key)}
+                    </span>
+                    <span class="mt-0.5 block truncate text-[11px] tabular-nums text-v2-text-text-muted">
+                      {segment.percent.toLocaleString(language.intl())}% · {formatter().number(segment.tokens)}
+                    </span>
+                    <Icon
+                      name="download"
+                      class="absolute top-3 right-0 size-3 text-v2-icon-icon-muted opacity-50 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                    />
+                  </button>
+                )}
+              </For>
+              <Show when={contextRemaining() > 0}>
+                <div class="flex min-w-0 items-center py-2 text-[11px] text-v2-text-text-faint">
+                  {language.t("context.breakdown.available")} {formatter().percent(contextAvailablePercent())}
+                </div>
+              </Show>
             </div>
             <div class="mt-2 flex items-center gap-1.5 text-[10px] text-v2-text-text-faint">
               <Icon name="download" class="size-3" />
@@ -531,18 +533,20 @@ export function SessionContextTab() {
             <div class="flex flex-col gap-2" aria-label={language.t("context.compactions.title")}>
               <Show
                 when={compactions().length > 0}
-                fallback={<div class="text-12-regular text-text-weak">{language.t("context.compactions.empty")}</div>}
+                fallback={
+                  <div class="text-12-regular text-v2-text-text-muted">{language.t("context.compactions.empty")}</div>
+                }
               >
                 <For each={compactions()}>
                   {(event) => (
-                    <div class="rounded-md border border-border-base bg-surface-base px-3 py-2 flex flex-col gap-1">
+                    <div class="rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-2 flex flex-col gap-1">
                       <div class="flex items-center justify-between gap-3">
-                        <div class="text-12-medium text-text-strong">
+                        <div class="text-12-medium text-v2-text-text-base">
                           {language.t(`context.compactions.cause.${event.cause}`)}
                         </div>
-                        <div class="text-11-regular text-text-weak">{formatter().time(event.at)}</div>
+                        <div class="text-11-regular text-v2-text-text-muted">{formatter().time(event.at)}</div>
                       </div>
-                      <div class="text-12-regular text-text-base">
+                      <div class="text-12-regular text-v2-text-text-base">
                         {event.beforeTokens === undefined
                           ? language.t("context.compactions.sizeUnknown")
                           : event.afterTokens === undefined
@@ -552,8 +556,8 @@ export function SessionContextTab() {
                       <div
                         class={
                           event.status === "failed"
-                            ? "text-11-regular text-icon-critical-base"
-                            : "text-11-regular text-text-weak"
+                            ? "text-11-regular text-v2-state-fg-danger"
+                            : "text-11-regular text-v2-text-text-muted"
                         }
                       >
                         {language.t(`context.compactions.status.${event.status}`)}
@@ -567,27 +571,27 @@ export function SessionContextTab() {
           </Show>
         </div>
 
-        <div class="flex flex-col gap-2">
-          <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
+        <details class="min-w-0 border-y border-v2-border-border-base py-3">
+          <summary class="cursor-pointer text-12-regular text-v2-text-text-muted">
+            {language.t("context.systemPrompt.title")}
+          </summary>
           <Show
             when={systemPrompt()}
             fallback={
-              <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 text-12-regular text-text-weak">
-                {language.t("context.systemPrompt.empty")}
-              </div>
+              <div class="mt-3 text-12-regular text-v2-text-text-muted">{language.t("context.systemPrompt.empty")}</div>
             }
           >
             {(prompt) => (
-              <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
+              <div class="mt-3 min-w-0 overflow-x-auto rounded-md bg-v2-background-bg-layer-01 px-3 py-2">
                 <Markdown text={prompt()} class="text-12-regular" />
               </div>
             )}
           </Show>
-        </div>
+        </details>
 
         <div>
           <div class="flex flex-wrap gap-2">
-            <ButtonV2 type="button" variant="gold" icon="download" onClick={exportPrompt}>
+            <ButtonV2 type="button" variant="outline" icon="download" onClick={exportPrompt}>
               {language.t("context.export.prompt")}
             </ButtonV2>
             <ButtonV2 type="button" variant="outline" icon="download" onClick={exportSession}>

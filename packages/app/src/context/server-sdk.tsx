@@ -11,7 +11,7 @@ import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { reconnectDelayMs } from "@/utils/reconnect-schedule"
-import { runReconnectingStream } from "./reconnect-stream"
+import { runReconnectingStream, waitForStreamRetry } from "./reconnect-stream"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -24,7 +24,7 @@ type QueuedServerEvent = { directory: string; payload: Event }
  *  attempt is exposed separately, while the banner still escalates long-outage copy by wall-clock. */
 export type ServerStreamStatus = "idle" | "connecting" | "connected" | "reconnecting"
 
-type ReconnectRecovery = () => Promise<void>
+type ReconnectRecovery = (signal?: AbortSignal) => Promise<void>
 
 /**
  * The connection is not usable until every registered projection has caught up with its source.
@@ -38,9 +38,11 @@ export function createReconnectRecoveryBarrier() {
       recoveries.add(recovery)
       return () => recoveries.delete(recovery)
     },
-    async run() {
+    async run(signal?: AbortSignal) {
       // Enter every recovery even if an implementation throws before returning its promise.
-      const results = await Promise.allSettled([...recoveries].map((recovery) => Promise.resolve().then(recovery)))
+      const results = await Promise.allSettled(
+        [...recoveries].map((recovery) => Promise.resolve().then(() => recovery(signal))),
+      )
       const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
       if (failures.length)
         throw new AggregateError(
@@ -129,6 +131,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   let streamErrorLogged = false
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
   let attempt: AbortController | undefined
+  let runAbort: AbortController | undefined
   let run: Promise<void> | undefined
   let started = false
   let generation = 0
@@ -156,6 +159,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     setReconnectAttemptNumber(0)
     setStreamStatus((s) => (s === "connected" ? s : "connecting"))
     const active = ++generation
+    const lifecycle = new AbortController()
+    runAbort = lifecycle
     const previous = run
     const current = (async () => {
       if (previous) await previous
@@ -166,6 +171,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         open: async (signal) => {
           const events = await eventSdk.global.event({
             signal,
+            // This loop owns retry state and recovery. Hidden SDK retries would keep the UI
+            // "connected" while disconnected, then deliver another stream without reconciliation.
+            sseMaxRetryAttempts: 1,
             onSseError: (error) => {
               if (isStreamClosed(error, signal)) return
               if (streamErrorLogged) return
@@ -181,7 +189,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           resetHeartbeat()
           return events.stream
         },
-        recover: () => reconnectRecovery.run(),
+        recover: (signal) => reconnectRecovery.run(signal),
         accept: async (event) => {
           resetHeartbeat()
           streamErrorLogged = false
@@ -237,7 +245,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
             })
           }
         },
-        wait,
+        wait: (ms) => waitForStreamRetry(ms, lifecycle.signal),
         delay: reconnectDelayMs,
       })
     })().finally(() => {
@@ -252,6 +260,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   const stop = () => {
     started = false
     generation++
+    runAbort?.abort()
     attempt?.abort()
     clearHeartbeat()
     setStreamStatus("idle") // an intentionally stopped stream (pagehide/cleanup) is not an outage

@@ -25,11 +25,17 @@ export async function withRequestDeadline<T>(input: {
   /** Cancel the request when its owning server context is replaced. */
   readonly signal?: AbortSignal
 }): Promise<T> {
+  input.signal?.throwIfAborted()
   const timeoutMs = input.timeoutMs ?? SESSION_REQUEST_TIMEOUT_MS
   const controller = new AbortController()
-  const abort = () => controller.abort(input.signal?.reason)
-  if (input.signal?.aborted) abort()
-  else input.signal?.addEventListener("abort", abort, { once: true })
+  let abort!: () => void
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => {
+      controller.abort(input.signal?.reason)
+      reject(controller.signal.reason)
+    }
+    input.signal?.addEventListener("abort", abort, { once: true })
+  })
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -39,7 +45,7 @@ export async function withRequestDeadline<T>(input: {
     }, timeoutMs)
   })
   try {
-    return await Promise.race([input.run(controller.signal), timeout])
+    return await Promise.race([input.run(controller.signal), timeout, cancelled])
   } finally {
     if (timer) clearTimeout(timer)
     input.signal?.removeEventListener("abort", abort)

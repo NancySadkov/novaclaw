@@ -263,7 +263,7 @@ export function NewAgentBar() {
   return (
     <div
       data-slot="home-new-agent"
-      class="flex w-full items-center gap-2 rounded-[12px] bg-v2-background-bg-layer-01 px-3.5 py-3 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
+      class="flex w-full items-center gap-2 rounded-[8px] bg-v2-background-bg-layer-01 px-3.5 py-3 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
     >
       {/* Gold lead-in glyph — the skin's command bar opens with a gold mark (one accent, spent on
           the primary action; the hero + this bar are the home screen's two gold anchors). */}
@@ -278,7 +278,7 @@ export function NewAgentBar() {
       <button
         data-slot="home-new-agent-input"
         type="button"
-        class="min-w-0 flex-1 cursor-text bg-transparent text-left text-[14px] text-v2-text-text-faint outline-none disabled:opacity-60"
+        class="min-w-0 flex-1 cursor-pointer bg-transparent text-left text-[14px] text-v2-text-text-faint outline-none disabled:opacity-60"
         disabled={spawning()}
         onClick={() => activate()}
       >

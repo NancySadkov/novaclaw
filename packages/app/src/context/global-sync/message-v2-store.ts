@@ -8,6 +8,8 @@ import {
 } from "@novaclaw/session-ui/v2/message-fold"
 export { OPTIMISTIC_METADATA_KEY } from "@novaclaw/session-ui/v2/message-fold"
 import { fetchNativeMessages } from "./message-v2-fetch"
+import { isSessionNotFoundError } from "@/utils/server-errors"
+import { withRequestDeadline } from "@/utils/request-deadline"
 
 /**
  * The native transcript store — THE render path (`NativeTimeline` → `NativeTranscript`).
@@ -36,6 +38,23 @@ export function createNativeMessageStore(client: NovaclawClient) {
   // loads deliberately do not share this fence: they add an older page and must retain their
   // independent pagination semantics.
   const authoritativeLoadRev = new Map<string, number>()
+  // Retain the latest outcome as well as its revision. Superseded reads must join that outcome,
+  // including a rejection, rather than fulfill a recovery barrier without committing any data.
+  const authoritativeLoads = new Map<string, Promise<void>>()
+  const settleLatest = async (sessionID: string, signal?: AbortSignal): Promise<void> => {
+    while (true) {
+      signal?.throwIfAborted()
+      const latest = authoritativeLoads.get(sessionID)
+      if (!latest) return // eviction is itself an authoritative resolution
+      try {
+        await withRequestDeadline({ label: "Loading this conversation", signal, run: () => latest })
+      } catch (error) {
+        if (authoritativeLoads.get(sessionID) !== latest) continue
+        throw error
+      }
+      if (authoritativeLoads.get(sessionID) === latest) return
+    }
+  }
 
   const apply = (event: V2Event) => {
     // A retired id returns — clear everything keyed on it. `server-session` drops its own caches
@@ -71,19 +90,16 @@ export function createNativeMessageStore(client: NovaclawClient) {
     if (event.type === "session.next.step.ended") {
       const generation = (data.terminalReconcile[sessionID] ?? 0) + 1
       setData("terminalReconcile", sessionID, generation)
-      void load(sessionID).then(
-        () => {
-          if (data.terminalReconcile[sessionID] === generation) setData("terminalReconcile", sessionID, 0)
-        },
-        // Keep the barrier raised. The connection recovery path calls `reconcileAll`, which clears
-        // it only after this chat has actually loaded. Treating a failed read as reconciliation is
-        // the same absence-as-ending bug at a different layer.
-        () => {},
-      )
+      // Only an authoritative commit (or confirmed deletion) may release the barrier. A later
+      // mount/recovery read can supersede this one and now owns that responsibility.
+      void load(sessionID).catch(() => {})
     }
   }
 
-  const load = async (sessionID: string, options?: { limit?: number; order?: "asc" | "desc"; cursor?: string }) => {
+  const load = (
+    sessionID: string,
+    options?: { limit?: number; order?: "asc" | "desc"; cursor?: string; signal?: AbortSignal },
+  ): Promise<void> => {
     heldSessions.add(sessionID)
     const authoritative = options?.cursor === undefined
     const rev = authoritative ? (authoritativeLoadRev.get(sessionID) ?? 0) + 1 : undefined
@@ -91,31 +107,48 @@ export function createNativeMessageStore(client: NovaclawClient) {
     // Stamp BEFORE the request: the response describes server state as of this moment, which lets the
     // merge tell a deleted row from one that arrived while the request was in flight.
     const asOf = Date.now()
-    const fetched = await fetchNativeMessages(client, sessionID, options)
-    // ⚠️ ABSENCE IS NOT AN ENDING — the same rule the terminal-reconcile barrier below already
-    // follows ("treating a failed read as reconciliation is the same absence-as-ending bug at a
-    // different layer"). `undefined` means the response carried no payload at all, so it says nothing
-    // about what the session contains. Committing it would reach `mergeNativeMessages` as an EMPTY
-    // AUTHORITATIVE fetch, which by that module's own rule "means the session is empty — a full
-    // revert" and drops every local row: the transcript blanks, the scroll container collapses to
-    // the top, and the next fetch restores it. A genuine empty session still arrives as `[]` and is
-    // still authoritative, so reverts keep working.
-    if (fetched === undefined) return
-    // A later authoritative request has already captured a newer server snapshot. Committing this
-    // older response would let an incomplete assistant regress a completed reply (and could also
-    // resurrect rows a newer snapshot proved deleted).
-    if (authoritative && authoritativeLoadRev.get(sessionID) !== rev) return
-    setData(
-      "messages",
-      produce((bySession) => {
-        // No cursor ⇒ this is a full reconcile of the newest page, so it is authoritative about what
-        // still exists in that range and may DROP rows the server deleted (e.g. a revert we missed).
-        bySession[sessionID] = mergeNativeMessages(bySession[sessionID] ?? [], fetched, {
-          authoritative: options?.cursor === undefined,
-          asOf,
-        })
-      }),
-    )
+    const request = (async () => {
+      let fetched: SessionMessage[] | undefined
+      try {
+        fetched = await fetchNativeMessages(client, sessionID, options)
+      } catch (error) {
+        if (authoritative && authoritativeLoadRev.get(sessionID) !== rev)
+          return settleLatest(sessionID, options?.signal)
+        if (!isSessionNotFoundError(error, sessionID)) throw error
+        // Its deletion event may have occurred while disconnected. An authoritative missing-session
+        // response retires this cache too; retrying it forever would block the whole server barrier.
+        evict(sessionID)
+        return
+      }
+      // A later read owns the authoritative snapshot. Join it without starting another request;
+      // ordinary mount/recovery overlap must neither expose stale data nor create a retry storm.
+      if (authoritative && authoritativeLoadRev.get(sessionID) !== rev) return settleLatest(sessionID, options?.signal)
+      // ⚠️ ABSENCE IS NOT AN ENDING — the same rule the terminal-reconcile barrier below already
+      // follows ("treating a failed read as reconciliation is the same absence-as-ending bug at a
+      // different layer"). `undefined` means the response carried no payload at all, so it says nothing
+      // about what the session contains. Committing it would reach `mergeNativeMessages` as an EMPTY
+      // AUTHORITATIVE fetch, which by that module's own rule "means the session is empty — a full
+      // revert" and drops every local row: the transcript blanks, the scroll container collapses to
+      // the top, and the next fetch restores it. A genuine empty session still arrives as `[]` and is
+      // still authoritative, so reverts keep working.
+      // A fulfilled no-op also lies to the two recovery barriers: both release on load's success.
+      // Preserve the visible transcript and report that no authoritative read happened.
+      if (fetched === undefined) throw new Error("The instance did not return this conversation. Reconnecting.")
+      setData(
+        "messages",
+        produce((bySession) => {
+          // No cursor ⇒ this is a full reconcile of the newest page, so it is authoritative about what
+          // still exists in that range and may DROP rows the server deleted (e.g. a revert we missed).
+          bySession[sessionID] = mergeNativeMessages(bySession[sessionID] ?? [], fetched, {
+            authoritative: options?.cursor === undefined,
+            asOf,
+          })
+        }),
+      )
+      if (authoritative) setData("terminalReconcile", sessionID, 0)
+    })()
+    if (authoritative) authoritativeLoads.set(sessionID, request)
+    return request
   }
 
   /**
@@ -171,6 +204,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
   const evict = (sessionID: string) => {
     heldSessions.delete(sessionID)
     authoritativeLoadRev.set(sessionID, (authoritativeLoadRev.get(sessionID) ?? 0) + 1)
+    authoritativeLoads.delete(sessionID)
     setData(
       "messages",
       produce((bySession) => {
@@ -207,13 +241,10 @@ export function createNativeMessageStore(client: NovaclawClient) {
    * Held sessions only, so this costs one request per open chat and nothing for chats nobody opened.
    * `load` is already idempotent and authoritative, so calling it twice is harmless.
    */
-  const reconcileAll = async () => {
+  const reconcileAll = async (signal?: AbortSignal) => {
     const sessions = new Set([...heldSessions, ...Object.keys(data.messages)])
     const sessionIDs = [...sessions]
-    const results = await Promise.allSettled(sessionIDs.map((sessionID) => load(sessionID)))
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled") setData("terminalReconcile", sessionIDs[index], 0)
-    })
+    const results = await Promise.allSettled(sessionIDs.map((sessionID) => load(sessionID, { signal })))
     const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
     // Finish every independent read before rejecting: one broken chat must not abandon the others,
     // but it also means the renderer is not synchronized. The reconnect barrier retries the sweep.

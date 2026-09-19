@@ -2,6 +2,34 @@ import { describe, expect, test } from "bun:test"
 import { RequestDeadlineError, withRequestDeadline } from "./request-deadline"
 
 describe("withRequestDeadline", () => {
+  test("owner cancellation settles even when a transport ignores abort", async () => {
+    const controller = new AbortController()
+    const reason = new Error("context replaced")
+    const pending = withRequestDeadline({
+      label: "Loading this session",
+      signal: controller.signal,
+      timeoutMs: 30,
+      run: () => new Promise<never>(() => undefined),
+    })
+    controller.abort(reason)
+
+    await expect(pending).rejects.toBe(reason)
+  })
+
+  test("a cancelled owner cannot start another request", async () => {
+    const controller = new AbortController()
+    controller.abort(new Error("context replaced"))
+    let calls = 0
+    const pending = withRequestDeadline({
+      label: "Loading this session",
+      signal: controller.signal,
+      run: async () => ++calls,
+    })
+
+    await expect(pending).rejects.toThrow("context replaced")
+    expect(calls).toBe(0)
+  })
+
   test("settles even when a transport ignores abort", async () => {
     const pending = withRequestDeadline({
       label: "Loading sessions",

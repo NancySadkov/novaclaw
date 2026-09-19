@@ -1,6 +1,7 @@
-import { Dialog as Kobalte } from "@kobalte/core/dialog"
+import { Dialog as Kobalte, useDialogContext } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
 import { useI18n } from "../../context/i18n"
+import { dismissDialogFromTabList } from "../../util/dialog-escape"
 
 export interface DialogProps extends ParentProps {
   /** "content" hugs the children in BOTH axes and centers them (tour/placeholder-style cards);
@@ -91,6 +92,7 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
+  const dialog = useDialogContext()
   const [local] = splitProps(props, ["size", "variant", "class", "classList", "fit", "children"])
 
   return (
@@ -103,6 +105,7 @@ export function Dialog(props: DialogProps) {
       <div data-slot="dialog-container">
         <Kobalte.Content
           data-slot="dialog-content"
+          onEscapeKeyDown={(event) => dismissDialogFromTabList(event, dialog.close)}
           classList={{
             ...local.classList,
             [local.class ?? ""]: !!local.class,

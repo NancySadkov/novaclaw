@@ -42,6 +42,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -187,46 +189,81 @@
   max-width: 100%;
 }
 
-[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"] {
   background-color: var(--v2-background-bg-layer-01);
 }
 
-@media (max-width: 639px) {
-  /* Phone: the settings rail becomes the same horizontal, scrollable strip the officer settings
-     screen (`AgentConfigScreen`) uses. The old 144px sidebar on a 360px screen left the panel a
-     sliver — this is the mainstream phone case, not an edge (owner, 2026-09-16). */
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] {
+.settings-v2[data-component="tabs-v2"] [data-slot="tabs-v2-trigger"]:focus-visible,
+[data-component="agent-settings"] [role="tab"]:focus-visible,
+[data-component="model-settings"] [role="tab"]:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -3px;
+}
+
+@media (max-width: 767px) {
+  /* The DOM orientation and this strip share the same breakpoint. Rotating only the visual rail
+     leaves keyboard and screen-reader navigation pointing up/down across a horizontal list. */
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] {
     flex-direction: column;
+    min-height: 0;
   }
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"] {
     flex-direction: row;
-    width: 100%;
+    align-items: stretch;
+    flex: 0 0 48px;
+    width: calc(100% - 48px);
     min-width: 0;
-    height: auto;
-    padding: 8px;
+    height: 48px;
+    padding: 2px 6px;
     gap: 4px;
     overflow-x: auto;
     overflow-y: hidden;
+    overscroll-behavior-x: contain;
     border-right: 0;
     border-bottom: 1px solid var(--v2-border-border-base);
     scrollbar-width: none;
   }
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
-    [data-slot="tabs-v2-list"]::-webkit-scrollbar {
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"]::-webkit-scrollbar {
     display: none;
   }
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-section-title"] {
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-section-title"] {
     display: none;
   }
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
-    [data-slot="tabs-v2-trigger-wrapper"] {
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"] {
     width: auto;
-    height: 30px;
+    height: 44px;
     flex: 0 0 auto;
+    color: var(--v2-text-text-muted);
+    border-bottom: 2px solid transparent;
   }
-  [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-trigger"] {
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"]
+    [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+    color: var(--v2-text-text-base);
+    border-bottom-color: var(--v2-border-border-focus);
+  }
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger"] {
     width: auto;
-    padding: 0 8px;
+    height: 100%;
+    padding: 0 10px;
+  }
+  .settings-v2-close {
+    top: 2px;
+    right: 2px;
+    width: 44px;
+    height: 44px;
+  }
+  .settings-v2-tab-header {
+    padding: 20px 16px 18px;
+  }
+  .settings-v2-tab-body {
+    gap: 24px;
+    padding: 0 16px 24px;
+  }
+  [data-component="settings-v2-list"] {
+    padding-inline: 12px;
+  }
+  [data-component="settings-v2-row"] {
+    padding-block: 16px;
   }
 }
 

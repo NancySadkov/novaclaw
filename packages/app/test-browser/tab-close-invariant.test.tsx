@@ -87,8 +87,15 @@ function Probe() {
       />
       <button data-testid="touch-first" onClick={() => tabs.store[0] && tabs.remember(tabs.store[0])} />
       <button
-        data-testid="add-fifth"
-        onClick={() => tabs.addSessionTab({ server: KEY, sessionId: "ses_five", agent: "xenia-2" })}
+        data-testid="add-fifth-sixth"
+        onClick={() => {
+          tabs.addSessionTab({ server: KEY, sessionId: "ses_five", agent: "xenia-2" })
+          tabs.addSessionTab({ server: KEY, sessionId: "ses_six", agent: "iris" })
+        }}
+      />
+      <button
+        data-testid="add-seventh"
+        onClick={() => tabs.addSessionTab({ server: KEY, sessionId: "ses_seven", agent: "sable" })}
       />
       <button
         data-testid="close-last"
@@ -237,20 +244,22 @@ describe("tab lifecycle removal", () => {
 })
 
 describe("automatic tab retention", () => {
-  test("opening a fifth colleague removes the least recently used tab", async () => {
+  test("opening a seventh colleague removes the least recently used tab", async () => {
     const { container } = mount()
     click(container, "add")
     await settle()
     click(container, "add-third-fourth")
     await settle()
+    click(container, "add-fifth-sixth")
+    await settle()
     click(container, "touch-first")
     await settle()
-    click(container, "add-fifth")
+    click(container, "add-seventh")
     await settle()
-    expect(await waitForText(container, "ids", "ses_one,ses_three,ses_four,ses_five")).toBe(
-      "ses_one,ses_three,ses_four,ses_five",
+    expect(await waitForText(container, "ids", "ses_one,ses_three,ses_four,ses_five,ses_six,ses_seven")).toBe(
+      "ses_one,ses_three,ses_four,ses_five,ses_six,ses_seven",
     )
-    expect(text(container, "count")).toBe("4")
+    expect(text(container, "count")).toBe("6")
   })
 })
 

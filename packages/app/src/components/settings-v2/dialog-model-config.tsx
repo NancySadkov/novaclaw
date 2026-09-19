@@ -4,6 +4,8 @@ import type {
   ProviderApi,
 } from "@novaclaw/sdk/v2/client"
 import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
+import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -216,6 +218,7 @@ export const ModelConfigScreen: Component<{
    */
   type ConfigTab = "identity" | "sampling" | "capabilities" | "scheduler"
   const [tab, setTab] = createSignal<ConfigTab>("identity")
+  const desktopSettings = createMediaQuery("(min-width: 768px)")
   const tabs = createMemo(() => [
     { id: "identity" as const, label: language.t("settings.models.config.tab.identity"), icon: "user" as const },
     { id: "sampling" as const, label: language.t("settings.models.config.tab.sampling"), icon: "sliders" as const },
@@ -504,7 +507,10 @@ export const ModelConfigScreen: Component<{
   )
 
   return (
-    <div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
+    <div
+      data-component="model-settings"
+      class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+    >
       {/* The officer-settings header shape: BACK (this is a place you came from the list), the model's
           identity, then Close. */}
       <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
@@ -534,37 +540,43 @@ export const ModelConfigScreen: Component<{
         </button>
       </div>
 
-      <div class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row">
+      <KobalteTabs
+        value={tab()}
+        onChange={(value) => setTab(value as ConfigTab)}
+        orientation={desktopSettings() ? "vertical" : "horizontal"}
+        class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row"
+      >
         {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
               scrollable strip on phones, a sidebar from `md` up. Configure used to be one long scroll
               with identity, sampling, limits and capabilities interleaved, which is what the owner
               called disorganized. */}
-        <nav
-          class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base pb-2 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:pb-0 md:pr-3"
+        <KobalteTabs.List
+          as="nav"
+          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-0.5 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
           aria-label={language.t("settings.models.config.title", { model: props.modelName })}
         >
           <For each={tabs()}>
             {(item) => (
-              <button
+              <KobalteTabs.Trigger
                 type="button"
-                class={`flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-[13px] transition-colors ${
+                value={item.id}
+                class={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-left text-[13px] transition-colors md:min-h-10 ${
                   tab() === item.id
                     ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
                     : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
                 }`}
-                aria-current={tab() === item.id ? "page" : undefined}
-                onClick={() => setTab(item.id)}
               >
                 <Icon name={item.icon} class="hidden size-4 shrink-0 sm:block" />
                 <span>{item.label}</span>
-              </button>
+              </KobalteTabs.Trigger>
             )}
           </For>
-        </nav>
+        </KobalteTabs.List>
         {/* Every panel stays MOUNTED and inactive ones are hidden by CSS — the same
               `data-active-tab`/`data-settings-tab` contract the officer settings screen uses, so a
               control is in the DOM (and a render harness can reach it) regardless of the open tab. */}
-        <div
+        <KobalteTabs.Content
+          value={tab()}
           class="model-settings-panels model-config-dialog-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-2 md:px-4"
           data-active-tab={tab()}
         >
@@ -810,8 +822,8 @@ export const ModelConfigScreen: Component<{
               </p>
             </div>
           </div>
-        </div>
-      </div>
+        </KobalteTabs.Content>
+      </KobalteTabs>
 
       <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
         <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>

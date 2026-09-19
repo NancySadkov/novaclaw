@@ -1,9 +1,23 @@
 export type ReconnectStreamState = "connected" | "reconnecting"
 
+/** Page suspension must release backoff before a visible page can start its fresh attempt. */
+export function waitForStreamRetry(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    signal.addEventListener("abort", finish, { once: true })
+  })
+}
+
 export interface ReconnectStreamOptions<T> {
   active: () => boolean
   open: (signal: AbortSignal) => Promise<AsyncIterable<T>>
-  recover: () => Promise<void>
+  recover: (signal: AbortSignal) => Promise<void>
   accept: (event: T) => void | Promise<void>
   wait: (ms: number) => Promise<void>
   delay: (failure: number) => number
@@ -27,10 +41,15 @@ export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T
       const stream = await options.open(attempt.signal)
       let received = false
       for await (const event of stream) {
+        if (!options.active()) return
+        attempt.signal.throwIfAborted()
         if (!received) {
           received = true
-          await options.recover()
-          if (!options.active() || attempt.signal.aborted) return
+          await options.recover(attempt.signal)
+          if (!options.active()) return
+          // A deadline ends this attempt, not its owner. Retry it through the same failure path as
+          // a dropped socket; returning here permanently stranded a still-started connection.
+          attempt.signal.throwIfAborted()
           failures = 0
           options.state("connected", 0)
         }
@@ -39,6 +58,7 @@ export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T
     } catch (error) {
       options.failed?.(error, attempt.signal)
     } finally {
+      attempt.abort()
       options.attemptFinished?.(attempt)
     }
 

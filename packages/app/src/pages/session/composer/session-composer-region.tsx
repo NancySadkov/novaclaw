@@ -26,12 +26,12 @@ export function SessionComposerRegion(props: {
       ref={controller.setDockRef}
       data-component="session-prompt-dock"
       classList={{
-        "w-full shrink-0 flex flex-col justify-center items-center pb-3 pointer-events-none bg-v2-background-bg-base": true,
+        "w-full min-w-0 shrink-0 flex flex-col justify-center items-center pb-2 md:pb-3 pointer-events-none bg-v2-background-bg-base": true,
       }}
     >
       <div
         classList={{
-          "w-full px-3 pointer-events-auto": true,
+          "w-full min-w-0 px-2 md:px-3 pointer-events-auto": true,
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
       >
@@ -77,7 +77,7 @@ export function SessionComposerRegion(props: {
                 )}
               </Show>
               <div
-                class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none"
+                class="w-full min-h-24 max-h-40 overflow-y-auto rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap break-words pointer-events-none"
                 style={{ "margin-top": `${-36 * controller.dockProgress()}px` }}
               >
                 {controller.handoffPrompt() || language.t("prompt.loading")}
@@ -125,7 +125,7 @@ export function SessionComposerRegion(props: {
             <Show when={controller.child()} fallback={props.promptInput}>
               <div
                 ref={controller.setPromptRef}
-                class="flex w-full items-center gap-3 rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+                class="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border-weak-base bg-background-base p-3 text-14-regular text-text-weak"
               >
                 <span class="min-w-0 flex-1">
                   <span>{language.t("session.child.promptDisabled")} </span>

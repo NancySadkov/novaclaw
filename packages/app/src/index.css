@@ -19,6 +19,8 @@
 @import "./components/titlebar-tab-nav.css" layer(components);
 @import "./components/settings-v2/settings-v2.css" layer(components);
 @import "./pages/session/file-tabs.css" layer(components);
+@import "./pages/session/session-surface.css" layer(components);
+@import "./pages/home-screen/home-screen.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
@@ -1100,6 +1102,10 @@ body[data-new-layout] {
   scrollbar-color: var(--v2-background-bg-layer-04) transparent;
 
   /* Legacy (v1) token bridge — some dialogs still read these; keep them on-palette */
+  --background-base: var(--v2-background-bg-base);
+  /* Tailwind aliases resolve where declared. Rebind this inherited root alias here too, or
+     portalled panels keep the operating system's light background under Nova's light text. */
+  --color-background-base: var(--v2-background-bg-base);
   --surface-base: #12091e;
   --surface-base-hover: #1b1027;
   --text-base: #f1e5d3;

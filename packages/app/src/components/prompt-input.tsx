@@ -1,5 +1,6 @@
 import { useSpring } from "@novaclaw/ui/motion-spring"
 import {
+  batch,
   createEffect,
   on,
   Component,
@@ -225,18 +226,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     const wantsReview = item.commentOrigin === "review" || (item.commentOrigin !== "file" && commentInReview(item.path))
     if (wantsReview) {
-      if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-      layout.fileTree.setTab("changes")
-      tabs().setActive("review")
+      batch(() => {
+        tabs().setActive("review")
+        layout.fileTree.setTab("changes")
+        if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
+      })
       queueCommentFocus()
       return
     }
 
-    if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-    layout.fileTree.setTab("all")
     const tab = files.tab(item.path)
-    void tabs().open(tab)
-    tabs().setActive(tab)
+    batch(() => {
+      void tabs().open(tab)
+      tabs().setActive(tab)
+      layout.fileTree.setTab("all")
+      if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
+    })
     void Promise.resolve(files.load(item.path)).finally(() => queueCommentFocus())
   }
 
@@ -747,7 +752,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     tabIndex={store.mode === "normal" ? undefined : -1}
                     icon={
                       <IconV2
-                        name={stopping() ? "stop" : resuming() ? "play" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                        name={
+                          stopping()
+                            ? "stop"
+                            : resuming()
+                              ? "play"
+                              : store.mode === "shell"
+                                ? "arrow-undo-down"
+                                : "arrow-up"
+                        }
                       />
                     }
                     variant="contrast"

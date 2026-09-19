@@ -228,6 +228,68 @@ describe("recovering a transcript after the stream dropped", () => {
   const message = (id: string, text: string): SessionMessage =>
     ({ id, type: "user", text, time: { created: 1 } }) as unknown as SessionMessage
 
+  test("a response without a transcript cannot clear either recovery barrier", async () => {
+    let answer: unknown = undefined
+    const client = {
+      v2: { session: { messages: async () => ({ data: answer }) } },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s", "msg_kept", "Keep this visible"))
+    store.apply(
+      ev("session.next.step.ended", {
+        timestamp: 5,
+        sessionID: "s",
+        assistantMessageID: "msg_answer",
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(store.reconciling("s")).toBe(true)
+    await expect(store.reconcileAll()).rejects.toThrow("transcript reconciliation failed")
+    expect(store.messages("s")?.some((row) => row.id === "msg_kept")).toBe(true)
+    expect(store.reconciling("s")).toBe(true)
+
+    answer = { data: [message("msg_recovered", "The complete answer")] }
+    await store.reconcileAll()
+    expect(store.reconciling("s")).toBe(false)
+    expect(store.messages("s")?.some((row) => row.id === "msg_recovered")).toBe(true)
+  })
+
+  test("a chat deleted during an outage cannot keep every other chat disconnected", async () => {
+    const reads: string[] = []
+    const client = {
+      v2: {
+        session: {
+          messages: async ({ sessionID }: { sessionID: string }) => {
+            reads.push(sessionID)
+            if (sessionID === "deleted")
+              throw new Error("Session was deleted", {
+                cause: {
+                  status: 404,
+                  body: { _tag: "SessionNotFoundError", sessionID, message: "Session was deleted" },
+                },
+              })
+            return { data: { data: [message("msg_recovered", "still here")] } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("deleted", "msg_old"))
+    store.apply(prompted("kept", "msg_kept"))
+
+    await store.reconcileAll()
+    expect(store.messages("deleted")).toBeUndefined()
+    expect(store.messages("kept")?.some((row) => row.id === "msg_recovered")).toBe(true)
+
+    reads.length = 0
+    await store.reconcileAll()
+    expect(reads).toEqual(["kept"])
+  })
+
   /** A client whose history answer can change between calls, like a server that kept working. */
   function growingClient(pages: SessionMessage[][]): { client: NovaclawClient; calls: () => number } {
     let call = 0
@@ -436,5 +498,93 @@ describe("recovering a transcript after the stream dropped", () => {
       expect(row.time?.completed).toBe(2)
       if (row.content[0]?.type === "text") expect(row.content[0].text).toBe("final")
     }
+  })
+
+  test("a superseded recovery waits for the newest transcript before releasing either barrier", async () => {
+    const pending: Array<(value: unknown) => void> = []
+    const client = {
+      v2: { session: { messages: () => new Promise((resolve) => pending.push(resolve)) } },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s", "msg_before"))
+    store.apply(
+      ev("session.next.step.ended", {
+        timestamp: 5,
+        sessionID: "s",
+        assistantMessageID: "msg_answer",
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    )
+    let recovered = false
+    const recovery = store.reconcileAll().then(() => {
+      recovered = true
+    })
+    const newer = store.load("s")
+    pending[1]!({ data: { data: [message("msg_stale", "stale")] } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const premature = { recovered, terminalBarrier: store.reconciling("s") }
+
+    pending[0]!({ data: { data: [] } })
+    pending[2]!({ data: { data: [message("msg_answer", "complete")] } })
+    await Promise.all([recovery, newer])
+
+    expect(premature).toEqual({ recovered: false, terminalBarrier: true })
+    expect(store.reconciling("s")).toBe(false)
+    expect(store.messages("s")?.some((row) => row.id === "msg_answer")).toBe(true)
+    expect(store.messages("s")?.some((row) => row.id === "msg_stale")).toBe(false)
+  })
+
+  test("a superseding load's failure cannot be concealed by an earlier successful response", async () => {
+    const pending: Array<{ resolve: (value: unknown) => void; reject: (error: unknown) => void }> = []
+    const client = {
+      v2: { session: { messages: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) } },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s", "msg_before"))
+    const recovery = store.reconcileAll().then(
+      () => "recovered",
+      () => "failed",
+    )
+    const newer = store.load("s").catch(() => {})
+    pending[0]!.resolve({ data: { data: [] } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    pending[1]!.reject(new Error("newer read failed"))
+    await newer
+
+    expect(await recovery).toBe("failed")
+    expect(store.messages("s")?.some((row) => row.id === "msg_before")).toBe(true)
+  })
+
+  test("cancelling a superseded recovery releases its wait without cancelling the newer mount", async () => {
+    const pending: Array<{ resolve: (value: unknown) => void; signal: AbortSignal }> = []
+    const client = {
+      v2: {
+        session: {
+          messages: (_input: unknown, options: { signal: AbortSignal }) =>
+            new Promise((resolve) => pending.push({ resolve, signal: options.signal })),
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    store.apply(prompted("s", "msg_before"))
+    const controller = new AbortController()
+    const recovery = store.reconcileAll(controller.signal).then(
+      () => "recovered",
+      () => "cancelled",
+    )
+    const newer = store.load("s")
+    pending[0]!.resolve({ data: { data: [] } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+    const result = await recovery
+    const newerAborted = pending[1]!.signal.aborted
+    pending[1]!.resolve({ data: { data: [message("msg_answer", "complete")] } })
+    await newer
+
+    expect(result).toBe("cancelled")
+    expect(newerAborted).toBe(false)
+    expect(store.messages("s")?.some((row) => row.id === "msg_answer")).toBe(true)
   })
 })

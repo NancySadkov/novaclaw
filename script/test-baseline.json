@@ -26,6 +26,7 @@
     "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true.",
     "novaclaw test/*": "Full release tier measured 780 on 2026-09-06, plus the metadata queue, stale-generation event-fence, and large image worker-transport regressions. Separate CLI/MCP leaves are excluded from this aggregate by the runner and counted under their own unit names. The headless run leaf moved 15→17 on 2026-09-12 for two added guards: a resumed session follows its stored location, and a named colleague remains the executing agent while each one-shot task stays an independent child thread. Nothing moved down."
   },
+  "countsCompactOfficerUiAndRecovery": "2026-09-20: app:unit 1761->1778. The previous two rate-formatting commits already measured 1766 without updating this ledger. This slice adds net 12: +1 portrait initials, -1 retired review-tooltip helper, +5 transcript recovery, +5 reconnect lifecycle/SDK stream, +2 cancellation deadline. app:browser 250->254 adds +1 officer settings keyboard orientation, +1 model settings draft retention, +2 focused-tab/nested-dialog Escape regressions. The tab-retention browser case now exercises the seventh officer against the intentional six-tab limit. No tests were skipped.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -59,8 +60,8 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7331,
-    "app:unit": 1761,
-    "app:browser": 250,
+    "app:unit": 1778,
+    "app:browser": 254,
     "desktop": 239,
     "server": 114,
     "novaclaw:server": 428,

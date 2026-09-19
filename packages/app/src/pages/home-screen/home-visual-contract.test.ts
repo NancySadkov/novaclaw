@@ -6,8 +6,7 @@ const read = (relative: string) => fs.readFileSync(path.join(import.meta.dir, re
 
 describe("home-screen visual contracts", () => {
   test("a tile that declares a transparent glyph gets the shared launcher frame", () => {
-    // The one live tile using this is Models (owner, 2026-09-16); the Skills tile that first
-    // introduced `tileNeedsFrame` retired with the skills subsystem on 2026-09-17.
+    // Built-in glyphs and contributed transparent artwork share the same compact frame.
     const tile = read("app-tile.tsx")
     expect(tile).toContain("!!props.app.tileNeedsFrame")
   })
@@ -16,7 +15,7 @@ describe("home-screen visual contracts", () => {
     // The tile must match the others: a transparent golden glyph that the renderer frames, like the
     // other framed tiles — not the gradient fallback it shipped with first (owner, 2026-09-16).
     const builtins = read("../../apps/builtins.tsx")
-    expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/tiles\/models\.svg"/)
+    expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/(?:tiles|glyphs)\/models\.svg"/)
     expect(builtins).toMatch(/id: "models",[\s\S]*?tileNeedsFrame: true/)
     const svg = read("../../../public/assets/skin/tiles/models.svg")
     expect(svg.trimStart().startsWith("<svg")).toBe(true)
@@ -24,7 +23,7 @@ describe("home-screen visual contracts", () => {
 
   test("every built-in tile URL resolves to a shipped asset", () => {
     const builtins = read("../../apps/builtins.tsx")
-    const urls = [...builtins.matchAll(/tile: "(\/assets\/skin\/tiles\/[^"]+)"/g)].map((match) => match[1]!)
+    const urls = [...builtins.matchAll(/tile: "(\/assets\/skin\/(?:tiles|glyphs)\/[^"]+)"/g)].map((match) => match[1]!)
     expect(urls.length).toBeGreaterThan(5)
     const missing = urls.filter(
       (url) => !fs.existsSync(path.join(import.meta.dir, "../../../public", url.replace(/^\//, ""))),

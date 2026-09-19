@@ -109,7 +109,7 @@ function SessionTabSlot(props: {
       ref={sortable.ref}
       data-titlebar-tab-slot
       data-tab-key={props.id}
-      class="relative flex w-56 min-w-14 max-w-56 flex-shrink"
+      class="relative flex min-w-0 flex-1"
       classList={{ hidden: !session() }}
     >
       <TabNavItem
@@ -151,12 +151,7 @@ function DraftTabSlot(props: {
   let ref!: HTMLDivElement
 
   return (
-    <div
-      ref={sortable.ref}
-      data-titlebar-tab-slot
-      data-tab-key={props.id}
-      class="relative flex w-56 min-w-14 max-w-56 flex-shrink"
-    >
+    <div ref={sortable.ref} data-titlebar-tab-slot data-tab-key={props.id} class="relative flex min-w-0 flex-1">
       <DraftTabItem
         ref={(el) => {
           ref = el
