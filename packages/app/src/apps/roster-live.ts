@@ -10,7 +10,6 @@
 // threads roll up into its totals, and what is shown when there is nothing to show yet.
 
 import { tokenTotals, type TokenTotals } from "@/pages/home-session-meta"
-import { formatTokensPerSecond as formatTokenRate } from "@/utils/token-rate"
 
 /** The session fields the roster needs. A structural subset, so the wire type can grow freely. */
 export interface SessionLike {
@@ -314,18 +313,6 @@ export const rosterTask = (input: {
   const title = input.title?.trim()
   if (!title) return undefined
   return title.toLowerCase() === input.colleagueName.trim().toLowerCase() ? undefined : title
-}
-
-/**
- * Tokens per SECOND, from the same per-minute series the rate badge already reads.
- *
- * ⚠️ Derived rather than measured separately: one series, two presentations, so the two can never
- * disagree about how fast a colleague is going. Returns `undefined` for a silent window exactly as
- * `ratePerMinute` does — a zero would read as a measurement of the colleague's speed rather than of
- * our decision to render it.
- */
-export const formatTokensPerSecond = (perMinute: number | undefined): string | undefined => {
-  return formatTokenRate(perMinute === undefined ? undefined : perMinute / 60)
 }
 
 /**

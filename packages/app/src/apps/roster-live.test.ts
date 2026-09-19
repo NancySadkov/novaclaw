@@ -3,7 +3,6 @@ import {
   chatFor,
   chatToClear,
   formatRate,
-  formatTokensPerSecond,
   liveFor,
   ratePerMinute,
   rosterState,
@@ -351,19 +350,6 @@ describe("rosterTask", () => {
   test("no title and an empty title both mean no task", () => {
     expect(rosterTask({ status: undefined, title: undefined, colleagueName: "Nova" })).toBeUndefined()
     expect(rosterTask({ status: undefined, title: "   ", colleagueName: "Nova" })).toBeUndefined()
-  })
-})
-
-describe("formatTokensPerSecond", () => {
-  test("a silent window renders nothing, never a zero", () => {
-    expect(formatTokensPerSecond(undefined)).toBeUndefined()
-    expect(formatTokensPerSecond(0)).toBeUndefined()
-  })
-
-  test("converts the per-minute series rather than measuring twice", () => {
-    expect(formatTokensPerSecond(600)).toBe("10")
-    expect(formatTokensPerSecond(90)).toBe("1.5")
-    expect(formatTokensPerSecond(3)).toBe("<0.1")
   })
 })
 
