@@ -66,6 +66,18 @@ const wireError = (fault: Fault) => ({
   ...(fault.status === undefined ? {} : { status: fault.status }),
 })
 
+/**
+ * What an interrupted tool call reads as, in the transcript and to the model.
+ *
+ * The tool's own NAME leads, because a recovered or interrupted turn must know WHICH call has an
+ * unknown outcome before it can decide whether to repeat it. The old generic sentence ("Tool
+ * execution interrupted") named no call, so every recovery warned about a tool that might not have
+ * been in flight at all. `result unknown` is the honest half: the call may have run, and this says
+ * so without pretending to know. Shared by the publisher's interrupt sweep and the runner's
+ * process-restart recovery (`llm.ts`), so the two cannot drift.
+ */
+export const interruptedToolMessage = (name: string) => `${name} interrupted, result unknown.`
+
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)
 
 const tokens = (usage: Usage | undefined) => {
@@ -380,12 +392,15 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     const tool = tools.get(callID)
     if (tool === undefined || tool.settled) return
     tool.settled = true
+    // An `Interrupted` fault is about THIS call, so it names the tool rather than keeping the
+    // caller's generic sentence. Other faults keep their own words and tag.
+    const error = fault._tag === "Interrupted" ? { ...fault, message: interruptedToolMessage(tool.name) } : fault
     yield* events.publish(SessionEvent.Tool.Failed, {
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
       assistantMessageID: tool.assistantMessageID,
       callID,
-      error: wireError(fault),
+      error: wireError(error),
       provider: {
         executed: tool.providerExecuted,
         ...(tool.providerMetadata === undefined ? {} : { metadata: tool.providerMetadata }),

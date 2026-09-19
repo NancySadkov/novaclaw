@@ -13,6 +13,15 @@
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--v2-text-text-base);
+  /* ⚠️ Phone-first width discipline. This container must never be wider than the chat scroller:
+     `min-width: 0` lets it shrink inside its flex parent, `overflow-x: clip` refuses any residue
+     that still would not fit, and `overflow-wrap: anywhere` breaks a long unbreakable token (an OS
+     path, a URL) instead of pushing a horizontal scrollbar across the transcript. The same reason
+     the chat scroller sets `overflow-x-hidden` (owner, 2026-09-19). */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  overflow-wrap: anywhere;
   /* The app shell root is select-none (layout-new.tsx); conversation content must be
      copyable, so selection is re-enabled for the whole transcript here (chrome like
      the copy button and fold summaries opts back out below). */
@@ -305,6 +314,8 @@
   font-size: var(--font-size-small);
   border-left: 2px solid var(--v2-border-border-muted);
   padding-left: 0.625rem;
+  min-width: 0;
+  max-width: 100%;
 }
 [data-slot="native-reasoning"] > summary,
 [data-slot="native-notice"] > summary {
@@ -315,6 +326,15 @@
 [data-slot="native-reasoning-body"],
 [data-slot="native-notice-body"] {
   margin-top: 0.375rem;
+  min-width: 0;
+  max-width: 100%;
+}
+/* A visible synthetic notice (runtime failures, recovery) is a card rather than a fold, so it has
+   no `native-notice` rule to inherit from; the same width discipline applies. */
+[data-slot="native-notice-visible"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* live reasoning: while the part streams, the summary shows a pulsing dot + growing counter
@@ -374,13 +394,18 @@
   color: var(--v2-text-text-muted);
   font-size: var(--font-size-small);
   white-space: pre-wrap;
-  overflow-x: auto;
+  /* One axis: a phone cannot scroll a code block sideways and also read the chat. Long tokens break
+     (`anywhere`) instead of drawing a bar; see the transcript root rule. */
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+  min-width: 0;
+  max-width: 100%;
   max-height: 24rem;
 }
 [data-slot="native-tool-path"] {
   color: var(--v2-text-text-base);
   font-family: var(--font-family-mono, monospace);
-  white-space: pre;
+  white-space: pre-wrap;
 }
 [data-slot="native-command-stop"] {
   display: flex;
@@ -415,8 +440,13 @@
   font-family: var(--font-family-mono, monospace);
   font-size: var(--font-size-small);
   line-height: 1.45;
-  white-space: pre;
-  overflow-x: auto;
+  /* Wrapped, not side-scrolled: a diff that runs off a phone screen is unreadable, and the row's
+     +/- colour still marks each line after wrapping. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+  min-width: 0;
+  max-width: 100%;
   max-height: 28rem;
 }
 [data-slot="native-tool-diff"] > [data-diff-line] {

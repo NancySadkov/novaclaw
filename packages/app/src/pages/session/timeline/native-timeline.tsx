@@ -499,7 +499,13 @@ export function NativeTimeline(props: {
           could match. It is deleted now. Citing it as precedent is what nearly put this rule in:
           a stylesheet with no reachable selector still reads exactly like a decision somebody made
           on purpose. */}
-      <div ref={(el) => (scroller = el)} class="h-full overflow-y-auto" data-component="native-timeline">
+      {/* ⚠️ `overflow-x-hidden` is load-bearing, not decoration. `overflow-y-auto` alone computes
+          `overflow-x: auto` (the other axis may not stay `visible`), so ONE unbreakable line in a
+          message — an OS path in a permission-denied notice was the observed case — drew a
+          horizontal scrollbar across the whole chat. NovaClaw runs on phones, so the chat must
+          narrow its content to the viewport instead; the transcript's own rules make that content
+          wrap (`native-transcript.css`), and this clips any residue that still would not. */}
+      <div ref={(el) => (scroller = el)} class="h-full overflow-y-auto overflow-x-hidden" data-component="native-timeline">
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}

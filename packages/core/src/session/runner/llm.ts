@@ -104,7 +104,7 @@ import { MemoryRerank } from "../../kb-graph/rerank"
 import { MemorySetting } from "../../kb-graph/memory-setting"
 import { HarnessConfig } from "./harness-config"
 import { StrictDrain } from "./strict-drain"
-import { createLLMEventPublisher } from "./publish-llm-event"
+import { createLLMEventPublisher, interruptedToolMessage } from "./publish-llm-event"
 import { SessionExecutionAttempt } from "../execution-attempt"
 import { attachmentModality, freshImageCount, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
@@ -162,7 +162,6 @@ import { BashJobs } from "../../tool/bash-jobs"
 import { SessionTitle } from "../title"
 import { SessionMapRetention } from "./session-map-retention"
 import { SessionDriveState } from "./drive-state"
-import { RecoveryJoin } from "./recovery-join"
 import { CompactionBackoff } from "./compaction-backoff"
 import { applySteerProvenance, lastRealUserIndex, lastRealUserText } from "../steer-provenance"
 import { VisionCopy } from "./vision-copy"
@@ -957,7 +956,6 @@ export const layer = Layer.effect(
     })
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
-      faultMessage = "Tool execution interrupted",
     ) {
       for (const message of yield* getContext(sessionID)) {
         if (message.type !== "assistant") continue
@@ -973,7 +971,11 @@ export const layer = Layer.effect(
             // calm "Interrupted" divider and a red error box — which is unlocalisable, and wrong
             // the moment a provider's own message happens to contain the word. `message` stays
             // exactly as it was: the tag is additional structure, never a replacement.
-            error: { type: "unknown", _tag: "Interrupted", message: faultMessage },
+            //
+            // The tool's own NAME leads the sentence (see `interruptedToolMessage`): a recovered
+            // model must know WHICH call has an unknown outcome before deciding whether to repeat
+            // it, and the old generic sentence made every recovery warn about phantom calls.
+            error: { type: "unknown", _tag: "Interrupted", message: interruptedToolMessage(tool.name) },
             provider: {
               executed: tool.provider?.executed === true,
               ...(tool.provider?.metadata === undefined ? {} : { metadata: tool.provider.metadata }),
@@ -4372,28 +4374,13 @@ export const layer = Layer.effect(
       }
       if (ambientNudges > 0 && !hasQueue) hasSteer = true
       if (providerRecovery) {
-        const interruptedWaits = RecoveryJoin.interruptedChildIDs(yield* getContext(input.sessionID))
-        const directChildren = new Set(yield* store.children(input.sessionID))
-        const joinsToResume = interruptedWaits.filter((childID) => directChildren.has(SessionSchema.ID.make(childID)))
-        yield* events.publish(SessionEvent.Synthetic, {
-          sessionID: input.sessionID,
-          messageID: SessionMessage.ID.create(),
-          timestamp: yield* DateTime.now,
-          // Recovery is routine unless its circuit opens. Give the transcript renderer the same
-          // provenance marker as the actionable steer below so routine notices fold; the repeated-
-          // failure notice remains visible and carries the diagnosis when recovery actually loops.
-          text: applySteerProvenance(
-            joinsToResume.length > 0
-              ? `Recovery resumed this work. A wait for ${joinsToResume.join(", ")} was interrupted; the child work was not cancelled.`
-              : providerRecovery.toolProtocol
-                ? "Recovery resumed this work. Inspect an interrupted tool's target before repeating it."
-                : "Recovery resumed this work from its saved transcript.",
-          ),
-        })
-        yield* failInterruptedTools(
-          input.sessionID,
-          "Tool outcome unknown after process restart; inspect target state before retrying",
-        )
+        // ONE nudge, not two. A synthetic notice and a durable steer used to say the same thing in
+        // two registers, so a recovered agent woke to a transcript notice plus a second instruction
+        // message. Recovery is routine: a single sentence resumes it. The one actionable detail —
+        // WHICH tool call has an unknown outcome — belongs to that call's own failure row, emitted
+        // here before the steer, and never to a generic warning that a tool *might* have been in
+        // flight. See `interruptedToolMessage`.
+        yield* failInterruptedTools(input.sessionID)
         yield* events.publish(SessionEvent.ProviderAttempt.Abandoned, {
           sessionID: input.sessionID,
           timestamp: yield* DateTime.now,
@@ -4404,20 +4391,9 @@ export const layer = Layer.effect(
         // A replacement worker with no pending input exits successfully after closing the orphaned
         // provider attempt. That is process recovery but task abandonment: the user's work remains
         // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the
-        // latch, and make inspection part of the steer so an uncertain tool is never blindly replayed.
-        yield* SessionInput.steer(
-          db,
-          events,
-          input.sessionID,
-          joinsToResume.length > 0
-            ? `A process loss interrupted your read-only wait for child ${joinsToResume.join(", ")}. ` +
-                "The child sessions remain authoritative and were not cancelled. Before editing files or redoing any delegated slice, " +
-                `call wait again for ${joinsToResume.join(", ")} and use the returned result. ` +
-                "Only replace a child if wait reports that it ended without finishing. Continue the user's task; do not merely report the interruption."
-            : "A process loss interrupted your previous reply. Continue the user's task now from the durable transcript. " +
-                "Previously saved response content remains valid. Any in-flight tool was closed with an unknown outcome; " +
-                "inspect the workspace or external target's current state before deciding whether to repeat it. Do not stop merely to report the interruption.",
-        )
+        // latch. `SessionInput.steer` prepends the 1N provenance prefix, so a small model reads the
+        // nudge as an automated check rather than an empty user turn.
+        yield* SessionInput.steer(db, events, input.sessionID, "Session restarted. Recover and proceed.")
         // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
         // just changed the durable queue, so leaving the old `false` here passes the first no-work
         // gate only to stop at the second one.

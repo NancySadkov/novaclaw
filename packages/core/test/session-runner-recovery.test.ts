@@ -114,7 +114,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
     // The harness may issue its normal empty-response correction after the recovery turn; the
     // invariant here is that at least one actual provider request carries the durable continuation.
     const continued = harness.requests.find((request) =>
-      JSON.stringify(request.messages).includes("Continue the user's task now"),
+      JSON.stringify(request.messages).includes("Session restarted. Recover and proceed."),
     )
     expect(continued, "the recovery steer never reached the model").toBeDefined()
     expect(continued?.messages.some((message) => message.role === "user")).toBe(true)
@@ -156,7 +156,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
           {
             type: "tool",
             id: "call-interrupted",
-            state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+            state: { status: "error", error: { type: "unknown", message: "echo interrupted, result unknown." } },
           },
         ],
       },

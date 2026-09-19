@@ -139,7 +139,7 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
           {
             type: "tool",
             id: "call-before-interrupt",
-            state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+            state: { status: "error", error: { type: "unknown", message: "echo interrupted, result unknown." } },
           },
         ],
       },
@@ -273,7 +273,7 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
           {
             type: "tool",
             id: "call-await-interrupt",
-            state: { status: "error", error: { type: "unknown", message: "Tool execution interrupted" } },
+            state: { status: "error", error: { type: "unknown", message: "echo interrupted, result unknown." } },
           },
         ],
       },

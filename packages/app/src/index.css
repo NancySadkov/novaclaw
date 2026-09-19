@@ -1250,3 +1250,20 @@ body[data-new-layout] [data-slot="dialog-container"] {
     padding: 1.5rem;
   }
 }
+
+/* ── One axis: no horizontal scrollbar, anywhere ──────────────────────────────────────────────────
+ * NovaClaw runs on phones, where a horizontal scrollbar eats the content it exists to reveal. So no
+ * surface may PAINT one. Surfaces that genuinely need more width than the viewport (a wide table, a
+ * syntax-highlighted fence, the titlebar tab strip) still scroll by touch or trackpad — the bar is
+ * simply not drawn. Chat content does better than hiding the bar: the transcript wraps to the
+ * viewport width and the chat scroller clips any residue (`native-transcript.css`,
+ * `native-timeline.tsx`), because a denied-tool notice with one long OS path was drawing a bar
+ * across the whole conversation (owner, 2026-09-19).
+ *
+ * Chromium-only: `::-webkit-scrollbar` is the engine Electron and the desktop app use, and
+ * `scrollbar-width` (the standard property) cannot target one axis, so there is no Firefox
+ * equivalent that would not also hide the VERTICAL bar the chat still needs. */
+*::-webkit-scrollbar:horizontal {
+  display: none;
+  height: 0;
+}
