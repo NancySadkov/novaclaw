@@ -248,3 +248,64 @@ describe("a human-unit duration may explicitly accept fractions", () => {
     expect(refusals()).toHaveLength(0)
   })
 })
+
+/**
+ * The Context tab (owner, 2026-09-19). Two structural claims the retired twenty-number-box panel
+ * could not state: every session type is ONE 100% split, and the guard's switch lives with the
+ * splits it governs. The arrow-key path is the deterministic edit a DOM test can drive — a pointer
+ * drag needs layout, which happy-dom does not have.
+ */
+describe("Context tab — the guard card and its splits", () => {
+  test("shows the new copy, four five-part bars, and the shipped threshold", async () => {
+    mount(() => <SettingsTunesV2 />, { context: {} })
+    await settle()
+
+    expect(document.querySelector(".settings-v2-tab-title")?.textContent).toBe(en["settings.tunes.title"])
+    expect(document.querySelector('[data-section="context-guard"]')?.textContent).toContain(
+      en["settings.tunes.context.enabled.description"],
+    )
+
+    const profiles = [...document.querySelectorAll<HTMLElement>("[data-context-profile]")]
+    expect(profiles.map((profile) => profile.dataset.contextProfile)).toEqual([
+      "interactive",
+      "sub-agent",
+      "auto-prompting",
+      "goal-oriented",
+    ])
+    for (const profile of profiles) {
+      expect(profile.querySelectorAll(".settings-v2-allocation-seg")).toHaveLength(5)
+      expect(profile.querySelectorAll(".settings-v2-allocation-handle")).toHaveLength(4)
+    }
+
+    // The threshold row states what is in force even though nothing is stored (default 80).
+    expect(box(en["settings.tunes.compaction.threshold.title"]).value).toBe("80")
+  })
+
+  test("an arrow key transfers one point between neighbours and commits once", async () => {
+    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    await settle()
+
+    const handle = document.querySelector<HTMLButtonElement>(
+      '[data-context-profile="interactive"] .settings-v2-allocation-handle',
+    )
+    expect(handle).not.toBeNull()
+    handle!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+    await settle()
+
+    expect(counts.patch).toBe(1)
+    expect(config().context).toMatchObject({
+      profiles: { interactive: { system: 26, messages: 39, retrieval: 10, memory: 5, tool_output: 20 } },
+    })
+  })
+
+  test("the compaction threshold commits through the shared number field", async () => {
+    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    await settle()
+
+    commit(box(en["settings.tunes.compaction.threshold.title"]), "70")
+    await settle()
+
+    expect(counts.patch).toBe(1)
+    expect(config().compaction).toMatchObject({ threshold: 70 })
+  })
+})

@@ -636,36 +636,182 @@
   outline-offset: 1px;
 }
 
-/* A2.1/A5 — readable context-budget profiles; raw percentages unlock only in Developer mode. */
-.settings-v2-tunes-profiles {
-  gap: 16px;
-}
-
-.settings-v2-tunes-profile {
+/* Owner, 2026-09-19: the Context tab (born "Tunes"). The guard owns a card; inside it, one
+   draggable 100% split per session type. The five parts are the kernel's context categories, colour
+   keyed across the legend, the segments, and the drag handles. */
+.settings-v2-context-guard {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 10px;
+  background: var(--v2-background-bg-layer-01);
 }
 
-.settings-v2-tunes-profile-header {
+.settings-v2-allocation-block {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-v2-allocation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-v2-allocation-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-v2-allocation-chip {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.settings-v2-allocation-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-v2-allocation-profile-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
 }
 
-.settings-v2-tunes-profile-title {
+.settings-v2-allocation-profile-title {
   font-size: 13px;
   font-weight: 560;
   color: var(--v2-text-text-base);
 }
 
-.settings-v2-tunes-profile-total,
-.settings-v2-tunes-share,
+.settings-v2-allocation-profile-total,
 .settings-v2-tunes-input {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--v2-text-text-muted);
+}
+
+.settings-v2-allocation {
+  position: relative;
+}
+
+.settings-v2-allocation[data-disabled="true"] {
+  opacity: 0.55;
+}
+
+.settings-v2-allocation-bar {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-02);
+}
+
+.settings-v2-allocation-seg {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.settings-v2-allocation-value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-base);
+}
+
+.settings-v2-allocation-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.settings-v2-allocation-handle::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 50%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: 0 0 0 1px var(--v2-border-border-strong);
+  transform: translateX(-50%);
+}
+
+.settings-v2-allocation[data-disabled="true"] .settings-v2-allocation-handle {
+  cursor: default;
+}
+
+.settings-v2-allocation-handle:focus-visible {
+  outline: none;
+}
+
+.settings-v2-allocation-handle:focus-visible::after {
+  background: var(--v2-border-border-focus);
+  box-shadow: 0 0 0 2px var(--v2-border-border-focus);
+}
+
+.settings-v2-allocation-off {
+  margin: 0;
+  font-size: 11px;
+  color: var(--v2-state-fg-warning);
+}
+
+.settings-v2-allocation-seg[data-category="system"] {
+  background: color-mix(in oklab, var(--syntax-info) 32%, var(--v2-background-bg-layer-02));
+}
+.settings-v2-allocation-seg[data-category="messages"] {
+  background: color-mix(in oklab, var(--syntax-success) 32%, var(--v2-background-bg-layer-02));
+}
+.settings-v2-allocation-seg[data-category="retrieval"] {
+  background: color-mix(in oklab, var(--syntax-property) 32%, var(--v2-background-bg-layer-02));
+}
+.settings-v2-allocation-seg[data-category="memory"] {
+  background: color-mix(in oklab, var(--syntax-warning) 32%, var(--v2-background-bg-layer-02));
+}
+.settings-v2-allocation-seg[data-category="tool_output"] {
+  background: color-mix(in oklab, var(--syntax-constant) 32%, var(--v2-background-bg-layer-02));
+}
+
+.settings-v2-allocation-chip[data-category="system"] {
+  background: var(--syntax-info);
+}
+.settings-v2-allocation-chip[data-category="messages"] {
+  background: var(--syntax-success);
+}
+.settings-v2-allocation-chip[data-category="retrieval"] {
+  background: var(--syntax-property);
+}
+.settings-v2-allocation-chip[data-category="memory"] {
+  background: var(--syntax-warning);
+}
+.settings-v2-allocation-chip[data-category="tool_output"] {
+  background: var(--syntax-constant);
 }
 
 .settings-v2-tunes-input {

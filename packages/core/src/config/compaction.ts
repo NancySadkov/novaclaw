@@ -7,6 +7,9 @@ export class Keep extends Schema.Class<Keep>("ConfigV2.Compaction.Keep")({
   tokens: NonNegativeInt.pipe(Schema.optional),
 }) {}
 
+/** A percentage of the model's context window, 1..100. Mirrors `ConfigV2.Context`'s `Share`. */
+const ThresholdPercent = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))
+
 export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
   auto: Schema.Boolean.pipe(Schema.optional),
   prune: Schema.Boolean.pipe(Schema.optional),
@@ -42,4 +45,14 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
   summarizeInput: PositiveInt.pipe(Schema.optional),
   keep: Keep.pipe(Schema.optional),
   buffer: NonNegativeInt.pipe(Schema.optional),
+  /**
+   * Where a compaction cycle fires, as a percentage of the model's context window.
+   *
+   * Owner, 2026-09-19: *"expose the Compaction Threshold (default 80%). Once the usage goes over
+   * 80%, we do compaction."* Absent means {@link DEFAULT_COMPACTION_THRESHOLD} (80). The trigger is
+   * the EARLIER of this percentage and the response-reserve ceiling (`PromptEstimate.capacity`), so
+   * a window whose reserve floors demand more room still compacts before it overflows:
+   * `min(ceiling, threshold%)`. It is a trigger, never a cap on what the packer may send.
+   */
+  threshold: ThresholdPercent.pipe(Schema.optional),
 }) {}

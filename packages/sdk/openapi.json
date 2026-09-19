@@ -36120,6 +36120,11 @@
           "buffer": {
             "type": "integer",
             "minimum": 0
+          },
+          "threshold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
           }
         },
         "additionalProperties": false

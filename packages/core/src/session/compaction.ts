@@ -24,6 +24,14 @@ import type { SessionRunnerModel } from "./runner/model"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
+/**
+ * Where a compaction cycle fires when nothing is configured: 80% of the model's context window.
+ *
+ * Owner, 2026-09-19: *"expose the Compaction Threshold (default 80%). Once the usage goes over 80%,
+ * we do compaction."* It is the earlier of this and the response-reserve ceiling, so it never lets a
+ * prompt reach a window the packer must refuse — see `Settings.threshold`.
+ */
+const DEFAULT_COMPACTION_THRESHOLD = 80
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 /**
  * B2 — the speaker label for a harness steer inside the summarization prompt. A steer rides the
@@ -174,6 +182,14 @@ type Settings = {
    * `DEFAULT_SUMMARY_INPUT_TOKENS` for why this is not the context window.
    */
   readonly summarizeInput: number
+  /**
+   * Where a cycle fires, as a percentage of the model's context window (1..100). Default 80.
+   *
+   * The effective trigger is the EARLIER of this and the response-reserve ceiling, because the
+   * ceiling encodes the room the response must have: `min(ceiling, threshold%)`. Lowering it
+   * compacts earlier and keeps more headroom; it can never raise the trigger above the ceiling.
+   */
+  readonly threshold: number
 }
 
 type Dependencies = {
@@ -411,6 +427,8 @@ export const settings = (documents: readonly Config.Entry[]) => {
       // ⚠️ `??` and not a falsy test: the schema is `PositiveInt`, so a stored `0` is refused at
       // decode rather than silently reinterpreted as "use the default".
       summarizeInput: current.summarizeInput ?? result.summarizeInput,
+      // `??` for the same reason: the schema is 1..100, so a stored value is a real choice.
+      threshold: current.threshold ?? result.threshold,
     }),
     {
       auto: true,
@@ -419,8 +437,29 @@ export const settings = (documents: readonly Config.Entry[]) => {
       prune: false,
       summarize: true,
       summarizeInput: DEFAULT_SUMMARY_INPUT_TOKENS,
+      threshold: DEFAULT_COMPACTION_THRESHOLD,
     },
   )
+}
+
+/**
+ * The compaction trigger, in tokens: the EARLIER of the response-reserve ceiling and the configured
+ * percentage of the window. Exported so the rule is asserted directly rather than inferred from a
+ * provider round trip.
+ *
+ * ⚠️ The `min` is what keeps the "never zero on a working window" invariant while adding a
+ * percentage the user controls. A ceiling of 0 (a tiny route whose reserve floors swallow the
+ * window) falls back to the percentage alone; a positive ceiling is never raised by a large
+ * percentage, so a prompt the packer must refuse can never be approved. See `Settings.threshold`.
+ */
+export const triggerAt = (input: {
+  readonly context: number
+  readonly promptCeilingTokens: number
+  readonly thresholdPercent: number
+}): number => {
+  const percent = Math.max(1, Math.min(100, Math.trunc(input.thresholdPercent)))
+  const byPercent = Math.max(1, Math.floor((input.context * percent) / 100))
+  return Math.max(1, Math.min(input.promptCeilingTokens > 0 ? input.promptCeilingTokens : byPercent, byPercent))
 }
 
 /**
@@ -839,15 +878,16 @@ export const make = (dependencies: Dependencies) => {
      * nothing it can explain, and looks to the user exactly like a chat stuck in a compaction loop.
      * Clause 4 of the invariant promises 4K and up, so the small end is the one that has to work.
      *
-     * ⭐ The fallback is the same 90 % boundary the reserve is derived from, without the floors: a
-     * prompt over 90 % of the window is worth folding, and below it there is room. It is a FLOOR, not
-     * a replacement — a ceiling that is already positive is untouched, so every existing route keeps
-     * the exact number it had.
+     * ⭐ The fallback is the configured `threshold` percentage, without the reserve floors: a prompt
+     * over the user's threshold is worth folding, and below it there is room. It is a FLOOR around
+     * the reserve, not a replacement — a ceiling that is already more conservative is untouched, so
+     * a high percentage can never approve a prompt the packer must refuse.
      */
-    const triggerThreshold =
-      triggerCapacity.promptCeilingTokens > 0
-        ? triggerCapacity.promptCeilingTokens
-        : Math.max(1, Math.floor((context * PromptEstimate.AUTO_COMPACT_PERCENT) / 100))
+    const triggerThreshold = triggerAt({
+      context,
+      promptCeilingTokens: triggerCapacity.promptCeilingTokens,
+      thresholdPercent: config.threshold,
+    })
     // Which of the three doors reached this cycle. `reason` alone cannot say: it is "auto" for BOTH
     // the threshold trigger and overflow recovery, and the owner's report — a compaction that fires
     // again a few tool calls later — is exactly the case where telling them apart is the whole
@@ -1232,13 +1272,15 @@ export const make = (dependencies: Dependencies) => {
       outputTokens: output,
       minimumResponseReserveTokens: config.buffer,
     })
-    // Never zero on a working window — see `triggerThreshold` in `compactAfterOverflow`. A ceiling of
-    // zero would make `estimatedWithMargin > 0` true on every turn: a trigger that fires forever and
-    // folds nothing, which is what a compaction loop looks like from the inside.
-    const threshold =
-      promptCapacity.promptCeilingTokens > 0
-        ? promptCapacity.promptCeilingTokens
-        : Math.max(1, Math.floor((context * PromptEstimate.AUTO_COMPACT_PERCENT) / 100))
+    // Never zero on a working window — see `triggerAt`. A ceiling of zero would make
+    // `estimatedWithMargin > 0` true on every turn: a trigger that fires forever and folds nothing,
+    // which is what a compaction loop looks like from the inside. The configured percentage is the
+    // other bound: a large one can only lower the trigger to the reserve ceiling, never raise it.
+    const threshold = triggerAt({
+      context,
+      promptCeilingTokens: promptCapacity.promptCeilingTokens,
+      thresholdPercent: config.threshold,
+    })
     yield* Log.event("session.compaction.threshold", {
       "session.id": String(input.sessionID),
       "compaction.estimated": estimated,

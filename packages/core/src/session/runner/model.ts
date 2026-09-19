@@ -259,8 +259,8 @@ export interface Interface {
    * seam, where there is no catalog entry to read.
    */
   /**
-   * Models item (c): the resolved catalog model's capability class, for the system-prompt scaffold
-   * and the recall budget. Best-effort — an unresolvable model yields `undefined` rather than
+   * Models item (c): the resolved catalog model's capability class, for the recall budget and the
+   * role/model fit notice. Best-effort — an unresolvable model yields `undefined` rather than
    * failing the turn.
    */
   readonly taxonomy: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Taxonomy | undefined>
@@ -1371,9 +1371,9 @@ export const locationLayer = Layer.effect(
           yield* sessionAffinityHeader(selected.api.url),
         )
       }),
-      // Models item (c): best-effort class lookup for the system-prompt scaffold and recall budget.
-      // Reuses `turnModel` (no boot-latch wait — this only decorates the prompt, never gates the
-      // turn) and never fails.
+      // Models item (c): best-effort class lookup for the recall budget and the role/model fit
+      // notice. Reuses `turnModel` (no boot-latch wait — this only decorates the prompt, never gates
+      // the turn) and never fails.
       //
       // ⚠️ `turnModel`, NOT `select`. `select` answers "what did this session CHOOSE", and after a
       // fallback that is not the model the turn runs on — which is how six of these accessors came

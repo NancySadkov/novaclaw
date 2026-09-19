@@ -309,6 +309,7 @@ describe("the prune flag is honoured, and absent means inert", () => {
       prune: false,
       summarize: true,
       summarizeInput: 32_000,
+      threshold: 80,
     })
   })
 
@@ -330,6 +331,7 @@ describe("the prune flag is honoured, and absent means inert", () => {
       prune: false,
       summarize: true,
       summarizeInput: 32_000,
+      threshold: 80,
     })
     expect(SessionCompaction.settings([document({ keep: { tokens: 2_000 } })]).tokens).toBe(2_000)
   })

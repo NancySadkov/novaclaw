@@ -305,9 +305,9 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      */
     modelResolveFailure: undefined as SessionRunnerModel.Error | undefined,
     /** The CATALOG class of the resolved model. `undefined` = unresolved, and the seam then answers
-     *  `undefined` — so the scaffold and the role/model fit notice see "no class", which is what
-     *  `SessionRunnerModel.layerWith`'s default does. Set it to exercise either
-     *  (`TaxonomyScaffold`, and the fit notice in `agent/model-fit.ts`). */
+     *  `undefined` — so the role/model fit notice sees "no class", which is what
+     *  `SessionRunnerModel.layerWith`'s default does. Set it to exercise the fit notice in
+     *  `agent/model-fit.ts`. */
     modelTaxonomy: undefined as ModelV2.Taxonomy | undefined,
     /**
      * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch

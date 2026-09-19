@@ -703,3 +703,33 @@ describe("bounded compaction summaries", () => {
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
   })
 })
+
+/**
+ * Owner, 2026-09-19: *"expose the Compaction Threshold (default 80%). Once the usage goes over
+ * 80%, we do compaction."*
+ *
+ * The trigger is the EARLIER of the configured percentage and the response-reserve ceiling, so the
+ * percentage can make compaction fire sooner but never approve a prompt the packer must refuse.
+ */
+describe("the compaction threshold is a percentage of the window", () => {
+  test("defaults to 80 when the config says nothing", () => {
+    expect(SessionCompaction.settings([]).threshold).toBe(80)
+  })
+
+  test("a document sets it, and the trigger is the earlier of the percentage and the reserve", () => {
+    const document = { type: "document", info: { compaction: { threshold: 70 } } } as unknown as Config.Document
+    expect(SessionCompaction.settings([document]).threshold).toBe(70)
+    // 80% of 262,144 wins over a looser 90% reserve ceiling (235,929)…
+    expect(SessionCompaction.triggerAt({ context: 262_144, promptCeilingTokens: 235_929, thresholdPercent: 80 })).toBe(
+      209_715,
+    )
+    // …a tiny window's reserve floors still win (12,000 < 80% of 32,000)…
+    expect(SessionCompaction.triggerAt({ context: 32_000, promptCeilingTokens: 12_000, thresholdPercent: 80 })).toBe(
+      12_000,
+    )
+    // …and no percentage can raise the trigger above the ceiling the packer must respect.
+    expect(
+      SessionCompaction.triggerAt({ context: 262_144, promptCeilingTokens: 235_929, thresholdPercent: 100 }),
+    ).toBe(235_929)
+  })
+})

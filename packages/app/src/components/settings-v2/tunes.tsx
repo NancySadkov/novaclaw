@@ -1,6 +1,5 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { For, Show, type Component } from "solid-js"
-import { useExpertise } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { reportedWrite } from "@/utils/config-write"
@@ -8,64 +7,82 @@ import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsNumberFieldV2 } from "./parts/number-field"
 import { SettingsRowV2 } from "./parts/row"
-import { SettingsExplainV2 } from "./explain"
+import {
+  ALLOCATION_CATEGORIES,
+  ALLOCATION_PROFILES,
+  allocationRecord,
+  allocationShares,
+  type AllocationCategory,
+  type AllocationProfile,
+} from "./parts/context-allocation"
+import { ContextAllocationBar } from "./parts/context-allocation-bar"
 
-type ContextCategory = "system" | "messages" | "retrieval" | "memory" | "tool_output"
-type ContextProfileName = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
-type ContextProfile = Partial<Record<ContextCategory, number>>
+type TodoReminder = {
+  enabled?: boolean
+  cadence?: number
+  max_tokens?: number
+}
 interface ContextConfig {
   enabled?: boolean
-  profiles?: Partial<Record<ContextProfileName, ContextProfile>>
-  todo_reminder?: {
-    enabled?: boolean
-    cadence?: number
-    max_tokens?: number
-  }
+  profiles?: Partial<Record<AllocationProfile, Partial<Record<AllocationCategory, number>>>>
+  todo_reminder?: TodoReminder
 }
-
-const PROFILE_NAMES: readonly ContextProfileName[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
-const CATEGORIES: readonly ContextCategory[] = ["system", "messages", "retrieval", "memory", "tool_output"]
-const DEFAULTS: Readonly<Record<ContextProfileName, Readonly<Record<ContextCategory, number>>>> = {
-  interactive: { system: 25, messages: 40, retrieval: 10, memory: 5, tool_output: 20 },
-  "sub-agent": { system: 25, messages: 30, retrieval: 10, memory: 5, tool_output: 30 },
-  "auto-prompting": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
-  "goal-oriented": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
+interface CompactionConfig {
+  threshold?: number
 }
+/** Where a compaction cycle fires when nothing is stored; mirrors `DEFAULT_COMPACTION_THRESHOLD`. */
+const DEFAULT_COMPACTION_THRESHOLD = 80
+const THRESHOLD_MIN = 50
+const THRESHOLD_MAX = 95
 
-/** A5/A2.1 — Settings owns the instance baseline for the context-budget Tune. Advanced users see
- * the automatic thread-type profiles; Developer mode unlocks their raw share ceilings. The runner
- * reads this store for every turn, so every successful save applies without a restart. */
+/**
+ * The Context tab (born as "Tunes").
+ *
+ * 🔴 Owner, 2026-09-19: *"rename `Tunes` tab to `Context` … give Context Guard a simpler
+ * description … turn each percentage profile into a single segments diagram, where all segment
+ * compose the 100% of the context and the user can freely drag segment ends to allocate areas. And
+ * context guard toggle should be right above its percent sliders and inside a nice area."* The old
+ * panel exposed twenty number boxes and buried the on/off switch above them; this shows the real
+ * object — one 100% split per session type — and puts the switch inside the card that owns it.
+ *
+ * ⚠️ The percentages are editable by whoever can see the tab (Advanced), not only Developer. The
+ * tab itself is the gate; a drag with no effect would be a control that lies (AGENTS.md 12).
+ */
 export const SettingsTunesV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
-  const { atLeast } = useExpertise()
 
-  const current = (): ContextConfig => (serverSync().data.config as { context?: ContextConfig }).context ?? {}
-  const share = (profile: ContextProfileName, category: ContextCategory) =>
-    current().profiles?.[profile]?.[category] ?? DEFAULTS[profile][category]
-  const reminderCadence = () => current().todo_reminder?.cadence ?? 6
-  const reminderBudget = () => current().todo_reminder?.max_tokens ?? 256
+  const stored = () => serverSync().data.config as { context?: ContextConfig; compaction?: CompactionConfig }
+  const context = (): ContextConfig => stored().context ?? {}
+  const guardOn = () => context().enabled !== false
 
-  const persist = (next: ContextConfig) =>
+  const persistContext = (next: ContextConfig) =>
     reportedWrite(
       () => serverSync().updateConfig({ context: next }),
       (error) => showToast({ variant: "error", title: language.t("settings.tunes.toast.failed"), description: error }),
     )
+  const persistCompaction = (threshold: number) =>
+    reportedWrite(
+      () => serverSync().updateConfig({ compaction: { ...(stored().compaction ?? {}), threshold } }),
+      (error) => showToast({ variant: "error", title: language.t("settings.tunes.toast.failed"), description: error }),
+    )
 
-  const setShare = (profile: ContextProfileName, category: ContextCategory, value: number) => {
-    const nextProfile = { ...current().profiles?.[profile], [category]: value }
-    void persist({
-      ...current(),
-      profiles: { ...current().profiles, [profile]: nextProfile },
+  const setShares = (profile: AllocationProfile, shares: readonly number[]) =>
+    void persistContext({
+      ...context(),
+      profiles: { ...context().profiles, [profile]: allocationRecord(shares) },
     })
-  }
 
-  const setReminder = (patch: NonNullable<ContextConfig["todo_reminder"]>) => {
-    void persist({
-      ...current(),
-      todo_reminder: { ...current().todo_reminder, ...patch },
-    })
-  }
+  const setReminder = (patch: TodoReminder) =>
+    void persistContext({ ...context(), todo_reminder: { ...context().todo_reminder, ...patch } })
+
+  const categoryName = (category: AllocationCategory) => language.t(`settings.tunes.category.${category}`)
+  const profileName = (profile: AllocationProfile) => language.t(`settings.tunes.profile.${profile}`)
+  const reminderCadence = () => context().todo_reminder?.cadence ?? 6
+  const reminderBudget = () => context().todo_reminder?.max_tokens ?? 256
+  // The number the runner actually uses when nothing is stored — showing a blank box would state a
+  // value the config does not hold and hide the shipped 80% (AGENTS.md 12d).
+  const compactionThreshold = () => stored().compaction?.threshold ?? DEFAULT_COMPACTION_THRESHOLD
 
   return (
     <>
@@ -75,33 +92,105 @@ export const SettingsTunesV2: Component = () => {
       </div>
 
       <div class="settings-v2-tab-body">
-        <div class="settings-v2-section">
+        {/* The guard card: its own switch sits directly above the split it governs, so the two read
+            as one control rather than as a switch here and twelve rows somewhere below. */}
+        <section class="settings-v2-context-guard" data-section="context-guard">
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.context.enabled.title")}
-              description={
-                <>
-                  {language.t("settings.tunes.context.enabled.description")}
-                  <SettingsExplainV2 label={language.t("settings.tunes.context.enabled.title")}>
-                    {language.t("settings.tunes.context.enabled.description.more")}
-                  </SettingsExplainV2>
-                </>
-              }
+              description={language.t("settings.tunes.context.enabled.description")}
+              info={language.t("settings.tunes.context.enabled.description.more")}
             >
               <Switch
-                checked={current().enabled !== false}
-                onChange={(checked) => void persist({ ...current(), enabled: checked })}
+                checked={guardOn()}
+                onChange={(checked) => void persistContext({ ...context(), enabled: checked })}
                 hideLabel
               >
                 {language.t("settings.tunes.context.enabled.title")}
               </Switch>
             </SettingsRowV2>
+          </SettingsListV2>
+
+          <div class="settings-v2-allocation-block">
+            <h3 class="settings-v2-section-title">{language.t("settings.tunes.profiles.title")}</h3>
+            <p class="settings-v2-field-description">{language.t("settings.tunes.profiles.description")}</p>
+            <ul class="settings-v2-allocation-legend">
+              <For each={ALLOCATION_CATEGORIES}>
+                {(category) => (
+                  <li title={language.t(`settings.tunes.category.${category}.description`)}>
+                    <span class="settings-v2-allocation-chip" data-category={category} />
+                    {categoryName(category)}
+                  </li>
+                )}
+              </For>
+            </ul>
+            <For each={ALLOCATION_PROFILES}>
+              {(profile) => (
+                <div class="settings-v2-allocation-profile" data-context-profile={profile}>
+                  <div class="settings-v2-allocation-profile-header">
+                    <span class="settings-v2-allocation-profile-title">{profileName(profile)}</span>
+                    <span class="settings-v2-allocation-profile-total">
+                      {language.t("settings.tunes.profile.total", {
+                        total: allocationShares(profile, context().profiles?.[profile]).reduce((sum, share) => sum + share, 0),
+                      })}
+                    </span>
+                  </div>
+                  <ContextAllocationBar
+                    value={() => allocationShares(profile, context().profiles?.[profile])}
+                    onChange={(next) => setShares(profile, next)}
+                    categories={ALLOCATION_CATEGORIES}
+                    labels={ALLOCATION_CATEGORIES.map(categoryName)}
+                    disabled={!guardOn()}
+                    boundaryLabel={(index) =>
+                      language.t("settings.tunes.boundary.aria", {
+                        left: categoryName(ALLOCATION_CATEGORIES[index]!),
+                        right: categoryName(ALLOCATION_CATEGORIES[index + 1]!),
+                      })
+                    }
+                  />
+                </div>
+              )}
+            </For>
+            <Show when={!guardOn()}>
+              <p class="settings-v2-allocation-off" role="status">
+                {language.t("settings.tunes.guard.off")}
+              </p>
+            </Show>
+          </div>
+        </section>
+
+        <section class="settings-v2-section">
+          <h3 class="settings-v2-section-title">{language.t("settings.tunes.compaction.title")}</h3>
+          <p class="settings-v2-field-description">{language.t("settings.tunes.compaction.description")}</p>
+          <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.tunes.compaction.threshold.title")}
+              description={language.t("settings.tunes.compaction.threshold.description")}
+              info={language.t("settings.tunes.compaction.threshold.description.more")}
+            >
+              <SettingsNumberFieldV2
+                class="settings-v2-tunes-input"
+                value={compactionThreshold}
+                onCommit={(threshold) => void persistCompaction(threshold)}
+                min={THRESHOLD_MIN}
+                max={THRESHOLD_MAX}
+                unit="%"
+                ariaLabel={language.t("settings.tunes.compaction.threshold.title")}
+              />
+            </SettingsRowV2>
+          </SettingsListV2>
+        </section>
+
+        <section class="settings-v2-section">
+          <h3 class="settings-v2-section-title">{language.t("settings.tunes.todo.title")}</h3>
+          <p class="settings-v2-field-description">{language.t("settings.tunes.todo.description")}</p>
+          <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.todo.enabled.title")}
               description={language.t("settings.tunes.todo.enabled.description")}
             >
               <Switch
-                checked={current().todo_reminder?.enabled !== false}
+                checked={context().todo_reminder?.enabled !== false}
                 onChange={(checked) => setReminder({ enabled: checked })}
                 hideLabel
               >
@@ -138,53 +227,7 @@ export const SettingsTunesV2: Component = () => {
               />
             </SettingsRowV2>
           </SettingsListV2>
-        </div>
-
-        <div class="settings-v2-section settings-v2-tunes-profiles">
-          <h3 class="settings-v2-section-title">{language.t("settings.tunes.profiles.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.tunes.profiles.description")}</p>
-          <For each={PROFILE_NAMES}>
-            {(profile) => (
-              <div class="settings-v2-tunes-profile" data-context-profile={profile}>
-                <div class="settings-v2-tunes-profile-header">
-                  <span class="settings-v2-tunes-profile-title">{language.t(`settings.tunes.profile.${profile}`)}</span>
-                  <span class="settings-v2-tunes-profile-total">
-                    {language.t("settings.tunes.profile.total", {
-                      total: CATEGORIES.reduce((sum, category) => sum + share(profile, category), 0),
-                    })}
-                  </span>
-                </div>
-                <SettingsListV2>
-                  <For each={CATEGORIES}>
-                    {(category) => (
-                      <SettingsRowV2
-                        title={language.t(`settings.tunes.category.${category}`)}
-                        description={language.t(`settings.tunes.category.${category}.description`)}
-                      >
-                        <Show
-                          when={atLeast("developer")}
-                          fallback={<span class="settings-v2-tunes-share">{share(profile, category)}%</span>}
-                        >
-                          <SettingsNumberFieldV2
-                            class="settings-v2-tunes-input"
-                            value={() => share(profile, category)}
-                            onCommit={(value) => setShare(profile, category, value)}
-                            min={0}
-                            max={100}
-                            unit="%"
-                            ariaLabel={`${language.t(`settings.tunes.profile.${profile}`)} — ${language.t(
-                              `settings.tunes.category.${category}`,
-                            )}`}
-                          />
-                        </Show>
-                      </SettingsRowV2>
-                    )}
-                  </For>
-                </SettingsListV2>
-              </div>
-            )}
-          </For>
-        </div>
+        </section>
       </div>
     </>
   )

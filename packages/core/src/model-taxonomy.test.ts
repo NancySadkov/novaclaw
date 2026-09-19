@@ -4,9 +4,8 @@ import { ModelTaxonomy } from "./model-taxonomy"
 import { ProviderV2 } from "./provider"
 
 // The ONE conversion from a model's class to a decision. Everything that used to read a benchmark
-// percentage — selection (`leastLoaded`), role-fit warnings (`AgentModelFit`), scaffold intensity
-// (`TaxonomyScaffold`) and the recall budget (`SessionRecall`) — reads this module, so these tests
-// are the contract those four share.
+// percentage — selection (`leastLoaded`), role-fit warnings (`AgentModelFit`) and the recall budget
+// (`SessionRecall`) — reads this module, so these tests are the contract those three share.
 
 const model = (id: string, taxonomy?: ModelV2.Taxonomy): ModelV2.Info =>
   ModelV2.Info.make({

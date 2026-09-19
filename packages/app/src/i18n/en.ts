@@ -1034,7 +1034,7 @@ export const dict = {
   "settings.field.number.range": "Enter a whole number between {{min}} and {{max}}",
   "settings.field.number.rangeDecimal": "Enter a number between {{min}} and {{max}}",
 
-  "settings.tunes.title": "Tunes",
+  "settings.tunes.title": "Context",
   "settings.nudges.title": "Nudges",
   "settings.nudges.description":
     "Give agents a short instruction only when it is useful. Choose a built-in event or match text with a regular expression; nothing is added to every prompt.",
@@ -1074,27 +1074,23 @@ export const dict = {
   "settings.nudges.resource.warning": "Warning only",
   "settings.nudges.resource.floor": "Critical only",
   "settings.tunes.description":
-    "Choose how NovaClaw protects the instructions, conversation, recalled memory, knowledge, and tool evidence that a model needs to keep working.",
-  "settings.tunes.toast.failed": "Saving Tune settings failed",
+    "Decide how a model's context window is divided between instructions, conversation, recalled memory, knowledge, and tool evidence.",
+  "settings.tunes.toast.failed": "Saving context settings failed",
   "settings.tunes.context.enabled.title": "Context guard",
-  "settings.tunes.context.enabled.description": "Keep one kind of context from crowding out the others.",
-  "settings.tunes.context.enabled.description.more": "System instructions and the original task are always protected.",
-  "settings.tunes.todo.enabled.title": "Checklist reminders",
-  "settings.tunes.todo.enabled.description":
-    "Periodically put the current task list back in front of the model so long jobs stay on course.",
-  "settings.tunes.todo.cadence.title": "Reminder cadence",
-  "settings.tunes.todo.cadence.description": "How many saved chat messages pass between checklist reminders.",
-  "settings.tunes.todo.budget.title": "Reminder budget",
-  "settings.tunes.todo.budget.description":
-    "The most context a reminder may use. Active work is kept first when the checklist is longer.",
-  "settings.tunes.profiles.title": "Context profiles",
+  "settings.tunes.context.enabled.description":
+    "Limit specific session events to a percentage of context - cut the overflowing.",
+  "settings.tunes.context.enabled.description.more":
+    "System instructions and the original task are always protected. Each session type is split on its own; turn the guard off to let the five parts share the whole window freely.",
+  "settings.tunes.guard.off": "Context guard is off. These splits are not applied.",
+  "settings.tunes.profiles.title": "How each session type splits context",
   "settings.tunes.profiles.description":
-    "NovaClaw chooses a profile from the chat's working mode. Attended chats preserve more conversation; unattended workers reserve more room for tool evidence.",
+    "Drag a boundary to move room between two neighbours; the five parts always add up to 100%. Arrow keys work too.",
   "settings.tunes.profile.interactive": "Interactive chat",
   "settings.tunes.profile.sub-agent": "Sub-agent",
   "settings.tunes.profile.auto-prompting": "Auto-prompting",
   "settings.tunes.profile.goal-oriented": "Goal-oriented",
   "settings.tunes.profile.total": "{{total}}% allocated",
+  "settings.tunes.boundary.aria": "Resize {{left}} and {{right}}",
   "settings.tunes.category.system": "Instructions",
   "settings.tunes.category.system.description": "System guidance and the agent's operating rules.",
   "settings.tunes.category.messages": "Conversation",
@@ -1105,6 +1101,25 @@ export const dict = {
   "settings.tunes.category.memory.description": "Personal and session memories recalled before the turn.",
   "settings.tunes.category.tool_output": "Tool output",
   "settings.tunes.category.tool_output.description": "Evidence returned by files, commands, browsers, and other tools.",
+  "settings.tunes.compaction.title": "Compaction",
+  "settings.tunes.compaction.description":
+    "When a conversation fills the context window, older turns are folded into a summary so the work can continue.",
+  "settings.tunes.compaction.threshold.title": "Compaction threshold",
+  "settings.tunes.compaction.threshold.description":
+    "Fold the conversation once it fills this share of the model's context window.",
+  "settings.tunes.compaction.threshold.description.more":
+    "Compaction fires at this percentage, or earlier when the response reserve needs the room — never later. 80% leaves a fifth of the window free for the reply and the next tool result.",
+  "settings.tunes.todo.title": "Reminders",
+  "settings.tunes.todo.description":
+    "Put the current task list back in front of the model periodically, so long unattended jobs stay on course.",
+  "settings.tunes.todo.enabled.title": "Checklist reminders",
+  "settings.tunes.todo.enabled.description":
+    "Periodically put the current task list back in front of the model so long jobs stay on course.",
+  "settings.tunes.todo.cadence.title": "Reminder cadence",
+  "settings.tunes.todo.cadence.description": "How many saved chat messages pass between checklist reminders.",
+  "settings.tunes.todo.budget.title": "Reminder budget",
+  "settings.tunes.todo.budget.description":
+    "The most context a reminder may use. Active work is kept first when the checklist is longer.",
 
   // The Storage tab: what the instance costs in RAM/on disk and where its files live.
   "settings.storage.title": "Storage and resources",

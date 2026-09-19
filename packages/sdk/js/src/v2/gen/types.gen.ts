@@ -3980,6 +3980,7 @@ export type ConfigV2Compaction = {
   summarizeInput?: number
   keep?: ConfigV2CompactionKeep
   buffer?: number
+  threshold?: number
 }
 
 export type ConfigV2ContextProfile = {
