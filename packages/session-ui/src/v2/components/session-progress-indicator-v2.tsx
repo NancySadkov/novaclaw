@@ -1,14 +1,4 @@
-import { For, splitProps, type ComponentProps } from "solid-js"
-
-const grid = 5
-const dot = 2
-const gap = 1
-const origin = 1.5
-const dots = Array.from({ length: grid * grid }, (_, index) => ({
-  index,
-  x: origin + (index % grid) * (dot + gap),
-  y: origin + Math.floor(index / grid) * (dot + gap),
-}))
+import { splitProps, type ComponentProps } from "solid-js"
 
 export function SessionProgressIndicatorV2(props: ComponentProps<"svg">) {
   const [local, rest] = splitProps(props, ["class", "classList", "width", "height"])
@@ -25,7 +15,7 @@ export function SessionProgressIndicatorV2(props: ComponentProps<"svg">) {
       data-component="session-progress-indicator-v2"
       aria-hidden={rest["aria-hidden"] ?? "true"}
     >
-      <For each={dots}>{(cell) => <rect data-dot={cell.index} x={cell.x} y={cell.y} width={dot} height={dot} />}</For>
+      <circle data-dot cx="8" cy="8" r="5" />
     </svg>
   )
 }
