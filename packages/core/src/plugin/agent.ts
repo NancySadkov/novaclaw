@@ -5,7 +5,7 @@ import { define } from "./internal"
 import { Effect } from "effect"
 import { AgentV2 } from "../agent"
 import { Scratch } from "../scratch"
-import { ownScratchGrants } from "../agent/scratch-grants"
+import { ownScratchGrants, scratchDirectoryGrants } from "../agent/scratch-grants"
 import { Global } from "../global"
 import { Location } from "../location"
 import { PermissionV2 } from "../permission"
@@ -155,10 +155,7 @@ export const floor = (input: {
   // path is the evaluator's mode-independent baseline. WRITING outside the folder defaults to ask
   // here; the whitelisted scratch dirs allow both because Nova owns those locations.
   { action: "external_directory_write", resource: "*", effect: "ask" },
-  ...input.scratchDirs.flatMap((resource): PermissionV2.Rule[] => [
-    { action: "external_directory_read", resource, effect: "allow" },
-    { action: "external_directory_write", resource, effect: "allow" },
-  ]),
+  ...input.scratchDirs.flatMap(scratchDirectoryGrants),
   // 🔴 **There is deliberately no `question` rule here, and no `question` tool to gate.** Principle 14:
   // **the chat IS the channel.** A model that needs a decision ends its turn and says so in its reply,
   // where asking costs nothing, works in every client, and cannot strand a session. The grant that

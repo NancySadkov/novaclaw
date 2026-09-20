@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AgentPlugin } from "@novaclaw/core/plugin/agent"
 import { PermissionV2 } from "@novaclaw/core/permission"
+import { ownScratchGrants, retargetScratchGrants } from "@novaclaw/core/agent/scratch-grants"
 
 /**
  * THE PAIRING INVARIANT. `withOwnScratch` does two things at once — drop a stored scratch grant that
@@ -54,10 +55,8 @@ describe("the scratch grant is derived, and always paired", () => {
       AgentPlugin.withOwnScratch(OWNED, staleLayer),
     ]) {
       const fixed = AgentPlugin.withOwnScratch(OWNED, layer)
-      const scratchGrants = fixed
-        .filter((rule) => rule.resource.includes("/scratch/"))
-        .map((rule) => rule.resource)
-      expect(scratchGrants.every((resource) => resource === own)).toBe(true)
+      const scratchGrants = fixed.filter((rule) => rule.resource.includes("/scratch/")).map((rule) => rule.resource)
+      expect(scratchGrants.every((resource) => resource === own || resource === own.slice(0, -2))).toBe(true)
       expect(effect(fixed, "external_directory_write", file(own))).toBe("allow")
     }
   })
@@ -76,5 +75,55 @@ describe("the scratch grant is derived, and always paired", () => {
     // Without this, a bug making `foreign` equal `own` would satisfy every assertion above.
     expect(foreign).not.toBe(own)
     expect(foreign.includes(OWNED)).toBe(false)
+  })
+
+  test("both shared and personal scratch roots support a shell working directory", () => {
+    const rules = AgentPlugin.withOwnScratch(
+      OWNED,
+      AgentPlugin.floor({ scratchDirs: AgentPlugin.scratchDirsFor(OWNED), officer: true }),
+    )
+    for (const glob of AgentPlugin.scratchDirsFor(OWNED)) {
+      for (const resource of [glob.slice(0, -2), `${glob.slice(0, -2)}/`, file(glob)]) {
+        expect(effect(rules, "external_directory_write", resource)).toBe("allow")
+        expect(effect(rules, "external_directory_read", resource)).toBe("allow")
+      }
+    }
+    expect(effect(rules, "external_directory_write", foreign.slice(0, -2))).not.toBe("allow")
+    expect(effect(rules, "external_directory_write", `${own.slice(0, -2)}-other`)).not.toBe("allow")
+  })
+
+  test("stored Windows path aliases cannot preserve another officer's root grant", () => {
+    const rules = ownScratchGrants(
+      [
+        { action: "external_directory_write", resource: "c:\\NOVA\\Scratch\\DAEDALUS\\", effect: "allow" },
+        { action: "external_directory_write", resource: "c:/NOVA/Scratch/DAEDALUS/*", effect: "allow" },
+        { action: "external_directory_write", resource: "c:/NOVA/Scratch", effect: "allow" },
+      ],
+      { root: "C:/Nova/scratch/", own: "C:/Nova/scratch/geryon/" },
+    )
+    expect(rules).toHaveLength(4)
+    expect(effect(rules, "external_directory_write", "C:/Nova/scratch/geryon")).toBe("allow")
+    expect(effect(rules, "external_directory_write", "C:/Nova/scratch/daedalus")).not.toBe("allow")
+  })
+
+  test("cloning and copying retarget exact roots as well as descendant grants", () => {
+    const source = ownScratchGrants([], { root: "D:/remote/scratch", own: "D:/remote/scratch/daedalus" })
+    const rules = retargetScratchGrants("daedalus", "geryon", source)
+    expect(rules).toHaveLength(4)
+    for (const suffix of ["", "/note.txt"]) {
+      expect(effect(rules, "external_directory_write", `D:/remote/scratch/geryon${suffix}`)).toBe("allow")
+      expect(effect(rules, "external_directory_write", `D:/remote/scratch/daedalus${suffix}`)).not.toBe("allow")
+    }
+  })
+
+  test("deriving scratch roots preserves an explicit later denial", () => {
+    const floor = AgentPlugin.floor({ scratchDirs: AgentPlugin.scratchDirsFor(OWNED), officer: true })
+    const rules = AgentPlugin.withOwnScratch(OWNED, [
+      ...floor,
+      { action: "external_directory_write", resource: own, effect: "deny" },
+      { action: "external_directory_write", resource: own.slice(0, -2), effect: "deny" },
+    ])
+    expect(effect(rules, "external_directory_write", file(own))).toBe("deny")
+    expect(effect(rules, "external_directory_write", own.slice(0, -2))).toBe("deny")
   })
 })

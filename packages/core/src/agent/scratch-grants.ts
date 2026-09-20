@@ -18,8 +18,20 @@
 import type { Permission } from "@novaclaw/schema/permission"
 
 const SCRATCH_GRANT_ACTIONS = new Set(["external_directory_read", "external_directory_write"])
-const normalized = (resource: unknown) => String(resource).replaceAll("\\", "/")
-const suffixFor = (agentID: string) => `/scratch/${agentID}/*`
+const normalized = (resource: unknown) => String(resource).replaceAll("\\", "/").replace(/\/+$/, "")
+const directory = (resource: unknown) => normalized(resource).replace(/\/\*$/, "")
+const key = (resource: unknown) => {
+  const value = normalized(resource)
+  return /^(?:[a-z]:|\/\/)/i.test(value) ? value.toLowerCase() : value
+}
+
+export function scratchDirectoryGrants(resource: string): Permission.Rule[] {
+  const root = directory(resource)
+  return [root, `${root}/*`].flatMap((resource) => [
+    { action: "external_directory_read", resource, effect: "allow" as const },
+    { action: "external_directory_write", resource, effect: "allow" as const },
+  ])
+}
 
 /**
  * Rewrite a ruleset's scratch grants so they name THIS agent's own workspace, and nothing else's.
@@ -44,20 +56,25 @@ export function ownScratchGrants(
   rules: readonly Permission.Rule[],
   paths: { readonly root: string; readonly own: string },
 ): Permission.Rule[] {
-  const own = `${normalized(paths.own)}/*`
-  const root = `${normalized(paths.root)}/`
+  const root = key(paths.root)
+  const grants = scratchDirectoryGrants(paths.own)
+  const ownResources = new Set(grants.map((rule) => key(rule.resource)))
   const kept = rules.filter((rule) => {
     if (!SCRATCH_GRANT_ACTIONS.has(rule.action)) return true
-    const resource = String(rule.resource)
-    if (!resource.startsWith(root)) return true
-    return resource === own
+    const resource = key(rule.resource)
+    return ownResources.has(resource) || (resource !== root && !resource.startsWith(`${root}/`))
   })
-  if (kept.some((rule) => rule.action === "external_directory_write" && String(rule.resource) === own)) return kept
-  return [
-    ...kept,
-    { action: "external_directory_read", resource: own, effect: "allow" },
-    { action: "external_directory_write", resource: own, effect: "allow" },
-  ]
+  const missing = grants.filter(
+    (grant) =>
+      !kept.some(
+        (rule) => rule.action === grant.action && key(rule.resource) === key(grant.resource) && rule.effect === "allow",
+      ),
+  )
+  const firstOwn = kept.findIndex(
+    (rule) => SCRATCH_GRANT_ACTIONS.has(rule.action) && ownResources.has(key(rule.resource)),
+  )
+  kept.splice(firstOwn === -1 ? kept.length : firstOwn, 0, ...missing)
+  return kept
 }
 
 /**
@@ -69,21 +86,18 @@ export function retargetScratchGrants(
   targetAgentID: string,
   rules: readonly Permission.Rule[],
 ): Permission.Rule[] {
-  const sourceSuffix = suffixFor(sourceAgentID)
+  const sourceSuffix = `/scratch/${sourceAgentID}`
   const roots = new Set<string>()
   const kept = rules.filter((rule) => {
     if (!SCRATCH_GRANT_ACTIONS.has(rule.action)) return true
-    const resource = normalized(rule.resource)
-    if (!resource.endsWith(sourceSuffix)) return true
-    roots.add(resource.slice(0, -sourceSuffix.length))
+    const resource = directory(rule.resource)
+    const root = resource.slice(0, -sourceSuffix.length)
+    if (key(resource) !== key(`${root}${sourceSuffix}`)) return true
+    roots.add(root)
     return false
   })
   for (const root of roots) {
-    const resource = `${root}${suffixFor(targetAgentID)}`
-    kept.push(
-      { action: "external_directory_read", resource, effect: "allow" },
-      { action: "external_directory_write", resource, effect: "allow" },
-    )
+    kept.push(...scratchDirectoryGrants(`${root}/scratch/${targetAgentID}`))
   }
   return kept
 }

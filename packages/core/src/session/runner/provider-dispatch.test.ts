@@ -364,12 +364,21 @@ describe("ProviderDispatch", () => {
     expect(controllerTokens).toBe(0)
     expect(openingHistoryBudget).toBe(plainHistoryBudget)
 
-    let filler = ""
-    let secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
-    while (ContextPack.estimateMessages(secondMessages) <= openingHistoryBudget) {
-      filler += "x"
-      secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
+    const historyFor = (length: number) => [
+      Message.user("first"),
+      Message.assistant("x".repeat(length)),
+      Message.user("second"),
+    ]
+    let below = 0
+    let above = 1
+    while (ContextPack.estimateMessages(historyFor(above)) <= openingHistoryBudget) above *= 2
+    while (above - below > 1) {
+      const middle = Math.floor((above + below) / 2)
+      if (ContextPack.estimateMessages(historyFor(middle)) <= openingHistoryBudget) below = middle
+      else above = middle
     }
+    const secondMessages = historyFor(above)
+    expect(ContextPack.estimateMessages(historyFor(below))).toBeLessThanOrEqual(openingHistoryBudget)
     expect(ContextPack.estimateMessages(secondMessages)).toBeGreaterThan(plainHistoryBudget)
 
     const secondBase = LLM.request({ model, system: plainSystem, messages: secondMessages })

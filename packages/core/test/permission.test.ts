@@ -3,6 +3,7 @@ import fs from "node:fs"
 import nodePath from "node:path"
 import { Effect, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { ownScratchGrants } from "@novaclaw/core/agent/scratch-grants"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -686,10 +687,10 @@ describe("PermissionV2 — unattended confinement stance", () => {
   // The `outside` request above names a DIFFERENT directory, so the two tell a named workspace apart
   // from confinement's blanket.
   const workspace = "C:/scratch/daedalus/*"
-  const namedWorkspaceRules: PermissionV2.Ruleset = [
-    ...buildAgentRules,
-    { action: "external_directory_write", resource: workspace, effect: "allow" as const },
-  ]
+  const namedWorkspaceRules: PermissionV2.Ruleset = ownScratchGrants(buildAgentRules, {
+    root: "C:/scratch",
+    own: "C:/scratch/daedalus",
+  })
   const inWorkspace = (input: Partial<PermissionV2.AssertInput> = {}) =>
     assertion({
       action: "external_directory_write",
@@ -906,6 +907,7 @@ describe("PermissionV2 — unattended confinement stance", () => {
       // The inspection and the enforcement path every mutating tool takes must agree.
       expect(yield* service.ask(inWorkspace({ sessionID }))).toMatchObject({ effect: "allow" })
       yield* service.assert(inWorkspace({ sessionID }))
+      yield* service.assert(inWorkspace({ sessionID, resources: ["C:/scratch/daedalus"] }))
       // NEGATIVE CONTROL: the same unattended root, writing a DIFFERENT directory, is still confined
       // — the carve-out is the named folder, never a hole in the stance.
       const error = yield* service.assert(outside({ sessionID })).pipe(Effect.flip)

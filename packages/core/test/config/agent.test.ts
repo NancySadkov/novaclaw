@@ -125,6 +125,8 @@ describe("ConfigAgentPlugin.Plugin", () => {
         { action: "bash", resource: "git *", effect: "allow" },
       ])
       expect(buildAgent.permissions.slice(4)).toEqual([
+        { action: "external_directory_read", resource: expect.stringMatching(/\/scratch\/build$/), effect: "allow" },
+        { action: "external_directory_write", resource: expect.stringMatching(/\/scratch\/build$/), effect: "allow" },
         { action: "external_directory_read", resource: expect.stringContaining("/scratch/build/*"), effect: "allow" },
         { action: "external_directory_write", resource: expect.stringContaining("/scratch/build/*"), effect: "allow" },
       ])

@@ -135,7 +135,9 @@ const config = Layer.succeed(
   Config.Service,
   Config.Service.of({
     entries: () =>
-      Effect.succeed(configEntries === undefined ? [] : [new Config.Document({ type: "document", info: configEntries })]),
+      Effect.succeed(
+        configEntries === undefined ? [] : [new Config.Document({ type: "document", info: configEntries })],
+      ),
   }),
 )
 
@@ -620,6 +622,52 @@ describe("BashTool", () => {
     ),
   )
 
+  it.live("search patterns and script literals cannot fault the advisory path scan", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const commands = [
+              String.raw`grep -n '/\*\|\*/' source.cpp`,
+              String.raw`sed -n '/\*\|\*/p' source.cpp`,
+              String.raw`python -c 'print("/\\*\\|\\*/")'`,
+              "printf sibling",
+            ]
+            for (const command of commands) {
+              const settled = yield* settleTool(registry, call({ command }))
+              expect(settled.output?.structured).toMatchObject({ exit: 0 })
+            }
+            expect(runs).toHaveLength(commands.length)
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("reduces an oversized soft wait and executes the command once", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          settleTool(registry, call({ command: "printf result", timeout: 900_000 })),
+        ).pipe(
+          Effect.andThen((settled) =>
+            Effect.sync(() => {
+              expect(settled.output?.structured).toMatchObject({ exit: 0 })
+              expect(runs).toHaveLength(1)
+              expect(JSON.stringify(settled.output?.content)).toContain("reduced from 900000 ms")
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("keeps non-zero exits useful", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -931,4 +979,3 @@ test("keeps locked deferred parity TODOs visible", async () => {
 // measured was removed, not changed. The programme and the cost are in `notes/reports/retire-project-file-2026-09-16.md`
 // (plan repo); the surviving halves — the instance `skill_invocation` store, the always-on policy
 // providers, the plain `AGENTS.md` walk — are covered by the other suites in this file.
-

@@ -321,9 +321,12 @@ const registryLayer = Layer.effect(
         // A policy may rewrite arguments. The rewritten call is screened too; policy code cannot
         // silently widen the officer's ceiling after the model's original input passed.
         const rewrittenExcess = ToolDeadline.exceedsLimit(input.call.name, screened.input, screened.maxToolTimeoutMs)
-        if (rewrittenExcess)
+        if (rewrittenExcess && input.call.name !== "bash")
           return yield* new ToolFailure({ message: ToolDeadline.refusal(input.call.name, rewrittenExcess) })
-        const deadline = ToolDeadline.resolve(input.call.name, screened.input, screened.maxToolTimeoutMs)
+        const executionInput = rewrittenExcess
+          ? { ...(screened.input as Record<string, unknown>), timeout: rewrittenExcess.timeoutMs }
+          : screened.input
+        const deadline = ToolDeadline.resolve(input.call.name, executionInput, screened.maxToolTimeoutMs)
         const expiresAt = startedAt + deadline.timeoutMs
         const remainingMs = Math.max(0, expiresAt - Date.now())
         // Bash's `timeout` is a SOFT command wait, not a promise that policy, durable job
@@ -336,7 +339,7 @@ const registryLayer = Layer.effect(
           input.call.name === "bash" ? remainingMs + ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS : remainingMs
         const execution = settle(
           registration.tool,
-          screened.input === input.call.input ? input.call : { ...input.call, input: screened.input },
+          executionInput === input.call.input ? input.call : { ...input.call, input: executionInput },
           {
             sessionID: input.sessionID,
             agent: input.agent,
@@ -364,8 +367,16 @@ const registryLayer = Layer.effect(
           }),
         )
         const output = yield* execution
+        const note = [
+          screened.note,
+          rewrittenExcess
+            ? `The requested soft wait was reduced from ${rewrittenExcess.requestedMs} ms to this officer's ${rewrittenExcess.limitMs} ms limit. The command can continue as a supervised job after the wait.`
+            : undefined,
+        ]
+          .filter((value) => value !== undefined)
+          .join("\n")
         return {
-          output: screened.note === undefined ? output : withPolicyNote(output, screened.note),
+          output: note ? withPolicyNote(output, note) : output,
           tool: registration.tool,
         }
       })
