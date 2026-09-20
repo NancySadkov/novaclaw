@@ -91,10 +91,12 @@ describe("SessionExecutionAttempt", () => {
       })
       expect(yield* attempts.list()).toEqual([expect.objectContaining({ sessionID, state: "recovering" })])
       yield* attempts.authorizeRetry(sessionID)
-      expect(yield* attempts.get(sessionID)).toMatchObject({
-        state: "recovering",
+      const authorized = yield* attempts.get(sessionID)
+      expect(authorized).toMatchObject({
+        state: "starting",
         failureCount: 0,
       })
+      expect(authorized?.failureClass).toBeUndefined()
     }),
   )
 
@@ -181,7 +183,9 @@ describe("SessionExecutionAttempt", () => {
 
       const replacement = yield* attempts.start(sessionID, "host-b")
       expect(yield* attempts.settle(replacement)).toBe("recovery-pending")
-      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering" })
+      const pending = yield* attempts.get(sessionID)
+      expect(pending).toMatchObject({ state: "busy" })
+      expect(pending?.failureClass).toBeUndefined()
       yield* attempts.providerSettled(first, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toEqual({ ...recovery, toolProtocol: true })
       yield* attempts.providerSettled(replacement, recovery.attemptID)

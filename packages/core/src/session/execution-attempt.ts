@@ -602,7 +602,7 @@ export const layer = Layer.effect(
               if (committed) return "committed" as const
               const pending = yield* tx
                 .update(SessionExecutionTable)
-                .set({ state: "recovering", heartbeat_at: now, time_updated: now })
+                .set({ state: "busy", heartbeat_at: now, time_updated: now })
                 .where(and(fence, isNotNull(SessionExecutionTable.provider_recovery)))
                 .returning({ sessionID: SessionExecutionTable.session_id })
                 .get()
@@ -726,11 +726,12 @@ export const layer = Layer.effect(
         yield* db
           .update(SessionExecutionTable)
           .set({
-            state: "recovering",
+            state: "starting",
             failure_class: null,
             failure_detail: null,
             failure_count: 0,
             checkpoint_at: null,
+            heartbeat_at: now,
             time_updated: now,
           })
           .where(eq(SessionExecutionTable.session_id, sessionID))

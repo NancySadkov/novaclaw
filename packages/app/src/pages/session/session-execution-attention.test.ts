@@ -17,8 +17,13 @@ describe("execution recovery attention", () => {
   })
 
   test("automatic recovery remains visible while it works", () => {
-    const recovering = { state: "recovering" }
+    const recovering = { state: "recovering", failureClass: "before-side-effect" }
     expect(visibleExecutionAttention(recovering, true)).toBe(recovering)
+  })
+
+  test("an internal settlement handoff cannot masquerade as a failed-worker recovery", () => {
+    expect(visibleExecutionAttention({ state: "recovering" }, true)).toBeUndefined()
+    expect(visibleExecutionAttention({ state: "recovering" }, false)).toBeUndefined()
   })
 
   test("ordinary busy and settled attempts never render as attention", () => {
