@@ -6,23 +6,6 @@ import { Auth, LLMClient } from "../src/route"
 import type { Protocol } from "../src/route/protocol"
 import { LLMError, type LLMRequest } from "../src/schema"
 
-// The mechanical check for ruling 1 on the empty-conversation guard (`route/protocol.ts`
-// `guardConversation`). The invariant: **no protocol may send a body whose conversation array
-// lowered to empty, and the refusal names the wire's own field.**
-//
-// ⚠️ **This is an ABSENCE assertion, so every claim here is written to be killable.** The failure
-// mode to fear is a test that passes because it can never fire — this repo shipped two of those in
-// one day (`not.toContain(windowsPath)` could not fire because `JSON.stringify` escapes `\`, and
-// `not.toHaveProperty("holo3.1")` passed vacuously because bun reads a dotted argument as a path).
-// So: the enumeration asserts it found something before iterating it; the refusal claims assert on
-// the MESSAGE TEXT and the reason tag, not merely that something failed; and every refusal claim is
-// paired with a control that must SUCCEED, so an always-refusing guard is as red as an absent one.
-//
-// ⚠️ **Not a re-litigation of `68d5029a2`.** That commit put the reasoning-only assistant DROP in
-// `openai-chat.ts` because the question has six answers per wire. This file pins the question that
-// has ONE answer on every wire — may the conversation array be empty — and it runs strictly after
-// the drop. See `guardConversation`'s own comment.
-
 // A cast request, the same minimal pattern the protocol body tests use: the lowering paths read
 // `model.id`, `model.compatibility`, `model.route.defaults`, `system`, `messages`, `tools`.
 const raw = (patch: Record<string, unknown>): LLMRequest =>
@@ -35,6 +18,8 @@ const raw = (patch: Record<string, unknown>): LLMRequest =>
   }) as unknown as LLMRequest
 
 const USER_TURN = { role: "user", content: [{ type: "text", text: "Say hello." }] }
+const MISSING_USER_QUERY =
+  "[Automated NovaClaw check — not a message from your user.] Handle the pending NovaClaw operation in the following conversation."
 
 // The MEASURED production shape (2026-07-31, B=2 at a 16k window): a session with zero user
 // messages whose surviving entry is an assistant that only thought. `lowerAssistantMessage` drops
@@ -123,7 +108,12 @@ describe("no protocol sends an empty conversation (the guard's own check)", () =
       expect(entry.protocol.body.conversation.name).toBe(expected.field)
     })
 
-    test(`${entry.export}: a request with no messages and no system is REFUSED, naming that field`, () => {
+    test(`${entry.export}: a request with no messages and no system follows its pinned empty-input rule`, () => {
+      if (entry.export === "OpenAIChat") {
+        const body = Effect.runSync(entry.protocol.body.from(raw({})))
+        expect(entry.protocol.body.conversation.read(body)).toEqual([{ role: "user", content: MISSING_USER_QUERY }])
+        return
+      }
       const error = refusalOf(entry.protocol, raw({}))
       expect(error).toBeInstanceOf(LLMError)
       expect(error.reason._tag).toBe("InvalidRequest")
@@ -145,28 +135,22 @@ describe("no protocol sends an empty conversation (the guard's own check)", () =
   }
 })
 
-// ⚖️ This block is the mechanical consequence of the 2026-08-07 ruling that `ContextPack.pack` does
-// NOT owe a "says something" postcondition (argued in full at `guardConversation` in
-// `route/protocol.ts`). The ruling only holds if the shape `pack` CAN emit — a session with no real
-// user message, whose kept-set is a lone reasoning-only assistant — is refused here by name. If a
-// future edit makes that shape reach a backend, the ruling has quietly become false and these go red.
 describe("the measured case — a session with zero user messages", () => {
-  test("openai-chat: a lone reasoning-only assistant is refused, not shipped as `messages: []`", () => {
-    const error = refusalOf(Protocols.OpenAIChat.protocol, raw({ messages: [REASONING_ONLY_ASSISTANT] }))
-    expect(error.reason._tag).toBe("InvalidRequest")
-    expect(error.reason.message).toContain("`messages` is empty after lowering 1 message(s) and 0 system part(s)")
+  test("openai-chat: a lone reasoning-only assistant lowers to the harness query", () => {
+    const body = Effect.runSync(
+      Protocols.OpenAIChat.protocol.body.from(raw({ messages: [REASONING_ONLY_ASSISTANT] })),
+    )
+    expect(body.messages).toEqual([{ role: "user", content: MISSING_USER_QUERY }])
   })
 
-  test("openai-chat: CONTROL — the PRODUCTION floor still compiles, because system lands in `messages`", () => {
-    // `@novaclaw/core` always supplies a system message, which is why this defect was
-    // production-mitigated and reachable only through the public surface. That mitigation must keep
-    // working: on THIS wire the system prompt is a `messages` entry, so the same dropped assistant
-    // leaves a legal one-entry body.
+  test("openai-chat: the harness query follows the system prompt when the assistant lowers away", () => {
     const body = Effect.runSync(
       Protocols.OpenAIChat.protocol.body.from(raw({ messages: [REASONING_ONLY_ASSISTANT], system: SYSTEM_PART })),
     )
-    expect(body.messages).toHaveLength(1)
-    expect(body.messages[0]).toMatchObject({ role: "system" })
+    expect(body.messages).toEqual([
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: MISSING_USER_QUERY },
+    ])
   })
 
   test("anthropic-messages: a system prompt alone is STILL refused — `system` is its own top-level field", () => {
@@ -179,10 +163,12 @@ describe("the measured case — a session with zero user messages", () => {
     expect(error.reason.message).toContain("`messages` is empty after lowering 0 message(s) and 1 system part(s)")
   })
 
-  test("openai-chat: CONTROL for the pair above — a system prompt alone COMPILES on this wire", () => {
+  test("openai-chat: a system prompt alone receives the harness query", () => {
     const body = Effect.runSync(Protocols.OpenAIChat.protocol.body.from(raw({ system: SYSTEM_PART })))
-    expect(body.messages).toHaveLength(1)
-    expect(body.messages[0]).toMatchObject({ role: "system" })
+    expect(body.messages).toEqual([
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: MISSING_USER_QUERY },
+    ])
   })
 
   test("anthropic-messages: a reasoning-only assistant is NOT dropped here — the per-wire ruling is intact", () => {
@@ -207,13 +193,13 @@ describe("reachable through the PUBLIC surface — the reason this needed a guar
     })
   }
 
-  test("LLMClient.prepare refuses — plugins and the SDK reach the wire through this, not through `body.from`", () => {
-    const error = Effect.runSync(
-      LLMClient.prepare(LLM.request({ model: route.model({ id: "test-model" }) })).pipe(Effect.flip),
+  test("LLMClient.prepare supplies a harness query — plugins and the SDK reach this public surface", () => {
+    const prepared = Effect.runSync(
+      LLMClient.prepare<Protocols.OpenAIChat.OpenAIChatBody>(
+        LLM.request({ model: route.model({ id: "test-model" }) }),
+      ),
     )
-    expect(error).toBeInstanceOf(LLMError)
-    expect(error.reason._tag).toBe("InvalidRequest")
-    expect(error.reason.message).toContain("openai-chat has nothing to send")
+    expect(prepared.body.messages).toEqual([{ role: "user", content: MISSING_USER_QUERY }])
   })
 
   test("CONTROL — the same public call with a prompt prepares a body", () => {

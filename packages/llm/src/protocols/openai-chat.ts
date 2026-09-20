@@ -437,12 +437,6 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
   // it, `content.length === 0` implies `toolCalls.length > 0`, so `content: null` now ships ONLY
   // alongside `tool_calls` — the one configuration our own recorded cassettes show a live backend
   // accepting.
-  //
-  // ⚠️ KNOWN RESIDUAL, deliberately not handled here: if this drops the last entry, `fromRequest`
-  // emits `messages: []`, which a backend rejects. Measured over the owner's real sessions it
-  // happens only for a session with NO user message at all, and only before `lowerMessages`
-  // prepends the system turn — which `@novaclaw/core` always supplies, so the production floor is a
-  // system-only request, not an empty array. An empty-request guard is a separate decision.
   if (content.length === 0 && toolCalls.length === 0) return []
   const replayedReasoning =
     reasoning.length > 0
@@ -492,6 +486,9 @@ const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (
   return (yield* lowerToolMessages(message)).messages
 })
 
+const missingUserQuery =
+  "[Automated NovaClaw check — not a message from your user.] Handle the pending NovaClaw operation in the following conversation."
+
 const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: LLMRequest) {
   // On the prompted channel the tools are DESCRIBED here, because the body will not carry them.
   // Appended to the system text rather than pushed as an extra message: a second system message is
@@ -537,6 +534,13 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
     messages.push(...(yield* lowerMessage(message, reasoningContentRequired)))
   }
   flushImages()
+  if (!messages.some((message) => message.role === "user")) {
+    const conversationStart = messages.findIndex((message) => message.role !== "system")
+    messages.splice(conversationStart < 0 ? messages.length : conversationStart, 0, {
+      role: "user",
+      content: missingUserQuery,
+    })
+  }
   return messages
 })
 
@@ -814,8 +818,7 @@ export const protocol = Protocol.make({
     schema: OpenAIChatBody,
     from: fromRequest,
     // This wire carries the system prompt INSIDE `messages`, so an empty array means the request
-    // said nothing at all — not merely "no user turn". This is the array the KNOWN RESIDUAL noted
-    // in `lowerAssistantMessage` above lands in; `Protocol.make` now refuses it by name.
+    // said nothing at all. `Protocol.make` refuses it by name.
     conversation: { name: "messages", read: (body) => body.messages },
   },
   stream: {

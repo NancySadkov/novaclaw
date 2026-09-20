@@ -86,7 +86,72 @@ describe("OpenAI Chat route", () => {
         }),
       )
 
-      expect(prepared.body.messages).toEqual([{ role: "assistant", content: "Hello", reasoning_content: "thinking" }])
+      expect(prepared.body.messages).toEqual([
+        {
+          role: "user",
+          content:
+            "[Automated NovaClaw check — not a message from your user.] Handle the pending NovaClaw operation in the following conversation.",
+        },
+        { role: "assistant", content: "Hello", reasoning_content: "thinking" },
+      ])
+    }),
+  )
+
+  it.effect("supplies a harness query before a colleague-style tool exchange with no user message", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.assistant([
+              ToolCallPart.make({ id: "colleague:incoming", name: "colleague", input: { op: "incoming" } }),
+            ]),
+            Message.tool({
+              id: "colleague:incoming",
+              name: "colleague",
+              result: "[Incoming ask from colleague Daedalus.] Please inspect this.",
+            }),
+            Message.assistant([ToolCallPart.make({ id: "shell:1", name: "bash", input: { command: "pwd" } })]),
+            Message.tool({ id: "shell:1", name: "bash", result: "C:/work" }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        {
+          role: "user",
+          content:
+            "[Automated NovaClaw check — not a message from your user.] Handle the pending NovaClaw operation in the following conversation.",
+        },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "colleague:incoming",
+              type: "function",
+              function: { name: "colleague", arguments: '{"op":"incoming"}' },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "colleague:incoming",
+          content: '"[Incoming ask from colleague Daedalus.] Please inspect this."',
+        },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "shell:1",
+              type: "function",
+              function: { name: "bash", arguments: '{"command":"pwd"}' },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "shell:1", content: '"C:/work"' },
+      ])
     }),
   )
 
