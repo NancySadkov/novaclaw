@@ -952,8 +952,7 @@ const droppedFrom = (messages: ReadonlyArray<Message>, kept: ReadonlyArray<Messa
   const keptObjects = new Set<Message>(kept)
   const keptIDs = new Set(kept.flatMap((message) => (message.id === undefined ? [] : [message.id])))
   return messages.filter(
-    (message) =>
-      !keptObjects.has(message) && !(message.id !== undefined && keptIDs.has(message.id)),
+    (message) => !keptObjects.has(message) && !(message.id !== undefined && keptIDs.has(message.id)),
   )
 }
 
@@ -1312,16 +1311,16 @@ export const packRequest = (input: {
     input.promptMarginTokens !== undefined && Number.isFinite(input.promptMarginTokens)
       ? Math.max(0, Math.trunc(input.promptMarginTokens))
       : PromptEstimate.unsupported(input.request, input.imagePatchPixels).marginTokens
-  // Reserve the tombstone's room before measuring, emit it only if something actually left. `budget`
-  // sees the part; the returned `system` carries it only when `dropped > 0`, because a line naming a
-  // file that was never written is worse than no line at all.
+  // Reserve the archive notice before packing. Append it only when history was dropped, keeping
+  // the system prefix byte-identical throughout the epoch.
   const droppedContextPart =
     input.droppedContextFile === undefined ? undefined : OldContext.part(input.droppedContextFile)
-  const measuredSystem =
-    droppedContextPart === undefined ? input.request.system : [...input.request.system, droppedContextPart]
+  const archiveMessage =
+    droppedContextPart === undefined ? undefined : Message.user(applySteerProvenance(droppedContextPart.text))
+  const archiveTokens = archiveMessage === undefined ? 0 : estimateMessage(archiveMessage, input.imagePatchPixels)
   const correctedBudget = budget({
     contextSize,
-    system: measuredSystem,
+    system: input.request.system,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
     prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
@@ -1335,7 +1334,7 @@ export const packRequest = (input: {
   // Feedback and uncertainty apply ONCE at the whole-request capacity boundary. Item estimates and
   // category ranks stay ordinary heuristics; a positive correction leaves less room for history, a
   // negative one restores room the provider proved the heuristic was wasting.
-  const result = pack(memoryBudget.messages, correctedBudget, {
+  const result = pack(memoryBudget.messages, Math.max(0, correctedBudget - archiveTokens), {
     imagePatchPixels: input.imagePatchPixels,
     ...(input.hard === true ? { hard: true } : {}),
     ...(input.profile === undefined
@@ -1350,11 +1349,14 @@ export const packRequest = (input: {
   })
   return {
     ...result,
+    messages:
+      archiveMessage !== undefined && result.dropped > 0 ? [...result.messages, archiveMessage] : result.messages,
+    estimatedTokens: result.estimatedTokens + (archiveMessage !== undefined && result.dropped > 0 ? archiveTokens : 0),
     changed: result.changed || memoryBudget.changed,
     findings: [...systemFindings, ...memoryBudget.findings, ...result.findings],
     contextSize,
     // The tombstone only rides the request when it is TRUE of this request. `dropped > 0` is the same
     // fact `droppedMessages` carries; if nothing left, the caller must not be told to go read a file.
-    system: droppedContextPart !== undefined && result.dropped > 0 ? measuredSystem : input.request.system,
+    system: input.request.system,
   }
 }

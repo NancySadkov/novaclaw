@@ -35,6 +35,29 @@ import {
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 import { ToolDeadline } from "../tool-deadline"
+import { Token } from "../util/token"
+
+/** Keep discovery callable while moving large schemas out of the immutable native prefix. */
+export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, budget?: number): ToolDefinition[] => {
+  if (
+    budget === undefined ||
+    !definitions.some((tool) => tool.name === "tool_search") ||
+    !definitions.some((tool) => tool.name === "tool_call")
+  )
+    return [...definitions]
+  const priority = ["tool_search", "tool_call", "spawn", "memo_set", "memo_clear", "exit"]
+  const rank = (name: string) => (priority.includes(name) ? priority.indexOf(name) : priority.length)
+  const selected = new Set<string>()
+  let used = 2
+  for (const tool of [...definitions].sort((a, b) => rank(a.name) - rank(b.name))) {
+    const cost = Token.estimateStructured(tool)
+    if (tool.name === "tool_search" || tool.name === "tool_call" || used + cost <= budget) {
+      used += cost
+      selected.add(tool.name)
+    }
+  }
+  return definitions.filter((tool) => selected.has(tool.name))
+}
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -75,6 +98,8 @@ export interface Interface {
      * unaffected.
      */
     variantOf?: (name: string) => string | undefined,
+    /** Bound native schemas; overflow stays available through discovery and deferred dispatch. */
+    nativeBudgetTokens?: number,
   ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
@@ -451,6 +476,7 @@ const registryLayer = Layer.effect(
         offered = () => true,
         discovered = new Set<string>(),
         variantOf = () => undefined,
+        nativeBudgetTokens?: number,
       ) {
         type MaterializedRegistration = Registration & { readonly server: string; readonly deferred: boolean }
         const registrations = new Map<string, MaterializedRegistration>()
@@ -483,12 +509,23 @@ const registryLayer = Layer.effect(
           const available = availabilityOf.get(registration.tool)
           if (available !== undefined && !(yield* available)) registrations.delete(name)
         }
+        const nativeNames = new Set(
+          nativeDefinitions(
+            [...registrations]
+              .filter(([, registration]) => !registration.deferred)
+              .map(([name, registration]) => definition(name, registration.tool, variantOf(name))),
+            nativeBudgetTokens,
+          ).map((tool) => tool.name),
+        )
+        for (const [name, registration] of registrations)
+          if (!nativeNames.has(name) && !registration.deferred)
+            registrations.set(name, { ...registration, deferred: true })
         const resident = new Map([...registrations].filter(([, registration]) => !registration.deferred))
         const deferred = [...registrations]
           .filter(([, registration]) => registration.deferred)
           .map(([name, registration]) => ({
             server: registration.server,
-            definition: definition(name, registration.tool),
+            definition: definition(name, registration.tool, variantOf(name)),
           }))
           .toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))
         const deferredByName = new Map(

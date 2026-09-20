@@ -96,9 +96,20 @@ export interface PrepareInput {
   readonly droppedContextFile?: string
 }
 
+/** Bound generation before either estimating or dispatching the request. */
+export const fitOutput = (request: LLMRequest, context = request.model.route.defaults.limits?.context): LLMRequest => {
+  if (context === undefined || !Number.isFinite(context) || context <= 0) return request
+  const maxTokens = ContextBudget.outputTokens(
+    context,
+    request.generation?.maxTokens ?? request.model.route.defaults.limits?.output,
+  )
+  if (request.generation?.maxTokens === maxTokens) return request
+  return LLM.request({ ...LLM.requestInput(request), generation: { ...request.generation, maxTokens } })
+}
+
 /** Attach the stable cache identity and pack the exact request that will reach the provider. */
 export const prepare = (input: PrepareInput) => {
-  const requestInput = LLM.requestInput(input.request)
+  const requestInput = LLM.requestInput(fitOutput(input.request, input.contextSize))
   const openai = (requestInput.providerOptions?.openai ?? {}) as Record<string, unknown>
   const cacheable = LLM.request({
     ...requestInput,
@@ -154,9 +165,11 @@ interface StreamInput {
 
 /** Exact first provider request. Healthy turns receive no controller-authored message. */
 export const openingRequest = (input: Pick<StreamInput, "request" | "enabled" | "budget">): LLMRequest =>
-  input.enabled && input.budget > 0 && thinkingEnabled(input.request)
-    ? ReasoningBudget.openingRequest({ request: input.request, budget: input.budget })
-    : input.request
+  fitOutput(
+    input.enabled && input.budget > 0 && thinkingEnabled(input.request)
+      ? ReasoningBudget.openingRequest({ request: input.request, budget: input.budget })
+      : input.request,
+  )
 
 export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
   const source = (

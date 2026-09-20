@@ -415,7 +415,8 @@ const prepareDispatch = Effect.fnUntraced(function* (input: {
   if (input.scratchFolder === undefined) return ProviderDispatch.prepare(base)
   const scratchFolder = input.scratchFolder
   const at = DateTime.toDate(yield* DateTime.now)
-  const file = OldContext.file({ scratchFolder, at })
+  const id = OldContext.identity()
+  const file = OldContext.file({ scratchFolder, at, id })
   const dispatch = ProviderDispatch.prepare({ ...base, droppedContextFile: file })
   if (dispatch.packed.droppedMessages.length === 0) return dispatch
   const text = OldContext.render(dispatch.packed.droppedMessages)
@@ -423,7 +424,7 @@ const prepareDispatch = Effect.fnUntraced(function* (input: {
     // `save` recomputes the path from the SAME `at` the request was packed against, so the file
     // written is the file named by construction rather than by two call sites agreeing.
     try: async () => {
-      const saved = await OldContext.save({ scratchFolder, at, text })
+      const saved = await OldContext.save({ scratchFolder, at, text, id })
       // The JSON work-log sibling, named by the prompt template. Best-effort: the `.txt` was already
       // promised by the tombstone, and a second convenience file must not lose it.
       await OldContext.saveWorkLog({ scratchFolder, at, text }).catch(() => undefined)
@@ -1120,6 +1121,7 @@ export const layer = Layer.effect(
     // exact array at this session's first request; live capability changes belong in deferred
     // tool-search results at the transcript tail, never in this prefix.
     const residentToolPrefix = new Map<string, import("@novaclaw/llm").ToolDefinition[]>()
+    const residentToolBudget = new Map<string, number>()
     const deferredToolCatalogue = new Map<string, ReadonlySet<string>>()
     const residentToolCatalogue = new Map<string, ReadonlySet<string>>()
     const promptPrefixEpoch = new Map<string, number>()
@@ -1596,6 +1598,74 @@ export const layer = Layer.effect(
       }
     })
 
+    // All entry points share the same commit lifecycle and semantic retry policy.
+    const attemptCompaction = Effect.fnUntraced(function* (
+      prepared: NonNullable<Effect.Success<ReturnType<typeof prepareTurn>>>,
+      compact: Harness["compaction"]["compactAfterOverflow"],
+      input: SessionCompaction.Input,
+      reason: "auto" | "manual" = "auto",
+    ) {
+      const { session, entries } = prepared
+      let outcome: SessionCompaction.Outcome | undefined
+      let declined: SessionCompaction.DeclineReason | undefined
+      const compacted = yield* compact(
+        {
+          ...input,
+          summaryAllowed:
+            input.summaryAllowed !== false && CompactionBackoff.due(compactionRetryAt.get(session.id), Date.now()),
+          onDecline: (value) => {
+            declined = value
+            input.onDecline?.(value)
+          },
+          onOutcome: (value) => {
+            outcome = value
+            input.onOutcome?.(value)
+          },
+        },
+        reason,
+      )
+      const retryAt = CompactionBackoff.afterAttempt({
+        current: compactionRetryAt.get(session.id),
+        now: Date.now(),
+        compacted,
+        decline: outcome?.reason ?? declined,
+        mode: outcome?.mode,
+      })
+      if (retryAt === undefined) compactionRetryAt.delete(session.id)
+      else compactionRetryAt.set(session.id, retryAt)
+      yield* flushDriveState(session.id)
+      if (!compacted) return false
+      yield* archiveCompactedChat({ entries, memoryOwner: prepared.memoryOwner, memory, session }).pipe(
+        reportArchiveFailure(session.id, prepared.memoryOwnerAgent),
+      )
+      // Snapshot even an empty shadow: clearing the final memo must clear the next epoch too.
+      yield* Effect.gen(function* () {
+        const durableItems = yield* components.list({ sessionID: session.id, kind: "durable" })
+        yield* components.put({
+          sessionID: session.id,
+          kind: "durable_prompt",
+          value: { text: Durable.render(Durable.itemsOf(durableItems)) },
+          system: true,
+        })
+      }).pipe(
+        Effect.catch((cause) =>
+          Log.event("session.compaction.memos.failed", {
+            "session.id": session.id,
+            error: Log.fault(cause),
+          }),
+        ),
+      )
+      const latest = yield* SessionHistory.latestCompaction(db, session.id)
+      if (latest)
+        yield* deliverNudges(
+          session.id,
+          String(prepared.agent.id),
+          { type: "compaction", id: latest.id },
+          !ShortChat.enabled(prepared.config.shortChat),
+        )
+      return true
+    })
+
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
       // ⚠️ PASSED IN, not read here (B7 tier-1). It could not be read here even if we wanted to: the
@@ -1608,6 +1678,7 @@ export const layer = Layer.effect(
       recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
       overflowRecovery?: OverflowRecovery,
       timing: TurnTiming.Recorder = TurnTiming.make(),
+      compactionChecked = false,
     ) {
       const publishLiveTiming = () =>
         Effect.suspend(() =>
@@ -2269,6 +2340,20 @@ export const layer = Layer.effect(
       //
       // Falls back to the live read only before the latch exists — the first step of a fresh session,
       // where the prompt is still in the window and the two answers are identical anyway.
+      const promptPrefixKey = session.id
+      if (promptPrefixEpoch.get(promptPrefixKey) !== system.baselineSeq) {
+        promptPrefixEpoch.set(promptPrefixKey, system.baselineSeq)
+        residentToolPrefix.delete(promptPrefixKey)
+        residentToolBudget.delete(promptPrefixKey)
+        deferredToolCatalogue.delete(promptPrefixKey)
+        residentToolCatalogue.delete(promptPrefixKey)
+      }
+      const currentNativeBudget =
+        model.route.defaults.limits?.context === undefined
+          ? Infinity
+          : Math.floor(model.route.defaults.limits.context * 0.2)
+      const nativeBudget = Math.min(currentNativeBudget, residentToolBudget.get(promptPrefixKey) ?? Infinity)
+      if (!residentToolBudget.has(promptPrefixKey)) residentToolBudget.set(promptPrefixKey, nativeBudget)
       const liveToolMaterialization = yield* tools.materialize(
         // The horizon sees what the verdict will refuse everywhere — the mode overlay, the Tuning
         // switches and the unattended stance, not the agent's own rules alone — so a tool the
@@ -2297,21 +2382,20 @@ export const layer = Layer.effect(
             config.tools,
           )(name),
         discoveredTools,
+        undefined,
+        Number.isFinite(nativeBudget) ? nativeBudget : undefined,
       )
       // Compaction starts a new context epoch. Within one epoch every provider-prefix byte is
       // immutable; the new baseline sequence deliberately gives changed standing configuration a
       // fresh prefix instead of mutating the old one in place.
-      const promptPrefixKey = session.id
-      if (promptPrefixEpoch.get(promptPrefixKey) !== system.baselineSeq) {
-        promptPrefixEpoch.set(promptPrefixKey, system.baselineSeq)
-        residentToolPrefix.delete(promptPrefixKey)
-        deferredToolCatalogue.delete(promptPrefixKey)
-        residentToolCatalogue.delete(promptPrefixKey)
-      }
       const frozenDefinitions = residentToolPrefix.get(promptPrefixKey)
       const stableDefinitions = frozenDefinitions ?? [...liveToolMaterialization.definitions]
       if (frozenDefinitions === undefined) residentToolPrefix.set(promptPrefixKey, stableDefinitions)
       const toolMaterialization = { ...liveToolMaterialization, definitions: stableDefinitions }
+      const replacedPrefixTokens = Math.max(
+        0,
+        Token.estimateStructured(stableDefinitions) - Token.estimateStructured(liveToolMaterialization.definitions),
+      )
       const catalogueNow = new Set(toolMaterialization.deferred.map((source) => source.definition.name))
       const catalogueBefore = deferredToolCatalogue.get(promptPrefixKey)
       deferredToolCatalogue.set(promptPrefixKey, catalogueNow)
@@ -2552,10 +2636,7 @@ export const layer = Layer.effect(
         imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("request-build")
-      // Prepare the provider request BEFORE a possible compaction so a derived summary can reuse
-      // the exact same packed prefix an ordinary turn would send. Passing the un-packed assembly
-      // here defeats cache reuse precisely on long chats, because its extra old messages diverge at
-      // the history frontier the provider has cached.
+      // Packing and compaction both measure the original assembly; summaries read the stored entries.
       yield* timingStart("context-fit")
       // One argument list, used twice: the ordinary pack, and the HARD re-pack the last-moment gate
       // below may ask for. A second copy would be the divergence that lets the gate measure against
@@ -2591,22 +2672,26 @@ export const layer = Layer.effect(
       const retryAt = compactionRetryAt.get(session.id) ?? 0
       const shouldAttemptCompaction = CompactionBackoff.due(retryAt, Date.now())
       let compacted = false
-      // 🔴 ALWAYS CALLED — the backoff gates the SPEND, not the check. It used to skip this call
-      // entirely for 30 minutes after a summarizer failure, which meant the threshold was not even
-      // measured or logged and the packed request went out unmeasured: `ses_daedalus` dispatched a
-      // request its own estimate put at 281,140 tokens against a 235,929 ceiling, 148 ms after
-      // compaction had given up. A failed summary is evidence about the summarizer; it is not
-      // evidence that the chat has room. See `SessionCompaction.Input.summaryAllowed`.
-      {
-        let declined: SessionCompaction.DeclineReason | undefined
+      // At most one automatic fold before dispatch. Re-entering must reach the provider or
+      // its final fit guard; repeated compaction cannot be used as a substitute for progress.
+      if (!compactionChecked) {
         yield* timingStart("compaction")
-        compacted = yield* harness.compaction.compactIfNeeded({
+        compacted = yield* attemptCompaction(prepared, harness.compaction.compactIfNeeded, {
           sessionID: session.id,
           scratchFolder,
           entries,
           model,
           guard: modelGuard,
-          request: preparedDispatch.request,
+          request: openingRequest,
+          fixedPromptTokens: PromptEstimate.whole(
+            {
+              ...openingRequest,
+              tools: [...liveToolMaterialization.definitions],
+              messages: openingRequest.messages.slice(providerMessages.length),
+            },
+            routeProfile.imagePatchPixels,
+          ),
+          replacedPrefixTokens,
           promptEstimate,
           imagePatchPixels: routeProfile.imagePatchPixels,
           prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
@@ -2618,69 +2703,7 @@ export const layer = Layer.effect(
             ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
             ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
           },
-          onDecline: (reason) => {
-            declined = reason
-          },
         })
-        const nextRetryAt = CompactionBackoff.afterAttempt({
-          current: compactionRetryAt.get(session.id),
-          now: Date.now(),
-          compacted,
-          decline: declined,
-        })
-        if (nextRetryAt === undefined) compactionRetryAt.delete(session.id)
-        else compactionRetryAt.set(session.id, nextRetryAt)
-        yield* flushDriveState(session.id)
-      }
-      // The conversation that just got compressed away is written into this colleague's OWN memory
-      // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
-      // why). Best-effort and AFTER the compaction is durable: an archive that failed must never
-      // turn a successful compaction into a failed turn — the summary is already committed, and the
-      // transcript rows are still in the database either way.
-      if (compacted)
-        yield* archiveCompactedChat({ entries, memoryOwner, memory, session }).pipe(
-          // Best-effort means the TURN survives, not that nobody is told. `Effect.ignore` here made
-          // an empty archive indistinguishable from an archive that was never attempted — which is
-          // exactly the question a person debugging one would be asking.
-          reportArchiveFailure(session.id, agent.id),
-        )
-      // 🔴 THE DURABLE AREA IS MATERIALISED HERE, and "here" is the whole of the owner's rule
-      // (*"updated only after compaction, from the housekeeped shadow copy"*). The `durable` items are
-      // the shadow the colleague writes mid-session with `durable_set` / `durable_clear`; this turn —
-      // the first after a rewrite — is when their rendered form becomes the block the model reads.
-      // Rendering live instead would make every `durable_set` an edit to the system prompt mid-turn,
-      // which is the churn the slot's `compaction` volatility exists to avoid.
-      //
-      // ⚠️ It runs on EVERY committed compaction, including one that folds nothing, and it writes the
-      // area even when the item set is EMPTY (`text: ""`): clearing the last durable item has to
-      // delete the block at the next rewrite, or a cleared item would survive in the prompt forever —
-      // the exact failure the area exists to prevent, one level up.
-      //
-      // ⚠️ Best-effort, like the archive above and for the same reason: the compaction is already
-      // durable, and a stale area is a far smaller loss than a failed turn. The `put` is still
-      // validated by the registry, so a malformed shadow surfaces as a fault where faults belong.
-      if (compacted) {
-        const durableItems = yield* components
-          .list({ sessionID: session.id, kind: "durable" })
-          .pipe(Effect.orElseSucceed((): readonly { readonly value: unknown }[] => []))
-        yield* components
-          .put({
-            sessionID: session.id,
-            kind: "durable_prompt",
-            value: { text: Durable.render(Durable.itemsOf(durableItems)) },
-            system: true,
-          })
-          .pipe(Effect.ignore)
-      }
-      if (compacted) {
-        const latest = yield* SessionHistory.latestCompaction(db, session.id)
-        if (latest)
-          yield* deliverNudges(
-            session.id,
-            String(agent.id),
-            { type: "compaction", id: latest.id },
-            !ShortChat.enabled(config.shortChat),
-          )
       }
       if (compacted) yield* timingEnd("compaction")
       // The phase is started unconditionally now (see the call site), so it must be withdrawn
@@ -3550,13 +3573,22 @@ export const layer = Layer.effect(
             recoveryFailure !== undefined &&
             recoveryPlan?.action === "compress" &&
             (yield* restore(
-              recoverOverflow({
+              attemptCompaction(prepared, recoverOverflow, {
                 sessionID: session.id,
                 scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
                 entries,
                 model,
                 guard: modelGuard,
                 request,
+                fixedPromptTokens: PromptEstimate.whole(
+                  {
+                    ...openingRequest,
+                    tools: [...liveToolMaterialization.definitions],
+                    messages: openingRequest.messages.slice(providerMessages.length),
+                  },
+                  routeProfile.imagePatchPixels,
+                ),
+                replacedPrefixTokens,
                 imagePatchPixels: routeProfile.imagePatchPixels,
                 /**
                  * ⚠️ **THE RECORD MUST NAME THE NUMBER THAT WAS ACTUALLY AVAILABLE.** This call site
@@ -4054,6 +4086,7 @@ export const layer = Layer.effect(
       promotion: SessionInput.Delivery | undefined,
       step: number,
       timing?: TurnTiming.Recorder,
+      compactionChecked?: boolean,
     ) => Effect.Effect<
       {
         readonly needsContinuation: boolean
@@ -4102,7 +4135,7 @@ export const layer = Layer.effect(
       recovery,
       timing = TurnTiming.make(),
     ) {
-      return yield* runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing).pipe(
+      return yield* runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing, true).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
@@ -4149,6 +4182,7 @@ export const layer = Layer.effect(
       promotion,
       step,
       timing = TurnTiming.make(),
+      compactionChecked = false,
     ) {
       return yield* runTurnAttempt(
         sessionID,
@@ -4158,6 +4192,7 @@ export const layer = Layer.effect(
         harness.compaction.compactAfterOverflow,
         undefined,
         timing,
+        compactionChecked,
       ).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
@@ -4182,7 +4217,14 @@ export const layer = Layer.effect(
                 defect.transition.recovery,
                 timing,
               )
-            return yield* runTurn(sessionID, harness, undefined, defect.transition.step, timing)
+            return yield* runTurn(
+              sessionID,
+              harness,
+              undefined,
+              defect.transition.step,
+              timing,
+              compactionChecked || defect.transition._tag === "ContinueAfterCompaction",
+            )
           }),
         ),
       )
@@ -4235,15 +4277,28 @@ export const layer = Layer.effect(
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
           })),
         )
-      // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
-      // from the request — a minimal envelope is enough.
-      const request = LLM.request({ model, messages: [], tools: [] })
+      // Include the established system/tool prefix when budgeting a manual checkpoint.
+      const priorTools = residentToolPrefix.get(session.id) ?? []
+      const nextTools = ToolRegistry.nativeDefinitions(
+        priorTools,
+        model.route.defaults.limits?.context === undefined
+          ? undefined
+          : Math.floor(model.route.defaults.limits.context * 0.2),
+      )
+      const request = LLM.request({
+        model,
+        system: prepared.system.baseline ? [SystemPart.make(prepared.system.baseline)] : [],
+        messages: [],
+        tools: nextTools,
+      })
       // The branch that actually declined, so the notice below STATES it instead of guessing. The
       // shipped sentence asserted "still small enough … or the summary model was unavailable" for
       // every decline — including the one that means the chat is too LARGE to summarise in one pass,
       // so a user whose chat was wedged over its ceiling was told it was too small.
       let declined: SessionCompaction.DeclineReason | undefined
-      const compacted = yield* compaction.compactAfterOverflow(
+      const compacted = yield* attemptCompaction(
+        prepared,
+        compaction.compactAfterOverflow,
         {
           sessionID: session.id,
           scratchFolder: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
@@ -4251,6 +4306,10 @@ export const layer = Layer.effect(
           model,
           guard: SessionRunnerModel.dispatchGuard(models, prepared.ran),
           request,
+          replacedPrefixTokens: Math.max(0, Token.estimateStructured(priorTools) - Token.estimateStructured(nextTools)),
+          fixedPromptTokens:
+            PromptEstimate.whole(request, routeProfile.imagePatchPixels) +
+            (priorTools.length === 0 ? Math.floor((model.route.defaults.limits?.context ?? 0) * 0.2) : 0),
           imagePatchPixels: routeProfile.imagePatchPixels,
           maintenance: {
             ownerID: session.id,
@@ -4265,28 +4324,6 @@ export const layer = Layer.effect(
         },
         "manual",
       )
-      // The archive runs on BOTH compaction paths, and it did not until now — the automatic branch
-      // had it and this one did not, so a user who pressed Compact lost the older half of the
-      // conversation to a summary while the same conversation compacted automatically kept it. One
-      // rule, two doors: the same class of gap as `agent.remove` missing the refresh the config path
-      // already had.
-      if (compacted)
-        yield* archiveCompactedChat({
-          entries,
-          memoryOwner: prepared.memoryOwner,
-          memory,
-          session,
-        }).pipe(reportArchiveFailure(session.id, prepared.memoryOwnerAgent))
-      if (compacted) {
-        const latest = yield* SessionHistory.latestCompaction(db, session.id)
-        if (latest)
-          yield* deliverNudges(
-            session.id,
-            prepared.config.agent,
-            { type: "compaction", id: latest.id },
-            !ShortChat.enabled(prepared.config.shortChat),
-          )
-      }
       yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
         yield* events.publish(SessionEvent.Synthetic, {

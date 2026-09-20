@@ -62,7 +62,7 @@ const drive = (input: {
 }) => {
   const requests: LLMRequest[] = []
   const published: string[] = []
-  const ended: { readonly data: unknown; readonly metadata: unknown }[] = []
+  const ended: { readonly data: unknown; readonly metadata: Record<string, any> | undefined }[] = []
   const declines: SessionCompaction.DeclineReason[] = []
   let index = 0
   const compactor = SessionCompaction.make({
@@ -71,7 +71,7 @@ const drive = (input: {
         Effect.sync(() => {
           published.push(definition.type)
           if (definition.type === "session.next.compaction.ended")
-            ended.push({ data, metadata: options?.metadata })
+            ended.push({ data, metadata: options?.metadata as Record<string, any> | undefined })
         }),
     } as unknown as EventV2.Interface,
     llm: {
@@ -184,11 +184,12 @@ describe("every decline names itself", () => {
   test("prune-only mode", () => {
     const run = drive({
       model: routed({ context: 200_000, output: 4_096 }),
-      entries: entries(user("hello"), assistant("hi")),
+      entries: entries(user("hello ".repeat(300)), assistant("hi")),
       summarize: false,
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["prune-only"])
+    expect(run.compacted).toBe(true)
+    expect(run.requests).toHaveLength(0)
+    expect(run.ended[0]?.metadata?.["compaction.mode"]).toBe("deterministic")
   })
 
   test("nothing to fold", () => {
@@ -197,14 +198,18 @@ describe("every decline names itself", () => {
     expect(run.declines).toEqual(["nothing-to-fold"])
   })
 
-  test("an empty head with no model declines BEFORE starting a compaction audit row", () => {
+  test("a previous checkpoint can fold even when the new head is empty", () => {
     // 🔴 The anti-loop guard. Head empty means the whole conversation already fits the verbatim tail;
     // with no model to merge the carried summary, NO path can reduce the context. Starting the audit
     // row anyway would settle as a failed `compaction-status` on every turn — the loop a user sees as
     // "stuck compacting". So it declines before `Compaction.Started` is ever published.
     const run = drive({
       model: routed({ context: 4_000, output: 4_096 }),
-      entries: entries(compactionMessage("previous summary", "previous tail"), user("hi"), assistant("ok")),
+      entries: entries(
+        compactionMessage("previous summary ".repeat(300), "previous tail"),
+        user("hi"),
+        assistant("ok"),
+      ),
       through: "ifNeeded",
       summaryAllowed: false,
       promptEstimate: {
@@ -220,13 +225,13 @@ describe("every decline names itself", () => {
         anchorHeuristicTokens: 0,
       },
     })
-    expect(run.compacted).toBe(false)
-    expect(run.declines).toEqual(["nothing-to-fold"])
-    expect(run.published).toEqual([])
-    expect(run.ended).toEqual([])
+    expect(run.compacted).toBe(true)
+    expect(run.declines).toEqual([])
+    expect(run.requests).toHaveLength(0)
+    expect(run.ended[0]?.metadata?.["compaction.mode"]).toBe("deterministic")
   })
 
-  test("a window too small to hold any summary still folds deterministically", () => {
+  test("an impossible four-token window declines without claiming successful recovery", () => {
     // 🔴 The old contract declined here, and that was the clause-4 hole: a 4K route could never
     // compact, so the trigger fired every turn and `context-too-small` was the whole conversation.
     // The deterministic fold needs no model and no output budget, so the chat now shrinks instead.
@@ -234,13 +239,10 @@ describe("every decline names itself", () => {
       model: routed({ context: 4, output: 4_096 }),
       entries: entries(user(`old ${"detail ".repeat(200)}`), assistant("done"), user("new"), assistant("ok")),
     })
-    expect(run.compacted).toBe(true)
-    expect(run.declines).toEqual([])
+    expect(run.compacted).toBe(false)
+    expect(run.declines).toEqual(["context-too-small"])
     expect(run.requests).toHaveLength(0)
-    expect(run.ended[0]?.metadata).toMatchObject({
-      "compaction.mode": "deterministic",
-      "compaction.deterministic.reason": "context-too-small",
-    })
+    expect(run.ended).toEqual([])
   })
 
   test("the summarizer never answered, so the fold is deterministic instead of a decline", () => {
@@ -438,15 +440,11 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
    * the deterministic fold carries the previous summary verbatim instead. The decline that used to
    * live here is exactly the "possibility of failure" the owner ruled out.
    */
-  test("even a carried summary too large to trim folds deterministically", () => {
+  test("a carried summary too large for the new window is bounded", () => {
     const carried = `carried ${"gamma ".repeat(20_000)}`
     const run = drive({
       model: routed({ context: 8_000, output: 4_096 }),
-      entries: entries(
-        compactionMessage(carried, "carried tail"),
-        user("a new question"),
-        assistant("a new answer"),
-      ),
+      entries: entries(compactionMessage(carried, "carried tail"), user("a new question"), assistant("a new answer")),
     })
     expect(run.compacted).toBe(true)
     expect(run.declines).toEqual([])
@@ -456,7 +454,8 @@ describe("a transcript too large for one summarization pass is trimmed, not refu
       "compaction.deterministic.reason": "transcript-too-large",
     })
     // The previous summary is CARRIED, not thrown away: the fold is deterministic, not amnesiac.
-    expect((run.ended[0]?.data as { readonly text?: string } | undefined)?.text).toBe(carried)
+    expect((run.ended[0]?.data as { readonly text?: string } | undefined)?.text).toBe("")
+    expect(run.ended[0]?.metadata?.["compaction.after.tokens"]).toBeLessThan(12_000)
   })
 })
 
@@ -509,7 +508,9 @@ describe("the Geryon sleep-recovery regression", () => {
     // same device. Foreground admission must abort the maintenance decode rather than merely put a
     // second request beside it on an already-starved model server.
     const admittedAt = Date.now()
-    await Effect.runPromise(scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive-focused" }))
+    await Effect.runPromise(
+      scheduler.admit({ sessionID: "daedalus", deviceKey: "spark", sessionClass: "interactive-focused" }),
+    )
     const compacted = await Promise.race([
       Effect.runPromise(Fiber.join(hung)),
       Bun.sleep(1_000).then(() => {
@@ -571,8 +572,8 @@ describe("the Geryon sleep-recovery regression", () => {
  *   2. whether or not the summarizer answers, the cycle COMMITS a fold — semantic when a model can
  *      answer, deterministic when it cannot. There is no third outcome.
  */
-describe("the 4K..256K window table", () => {
-  const WINDOWS = [4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144] as const
+describe("the 4K..1M window table", () => {
+  const WINDOWS = [4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144, 524_288, 1_048_576] as const
   const overThreshold = (window: number): PromptEstimate.Result => ({
     heuristicTokens: window,
     estimatedTokens: window,
@@ -610,7 +611,9 @@ describe("the 4K..256K window table", () => {
       expect(run.ended.at(-1)?.metadata).toMatchObject({
         "compaction.mode": expect.stringMatching(/^(semantic|deterministic)$/),
       })
-      expect((run.ended.at(-1)?.metadata as { readonly "compaction.threshold"?: number })["compaction.threshold"]).toBeGreaterThan(0)
+      expect(
+        (run.ended.at(-1)?.metadata as { readonly "compaction.threshold"?: number })["compaction.threshold"],
+      ).toBeGreaterThan(0)
     })
 
     test(`a ${window}-token window still folds when no model can answer`, () => {

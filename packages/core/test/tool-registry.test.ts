@@ -277,6 +277,37 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
       expect(settled.result).toEqual({ type: "json", value: { ok: true } })
     }),
   )
+
+  it.effect("native schema overflow remains discoverable and permission checked after discovery", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        tool_search: echo(),
+        tool_call: deferredDispatcher(),
+        bulky: Tool.make({
+          description: "large schema documentation ".repeat(2000),
+          input: Schema.Struct({}),
+          output: Schema.Struct({ ok: Schema.Boolean }),
+          execute: () => Effect.succeed({ ok: true }),
+        }),
+      })
+      const before = yield* service.materialize([], undefined, undefined, undefined, 820)
+      expect(before.definitions.map((tool) => tool.name)).toEqual(["tool_search", "tool_call"])
+      expect(before.deferred.map((tool) => tool.definition.name)).toEqual(["bulky"])
+      expect(message(yield* before.settle(call("bulky")))).toContain("schema has not been disclosed")
+      const after = yield* service.materialize([], undefined, new Set(["bulky"]), undefined, 820)
+      expect((yield* after.settle(call("bulky"))).result).toEqual({ type: "json", value: { ok: true } })
+      const denied = yield* service.materialize(
+        [{ action: "bulky", resource: "*", effect: "deny" }],
+        undefined,
+        new Set(["bulky"]),
+        undefined,
+        820,
+      )
+      expect(denied.deferred).toHaveLength(0)
+      expect((yield* denied.settle(call("bulky"))).result.type).toBe("error")
+    }),
+  )
 })
 
 describe("ToolRegistry tool deadlines", () => {

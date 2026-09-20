@@ -84,7 +84,7 @@ describe("the tombstone is reserved before the measurement and emitted only when
     expect(SystemPart.content(withNotice.system).some((part) => part.text.includes("holds earlier chat"))).toBe(false)
   })
 
-  test("something dropped: the notice is the last system part, and stays out of the messages", () => {
+  test("something dropped: the notice is a tail message and the system stays byte-identical", () => {
     const packed = packRequest({ request: request(oversized, "you are a colleague"), contextSize: 12_000 })
     const withNotice = packRequest({
       request: request(oversized, "you are a colleague"),
@@ -93,13 +93,15 @@ describe("the tombstone is reserved before the measurement and emitted only when
     })
     expect(withNotice.dropped).toBeGreaterThan(0)
     const parts = SystemPart.content(withNotice.system)
-    expect(parts.at(-1)?.text).toBe(notice)
+    expect(parts).toHaveLength(1)
     // The system prompt the invariant says to keep is still first and untouched.
     expect(parts[0]?.text).toBe("you are a colleague")
     // ⚠️ `preservesWireShape` is the guard that exists to catch a message injected after packing. The
     // tombstone is not one: the notice rides `system`, and the message list keeps its roles, count and
     // part types. Anything else is a wire the provider's prefix cache has never seen.
-    expect(withNotice.messages.map((message) => message.role)).toEqual(packed.messages.map((message) => message.role))
+    expect(withNotice.system).toEqual(packed.system)
+    expect(JSON.stringify(withNotice.messages.at(-1))).toContain(notice)
+    expect(withNotice.messages.at(-1)?.role).toBe("user")
   })
 
   test("the notice's room is reserved BEFORE the packer measures", () => {
@@ -129,7 +131,7 @@ describe("the tombstone is reserved before the measurement and emitted only when
 })
 
 describe("the request that leaves names the file the caller will write", () => {
-  test("ProviderDispatch.prepare carries the notice into the system parts", () => {
+  test("ProviderDispatch.prepare carries the notice at the conversation tail", () => {
     // The end of the chain: `prepare` is the last thing between the packer and the wire, and it is
     // pure — it is TOLD the line, never asked to produce one, because the caller is who writes the
     // file. This asserts the line survives that rebuild rather than being dropped with the old system.
@@ -140,7 +142,8 @@ describe("the request that leaves names the file the caller will write", () => {
       droppedContextFile: droppedFile,
     })
     expect(prepared.packed.dropped).toBeGreaterThan(0)
-    expect(SystemPart.content(prepared.request.system).some((part) => part.text === notice)).toBe(true)
+    expect(SystemPart.content(prepared.request.system).some((part) => part.text === notice)).toBe(false)
+    expect(JSON.stringify(prepared.request.messages.at(-1))).toContain(notice)
     expect(prepared.packed.droppedMessages.length).toBe(prepared.packed.dropped)
   })
 

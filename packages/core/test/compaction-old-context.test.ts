@@ -30,7 +30,7 @@ import { DateTime, Effect, Stream } from "effect"
  */
 
 const SUMMARY = "## Goal\n- finish the wiring\n\n## Current Work\n- writing the folded chat"
-const HEAD = "old question detail detail detail"
+const HEAD = "old question detail detail detail ".repeat(50)
 
 const model = Model.make({
   id: "old-context-test",

@@ -38,3 +38,7 @@ export const resolve = (config: ConfigContext.Info | undefined, type: SessionTyp
 }
 
 export const cap = (contextSize: number, share: number): number => Math.max(0, Math.floor(contextSize * (share / 100)))
+
+/** One response allowance for dispatch and compaction. Small windows must retain room for input. */
+export const outputTokens = (contextSize: number, requested = 4096): number =>
+  Math.max(1, Math.min(Math.floor(contextSize / 4), requested))

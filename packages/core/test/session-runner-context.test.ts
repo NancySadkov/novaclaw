@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Schema } from "effect"
 import { eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
 import { ContextSnapshotDecodeError } from "@novaclaw/core/session/error"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, makeLatch } from "./fixture/runner-harness"
+import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { Tool } from "@novaclaw/core/tool/tool"
+import { PromptEstimate } from "@novaclaw/core/session/runner/prompt-estimate"
+import { EventV2 } from "@novaclaw/core/event"
+import { SessionEvent } from "@novaclaw/core/session/event"
 
 /**
  * The ONE prompt baseline, and what may and may not rewrite it (owner, 2026-09-17).
@@ -21,8 +26,72 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  * `session-runner-agent.test.ts`).
  */
 describe("SessionRunnerLLM — the one prompt baseline", () => {
-  test("normal dispatch retains a short conversation from 4K through 256K", async () => {
-    for (let context = 4096; context <= 262144; context *= 2) {
+  test.each(["automatic", "manual"])(
+    "%s: a native prefix shrinks from 1M to 4K and stays stable when switching back",
+    async (mode) => {
+      const harness = makeRunnerHarness({
+        turns: [
+          completeTurn("large", "First."),
+          completeTurn("small", "Second."),
+          completeTurn("large-again", "Third."),
+        ],
+      })
+      harness.controls.currentModel = harness.makeModel("large", { context: 1048576, output: 512 })
+      await drive(
+        harness,
+        Effect.gen(function* () {
+          const tools = yield* ToolRegistry.Service
+          const fake = (description: string) =>
+            Tool.make({
+              description,
+              input: Schema.Struct({}),
+              output: Schema.String,
+              execute: () => Effect.succeed("ok"),
+            })
+          yield* tools.register({
+            tool_search: fake("Discover tools"),
+            tool_call: fake("Call a discovered tool"),
+            bulky: fake("long native documentation ".repeat(3000)),
+          })
+          const session = yield* SessionV2.Service
+          for (const [model, context] of [
+            ["large", 1048576],
+            ["small", 4096],
+            ["large-again", 1048576],
+          ] as const) {
+            harness.controls.currentModel = harness.makeModel(model, { context, output: 512 })
+            if (mode === "manual" && context === 4096) {
+              const ended = makeLatch()
+              const events = yield* EventV2.Service
+              const unsubscribe = yield* events.listen((event) => {
+                if (event.type === SessionEvent.Compaction.Ended.type) ended.open()
+                return Effect.void
+              })
+              yield* session.compact({ sessionID: HARNESS_SESSION })
+              yield* Effect.promise(() => ended.promise)
+              yield* unsubscribe
+            }
+            yield* session.prompt({
+              sessionID: HARNESS_SESSION,
+              prompt: Prompt.make({ text: "Continue this task." }),
+              resume: false,
+            })
+            yield* session.resume(HARNESS_SESSION)
+          }
+        }),
+        "adaptive native prefix",
+      )
+      expect(harness.requests).toHaveLength(3)
+      expect(harness.requests[0]!.tools.some((tool) => tool.name === "bulky")).toBe(true)
+      expect(harness.requests[1]!.tools.some((tool) => tool.name === "bulky")).toBe(false)
+      expect(PromptEstimate.whole(harness.requests[1]!) + harness.requests[1]!.generation!.maxTokens!).toBeLessThan(
+        4096,
+      )
+      expect(harness.requests[2]!.tools).toEqual(harness.requests[1]!.tools)
+    },
+  )
+  test("normal dispatch retains a short conversation from 4K through 1M", async () => {
+    for (let context = 4096; context <= 1048576; context *= 2) {
       const harness = makeRunnerHarness({
         turns: [completeTurn("first", "I remember cobalt."), completeTurn("second", "cobalt")],
       })

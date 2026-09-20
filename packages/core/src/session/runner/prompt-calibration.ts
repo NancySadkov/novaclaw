@@ -57,10 +57,18 @@ export const marginFractionOf = (anchoredResidualRatios: readonly number[]): num
   return Math.max(MIN_MARGIN_FRACTION, MARGIN_SIGMA_MULTIPLIER * sigma)
 }
 
-/** `max(1,000, estimated * max(2%, 1.5 sigma_recent))`, saturated for hostile observations. */
-export const marginTokens = (estimatedTokens: number, anchoredResidualRatios: readonly number[] = []): number => {
+/** Statistical margin with a floor capped at 5% of small windows, saturated for hostile observations. */
+export const marginTokens = (
+  estimatedTokens: number,
+  anchoredResidualRatios: readonly number[] = [],
+  contextTokens?: number,
+): number => {
   const estimate = Number.isFinite(estimatedTokens) && estimatedTokens > 0 ? estimatedTokens : 0
   const scaled = estimate * marginFractionOf(anchoredResidualRatios)
   if (!Number.isFinite(scaled) || scaled >= Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER
-  return Math.max(MIN_MARGIN_TOKENS, Math.ceil(scaled))
+  const floor =
+    contextTokens !== undefined && Number.isFinite(contextTokens) && contextTokens > 0
+      ? Math.min(MIN_MARGIN_TOKENS, Math.ceil(contextTokens * 0.05))
+      : MIN_MARGIN_TOKENS
+  return Math.max(floor, Math.ceil(scaled))
 }

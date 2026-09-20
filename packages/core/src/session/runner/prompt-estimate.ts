@@ -280,7 +280,7 @@ const calibrationFactor = (value: number | undefined): number =>
 const inflate = (tokens: number, factor: number): number =>
   Math.min(Number.MAX_SAFE_INTEGER, Math.ceil(tokens * factor))
 
-const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1): Result => {
+const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1, contextTokens?: number): Result => {
   const estimatedTokens = inflate(heuristicTokens, factor)
   return {
     heuristicTokens,
@@ -288,7 +288,7 @@ const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1): 
     correctionTokens: estimatedTokens - heuristicTokens,
     // Anchored residuals describe anchored predictions only. A whole-request fallback has no
     // comparable residual series, so it receives the conservative fixed floor.
-    marginTokens: PromptCalibration.marginTokens(estimatedTokens),
+    marginTokens: PromptCalibration.marginTokens(estimatedTokens, [], contextTokens),
     deltaTokens: 0,
     growth: 0,
     confidence: "whole",
@@ -337,7 +337,8 @@ export const resolve = (input: {
   const heuristicTokens = whole(input.request, input.imagePatchPixels)
   const factor = calibrationFactor(input.calibrationFactor)
   const residuals = input.anchoredResidualRatios ?? []
-  if (!positiveInt(heuristicTokens)) return full(heuristicTokens, "invalid", factor)
+  if (!positiveInt(heuristicTokens))
+    return full(heuristicTokens, "invalid", factor, input.request.model.route.defaults.limits?.context)
   const currentShapeKey = shapeKey(input.request, input.imagePatchPixels)
   let fallback: Fallback = "unavailable"
   let anchor: SessionMessage.PromptAnchor | undefined
@@ -353,9 +354,10 @@ export const resolve = (input: {
     }
     if (fallback === "unavailable") fallback = reason
   }
-  if (anchor === undefined) return full(heuristicTokens, fallback, factor)
+  if (anchor === undefined)
+    return full(heuristicTokens, fallback, factor, input.request.model.route.defaults.limits?.context)
   if (!positiveInt(anchor.heuristicTokens) || !positiveInt(anchor.reportedTokens))
-    return full(heuristicTokens, "invalid", factor)
+    return full(heuristicTokens, "invalid", factor, input.request.model.route.defaults.limits?.context)
   const deltaTokens = heuristicTokens - anchor.heuristicTokens
   // The durable anchor is exact for its settled prefix. Calibrate only NEW positive growth; applying
   // the whole-prompt factor again would double-charge the provider-reported base. A shrinking
@@ -363,13 +365,18 @@ export const resolve = (input: {
   // larger shrink than the heuristic observed.
   const calibratedDelta = deltaTokens > 0 ? inflate(deltaTokens, factor) : deltaTokens
   const estimatedTokens = anchor.reportedTokens + calibratedDelta
-  if (!positiveInt(estimatedTokens)) return full(heuristicTokens, "invalid", factor)
+  if (!positiveInt(estimatedTokens))
+    return full(heuristicTokens, "invalid", factor, input.request.model.route.defaults.limits?.context)
   const growth = Math.max(0, calibratedDelta) / anchor.reportedTokens
   return {
     heuristicTokens,
     estimatedTokens,
     correctionTokens: estimatedTokens - heuristicTokens,
-    marginTokens: PromptCalibration.marginTokens(estimatedTokens, residuals),
+    marginTokens: PromptCalibration.marginTokens(
+      estimatedTokens,
+      residuals,
+      input.request.model.route.defaults.limits?.context,
+    ),
     deltaTokens,
     growth,
     confidence: growth > 0.15 ? "low" : "anchored",
@@ -380,4 +387,4 @@ export const resolve = (input: {
 }
 
 export const unsupported = (request: RequestShape, imagePatchPixels?: number): Result =>
-  full(whole(request, imagePatchPixels), "unsupported")
+  full(whole(request, imagePatchPixels), "unsupported", 1, request.model.route.defaults.limits?.context)

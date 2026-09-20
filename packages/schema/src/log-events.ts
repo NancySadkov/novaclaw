@@ -981,17 +981,6 @@ export const EVENTS = {
     file: "packages/core/src/schedule/scheduler.ts",
   },
   /**
-   * A compaction cycle stopped after the cheap prune because `compaction.summarize` is false.
-   * Informational: the reclaim happened, no summary was written, and the transcript is untouched.
-   */
-  "session.compaction.prune.only": {
-    level: "info",
-    message: "compaction pruned without summarising",
-    attributes: { "session.id": "correlate" },
-    content: "correlated",
-    file: "packages/core/src/session/compaction.ts",
-  },
-  /**
    * A compacted conversation was written into the colleague's own memory as searchable passages
    * (`session/compaction-archive.ts`). Informational: the compaction itself is already durable, and
    * this line is what tells an operator that the older half of a never-ending chat is still
@@ -1052,6 +1041,13 @@ export const EVENTS = {
     attributes: { "session.id": "correlate", "compaction.folded.chars": "count", "compaction.folded.error": "fault" },
     content: "user",
     file: "packages/core/src/session/compaction.ts",
+  },
+  "session.compaction.memos.failed": {
+    level: "warn",
+    message: "could not materialize the memo shadow after compaction",
+    attributes: { "session.id": "correlate", error: "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
   },
   /**
    * The head the PACKER cut — not the summarizer's fold — was written to the agent's scratch folder,
@@ -2750,7 +2746,7 @@ export const EVENTS = {
   },
   "session.compaction.summary.truncated": {
     level: "warn",
-    message: "compaction: the first summary exceeded its output budget and entered bounded recovery",
+    message: "compaction rejected an incomplete or oversized summary and retained original text",
     attributes: { "session.id": "correlate", "compaction.output.cap": "count", "compaction.summary.chars": "count" },
     content: "correlated",
     file: "packages/core/src/session/compaction.ts",

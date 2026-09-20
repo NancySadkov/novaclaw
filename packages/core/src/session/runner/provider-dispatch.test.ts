@@ -190,9 +190,9 @@ describe("ProviderDispatch", () => {
 
     // Each production compaction door carries the bound catalog identity. Isolated compactor unit
     // seams may omit it; the live runner may not.
-    for (const call of ordinary.split(/\.compact(?:IfNeeded|AfterOverflow)\(\{/).slice(1))
-      expect(call.slice(0, 300)).toContain("guard:")
-    expect(ordinary.split("recoverOverflow({")[1]?.slice(0, 300)).toContain("guard:")
+    const calls = ordinary.split(/attemptCompaction\(\s*prepared,\s*[^,]+,\s*\{/).slice(1)
+    expect(calls).toHaveLength(3)
+    for (const call of calls) expect(call.slice(0, 500)).toContain("guard:")
   })
 
   test("prepares one cache-keyed, context-packed request", () => {

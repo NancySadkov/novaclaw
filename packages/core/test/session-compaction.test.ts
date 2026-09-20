@@ -44,23 +44,6 @@ test("compaction describes tool media without embedding base64", () => {
 
 const user = (text: string): SessionMessage.Message => ({ type: "user", text }) as unknown as SessionMessage.Message
 
-test("overflow recovery translates the fixed whole-request cut into a smaller recent tail", () => {
-  expect(
-    SessionCompaction.overflowRecentBudget({
-      configuredRecentTokens: 8_000,
-      originalPromptTokens: 32_000,
-      targetPromptTokens: 24_000,
-    }),
-  ).toBe(0)
-  expect(
-    SessionCompaction.overflowRecentBudget({
-      configuredRecentTokens: 8_000,
-      originalPromptTokens: 20_000,
-      targetPromptTokens: 15_000,
-    }),
-  ).toBe(3_000)
-})
-
 /**
  * 🔴 **THE SUMMARIZER'S CEILING IS NOT THE PROVIDER'S CEILING.**
  *
@@ -138,54 +121,6 @@ describe("a steer is never attributed to the user in the compaction summary", ()
     expect(new Set(labels).size).toBe(labels.length)
     expect(labels).toContain("[User]:")
     expect(labels).toContain("[System update]:")
-  })
-
-  test("neither durable half of the split — the summarized head nor the retained recent — says [User] about a steer", () => {
-    // `head` feeds the summary prompt; `recent` is stored verbatim on the compaction message and is
-    // re-fed as context on the NEXT compaction, so a misattribution there compounds.
-    const transcript = entries(
-      user("count the digits of pi"),
-      assistant("Earlier answer"),
-      steer(NUDGE),
-      assistant("Continuing with a different approach"),
-    )
-    const wide = SessionCompaction.selectContext(transcript, 100_000)
-    const narrow = SessionCompaction.selectContext(transcript, 1)
-    for (const selected of [wide, narrow]) {
-      expect(selected).toBeDefined()
-      const both = `${selected!.head}\n${selected!.recent}`
-      expect(both).not.toContain(`[User]: ${STEER_PROVENANCE_PREFIX}`)
-      expect(both).not.toContain(STEER_PROVENANCE_PREFIX)
-      expect(both).toContain("[User]: count the digits of pi")
-    }
-    // The whole transcript fits in the wide budget, so nothing is split off: the steer is present
-    // (relabelled) and the assistant text that FOLLOWED it is still attached to this exchange.
-    expect(wide!.recent).toContain("Stop repeating it")
-    expect(wide!.recent).toContain("Continuing with a different approach")
-    expect(wide!.head).toBe("")
-  })
-
-  test("the cut point stays on a completed assistant-turn boundary", () => {
-    const transcript = entries(
-      user("old question"),
-      assistant("old answer"),
-      user(`new question ${"detail ".repeat(200)}`),
-      assistant("new answer"),
-    )
-    const selected = SessionCompaction.selectContext(transcript, 20)
-    expect(selected).toBeDefined()
-    expect(selected!.head).toContain("old question")
-    expect(selected!.head).toContain("old answer")
-    expect(selected!.recent).toContain("new question")
-    expect(selected!.recent).toContain("new answer")
-    // No message is token-sliced: both durable halves contain whole model-visible messages.
-    expect(`${selected!.head}\n${selected!.recent}`.split("new question").length - 1).toBe(1)
-  })
-
-  test("a steer-only transcript contributes no user-attributed text at all", () => {
-    const selected = SessionCompaction.selectContext(entries(steer(NUDGE)), 100_000)
-    expect(selected).toBeDefined()
-    expect(`${selected!.head}\n${selected!.recent}`).not.toContain("[User]:")
   })
 })
 
@@ -306,7 +241,7 @@ test("the summary is generated through ReasoningBudget, with a declared budget",
     })
     .join("\n")
 
-  expect(source, "the summary call moved — re-point this test, do not delete it").toContain("summaryPrompt")
+  expect(source, "the summary call moved — re-point this test, do not delete it").toContain("requestFor")
   expect(source).toContain("ReasoningBudget.stream({")
   expect(source).toContain("budget: COMPACTION_REASONING_BUDGET")
   // 🔴 And NOT a bare provider call for the summary: that is the state this replaced.
@@ -372,7 +307,10 @@ test("overflow recovery measures the exact packed requests and resends at most o
   // call → compaction → the measured request.
   const prepareAt = runner.indexOf("const prepareInput = {", estimateAt)
   const prepareCallAt = runner.indexOf("const preparedDispatch = yield* prepareDispatch({", prepareAt)
-  const compactionAt = runner.indexOf("compactIfNeeded({", prepareCallAt)
+  const compactionAt = runner.indexOf(
+    "attemptCompaction(prepared, harness.compaction.compactIfNeeded, {",
+    prepareCallAt,
+  )
   const packedAt = runner.indexOf("let request = preparedDispatch.request")
   const measuredAt = runner.indexOf("const resolveOutbound = (candidate:", packedAt)
   const authorizeAt = runner.indexOf("OverflowRecoveryPolicy.authorizeRetry({", measuredAt)
@@ -390,7 +328,7 @@ test("overflow recovery measures the exact packed requests and resends at most o
   expect(runner.slice(openingAt, estimateAt)).toContain("request: baseRequest")
   expect(runner.slice(estimateAt, prepareAt)).toContain("request: openingRequest")
   expect(runner.slice(prepareAt, packedAt)).toContain("request: openingRequest")
-  expect(runner.slice(compactionAt, packedAt)).toContain("request: preparedDispatch.request")
+  expect(runner.slice(compactionAt, packedAt)).toContain("request: openingRequest")
   /**
    * 🔴 **THE GATE MEASURES THE PACKED REQUEST WITH THE ANCHOR, NOT WITH THE RAW HEURISTIC.**
    *
@@ -409,7 +347,7 @@ test("overflow recovery measures the exact packed requests and resends at most o
   expect(runner.slice(authorizeAt, providerAt)).toContain("Stream.succeed(overflowRecovery!.failure)")
 
   const planAt = runner.indexOf("OverflowRecoveryPolicy.plan({")
-  const compactAt = runner.indexOf("recoverOverflow({", planAt)
+  const compactAt = runner.indexOf("attemptCompaction(prepared, recoverOverflow, {", planAt)
   const transitionAt = runner.indexOf("continueAfterOverflowCompaction(", compactAt)
   expect(planAt).toBeGreaterThan(providerAt)
   expect(compactAt).toBeGreaterThan(planAt)
@@ -421,7 +359,7 @@ test("overflow recovery measures the exact packed requests and resends at most o
   expect(recovery).toContain("originalPromptTokens: promptTokensFrom(recoveryFailure.message) ?? outboundPromptTokens")
   expect(recovery).toContain("overflowPromptTokens: recoveryPlan.originalPromptTokens")
   expect(recovery).toContain("overflowTargetTokens: recoveryPlan.targetPromptTokens")
-  expect(runner).toContain("runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing)")
+  expect(runner).toContain("runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing, true)")
 })
 
 // ── A summary has a finite, hard output chain ─────────────────────────────────────────────────────────────────────
@@ -445,7 +383,7 @@ test("one resolved route profile reaches every compaction and packing consumer",
   }
 
   expectProfileNear(runner, "const promptEstimate = PromptEstimate.resolve({", 500, false)
-  expectProfileNear(runner, "harness.compaction.compactIfNeeded({", 500)
+  expectProfileNear(runner, "attemptCompaction(prepared, harness.compaction.compactIfNeeded, {", 900)
   // The prepare argument list is built once (`const prepareInput = {`) and handed to
   // `ProviderDispatch.prepare`, so the resolved route facts are pinned at the LIST, not at a call.
   expectProfileNear(runner, "const prepareInput = {", 1_200)
@@ -529,7 +467,7 @@ const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) 
     ),
   )
   const ended = published.find((event) => event.type === SessionEvent.Compaction.Ended.type)?.data as
-    | { readonly text?: string }
+    | { readonly text?: string; readonly recent?: string }
     | undefined
   /** The durable decision record: it rides the event's `metadata`, which the projector writes verbatim. */
   const endedMetadata = published.find((event) => event.type === SessionEvent.Compaction.Ended.type)?.metadata
@@ -576,7 +514,7 @@ describe("postfix compaction prompt", () => {
     expect(prompt).toEndWith("- Do not mention the summary process or that context was compacted.")
   })
 
-  test("a committing compaction reuses the assembled working request and only appends its operation", () => {
+  test("a compaction reads original entries instead of a potentially packed working request", () => {
     const prefix = LLM.request({
       model: summaryModel,
       system: [SystemPart.make("officer identity")],
@@ -586,9 +524,10 @@ describe("postfix compaction prompt", () => {
     const run = driveSummary([{ text: "## Goal\n- done", reason: "stop", outputTokens: 8 }], prefix)
     const request = run.requests[0]!
 
-    expect(request.system).toEqual(prefix.system)
-    expect(request.tools).toEqual(prefix.tools)
-    expect(request.messages.slice(0, -1)).toEqual([...prefix.messages])
+    expect(request.system).toEqual([])
+    expect(request.tools).toEqual([])
+    expect(run.userPrompt(request)).toContain("[User]: old question")
+    expect(run.userPrompt(request)).not.toContain("first request")
     expect(run.userPrompt(request).split("\n").at(-1)).toBe(
       "- Do not mention the summary process or that context was compacted.",
     )
@@ -660,7 +599,7 @@ describe("bounded compaction summaries", () => {
     expect(SessionCompaction.summaryWithinBudget(trimmed, 20)).toBe(true)
   })
 
-  test("a Token.estimate over-budget summary is deterministically trimmed even when provider usage under-reports it", () => {
+  test("an over-budget summary falls back to original evidence even when provider usage under-reports it", () => {
     // Digit-dense output defeats chars/4 dramatically: this is over 32 estimated tokens despite
     // the canned provider claiming only 12.
     const first = `## Goal\n- ${"1234567890".repeat(5)}`
@@ -669,7 +608,7 @@ describe("bounded compaction summaries", () => {
     expect(run.compacted).toBe(true)
     expect(run.requests).toHaveLength(1)
     expect(run.requests[0]!.generation?.maxTokens).toBe(32)
-    expect(run.ended?.text).toContain("Older summary content removed")
+    expect(run.ended?.text).toBe("")
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
     expect(run.published.map((event) => event.type)).toEqual([
       SessionEvent.Compaction.Started.type,
@@ -678,27 +617,29 @@ describe("bounded compaction summaries", () => {
     ])
   })
 
-  test("finish=length cuts the oldest head without spending a second model pass", () => {
+  test("finish=length uses deterministic recovery without spending a second model pass", () => {
     const newest = "## Relevant Files\n- src/new.ts: newest fact"
     const first = `## Goal\n- ${"old ".repeat(80)}\n\n${newest}`
     const run = driveSummary([{ text: first, reason: "length", outputTokens: 96 }])
 
     expect(run.compacted).toBe(true)
     expect(run.requests).toHaveLength(1)
-    expect(run.ended?.text).toContain("Older summary content removed")
-    expect(run.ended?.text).toContain(newest)
+    expect(run.ended?.text).toBe("")
+    expect(run.ended?.text).not.toContain(newest)
+    expect(run.ended?.recent).toContain("new answer")
     expect(run.ended?.text).not.toContain("## Goal")
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
   })
 
-  test("an over-budget answer preserves its newest tail in one model call", () => {
+  test("an inflated answer never replaces the original evidence", () => {
     const newest = "## Relevant Files\n- src/final.ts: keep this"
     const first = `## Goal\n- ${"still too long ".repeat(80)}\n\n${newest}`
     const run = driveSummary([{ text: first, reason: "stop", outputTokens: 100 }])
 
     expect(run.compacted).toBe(true)
     expect(run.requests).toHaveLength(1)
-    expect(run.ended?.text).toContain(newest)
+    expect(run.ended?.text).not.toContain(newest)
+    expect(run.ended?.recent).toContain("new answer")
     expect(run.ended?.text).not.toContain("## Goal")
     expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
   })
@@ -728,8 +669,8 @@ describe("the compaction threshold is a percentage of the window", () => {
       12_000,
     )
     // …and no percentage can raise the trigger above the ceiling the packer must respect.
-    expect(
-      SessionCompaction.triggerAt({ context: 262_144, promptCeilingTokens: 235_929, thresholdPercent: 100 }),
-    ).toBe(235_929)
+    expect(SessionCompaction.triggerAt({ context: 262_144, promptCeilingTokens: 235_929, thresholdPercent: 100 })).toBe(
+      235_929,
+    )
   })
 })

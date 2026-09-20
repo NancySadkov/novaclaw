@@ -14,16 +14,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
   auto: Schema.Boolean.pipe(Schema.optional),
   prune: Schema.Boolean.pipe(Schema.optional),
   /**
-   * Whether a compaction cycle may write an LLM SUMMARY, or stop after the cheap prune.
-   *
-   * Default (absent) is `true` — prune then summarise, which is what has always shipped. Setting it
-   * `false` is the *prune only* tier of the compaction ladder, and it is not merely a speed knob:
-   * summarising rewrites the conversation into a model's paraphrase, and a user who would rather
-   * lose old TOOL OUTPUT than have their history restated now has a way to say so.
-   *
-   * ⚠️ Only meaningful with `prune: true`. With both off, a full context has nothing to reclaim and
-   * nothing to summarise — the cycle simply declines, which is the pre-existing behaviour and not a
-   * new failure mode.
+   * Whether compaction may ask a model to summarize (default true). When false, it archives the
+   * original conversation and retains the newest text that fits. Optional stale-output pruning
+   * still applies before selecting that tail. Disabling summaries never disables overflow recovery.
    */
   summarize: Schema.Boolean.pipe(Schema.optional),
   /**
@@ -39,8 +32,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
    *
    * ⭐ This is a budget for a PREFILL, not a fraction of the window: it must be a prompt the
    * slowest configured route can ingest inside the provider stall timeout. The default is
-   * `DEFAULT_SUMMARY_INPUT_TOKENS` in `session/compaction.ts`; the head is folded in passes that
-   * each stay under it.
+   * `DEFAULT_SUMMARY_INPUT_TOKENS` in `session/compaction.ts`. One bounded pass retains the prior
+   * summary and newest evidence; omitted evidence remains in the transcript and archive.
    */
   summarizeInput: PositiveInt.pipe(Schema.optional),
   keep: Keep.pipe(Schema.optional),

@@ -75,12 +75,12 @@ describe("the harness can always write it, whatever is already on disk", () => {
 
     const written = await save({ scratchFolder: scratch, at, text: "earlier chat" })
 
-    expect(written).toBe(file({ scratchFolder: scratch, at }))
+    expect(written).not.toBe(file({ scratchFolder: scratch, at }))
     expect(await fs.readFile(written, "utf8")).toBe("earlier chat")
     expect(path.dirname(written)).toBe(path.join(scratch, DIR))
   })
 
-  test("an existing file at the same name is REPLACED, not appended to and not refused", async () => {
+  test("a colliding timestamp preserves the earlier archive", async () => {
     const root = await tempRoot("collision")
     const scratch = path.join(root, "geryon")
     const at = new Date("2026-09-15T17:45:00.123Z")
@@ -93,15 +93,16 @@ describe("the harness can always write it, whatever is already on disk", () => {
 
     const written = await save({ scratchFolder: scratch, at, text: "the fold that replaced it" })
 
-    expect(written).toBe(target)
-    const content = await fs.readFile(target, "utf8")
+    expect(written).not.toBe(target)
+    expect(await fs.readFile(target, "utf8")).toBe("the fold that was here first")
+    const content = await fs.readFile(written, "utf8")
     expect(content).toBe("the fold that replaced it")
     // The seam is what an append would leave behind: two conversations in one file, with nothing
     // marking where the first ends. An agent grepping it would read them as one chat.
     expect(content).not.toContain("the fold that was here first")
   })
 
-  test("the same instant writes the same path, and the newest write is the one that stands", async () => {
+  test("the same instant writes distinct recoverable archives", async () => {
     const root = await tempRoot("idempotent")
     const scratch = path.join(root, "geryon")
     const at = new Date("2026-09-15T17:45:00.123Z")
@@ -111,9 +112,10 @@ describe("the harness can always write it, whatever is already on disk", () => {
 
     // The name carries no uniqueness beyond the millisecond, which is exactly why `save` must own the
     // flag: the caller cannot make a collision safe by choosing differently.
-    expect(second).toBe(first)
-    expect(await fs.readFile(first, "utf8")).toBe("second")
-    expect((await fs.readdir(path.join(scratch, DIR))).length).toBe(1)
+    expect(second).not.toBe(first)
+    expect(await fs.readFile(second, "utf8")).toBe("second")
+    expect(await fs.readFile(first, "utf8")).toBe("first")
+    expect((await fs.readdir(path.join(scratch, DIR))).length).toBe(2)
   })
 
   test("the path it returns is the file it wrote, not one it intended to write", async () => {
@@ -125,7 +127,7 @@ describe("the harness can always write it, whatever is already on disk", () => {
 
     // A tombstone built from anything but this return value is a promise about a file the harness may
     // never have created; `oldctx-` and the `tmp/` segment are the invariant's spelling, not a guess.
-    expect(path.basename(written)).toBe("oldctx-20260915T174500123Z.txt")
+    expect(path.basename(written)).toMatch(/^oldctx-20260915T174500123Z-[a-f0-9-]+\.txt$/)
     expect(path.basename(path.dirname(written))).toBe("tmp")
     await expect(fs.stat(written)).resolves.toBeDefined()
   })

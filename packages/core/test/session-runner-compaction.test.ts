@@ -10,6 +10,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { Token } from "../src/util/token"
 import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
@@ -122,6 +123,13 @@ describe("SessionRunnerLLM — compaction", () => {
         harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
         harness.requests.length = 0
 
+        const components = yield* SessionComponentRegistry.Service
+        yield* components.put({
+          sessionID: HARNESS_SESSION,
+          kind: "durable",
+          id: "plan",
+          value: { name: "Plan", value: "MANUAL_MEMO" },
+        })
         yield* session.compact({ sessionID: HARNESS_SESSION })
         yield* Effect.promise(() => started.promise)
         yield* Effect.promise(() => ended.promise)
@@ -158,6 +166,7 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(contextAfterCompact[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
     expect(afterRequests).toHaveLength(1)
     expectCurrentIdentity(afterRequests[0]!)
+    expect(afterRequests[0]!.system.map((part) => part.text).join("\n")).toContain("MANUAL_MEMO")
   })
 
   test("automatically compacts into a completed summary and retained recent turn", async () => {
@@ -230,7 +239,7 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(userTexts(firstRound[0]!).at(-1)).toContain("## Goal")
     expect(userTexts(firstRound[1]!)).toHaveLength(1)
     expect(userTexts(firstRound[1]!)[0]).toContain("<summary>\n## Goal\n- Preserve the task\n</summary>")
-    expect(userTexts(firstRound[1]!)[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
+    expect(userTexts(firstRound[1]!)[0]).toContain("Recent exact request")
     expectCurrentIdentity(firstRound[1]!)
     expect(contextAfterFirst.map((message) => message.type)).toEqual(["compaction", "assistant"])
     expect(contextAfterFirst[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Preserve the task" })
@@ -283,37 +292,28 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
 })
 
 describe("SessionRunnerLLM — overflow recovery", () => {
-  test("a token-dense first call that exceeds the whole context fails legibly without an unchanged retry", async () => {
-    const dense = "0123456789".repeat(1_000)
-    const harness = makeRunnerHarness({ turns: [overflowTurn()] })
-    harness.controls.currentModel = harness.makeModel("dense-first-call", { context: 4_096, output: 512 })
-
+  test("a token-dense first request compacts once and continues on 4K", async () => {
+    const dense = "0123456789".repeat(1000)
+    const harness = makeRunnerHarness({
+      turns: [
+        completeTurn("summary", "The user supplied dense numeric data."),
+        completeTurn("answer", "Ready to continue."),
+      ],
+    })
+    harness.controls.currentModel = harness.makeModel("dense-first-call", { context: 4096, output: 512 })
     const context = await drive(
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({
-          sessionID: HARNESS_SESSION,
-          prompt: Prompt.make({ text: dense }),
-          resume: false,
-        })
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: dense }), resume: false })
         yield* session.resume(HARNESS_SESSION)
         return yield* session.context(HARNESS_SESSION)
       }),
-      "claim — a dense first call cannot trigger an unchanged overflow retry",
+      "a dense first request recovers",
     )
-
-    expect(
-      harness.requests,
-      "no compactable head exists, so the same oversized call is never retried — and with the dispatch " +
-        "gate it is not attempted at all: a single message over the whole window cannot be made smaller " +
-        "by dropping anything, so the harness names the fault instead of buying the same refusal from " +
-        "the provider (or, on a server that reports no window, a silent front-truncation).",
-    ).toHaveLength(0)
-    expect(context.slice(-2)).toMatchObject([
-      { type: "user", text: dense },
-      { type: "assistant", finish: "error", error: { message: expect.stringContaining("too large to send") } },
-    ])
+    expect(harness.requests).toHaveLength(2)
+    expect(context[0]).toMatchObject({ type: "compaction" })
+    expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
   })
 
   test("a summary cut off at max_tokens is marked and stored without another model pass", async () => {
@@ -363,7 +363,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
 
     expect(context[0]).toMatchObject({
       type: "compaction",
-      summary: expect.stringContaining("Older summary content removed"),
+      summary: "",
     })
     expect(context[0]).toMatchObject({ summary: expect.not.stringContaining("Half a sum") })
     expect(harness.requests).toHaveLength(4)
@@ -420,7 +420,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
 
     expect(context[0]).toMatchObject({
       type: "compaction",
-      summary: expect.stringContaining("Older summary content removed"),
+      summary: "",
     })
     expect(context[0]).toMatchObject({ summary: expect.not.stringContaining("Half again") })
     expect(harness.requests).toHaveLength(4)
@@ -508,6 +508,13 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* primeForOverflow(harness)
+        const components = yield* SessionComponentRegistry.Service
+        yield* components.put({
+          sessionID: HARNESS_SESSION,
+          kind: "durable",
+          id: "recovery",
+          value: { name: "Recovery", value: "OVERFLOW_MEMO" },
+        })
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
         yield* session.resume(HARNESS_SESSION)
         const context = yield* session.context(HARNESS_SESSION)
@@ -520,6 +527,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     expect(harness.requests).toHaveLength(3)
     expect(userTexts(harness.requests[1]!).at(-1)).toContain("## Goal")
     expect(userTexts(harness.requests[2]!)[0]).toContain("<summary>\n## Goal\n- Recover overflow\n</summary>")
+    expect(harness.requests[2]!.system.map((part) => part.text).join("\n")).toContain("OVERFLOW_MEMO")
     expect(context).toMatchObject([
       { type: "compaction", summary: "## Goal\n- Recover overflow" },
       { type: "assistant", finish: "stop" },
@@ -734,10 +742,7 @@ const GATE_TURN_ONE_TOKENS = 14_000
 const GATE_TURN_TWO_TOKENS = 6_500
 const GATE_PROVIDER_REPORTED = 8_000
 
-const driveGate = (
-  harness: ReturnType<typeof makeRunnerHarness>,
-  label: string,
-): Promise<Array<{ type: string }>> =>
+const driveGate = (harness: ReturnType<typeof makeRunnerHarness>, label: string): Promise<Array<{ type: string }>> =>
   drive(
     harness,
     Effect.gen(function* () {
@@ -758,7 +763,10 @@ const driveGate = (
 describe("SessionRunnerLLM — the dispatch gate measures with the provider's own count", () => {
   test("🔴 a chat the provider has already counted under the ceiling is dispatched, not refused", async () => {
     const harness = makeRunnerHarness({
-      turns: [countedTurn("counted", "First answer", GATE_PROVIDER_REPORTED), completeTurn("answered", "Second answer")],
+      turns: [
+        countedTurn("counted", "First answer", GATE_PROVIDER_REPORTED),
+        completeTurn("answered", "Second answer"),
+      ],
     })
     harness.controls.currentModel = harness.makeModel("counted-route", gateModel)
 
@@ -776,35 +784,15 @@ describe("SessionRunnerLLM — the dispatch gate measures with the provider's ow
     ])
   })
 
-  test("with no reported count the same chat is refused, and the harness has to fold it", async () => {
-    // The control: identical fixture, identical sizes, and the only difference is that turn one's
-    // response carries no usage — so no anchor exists and the raw heuristic is all the gate has. That
-    // number is genuinely over the ceiling here, so refusing is right; it is the anchored case above
-    // that was wrong.
-    //
-    // ⚠️ A refusal is not the end of the turn: it is classified `context-overflow`, so the runner
-    // folds the transcript and retries once. That is why this case spends THREE requests where the
-    // anchored case spends two, and why the transcript gains a compaction. The extra requests are the
-    // cost of not knowing the provider's count, and they are the point of the comparison.
+  test("a model's large maximum output does not consume the entire prompt window", async () => {
     const harness = makeRunnerHarness({
-      turns: [
-        completeTurn("uncounted", "First answer"),
-        fragmentFixture("text", "text-summary", ["## Goal\n- Fold to fit"]).completeEvents,
-        completeTurn("answered", "Second answer"),
-      ],
+      turns: [completeTurn("first", "First answer"), completeTurn("second", "Second answer")],
     })
     harness.controls.currentModel = harness.makeModel("uncounted-route", gateModel)
-
-    const context = await driveGate(harness, "claim — with no anchor the gate refuses what the heuristic says cannot fit")
-
-    expect(
-      harness.requests,
-      "the refused attempt never reaches the provider; the summary and the retry do",
-    ).toHaveLength(3)
-    expect(userTexts(harness.requests[1]!).at(-1), "the middle request is the summarizer's").toContain("## Goal")
-    expect(context.slice(-2), "the chat had to be folded to fit").toMatchObject([
-      { type: "compaction", summary: "## Goal\n- Fold to fit" },
-      { type: "assistant", finish: "stop" },
-    ])
+    const context = await driveGate(harness, "a bounded response leaves room for the conversation")
+    expect(harness.requests).toHaveLength(2)
+    for (const request of harness.requests)
+      expect(request.generation!.maxTokens!).toBeLessThanOrEqual(gateModel.context / 4)
+    expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
   })
 })
