@@ -119,8 +119,7 @@ export const BUILTIN_APP_LABELS = {
   // ⚠️ `memory-graph` is NOT here any more — RETIRED as a tile 2026-08-21, id still reserved.
   // A top-level Memory app was the same shape as the Chats list the roster replaced: a global pile of
   // something that now belongs to a COLLEAGUE. What a colleague remembers is opened from that
-  // colleague (`agent-config-dialog.tsx`), and the household's shared facts from the roster's own
-  // "Shared with everyone" row. The page and the route stay; only the tile is gone.
+  // colleague (`agent-config-dialog.tsx`).
   // ⚠️ `trash` is NOT here any more — RETIRED as a tile 2026-09-16, id still reserved. The Trash
   // surface moved into Settings → Safety, where restore and retention live together.
   models: { name: "Models", subtitle: "Add, enable and tune the models this instance can run" },

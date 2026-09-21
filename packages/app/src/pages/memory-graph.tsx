@@ -36,7 +36,6 @@ const short = (text: string, length = 82): string =>
 const rowTitle = (row: MemoryRow): string => row.name?.trim() || short(row.text, 58) || row.kind
 
 const scopeLabel = (scope: string): string => {
-  if (scope === "global") return "Shared with everyone"
   if (scope.startsWith("agent:")) return "This officer's cabinet"
   if (scope.startsWith("session:")) return "One chat"
   return scope
@@ -69,7 +68,7 @@ export function MemoryGraphPage() {
   })
   const directory = () => instanceGlobalDirectory(context()?.sync.data.path)
   const agents = () => context()?.agents.list()
-  const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[]), "Shared with everyone"))
+  const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[])))
   const owner = createMemo(() => ownerFromKey(owners(), params.owner))
   const backRoute = () => {
     const current = owner()

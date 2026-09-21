@@ -260,12 +260,6 @@ export const roster = (agents: readonly AgentLike[], saved: readonly string[] = 
  * turn a "you hid these" list into an internals dump. The other two `isColleague` clauses still
  * apply, so what comes back is exactly *a colleague-shaped agent that is hidden*.
  */
-export const hiddenRoster = (agents: readonly AgentLike[]): readonly ContactView[] =>
-  agents
-    .filter((agent) => agent.hidden === true && agent.mode !== "subagent" && !POSTURE_AGENTS.has(agent.id))
-    .map(view)
-    .sort((left, right) => left.name.localeCompare(right.name))
-
 /** Filter the roster by what the user typed. Matches the name, the job title and the id, because a
  *  user who knows a colleague by any of the three should find it by that one. */
 export const searchRoster = (views: readonly ContactView[], query: string): readonly ContactView[] => {
@@ -279,12 +273,5 @@ export const searchRoster = (views: readonly ContactView[], query: string): read
 /** The two sentences a row shows about memory. BOTH are always rendered: the first is what this
  *  colleague keeps to itself, the second is what every colleague can see. Naming only the first is
  *  how a roster promises an isolation it does not have. */
-export interface MemoryDisclosure {
-  readonly privateKey: "contacts.memory.own" | "contacts.memory.none"
-  readonly sharedKey: "contacts.memory.shared"
-}
-
-export const memoryDisclosure = (memory: "own" | "none"): MemoryDisclosure => ({
-  privateKey: memory === "none" ? "contacts.memory.none" : "contacts.memory.own",
-  sharedKey: "contacts.memory.shared",
-})
+export const memoryKey = (memory: "own" | "none"): "contacts.memory.own" | "contacts.memory.none" =>
+  memory === "none" ? "contacts.memory.none" : "contacts.memory.own"

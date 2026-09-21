@@ -26,7 +26,7 @@ import {
   GOVERNING_ID,
   displayName,
   isColleague,
-  memoryDisclosure,
+  memoryKey,
   superiorCandidates,
   type AgentLike,
 } from "@/apps/contacts"
@@ -1789,8 +1789,7 @@ export function AgentConfigScreen(props: {
                   <span>{language.t("agentConfig.memoryRag")}</span>
                 </label>
                 <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(memoryDisclosure(memoryValue()).privateKey)}
-                  <Show when={memoryValue() === "own"}> {language.t(memoryDisclosure("own").sharedKey)}</Show>
+                  {language.t(memoryKey(memoryValue()))}
                 </p>
                 {/* The filing cabinet and its destructive action belong beside the switch that
                     governs it. On a phone these stack into two full-width, easy targets; from `sm`

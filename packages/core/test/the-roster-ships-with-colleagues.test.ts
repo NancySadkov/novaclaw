@@ -65,7 +65,7 @@ describe("the colleagues that ship", () => {
     for (const id of SEEDED) {
       expect(AgentV2.POSTURE_IDS.has(id)).toBe(false)
       expect(id).not.toBe(AgentV2.NOVA_ID)
-      expect(["general", "explore", "compaction", "title", "summary"]).not.toContain(id)
+      expect(["general", "explore", "compaction"]).not.toContain(id)
     }
   })
 

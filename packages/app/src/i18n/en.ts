@@ -2156,7 +2156,6 @@ export const dict = {
   "home.app.debug.subtitle": "Connection, error log, sessions — under the hood",
   "agentConfig.close": "Close",
   "contacts.paused": "Paused",
-  "contacts.hiddenCount": "Hidden ({{count}})",
   "agentConfig.pause": "Pause",
   "agentConfig.resume": "Resume",
   "agentConfig.pausing": "Saving…",
@@ -2338,8 +2337,6 @@ export const dict = {
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write
   // something into it.
-  "contacts.shared": "Shared with everyone",
-  "contacts.sharedHint": "What every colleague can read — your household's facts, not any one agent's",
   "contacts.search": "Search by name or job",
   "contacts.hire": "Hire",
   "contacts.hiring": "Hiring…",
@@ -2387,7 +2384,6 @@ export const dict = {
   "contacts.workers.untitled": "Worker {{number}}",
   "contacts.memory.own": "Remembers its own chats, privately.",
   "contacts.memory.none": "Remembers nothing — a throwaway.",
-  "contacts.memory.shared": "Shares this machine, its files and your household facts with every colleague.",
   "home.app.models.name": "Models",
   "home.app.models.subtitle": "Add, enable and tune the models this instance can run",
   "home.app.social.name": "Community",

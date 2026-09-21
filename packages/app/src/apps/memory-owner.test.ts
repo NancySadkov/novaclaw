@@ -9,20 +9,18 @@ import {
   ownersFor,
   scopeLabelKey,
   scopeOwnerName,
-  SHARED_KEY,
 } from "./memory-owner"
 
 const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({ mode: "primary", hidden: false, ...over })
 
 const owners = ownersFor(
   [agent({ id: "trader" }), agent({ id: "nova" }), agent({ id: "general", mode: "subagent" })],
-  "Shared",
 )
 
 describe("whose memory the app can show", () => {
-  test("one entry per colleague, then the household — sub-agents are not owners", () => {
+  test("one entry per colleague — sub-agents are not owners", () => {
     // Staff spawned for one task own nothing: their memories ride their officer's cabinet.
-    expect(owners.map((owner) => owner.key)).toEqual(["agent:nova", "agent:trader", SHARED_KEY])
+    expect(owners.map((owner) => owner.key)).toEqual(["agent:nova", "agent:trader"])
   })
 
   test("a colleague's page shows ONLY that colleague's cabinet", () => {
@@ -32,11 +30,6 @@ describe("whose memory the app can show", () => {
     expect(owners.find((owner) => owner.key === "agent:trader")!.scopes).toEqual(["agent:trader"])
   })
 
-  test("the household's shared facts are an OWNER, not a checkbox", () => {
-    const shared = owners.find((owner) => owner.key === SHARED_KEY)!
-    expect(shared).toMatchObject({ kind: "shared", scopes: ["global"], label: "Shared" })
-  })
-
   test("the CEO is the default view, and an empty instance has no default rather than a wrong one", () => {
     expect(defaultOwner(owners)!.key).toBe("agent:nova")
     expect(defaultOwner([])).toBeUndefined()
@@ -44,8 +37,7 @@ describe("whose memory the app can show", () => {
 })
 
 describe("what a scope means, in words", () => {
-  test("each of the three scopes reads as who can see it", () => {
-    expect(scopeLabelKey("global")).toBe("memory.scope.shared")
+  test("each officer and chat scope reads as who can see it", () => {
     expect(scopeLabelKey("session:ses_1")).toBe("memory.scope.chat")
     expect(scopeLabelKey("agent:trader")).toBe("memory.scope.agent")
   })
@@ -64,7 +56,6 @@ describe("what a scope means, in words", () => {
 describe("opening ONE colleague's cabinet by link", () => {
   test("an explicit colleague wins", () => {
     expect(ownerFromKey(owners, "agent:trader")?.scopes).toEqual(["agent:trader"])
-    expect(ownerFromKey(owners, SHARED_KEY)?.scopes).toEqual(["global"])
   })
 
   test("an explicit agent key remains authoritative while the roster is late or missing", () => {
@@ -107,8 +98,7 @@ describe("postures own no memories", () => {
         { id: "build", mode: "primary" },
         { id: "plan", mode: "primary" },
       ] as never,
-      "Shared",
     ).map((owner) => owner.key)
-    expect(keys).toEqual(["agent:nova", "global"])
+    expect(keys).toEqual(["agent:nova"])
   })
 })

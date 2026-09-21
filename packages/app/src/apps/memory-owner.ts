@@ -9,20 +9,18 @@ import { displayName, roster, type AgentLike, type ContactView } from "./contact
 
 /** The owner named by one Memory route. */
 export interface MemoryOwner {
-  /** `agent:<id>`, or the sentinel `global` for the household's shared facts. */
+  /** `agent:<id>` for one officer's cabinet. */
   readonly key: string
   readonly label: string
   /** The scopes to query for this owner. */
   readonly scopes: readonly string[]
-  readonly kind: "agent" | "shared"
+  readonly kind: "agent"
 }
 
 /** The household's shared facts — readable by every colleague, on purpose: partitioning what the
  *  user is like would make each new colleague a stranger. It is an OWNER reached from the household
  *  row rather than a checkbox on somebody else's cabinet, so "who knows this?" has one answer. */
-export const SHARED_KEY = "global"
-
-export const ownersFor = (agents: readonly AgentLike[], sharedLabel: string): readonly MemoryOwner[] => [
+export const ownersFor = (agents: readonly AgentLike[]): readonly MemoryOwner[] => [
   ...roster(agents).map(
     (view: ContactView): MemoryOwner => ({
       key: `agent:${view.id}`,
@@ -35,7 +33,6 @@ export const ownersFor = (agents: readonly AgentLike[], sharedLabel: string): re
       kind: "agent",
     }),
   ),
-  { key: SHARED_KEY, label: sharedLabel, scopes: ["global"], kind: "shared" },
 ]
 
 /** The owner to show when the app opens, or `undefined` when there is nobody at all. Nova first,
@@ -79,14 +76,12 @@ export const agentIDFromOwnerKey = (key: string): string | undefined => {
 /** The household's shared facts, which belong to no colleague. Reached from the ROSTER's own row
  *  rather than from a top-level app: under the metaphor the roster is the index of who remembers
  *  what, and the household is one of those whos. */
-export const SHARED_ROUTE = `/memory-graph?owner=${SHARED_KEY}`
-
 /** What a stored scope string means, in words a non-expert can act on. Keys, so the page translates.
  *
  *  ⚠️ `session:<id>` stays "one chat" rather than naming the chat: a memory scoped to a conversation
  *  is not addressed to a colleague at all, and dressing it up as one would misstate who can read it. */
-export const scopeLabelKey = (scope: string): "memory.scope.shared" | "memory.scope.chat" | "memory.scope.agent" =>
-  scope === "global" ? "memory.scope.shared" : scope.startsWith("session:") ? "memory.scope.chat" : "memory.scope.agent"
+export const scopeLabelKey = (scope: string): "memory.scope.chat" | "memory.scope.agent" =>
+  scope.startsWith("session:") ? "memory.scope.chat" : "memory.scope.agent"
 
 /** The colleague a scope belongs to, if it belongs to one. Used to put a NAME on the badge rather
  *  than the raw `agent:talent-scout` key the store holds. */

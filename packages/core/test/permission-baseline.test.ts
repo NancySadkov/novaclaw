@@ -160,8 +160,6 @@ describe("the built-in agents the plugin actually builds", () => {
         "nova",
         "plan",
         "recipe",
-        "summary",
-        "title",
       ])
       for (const [id, rules] of agents) {
         expect({ id, catchAll: PermissionV2.catchAllAllowRules(rules) }).toEqual({ id, catchAll: [] })
@@ -189,7 +187,7 @@ describe("the built-in agents the plugin actually builds", () => {
       // `deny` here is what keeps `colleague`'s 2,078 resident bytes (measured 2026-08-21,
       // `location-layer.test.ts`) out of every ordinary session's prompt. If this flips to `ask`,
       // nothing refuses — but every agent starts paying for a tool it may not use.
-      for (const id of ["build", "plan", "explore", "general", "summary", "title", "compaction"])
+      for (const id of ["build", "plan", "explore", "general", "compaction"])
         expect({ id, effect: effectFor(agents.get(id)!, "colleague") }).toEqual({ id, effect: "deny" })
       expect(effectFor(agents.get("nova")!, "colleague")).toBe("allow")
     }),
@@ -321,11 +319,12 @@ describe("the built-in agents the plugin actually builds", () => {
       const agents = yield* builtinAgents
       // `general` denies todowrite explicitly, AFTER the floor grants it.
       expect(effectFor(agents.get("general")!, "todowrite")).toBe("deny")
-      // The three hidden single-purpose agents end in a catch-all DENY, so the floor reaches
-      // nothing there — the same as before B4c, and the reason `catchAllAllowRules` must not
-      // confuse a deny for an allow.
-      for (const id of ["compaction", "title", "summary"])
-        expect({ id, read: effectFor(agents.get(id)!, "read") }).toEqual({ id, read: "deny" })
+      // Compaction is the remaining internal maintenance agent; title labeling is owned by the
+      // officer that produced the work and is no longer a separate agent entity.
+      expect({ id: "compaction", read: effectFor(agents.get("compaction")!, "read") }).toEqual({
+        id: "compaction",
+        read: "deny",
+      })
     }),
   )
 })

@@ -13,8 +13,6 @@ import { COMPACTION_SYSTEM } from "@novaclaw/core/compaction-system-prompt"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
-import PROMPT_SUMMARY from "./prompt/summary.txt"
-import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@novaclaw/core/global"
@@ -56,7 +54,7 @@ export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
 // Built-in agent ids — mirrors the `native: true` set the `agents` map defines
 // below. Used to restore the V1 `native` flag when projecting a V2 agent.
-const NATIVE_IDS = new Set(["build", "plan", "general", "explore", "compaction", "title", "summary"])
+const NATIVE_IDS = new Set(["build", "plan", "general", "explore", "compaction"])
 
 // Project an authoritative V2 `AgentV2.Info` onto this legacy V1 `Info` wire shape.
 // V2 (`@novaclaw/v2/Agent`) is the store the RUNNER reads and is a SUPERSET —
@@ -316,37 +314,6 @@ export const layer = Layer.effect(
               user,
             ),
             options: {},
-          },
-          title: {
-            name: "title",
-            mode: "primary",
-            options: {},
-            native: true,
-            hidden: true,
-            temperature: 0.5,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            prompt: PROMPT_TITLE,
-          },
-          summary: {
-            name: "summary",
-            mode: "primary",
-            options: {},
-            native: true,
-            hidden: true,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            prompt: PROMPT_SUMMARY,
           },
         }
 

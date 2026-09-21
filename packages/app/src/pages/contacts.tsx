@@ -17,8 +17,7 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import { hiddenRoster, moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
-import { SHARED_ROUTE } from "@/apps/memory-owner"
+import { moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
@@ -37,7 +36,6 @@ import {
   type UsageMinute,
   workersOf,
 } from "@/apps/roster-live"
-import { messageTime } from "@novaclaw/session-ui/v2/message-time"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
@@ -55,12 +53,7 @@ import { WorkerListDialog, type WorkerListItem } from "@/components/worker-list-
 // organization. Nova (the CEO) is the first row and cannot be retired; every other row is a colleague
 // the user hired and may re-brief or retire.
 //
-// ⚠️ Two rules run through this page and must survive any edit:
-//   1. **Memory is disclosed in BOTH halves** — what a colleague keeps to itself AND what every
-//      colleague can see. The surveyed competitor's roster names only the first while sharing the
-//      machine underneath (`notes/survey/grokbot-research.md`); a row that reads the same way here
-//      would be promising an isolation we did not build.
-//   2. **A control the API will refuse is not rendered.** Nova has no Retire button, and the endpoint
+// ⚠️ A control the API will refuse is not rendered. Nova has no Retire button, and the endpoint
 //      refuses it too — the UI is not the enforcement, it is the honest face of it.
 //
 // The ordering, filtering and disclosure decisions live in `@/apps/contacts` where tests reach them.
@@ -300,8 +293,6 @@ ${copy.detail}`
 
   const savedOrder = createMemo<readonly string[]>(() => pendingOrder() ?? sync().data.config?.officer_order ?? [])
   const views = createMemo(() => roster(agents() ?? [], savedOrder()))
-  /** The colleagues the user hid — listed separately so their chats keep a door. */
-  const hidden = createMemo(() => hiddenRoster(agents() ?? []))
   const shown = createMemo(() => searchRoster(views(), query()))
 
   /**
@@ -437,6 +428,7 @@ ${copy.detail}`
                   .filter((view) => view.kind === "officer")
                   .map((view) => view.id)}
               >
+                <div class="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
                 <For each={shown()}>
                   {(view) => {
                     const row = {
@@ -482,70 +474,12 @@ ${copy.detail}`
                     )
                   }}
                 </For>
+                </div>
               </SortableProvider>
             </DragDropProvider>
           </Show>
         </Show>
 
-        {/* HIDDEN COLLEAGUES — the door that hiding used to take away.
-            🔴 `hidden: true` drops a row from the main roster while the colleague stays fully able to
-            act (pausing, by contrast, denies it everything). The row is the only way into a
-            colleague's chat, so a hidden colleague had a live chat and no door. Collapsed by default
-            because hiding means "not one of my working colleagues" — but present, countable and one
-            click from openable, which is the whole difference.
-            ⚠️ Machinery is not in here: `hiddenRoster` keeps `isColleague`'s other two clauses, so
-            `compaction`/`title` stay out and this reads as "you hid these" rather than an internals
-            dump. */}
-        <Show when={hidden().length > 0}>
-          <details data-slot="contacts-hidden" class="border-t border-v2-border-border-muted">
-            <summary class="cursor-pointer px-4 py-3 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02">
-              {language.t("contacts.hiddenCount", { count: String(hidden().length) })}
-            </summary>
-            <For each={hidden()}>
-              {(view) => (
-                <ContactRow
-                  view={view}
-                  sessions={liveSessions()}
-                  starting={starting() === view.id}
-                  cloning={cloning() === view.id}
-                  cloneDisabled={cloning() !== undefined}
-                  onStart={() => void startTheirChat(view.id, view.name)}
-                  onClone={() => void cloneColleague(view.id)}
-                  usage={usage()?.[view.id] ?? []}
-                  executions={executionBySession()}
-                  serverKey={serverKey()}
-                  server={conn()?.http}
-                  onOpen={() => openConfig(view.id)}
-                />
-              )}
-            </For>
-          </details>
-        </Show>
-
-        {/* The HOUSEHOLD, at the foot of the roster and visibly not a colleague.
-            🔴 It is here because the top-level Memory app is gone (2026-08-21): a global pile of
-            memories was the same shape as the Chats list this roster replaced. What a colleague
-            remembers is opened from that colleague; what EVERY colleague can read has no colleague to
-            hang off, so it hangs off the list of them. Rendered as a plain row rather than a contact
-            card on purpose — the household is not someone you can chat to, hire or retire, and a row
-            that looked like a colleague would invite all three. */}
-        <Show when={agentsError() === undefined && !agentsLoading()}>
-          <button
-            type="button"
-            class="flex w-full items-center gap-3 border-t border-v2-border-border-muted px-4 py-3 text-left hover:bg-v2-background-bg-layer-02"
-            onClick={() => navigate(SHARED_ROUTE)}
-          >
-            <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-v2-background-bg-layer-03 text-sm">
-              🏠
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm">{language.t("contacts.shared")}</span>
-              <span class="block truncate text-[11px] text-v2-text-text-faint">
-                {language.t("contacts.sharedHint")}
-              </span>
-            </span>
-          </button>
-        </Show>
       </div>
     </AppPage>
   )
@@ -634,6 +568,7 @@ function SortableContactRow(
 
 function ContactRow(props: ContactRowProps) {
   const language = useLanguage()
+  const navigate = useNavigate()
   const dialog = useDialog()
   const rowSync = useServerSync()
   const live = createMemo<RosterLive>(() => liveFor(props.sessions, props.view.id))
@@ -716,24 +651,6 @@ function ContactRow(props: ContactRowProps) {
       />
     ))
   }
-  // The transcript's own formatter, so a timestamp reads the same in both places. Ticked by `nowTick`
-  // so "today" stops being today at midnight without a reload.
-  const lastTouched = createMemo(() => {
-    const updated = live().updatedAt
-    nowTick()
-    return updated === undefined ? undefined : messageTime({ created: updated, locale: language.locale() })
-  })
-  /** The facts that FOLLOW the task, each present only when it has something to say. Built as a list
-   *  so the separators can be joined between them rather than written beside each one. */
-  const meta = createMemo<{ text: string; iso?: string; title?: string }[]>(() => {
-    const parts: { text: string; iso?: string; title?: string }[] = [{ text: language.t(`contacts.state.${state()}`) }]
-    const speed = perSecond()
-    if (speed) parts.push({ text: language.t("contacts.perSecond", { tokens: speed }) })
-    const stamp = lastTouched()
-    const updated = live().updatedAt
-    if (stamp && updated !== undefined) parts.push({ text: stamp.label, iso: stamp.iso, title: stamp.full })
-    return parts
-  })
   // The row IS the way into the colleague's one chat — that is what replacing the chat list means.
   // Its config is the gear beside it, so "talk to them" and "change them" are different gestures.
   // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
@@ -746,16 +663,32 @@ function ContactRow(props: ContactRowProps) {
   return (
     <div
       data-contact-id={props.view.id}
-      class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 transition-colors hover:bg-v2-background-bg-layer-02"
+      role="link"
+      tabIndex={0}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button,a")) return
+        const href = chatHref()
+        if (href) navigate(href)
+        else props.onStart()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        const href = chatHref()
+        if (href) navigate(href)
+        else props.onStart()
+      }}
+      class="group flex min-h-44 w-full flex-col rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-sm transition hover:border-v2-border-border-strong hover:bg-v2-background-bg-layer-02 focus:outline-none focus:ring-2 focus:ring-v2-border-border-strong"
     >
-      {props.dragHandle}
-      <AgentPortrait
-        id={props.view.id}
-        name={props.view.name}
-        avatar={props.view.avatar}
-        background={agentColor(props.view.id, props.view.color)}
-        class="size-9 border border-v2-border-border-strong text-base"
-      />
+      <div class="flex items-start gap-3">
+        {props.dragHandle}
+        <AgentPortrait
+          id={props.view.id}
+          name={props.view.name}
+          avatar={props.view.avatar}
+          background={agentColor(props.view.id, props.view.color)}
+          class="size-14 border-2 border-v2-border-border-strong text-lg"
+        />
       <Dynamic
         component={chatHref() ? A : "button"}
         {...(chatHref()
@@ -789,38 +722,16 @@ function ContactRow(props: ContactRowProps) {
             {props.view.title ?? language.t("contacts.noTitle")}
           </span>
         </span>
-        {/* WHAT IT IS ON, and HOW IT IS DOING — one line, four facts, each absent when it has
-            nothing to say (owner, 2026-08-27).
-            🔴 The task is the chat's auto-title, but only when it is actually a task: `rosterTask`
-            drops it when it merely echoes the colleague's name, which is what a fresh chat's title
-            is. "No chat yet" is gone with it — the reader is being told about a TASK, and not having
-            one is the same answer whether or not a conversation exists. */}
-        <span class="block truncate text-xs">
-          <Show when={task()} fallback={<span class="text-v2-text-text-faint">{language.t("contacts.noTask")}</span>}>
-            {(value) => <span class="text-v2-text-text-base">{value()}</span>}
-          </Show>
-          {/* ⚠️ Separators are JOINED between the parts that exist, never written beside each one.
-              Written inline, an absent rate left `No task · · 07:51 PM` on screen — a punctuation
-              mark for a fact that is deliberately not rendered. Caught by looking at the row, not by
-              the diff: every `Show` was individually correct.
-              · The RATE is per second, absent rather than "0/s" — a zero reads as a measurement of
-                the colleague's speed rather than of our decision to render it.
-              · The TIME uses the transcript's own `messageTime`, so the clock-today / date-after
-                rule cannot drift between the two surfaces. */}
-          <For each={meta()}>
-            {(part) => (
-              <span class="text-v2-text-text-faint">
-                {" · "}
-                <Show when={part.iso !== undefined} fallback={part.text}>
-                  <time dateTime={part.iso} title={part.title}>
-                    {part.text}
-                  </time>
-                </Show>
-              </span>
-            )}
-          </For>
-        </span>
       </Dynamic>
+      </div>
+      <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-2 text-xs">
+        <span class={state() === "working" ? "text-v2-state-fg-success" : "text-v2-text-text-faint"}>
+          {task() ?? language.t("contacts.state.idle")}
+        </span>
+        <span class="shrink-0 font-mono tabular-nums text-v2-text-text-muted">
+          {perSecond() ?? "0"} t/s
+        </span>
+      </div>
       {/* Spend, rolled up over this colleague's chat AND the nameless staff it spawned — they spend
           on their officer's behalf. Absent rather than "0" when nothing has been produced: a zero
           reads as a measurement, and no work is not a measurement. */}
