@@ -817,11 +817,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   agent: agentControlState(),
                 }}
               />
-              {/* The project name is the last element inside ComposerControlsRow. Keep live work
-                  shortcuts immediately after it and before the context gauge. */}
-              <Show when={props.controls.session?.id}>
-                {(sessionID) => <SessionActivityIndicators sessionID={sessionID()} />}
-              </Show>
               <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                 <ComposerVariantControl
                   state={{
@@ -845,6 +840,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   the other chips (the submit button moved up beside the editor, 2026-07-24). */}
               <Show when={props.controls.session?.id}>
                 <SessionContextUsage buttonAppearance="v2" placement="top" />
+              </Show>
+              <Show when={props.controls.session?.id}>
+                {(sessionID) => <SessionActivityIndicators sessionID={sessionID()} />}
               </Show>
             </div>
           </DockShellForm>

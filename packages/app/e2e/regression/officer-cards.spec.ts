@@ -104,9 +104,22 @@ test.beforeEach(async ({ page }) => {
 test("officer tiles keep dimensions across widths and expose actions without clutter", async ({ page }, info) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
+  await page.goto("/")
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const tiles = page.locator('.home-app:not([data-hero="true"])')
+    await expect(tiles.first()).toBeVisible()
+    const box = await tiles.first().boundingBox()
+    expect(box!.width).toBe(width === 390 ? 77 : 84)
+    expect(box!.height).toBe(108)
+    await expect(tiles.first().locator(".home-app-icon")).toHaveCSS("width", "64px")
+    await page.screenshot({ path: info.outputPath(`home-${width}.png`) })
+  }
   await page.goto("/tasks")
   const cards = page.locator("[data-contact-id]")
   await expect(cards).toHaveCount(6)
+  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("width", "45px")
+  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("height", "45px")
   const rowCounts: number[] = []
   for (const width of [390, 768, 1280, 1600]) {
     await page.setViewportSize({ width, height: 900 })
@@ -198,10 +211,34 @@ test("whole-card dragging persists arrangement and releasing does not open chat"
 })
 
 test("Clear Chat lives in the Context Inspector and requires confirmation", async ({ page }) => {
+  await page.route(/\/api\/session\/[^/]+\/worker(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      headers: { "access-control-allow-origin": "*" },
+      json: { data: [{ id: "ses_worker", title: "Research", startedAt: 1700000000000 }] },
+    }),
+  )
+  await page.route(/\/api\/session\/[^/]+\/command(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      headers: { "access-control-allow-origin": "*" },
+      json: {
+        data: [{ id: "shell_one", sessionID: "ses_compact_2", command: "echo ready", startedAt: 1700000000000 }],
+      },
+    }),
+  )
   await page.goto("/")
   await page.locator('[data-slot="titlebar-tabs"]').getByRole("link", { name: "Theron", exact: true }).click()
   await expect(page.locator('[data-component="native-timeline"]')).toBeVisible()
-  await page.getByRole("button", { name: "View context usage" }).click()
+  const context = page.getByRole("button", { name: "View context usage" })
+  const workers = page.locator('[data-action="prompt-workers"]')
+  const commands = page.locator('[data-action="prompt-shells"]')
+  await expect(workers).toBeVisible()
+  await expect(commands).toBeVisible()
+  const contextBox = await context.boundingBox()
+  const workerBox = await workers.boundingBox()
+  const commandBox = await commands.boundingBox()
+  expect(workerBox!.x).toBeGreaterThan(contextBox!.x)
+  expect(commandBox!.x).toBeGreaterThan(workerBox!.x)
+  await context.click()
   const inspector = page.getByRole("dialog", { name: "Review and files" })
   const clear = inspector.locator('[data-action="agent-clear-chat"]')
   await expect(clear).toBeVisible()

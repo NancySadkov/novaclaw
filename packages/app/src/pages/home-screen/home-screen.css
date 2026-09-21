@@ -1,5 +1,3 @@
-/* A small cabinet of instruments. Gold belongs to Nova; tools use cool metal.
-   Static, local artwork. Hover never moves a target under the pointer. */
 [data-component="home-launcher"] {
   display: flex;
   flex-direction: column;
@@ -64,18 +62,25 @@
   width: 64px;
   max-width: 100%;
   aspect-ratio: 1;
-  border-radius: 15px 15px 7px 7px;
-  color: var(--app-accent);
+  border-radius: 14px;
+  color: color-mix(in srgb, var(--app-accent) 35%, #ead3a4);
   transition:
     border-color 140ms ease,
-    background-color 140ms ease;
+    box-shadow 140ms ease;
 }
 .home-app-icon[data-framed="true"] {
-  border: 1px solid color-mix(in srgb, var(--app-accent) 32%, var(--v2-border-border-base));
-  background: linear-gradient(150deg, var(--v2-background-bg-layer-02), var(--v2-background-bg-base));
+  border: 1px solid color-mix(in srgb, #c2a575 48%, var(--v2-border-border-base));
+  background:
+    radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--app-accent) 18%, transparent), transparent 75%),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--v2-background-bg-layer-02) 88%, #8b65c4),
+      var(--v2-background-bg-base)
+    );
   box-shadow:
-    inset 0 1px rgb(255 255 255 / 0.07),
-    0 3px 8px rgb(0 0 0 / 0.18);
+    inset 0 1px rgb(255 240 205 / 0.12),
+    inset 0 -1px rgb(8 4 17 / 0.3),
+    0 5px 14px rgb(9 4 20 / 0.3);
 }
 .home-app-icon img {
   width: 100%;
@@ -83,11 +88,11 @@
   object-fit: contain;
 }
 .home-app-icon[data-framed="true"] img {
-  width: 78%;
-  height: 78%;
+  width: 92%;
+  height: 92%;
 }
 .home-app[data-source="builtin"] .home-app-icon img {
-  filter: grayscale(1) brightness(1.1) sepia(0.5) hue-rotate(165deg) saturate(1.5);
+  filter: drop-shadow(0 2px 3px rgb(8 4 17 / 0.5));
 }
 .home-app-label {
   flex-shrink: 0;
@@ -106,7 +111,7 @@
   color: var(--v2-text-text-base);
 }
 .home-app:hover .home-app-icon[data-framed="true"] {
-  border-color: var(--app-accent);
+  border-color: color-mix(in srgb, var(--app-accent) 35%, #ead3a4);
 }
 .home-app:focus-visible .home-app-icon,
 .home-app[data-hero="true"]:focus-visible {
@@ -120,7 +125,7 @@
   gap: 0;
   padding: 12px;
   border: 1px solid var(--nc-panel-line);
-  border-radius: 22px 5px 22px 5px;
+  border-radius: 18px;
   background: var(--nc-panel-gradient);
   box-shadow:
     inset 0 1px var(--nc-panel-line-top),
@@ -131,7 +136,7 @@
   position: absolute;
   inset: 5px;
   border: 1px solid color-mix(in srgb, var(--nc-panel-line) 30%, transparent);
-  border-radius: 17px 2px 17px 2px;
+  border-radius: 13px;
   pointer-events: none;
 }
 .home-app[data-hero="true"]:hover {
@@ -144,7 +149,7 @@
   min-height: 0;
 }
 .home-nova-art img {
-  width: 116px;
+  width: 136px;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -245,7 +250,7 @@
     padding: 10px;
   }
   .home-nova-art img {
-    width: 106px;
+    width: 124px;
   }
   .home-command {
     padding: 8px 12px 12px;

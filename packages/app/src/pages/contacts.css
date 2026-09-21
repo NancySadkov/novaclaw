@@ -71,19 +71,20 @@
 .officer-card-art::before {
   content: "";
   position: absolute;
-  inset: 15px 44px 12px;
+  width: 66px;
+  height: 54px;
   border: 1px solid #cba76525;
   border-radius: 50%;
-  box-shadow: 0 0 0 8px #b9955c08;
+  box-shadow: 0 0 0 4px #b9955c08;
 }
 .officer-card .officer-card-portrait {
-  width: 90px;
-  height: 90px;
-  border: 2px solid #c2a575;
+  width: 45px;
+  height: 45px;
+  border: 1px solid #c2a575;
   box-shadow:
     0 4px 20px #08031170,
     inset 0 1px 1px #fff3;
-  font-size: 28px;
+  font-size: 14px;
   font-weight: 600;
   pointer-events: none;
 }

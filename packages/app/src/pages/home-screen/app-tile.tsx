@@ -30,7 +30,7 @@ export const AppTile: Component<TileProps> = (props) => (
           <span class="home-app-icon" data-framed={!!props.app.tileNeedsFrame || !props.app.tile}>
             <Show
               when={props.app.tile}
-              fallback={<Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-8" />}
+              fallback={<Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-11" />}
             >
               {(src) => <img src={src()} alt="" draggable={false} />}
             </Show>

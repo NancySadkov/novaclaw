@@ -47,11 +47,11 @@ test("both activity dialogs are fed live accessors so finished work drops out", 
   expect(activity).toContain("shells={shells()}")
 })
 
-test("activity shortcuts sit after the project control and before the context gauge", () => {
+test("activity shortcuts sit after the context gauge", () => {
   const controls = composer.indexOf("<ComposerControlsRow")
   const activityIndicators = composer.indexOf("<SessionActivityIndicators")
   const contextGauge = composer.lastIndexOf("<SessionContextUsage")
   expect(controls).toBeGreaterThan(-1)
   expect(activityIndicators).toBeGreaterThan(controls)
-  expect(contextGauge).toBeGreaterThan(activityIndicators)
+  expect(activityIndicators).toBeGreaterThan(contextGauge)
 })
