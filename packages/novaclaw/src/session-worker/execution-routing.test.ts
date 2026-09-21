@@ -27,6 +27,13 @@ test("a stopped session settles the durable rows of jobs whose process died with
   expect(execution).toContain("return (yield* BashJobs.interruptSessions(database.db, [String(sessionID)])) > 0")
 })
 
+test("a drain refuses an archived session, so a late wake cannot resurrect it", () => {
+  // Archiving stops the tree; a queued input, nudge or recovery adoption that arrives afterwards must
+  // not start a drain for a chat the user can no longer see. Restoring unarchives and runs normally.
+  const execution = readFileSync(fileURLToPath(new URL("./execution.ts", import.meta.url)), "utf8")
+  expect(execution).toContain("if (stored.time?.archived !== undefined) return")
+})
+
 test("worker memory ceiling scales by host tier and stays bounded", () => {
   const gib = 1024 ** 3
   expect(defaultMemoryLimitBytes(4 * gib)).toBe(768 * 1024 ** 2)

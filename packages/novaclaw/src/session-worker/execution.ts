@@ -226,6 +226,10 @@ export const layer = Layer.effect(
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const stored = yield* store.get(sessionID)
         if (!stored) return yield* Effect.die(`Session not found: ${sessionID}`)
+        // An ARCHIVED chat does not run. Archiving stops the tree; a wake that arrives afterwards — a
+        // queued input, a nudge, a recovery adoption — must not resurrect it, or the archive leaves a
+        // ghost the user cannot see. Restoring unarchives, and the next prompt runs normally.
+        if (stored.time?.archived !== undefined) return
 
         // 🔴 **Degrade, don't die: a session whose working folder has gone runs in a scratch folder.**
         // Before this the worker refused to start and the session was ISOLATED — legible but stopped,

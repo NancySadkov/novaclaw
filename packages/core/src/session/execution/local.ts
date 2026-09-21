@@ -34,6 +34,9 @@ export const layer = Layer.effect(
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
+        // An ARCHIVED chat does not run — see the worker executor's twin. Archiving stops the tree, so
+        // a wake that arrives afterwards must not resurrect it.
+        if (session.time?.archived !== undefined) return
         const located = locations.get(session.location)
         // The drain IS a session's execution lifetime, so this is the single authoritative
         // seam for the `session.status` busy/idle vocabulary (the same truth /session/active

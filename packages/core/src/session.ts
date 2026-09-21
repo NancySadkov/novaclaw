@@ -1574,14 +1574,33 @@ export const layer = Layer.effect(
           }),
         ),
       ),
-      setArchived: Effect.fn("V2Session.setArchived")((input) =>
-        patchRecord(input.sessionID, (info) =>
+      /**
+       * Archiving STOPS the session's work — the other half of the invariant beside removal:
+       * *"workers and shell commands of a cleared/archived session are stopped."*
+       *
+       * 🔴 Interrupt BEFORE the row is patched and AWAIT it, so the archive the caller is told
+       * succeeded is one whose workers and shells are already gone. Patching first would leave a
+       * window in which the session reads as archived while its worker is still spawning children
+       * under it — and no later interrupt would find them. `execution.interrupt` walks the WHOLE tree
+       * (children included), marks their attempt rows, kills their worker processes, and settles their
+       * background-job rows; the scheduler eviction is the same residue cleanup removal does, so a
+       * queued turn cannot survive into dispatch for a chat the user can no longer see.
+       *
+       * ⚠️ Restoring is NOT this path: it sets `archived: undefined` through `restore`, so a restore
+       * never interrupts anything.
+       */
+      setArchived: Effect.fn("V2Session.setArchived")(function* (input) {
+        if (input.time !== undefined) {
+          yield* Effect.uninterruptible(execution.interrupt(input.sessionID))
+          yield* scheduler.evict(input.sessionID)
+        }
+        yield* patchRecord(input.sessionID, (info) =>
           SessionSchema.Info.make({
             ...info,
             time: { ...info.time, archived: input.time === undefined ? undefined : DateTime.makeUnsafe(input.time) },
           }),
-        ),
-      ),
+        )
+      }),
       restore: Effect.fn("V2Session.restore")(function* (input) {
         const info = yield* result.get(input.sessionID)
         if (info.time.archived === undefined) return
