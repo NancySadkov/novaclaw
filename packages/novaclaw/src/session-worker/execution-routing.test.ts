@@ -17,6 +17,16 @@ test("the production HTTP graph routes admitted drains through the worker execut
   expect(source).not.toContain("Layer.provide(SessionExecutionLocal.defaultLayer)")
 })
 
+test("a stopped session settles the durable rows of jobs whose process died with it", () => {
+  // 🔴 Owner report 2026-09-22: clearing a chat killed the worker, so the background job's own
+  // finalizer never ran and its row stayed `running` forever — the commands list showed a phantom
+  // and the manual stop was a silent no-op. The interrupt path must settle each visited session's
+  // rows, and a stop with no live worker must settle rather than do nothing.
+  const execution = readFileSync(fileURLToPath(new URL("./execution.ts", import.meta.url)), "utf8")
+  expect(execution).toContain("yield* BashJobs.interruptSessions(database.db, [String(sessionID)])")
+  expect(execution).toContain("return (yield* BashJobs.interruptSessions(database.db, [String(sessionID)])) > 0")
+})
+
 test("worker memory ceiling scales by host tier and stays bounded", () => {
   const gib = 1024 ** 3
   expect(defaultMemoryLimitBytes(4 * gib)).toBe(768 * 1024 ** 2)

@@ -30,6 +30,7 @@ import { SessionInterruptNotice } from "@novaclaw/core/session/interrupt-notice"
 import { SessionPresence } from "@novaclaw/core/session/presence"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { WorkerControl } from "@novaclaw/core/session/worker-control"
+import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import os from "node:os"
 import { SessionWorkerCommand } from "./command"
 import { SessionWorkerAdmission } from "./admission"
@@ -527,9 +528,13 @@ export const layer = Layer.effect(
                 }
                 outcome = yield* Effect.promise(() => spawned.value.result).pipe(
                   Effect.ensuring(
-                    Effect.sync(() => {
+                    Effect.gen(function* () {
                       releaseWorker()
                       releaseLiveWorker()
+                      // A worker process that ended owns no live jobs — its tree was killed before
+                      // `result` resolved. Settle its rows so a crash or a graceful settle cannot
+                      // leave the commands list showing a command nothing can stop.
+                      yield* BashJobs.interruptSessions(database.db, [String(sessionID)])
                     }),
                   ),
                   Effect.onInterrupt(() =>
@@ -622,6 +627,11 @@ export const layer = Layer.effect(
         visited.add(sessionID)
         yield* attempts.requestInterrupt(sessionID)
         yield* coordinator.interrupt(sessionID)
+        // The worker this session ran in is dead, so every background job it owned died with it.
+        // Settle their durable rows, or the commands list shows a phantom nothing can stop: the
+        // job's own finalizer ran in that dead process and never got to write the terminal row.
+        // AFTER the interrupt, which awaits the worker's teardown.
+        yield* BashJobs.interruptSessions(database.db, [String(sessionID)])
         const children = yield* store.children(sessionID)
         yield* Effect.forEach(children, (childID) => interruptBranch(childID, visited), { concurrency: "unbounded" })
       })
@@ -633,19 +643,24 @@ export const layer = Layer.effect(
       wake: coordinator.wake,
       interrupt: (sessionID) => interruptBranch(sessionID, new Set()),
       stopCommand: (sessionID, commandID, reason) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const current = liveWorkers.get(sessionID)
-          if (!current) return false
-          current.handle.send({
-            version: SessionWorkerProtocol.VERSION,
-            sessionID,
-            attemptID: current.lease.attemptID,
-            generation: current.lease.generation,
-            type: "stop-command",
-            commandID,
-            reason,
-          })
-          return true
+          if (current) {
+            current.handle.send({
+              version: SessionWorkerProtocol.VERSION,
+              sessionID,
+              attemptID: current.lease.attemptID,
+              generation: current.lease.generation,
+              type: "stop-command",
+              commandID,
+              reason,
+            })
+            return true
+          }
+          // No live worker: the process that owned this command is gone, so a `running` row is a
+          // phantom. Settle it and report the stop as effective — a silent no-op is how the user's
+          // stop looked like it did nothing.
+          return (yield* BashJobs.interruptSessions(database.db, [String(sessionID)])) > 0
         }),
     })
   }),

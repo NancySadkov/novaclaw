@@ -272,3 +272,65 @@ describe("BashJobs durability", () => {
     }),
   )
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The phantom-row class (owner report 2026-09-22): clearing a chat killed the worker, so the job's
+// own finalizer never ran and the row stayed `running` with no process behind it. The commands list
+// kept showing it and the manual stop was a silent no-op, because `stopCommand` only signalled a
+// LIVE worker. Measured live: `job_0c610a806001fUln4ORT5IPlmW`, owner `ses_geryon`, `running`,
+// `time_done: null`, no matching OS process.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("a running row whose process is gone is settled, not left as a phantom", () => {
+  it.effect("stop settles a stale running row instead of reporting it untouched", () =>
+    Effect.gen(function* () {
+      const bashJobs = yield* BashJobs.Service
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(BashJobTable)
+        .values({
+          id: "job_orphan",
+          owner: "ses_cleared",
+          command: "find / -iname ghidra",
+          status: "running",
+          output: "partial",
+          truncated: false,
+          time_started: Date.now() - 60_000,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const stopped = yield* bashJobs.stop("job_orphan", "ses_cleared", "user stopped it")
+      expect(stopped.running).toBe(false)
+      expect(stopped.interrupted).toBe(true)
+
+      const row = (yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)).find((r) => r.id === "job_orphan")!
+      expect(row.status).toBe("interrupted")
+      expect(row.time_done).not.toBeNull()
+      // And it is gone from the list the commands UI reads — the phantom cannot outlive the stop.
+      expect(yield* BashJobs.listRunning(db, ["ses_cleared"])).toEqual([])
+    }),
+  )
+
+  it.effect("interruptSessions settles the named sessions' running rows and no other's", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const insert = (id: string, owner: string, status: "running" | "done" | "interrupted") =>
+        db
+          .insert(BashJobTable)
+          .values({ id, owner, command: `cmd ${id}`, status, output: "", truncated: false, time_started: Date.now() })
+          .run()
+          .pipe(Effect.orDie)
+      yield* insert("job_a1", "ses_a", "running")
+      yield* insert("job_a2", "ses_a", "done")
+      yield* insert("job_b1", "ses_b", "running")
+
+      expect(yield* BashJobs.interruptSessions(db, ["ses_a"])).toBe(1)
+      const rows = yield* db.select().from(BashJobTable).all().pipe(Effect.orDie)
+      expect(rows.find((r) => r.id === "job_a1")!.status).toBe("interrupted")
+      // A settled row is not rewritten, and a sibling session's live row is untouched: the settle is
+      // scoped to the tree that stopped.
+      expect(rows.find((r) => r.id === "job_a2")!.status).toBe("done")
+      expect(rows.find((r) => r.id === "job_b1")!.status).toBe("running")
+    }),
+  )
+})

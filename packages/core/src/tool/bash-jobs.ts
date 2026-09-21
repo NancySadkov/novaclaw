@@ -72,6 +72,35 @@ export const listRunning = Effect.fn("BashJobs.listRunning")(function* (
   return rows satisfies RunningJob[]
 })
 
+/**
+ * Settle the durable rows of sessions whose work has stopped.
+ *
+ * 🔴 **A `running` row is normally settled by the fiber that owns the job** — `flushRow` in the
+ * job's own `ensuring`. When that fiber dies with its PROCESS (a worker killed by Stop, a cleared
+ * chat, a crash), nothing runs the finalizer and the row stays `running` forever: the commands list
+ * shows a phantom command, and the manual stop cannot clear it because `stopCommand` only signals a
+ * LIVE worker. `recover` sweeps `running` rows only at process boot, so within one running host the
+ * phantom is permanent — measured on the owner's instance 2026-09-22, where clearing a chat left its
+ * `find` job `running` with `time_done: null` and no process behind it.
+ *
+ * This is the seam that settles it at the moment the work stops. Idempotent: only `running` rows move.
+ */
+export const interruptSessions = Effect.fn("BashJobs.interruptSessions")(function* (
+  db: Database.Interface["db"],
+  sessionIDs: readonly string[],
+) {
+  if (sessionIDs.length === 0) return 0
+  const now = Date.now()
+  const settled = yield* db
+    .update(BashJobTable)
+    .set({ status: "interrupted", time_done: now })
+    .where(and(eq(BashJobTable.status, "running"), inArray(BashJobTable.owner, sessionIDs)))
+    .returning({ id: BashJobTable.id })
+    .all()
+    .pipe(Effect.orDie)
+  return settled.length
+})
+
 export class JobNotFoundError extends Data.TaggedError("BashJobs.NotFoundError")<{ id: string }> {}
 export class JobLimitError extends Data.TaggedError("BashJobs.LimitError")<{ limit: number }> {}
 export class JobLaunchError extends Data.TaggedError("BashJobs.LaunchError")<{ reason: string }> {}
@@ -314,8 +343,21 @@ export const layer = Layer.effect(
         direct?.owner === owner
           ? direct
           : [...jobs.values()].find((candidate) => candidate.owner === owner && candidate.callID === identifier)
-      // Not in memory → nothing is running to stop; report the durable status.
-      if (!job) return rowSnapshot(yield* findRow(identifier, owner))
+      // Not in memory → the process that owned it is gone. A `running` row here is a phantom (its
+      // finalizer died with that process), so settle it: the stop the user pressed must not be a
+      // silent no-op, and the commands list must stop showing a command nothing can stop.
+      if (!job) {
+        const row = yield* findRow(identifier, owner)
+        if (row.status !== "running") return rowSnapshot(row)
+        const now = Date.now()
+        yield* db
+          .update(BashJobTable)
+          .set({ status: "interrupted", time_done: now })
+          .where(and(eq(BashJobTable.id, row.id), eq(BashJobTable.status, "running")))
+          .run()
+          .pipe(Effect.ignore)
+        return rowSnapshot({ ...row, status: "interrupted", time_done: now })
+      }
       if (job.doneAt === undefined && job.fiber) {
         job.interruptionReason = reason?.trim() || "The command was stopped."
         yield* Fiber.interrupt(job.fiber)
