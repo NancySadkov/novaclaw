@@ -196,7 +196,7 @@ describe("shell bundle provisioning", () => {
 })
 
 describe("agent default shell (B11)", () => {
-  test("prefers Git Bash for coherent Windows paths and exposes w64devkit as its compiler payload", async () => {
+  test("uses the shipped w64devkit shell even when a bundled Git Bash exists", async () => {
     if (process.platform !== "win32") return
     const w64devkit = await fakeW64devkit()
     const root = await fakeBundle()
@@ -204,33 +204,35 @@ describe("agent default shell (B11)", () => {
     process.env.NOVACLAW_SHELL_BUNDLE_ROOT = root
     ShellBundle.resolve.reset()
     Shell.agentDefault.reset()
-    expect(Shell.agentDefault()).toBe(path.join(root, "bin", "bash.exe"))
+    expect(Shell.agentDefault()).toBe(path.join(w64devkit, "bin", "sh.exe"))
     expect(Shell.gitbash()).toBe(path.join(root, "bin", "bash.exe"))
     const env = Shell.toolchainEnv(Shell.agentDefault(), { Path: "C:\\Windows" })
-    expect(env?.Path?.split(path.delimiter)[0]).toBe(path.join(root, "mingw64", "bin"))
-    expect(env?.Path?.split(path.delimiter).at(-1)).toBe(path.join(w64devkit, "bin"))
+    expect(env?.Path?.split(path.delimiter)[0]).toBe(path.join(w64devkit, "bin"))
+    expect(env?.Path?.split(path.delimiter).at(-1)).toBe("C:\\Windows")
     expect(env?.W64DEVKIT_HOME).toBe(w64devkit)
     expect(env?.W64DEVKIT).toBe("2.9.0")
-    expect(Shell.posix(Shell.agentDefault())).toBe(true)
+    expect(Shell.name(Shell.agentDefault())).toBe("sh")
   })
 
-  test("keeps Git Bash userland ahead of w64devkit while adding GCC last", async () => {
+  test("does not use a host shell when the shipped shell is available", async () => {
     if (process.platform !== "win32") return
     const w64devkit = await fakeW64devkit()
     const root = await fakeBundle()
     process.env.NOVACLAW_W64DEVKIT_PATH = w64devkit
     process.env.NOVACLAW_SHELL_BUNDLE_ROOT = root
     ShellBundle.resolve.reset()
-    const bash = Shell.gitbash()!
-    const paths = Shell.toolchainEnv(bash, { PATH: "C:\\Windows" })?.PATH?.split(path.delimiter)
-    expect(paths?.[0]).toBe(path.join(root, "mingw64", "bin"))
-    expect(paths?.at(-1)).toBe(path.join(w64devkit, "bin"))
+    const shell = Shell.agentDefault()
+    const paths = Shell.toolchainEnv(shell, { PATH: "C:\\Windows" })?.PATH?.split(path.delimiter)
+    expect(shell).toBe(path.join(w64devkit, "bin", "sh.exe"))
+    expect(paths?.[0]).toBe(path.join(w64devkit, "bin"))
+    expect(paths?.at(-1)).toBe("C:\\Windows")
   })
 
-  test("agentDefault is bash-or-fallback everywhere", () => {
+  test("agentDefault always has a non-empty platform-owned fallback", () => {
     Shell.agentDefault.reset()
     const value = Shell.agentDefault()
     expect(typeof value).toBe("string")
     expect(value.length).toBeGreaterThan(0)
+    if (process.platform === "win32") expect(Shell.name(value)).not.toBe("bash")
   })
 })

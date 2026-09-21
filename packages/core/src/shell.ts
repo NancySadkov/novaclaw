@@ -272,18 +272,17 @@ let defaultPreferred: string | undefined
 let defaultAgent: string | undefined
 
 /**
- * B11 — the AGENT default shell: bash wherever one exists (the bundled PortableGit
- * first on Windows, then system git-bash), because small models are trained
- * overwhelmingly on bash. Packaged Windows builds carry Git Bash and w64devkit; `bash` is the
- * honest final spelling during development if those assets are damaged or absent. The HUMAN
- * terminal default (`preferred`) is deliberately unchanged.
+ * B11 — the AGENT default shell: the shell shipped with NovaClaw on Windows. Packaged Windows
+ * builds carry w64devkit; a host Git Bash must not change the agent's runtime or its prompt.
+ * The HUMAN terminal default (`preferred`) is deliberately unchanged.
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
-    // Git Bash owns path translation and filesystem semantics on Windows. w64devkit remains the
-    // compiler payload at the end of PATH; using its BusyBox sh as the shell made native tools and
-    // `ls` disagree about the very same cwd in a live delegated build.
-    if (process.platform === "win32") return gitbash() ?? w64devkitShell() ?? "bash"
+    // The shipped w64devkit is the only Windows agent shell. Falling through to `bash` here would
+    // resolve a random pre-existing Git Bash or WSL launcher and make the prompt describe the
+    // machine's installation instead of NovaClaw's runtime. Native cmd is only a damaged-install
+    // fallback; it never searches for another bash.
+    if (process.platform === "win32") return w64devkitShell() ?? process.env.ComSpec ?? "cmd.exe"
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent
@@ -322,9 +321,10 @@ export interface AgentPlatform {
  * WSL kernel — wrong box entirely — which is why `agentDefault()` deliberately rejects it. Off Windows,
  * or when no shell answers within the bound, this falls back to Node's `os` rather than inventing one.
  *
- * ⚠️ The resolution this reads is `agentDefault()`: bundled PortableGit when provisioned, else the
- * embedded w64devkit `sh` (the packaged-Windows default), else a system bash. Provisioning a bundle at
- * runtime changes it, so the `shell.provision` handler resets this cache with the others.
+ * ⚠️ The resolution this reads is `agentDefault()`: the embedded w64devkit `sh` on packaged
+ * Windows. The system shell is not a production fallback. Provisioning a shell bundle at runtime
+ * changes its own explicit shell capability, so the `shell.provision` handler resets this cache with
+ * the others.
  *
  * ⚠️ Cached per process: the prompt is regenerated only at a session start and after a compaction, and
  * the shell cannot change in any way that matters between them. `reset` exists for tests.

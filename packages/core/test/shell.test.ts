@@ -115,8 +115,8 @@ describe("shell", () => {
       expect(Shell.name(bash!)).toBe("bash")
     })
 
-    test("the supplied agent shell is always POSIX-compatible", () => {
-      expect(Shell.posix(Shell.agentDefault())).toBe(true)
+    test("the supplied agent shell never resolves to a host bash", () => {
+      expect(Shell.name(Shell.agentDefault())).not.toBe("bash")
     })
   }
 })
