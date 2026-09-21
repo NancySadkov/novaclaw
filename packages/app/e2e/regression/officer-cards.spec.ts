@@ -103,7 +103,7 @@ test.beforeEach(async ({ page }) => {
 
 test("officer tiles keep dimensions across widths and expose actions without clutter", async ({ page }, info) => {
   const errors: string[] = []
-  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("pageerror", (error) => errors.push(error.stack || error.message))
   await page.goto("/")
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 })
@@ -118,10 +118,10 @@ test("officer tiles keep dimensions across widths and expose actions without clu
   await page.goto("/tasks")
   const cards = page.locator("[data-contact-id]")
   await expect(cards).toHaveCount(6)
-  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("width", "45px")
-  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("height", "45px")
+  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("width", "90px")
+  await expect(cards.first().locator(".officer-card-portrait")).toHaveCSS("height", "90px")
   const rowCounts: number[] = []
-  for (const width of [390, 768, 1280, 1600]) {
+  for (const width of [320, 360, 390, 768, 1280, 1600]) {
     await page.setViewportSize({ width, height: 900 })
     const boxes = await cards.evaluateAll((elements) =>
       elements.map((el) => {
@@ -129,12 +129,12 @@ test("officer tiles keep dimensions across widths and expose actions without clu
         return { width: box.width, height: box.height, y: box.y }
       }),
     )
-    expect(boxes.every((box) => box.width === 224 && box.height === 276)).toBe(true)
+    expect(boxes.every((box) => box.width === 150 && box.height === 185)).toBe(true)
     rowCounts.push(boxes.filter((box) => box.y === boxes[0]!.y).length)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: info.outputPath(`officers-${width}.png`) })
   }
-  expect(rowCounts).toEqual([1, 3, 5, 6])
+  expect(rowCounts).toEqual([2, 2, 2, 4, 6, 6])
   await expect(cards.locator('[data-action="contacts-clone"], [data-action="contacts-reorder"]')).toHaveCount(0)
   await expect(page.getByText("CEO", { exact: true })).toHaveCount(0)
   const iris = page.locator('[data-contact-id="officer-1"]')
@@ -165,6 +165,21 @@ test.describe("touch cards", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
   test("holding opens actions without selecting the chat", async ({ page }) => {
     await page.goto("/tasks")
+    await page.setViewportSize({ width: 390, height: 420 })
+    const touch = await page.context().newCDPSession(page)
+    const first = await page.locator('[data-contact-id="officer-4"]').boundingBox()
+    const x = first!.x + 75
+    const y = first!.y + 120
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] })
+    for (const dy of [20, 40, 60, 80, 100]) {
+      await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - dy }] })
+    }
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
+    await expect
+      .poll(() => page.locator('[data-slot="officer-roster-scroll"]').evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0)
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(page).toHaveURL(/tasks$/)
     const card = page.locator('[data-contact-id="officer-1"]')
     await card.scrollIntoViewIfNeeded()
     const box = await card.boundingBox()

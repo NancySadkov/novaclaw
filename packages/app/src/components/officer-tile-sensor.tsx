@@ -3,7 +3,7 @@ import { useDragDropContext, type Id } from "@thisbeyond/solid-dnd"
 
 export function OfficerTileSensor(props: { disabled: boolean; onCancel: () => void }) {
   const [state, actions] = useDragDropContext()!
-  let press: { id: Id; pointer: number; x: number; y: number } | undefined
+  let press: { id: Id; pointer: number; touch: boolean; x: number; y: number } | undefined
   const detach = () => {
     document.removeEventListener("pointermove", move)
     document.removeEventListener("pointerup", finish)
@@ -30,7 +30,13 @@ export function OfficerTileSensor(props: { disabled: boolean; onCancel: () => vo
   }
   const move = (event: PointerEvent) => {
     if (!press || press.pointer !== event.pointerId) return
-    if (!state.active.sensor && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 8) {
+    const dx = event.clientX - press.x
+    const dy = event.clientY - press.y
+    if (!state.active.sensor && Math.hypot(dx, dy) >= 8) {
+      if (press.touch && Math.abs(dy) >= Math.abs(dx)) {
+        cancel()
+        return
+      }
       actions.sensorStart("officer-tile", { x: press.x, y: press.y })
       actions.dragStart(press.id)
     }
@@ -46,7 +52,13 @@ export function OfficerTileSensor(props: { disabled: boolean; onCancel: () => vo
           if (props.disabled || event.button !== 0 || !event.isPrimary) return
           if ((event.target as HTMLElement).closest("button,[role=menu]")) return
           detach()
-          press = { id, pointer: event.pointerId, x: event.clientX, y: event.clientY }
+          press = {
+            id,
+            pointer: event.pointerId,
+            touch: event.pointerType === "touch",
+            x: event.clientX,
+            y: event.clientY,
+          }
           document.addEventListener("pointermove", move, { passive: false })
           document.addEventListener("pointerup", finish)
           document.addEventListener("pointercancel", cancel)

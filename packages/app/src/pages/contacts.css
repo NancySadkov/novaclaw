@@ -1,15 +1,15 @@
 .officer-roster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 224px);
+  grid-template-columns: repeat(auto-fill, 150px);
   align-content: start;
-  gap: 16px;
-  padding: 20px;
+  gap: 12px;
+  padding: 12px;
 }
 
 .officer-sortable {
   position: relative;
-  width: 224px;
-  height: 276px;
+  width: 150px;
+  height: 185px;
 }
 .officer-sortable[data-dragging] {
   z-index: 20;
@@ -26,8 +26,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 224px;
-  height: 276px;
+  width: 150px;
+  height: 185px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--v2-text-text-base) 15%, transparent);
   border-radius: 14px;
@@ -41,7 +41,7 @@
     0 5px 16px #09041425;
   color: var(--v2-text-text-base);
   cursor: grab;
-  touch-action: none;
+  touch-action: pan-y pinch-zoom;
   user-select: none;
   transition:
     border-color 160ms ease,
@@ -61,7 +61,7 @@
 .officer-card-art {
   position: relative;
   display: flex;
-  flex: 0 0 132px;
+  flex: 0 0 96px;
   align-items: center;
   justify-content: center;
   background:
@@ -71,27 +71,27 @@
 .officer-card-art::before {
   content: "";
   position: absolute;
-  width: 66px;
-  height: 54px;
+  width: 104px;
+  height: 92px;
   border: 1px solid #cba76525;
   border-radius: 50%;
   box-shadow: 0 0 0 4px #b9955c08;
 }
 .officer-card .officer-card-portrait {
-  width: 45px;
-  height: 45px;
-  border: 1px solid #c2a575;
+  width: 90px;
+  height: 90px;
+  border: 2px solid #c2a575;
   box-shadow:
     0 4px 20px #08031170,
     inset 0 1px 1px #fff3;
-  font-size: 14px;
+  font-size: 28px;
   font-weight: 600;
   pointer-events: none;
 }
 .officer-card-status {
   position: absolute;
-  right: 10px;
-  top: 10px;
+  right: 5px;
+  top: 4px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -115,7 +115,8 @@
   color: var(--v2-state-fg-warning);
 }
 .officer-card-identity {
-  padding: 0 14px;
+  padding: 0 8px;
+  flex-shrink: 0;
   text-align: center;
 }
 .officer-card-identity strong {
@@ -123,8 +124,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 18px;
   letter-spacing: 0.015em;
 }
 .officer-card-identity > span {
@@ -133,12 +134,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--v2-text-text-muted);
-  font-size: 11px;
-  line-height: 20px;
+  font-size: 10px;
+  line-height: 14px;
 }
 .officer-card-task {
-  height: 40px;
-  padding: 8px 14px;
+  flex: 0 0 18px;
+  line-height: 14px;
+  padding: 2px 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -149,10 +151,10 @@
 .officer-card-stats {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   margin-top: auto;
-  height: 52px;
-  padding: 8px 14px;
+  flex: 0 0 37px;
+  padding: 3px 8px;
   border-top: 1px solid #cba76520;
   background: #8874af08;
 }
@@ -196,7 +198,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 44px;
   padding: 7px 10px;
   border-radius: 5px;
   outline: none;
@@ -221,5 +223,26 @@
 @media (prefers-reduced-motion: reduce) {
   .officer-card {
     transition: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .officer-roster-grid {
+    gap: 8px;
+    padding: 8px 4px;
+    justify-content: center;
+  }
+  .officer-roster-toolbar {
+    padding: 6px 8px;
+  }
+  .officer-roster-toolbar > button {
+    min-height: 44px;
+  }
+  .officer-roster-toolbar > :last-child {
+    min-width: 0;
+    flex: 1;
+  }
+  .officer-roster-toolbar [data-component="text-input-v2"] {
+    height: 44px;
   }
 }

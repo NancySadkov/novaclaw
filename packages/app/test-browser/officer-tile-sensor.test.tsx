@@ -47,7 +47,7 @@ function mount() {
     ),
     host,
   )
-  const pointer = (target: EventTarget, type: string, x = 0, pointerId = 1) => {
+  const pointer = (target: EventTarget, type: string, x = 0, pointerId = 1, y = 0) => {
     const event = new PointerEvent(type, {
       bubbles: true,
       cancelable: true,
@@ -55,6 +55,7 @@ function mount() {
       pointerId,
       button: 0,
       clientX: x,
+      clientY: y,
       pointerType: "touch",
     })
     target.dispatchEvent(event)
@@ -117,4 +118,14 @@ test("opening the context menu cancels an active drag before it can save a drop"
   rig.pointer(document, "pointerup", 20)
   expect(rig.active()).toBe(false)
   expect(rig.events).toHaveLength(3)
+})
+
+test("vertical touch movement scrolls instead of dragging an officer", () => {
+  const rig = mount()
+  rig.pointer(rig.tile, "pointerdown")
+  expect(rig.pointer(document, "pointermove", 2, 1, 20).defaultPrevented).toBe(false)
+  expect(rig.active()).toBe(false)
+  rig.pointer(document, "pointermove", 40, 1, 30)
+  expect(rig.active()).toBe(false)
+  expect(rig.events).toEqual(["cancel"])
 })

@@ -411,7 +411,7 @@ ${copy.detail}`
           so the title is an echo, and the sentence under it explained a roster that explains itself
           the moment you look at the rows. The glyph rendered as a blank besides. What the app is for
           belongs on the tile and in Help, not spent on the top of every visit. */}
-      <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
+      <div class="officer-roster-toolbar flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
         {/* The user's own half of the CEO's power (owner: "user can create new agents on demand").
             Nova can hire through her tool; this is the same act performed by the person, sharing the
             same naming rule so the roster never reads like a list of people. */}
@@ -432,10 +432,11 @@ ${copy.detail}`
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}
           placeholder={language.t("contacts.search")}
+          aria-label={language.t("contacts.search")}
         />
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div data-slot="officer-roster-scroll" class="min-h-0 flex-1 overflow-y-auto">
         {/* Four distinct situations, four distinct sentences. An empty roster, a search that
             matched nothing, a roster still loading and a roster we FAILED to read are not the
             same fact, and collapsing them is how a broken request reads as "you have nobody".

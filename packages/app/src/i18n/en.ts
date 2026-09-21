@@ -2368,7 +2368,8 @@ export const dict = {
   "contacts.configure": "Configure this colleague",
   "contacts.clone": "Clone {{name}}",
   "contacts.order.drag": "Reorder {{name}}",
-  "contacts.order.hint": "Drag to arrange · Alt + arrow keys to move · Right-click or hold for actions",
+  "contacts.order.hint":
+    "Drag sideways to arrange · Swipe vertically to scroll · Alt + arrow keys to move · Right-click or hold for actions",
   "contacts.order.failed": "Could not save officer order",
   "contacts.workers.count.one": "{{count}} worker",
   "contacts.workers.count.other": "{{count}} workers",
